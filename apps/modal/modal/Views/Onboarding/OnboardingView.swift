@@ -39,19 +39,21 @@ struct OnboardingView: View {
     
     private var conversationalTextSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            AnimatedText(text: "Hey Modi,", show: $viewModel.showGreeting)
+            AnimatedText(typing: "Hey Modi,", show: $viewModel.showGreeting)
                 .font(.system(size: 28, weight: .medium))
                 .foregroundColor(.primary.opacity(0.9))
             
-            Text(viewModel.currentPhrase)
-                .font(.system(size: 28, weight: .medium))
-                .foregroundColor(.primary.opacity(0.6))
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .opacity(viewModel.phraseOpacity)
-                .blur(radius: viewModel.phraseBlur)
-                .offset(y: viewModel.phraseOffset)
+            AnimatedText(
+                fadeIn: viewModel.currentPhrase,
+                opacity: viewModel.phraseOpacity,
+                blur: viewModel.phraseBlur,
+                offset: viewModel.phraseOffset
+            )
+            .font(.system(size: 28, weight: .medium))
+            .foregroundColor(.primary.opacity(0.6))
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 32)

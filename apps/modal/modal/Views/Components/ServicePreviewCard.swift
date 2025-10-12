@@ -61,7 +61,7 @@ struct ServicePreviewCard: View {
                     .font(.system(size: 20, weight: .semibold))
             }
             
-            ShimmeringText(text: service.shimmerText)
+            AnimatedText(shimmer: service.shimmerText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -88,7 +88,7 @@ struct ServicePreviewCard: View {
                         .font(.system(size: 20, weight: .semibold))
                 }
                 
-                ShimmeringText(text: service.shimmerText)
+                AnimatedText(shimmer: service.shimmerText)
             }
             
             Spacer()
