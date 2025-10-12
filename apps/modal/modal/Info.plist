@@ -7,7 +7,7 @@
 		<string>remote-notification</string>
 	</array>
 	<key>GIDClientID</key>
-    <string>1021220745951-rhk2eqfqr5op93v19ntr1hr462fpquhj.apps.googleusercontent.com</string>
+    <string>1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9.apps.googleusercontent.com</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -15,7 +15,15 @@
             <string>Editor</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>com.googleusercontent.apps.1021220745951-rhk2eqfqr5op93v19ntr1hr462fpquhj</string>
+                <string>com.googleusercontent.apps.1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>com.modal.app</string>
             </array>
         </dict>
     </array>

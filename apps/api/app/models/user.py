@@ -1,13 +1,33 @@
 """User model for the application."""
 from datetime import datetime
 from typing import Optional
+
 from sqlalchemy import String, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.database import Base
 
 
 class User(Base):
-    """User model representing authenticated users."""
+    """User model representing authenticated users.
+    
+    This model stores user information synced from Supabase Auth.
+    Users are created via OAuth providers (Google, Apple) or email.
+    
+    Attributes:
+        id: Unique user identifier (from Supabase)
+        email: User's email address
+        username: Optional username
+        full_name: User's full name
+        avatar_url: URL to user's profile picture
+        provider: OAuth provider (google, apple, email)
+        provider_id: Provider-specific user ID
+        is_active: Whether user account is active
+        is_verified: Whether user's email is verified
+        created_at: Account creation timestamp
+        updated_at: Last update timestamp
+        last_login: Last login timestamp
+    """
 
     __tablename__ = "users"
 

@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import GoogleSignIn
+import Supabase
 
 @main
 struct modalApp: App {
@@ -28,6 +29,7 @@ struct modalApp: App {
         WindowGroup {
             ContentView()
                 .onOpenURL { url in
+                    // Handle Google Sign-In callback URL
                     GIDSignIn.sharedInstance.handle(url)
                 }
         }

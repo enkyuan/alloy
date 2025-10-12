@@ -1,31 +1,11 @@
 import Foundation
 import AuthenticationServices
+import Supabase
+import GoogleSignIn
 
-// MARK: - API Models
-struct GoogleAuthRequest: Codable {
-    let idToken: String
+// MARK: - User Model
 
-    enum CodingKeys: String, CodingKey {
-        case idToken = "id_token"
-    }
-}
-
-struct TokenResponse: Codable {
-    let accessToken: String
-    let tokenType: String
-    let expiresIn: Int
-    let refreshToken: String?
-    let user: User
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case tokenType = "token_type"
-        case expiresIn = "expires_in"
-        case refreshToken = "refresh_token"
-        case user
-    }
-}
-
+/// User model representing an authenticated user
 struct User: Codable, Identifiable {
     let id: String
     let email: String
@@ -48,197 +28,198 @@ struct User: Codable, Identifiable {
 }
 
 // MARK: - Authentication Service
+
+/// Service for managing user authentication and session state
+///
+/// This service handles:
+/// - Google OAuth via Google Sign-In SDK
+/// - Apple Sign In
+/// - Supabase session management
+/// - Backend user synchronization
 @Observable
-class AuthenticationService: NSObject {
+class AuthenticationService {
+    // MARK: - Properties
+    
+    /// Current authenticated user from backend
     var currentUser: User?
-    var accessToken: String?
-    var refreshToken: String?
-    var isAuthenticated: Bool { currentUser != nil }
-
-    private let baseURL: String
-    private let session: URLSession
-
-    init(baseURL: String = "http://localhost:8000/api/v1") {
-        self.baseURL = baseURL
-        self.session = URLSession.shared
-        super.init()
-        loadSavedTokens()
-    }
-
-    // MARK: - Google OAuth
-    func authenticateWithGoogle(idToken: String) async throws -> User {
-        let url = URL(string: "\(baseURL)/auth/google")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let authRequest = GoogleAuthRequest(idToken: idToken)
-        request.httpBody = try JSONEncoder().encode(authRequest)
-
-        // Debug logging
-        print("📤 Sending request to: \(url.absoluteString)")
-        if let bodyString = String(data: request.httpBody ?? Data(), encoding: .utf8) {
-            print("📦 Request body: \(bodyString)")
+    
+    /// Current Supabase session
+    var session: Session?
+    
+    /// Whether the user is authenticated
+    var isAuthenticated: Bool { session != nil }
+    
+    /// Backend API base URL
+    private let backendURL: String
+    
+    // MARK: - Initialization
+    
+    /// Initialize the authentication service
+    /// - Parameter backendURL: Backend API base URL (defaults to localhost for development)
+    init(backendURL: String = "http://localhost:8000/api/v1") {
+        self.backendURL = backendURL
+        
+        // Check for existing session
+        Task {
+            await loadSession()
         }
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AuthError.invalidResponse
-        }
-
-        // Debug logging
-        print("📥 Response status: \(httpResponse.statusCode)")
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("📥 Response body: \(responseString)")
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            // Try to parse error message from response
-            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-               let detail = errorResponse["detail"] {
-                throw AuthError.serverError(detail)
+        
+        // Listen for authentication state changes
+        Task {
+            for await state in SupabaseConfig.shared.auth.authStateChanges {
+                if state.event == .signedIn {
+                    print("✅ Auth state changed: Signed in")
+                    await handleAuthStateChange(session: state.session)
+                } else if state.event == .signedOut {
+                    print("ℹ️ Auth state changed: Signed out")
+                    self.session = nil
+                    self.currentUser = nil
+                }
             }
-            throw AuthError.authenticationFailed(statusCode: httpResponse.statusCode)
         }
-
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-        // Save tokens and user
-        self.accessToken = tokenResponse.accessToken
-        self.refreshToken = tokenResponse.refreshToken
-        self.currentUser = tokenResponse.user
-        saveTokens()
-
-        return tokenResponse.user
     }
-
-    // MARK: - Apple Sign In
-    func authenticateWithApple(authorization: ASAuthorization) async throws -> User {
+    
+    // MARK: - Private Methods
+    
+    /// Handle authentication state changes from Supabase
+    /// - Parameter session: The new session
+    private func handleAuthStateChange(session: Session?) async {
+        guard let session = session else { return }
+        self.session = session
+        print("✅ Session updated for: \(session.user.email ?? "unknown")")
+        await syncUserWithBackend()
+    }
+    
+    /// Load existing session on app launch
+    private func loadSession() async {
+        do {
+            session = try await SupabaseConfig.shared.auth.session
+            if let session = session {
+                print("✅ Loaded existing session for: \(session.user.email ?? "unknown")")
+                await syncUserWithBackend()
+            }
+        } catch {
+            print("ℹ️ No existing session")
+        }
+    }
+    
+    // MARK: - Public Methods
+    
+    /// Authenticate user with Google ID token
+    ///
+    /// This uses Google Sign-In SDK to get an ID token, then exchanges it
+    /// with Supabase for a session. Requires `skip_nonce_check=true` in Supabase config.
+    ///
+    /// - Parameter idToken: Google ID token from Google Sign-In SDK
+    /// - Throws: Supabase authentication errors
+    func authenticateWithGoogle(idToken: String) async throws {
+        print("📤 Authenticating with Supabase using Google ID token")
+        
+        // Sign in with Supabase using Google ID token from Google Sign-In SDK
+        // Reference: https://supabase.com/docs/guides/auth/social-login/auth-google
+        let session = try await SupabaseConfig.shared.auth.signInWithIdToken(
+            credentials: .init(
+                provider: .google,
+                idToken: idToken
+            )
+        )
+        
+        self.session = session
+        print("✅ Supabase session created for: \(session.user.email ?? "unknown")")
+        
+        // Sync user with our backend database
+        await syncUserWithBackend()
+    }
+    
+    /// Authenticate user with Apple Sign In
+    ///
+    /// - Parameter authorization: Apple authorization result from ASAuthorizationController
+    /// - Throws: `AuthError.invalidAppleCredential` or Supabase authentication errors
+    func authenticateWithApple(authorization: ASAuthorization) async throws {
         guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
               let identityToken = appleIDCredential.identityToken,
               let idTokenString = String(data: identityToken, encoding: .utf8) else {
             throw AuthError.invalidAppleCredential
         }
-
-        let url = URL(string: "\(baseURL)/auth/apple")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        var userInfo: [String: Any]?
-        if let fullName = appleIDCredential.fullName {
-            userInfo = [
-                "name": [
-                    "firstName": fullName.givenName ?? "",
-                    "lastName": fullName.familyName ?? ""
-                ]
-            ]
-        }
-
-        let body: [String: Any] = [
-            "id_token": idTokenString,
-            "authorization_code": appleIDCredential.authorizationCode.map { String(data: $0, encoding: .utf8) } ?? "",
-            "user_info": userInfo as Any
-        ]
-
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AuthError.invalidResponse
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            throw AuthError.authenticationFailed(statusCode: httpResponse.statusCode)
-        }
-
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-        // Save tokens and user
-        self.accessToken = tokenResponse.accessToken
-        self.refreshToken = tokenResponse.refreshToken
-        self.currentUser = tokenResponse.user
-        saveTokens()
-
-        return tokenResponse.user
+        
+        print("📤 Authenticating with Supabase using Apple ID token")
+        
+        // Sign in with Apple ID token
+        // Reference: https://supabase.com/docs/reference/swift/auth-signinwithidtoken
+        let session = try await SupabaseConfig.shared.auth.signInWithIdToken(
+            credentials: .init(
+                provider: .apple,
+                idToken: idTokenString
+            )
+        )
+        
+        self.session = session
+        print("✅ Supabase session created for: \(session.user.email ?? "unknown")")
+        
+        // Sync user with our backend database
+        await syncUserWithBackend()
     }
-
-    // MARK: - Token Management
-    func refreshAccessToken() async throws {
-        guard let refreshToken = refreshToken else {
-            throw AuthError.noRefreshToken
-        }
-
-        let url = URL(string: "\(baseURL)/auth/refresh")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = ["refresh_token": refreshToken]
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw AuthError.tokenRefreshFailed
-        }
-
-        let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
-
-        self.accessToken = tokenResponse.accessToken
-        self.refreshToken = tokenResponse.refreshToken
-        self.currentUser = tokenResponse.user
-        saveTokens()
-    }
-
-    func signOut() {
-        accessToken = nil
-        refreshToken = nil
+    
+    /// Sign out the current user
+    ///
+    /// This signs out from Supabase and clears local session state.
+    ///
+    /// - Throws: Supabase sign out errors
+    func signOut() async throws {
+        try await SupabaseConfig.shared.auth.signOut()
+        session = nil
         currentUser = nil
-
-        // Clear from UserDefaults
-        UserDefaults.standard.removeObject(forKey: "accessToken")
-        UserDefaults.standard.removeObject(forKey: "refreshToken")
-        UserDefaults.standard.removeObject(forKey: "currentUser")
+        print("✅ Signed out successfully")
     }
-
-    // MARK: - Persistence
-    private func saveTokens() {
-        if let accessToken = accessToken {
-            UserDefaults.standard.set(accessToken, forKey: "accessToken")
-        }
-        if let refreshToken = refreshToken {
-            UserDefaults.standard.set(refreshToken, forKey: "refreshToken")
-        }
-        if let currentUser = currentUser,
-           let userData = try? JSONEncoder().encode(currentUser) {
-            UserDefaults.standard.set(userData, forKey: "currentUser")
+    
+    // MARK: - Backend Integration
+    
+    /// Sync user data with backend database
+    ///
+    /// This creates or updates the user record in our backend database.
+    /// The backend validates the Supabase session and returns user data.
+    private func syncUserWithBackend() async {
+        guard let session = session else { return }
+        
+        do {
+            let accessToken = session.accessToken
+            
+            // Call backend sync endpoint
+            let url = URL(string: "\(backendURL)/auth/sync")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                print("⚠️ Failed to sync user with backend (status: \((response as? HTTPURLResponse)?.statusCode ?? -1))")
+                return
+            }
+            
+            // Parse and store user data
+            currentUser = try JSONDecoder().decode(User.self, from: data)
+            print("✅ User synced with backend: \(currentUser?.email ?? "unknown")")
+            
+        } catch {
+            print("⚠️ Error syncing with backend: \(error.localizedDescription)")
+            // Don't throw - authentication succeeded, backend sync is optional
         }
     }
-
-    private func loadSavedTokens() {
-        accessToken = UserDefaults.standard.string(forKey: "accessToken")
-        refreshToken = UserDefaults.standard.string(forKey: "refreshToken")
-
-        if let userData = UserDefaults.standard.data(forKey: "currentUser"),
-           let user = try? JSONDecoder().decode(User.self, from: userData) {
-            currentUser = user
-        }
-    }
+    
 }
 
-// MARK: - Errors
+// MARK: - Authentication Errors
+
+/// Errors that can occur during authentication
 enum AuthError: LocalizedError {
     case invalidResponse
     case invalidAppleCredential
     case authenticationFailed(statusCode: Int)
-    case tokenRefreshFailed
-    case noRefreshToken
     case serverError(String)
-
+    
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
@@ -247,10 +228,6 @@ enum AuthError: LocalizedError {
             return "Invalid Apple credential"
         case .authenticationFailed(let statusCode):
             return "Authentication failed with status code: \(statusCode)"
-        case .tokenRefreshFailed:
-            return "Failed to refresh token"
-        case .noRefreshToken:
-            return "No refresh token available"
         case .serverError(let message):
             return "Server error: \(message)"
         }

@@ -1,14 +1,20 @@
+"""Application configuration and settings management."""
 from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+    """Application settings loaded from environment variables.
+    
+    All settings are loaded from the .env file or environment variables.
+    Required settings will raise an error if not provided.
+    """
 
     # Database
     DATABASE_URL: str
 
-    # Redis
+    # Redis (for future caching/sessions)
     REDIS_URL: str = "redis://redis:6379/0"
 
     # Supabase
@@ -16,17 +22,17 @@ class Settings(BaseSettings):
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_KEY: str
 
-    # JWT
+    # JWT (for custom tokens if needed)
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # Google OAuth
+    # Google OAuth (optional - used for server-side OAuth)
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_REDIRECT_URI: Optional[str] = None
 
-    # Apple OAuth
+    # Apple OAuth (optional - used for server-side OAuth)
     APPLE_CLIENT_ID: Optional[str] = None
     APPLE_TEAM_ID: Optional[str] = None
     APPLE_KEY_ID: Optional[str] = None
@@ -43,4 +49,5 @@ class Settings(BaseSettings):
     )
 
 
+# Global settings instance
 settings = Settings()

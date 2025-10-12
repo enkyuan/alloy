@@ -1,12 +1,21 @@
 """Main FastAPI application."""
+import logging
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.config import settings
 from app.routers import auth
-from app.database import Base, engine
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
@@ -14,12 +23,14 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     docs_url=f"{settings.API_V1_PREFIX}/docs",
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
+    version="1.0.0",
+    description="Modal API"
 )
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this in production
+    allow_origins=["*"],  # TODO: Update this in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,18 +39,26 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 
+logger.info(f"Starting {settings.PROJECT_NAME}")
+
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "service": "modal-api"}
+    """Health check endpoint for monitoring and load balancers."""
+    logger.debug("Health check requested")
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "version": "1.0.0"
+    }
 
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
+    """Root endpoint with API information."""
     return {
-        "message": "Modal API",
+        "message": settings.PROJECT_NAME,
         "version": "1.0.0",
-        "docs": f"{settings.API_V1_PREFIX}/docs"
+        "docs": f"{settings.API_V1_PREFIX}/docs",
+        "health": "/health"
     }
