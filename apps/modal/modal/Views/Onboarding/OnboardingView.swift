@@ -146,6 +146,12 @@ struct OnboardingView: View {
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 isAuthenticating = false
+                // Check if user cancelled the sign-in
+                let nsError = error as NSError
+                if nsError.code == -5 { // GIDSignInError.canceled
+                    print("ℹ️ User cancelled Google Sign-In")
+                    return
+                }
                 showError(message: "Google Sign-In failed: \(error.localizedDescription)")
                 return
             }

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     APPLE_KEY_ID: Optional[str] = None
     APPLE_PRIVATE_KEY: Optional[str] = None
 
+    # Spotify OAuth
+    SPOTIFY_CLIENT_ID: Optional[str] = None
+    SPOTIFY_CLIENT_SECRET: Optional[str] = None
+    SPOTIFY_REDIRECT_URI: str = "http://localhost:8000/api/v1/integrations/spotify/callback"
+
     # Application
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
