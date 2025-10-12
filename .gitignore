@@ -1,3 +1,6 @@
 # OS-related
 .DS_Store
+
+# misc
+.env
 imgs/
