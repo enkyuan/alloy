@@ -5,8 +5,8 @@
 //  Created by Enkang Yuan on 10/11/25.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 @main
 struct modalApp: App {
