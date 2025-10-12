@@ -1,9 +1,5 @@
 # Modal
 
-> Your agentic voice assistant
-
-Modal is a full-stack application consisting of a SwiftUI iOS app and a FastAPI backend, with Supabase for authentication and PostgreSQL for data storage.
-
 ## 🏗️ Architecture
 
 ```
