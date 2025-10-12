@@ -133,18 +133,6 @@ xcodebuild -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro
 - **Docker Compose**: Multi-container orchestration
 - **Kong**: API gateway (Supabase)
 
-## 🔐 Authentication Flow
-
-1. User taps "Continue with Google" in iOS app
-2. Google Sign-In SDK presents native Google sign-in flow
-3. User authenticates with Google
-4. App receives Google ID token
-5. App sends ID token to Supabase (via `signInWithIdToken`)
-6. Supabase validates token and creates session
-7. App syncs user data with backend API (`/auth/sync`)
-8. Backend creates/updates user in PostgreSQL database
-9. User is authenticated and redirected to HomeView
-
 ## 🧪 Testing
 
 ### Backend Tests
