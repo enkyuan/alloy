@@ -109,7 +109,6 @@ xcodebuild -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro
 - [Docker Guide](docs/DOCKER.md) - Running with Docker Compose
 - [Architecture Guide](docs/ARCHITECTURE.md) - System design and patterns
 - [API Documentation](docs/API.md) - Backend API reference
-- [Google OAuth Setup](GOOGLE_AUTH_QUICKSTART.md) - OAuth configuration
 
 ## 🏛️ Technology Stack
 
