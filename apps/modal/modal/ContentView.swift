@@ -1,6 +1,8 @@
+
 import SwiftData
 import SwiftUI
 import UIKit
+import GoogleSignIn
 
 // MARK: - Main View
 
@@ -14,6 +16,10 @@ struct ContentView: View {
 
 struct OnboardingView: View {
     @State private var viewModel = OnboardingViewModel()
+    @State private var authService = AuthenticationService()
+    @State private var showError = false
+    @State private var errorMessage = ""
+    @State private var isAuthenticating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +31,22 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
         .onAppear { viewModel.startAnimations() }
+        .alert("Authentication Error", isPresented: $showError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+        .overlay {
+            if isAuthenticating {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+                }
+            }
+        }
     }
 
     // MARK: - View Components
@@ -90,11 +112,65 @@ struct OnboardingView: View {
 
     private var authButtonsSection: some View {
         VStack(spacing: 12) {
-            AuthButton(icon: .system("apple.logo"), text: "Continue with Apple", style: .primary)
-            AuthButton(icon: .asset("GoogleIcon"), text: "Continue with Google", style: .secondary)
-            AuthButton(icon: .asset("MailIcon"), text: "Continue with Email", style: .secondary)
+            AuthButton(icon: .system("apple.logo"), text: "Continue with Apple", style: .primary, action: handleAppleSignIn)
+            AuthButton(icon: .asset("GoogleIcon"), text: "Continue with Google", style: .secondary, action: handleGoogleSignIn)
+            AuthButton(icon: .asset("MailIcon"), text: "Continue with Email", style: .secondary, action: handleEmailSignIn)
         }
         .padding(.horizontal, 32)
+    }
+
+    // MARK: - Authentication Handlers
+
+    private func handleGoogleSignIn() {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            errorMessage = "Unable to get root view controller"
+            showError = true
+            return
+        }
+
+        isAuthenticating = true
+
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
+            isAuthenticating = false
+
+            if let error = error {
+                errorMessage = "Google Sign-In failed: \(error.localizedDescription)"
+                showError = true
+                return
+            }
+
+            guard let result = result,
+                  let idToken = result.user.idToken?.tokenString else {
+                errorMessage = "Failed to get Google ID token"
+                showError = true
+                return
+            }
+
+            // Authenticate with backend
+            Task {
+                isAuthenticating = true
+                do {
+                    let user = try await authService.authenticateWithGoogle(idToken: idToken)
+                    print("✅ Successfully authenticated: \(user.email)")
+                    // TODO: Navigate to main app
+                } catch {
+                    errorMessage = error.localizedDescription
+                    showError = true
+                }
+                isAuthenticating = false
+            }
+        }
+    }
+
+    private func handleAppleSignIn() {
+        // TODO: Implement Apple Sign In
+        print("Apple Sign In tapped")
+    }
+
+    private func handleEmailSignIn() {
+        // TODO: Implement Email Sign In
+        print("Email Sign In tapped")
     }
 }
 
@@ -256,9 +332,10 @@ struct AuthButton: View {
     let icon: IconType
     let text: String
     let style: ButtonStyle
+    let action: () -> Void
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: action) {
             HStack(spacing: 0) {
                 iconView
 
