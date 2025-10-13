@@ -12,6 +12,18 @@ import Supabase
 
 @main
 struct modalApp: App {
+    
+    init() {
+        // Configure Google Sign-In with client ID from Info.plist
+        if let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String {
+            let config = GIDConfiguration(clientID: clientID)
+            GIDSignIn.sharedInstance.configuration = config
+            print("✅ Google Sign-In configured with client ID")
+        } else {
+            print("⚠️ Warning: GIDClientID not found in Info.plist")
+        }
+    }
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             // Add your SwiftData models here

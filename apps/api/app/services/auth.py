@@ -19,8 +19,8 @@ class SupabaseAuthService:
             "Content-Type": "application/json",
         }
         self.service_headers = {
-            "apikey": settings.SUPABASE_SERVICE_KEY,
-            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+            "apikey": settings.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {settings.SUPABASE_SERVICE_ROLE_KEY}",
             "Content-Type": "application/json",
         }
 

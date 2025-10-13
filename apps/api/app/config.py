@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Supabase
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_KEY: str
+    SUPABASE_SERVICE_ROLE_KEY: str
 
     # JWT (for custom tokens if needed)
     JWT_SECRET: str

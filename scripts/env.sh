@@ -324,7 +324,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 # Supabase Keys
 SUPABASE_URL=http://localhost:8001
 SUPABASE_ANON_KEY=${ANON_KEY}
-SUPABASE_SERVICE_KEY=${SERVICE_ROLE_KEY}
+SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
 # Google OAuth Configuration
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
@@ -352,7 +352,7 @@ else
     echo -e "${YELLOW}Updating apps/api/.env...${NC}"
     update_env_var "$API_ENV" "JWT_SECRET" "$JWT_SECRET"
     update_env_var "$API_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
-    update_env_var "$API_ENV" "SUPABASE_SERVICE_KEY" "$SERVICE_ROLE_KEY"
+    update_env_var "$API_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
     update_env_var "$API_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$API_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$API_ENV" "SPOTIFY_CLIENT_ID" "$SPOTIFY_CLIENT_ID"
