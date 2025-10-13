@@ -192,9 +192,6 @@ build_ios_app() {
         -derivedDataPath ./build \
         -allowProvisioningUpdates \
         clean build \
-        CODE_SIGN_IDENTITY="" \
-        CODE_SIGNING_REQUIRED=NO \
-        CODE_SIGNING_ALLOWED=NO \
         2>&1 | $BUILD_FORMATTER
     
     BUILD_EXIT_CODE=$?

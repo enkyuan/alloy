@@ -148,11 +148,24 @@ struct OnboardingView: View {
                 isAuthenticating = false
                 // Check if user cancelled the sign-in
                 let nsError = error as NSError
+                print("❌ Google Sign-In error - Domain: \(nsError.domain), Code: \(nsError.code)")
+                print("❌ Error description: \(error.localizedDescription)")
+                print("❌ User info: \(nsError.userInfo)")
+                
                 if nsError.code == -5 { // GIDSignInError.canceled
                     print("ℹ️ User cancelled Google Sign-In")
                     return
                 }
-                showError(message: "Google Sign-In failed: \(error.localizedDescription)")
+                
+                // Provide more specific error messages
+                var errorMsg = "Google Sign-In failed"
+                if nsError.domain == "com.google.GIDSignIn" && nsError.code == -4 {
+                    errorMsg = "Keychain error - Try resetting the simulator (Device → Erase All Content and Settings)"
+                } else {
+                    errorMsg = "Google Sign-In failed: \(error.localizedDescription)"
+                }
+                
+                showError(message: errorMsg)
                 return
             }
             

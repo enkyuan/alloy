@@ -18,7 +18,18 @@ struct modalApp: App {
         if let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String {
             let config = GIDConfiguration(clientID: clientID)
             GIDSignIn.sharedInstance.configuration = config
-            print("✅ Google Sign-In configured with client ID")
+            print("✅ Google Sign-In configured with client ID: \(clientID)")
+            
+            // Attempt to restore previous sign-in (helps initialize keychain access)
+            GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
+                if let error = error {
+                    print("ℹ️ No previous sign-in to restore: \(error.localizedDescription)")
+                } else if let user = user {
+                    print("✅ Restored previous Google Sign-In for: \(user.profile?.email ?? "unknown")")
+                } else {
+                    print("ℹ️ No previous Google Sign-In session")
+                }
+            }
         } else {
             print("⚠️ Warning: GIDClientID not found in Info.plist")
         }

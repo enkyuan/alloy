@@ -15,7 +15,7 @@ enum SupabaseConfig {
     /// Note: This key is safe to expose in client applications.
     /// It only allows operations permitted by your Row Level Security policies.
     /// Reference: https://supabase.com/docs/guides/api/api-keys
-    static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzYwMjUwMDY1LCJleHAiOjQxMDI0NDQ4MDB9.j28GOOiKPcjJRp57BlAgpMEIG7sdYwgSiWGnYD45slA"
+    static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzYwMzI4ODk4LCJleHAiOjQxMDI0NDQ4MDB9.zc_DOTFuH0bbMzTvjp5YzE34hEQnHCvdp6nlHAOwpuA"
     
     // MARK: - Shared Client
     
