@@ -11,7 +11,7 @@ struct HomeView: View {
     var body: some View {
         StepperNavigation.pages(
             (icon: "waveform", view: IntegrationsEmptyStateView(authService: authService)),
-            (icon: "gearshape", view: SettingsView(authService: authService))
+            (icon: "gear", view: SettingsView(authService: authService))
         )
     }
 }
