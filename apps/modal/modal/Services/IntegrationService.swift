@@ -72,11 +72,11 @@ class IntegrationService {
             let connected: Bool
         }
         
-        let response = try JSONDecoder().decode(IntegrationListResponse.self, from: data)
+        let integrationResponse = try JSONDecoder().decode(IntegrationListResponse.self, from: data)
         
         // Update connected services
         connectedServices.removeAll()
-        for integration in response.integrations where integration.connected {
+        for integration in integrationResponse.integrations where integration.connected {
             if let serviceType = ServiceType(rawValue: integration.service) {
                 connectedServices.insert(serviceType)
             }
@@ -130,7 +130,6 @@ class IntegrationService {
         }
         
         connectedServices.remove(service)
-        saveConnectedServices()
         
         print("✅ Successfully disconnected \(service.displayName)")
     }

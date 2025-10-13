@@ -492,38 +492,4 @@ curl -X GET "http://localhost:8000/api/v1/auth/me" \
 
 1. **Always use HTTPS** in production
 2. **Validate all inputs** (handled by Pydantic)
-3. **Never expose sensitive data** in logs or errors
-4. **Implement rate limiting** (future)
-5. **Monitor for suspicious activity**
-
----
-
-## Support
-
-For API issues or questions:
-1. Check interactive documentation: `/api/v1/docs`
-2. Review this documentation
-3. Check backend logs: `docker-compose logs api`
-4. Open an issue in the project repository
-
----
-
-## Changelog
-
-### Version 1.0.0 (Current)
-
-**Released**: 2024-01-01
-
-**Features**:
-- User authentication and sync
-- Google OAuth integration
-- Token refresh
-- Health check endpoint
-
-**Future Enhancements**:
-- Additional user endpoints (update profile, delete account)
-- Rate limiting
-- Pagination for list endpoints
-- WebSocket support
-- GraphQL API
-
+3. **Implement rate limiting** (future)

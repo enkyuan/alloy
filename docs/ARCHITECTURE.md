@@ -167,14 +167,14 @@ Views/
 ┌─────────┐     ┌──────────┐     ┌──────────┐     ┌─────────┐
 │ iOS App │     │  Google  │     │ Supabase │     │ Backend │
 └────┬────┘     └────┬─────┘     └────┬─────┘     └────┬────┘
-     │               │                 │                │
-     │ 1. Open      │                 │                │
+     │               │                │                │
+     │ 1. Open       │                │                │
      │    Google     │                │                │
      │    Sign-In    │                │                │
      ├──────────────►│                │                │
      │               │                │                │
      │ 2. User       │                │                │
-     │    authenticates │             │                │
+     │    authenticates               │                │
      │◄──────────────┤                │                │
      │               │                │                │
      │ 3. Return     │                │                │
@@ -182,7 +182,7 @@ Views/
      │◄──────────────┤                │                │
      │               │                │                │
      │ 4. Send ID token               │                │
-     ├──────────────────────────────►│                │
+     ├──────────────────────────────-►│                │
      │               │                │                │
      │ 5. Validate   │                │                │
      │    with Google│                │                │
@@ -191,9 +191,9 @@ Views/
      │ 6. Return     │                │                │
      │    Supabase   │                │                │
      │    session    │                │                │
-     │◄──────────────────────────────┤                │
+     │◄────────────────────────────── ┤                │
      │               │                │                │
-     │ 7. Sync user with backend     │                │
+     │ 7. Sync user with backend      │                │
      │    (send access token)         │                │
      ├────────────────────────────────────────────────►│
      │               │                │                │
@@ -582,62 +582,3 @@ Response: {"status": "healthy", "service": "modal-api"}
 - **Development**: Local Supabase + local PostgreSQL
 - **Staging**: Cloud Supabase + cloud PostgreSQL (small instance)
 - **Production**: Cloud Supabase + cloud PostgreSQL (sized appropriately)
-
-## Design Decisions
-
-### Why Supabase?
-
-- **Pros**: Managed auth, OAuth integrations, real-time capabilities
-- **Cons**: Vendor lock-in for auth
-- **Decision**: Benefits outweigh vendor lock-in risk
-
-### Why PostgreSQL over NoSQL?
-
-- Structured user data with relationships
-- ACID guarantees important for user management
-- Excellent tooling and familiarity
-- SQLAlchemy ORM provides type safety
-
-### Why FastAPI?
-
-- Modern Python framework with async support
-- Automatic API documentation
-- Type safety with Pydantic
-- Excellent performance
-- Large ecosystem
-
-### Why SwiftUI over UIKit?
-
-- Modern, declarative UI
-- Less boilerplate code
-- Better state management
-- Future of iOS development
-- Excellent developer experience
-
-## Future Enhancements
-
-1. **Backend**:
-   - GraphQL API option
-   - WebSocket support for real-time features
-   - Redis caching layer
-   - Background job processing (Celery)
-
-2. **Frontend**:
-   - Offline support
-   - Push notifications
-   - Widget extensions
-   - Watch app
-
-3. **Infrastructure**:
-   - CI/CD pipeline
-   - Automated testing
-   - Performance monitoring
-   - Error tracking (Sentry)
-
-## References
-
-- [FastAPI Best Practices](https://fastapi.tiangolo.com/tutorial/best-practices/)
-- [SQLAlchemy Best Practices](https://docs.sqlalchemy.org/en/20/orm/queryguide/index.html)
-- [SwiftUI Architecture](https://developer.apple.com/documentation/swiftui/)
-- [Supabase Architecture](https://supabase.com/docs/architecture)
-
