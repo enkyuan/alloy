@@ -197,10 +197,8 @@ else
     # Update existing docker/.env
     echo -e "${YELLOW}Updating docker/.env...${NC}"
     update_env_var "$DOCKER_ENV" "JWT_SECRET" "$JWT_SECRET"
-    update_env_var "$DOCKER_ENV" "ANON_KEY" "$ANON_KEY"
     update_env_var "$DOCKER_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
-    update_env_var "$DOCKER_ENV" "SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
-    update_env_var "$DOCKER_ENV" "SUPABASE_SERVICE_KEY" "$SERVICE_ROLE_KEY"
+    update_env_var "$DOCKER_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$DOCKER_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
