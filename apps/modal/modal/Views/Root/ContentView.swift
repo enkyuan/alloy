@@ -18,8 +18,7 @@ struct ContentView: View {
                             hasCompletedOnboarding = true
                         }
                     }) {
-                        IntegrationsView(authService: authService)
-                            .interactiveDismissDisabled()
+                        IntegrationsView(authService: authService, isOnboarding: true)
                     }
                     .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
                         if isAuthenticated {

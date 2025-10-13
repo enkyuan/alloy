@@ -178,7 +178,7 @@ struct OnboardingView: View {
             
             print("📝 Got Google ID token for: \(result.user.profile?.email ?? "unknown")")
             
-            Task {
+            Task { @MainActor in
                 do {
                     try await authService.authenticateWithGoogle(idToken: idToken)
                     print("✅ Successfully authenticated!")

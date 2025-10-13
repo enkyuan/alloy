@@ -24,6 +24,7 @@ Thumbs.db
 *.swo
 *~
 .vim/
+.gemini/
 
 # Python
 __pycache__/

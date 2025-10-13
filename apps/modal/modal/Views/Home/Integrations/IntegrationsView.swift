@@ -1,24 +1,24 @@
 import SwiftUI
 
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 /// View for managing service integrations
 struct IntegrationsView: View {
     // MARK: - Properties
     
     @Bindable var authService: AuthenticationService
+    let isOnboarding: Bool
     @State private var integrationService = IntegrationService()
     @State private var showError = false
     @State private var errorMessage = ""
-    @State private var showStickyHeader = false
     @State private var showDisconnectAlert = false
     @State private var serviceToDisconnect: IntegrationService.ServiceType?
     @Environment(\.dismiss) var dismiss
+    
+    // MARK: - Initializer
+    
+    init(authService: AuthenticationService, isOnboarding: Bool = false) {
+        self.authService = authService
+        self.isOnboarding = isOnboarding
+    }
     
     // MARK: - Computed Properties
     
@@ -32,37 +32,29 @@ struct IntegrationsView: View {
     // MARK: - Body
     
     var body: some View {
-        ZStack(alignment: .top) {
+        NavigationStack {
             VStack(spacing: 0) {
                 ScrollView {
-                    VStack(spacing: 0) {
-                        headerSection
-                            .padding(.horizontal, 20)
-                            .padding(.top, 40)
-                            .padding(.bottom, 24)
-                            .background(
-                                GeometryReader { geometry in
-                                    let offset = geometry.frame(in: .named("scroll")).minY
-                                    Color.clear
-                                        .onChange(of: offset) { oldValue, newValue in
-                                            print("🔄 Offset: \(newValue)")
-                                            // Directly update state instead of using preference
-                                            withAnimation(.easeInOut(duration: 0.25)) {
-                                                self.showStickyHeader = newValue < -50
-                                            }
-                                        }
-                                }
-                            )
+                    VStack(spacing: 20) {
+                        // Subtitle
+                        Text("Link your favorite apps to unlock Modal's full potential")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         
                         integrationsGrid
-                            .padding(.horizontal, 20)
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
                 }
-                .coordinateSpace(name: "scroll")
                 
                 footerSection
             }
             .background(Color(uiColor: .systemBackground))
+            .navigationTitle("Connect Your Services")
+            .navigationBarTitleDisplayMode(.large)
+            .interactiveDismissDisabled(isOnboarding)
             .alert("Error", isPresented: $showError) {
                 Button("OK") { } 
             } message: {
@@ -80,50 +72,18 @@ struct IntegrationsView: View {
                     Text("Are you sure you want to disconnect \(service.displayName)? You can reconnect it anytime.")
                 }
             }
-            
-            stickyHeaderSection
-                .offset(y: showStickyHeader ? 0 : -100)
-                .opacity(showStickyHeader ? 1 : 0)
-                .animation(.spring(response: 0.32, dampingFraction: 0.9), value: showStickyHeader)
-        }
-        .task {
-            // Fetch connected integrations when view appears
-            do {
-                try await integrationService.fetchConnectedIntegrations(authService: authService)
-            } catch {
-                print("Failed to fetch integrations: \(error)")
+            .task {
+                // Fetch connected integrations when view appears
+                do {
+                    try await integrationService.fetchConnectedIntegrations(authService: authService)
+                } catch {
+                    print("Failed to fetch integrations: \(error)")
+                }
             }
         }
     }
     
     // MARK: - View Components
-
-    private var stickyHeaderSection: some View {
-        VStack(spacing: 0) {
-            Text("Connect Your Services")
-                .font(.headline.weight(.bold))
-                .foregroundColor(.primary)
-                .padding(.vertical, 16)
-                .padding(.horizontal)
-                .frame(maxWidth: .infinity)
-            Divider()
-        }
-        .background(.ultraThinMaterial)
-        .shadow(color: Color.black.opacity(0.1), radius: 8, x: 0, y: 2)
-    }
-    
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Connect Your Services")
-                .font(.system(size: 32, weight: .bold))
-            
-            Text("Link your favorite apps to unlock Modal's full potential")
-                .font(.system(size: 16, weight: .regular))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
     
     private var integrationsGrid: some View {
         VStack(spacing: 16) {

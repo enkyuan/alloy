@@ -127,7 +127,7 @@ class IntegrationService {
             print("✅ Successfully connected \(service.displayName)")
 
         } catch let error as IntegrationError {
-            print("❌ Integration error: \(error.localizedDescription ?? "Unknown")")
+            print("❌ Integration error: \(error.localizedDescription)")
             throw error
         } catch {
             print("❌ Unexpected OAuth error: \(error.localizedDescription)")
@@ -319,8 +319,11 @@ class WebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticatio
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive }),
               let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first else {
-            // Fallback: try to get any available window
-            if let fallbackWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+            // Fallback: try to get any available window from any window scene
+            if let fallbackScene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first,
+               let fallbackWindow = fallbackScene.windows.first(where: { $0.isKeyWindow }) ?? fallbackScene.windows.first {
                 return fallbackWindow
             }
             // Last resort: return a new window

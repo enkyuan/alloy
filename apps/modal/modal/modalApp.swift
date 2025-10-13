@@ -12,14 +12,15 @@ import Supabase
 
 @main
 struct modalApp: App {
-    
+    @State private var liveActivityManager = LiveActivityManager.shared
+
     init() {
         // Configure Google Sign-In with client ID from Info.plist
         if let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String {
             let config = GIDConfiguration(clientID: clientID)
             GIDSignIn.sharedInstance.configuration = config
             print("✅ Google Sign-In configured with client ID: \(clientID)")
-            
+
             // Attempt to restore previous sign-in (helps initialize keychain access)
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
                 if let error = error {
@@ -33,6 +34,9 @@ struct modalApp: App {
         } else {
             print("⚠️ Warning: GIDClientID not found in Info.plist")
         }
+
+        // Start Live Activity on app launch
+        LiveActivityManager.shared.start()
     }
     
     var sharedModelContainer: ModelContainer = {

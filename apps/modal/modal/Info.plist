@@ -13,6 +13,10 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Modal needs access to your microphone to listen to your voice commands and assist you.</string>
 	<key>GIDClientID</key>
 	<string>1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
