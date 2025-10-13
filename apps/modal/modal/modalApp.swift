@@ -52,8 +52,35 @@ struct modalApp: App {
         WindowGroup {
             ContentView()
                 .onOpenURL { url in
+                    print("📱 Received URL: \(url.absoluteString)")
+                    
                     // Handle Google Sign-In callback URL
-                    GIDSignIn.sharedInstance.handle(url)
+                    if url.scheme == "com.googleusercontent.apps.1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9" {
+                        print("🔵 Google Sign-In callback detected")
+                        GIDSignIn.sharedInstance.handle(url)
+                        return
+                    }
+                    
+                    // Handle integration callbacks (Spotify, Uber, etc.)
+                    // ASWebAuthenticationSession handles these automatically, so we don't need to do anything
+                    if url.scheme == "modal" {
+                        if url.host == "spotify" || url.host == "uber" || url.host == "gmail" {
+                            print("🟢 Integration callback detected: \(url.host ?? "unknown")")
+                            print("   ASWebAuthenticationSession will handle this automatically")
+                            // Don't pass to Supabase - let ASWebAuthenticationSession handle it
+                            return
+                        }
+                    }
+                    
+                    // For all other URLs, pass to Supabase to handle OAuth callbacks
+                    print("🟣 Passing to Supabase for handling")
+                    Task {
+                        do {
+                            try await SupabaseConfig.shared.auth.session(from: url)
+                        } catch {
+                            print("❌ Supabase session error: \(error)")
+                        }
+                    }
                 }
         }
         .modelContainer(sharedModelContainer)

@@ -1,8 +1,10 @@
 import Foundation
 import AuthenticationServices
 import Auth
+import Supabase
 
 /// Service for managing third-party integrations
+@MainActor
 @Observable
 class IntegrationService {
     // MARK: - Service Types
@@ -36,12 +38,13 @@ class IntegrationService {
     
     private var connectedServices: Set<ServiceType> = []
     private let backendURL: String
+    private var authSession: ASWebAuthenticationSession?
+    private let contextProvider = WebAuthenticationPresentationContextProvider()
     
     // MARK: - Initialization
     
-    init(backendURL: String = "http://localhost:8000/api/v1") {
+    init(backendURL: String = "http://127.0.0.1:8000/api/v1") {
         self.backendURL = backendURL
-        // Don't load from UserDefaults, fetch from backend instead
     }
     
     // MARK: - Public Methods
@@ -93,21 +96,43 @@ class IntegrationService {
     /// Connect a service via OAuth
     func connectService(_ service: ServiceType, authService: AuthenticationService) async throws {
         print("🔗 Initiating OAuth for \(service.displayName)")
-        
+
         guard let session = authService.session else {
+            print("❌ Not authenticated")
             throw IntegrationError.notAuthenticated
         }
-        
-        // Get OAuth URL from backend
-        let authURL = try await getOAuthURL(for: service, accessToken: session.accessToken)
-        
-        // Present OAuth flow
-        try await presentOAuthFlow(url: authURL, service: service)
-        
-        // Fetch updated integrations from backend
-        try await fetchConnectedIntegrations(authService: authService)
-        
-        print("✅ Successfully connected \(service.displayName)")
+
+        // This manual flow is more robust and bypasses the crashing Supabase helper function.
+        // The app's backend still handles the secure OAuth token exchange with Supabase.
+        do {
+            // 1. Get the auth URL from our own backend
+            print("📡 Step 1: Getting OAuth URL from backend...")
+            let authURL = try await getOAuthURL(for: service, accessToken: session.accessToken)
+            print("✅ Received auth URL: \(authURL.absoluteString)")
+
+            // 2. Present the web flow using ASWebAuthenticationSession
+            print("🌐 Step 2: Presenting OAuth web flow...")
+            let (code, state) = try await presentOAuthFlow(url: authURL, service: service)
+            print("✅ Received callback - Code: \(code.prefix(20))..., State: \(state.prefix(20))...")
+
+            // 3. Send the authorization code to our backend to be exchanged for tokens
+            print("🔄 Step 3: Exchanging authorization code...")
+            try await exchangeCode(code: code, state: state, accessToken: session.accessToken, service: service)
+
+            // 4. Update the local state to reflect the new connection
+            DispatchQueue.main.async {
+                self.connectedServices.insert(service)
+            }
+            
+            print("✅ Successfully connected \(service.displayName)")
+
+        } catch let error as IntegrationError {
+            print("❌ Integration error: \(error.localizedDescription ?? "Unknown")")
+            throw error
+        } catch {
+            print("❌ Unexpected OAuth error: \(error.localizedDescription)")
+            throw IntegrationError.oauthFailed
+        }
     }
     
     /// Disconnect a service
@@ -136,6 +161,36 @@ class IntegrationService {
     
     // MARK: - Private Methods
     
+    private func exchangeCode(code: String, state: String, accessToken: String, service: ServiceType) async throws {
+        // Properly encode query parameters
+        guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(backendURL)/integrations/spotify/exchange?code=\(encodedCode)&state=\(encodedState)") else {
+            print("❌ Failed to encode OAuth parameters")
+            throw IntegrationError.oauthFailed
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response from exchange endpoint")
+            throw IntegrationError.oauthFailed
+        }
+        
+        // Log response for debugging
+        if httpResponse.statusCode != 200 {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
+            print("❌ Exchange failed with status \(httpResponse.statusCode): \(errorMessage)")
+            throw IntegrationError.oauthFailed
+        }
+
+        print("✅ Successfully exchanged code for \(service.displayName)")
+    }
+
     private func getOAuthURL(for service: ServiceType, accessToken: String) async throws -> URL {
         let url = URL(string: "\(backendURL)\(service.oauthEndpoint)")!
         var request = URLRequest(url: url)
@@ -143,73 +198,113 @@ class IntegrationService {
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid response from OAuth URL endpoint")
             throw IntegrationError.oauthURLFailed
         }
         
-            struct OAuthURLResponse: Codable {
-                let authUrl: String
-                let state: String?
-            }
-            
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
+        if httpResponse.statusCode != 200 {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
+            print("❌ Failed to get OAuth URL (status \(httpResponse.statusCode)): \(errorMessage)")
+            throw IntegrationError.oauthURLFailed
+        }
+        
+        struct OAuthURLResponse: Codable {
+            let authUrl: String
+            let state: String?
+        }
+        
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        
+        do {
             let oauthResponse = try decoder.decode(OAuthURLResponse.self, from: data)
             guard let authURL = URL(string: oauthResponse.authUrl) else {
+                print("❌ Invalid OAuth URL in response: \(oauthResponse.authUrl)")
                 throw IntegrationError.invalidURL
             }
-        
-        return authURL
+            return authURL
+        } catch {
+            print("❌ Failed to decode OAuth URL response: \(error)")
+            throw IntegrationError.oauthURLFailed
+        }
     }
     
-    private func presentOAuthFlow(url: URL, service: ServiceType) async throws {
+    private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (code: String, state: String) {
         // Use ASWebAuthenticationSession for OAuth flow
         return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
+            // Create the session and store it as a property to keep it alive
+            self.authSession = ASWebAuthenticationSession(
                 url: url,
                 callbackURLScheme: "modal"
             ) { callbackURL, error in
+                // Clear the session reference when done
+                defer { self.authSession = nil }
+                
                 if let error = error {
                     // Check if user cancelled the authentication
                     let nsError = error as NSError
-                    if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession" 
+                    if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession"
                         && nsError.code == 1 {
                         // User cancelled - this is not an error, just resume normally
                         print("ℹ️ User cancelled OAuth for \(service.displayName)")
                         continuation.resume(throwing: IntegrationError.userCancelled)
                         return
                     }
+                    print("❌ ASWebAuthenticationSession error: \(error.localizedDescription)")
                     continuation.resume(throwing: error)
                     return
                 }
-                
+
                 guard let callbackURL = callbackURL else {
+                    print("❌ No callback URL received")
                     continuation.resume(throwing: IntegrationError.noCallbackURL)
                     return
                 }
-                
+
+                print("📱 Received callback URL: \(callbackURL.absoluteString)")
+
                 // Parse callback URL parameters
                 guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
                       let queryItems = components.queryItems else {
+                    print("❌ Could not parse callback URL components")
                     continuation.resume(throwing: IntegrationError.noCallbackURL)
                     return
                 }
-                
-                // Check for success parameter
-                if let successParam = queryItems.first(where: { $0.name == "success" }),
-                   successParam.value == "true" {
-                    continuation.resume()
-                } else if let errorParam = queryItems.first(where: { $0.name == "error" }) {
-                    print("❌ OAuth error: \(errorParam.value ?? "unknown")")
-                    continuation.resume(throwing: IntegrationError.oauthFailed)
+
+                // For Spotify OAuth, we receive: modal://spotify/callback?code=...&state=...
+                if callbackURL.host == "spotify" && callbackURL.path == "/callback" {
+                    // Extract authorization code and state
+                    guard let code = queryItems.first(where: { $0.name == "code" })?.value,
+                          let state = queryItems.first(where: { $0.name == "state" })?.value else {
+                        print("❌ Missing code or state in callback")
+                        continuation.resume(throwing: IntegrationError.oauthFailed)
+                        return
+                    }
+
+                    print("✅ Received authorization code for \(service.displayName)")
+                    continuation.resume(returning: (code: code, state: state))
                 } else {
+                    // Fallback for services that don't need code exchange
+                    // This shouldn't happen with Spotify
+                    print("⚠️ Unexpected callback URL format: \(callbackURL)")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
                 }
             }
+
+            // Use the retained context provider
+            self.authSession?.presentationContextProvider = self.contextProvider
             
-            session.presentationContextProvider = WebAuthenticationPresentationContextProvider()
-            session.start()
+            // Prefer ephemeral session (doesn't save cookies)
+            self.authSession?.prefersEphemeralWebBrowserSession = true
+            
+            // Start the session
+            if self.authSession?.start() == false {
+                print("❌ Failed to start ASWebAuthenticationSession")
+                continuation.resume(throwing: IntegrationError.oauthFailed)
+            } else {
+                print("✅ ASWebAuthenticationSession started successfully")
+            }
         }
     }
     
@@ -219,9 +314,18 @@ class IntegrationService {
 
 class WebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first else {
-            return ASPresentationAnchor()
+        // Get the first active window scene
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }),
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first else {
+            // Fallback: try to get any available window
+            if let fallbackWindow = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) {
+                return fallbackWindow
+            }
+            // Last resort: return a new window
+            print("⚠️ Warning: Could not find key window for OAuth presentation")
+            return UIWindow()
         }
         return window
     }
@@ -263,4 +367,3 @@ enum IntegrationError: LocalizedError {
 
 // Make ServiceType Codable
 extension IntegrationService.ServiceType: Codable {}
-

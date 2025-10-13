@@ -122,7 +122,7 @@ enabled = true
 # in emails.
 site_url = "http://127.0.0.1:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+additional_redirect_urls = ["https://127.0.0.1:3000", "modal"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # Path to JWT signing key. DO NOT commit your signing keys file to git.
@@ -270,6 +270,11 @@ client_id = "env(GOOGLE_CLIENT_ID)"
 secret = "env(GOOGLE_CLIENT_SECRET)"
 # If enabled, the nonce check will be skipped. Required for local sign in with Google auth from mobile apps.
 skip_nonce_check = true
+
+[auth.external.spotify]
+enabled = true
+client_id = "env(SPOTIFY_CLIENT_ID)"
+secret = "env(SPOTIFY_CLIENT_SECRET)"
 
 [auth.external.apple]
 enabled = false

@@ -23,6 +23,7 @@ from app.schemas.integration import (
     IntegrationListResponse
 )
 from app.services.auth import supabase_auth_service
+from app.services.spotify import spotify_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -130,54 +131,154 @@ async def get_spotify_oauth_url(
         )
 
 
-@router.get("/spotify/callback")
-async def spotify_oauth_callback(
-    code: Optional[str] = Query(None, description="OAuth authorization code"),
-    state: Optional[str] = Query(None, description="OAuth state parameter"),
-    error: Optional[str] = Query(None, description="OAuth error"),
+@router.post("/spotify/sync")
+async def sync_spotify_integration(
+    authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Handle Spotify OAuth callback.
-    
+    """Sync Spotify integration from Supabase to our database.
+
+    Called by iOS app after successful Supabase Spotify OAuth.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response
+
+    Raises:
+        HTTPException: If sync fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        user_id = supabase_user["id"]
+
+        # Check if user has Spotify linked in Supabase
+        # Note: Supabase handles the OAuth tokens, we just track the connection
+        # Get user's identities to see if Spotify is linked
+        identities = supabase_user.get("identities", [])
+        has_spotify = any(identity.get("provider") == "spotify" for identity in identities)
+
+        if not has_spotify:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Spotify not linked in Supabase"
+            )
+
+        # Create or update integration record
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "spotify"
+        ).first()
+
+        if integration:
+            integration.is_active = True
+            integration.updated_at = datetime.utcnow()
+        else:
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="spotify",
+                is_active=True
+            )
+            db.add(integration)
+
+        db.commit()
+
+        logger.info(f"Successfully synced Spotify integration for user {user_id}")
+
+        return {"success": True, "message": "Spotify integration synced"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to sync Spotify integration: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync integration: {str(e)}"
+        )
+
+
+@router.post("/spotify/exchange")
+async def spotify_exchange_code(
+    code: str = Query(..., description="OAuth authorization code"),
+    state: str = Query(..., description="OAuth state parameter"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Exchange Spotify authorization code for access token.
+
+    This endpoint is called by the iOS app after receiving the callback.
+
     Args:
         code: Authorization code from Spotify
         state: State parameter for CSRF protection
-        error: Error from Spotify (if authorization failed)
+        authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
-        Redirect to modal:// URL scheme
-        
+        Success response with integration status
+
     Raises:
-        HTTPException: If callback processing fails
+        HTTPException: If exchange fails
     """
     try:
-        # Check for OAuth error
-        if error:
-            logger.warning(f"Spotify OAuth error: {error}")
-            return RedirectResponse(url=f"modal://integrations?error={error}")
-        
-        if not code or not state:
+        if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing code or state parameter"
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
             )
-        
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
         # Validate state parameter from Redis
         state_key = f"oauth_state:{state}"
         state_json = await redis_client.get(state_key)
-        
+
         if not state_json:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired state parameter"
             )
-        
+
+        # Verify state belongs to this user
+        state_data = json.loads(state_json)
+        if state_data["user_id"] != supabase_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="State parameter does not match user"
+            )
+
         # Delete state from Redis (one-time use)
         await redis_client.delete(state_key)
-        
-        state_data = json.loads(state_json)
-        user_id = state_data["user_id"]
+
+        user_id = supabase_user["id"]
         
         # Exchange authorization code for access token
         async with httpx.AsyncClient() as client:
@@ -234,19 +335,21 @@ async def spotify_oauth_callback(
                 is_active=True
             )
             db.add(integration)
-        
+
         db.commit()
-        
+
         logger.info(f"Successfully connected Spotify for user {user_id}")
-        
-        # Redirect back to app with success=true
-        return RedirectResponse(url="modal://integrations?success=true&service=spotify")
+
+        return {"success": True, "message": "Successfully connected Spotify", "service": "spotify"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Spotify OAuth callback failed: {str(e)}", exc_info=True)
-        return RedirectResponse(url=f"modal://integrations?error={str(e)}")
+        logger.error(f"Spotify code exchange failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to exchange code: {str(e)}"
+        )
 
 
 @router.get("", response_model=IntegrationListResponse)
@@ -372,4 +475,476 @@ async def disconnect_service(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to disconnect service: {str(e)}"
+        )
+
+
+# ============================================================================
+# Spotify API Endpoints
+# ============================================================================
+
+@router.get("/spotify/playback")
+async def get_spotify_playback(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get current Spotify playback state.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Current playback state
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token (auto-refreshes if needed)
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Get playback state
+        playback = await spotify_service.get_current_playback(spotify_token)
+
+        return playback
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get Spotify playback: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get playback: {str(e)}"
+        )
+
+
+@router.post("/spotify/play")
+async def spotify_play(
+    uri: Optional[str] = Query(None, description="Spotify URI to play"),
+    device_id: Optional[str] = Query(None, description="Device ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Start or resume Spotify playback.
+
+    Args:
+        uri: Optional Spotify URI (track, album, playlist, etc.)
+        device_id: Optional device ID to play on
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Play
+        await spotify_service.play(spotify_token, uri, device_id)
+
+        return {"success": True, "message": "Playback started"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to play Spotify: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to play: {str(e)}"
+        )
+
+
+@router.post("/spotify/pause")
+async def spotify_pause(
+    device_id: Optional[str] = Query(None, description="Device ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Pause Spotify playback.
+
+    Args:
+        device_id: Optional device ID to pause on
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Pause
+        await spotify_service.pause(spotify_token, device_id)
+
+        return {"success": True, "message": "Playback paused"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to pause Spotify: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to pause: {str(e)}"
+        )
+
+
+@router.post("/spotify/next")
+async def spotify_next(
+    device_id: Optional[str] = Query(None, description="Device ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Skip to next track.
+
+    Args:
+        device_id: Optional device ID
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Skip
+        await spotify_service.skip_next(spotify_token, device_id)
+
+        return {"success": True, "message": "Skipped to next track"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to skip Spotify track: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to skip: {str(e)}"
+        )
+
+
+@router.post("/spotify/previous")
+async def spotify_previous(
+    device_id: Optional[str] = Query(None, description="Device ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Skip to previous track.
+
+    Args:
+        device_id: Optional device ID
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Skip back
+        await spotify_service.skip_previous(spotify_token, device_id)
+
+        return {"success": True, "message": "Skipped to previous track"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to skip back Spotify track: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to skip back: {str(e)}"
+        )
+
+
+@router.get("/spotify/search")
+async def spotify_search(
+    q: str = Query(..., description="Search query"),
+    type: str = Query("track,artist,album", description="Types to search"),
+    limit: int = Query(10, ge=1, le=50, description="Results limit"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Search Spotify catalog.
+
+    Args:
+        q: Search query
+        type: Comma-separated list of types (track, artist, album, playlist)
+        limit: Number of results per type (1-50)
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Search results
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Search
+        results = await spotify_service.search(spotify_token, q, type, limit)
+
+        return results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to search Spotify: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search: {str(e)}"
+        )
+
+
+@router.post("/spotify/volume")
+async def spotify_set_volume(
+    volume: int = Query(..., ge=0, le=100, description="Volume percent"),
+    device_id: Optional[str] = Query(None, description="Device ID"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Set Spotify playback volume.
+
+    Args:
+        volume: Volume level (0-100)
+        device_id: Optional device ID
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Spotify integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "spotify",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Spotify not connected"
+            )
+
+        # Get valid token
+        spotify_token = await spotify_service.get_valid_token(integration, db)
+
+        # Set volume
+        await spotify_service.set_volume(spotify_token, volume, device_id)
+
+        return {"success": True, "message": f"Volume set to {volume}%"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set Spotify volume: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set volume: {str(e)}"
         )

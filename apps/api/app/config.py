@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Spotify OAuth
     SPOTIFY_CLIENT_ID: Optional[str] = None
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
-    SPOTIFY_REDIRECT_URI: str = "http://localhost:8000/api/v1/integrations/spotify/callback"
+    SPOTIFY_REDIRECT_URI: str = "modal://spotify/callback"
 
     # Application
     DEBUG: bool = False
