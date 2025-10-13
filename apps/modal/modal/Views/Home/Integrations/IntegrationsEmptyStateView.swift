@@ -12,7 +12,6 @@ struct IntegrationsEmptyStateView: View {
     var body: some View {
         EmptyStateView(
             iconName: "InterlockedIcon",
-            renderingMode: .original,
             title: "No Integrations Yet",
             subtitle: "Connect your favorite apps to get started",
             buttonTitle: "Add Integration",

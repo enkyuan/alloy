@@ -5,7 +5,6 @@ struct EmptyStateView: View {
     // MARK: - Properties
     
     let iconName: String
-    let renderingMode: Image.TemplateRenderingMode
     let title: String
     let subtitle: String
     let buttonTitle: String
@@ -19,7 +18,6 @@ struct EmptyStateView: View {
             
             // Icon
             Image(iconName)
-                .renderingMode(renderingMode)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 80, height: 80)
@@ -58,7 +56,6 @@ struct EmptyStateView: View {
 #Preview {
     EmptyStateView(
         iconName: "ModalIcon",
-        renderingMode: .original,
         title: "No Items Yet",
         subtitle: "Add items to get started",
         buttonTitle: "Add Item",
