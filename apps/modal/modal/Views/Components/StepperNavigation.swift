@@ -17,16 +17,30 @@ struct StepperNavigation: View {
     
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Swipeable pages
-            TabView(selection: $currentPage) {
-                ForEach(0..<content.count, id: \.self) { index in
-                    content[index].view
-                        .tag(index)
+            // Custom swipeable pages (replaces TabView to fix NavigationStack safe area bug)
+            GeometryReader { geometry in
+                HStack(spacing: 0) {
+                    ForEach(0..<content.count, id: \.self) { index in
+                        content[index].view
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
                 }
+                .offset(x: -CGFloat(currentPage) * geometry.size.width)
+                .animation(.easeInOut(duration: 0.3), value: currentPage)
+                .gesture(
+                    DragGesture()
+                        .onEnded { value in
+                            let threshold: CGFloat = 50
+                            if value.translation.width < -threshold && currentPage < content.count - 1 {
+                                hapticFeedback()
+                                currentPage += 1
+                            } else if value.translation.width > threshold && currentPage > 0 {
+                                hapticFeedback()
+                                currentPage -= 1
+                            }
+                        }
+                )
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .animation(.easeInOut(duration: 0.3), value: currentPage)
-            .ignoresSafeArea(edges: .bottom)
             
             // Stepper indicators
             HStack(spacing: 12) {

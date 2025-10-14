@@ -41,6 +41,11 @@ class IntegrationService {
     private var authSession: ASWebAuthenticationSession?
     private let contextProvider = WebAuthenticationPresentationContextProvider()
     
+    /// Check if any services are connected
+    var hasConnectedIntegrations: Bool {
+        !connectedServices.isEmpty
+    }
+    
     // MARK: - Initialization
     
     init(backendURL: String = "http://127.0.0.1:8000/api/v1") {
