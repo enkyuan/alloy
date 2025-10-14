@@ -25,7 +25,7 @@ struct SettingsView: View {
                     // Services Group
                     VStack(spacing: 0) {
                         settingsButton(
-                            icon: "app.connected.to.app.below.fill",
+                            icon: "square.grid.2x2",
                             iconColor: .blue,
                             title: "Connected Services",
                             action: { showIntegrations = true }
@@ -37,7 +37,7 @@ struct SettingsView: View {
                     // Preferences Group
                     VStack(spacing: 0) {
                         settingsButton(
-                            icon: "bubble.left.and.text.bubble.right.fill",
+                            icon: "waveform",
                             iconColor: .purple,
                             title: "Voice & Speech",
                             action: { /* Coming soon */ }
@@ -81,7 +81,7 @@ struct SettingsView: View {
                                 }
                                 
                                 Text("Version")
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(.black)
                             }
                             
                             Spacer()
@@ -147,7 +147,7 @@ struct SettingsView: View {
                 }
                 
                 Text(title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.black)
                 
                 Spacer()
                 
