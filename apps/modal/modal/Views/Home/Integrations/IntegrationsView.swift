@@ -52,8 +52,19 @@ struct IntegrationsView: View {
                 footerSection
             }
             .background(Color(uiColor: .systemBackground))
-            .navigationTitle("Connect Your Services")
+            .navigationTitle("Add Integrations")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                if !isOnboarding {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
             .interactiveDismissDisabled(isOnboarding)
             .alert("Error", isPresented: $showError) {
                 Button("OK") { } 

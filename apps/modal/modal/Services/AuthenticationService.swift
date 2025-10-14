@@ -56,7 +56,7 @@ class AuthenticationService {
     
     /// Initialize the authentication service
     /// - Parameter backendURL: Backend API base URL (defaults to localhost for development)
-    init(backendURL: String = "http://localhost:8000/api/v1") {
+    init(backendURL: String = "https://fk1k6d8vt9jw.share.zrok.io/api/v1") {
         self.backendURL = backendURL
         
         // Check for existing session

@@ -48,7 +48,7 @@ class IntegrationService {
     
     // MARK: - Initialization
     
-    init(backendURL: String = "http://127.0.0.1:8000/api/v1") {
+    init(backendURL: String = "https://fk1k6d8vt9jw.share.zrok.io/api/v1") {
         self.backendURL = backendURL
     }
     

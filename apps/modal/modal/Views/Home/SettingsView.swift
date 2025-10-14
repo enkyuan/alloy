@@ -25,7 +25,7 @@ struct SettingsView: View {
                     // Services Group
                     VStack(spacing: 0) {
                         settingsButton(
-                            icon: "square.grid.2x2",
+                            icon: "app.connected.to.app.below.fill",
                             iconColor: .blue,
                             title: "Connected Services",
                             action: { showIntegrations = true }
@@ -81,7 +81,7 @@ struct SettingsView: View {
                                 }
                                 
                                 Text("Version")
-                                    .foregroundStyle(.black)
+                                    .foregroundStyle(.primary)
                             }
                             
                             Spacer()
@@ -94,18 +94,20 @@ struct SettingsView: View {
                     .cornerRadius(12)
                     
                     // Sign Out Button
-                    Button(role: .destructive) {
-                        showSignOutConfirmation = true
+                    Button {
+                        Task {
+                            try? await authService.signOut()
+                        }
                     } label: {
-                        Label("Sign Out", systemImage: "arrow.right.square")
-                            .font(.system(size: 17, weight: .medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(16)
-                            .background(Color(uiColor: .secondarySystemBackground))
-                            .cornerRadius(12)
+                        HStack {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .foregroundStyle(.red)
+                            Text("Sign out")
+                                .foregroundStyle(.red)
+                        }
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 20)
                 .padding(.bottom, 100)
             }
@@ -147,7 +149,7 @@ struct SettingsView: View {
                 }
                 
                 Text(title)
-                    .foregroundStyle(.black)
+                    .foregroundStyle(.primary)
                 
                 Spacer()
                 

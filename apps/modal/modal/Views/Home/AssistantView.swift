@@ -12,12 +12,16 @@ struct AssistantView: View {
     // MARK: - Properties
 
     @Bindable var authService: AuthenticationService
+    @Bindable var viewModel: AssistantViewModel
     @State private var integrationService = IntegrationService()
-    @State private var isTalking = false
-    @State private var visualizerState: BarVisualizer.VisualizerState = .initializing
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
     @State private var hasIntegrations = false
+    
+    // Computed property to avoid binding issues
+    private var messages: [Message] {
+        viewModel.conversationService.messages
+    }
 
     // MARK: - Body
 
@@ -29,20 +33,8 @@ struct AssistantView: View {
             } else if !hasPermission {
                 permissionEmptyStateView
             } else {
-                // Ready state - show visualizer
-                Color.clear
-            }
-
-            // Bottom section with visualizer and controls
-            if hasIntegrations && hasPermission {
-                VStack(spacing: 0) {
-                    Spacer()
-
-                    // Bar visualizer
-                    BarVisualizer(state: visualizerState)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 100) // Space for button and stepper
-                }
+                // Chat interface
+                chatView
             }
         }
         .task {
@@ -61,6 +53,70 @@ struct AssistantView: View {
     }
 
     // MARK: - View Components
+    
+    private var chatView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    if messages.isEmpty {
+                        // Empty state - show icon
+                        VStack {
+                            Spacer()
+                            
+                            Image("ModalIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 80, height: 80)
+                                .foregroundStyle(.secondary.opacity(0.3))
+                                .opacity(viewModel.isProcessingTranscription ? 0 : 1)
+                                .animation(.easeInOut(duration: 0.3), value: viewModel.isProcessingTranscription)
+                            
+                            if viewModel.isProcessingTranscription {
+                                ProgressView()
+                                    .padding(.top, 20)
+                            }
+                            
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 400)
+                    } else {
+                        // Messages
+                        ForEach(messages) { message in
+                            MessageRow(message: message)
+                        }
+
+                        if viewModel.isProcessingTranscription {
+                            HStack {
+                                ProgressView()
+                                    .padding(.leading, 16)
+                                Text("Transcribing...")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                    }
+                }
+                .padding(.top, 20)
+                .padding(.bottom, 120) // Space for stepper navigation
+                .onChange(of: messages.isEmpty) { _, isEmpty in
+                    print("🔍 AssistantView: messages.isEmpty changed to \(isEmpty), count = \(messages.count)")
+                }
+            }
+            .onChange(of: messages.count) { _, newCount in
+                print("🔍 AssistantView: messages.count changed to \(newCount)")
+                // Auto-scroll to bottom when new message added
+                if let lastMessage = messages.last {
+                    withAnimation {
+                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+    
 
     private var permissionEmptyStateView: some View {
         VStack(spacing: 32) {
@@ -142,6 +198,46 @@ struct AssistantView: View {
     }
 }
 
+// MARK: - Message Row
+
+private struct MessageRow: View {
+    let message: Message
+    @State private var opacity: Double = 0
+    @State private var blur: CGFloat = 10
+    @State private var offset: CGFloat = 20
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if message.isUser {
+                Spacer()
+            }
+
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                // All messages use fade-in animation
+                AnimatedText(
+                    fadeIn: message.text,
+                    opacity: opacity,
+                    blur: blur,
+                    offset: offset
+                )
+            }
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    opacity = 1.0
+                    blur = 0
+                    offset = 0
+                }
+            }
+
+            if !message.isUser {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
 #Preview {
-    AssistantView(authService: AuthenticationService())
+    AssistantView(authService: AuthenticationService(), viewModel: AssistantViewModel())
 }

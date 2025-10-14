@@ -9,7 +9,7 @@ enum SupabaseConfig {
     /// Supabase project URL
     /// For local development: http://localhost:8001
     /// For production: https://your-project.supabase.co
-    static let supabaseURL = URL(string: "http://localhost:8001")!
+    static let supabaseURL = URL(string: "https://b6gw02s7yujv.share.zrok.io")!
     
     /// Supabase anon/public key
     /// Note: This key is safe to expose in client applications.
