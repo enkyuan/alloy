@@ -6,17 +6,14 @@ import Supabase
 enum SupabaseConfig {
     // MARK: - Configuration
     
-    /// Supabase project URL
-    /// For local development: http://localhost:8001
-    /// For production: https://your-project.supabase.co
-    /// ngrok forwarding: https://05b01fd73ca3.ngrok-free.app
-    static let supabaseURL = URL(string: "https://05b01fd73ca3.ngrok-free.app")!
+    /// Supabase project URL (from Environment config)
+    static let supabaseURL = URL(string: Environment.supabaseURL)!
     
-    /// Supabase anon/public key
+    /// Supabase anon/public key (from Environment config)
     /// Note: This key is safe to expose in client applications.
     /// It only allows operations permitted by your Row Level Security policies.
     /// Reference: https://supabase.com/docs/guides/api/api-keys
-    static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzYwMzI4ODk4LCJleHAiOjQxMDI0NDQ4MDB9.zc_DOTFuH0bbMzTvjp5YzE34hEQnHCvdp6nlHAOwpuA"
+    static let supabaseAnonKey = Environment.supabaseAnonKey
     
     // MARK: - Shared Client
     

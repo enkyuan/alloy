@@ -19,7 +19,7 @@ class WebSocketSTTService: NSObject {
     
     // MARK: - Initialization
     
-    init(backendURL: String = "wss://4dc3d2c29bed.ngrok-free.app/api/v1") {
+    init(backendURL: String = Environment.websocketURL) {
         self.backendURL = backendURL
         super.init()
         

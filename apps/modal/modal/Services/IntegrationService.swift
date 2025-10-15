@@ -58,7 +58,7 @@ class IntegrationService {
 
     // MARK: - Initialization
 
-    private init(backendURL: String = "https://4dc3d2c29bed.ngrok-free.app/api/v1") {
+    private init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
         loadConnectedServices()
     }

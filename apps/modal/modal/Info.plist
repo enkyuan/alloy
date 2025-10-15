@@ -17,6 +17,16 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Modal needs access to your microphone to listen to your voice commands and assist you.</string>
+	<key>API_BASE_URL</key>
+	<string>$(API_BASE_URL)</string>
+	<key>WEBSOCKET_URL</key>
+	<string>$(WEBSOCKET_URL)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>DEBUG_LOGGING</key>
+	<string>$(DEBUG_LOGGING)</string>
 	<key>GIDClientID</key>
 	<string>1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>

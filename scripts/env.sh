@@ -138,7 +138,7 @@ update_env_var() {
     local file=$1
     local key=$2
     local value=$3
-    
+
     if grep -q "^${key}=" "$file" 2>/dev/null; then
         # Use | as delimiter since paths and URLs may contain /
         sed -i.tmp "s|^${key}=.*|${key}=${value}|" "$file" && rm -f "$file.tmp"
@@ -298,8 +298,6 @@ EOF
 else
     echo -e "${YELLOW}Updating docker/supabase/.env...${NC}"
     update_env_var "$SUPABASE_ENV" "JWT_SECRET" "$JWT_SECRET"
-    update_env_var "$SUPABASE_ENV" "ANON_KEY" "$ANON_KEY"
-    update_env_var "$SUPABASE_ENV" "SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$SUPABASE_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
@@ -314,7 +312,7 @@ if [ ! -f "$API_ENV" ]; then
 DATABASE_URL=postgresql://postgres:postgres@0.0.0.0:5432/postgres
 
 # Redis Configuration
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://redis:6379/0
 
 # JWT Configuration
 JWT_SECRET=${JWT_SECRET}

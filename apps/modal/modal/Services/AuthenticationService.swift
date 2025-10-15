@@ -55,8 +55,8 @@ class AuthenticationService {
     // MARK: - Initialization
     
     /// Initialize the authentication service
-    /// - Parameter backendURL: Backend API base URL (defaults to localhost for development)
-    init(backendURL: String = "https://4dc3d2c29bed.ngrok-free.app/api/v1") {
+    /// - Parameter backendURL: Backend API base URL (defaults to value from Environment config)
+    init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
         
         // Check for existing session
