@@ -11,6 +11,7 @@ struct SettingsView: View {
     // MARK: - Properties
 
     @Bindable var authService: AuthenticationService
+    @Bindable var integrationService: IntegrationService
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showIntegrations = false
@@ -114,7 +115,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showIntegrations) {
-                IntegrationsView(authService: authService)
+                IntegrationsView(authService: authService, integrationService: integrationService)
             }
             .alert("Sign Out", isPresented: $showSignOutConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -180,5 +181,5 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(authService: AuthenticationService())
+    SettingsView(authService: AuthenticationService(), integrationService: IntegrationService.shared)
 }

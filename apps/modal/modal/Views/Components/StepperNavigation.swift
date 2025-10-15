@@ -9,14 +9,16 @@ struct StepperNavigation: View {
     @State private var showPermissionAlert = false
     @Bindable var authService: AuthenticationService
     @Bindable var assistantViewModel: AssistantViewModel
+    @Bindable var integrationService: IntegrationService
     private let content: [(icon: String, view: AnyView)]
     
     // MARK: - Initializer
     
-    private init(pages: [(icon: String, view: AnyView)], authService: AuthenticationService, assistantViewModel: AssistantViewModel) {
+    private init(pages: [(icon: String, view: AnyView)], authService: AuthenticationService, assistantViewModel: AssistantViewModel, integrationService: IntegrationService) {
         self.content = pages
         self.authService = authService
         self.assistantViewModel = assistantViewModel
+        self.integrationService = integrationService
     }
     
     // MARK: - Body
@@ -86,8 +88,9 @@ struct StepperNavigation: View {
                 pushToTalkButton
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .padding(.bottom, 60)
         }
+        .ignoresSafeArea(.all, edges: .bottom)
         .alert("Microphone Access Required", isPresented: $showPermissionAlert) {
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -182,12 +185,13 @@ extension StepperNavigation {
         _ page0: (icon: String, view: V0),
         _ page1: (icon: String, view: V1),
         authService: AuthenticationService,
-        assistantViewModel: AssistantViewModel
+        assistantViewModel: AssistantViewModel,
+        integrationService: IntegrationService
     ) -> StepperNavigation {
         let pages = [
             (icon: page0.icon, view: AnyView(page0.view)),
             (icon: page1.icon, view: AnyView(page1.view))
         ]
-        return StepperNavigation(pages: pages, authService: authService, assistantViewModel: assistantViewModel)
+        return StepperNavigation(pages: pages, authService: authService, assistantViewModel: assistantViewModel, integrationService: integrationService)
     }
 }

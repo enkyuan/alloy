@@ -7,8 +7,12 @@ import Supabase
 @MainActor
 @Observable
 class IntegrationService {
+    // MARK: - Singleton
+
+    static let shared = IntegrationService()
+
     // MARK: - Service Types
-    
+
     enum ServiceType: String {
         case spotify
         case uber
@@ -35,21 +39,28 @@ class IntegrationService {
     }
     
     // MARK: - Properties
-    
-    private var connectedServices: Set<ServiceType> = []
+
+    private var connectedServices: Set<ServiceType> = [] {
+        didSet {
+            saveConnectedServices()
+        }
+    }
     private let backendURL: String
     private var authSession: ASWebAuthenticationSession?
     private let contextProvider = WebAuthenticationPresentationContextProvider()
-    
+
+    private let connectedServicesKey = "connectedServices"
+
     /// Check if any services are connected
     var hasConnectedIntegrations: Bool {
         !connectedServices.isEmpty
     }
-    
+
     // MARK: - Initialization
-    
-    init(backendURL: String = "https://fk1k6d8vt9jw.share.zrok.io/api/v1") {
+
+    private init(backendURL: String = "https://4dc3d2c29bed.ngrok-free.app/api/v1") {
         self.backendURL = backendURL
+        loadConnectedServices()
     }
     
     // MARK: - Public Methods
@@ -312,7 +323,25 @@ class IntegrationService {
             }
         }
     }
-    
+
+    // MARK: - Persistence
+
+    private func saveConnectedServices() {
+        let serviceNames = connectedServices.map { $0.rawValue }
+        UserDefaults.standard.set(serviceNames, forKey: connectedServicesKey)
+        print("💾 Saved connected services: \(serviceNames)")
+    }
+
+    private func loadConnectedServices() {
+        guard let serviceNames = UserDefaults.standard.array(forKey: connectedServicesKey) as? [String] else {
+            print("ℹ️ No saved connected services found")
+            return
+        }
+
+        connectedServices = Set(serviceNames.compactMap { ServiceType(rawValue: $0) })
+        print("📂 Loaded connected services: \(connectedServices.map { $0.displayName })")
+    }
+
 }
 
 // MARK: - Presentation Context Provider

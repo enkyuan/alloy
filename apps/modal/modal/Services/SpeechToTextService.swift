@@ -11,7 +11,7 @@ class SpeechToTextService {
     
     // MARK: - Initialization
     
-    init(backendURL: String = "https://fk1k6d8vt9jw.share.zrok.io/api/v1") {
+    init(backendURL: String = "https://4dc3d2c29bed.ngrok-free.app/api/v1") {
         self.backendURL = backendURL
     }
     

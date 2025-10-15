@@ -5,6 +5,7 @@ struct IntegrationsEmptyStateView: View {
     // MARK: - Properties
     
     @Bindable var authService: AuthenticationService
+    @Bindable var integrationService: IntegrationService
     @State private var showIntegrations = false
     
     // MARK: - Body
@@ -18,7 +19,7 @@ struct IntegrationsEmptyStateView: View {
             buttonAction: { showIntegrations = true }
         )
         .sheet(isPresented: $showIntegrations) {
-            IntegrationsView(authService: authService)
+            IntegrationsView(authService: authService, integrationService: integrationService)
         }
     }
 }

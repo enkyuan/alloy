@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
     SPOTIFY_REDIRECT_URI: str = "modal://spotify/callback"
 
-    # ElevenLabs
-    ELEVENLABS_API_KEY: Optional[str] = None
+    # Soniox (Real-time Speech-to-Text)
+    SONIOX_API_KEY: Optional[str] = None
 
     # Application
     DEBUG: bool = False

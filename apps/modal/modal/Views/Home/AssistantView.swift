@@ -13,10 +13,8 @@ struct AssistantView: View {
 
     @Bindable var authService: AuthenticationService
     @Bindable var viewModel: AssistantViewModel
-    @State private var integrationService = IntegrationService()
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var hasIntegrations = false
     
     // Computed property to avoid binding issues
     private var messages: [Message] {
@@ -28,9 +26,7 @@ struct AssistantView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             // Main content
-            if !hasIntegrations {
-                IntegrationsEmptyStateView(authService: authService)
-            } else if !hasPermission {
+            if !hasPermission {
                 permissionEmptyStateView
             } else {
                 // Chat interface
@@ -58,63 +54,106 @@ struct AssistantView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 16) {
-                    if messages.isEmpty {
-                        // Empty state - show icon
+                    // Show empty state icon when idle
+                    if messages.isEmpty && !isActiveSession {
                         VStack {
                             Spacer()
-                            
+
                             Image("ModalIcon")
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 80, height: 80)
                                 .foregroundStyle(.secondary.opacity(0.3))
-                                .opacity(viewModel.isProcessingTranscription ? 0 : 1)
-                                .animation(.easeInOut(duration: 0.3), value: viewModel.isProcessingTranscription)
-                            
-                            if viewModel.isProcessingTranscription {
-                                ProgressView()
-                                    .padding(.top, 20)
-                            }
-                            
+
                             Spacer()
                         }
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 400)
-                    } else {
-                        // Messages
-                        ForEach(messages) { message in
-                            MessageRow(message: message)
-                        }
-
-                        if viewModel.isProcessingTranscription {
-                            HStack {
-                                ProgressView()
-                                    .padding(.leading, 16)
-                                Text("Transcribing...")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                        }
                     }
+
+                    // Message history
+                    ForEach(messages) { message in
+                        MessageRow(message: message)
+                            .id(message.id)
+                    }
+
+                    // Show transcription bubble when active (connecting, recording, or processing)
+                    if isActiveSession {
+                        TranscriptionBubble(
+                            isConnecting: viewModel.isConnecting,
+                            isRecording: viewModel.isRecording,
+                            isProcessing: viewModel.isProcessingTranscription,
+                            partialText: viewModel.partialTranscription
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .id("partial-transcription")
+                    }
+                    
+                    // Invisible anchor at the very bottom for reliable scrolling
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottom-anchor")
                 }
                 .padding(.top, 20)
                 .padding(.bottom, 120) // Space for stepper navigation
-                .onChange(of: messages.isEmpty) { _, isEmpty in
-                    print("🔍 AssistantView: messages.isEmpty changed to \(isEmpty), count = \(messages.count)")
+            }
+            .onChange(of: messages.count) { oldCount, newCount in
+                // Scroll to new message when added
+                guard newCount > oldCount else { return }
+                
+                // Small delay to ensure view is rendered
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        if let lastMessage = messages.last {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        } else {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                    }
                 }
             }
-            .onChange(of: messages.count) { _, newCount in
-                print("🔍 AssistantView: messages.count changed to \(newCount)")
-                // Auto-scroll to bottom when new message added
-                if let lastMessage = messages.last {
-                    withAnimation {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
+            .onChange(of: isActiveSession) { wasActive, isActive in
+                // Scroll when bubble appears or disappears
+                if isActive {
+                    // Bubble just appeared - scroll to it
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            proxy.scrollTo("partial-transcription", anchor: .bottom)
+                        }
+                    }
+                } else if wasActive && !isActive {
+                    // Bubble just disappeared - scroll to bottom (likely new message was added)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            .onChange(of: viewModel.partialTranscription) { oldValue, newValue in
+                // Only scroll when transcription first appears or grows significantly
+                // This prevents janky scrolling on every character
+                guard isActiveSession else { return }
+                
+                let oldWordCount = oldValue.split(separator: " ").count
+                let newWordCount = newValue.split(separator: " ").count
+                
+                // Scroll when: first word appears, or every 3 new words
+                if (oldWordCount == 0 && newWordCount > 0) || 
+                   (newWordCount > 0 && newWordCount % 3 == 0 && newWordCount > oldWordCount) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("partial-transcription", anchor: .bottom)
                     }
                 }
             }
         }
+    }
+    
+    // MARK: - Computed Properties
+    
+    /// True when button is pressed - shows the transcription bubble immediately
+    private var isActiveSession: Bool {
+        viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
     
 
@@ -124,7 +163,7 @@ struct AssistantView: View {
 
             VStack(spacing: 24) {
                 // Icon
-                Image("ModalIcon@LiquidGlass")
+                Image("ModalIcon")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 120, height: 120)
@@ -174,15 +213,6 @@ struct AssistantView: View {
         if !hasPermission && AVAudioApplication.shared.recordPermission == .undetermined {
             requestMicrophonePermission()
         }
-
-        // Check integrations
-        do {
-            try await integrationService.fetchConnectedIntegrations(authService: authService)
-            hasIntegrations = integrationService.hasConnectedIntegrations
-        } catch {
-            print("Failed to fetch integrations: \(error)")
-            hasIntegrations = false
-        }
     }
 
     private func requestMicrophonePermission() {
@@ -213,7 +243,6 @@ private struct MessageRow: View {
             }
 
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                // All messages use fade-in animation
                 AnimatedText(
                     fadeIn: message.text,
                     opacity: opacity,

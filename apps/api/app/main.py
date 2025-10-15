@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, integrations, speech_to_text, speech_to_text_stream
+from app.routers import auth, integrations, speech_to_text_stream
 
 # Configure logging
 logging.basicConfig(
@@ -39,7 +39,6 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations.router, prefix=settings.API_V1_PREFIX)
-app.include_router(speech_to_text.router, prefix=settings.API_V1_PREFIX)
 app.include_router(speech_to_text_stream.router, prefix=settings.API_V1_PREFIX)
 
 logger.info(f"Starting {settings.PROJECT_NAME}")

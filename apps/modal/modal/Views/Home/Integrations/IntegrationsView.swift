@@ -5,8 +5,8 @@ struct IntegrationsView: View {
     // MARK: - Properties
     
     @Bindable var authService: AuthenticationService
+    @Bindable var integrationService: IntegrationService
     let isOnboarding: Bool
-    @State private var integrationService = IntegrationService()
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showDisconnectAlert = false
@@ -15,8 +15,9 @@ struct IntegrationsView: View {
     
     // MARK: - Initializer
     
-    init(authService: AuthenticationService, isOnboarding: Bool = false) {
+    init(authService: AuthenticationService, integrationService: IntegrationService, isOnboarding: Bool = false) {
         self.authService = authService
+        self.integrationService = integrationService
         self.isOnboarding = isOnboarding
     }
     
@@ -81,14 +82,6 @@ struct IntegrationsView: View {
             } message: {
                 if let service = serviceToDisconnect {
                     Text("Are you sure you want to disconnect \(service.displayName)? You can reconnect it anytime.")
-                }
-            }
-            .task {
-                // Fetch connected integrations when view appears
-                do {
-                    try await integrationService.fetchConnectedIntegrations(authService: authService)
-                } catch {
-                    print("Failed to fetch integrations: \(error)")
                 }
             }
         }

@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "F6B6E8F82C96D11F00D93E20"
+               BlueprintIdentifier = "830FBFE42E9B7AE100C65E4A"
                BuildableName = "modal.app"
                BlueprintName = "modal"
                ReferencedContainer = "container:modal.xcodeproj">
@@ -44,7 +44,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "F6B6E8F82C96D11F00D93E20"
+            BlueprintIdentifier = "830FBFE42E9B7AE100C65E4A"
             BuildableName = "modal.app"
             BlueprintName = "modal"
             ReferencedContainer = "container:modal.xcodeproj">
@@ -61,7 +61,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "F6B6E8F82C96D11F00D93E20"
+            BlueprintIdentifier = "830FBFE42E9B7AE100C65E4A"
             BuildableName = "modal.app"
             BlueprintName = "modal"
             ReferencedContainer = "container:modal.xcodeproj">
@@ -76,4 +76,3 @@
       revealArchiveInOrganizer = "YES">
    </ArchiveAction>
 </Scheme>
-

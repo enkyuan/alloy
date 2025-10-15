@@ -5,9 +5,10 @@ struct HomeView: View {
     // MARK: - Properties
 
     @Bindable var authService: AuthenticationService
-    @State private var integrationService = IntegrationService()
+    @Bindable var integrationService: IntegrationService
     @State private var assistantViewModel = AssistantViewModel()
     @State private var isLoadingIntegrations = true
+    @State private var hasLoadedOnce = false
 
     // MARK: - Body
 
@@ -20,14 +21,21 @@ struct HomeView: View {
             } else {
                 StepperNavigation.pages(
                     (icon: "waveform", view: mainView),
-                    (icon: "gear", view: SettingsView(authService: authService)),
+                    (icon: "gear", view: SettingsView(authService: authService, integrationService: integrationService)),
                     authService: authService,
-                    assistantViewModel: assistantViewModel
+                    assistantViewModel: assistantViewModel,
+                    integrationService: integrationService
                 )
             }
         }
         .task {
-            await loadIntegrations()
+            // Only load if not already loaded
+            if !hasLoadedOnce {
+                await loadIntegrations()
+                hasLoadedOnce = true
+            } else {
+                isLoadingIntegrations = false
+            }
         }
     }
     
@@ -38,7 +46,7 @@ struct HomeView: View {
         if integrationService.hasConnectedIntegrations {
             AssistantView(authService: authService, viewModel: assistantViewModel)
         } else {
-            IntegrationsEmptyStateView(authService: authService)
+            IntegrationsEmptyStateView(authService: authService, integrationService: integrationService)
         }
     }
     

@@ -1,98 +1,184 @@
 import Foundation
 import AVFoundation
+import Auth
 
-/// View model for the voice assistant
+/// View model for the voice assistant with real-time streaming
 @MainActor
 @Observable
 class AssistantViewModel {
     // MARK: - Properties
     
     let conversationService = ConversationService()
-    let audioRecordingService = AudioRecordingService()
-    let speechToTextService = SpeechToTextService()
+    let streamingAudioService = StreamingAudioService()
+    let webSocketSTTService = WebSocketSTTService()
     
-    var isRecording: Bool = false
-    var isProcessingTranscription: Bool = false
+    // Recording and processing states
+    var isRecording = false
+    var isConnecting = false  // New state for when connecting WebSocket
+    var isProcessingTranscription = false
+    var partialTranscription: String = ""
     var errorMessage: String?
     var showError: Bool = false
     
-    // MARK: - Public Methods
+    // MARK: - Initialization
     
-    /// Start recording audio
-    func startRecording() {
-        do {
-            try audioRecordingService.startRecording()
-            isRecording = true
-            print("🎤 Recording started")
-        } catch {
-            errorMessage = error.localizedDescription
-            showError = true
+    init() {
+        setupWebSocketCallbacks()
+    }
+    
+    // MARK: - Setup
+    
+    private func setupWebSocketCallbacks() {
+        // Handle partial transcriptions (real-time updates as you speak)
+        webSocketSTTService.onTranscriptionUpdate = { [weak self] text in
+            guard let self = self else { return }
+            Task { @MainActor in
+                print("📝 Partial transcription received: \"\(text)\"")
+                self.partialTranscription = text
+                print("📝 ViewModel partialTranscription updated to: \"\(self.partialTranscription)\"")
+            }
+        }
+        
+        // Handle final transcription
+        webSocketSTTService.onFinalTranscription = { [weak self] text in
+            guard let self = self else { return }
+            Task { @MainActor in
+                print("✅ Final transcription received: \"\(text)\"")
+                self.partialTranscription = ""
+                self.isProcessingTranscription = false
+                
+                // Add user message
+                self.conversationService.addUserMessage(text)
+                print("📝 Message count after adding user message: \(self.conversationService.messages.count)")
+                
+                // TODO: Send to LLM and get response
+                // For now, add a placeholder response
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+                    self.conversationService.addAssistantMessage("I heard you say: \"\(text)\". I'm still learning how to respond!")
+                    print("📝 Message count after adding assistant message: \(self.conversationService.messages.count)")
+                }
+            }
+        }
+        
+        // Handle errors
+        webSocketSTTService.onError = { [weak self] error in
+            guard let self = self else { return }
+            Task { @MainActor in
+                print("❌ WebSocket error: \(error)")
+                self.errorMessage = error
+                self.showError = true
+                self.isProcessingTranscription = false
+                self.conversationService.addAssistantMessage("Sorry, I couldn't transcribe that. Error: \(error)")
+            }
+        }
+        
+        // Setup audio streaming callback - send PCM chunks in real-time
+        streamingAudioService.onAudioChunk = { [weak self] pcmData in
+            guard let self = self else { return }
+            self.webSocketSTTService.sendAudioChunk(pcmData)
+        }
+        
+        streamingAudioService.onError = { [weak self] error in
+            guard let self = self else { return }
+            Task { @MainActor in
+                print("❌ Audio streaming error: \(error)")
+                self.errorMessage = error
+                self.showError = true
+                self.isRecording = false
+            }
         }
     }
     
-    /// Stop recording and transcribe
-    func stopRecordingAndTranscribe(authService: AuthenticationService) async {
-        guard let audioURL = audioRecordingService.stopRecording() else {
-            print("❌ No recording to transcribe")
-            errorMessage = "No recording found"
-            showError = true
+    // MARK: - Public Methods
+    
+    /// Start streaming recording
+    func startStreamingRecording(authService: AuthenticationService) async {
+        guard let token = authService.session?.accessToken else {
+            print("❌ No auth token available")
+            await MainActor.run {
+                errorMessage = "Not authenticated"
+                showError = true
+            }
             return
         }
+        
+        print("🎤 Starting streaming recording")
+        isConnecting = true
 
-        print("🎤 Recording stopped, audio file at: \(audioURL)")
-        print("📊 Audio file size: \(try? FileManager.default.attributesOfItem(atPath: audioURL.path)[.size] as? Int ?? 0) bytes")
+        // Wait for WebSocket to be ready before starting audio
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            // Set up ready callback - start audio immediately when WebSocket is ready
+            webSocketSTTService.onReady = { [weak self] in
+                guard let self = self else {
+                    continuation.resume()
+                    return
+                }
 
+                Task { @MainActor in
+                    print("✅ WebSocket ready, starting audio...")
+
+                    do {
+                        try await self.streamingAudioService.startStreaming()
+                        self.isConnecting = false
+                        self.isRecording = true
+                        print("✅ Recording started")
+                    } catch {
+                        print("❌ Failed to start recording: \(error)")
+                        self.errorMessage = "Failed to start recording: \(error.localizedDescription)"
+                        self.showError = true
+                        self.isConnecting = false
+                        self.webSocketSTTService.disconnect()
+                    }
+
+                    continuation.resume()
+                }
+            }
+
+            // Connect WebSocket (will trigger onReady when server sends ready message)
+            webSocketSTTService.connect(token: token)
+
+            // Set timeout in case connection fails
+            Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s timeout
+                if await !self.webSocketSTTService.isConnected {
+                    print("❌ WebSocket connection timeout")
+                    self.errorMessage = "Failed to connect to speech service"
+                    self.showError = true
+                    self.isConnecting = false
+                    continuation.resume()
+                }
+            }
+        }
+    }
+    
+    /// Stop streaming and finalize transcription
+    func stopStreamingRecording() async {
+        print("🛑 Stopping streaming recording")
+        
+        // Stop audio recording (sends any remaining buffered audio)
+        _ = streamingAudioService.stopStreaming()
+        
         isRecording = false
         isProcessingTranscription = true
-
-        do {
-            print("📤 Sending audio for transcription...")
-            print("🔐 Auth session exists: \(authService.session != nil)")
-
-            // Transcribe the audio
-            let transcription = try await speechToTextService.transcribe(audioURL: audioURL, authService: authService)
-
-            print("✅ Transcription received: \"\(transcription.text)\"")
-            print("📝 Current message count before adding: \(conversationService.messages.count)")
-
-            // Add user message with transcription
-            conversationService.addUserMessage(transcription.text)
-
-            print("📝 Message count after adding user message: \(conversationService.messages.count)")
-            print("📝 Messages array: \(conversationService.messages.map { $0.text })")
-
-            // TODO: Send to LLM and get response
-            // For now, add a placeholder response
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
-            conversationService.addAssistantMessage("I heard you say: \"\(transcription.text)\". I'm still learning how to respond!")
-
-            print("📝 Message count after adding assistant message: \(conversationService.messages.count)")
-
-            // Clean up audio file
-            audioRecordingService.deleteRecording(at: audioURL)
-
-        } catch let error as SpeechToTextError {
-            print("❌ SpeechToText error: \(error.localizedDescription)")
-            errorMessage = error.localizedDescription
-            showError = true
-            conversationService.addAssistantMessage("Sorry, I couldn't transcribe that. Error: \(error.localizedDescription)")
-        } catch {
-            print("❌ Transcription error: \(error)")
-            errorMessage = error.localizedDescription
-            showError = true
-            conversationService.addAssistantMessage("Sorry, something went wrong: \(error.localizedDescription)")
+        
+        // Send END signal to get final transcription
+        webSocketSTTService.endRecording()
+        
+        // Disconnect after receiving response
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+            webSocketSTTService.disconnect()
+            print("✅ WebSocket disconnected")
         }
-
-        isProcessingTranscription = false
-        print("✅ Processing complete, isProcessingTranscription = false")
     }
     
     /// Toggle recording state
     func toggleRecording(authService: AuthenticationService) async {
         if isRecording {
-            await stopRecordingAndTranscribe(authService: authService)
+            await stopStreamingRecording()
         } else {
-            startRecording()
+            await startStreamingRecording(authService: authService)
         }
     }
 }
