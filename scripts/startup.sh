@@ -36,9 +36,9 @@ wait_for_service() {
     local service_name=$1
     local max_attempts=30
     local attempt=1
-    
+
     echo -e "${YELLOW}Waiting for ${service_name} to be healthy...${NC}"
-    
+
     while [ $attempt -le $max_attempts ]; do
         if docker inspect --format='{{.State.Health.Status}}' "$service_name" 2>/dev/null | grep -q "healthy"; then
             echo -e "${GREEN}✓ ${service_name} is healthy${NC}"
@@ -48,7 +48,7 @@ wait_for_service() {
         sleep 2
         attempt=$((attempt + 1))
     done
-    
+
     echo -e "\n${RED}✗ ${service_name} failed to become healthy${NC}"
     return 1
 }
@@ -56,9 +56,9 @@ wait_for_service() {
 # Function to start all services
 start_all_services() {
     echo -e "\n${CYAN}=== Starting All Services ===${NC}"
-    
+
     cd "$PROJECT_ROOT/docker"
-    
+
     # Check if .env exists
     if [ ! -f ".env" ]; then
         echo -e "${YELLOW}Warning: docker/.env not found. Run ./scripts/env.sh first.${NC}"
@@ -68,13 +68,13 @@ start_all_services() {
             exit 1
         fi
     fi
-    
+
     # Start all services (Docker Compose will create the network if needed)
     docker compose down 2>/dev/null || true
     docker compose up -d
-    
+
     echo -e "${GREEN}✓ All services starting...${NC}"
-    
+
     cd "$PROJECT_ROOT"
 }
 
@@ -82,23 +82,23 @@ start_all_services() {
 start_specific_service() {
     local service=$1
     echo -e "\n${CYAN}=== Starting ${service} ===${NC}"
-    
+
     cd "$PROJECT_ROOT/docker"
-    
+
     docker compose up -d $service
-    
+
     echo -e "${GREEN}✓ ${service} started${NC}"
-    
+
     cd "$PROJECT_ROOT"
 }
 
 # Function to list iOS simulators
 list_simulators() {
     echo -e "\n${CYAN}=== Available iOS Simulators ===${NC}\n"
-    
+
     # Get booted simulators
     BOOTED_SIMS=$(xcrun simctl list devices | grep "Booted" | sed 's/(.*//' | sed 's/^[[:space:]]*//')
-    
+
     if [ -n "$BOOTED_SIMS" ]; then
         echo -e "${GREEN}★ Currently Booted:${NC}"
         echo "$BOOTED_SIMS" | while IFS= read -r sim; do
@@ -106,7 +106,7 @@ list_simulators() {
         done
         echo ""
     fi
-    
+
     # Get all available simulators (iOS only, runtime available)
     echo -e "${YELLOW}All Available Devices:${NC}"
     xcrun simctl list devices available | grep "iPhone\|iPad" | grep -v "unavailable" | sed 's/(.*//' | sed 's/^[[:space:]]*//' | nl
@@ -115,17 +115,17 @@ list_simulators() {
 # Function to select a simulator
 select_simulator() {
     list_simulators
-    
+
     # Check if there's a booted device
     BOOTED_LINE=$(xcrun simctl list devices | grep "Booted" | head -n 1)
-    
+
     if [ -n "$BOOTED_LINE" ]; then
         echo -e "\n${YELLOW}Enter simulator number (or press Enter for currently booted device):${NC} "
     else
         echo -e "\n${YELLOW}Enter simulator number (or press Enter for iPhone 15 Pro):${NC} "
     fi
     read -r sim_choice
-    
+
     if [ -z "$sim_choice" ]; then
         # Default to currently booted device if available
         if [ -n "$BOOTED_LINE" ]; then
@@ -145,12 +145,12 @@ select_simulator() {
         SELECTED_SIM=$(echo "$SELECTED_LINE" | sed 's/(.*//' | sed 's/^[[:space:]]*//')
         SIMULATOR_UDID=$(echo "$SELECTED_LINE" | grep -o -E '\([A-Z0-9-]+\)' | head -n 1 | tr -d '()')
     fi
-    
+
     if [ -z "$SELECTED_SIM" ] || [ -z "$SIMULATOR_UDID" ]; then
         echo -e "${RED}✗ Invalid selection or could not find simulator${NC}"
         return 1
     fi
-    
+
     echo -e "${GREEN}✓ Selected: ${SELECTED_SIM}${NC}"
     echo -e "${GREEN}  UDID: ${SIMULATOR_UDID}${NC}"
 }
@@ -158,31 +158,31 @@ select_simulator() {
 # Function to build and run iOS app
 build_ios_app() {
     echo -e "\n${CYAN}=== Building iOS App ===${NC}"
-    
+
     # Select simulator
     select_simulator || return 1
-    
+
     # Boot simulator if not already booted
     echo -e "\n${YELLOW}Booting simulator...${NC}"
     xcrun simctl boot "$SIMULATOR_UDID" 2>/dev/null || echo -e "${YELLOW}Simulator already booted${NC}"
-    
+
     # Open Simulator.app
     open -a Simulator
-    
+
     # Build the app
     echo -e "\n${YELLOW}Building app...${NC}"
     cd "$PROJECT_ROOT/apps/modal"
-    
+
     # Determine if xcpretty is available
     if command -v xcpretty &> /dev/null; then
         BUILD_FORMATTER="xcpretty"
     else
         BUILD_FORMATTER="cat"
     fi
-    
+
     # Enable pipefail to catch build errors even with pipes
     set -o pipefail
-    
+
     xcodebuild \
         -project modal.xcodeproj \
         -scheme modal \
@@ -193,30 +193,30 @@ build_ios_app() {
         -allowProvisioningUpdates \
         clean build \
         2>&1 | $BUILD_FORMATTER
-    
+
     BUILD_EXIT_CODE=$?
     set +o pipefail
-    
+
     if [ $BUILD_EXIT_CODE -eq 0 ]; then
         echo -e "${GREEN}✓ Build successful${NC}"
-        
+
         # Install and run the app
         echo -e "\n${YELLOW}Installing app on simulator...${NC}"
-        
+
         # Find the built app (check local build dir first, then DerivedData)
         APP_PATH=$(find "$PROJECT_ROOT/apps/modal/build" -name "modal.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
-        
+
         if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "modal.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
         fi
-        
+
         if [ -n "$APP_PATH" ]; then
             # Verify bundle exists
             if [ ! -d "$APP_PATH" ]; then
                 echo -e "${RED}✗ App bundle not found at: $APP_PATH${NC}"
                 return 1
             fi
-            
+
             # Install app on the selected simulator
             echo -e "${YELLOW}Installing on: ${SELECTED_SIM} (${SIMULATOR_UDID})${NC}"
             if xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH" 2>&1; then
@@ -225,7 +225,7 @@ build_ios_app() {
                 echo -e "${RED}✗ Installation failed${NC}"
                 return 1
             fi
-            
+
             # Launch app on the selected simulator
             echo -e "\n${YELLOW}Launching app on ${SELECTED_SIM}...${NC}"
             if xcrun simctl launch "$SIMULATOR_UDID" com.app.modal 2>&1; then
@@ -233,9 +233,9 @@ build_ios_app() {
                 echo -e "\n${CYAN}════════════════════════════════════════${NC}"
                 echo -e "${GREEN}✓ Build and Launch Complete!${NC}"
                 echo -e "${CYAN}════════════════════════════════════════${NC}\n"
-                
+
                 cd "$PROJECT_ROOT"
-                
+
                 # Auto-exit after successful launch
                 echo -e "${GREEN}Exiting...${NC}\n"
                 exit 0
@@ -251,7 +251,7 @@ build_ios_app() {
         echo -e "${RED}✗ Build failed${NC}"
         return 1
     fi
-    
+
     cd "$PROJECT_ROOT"
 }
 
@@ -271,7 +271,7 @@ show_menu() {
 # Function to check status
 check_status() {
     echo -e "\n${CYAN}=== Service Status ===${NC}\n"
-    
+
     cd "$PROJECT_ROOT/docker"
     docker compose ps
     cd "$PROJECT_ROOT"
@@ -287,9 +287,9 @@ stop_services() {
     echo -e "0) Cancel"
     echo -e "\n${YELLOW}Select shutdown option:${NC} "
     read -r shutdown_choice
-    
+
     cd "$PROJECT_ROOT/docker"
-    
+
     case $shutdown_choice in
         1)
             echo -e "${YELLOW}Stopping Docker containers...${NC}"
@@ -334,7 +334,7 @@ stop_services() {
             echo -e "${RED}Invalid choice${NC}"
             ;;
     esac
-    
+
     cd "$PROJECT_ROOT"
 }
 
@@ -348,9 +348,9 @@ view_logs() {
     echo -e "5) All logs"
     echo -e "\n${YELLOW}Select:${NC} "
     read -r log_choice
-    
+
     cd "$PROJECT_ROOT/docker"
-    
+
     case $log_choice in
         1)
             docker compose logs -f modal_api
@@ -371,7 +371,7 @@ view_logs() {
             echo -e "${RED}Invalid choice${NC}"
             ;;
     esac
-    
+
     cd "$PROJECT_ROOT"
 }
 
@@ -391,7 +391,7 @@ fi
 while true; do
     show_menu
     read -r choice
-    
+
     case $choice in
         1)
             start_all_services
@@ -399,7 +399,7 @@ while true; do
             echo -e "${YELLOW}API: http://localhost:8000${NC}"
             echo -e "${YELLOW}Supabase: http://localhost:8001${NC}"
             echo -e "${YELLOW}Database: localhost:5432${NC}"
-            echo -e "${YELLOW}Redis: localhost:6379${NC}"
+            echo -e "${YELLOW}Redis: redis:6379${NC}"
             ;;
         2)
             start_all_services
@@ -427,4 +427,3 @@ while true; do
             ;;
     esac
 done
-

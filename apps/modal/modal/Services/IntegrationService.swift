@@ -18,7 +18,7 @@ class IntegrationService {
         case uber
         case gmail
         case googleCalendar
-        
+
         var displayName: String {
             switch self {
             case .spotify: return "Spotify"
@@ -27,7 +27,7 @@ class IntegrationService {
             case .googleCalendar: return "Google Calendar"
             }
         }
-        
+
         var oauthEndpoint: String {
             switch self {
             case .spotify: return "/integrations/spotify/auth"
@@ -37,7 +37,7 @@ class IntegrationService {
             }
         }
     }
-    
+
     // MARK: - Properties
 
     private var connectedServices: Set<ServiceType> = [] {
@@ -62,37 +62,37 @@ class IntegrationService {
         self.backendURL = backendURL
         loadConnectedServices()
     }
-    
+
     // MARK: - Public Methods
-    
+
     /// Fetch connected integrations from backend
     func fetchConnectedIntegrations(authService: AuthenticationService) async throws {
         guard let session = authService.session else {
             throw IntegrationError.notAuthenticated
         }
-        
+
         let url = URL(string: "\(backendURL)/integrations")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw IntegrationError.fetchFailed
         }
-        
+
         struct IntegrationListResponse: Codable {
             let integrations: [IntegrationStatus]
         }
-        
+
         struct IntegrationStatus: Codable {
             let service: String
             let connected: Bool
         }
-        
+
         let integrationResponse = try JSONDecoder().decode(IntegrationListResponse.self, from: data)
-        
+
         // Update connected services
         connectedServices.removeAll()
         for integration in integrationResponse.integrations where integration.connected {
@@ -100,15 +100,15 @@ class IntegrationService {
                 connectedServices.insert(serviceType)
             }
         }
-        
+
         print("✅ Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))")
     }
-    
+
     /// Check if a service is connected
     func isConnected(_ service: ServiceType) -> Bool {
         connectedServices.contains(service)
     }
-    
+
     /// Connect a service via OAuth
     func connectService(_ service: ServiceType, authService: AuthenticationService) async throws {
         print("🔗 Initiating OAuth for \(service.displayName)")
@@ -139,7 +139,7 @@ class IntegrationService {
             DispatchQueue.main.async {
                 self.connectedServices.insert(service)
             }
-            
+
             print("✅ Successfully connected \(service.displayName)")
 
         } catch let error as IntegrationError {
@@ -150,33 +150,33 @@ class IntegrationService {
             throw IntegrationError.oauthFailed
         }
     }
-    
+
     /// Disconnect a service
     func disconnectService(_ service: ServiceType, authService: AuthenticationService) async throws {
         guard let session = authService.session else {
             throw IntegrationError.notAuthenticated
         }
-        
+
         // Call backend to revoke access
         let url = URL(string: "\(backendURL)/integrations/\(service.rawValue)/disconnect")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
-        
+
         let (_, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw IntegrationError.disconnectFailed
         }
-        
+
         connectedServices.remove(service)
-        
+
         print("✅ Successfully disconnected \(service.displayName)")
     }
-    
+
     // MARK: - Private Methods
-    
+
     private func exchangeCode(code: String, state: String, accessToken: String, service: ServiceType) async throws {
         // Properly encode query parameters
         guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -185,7 +185,7 @@ class IntegrationService {
             print("❌ Failed to encode OAuth parameters")
             throw IntegrationError.oauthFailed
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -196,7 +196,7 @@ class IntegrationService {
             print("❌ Invalid response from exchange endpoint")
             throw IntegrationError.oauthFailed
         }
-        
+
         // Log response for debugging
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
@@ -211,28 +211,28 @@ class IntegrationService {
         let url = URL(string: "\(backendURL)\(service.oauthEndpoint)")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             print("❌ Invalid response from OAuth URL endpoint")
             throw IntegrationError.oauthURLFailed
         }
-        
+
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("❌ Failed to get OAuth URL (status \(httpResponse.statusCode)): \(errorMessage)")
             throw IntegrationError.oauthURLFailed
         }
-        
+
         struct OAuthURLResponse: Codable {
             let authUrl: String
             let state: String?
         }
-        
+
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        
+
         do {
             let oauthResponse = try decoder.decode(OAuthURLResponse.self, from: data)
             guard let authURL = URL(string: oauthResponse.authUrl) else {
@@ -245,7 +245,7 @@ class IntegrationService {
             throw IntegrationError.oauthURLFailed
         }
     }
-    
+
     private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (code: String, state: String) {
         // Use ASWebAuthenticationSession for OAuth flow
         return try await withCheckedThrowingContinuation { continuation in
@@ -256,7 +256,7 @@ class IntegrationService {
             ) { callbackURL, error in
                 // Clear the session reference when done
                 defer { self.authSession = nil }
-                
+
                 if let error = error {
                     // Check if user cancelled the authentication
                     let nsError = error as NSError
@@ -310,10 +310,10 @@ class IntegrationService {
 
             // Use the retained context provider
             self.authSession?.presentationContextProvider = self.contextProvider
-            
+
             // Prefer ephemeral session (doesn't save cookies)
             self.authSession?.prefersEphemeralWebBrowserSession = true
-            
+
             // Start the session
             if self.authSession?.start() == false {
                 print("❌ Failed to start ASWebAuthenticationSession")
@@ -379,7 +379,7 @@ enum IntegrationError: LocalizedError {
     case disconnectFailed
     case userCancelled
     case fetchFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:

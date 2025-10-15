@@ -40,7 +40,7 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
-  modal_api:
+  api:
     container_name: modal-api
     build:
       context: ../apps/api
@@ -92,9 +92,6 @@ services:
       APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
       APPLE_KEY_ID: ${APPLE_KEY_ID:-}
       APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
-
-      # ElevenLabs
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
 
       # Soniox
       SONIOX_API_KEY: ${SONIOX_API_KEY:-}
@@ -499,4 +496,3 @@ services:
 volumes:
   redis-data:
     driver: local
-
