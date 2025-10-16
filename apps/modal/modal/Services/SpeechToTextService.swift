@@ -11,7 +11,7 @@ class SpeechToTextService {
     
     // MARK: - Initialization
     
-    init(backendURL: String = Environment.apiBaseURL) {
+    nonisolated init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
     }
     

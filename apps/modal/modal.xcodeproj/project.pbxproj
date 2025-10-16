@@ -15,6 +15,7 @@
 		83601AE82E9C42E300C9B0A6 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE72E9C42E300C9B0A6 /* Realtime */; };
 		83601AEA2E9C42E300C9B0A6 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE92E9C42E300C9B0A6 /* Storage */; };
 		83601AEC2E9C42F400C9B0A6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AEB2E9C42F400C9B0A6 /* Supabase */; };
+		83D7700D2EA14DF90039A407 /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 83D7700C2EA14DF90039A407 /* Config.xcconfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,6 +39,7 @@
 		830FBFE52E9B7AE100C65E4A /* modal.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = modal.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		830FBFF62E9B7AE200C65E4A /* modalTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = modalTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		830FC0002E9B7AE200C65E4A /* modalUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = modalUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		83D7700C2EA14DF90039A407 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -107,6 +109,7 @@
 		830FBFDC2E9B7AE100C65E4A = {
 			isa = PBXGroup;
 			children = (
+				83D7700C2EA14DF90039A407 /* Config.xcconfig */,
 				830FBFE72E9B7AE100C65E4A /* modal */,
 				830FBFF92E9B7AE200C65E4A /* modalTests */,
 				830FC0032E9B7AE200C65E4A /* modalUITests */,
@@ -264,6 +267,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				83D7700D2EA14DF90039A407 /* Config.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

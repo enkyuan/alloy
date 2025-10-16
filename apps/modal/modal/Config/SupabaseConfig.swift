@@ -22,7 +22,7 @@ enum SupabaseConfig {
     /// Example: SupabaseConfig.shared.auth.signIn(...)
     /// 
     /// Note: Using Google Sign-In SDK directly, so no OAuth redirect URL needed
-    static let shared = SupabaseClient(
+    nonisolated(unsafe) static let shared = SupabaseClient(
         supabaseURL: supabaseURL,
         supabaseKey: supabaseAnonKey
     )

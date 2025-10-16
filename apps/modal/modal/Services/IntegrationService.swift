@@ -58,9 +58,11 @@ class IntegrationService {
 
     // MARK: - Initialization
 
-    private init(backendURL: String = Environment.apiBaseURL) {
+    nonisolated private init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
-        loadConnectedServices()
+        Task { @MainActor in
+            self.loadConnectedServices()
+        }
     }
 
     // MARK: - Public Methods

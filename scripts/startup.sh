@@ -69,8 +69,16 @@ start_all_services() {
         fi
     fi
 
-    # Start all services (Docker Compose will create the network if needed)
+    # Stop any running containers
+    echo -e "${YELLOW}Stopping existing containers...${NC}"
     docker compose down 2>/dev/null || true
+    
+    # Build the API container to ensure dependencies are up to date
+    echo -e "${YELLOW}Building API container (ensuring dependencies are installed)...${NC}"
+    docker compose build api
+    
+    # Start all services
+    echo -e "${YELLOW}Starting all services...${NC}"
     docker compose up -d
 
     echo -e "${GREEN}✓ All services starting...${NC}"

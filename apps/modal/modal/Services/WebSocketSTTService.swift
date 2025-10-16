@@ -8,7 +8,15 @@ class WebSocketSTTService: NSObject {
     
     private let backendURL: String
     private var webSocketTask: URLSessionWebSocketTask?
-    private var session: URLSession?
+    private var _session: URLSession?
+    private var session: URLSession {
+        if _session == nil {
+            let config = URLSessionConfiguration.default
+            config.waitsForConnectivity = true
+            _session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
+        }
+        return _session!
+    }
     
     var isConnected: Bool = false
     var currentTranscription: String = ""
@@ -19,13 +27,9 @@ class WebSocketSTTService: NSObject {
     
     // MARK: - Initialization
     
-    init(backendURL: String = Environment.websocketURL) {
+    nonisolated init(backendURL: String = Environment.websocketURL) {
         self.backendURL = backendURL
         super.init()
-        
-        let config = URLSessionConfiguration.default
-        config.waitsForConnectivity = true
-        self.session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue())
     }
     
     // MARK: - Public Methods
@@ -40,7 +44,7 @@ class WebSocketSTTService: NSObject {
         
         print("🔗 Connecting to WebSocket: \(url)")
         
-        webSocketTask = session?.webSocketTask(with: url)
+        webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
         
         // Start receiving messages

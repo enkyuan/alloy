@@ -11,7 +11,7 @@ struct IntegrationsView: View {
     @State private var errorMessage = ""
     @State private var showDisconnectAlert = false
     @State private var serviceToDisconnect: IntegrationService.ServiceType?
-    @Environment(\.dismiss) var dismiss
+    @SwiftUI.Environment(\.dismiss) private var dismiss
     
     // MARK: - Initializer
     

@@ -141,7 +141,7 @@ class AssistantViewModel {
             // Set timeout in case connection fails
             Task {
                 try? await Task.sleep(nanoseconds: 5_000_000_000) // 5s timeout
-                if await !self.webSocketSTTService.isConnected {
+                if !self.webSocketSTTService.isConnected {
                     print("❌ WebSocket connection timeout")
                     self.errorMessage = "Failed to connect to speech service"
                     self.showError = true

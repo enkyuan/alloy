@@ -56,7 +56,7 @@ class AuthenticationService {
     
     /// Initialize the authentication service
     /// - Parameter backendURL: Backend API base URL (defaults to value from Environment config)
-    init(backendURL: String = Environment.apiBaseURL) {
+    nonisolated init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
         
         // Check for existing session
@@ -65,7 +65,7 @@ class AuthenticationService {
         }
         
         // Listen for authentication state changes
-        Task {
+        Task { @MainActor in
             for await state in SupabaseConfig.shared.auth.authStateChanges {
                 if state.event == .signedIn {
                     print("✅ Auth state changed: Signed in")
