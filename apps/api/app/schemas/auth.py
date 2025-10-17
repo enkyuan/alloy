@@ -76,29 +76,6 @@ class UserResponse(UserBase):
     model_config = {"from_attributes": True}
 
 
-# OAuth Request Schemas
-
-class GoogleOAuthRequest(BaseModel):
-    """Schema for Google OAuth token exchange.
-    
-    Note: This is kept for potential server-side OAuth but not currently used.
-    The iOS app uses Supabase SDK directly.
-    """
-    id_token: str = Field(..., description="Google ID token from client")
-    nonce: Optional[str] = Field(None, description="Nonce used in Google Sign-In")
-
-
-class AppleOAuthRequest(BaseModel):
-    """Schema for Apple Sign In.
-    
-    Note: This is kept for potential server-side OAuth but not currently used.
-    The iOS app uses Supabase SDK directly.
-    """
-    id_token: str = Field(..., description="Apple ID token from client")
-    authorization_code: Optional[str] = None
-    user_info: Optional[dict] = None
-
-
 # Token Schemas
 
 class TokenResponse(BaseModel):

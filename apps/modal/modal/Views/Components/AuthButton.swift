@@ -2,20 +2,22 @@ import SwiftUI
 
 /// A styled authentication button with icon and text
 struct AuthButton: View {
+    @SwiftUI.Environment(\.colorScheme) private var colorScheme
+    
     enum IconType {
         case system(String)
         case asset(String)
         case none
     }
     
-    enum ButtonStyle {
+    enum Style {
         case primary
         case secondary
     }
     
     let icon: IconType
     let text: String
-    let style: ButtonStyle
+    let style: Style
     let action: () -> Void
     
     var body: some View {
@@ -29,8 +31,8 @@ struct AuthButton: View {
                     .padding(.trailing, trailingPadding)
             }
             .frame(height: 56)
-            .foregroundColor(style == .primary ? .white : .black)
-            .background(style == .primary ? Color.black : Color.white)
+            .foregroundColor(foregroundColor)
+            .background(backgroundColor)
             .overlay(borderOverlay)
             .cornerRadius(16)
         }
@@ -43,15 +45,36 @@ struct AuthButton: View {
             Image(systemName: name)
                 .font(.system(size: 20, weight: .medium))
                 .frame(width: 20)
+                .foregroundColor(foregroundColor)
                 .padding(.leading, 20)
         case let .asset(name):
             Image(name)
                 .resizable()
+                .renderingMode(.template)
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 20, height: 20)
+                .foregroundColor(foregroundColor)
                 .padding(.leading, 20)
         case .none:
             EmptyView()
+        }
+    }
+    
+    private var foregroundColor: Color {
+        switch style {
+        case .primary:
+            return colorScheme == .dark ? .black : .white
+        case .secondary:
+            return colorScheme == .dark ? .white : .black
+        }
+    }
+    
+    private var backgroundColor: Color {
+        switch style {
+        case .primary:
+            return colorScheme == .dark ? .white : .black
+        case .secondary:
+            return colorScheme == .dark ? Color(.systemGray6) : .white
         }
     }
     
@@ -64,7 +87,7 @@ struct AuthButton: View {
     private var borderOverlay: some View {
         if style == .secondary {
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                .stroke(Color.gray.opacity(colorScheme == .dark ? 0.5 : 0.3), lineWidth: 1)
         }
     }
 }

@@ -105,36 +105,35 @@ class AuthenticationService {
     
     // MARK: - Public Methods
     
-    /// Authenticate user with Google ID token
+    /// Authenticate user with Google Sign-In
     ///
-    /// This uses Google Sign-In SDK to get an ID token, then exchanges it
-    /// with Supabase for a session. Requires `skip_nonce_check=true` in Supabase config.
+    /// Uses Google Sign-In SDK to get ID token, then authenticates with Supabase using OAuth.
     ///
     /// - Parameters:
     ///   - idToken: Google ID token from Google Sign-In SDK
-    ///   - accessToken: Google OAuth access token for Gmail API access (optional)
-    /// - Throws: Supabase authentication errors
-    func authenticateWithGoogle(idToken: String, accessToken: String? = nil) async throws {
-        print("📤 Authenticating with Supabase using Google ID token")
+    ///   - accessToken: Google access token from Google Sign-In SDK
+    /// - Throws: Authentication errors
+    func authenticateWithGoogle(idToken: String, accessToken: String) async throws {
+        print("� Authenticating with Supabase using Google tokens")
         
-        // Sign in with Supabase using Google ID token from Google Sign-In SDK
-        // Reference: https://supabase.com/docs/guides/auth/social-login/auth-google
-        let session = try await SupabaseConfig.shared.auth.signInWithIdToken(
-            credentials: .init(
-                provider: .google,
-                idToken: idToken
+        do {
+            // Use Supabase's signInWithIdToken for Google OAuth
+            let session = try await SupabaseConfig.shared.auth.signInWithIdToken(
+                credentials: .init(
+                    provider: .google,
+                    idToken: idToken,
+                    accessToken: accessToken
+                )
             )
-        )
-        
-        self.session = session
-        print("✅ Supabase session created for: \(session.user.email ?? "unknown")")
-        
-        // Sync user with our backend database
-        await syncUserWithBackend()
-        
-        // If Gmail/Calendar access token is provided, sync Google integrations
-        if let accessToken = accessToken {
-            await syncGoogleIntegrations(accessToken: accessToken)
+            
+            self.session = session
+            print("✅ Supabase session created for: \(session.user.email ?? "unknown")")
+            
+            // Sync user with our backend database
+            await syncUserWithBackend()
+        } catch {
+            print("❌ Google authentication failed: \(error)")
+            throw AuthError.serverError(error.localizedDescription)
         }
     }
     

@@ -143,74 +143,38 @@ struct OnboardingView: View {
         
         isAuthenticating = true
         
-        // Request Gmail and Calendar scopes during sign-in for automatic integration
-        let additionalScopes = [
-            // Gmail
-            "https://www.googleapis.com/auth/gmail.readonly",
-            "https://www.googleapis.com/auth/gmail.send",
-            "https://www.googleapis.com/auth/gmail.modify",
-            // Google Calendar
-            "https://www.googleapis.com/auth/calendar.readonly",
-            "https://www.googleapis.com/auth/calendar.events"
-        ]
-        
-        GIDSignIn.sharedInstance.signIn(
-            withPresenting: rootViewController,
-            hint: nil,
-            additionalScopes: additionalScopes
-        ) { result, error in
+        // Use Google Sign-In SDK
+        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 isAuthenticating = false
-                // Check if user cancelled the sign-in
                 let nsError = error as NSError
-                print("❌ Google Sign-In error - Domain: \(nsError.domain), Code: \(nsError.code)")
-                print("❌ Error description: \(error.localizedDescription)")
-                print("❌ User info: \(nsError.userInfo)")
-                
-                if nsError.code == -5 { // GIDSignInError.canceled
+                if nsError.code == -5 {
                     print("ℹ️ User cancelled Google Sign-In")
                     return
                 }
-                
-                // Provide more specific error messages
-                var errorMsg = "Google Sign-In failed"
-                if nsError.domain == "com.google.GIDSignIn" && nsError.code == -4 {
-                    errorMsg = "Keychain error - Try resetting the simulator (Device → Erase All Content and Settings)"
-                } else {
-                    errorMsg = "Google Sign-In failed: \(error.localizedDescription)"
-                }
-                
-                showError(message: errorMsg)
+                showError(message: "Google Sign-In failed: \(error.localizedDescription)")
                 return
             }
             
             guard let result = result,
                   let idToken = result.user.idToken?.tokenString else {
                 isAuthenticating = false
-                showError(message: "Failed to get Google ID token")
+                showError(message: "Failed to get Google tokens")
                 return
             }
             
-            // Get access token for Gmail API if available
             let accessToken = result.user.accessToken.tokenString
             
-            print("📝 Got Google ID token for: \(result.user.profile?.email ?? "unknown")")
-            if let grantedScopes = result.user.grantedScopes, !grantedScopes.isEmpty {
-                print("✅ Granted scopes: \(grantedScopes.joined(separator: ", "))")
-            }
+            print("✅ Got Google tokens for: \(result.user.profile?.email ?? "unknown")")
             
             Task { @MainActor in
                 do {
-                    try await authService.authenticateWithGoogle(
-                        idToken: idToken,
-                        accessToken: accessToken
-                    )
+                    try await authService.authenticateWithGoogle(idToken: idToken, accessToken: accessToken)
                     print("✅ Successfully authenticated!")
                     isAuthenticating = false
                 } catch {
                     isAuthenticating = false
                     showError(message: "Authentication failed: \(error.localizedDescription)")
-                    print("❌ Error: \(error)")
                 }
             }
         }
