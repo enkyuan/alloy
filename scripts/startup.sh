@@ -50,6 +50,16 @@ wait_for_service() {
     done
 
     echo -e "\n${RED}✗ ${service_name} failed to become healthy${NC}"
+    
+    # Show helpful troubleshooting info for database
+    if [ "$service_name" = "supabase-db" ]; then
+        echo -e "${YELLOW}Troubleshooting tips:${NC}"
+        echo -e "  1. Check database logs: ${GREEN}docker compose logs db${NC}"
+        echo -e "  2. Verify JWT configuration is synced across .env files"
+        echo -e "  3. Run ${GREEN}./scripts/setup.sh${NC} to regenerate configuration"
+        echo -e "  4. Try a full cleanup: ${GREEN}docker compose down -v${NC} then restart"
+    fi
+    
     return 1
 }
 
@@ -70,19 +80,27 @@ start_all_services() {
         fi
     fi
 
-    # Stop any running containers
-    echo -e "${YELLOW}Stopping existing containers...${NC}"
+    # Stop any running containers and remove them completely
+    echo -e "${YELLOW}Stopping and removing existing containers...${NC}"
     docker compose down 2>/dev/null || true
     
     # Build the API container to ensure dependencies are up to date
     echo -e "${YELLOW}Building API container (ensuring dependencies are installed)...${NC}"
     docker compose build api
     
-    # Start all services
-    echo -e "${YELLOW}Starting all services...${NC}"
-    docker compose up -d
-
+    # Start all services with fresh containers
+    echo -e "${YELLOW}Starting all services with fresh containers...${NC}"
+    docker compose up -d --force-recreate
+    
     echo -e "${GREEN}✓ All services starting...${NC}"
+    echo -e "${YELLOW}Note: Services may take 30-60 seconds to become healthy.${NC}"
+    
+    # Wait for critical services to be healthy
+    echo -e "\n${YELLOW}Waiting for critical services to be healthy...${NC}"
+    wait_for_service "supabase-db" || echo -e "${YELLOW}⚠️  Database may still be starting up${NC}"
+    wait_for_service "modal-redis" || echo -e "${YELLOW}⚠️  Redis may still be starting up${NC}"
+    
+    echo -e "\n${GREEN}✓ Core services are healthy${NC}"
 
     cd "$PROJECT_ROOT"
 }

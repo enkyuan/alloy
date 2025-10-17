@@ -418,10 +418,51 @@ echo -e "Google OAuth:      ${GREEN}[SYNCED]${NC}"
 echo -e "Spotify OAuth:     ${GREEN}[SYNCED]${NC}"
 echo -e "iOS Config:        ${GREEN}[SYNCED]${NC}"
 
+# Check if Docker containers are running and offer to restart them
+echo -e "\n${BLUE}=== Docker Container Management ===${NC}"
+cd "$PROJECT_ROOT/docker"
+
+if docker compose ps -q 2>/dev/null | grep -q .; then
+    echo -e "${YELLOW}⚠️  Docker containers are currently running.${NC}"
+    echo -e "${YELLOW}   They need to be restarted to apply the new JWT configuration.${NC}\n"
+    read -p "Restart Docker containers now? (Y/n): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "\n${YELLOW}Stopping containers...${NC}"
+        docker compose down
+        
+        echo -e "${YELLOW}Starting containers with new configuration...${NC}"
+        docker compose up -d
+        
+        echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
+        echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+        
+        # Wait a bit for services to start
+        sleep 5
+    else
+        echo -e "${YELLOW}⚠️  Skipped Docker restart.${NC}"
+        echo -e "${YELLOW}   Run 'cd docker && docker compose down && docker compose up -d' to apply changes.${NC}"
+    fi
+else
+    echo -e "${YELLOW}No Docker containers are currently running.${NC}"
+    read -p "Start Docker containers now? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "\n${YELLOW}Starting containers...${NC}"
+        docker compose up -d
+        
+        echo -e "\n${GREEN}✓ Docker containers started${NC}"
+        echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+        
+        # Wait a bit for services to start
+        sleep 5
+    fi
+fi
+
+cd "$PROJECT_ROOT"
+
 echo -e "\n${BLUE}=== Next Steps ===${NC}"
 echo -e "1. ${YELLOW}Review and update iOS configuration if needed:${NC}"
 echo -e "   ${GREEN}apps/modal/Config.xcconfig${NC}"
-echo -e "\n2. ${YELLOW}Restart Docker containers:${NC}"
-echo -e "   ${GREEN}cd docker && docker compose down && docker compose up -d${NC}"
-echo -e "\n3. ${YELLOW}Or use the startup script:${NC}"
+echo -e "\n2. ${YELLOW}Use the startup script to build and run the iOS app:${NC}"
 echo -e "   ${GREEN}./scripts/startup.sh${NC}\n"
