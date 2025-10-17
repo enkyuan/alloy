@@ -54,26 +54,10 @@ wait_for_service() {
     # Show helpful troubleshooting info for database
     if [ "$service_name" = "supabase-db" ]; then
         echo -e "${YELLOW}Troubleshooting tips:${NC}"
-        
-        # Check for specific error in logs
-        DB_LOGS=$(docker compose logs db --tail=20 2>/dev/null)
-        if echo "$DB_LOGS" | grep -q "invalid value for parameter \"port\""; then
-            echo -e "${RED}  ⚠️  Detected: Database port configuration error${NC}"
-            echo -e "${YELLOW}  This is usually caused by corrupted Docker volumes.${NC}"
-            echo -e "${GREEN}  Solution: Stop this script (Ctrl+C) and run:${NC}"
-            echo -e "${GREEN}    cd docker && docker compose down -v${NC}"
-            echo -e "${GREEN}    ./scripts/setup.sh  # Choose option 2 to clean volumes${NC}"
-        elif echo "$DB_LOGS" | grep -q "Database directory appears to contain a database"; then
-            echo -e "${RED}  ⚠️  Detected: Stale database volume${NC}"
-            echo -e "${YELLOW}  Old database data is preventing initialization.${NC}"
-            echo -e "${GREEN}  Solution: Clean volumes and restart:${NC}"
-            echo -e "${GREEN}    cd docker && docker compose down -v && docker compose up -d${NC}"
-        else
-            echo -e "  1. Check database logs: ${GREEN}docker compose logs db${NC}"
-            echo -e "  2. Verify JWT configuration is synced across .env files"
-            echo -e "  3. Run ${GREEN}./scripts/setup.sh${NC} to regenerate configuration"
-            echo -e "  4. Try a full cleanup: ${GREEN}docker compose down -v${NC} then restart"
-        fi
+        echo -e "  1. Check database logs: ${GREEN}docker compose logs db${NC}"
+        echo -e "  2. Verify JWT configuration is synced across .env files"
+        echo -e "  3. Run ${GREEN}./scripts/setup.sh${NC} to regenerate configuration"
+        echo -e "  4. Try a full cleanup: ${GREEN}docker compose down -v${NC} then restart"
     fi
     
     return 1
@@ -95,77 +79,20 @@ start_all_services() {
             exit 1
         fi
     fi
-    
-    # Check if volumes exist that might have stale data
-    if docker volume ls | grep -q "modal"; then
-        echo -e "${YELLOW}⚠️  Existing Docker volumes detected.${NC}"
-        echo -e "${YELLOW}   If you're experiencing database errors, you may need to clean them.${NC}\n"
-        echo -e "Choose startup mode:"
-        echo -e "  1) Normal start (reuse existing volumes)"
-        echo -e "  2) Clean start (⚠️  removes volumes - fixes database errors)"
-        echo -e "  3) Cancel"
-        read -p "Selection (1/2/3): " -n 1 -r
-        echo
-        
-        case $REPLY in
-            1)
-                # Normal restart - keep volumes
-                echo -e "\n${YELLOW}Stopping and removing existing containers...${NC}"
-                docker compose down 2>/dev/null || true
-                
-                echo -e "${YELLOW}Building API container...${NC}"
-                docker compose build api
-                
-                echo -e "${YELLOW}Starting all services...${NC}"
-                docker compose up -d --force-recreate
-                ;;
-            2)
-                # Clean restart - remove volumes
-                echo -e "\n${RED}⚠️  This will delete all database data, uploads, and cached data.${NC}"
-                read -p "Are you absolutely sure? (type 'yes' to confirm): " confirm
-                if [ "$confirm" = "yes" ]; then
-                    echo -e "\n${YELLOW}Stopping containers and removing volumes...${NC}"
-                    docker compose down -v
-                    
-                    echo -e "${YELLOW}Building API container...${NC}"
-                    docker compose build api
-                    
-                    echo -e "${YELLOW}Starting fresh services...${NC}"
-                    docker compose up -d
-                    
-                    echo -e "\n${GREEN}✓ Started with clean volumes${NC}"
-                else
-                    echo -e "${YELLOW}Cancelled. Using normal start instead...${NC}"
-                    docker compose down 2>/dev/null || true
-                    docker compose build api
-                    docker compose up -d --force-recreate
-                fi
-                ;;
-            3)
-                echo -e "${YELLOW}Cancelled startup.${NC}"
-                cd "$PROJECT_ROOT"
-                return 1
-                ;;
-            *)
-                echo -e "${YELLOW}Invalid selection. Using normal start...${NC}"
-                docker compose down 2>/dev/null || true
-                docker compose build api
-                docker compose up -d --force-recreate
-                ;;
-        esac
-    else
-        # No existing volumes - normal startup
-        echo -e "${YELLOW}Stopping and removing existing containers...${NC}"
-        docker compose down 2>/dev/null || true
-        
-        echo -e "${YELLOW}Building API container...${NC}"
-        docker compose build api
-        
-        echo -e "${YELLOW}Starting all services with fresh containers...${NC}"
-        docker compose up -d --force-recreate
-    fi
 
-    echo -e "\n${GREEN}✓ All services starting...${NC}"
+    # Stop any running containers and remove them completely
+    echo -e "${YELLOW}Stopping and removing existing containers...${NC}"
+    docker compose down 2>/dev/null || true
+    
+    # Build the API container to ensure dependencies are up to date
+    echo -e "${YELLOW}Building API container (ensuring dependencies are installed)...${NC}"
+    docker compose build api
+    
+    # Start all services with fresh containers
+    echo -e "${YELLOW}Starting all services with fresh containers...${NC}"
+    docker compose up -d --force-recreate
+    
+    echo -e "${GREEN}✓ All services starting...${NC}"
     echo -e "${YELLOW}Note: Services may take 30-60 seconds to become healthy.${NC}"
     
     # Wait for critical services to be healthy
