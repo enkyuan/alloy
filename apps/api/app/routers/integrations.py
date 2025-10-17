@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 import httpx
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Query, Response, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,8 @@ from app.schemas.integration import (
 )
 from app.services.auth import supabase_auth_service
 from app.services.spotify import spotify_service
+from app.services.gmail import get_gmail_service
+from app.services.google_calendar import get_google_calendar_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -948,3 +950,648 @@ async def spotify_set_volume(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to set volume: {str(e)}"
         )
+
+
+# =======================
+# Gmail Integration Routes
+# =======================
+
+@router.get("/gmail/auth", response_model=OAuthURLResponse)
+async def get_gmail_oauth_url(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get Gmail OAuth authorization URL.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+        
+    Returns:
+        OAuthURLResponse with authorization URL and state
+        
+    Raises:
+        HTTPException: If authentication fails or Gmail is not configured
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            logger.warning("Missing or invalid authorization header")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+        
+        if not supabase_user:
+            logger.warning("Invalid or expired token provided")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        # Check if Gmail is configured
+        if not settings.GMAIL_CLIENT_ID or not settings.GMAIL_CLIENT_SECRET:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Gmail OAuth is not configured"
+            )
+        
+        # Generate state parameter for CSRF protection
+        state = secrets.token_urlsafe(32)
+        
+        # Store state with user ID in Redis with TTL
+        state_data = {
+            "user_id": supabase_user["id"],
+            "service": "gmail",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        await redis_client.setex(
+            f"oauth_state:{state}",
+            OAUTH_STATE_TTL,
+            json.dumps(state_data)
+        )
+        
+        # Build Google OAuth URL with Gmail scopes
+        scopes = [
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/gmail.modify",
+            "https://www.googleapis.com/auth/userinfo.email"
+        ]
+        
+        params = {
+            "client_id": settings.GMAIL_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": settings.GMAIL_REDIRECT_URI,
+            "scope": " ".join(scopes),
+            "state": state,
+            "access_type": "offline",  # Request refresh token
+            "prompt": "consent"  # Force consent screen to get refresh token
+        }
+        
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
+        
+        logger.info(f"Generated Gmail OAuth URL for user {supabase_user['id']}")
+        
+        return OAuthURLResponse(
+            auth_url=auth_url,
+            state=state
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate Gmail OAuth URL: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate OAuth URL: {str(e)}"
+        )
+
+
+@router.post("/gmail/exchange")
+async def gmail_exchange_code(
+    code: str = Query(..., description="OAuth authorization code"),
+    state: str = Query(..., description="OAuth state parameter"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Exchange Gmail authorization code for access token.
+
+    This endpoint is called by the iOS app after receiving the callback.
+
+    Args:
+        code: Authorization code from Google
+        state: State parameter for CSRF protection
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response with integration status
+
+    Raises:
+        HTTPException: If exchange fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Validate state parameter from Redis
+        state_key = f"oauth_state:{state}"
+        state_json = await redis_client.get(state_key)
+
+        if not state_json:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired state parameter"
+            )
+
+        # Verify state belongs to this user
+        state_data = json.loads(state_json)
+        if state_data["user_id"] != supabase_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="State parameter does not match user"
+            )
+
+        # Delete state from Redis (one-time use)
+        await redis_client.delete(state_key)
+
+        user_id = supabase_user["id"]
+        
+        # Exchange authorization code for access token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.GMAIL_REDIRECT_URI,
+                    "client_id": settings.GMAIL_CLIENT_ID,
+                    "client_secret": settings.GMAIL_CLIENT_SECRET
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+        
+        if token_response.status_code != 200:
+            logger.error(f"Gmail token exchange failed: {token_response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to exchange authorization code"
+            )
+
+        token_data = token_response.json()
+        gmail_access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)
+
+        if not gmail_access_token:
+            logger.error("No access token in Gmail response")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No access token received from Google"
+            )
+
+        # Get user's Gmail profile to verify the connection
+        gmail_svc = get_gmail_service(gmail_access_token, refresh_token)
+        profile = gmail_svc.get_profile()
+        gmail_email = profile.get("emailAddress")
+
+        logger.info(f"Successfully authenticated Gmail for {gmail_email}")
+
+        # Store or update integration in database
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "gmail"
+        ).first()
+
+        if integration:
+            # Update existing integration
+            integration.access_token = gmail_access_token
+            integration.refresh_token = refresh_token
+            integration.expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+            integration.is_active = True
+            integration.scope = "gmail.readonly gmail.send gmail.modify"
+            integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="gmail",
+                access_token=gmail_access_token,
+                refresh_token=refresh_token,
+                expires_at=datetime.utcnow() + timedelta(seconds=expires_in),
+                is_active=True,
+                scope="gmail.readonly gmail.send gmail.modify"
+            )
+            db.add(integration)
+
+        db.commit()
+
+        logger.info(f"Successfully stored Gmail integration for user {user_id}")
+
+        return {
+            "success": True,
+            "message": "Gmail connected successfully",
+            "email": gmail_email
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to exchange Gmail code: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect Gmail: {str(e)}"
+        )
+
+
+@router.post("/gmail/sync")
+async def sync_gmail_from_google_signin(
+    request: Request,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Sync Gmail integration from Google Sign-In access token.
+    
+    This endpoint is called automatically when a user signs in with Google
+    and has granted Gmail scopes. The iOS app sends the Google OAuth access
+    token, and we store it for Gmail API access.
+    
+    Args:
+        request: FastAPI request object
+        authorization: Bearer token from Authorization header
+        db: Database session
+        
+    Returns:
+        Success response with integration status
+        
+    Raises:
+        HTTPException: If sync fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+        
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        # Get Google access token from request body
+        body_data = await request.json()
+        google_access_token = body_data.get("access_token")
+        
+        if not google_access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing access_token in request body"
+            )
+        
+        user_id = supabase_user["id"]
+        
+        # Verify token works with Gmail API and get user's email
+        try:
+            gmail_svc = get_gmail_service(google_access_token)
+            profile = gmail_svc.get_profile()
+            gmail_email = profile.get("emailAddress")
+            logger.info(f"Successfully verified Gmail access for {gmail_email}")
+        except Exception as e:
+            logger.error(f"Failed to verify Gmail access: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or insufficient Gmail access token"
+            )
+        
+        # Store or update integration in database
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "gmail"
+        ).first()
+        
+        # Note: Google Sign-In tokens typically expire in 1 hour
+        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        
+        if integration:
+            # Update existing integration
+            integration.access_token = google_access_token
+            integration.expires_at = token_expires_at
+            integration.is_active = True
+            integration.scope = "gmail.readonly gmail.send gmail.modify"
+            integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="gmail",
+                access_token=google_access_token,
+                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens
+                expires_at=token_expires_at,
+                is_active=True,
+                scope="gmail.readonly gmail.send gmail.modify"
+            )
+            db.add(integration)
+        
+        db.commit()
+        
+        logger.info(f"Successfully synced Gmail integration for user {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Gmail synced successfully",
+            "email": gmail_email
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to sync Gmail: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync Gmail: {str(e)}"
+        )
+
+
+@router.post("/gmail/disconnect")
+async def disconnect_gmail(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Disconnect Gmail integration.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response
+
+    Raises:
+        HTTPException: If not authenticated or disconnection fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Find Gmail integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "gmail"
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Gmail integration not found"
+            )
+
+        # Revoke Google OAuth token
+        if integration.access_token:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://oauth2.googleapis.com/revoke",
+                        params={"token": integration.access_token}
+                    )
+                logger.info(f"Revoked Gmail token for user {supabase_user['id']}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Gmail token: {e}")
+                # Continue with deletion even if revocation fails
+
+        # Delete integration from database
+        db.delete(integration)
+        db.commit()
+
+        logger.info(f"Successfully disconnected Gmail for user {supabase_user['id']}")
+
+        return {"success": True, "message": "Gmail disconnected successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to disconnect Gmail: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disconnect Gmail: {str(e)}"
+        )
+
+
+# =======================
+# Google Calendar Integration Routes
+# =======================
+
+@router.post("/google-calendar/sync")
+async def sync_google_calendar_from_google_signin(
+    request: Request,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Sync Google Calendar integration from Google Sign-In access token.
+    
+    This endpoint is called automatically when a user signs in with Google
+    and has granted Calendar scopes. The iOS app sends the Google OAuth access
+    token, and we store it for Calendar API access.
+    
+    Args:
+        request: FastAPI request object
+        authorization: Bearer token from Authorization header
+        db: Database session
+        
+    Returns:
+        Success response with integration status
+        
+    Raises:
+        HTTPException: If sync fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+        
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        # Get Google access token from request body
+        body_data = await request.json()
+        google_access_token = body_data.get("access_token")
+        
+        if not google_access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing access_token in request body"
+            )
+        
+        user_id = supabase_user["id"]
+        
+        # Verify token works with Calendar API and get user's calendars
+        try:
+            calendar_svc = get_google_calendar_service(google_access_token)
+            calendars = calendar_svc.list_calendars()
+            primary_calendar = next(
+                (cal for cal in calendars if cal.get('id') == 'primary'),
+                calendars[0] if calendars else None
+            )
+            calendar_email = primary_calendar.get('id') if primary_calendar else 'primary'
+            logger.info(f"Successfully verified Calendar access for {calendar_email}")
+        except Exception as e:
+            logger.error(f"Failed to verify Calendar access: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or insufficient Calendar access token"
+            )
+        
+        # Store or update integration in database
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "google_calendar"
+        ).first()
+        
+        # Note: Google Sign-In tokens typically expire in 1 hour
+        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        
+        if integration:
+            # Update existing integration
+            integration.access_token = google_access_token
+            integration.expires_at = token_expires_at
+            integration.is_active = True
+            integration.scope = "calendar.readonly calendar.events"
+            integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="google_calendar",
+                access_token=google_access_token,
+                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens
+                expires_at=token_expires_at,
+                is_active=True,
+                scope="calendar.readonly calendar.events"
+            )
+            db.add(integration)
+        
+        db.commit()
+        
+        logger.info(f"Successfully synced Google Calendar integration for user {user_id}")
+        
+        return {
+            "success": True,
+            "message": "Google Calendar synced successfully",
+            "calendar_id": calendar_email
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to sync Google Calendar: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync Google Calendar: {str(e)}"
+        )
+
+
+@router.post("/google-calendar/disconnect")
+async def disconnect_google_calendar(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Disconnect Google Calendar integration.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response
+
+    Raises:
+        HTTPException: If not authenticated or disconnection fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Find Google Calendar integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "google_calendar"
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Google Calendar integration not found"
+            )
+
+        # Revoke Google OAuth token
+        if integration.access_token:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://oauth2.googleapis.com/revoke",
+                        params={"token": integration.access_token}
+                    )
+                logger.info(f"Revoked Google Calendar token for user {supabase_user['id']}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Google Calendar token: {e}")
+                # Continue with deletion even if revocation fails
+
+        # Delete integration from database
+        db.delete(integration)
+        db.commit()
+
+        logger.info(f"Successfully disconnected Google Calendar for user {supabase_user['id']}")
+
+        return {"success": True, "message": "Google Calendar disconnected successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to disconnect Google Calendar: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disconnect Google Calendar: {str(e)}"
+        )
+

@@ -11,6 +11,7 @@ struct IntegrationsView: View {
     @State private var errorMessage = ""
     @State private var showDisconnectAlert = false
     @State private var serviceToDisconnect: IntegrationService.ServiceType?
+    @State private var isCheckingIntegrations = false
     @SwiftUI.Environment(\.dismiss) private var dismiss
     
     // MARK: - Initializer
@@ -67,6 +68,11 @@ struct IntegrationsView: View {
                 }
             }
             .interactiveDismissDisabled(isOnboarding)
+            .task {
+                // Check for integrations when view appears
+                // This will detect if Gmail was auto-connected via Google Sign-In
+                await refreshIntegrations()
+            }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { } 
             } message: {
@@ -113,10 +119,12 @@ struct IntegrationsView: View {
             Card.integration(
                 iconName: "GmailIcon",
                 serviceName: "Gmail",
-                description: "Read and send emails",
+                description: isCheckingIntegrations ? "Checking status..." : "Read and send emails",
                 isConnected: integrationService.isConnected(.gmail),
                 action: { handleIntegration(.gmail) }
             )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
             
             // Google Calendar
             Card.integration(
@@ -223,6 +231,21 @@ struct IntegrationsView: View {
                 errorMessage = "Failed to disconnect \(service.displayName): \(error.localizedDescription)"
                 showError = true
             }
+        }
+    }
+    
+    private func refreshIntegrations() async {
+        // Fetch latest integration status from backend
+        // This will show Gmail as connected if user granted permissions during Google Sign-In
+        isCheckingIntegrations = true
+        defer { isCheckingIntegrations = false }
+        
+        do {
+            try await integrationService.fetchConnectedIntegrations(authService: authService)
+            print("✅ Refreshed integrations - Gmail connected: \(integrationService.isConnected(.gmail))")
+        } catch {
+            print("⚠️ Failed to refresh integrations: \(error.localizedDescription)")
+            // Don't show error to user - this is a background check
         }
     }
 

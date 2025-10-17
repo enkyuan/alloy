@@ -143,7 +143,22 @@ struct OnboardingView: View {
         
         isAuthenticating = true
         
-        GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
+        // Request Gmail and Calendar scopes during sign-in for automatic integration
+        let additionalScopes = [
+            // Gmail
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/gmail.send",
+            "https://www.googleapis.com/auth/gmail.modify",
+            // Google Calendar
+            "https://www.googleapis.com/auth/calendar.readonly",
+            "https://www.googleapis.com/auth/calendar.events"
+        ]
+        
+        GIDSignIn.sharedInstance.signIn(
+            withPresenting: rootViewController,
+            hint: nil,
+            additionalScopes: additionalScopes
+        ) { result, error in
             if let error = error {
                 isAuthenticating = false
                 // Check if user cancelled the sign-in
@@ -176,11 +191,20 @@ struct OnboardingView: View {
                 return
             }
             
+            // Get access token for Gmail API if available
+            let accessToken = result.user.accessToken.tokenString
+            
             print("📝 Got Google ID token for: \(result.user.profile?.email ?? "unknown")")
+            if let grantedScopes = result.user.grantedScopes, !grantedScopes.isEmpty {
+                print("✅ Granted scopes: \(grantedScopes.joined(separator: ", "))")
+            }
             
             Task { @MainActor in
                 do {
-                    try await authService.authenticateWithGoogle(idToken: idToken)
+                    try await authService.authenticateWithGoogle(
+                        idToken: idToken,
+                        accessToken: accessToken
+                    )
                     print("✅ Successfully authenticated!")
                     isAuthenticating = false
                 } catch {

@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
     SPOTIFY_REDIRECT_URI: str = "modal://spotify/callback"
 
+    # Gmail OAuth (reuses Google OAuth credentials)
+    # No separate credentials needed - uses GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+    GMAIL_REDIRECT_URI: str = "modal://gmail/callback"
+
     # Soniox (Real-time Speech-to-Text)
     SONIOX_API_KEY: Optional[str] = None
 
@@ -55,6 +59,17 @@ class Settings(BaseSettings):
         env_file=".env",
         case_sensitive=True
     )
+    
+    # Computed properties - Gmail reuses Google OAuth credentials
+    @property
+    def GMAIL_CLIENT_ID(self) -> Optional[str]:
+        """Gmail uses the same Google OAuth client ID."""
+        return self.GOOGLE_CLIENT_ID
+    
+    @property
+    def GMAIL_CLIENT_SECRET(self) -> Optional[str]:
+        """Gmail uses the same Google OAuth client secret."""
+        return self.GOOGLE_CLIENT_SECRET
 
 
 # Global settings instance

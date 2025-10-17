@@ -82,12 +82,12 @@ struct SettingsView: View {
                                 }
                                 
                                 Text("Version")
-                                    .foregroundStyle(.primary)
+                                    .foregroundStyle(Color(uiColor: .label))
                             }
                             
                             Spacer()
                             Text("1.0.0")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(uiColor: .secondaryLabel))
                         }
                         .padding(16)
                     }
@@ -150,13 +150,13 @@ struct SettingsView: View {
                 }
                 
                 Text(title)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color(uiColor: .label))
                 
                 Spacer()
                 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
             .padding(16)
             .contentShape(Rectangle())

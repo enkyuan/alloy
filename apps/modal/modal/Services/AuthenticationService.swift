@@ -110,9 +110,11 @@ class AuthenticationService {
     /// This uses Google Sign-In SDK to get an ID token, then exchanges it
     /// with Supabase for a session. Requires `skip_nonce_check=true` in Supabase config.
     ///
-    /// - Parameter idToken: Google ID token from Google Sign-In SDK
+    /// - Parameters:
+    ///   - idToken: Google ID token from Google Sign-In SDK
+    ///   - accessToken: Google OAuth access token for Gmail API access (optional)
     /// - Throws: Supabase authentication errors
-    func authenticateWithGoogle(idToken: String) async throws {
+    func authenticateWithGoogle(idToken: String, accessToken: String? = nil) async throws {
         print("📤 Authenticating with Supabase using Google ID token")
         
         // Sign in with Supabase using Google ID token from Google Sign-In SDK
@@ -129,6 +131,11 @@ class AuthenticationService {
         
         // Sync user with our backend database
         await syncUserWithBackend()
+        
+        // If Gmail/Calendar access token is provided, sync Google integrations
+        if let accessToken = accessToken {
+            await syncGoogleIntegrations(accessToken: accessToken)
+        }
     }
     
     /// Authenticate user with Apple Sign In
@@ -206,6 +213,77 @@ class AuthenticationService {
         } catch {
             print("⚠️ Error syncing with backend: \(error.localizedDescription)")
             // Don't throw - authentication succeeded, backend sync is optional
+        }
+    }
+    
+    /// Sync Google integrations (Gmail and Calendar) using Google OAuth access token
+    ///
+    /// Called after successful Google Sign-In when Google scopes were granted
+    ///
+    /// - Parameter accessToken: Google OAuth access token with Gmail and Calendar scopes
+    private func syncGoogleIntegrations(accessToken: String) async {
+        guard let session = session else {
+            print("⚠️ No session available for Google integrations sync")
+            return
+        }
+        
+        // Sync Gmail
+        print("📧 Syncing Gmail integration with backend...")
+        await syncIntegration(
+            endpoint: "/integrations/gmail/sync",
+            accessToken: accessToken,
+            session: session,
+            serviceName: "Gmail"
+        )
+        
+        // Sync Google Calendar
+        print("📅 Syncing Google Calendar integration with backend...")
+        await syncIntegration(
+            endpoint: "/integrations/google-calendar/sync",
+            accessToken: accessToken,
+            session: session,
+            serviceName: "Google Calendar"
+        )
+    }
+    
+    /// Helper method to sync a Google integration
+    ///
+    /// - Parameters:
+    ///   - endpoint: API endpoint path
+    ///   - accessToken: Google OAuth access token
+    ///   - session: Current Supabase session
+    ///   - serviceName: Human-readable service name for logging
+    private func syncIntegration(
+        endpoint: String,
+        accessToken: String,
+        session: Session,
+        serviceName: String
+    ) async {
+        
+        do {
+            let url = URL(string: "\(Environment.apiBaseURL)\(endpoint)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            // Send Google access token to backend
+            let body = ["access_token": accessToken]
+            request.httpBody = try JSONEncoder().encode(body)
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                print("⚠️ Failed to sync \(serviceName) integration (status: \((response as? HTTPURLResponse)?.statusCode ?? -1))")
+                return
+            }
+            
+            print("✅ \(serviceName) integration synced successfully")
+            
+        } catch {
+            print("⚠️ Error syncing \(serviceName) integration: \(error.localizedDescription)")
+            // Don't throw - authentication succeeded, integration sync is optional
         }
     }
     

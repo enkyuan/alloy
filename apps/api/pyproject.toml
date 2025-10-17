@@ -22,6 +22,10 @@ httpx = ">=0.27.0,<0.28.0"
 redis = {extras = ["asyncio"], version = "^6.4.0"}
 python-multipart = ">=0.0.9,<0.1.0"
 websockets = ">=12.0,<13.0"
+google-api-python-client = ">=2.108.0,<3.0.0"
+google-auth = ">=2.25.0,<3.0.0"
+google-auth-oauthlib = ">=1.2.0,<2.0.0"
+google-auth-httplib2 = ">=0.2.0,<1.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

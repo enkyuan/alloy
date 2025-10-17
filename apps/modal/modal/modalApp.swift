@@ -20,6 +20,9 @@ struct modalApp: App {
             let config = GIDConfiguration(clientID: clientID)
             GIDSignIn.sharedInstance.configuration = config
             print("✅ Google Sign-In configured with client ID: \(clientID)")
+            
+            // Note: Gmail scopes will be requested during sign-in
+            // This allows automatic Gmail integration without separate OAuth flow
 
             // Attempt to restore previous sign-in (helps initialize keychain access)
             GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in

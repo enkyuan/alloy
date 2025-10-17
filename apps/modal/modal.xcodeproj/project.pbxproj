@@ -15,7 +15,6 @@
 		83601AE82E9C42E300C9B0A6 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE72E9C42E300C9B0A6 /* Realtime */; };
 		83601AEA2E9C42E300C9B0A6 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE92E9C42E300C9B0A6 /* Storage */; };
 		83601AEC2E9C42F400C9B0A6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AEB2E9C42F400C9B0A6 /* Supabase */; };
-		83D7700D2EA14DF90039A407 /* Config.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 83D7700C2EA14DF90039A407 /* Config.xcconfig */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -249,6 +248,7 @@
 			packageReferences = (
 				83601AD62E9B93CF00C9B0A6 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				83D7700E2EA1B84C0039A407 /* XCRemoteSwiftPackageReference "swiftui-toasts" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 830FBFE62E9B7AE100C65E4A /* Products */;
@@ -267,7 +267,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				83D7700D2EA14DF90039A407 /* Config.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,6 +326,7 @@
 /* Begin XCBuildConfiguration section */
 		830FC00A2E9B7AE200C65E4A /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83D7700C2EA14DF90039A407 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -361,6 +361,7 @@
 		};
 		830FC00B2E9B7AE200C65E4A /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83D7700C2EA14DF90039A407 /* Config.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -452,6 +453,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -509,6 +511,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -654,6 +657,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.5.1;
+			};
+		};
+		83D7700E2EA1B84C0039A407 /* XCRemoteSwiftPackageReference "swiftui-toasts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sunghyun-k/swiftui-toasts";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
