@@ -161,6 +161,10 @@ if [ ! -f "$DOCKER_ENV" ]; then
     cat > "$DOCKER_ENV" << EOF
 # Database Configuration (uses container name for internal networking)
 DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=postgres
+POSTGRES_PASSWORD=postgres
 
 # Redis Configuration
 REDIS_URL=redis://redis:6379/0
@@ -176,6 +180,18 @@ SUPABASE_SERVICE_KEY=${SERVICE_ROLE_KEY}
 JWT_SECRET=${JWT_SECRET}
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Studio Configuration
+STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_PROJECT=Default Project
+DASHBOARD_USERNAME=supabase
+DASHBOARD_PASSWORD=supabase
+
+# Analytics
+LOGFLARE_API_KEY=dummy-key
+
+# Functions
+FUNCTIONS_VERIFY_JWT=true
 
 # API Configuration
 DEBUG=false
@@ -205,11 +221,21 @@ else
     update_env_var "$DOCKER_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
     update_env_var "$DOCKER_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
     update_env_var "$DOCKER_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
+    update_env_var "$DOCKER_ENV" "POSTGRES_HOST" "db"
+    update_env_var "$DOCKER_ENV" "POSTGRES_PORT" "5432"
+    update_env_var "$DOCKER_ENV" "POSTGRES_DB" "postgres"
+    update_env_var "$DOCKER_ENV" "POSTGRES_PASSWORD" "postgres"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$DOCKER_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
     update_env_var "$DOCKER_ENV" "SPOTIFY_CLIENT_ID" "$SPOTIFY_CLIENT_ID"
     update_env_var "$DOCKER_ENV" "SPOTIFY_CLIENT_SECRET" "$SPOTIFY_CLIENT_SECRET"
+    update_env_var "$DOCKER_ENV" "STUDIO_DEFAULT_ORGANIZATION" "Default Organization"
+    update_env_var "$DOCKER_ENV" "STUDIO_DEFAULT_PROJECT" "Default Project"
+    update_env_var "$DOCKER_ENV" "DASHBOARD_USERNAME" "supabase"
+    update_env_var "$DOCKER_ENV" "DASHBOARD_PASSWORD" "supabase"
+    update_env_var "$DOCKER_ENV" "LOGFLARE_API_KEY" "dummy-key"
+    update_env_var "$DOCKER_ENV" "FUNCTIONS_VERIFY_JWT" "true"
     echo -e "${GREEN}✓ Updated docker/.env${NC}"
 fi
 
@@ -224,6 +250,15 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
 POSTGRES_HOST=db
 POSTGRES_PORT=5432
 POSTGRES_DB=postgres
+
+# Studio Configuration
+STUDIO_DEFAULT_ORGANIZATION=Default Organization
+STUDIO_DEFAULT_PROJECT=Default Project
+DASHBOARD_USERNAME=supabase
+DASHBOARD_PASSWORD=supabase
+
+# Analytics
+LOGFLARE_API_KEY=dummy-key
 
 # OAuth Configurations
 ENABLE_GOOGLE_OAUTH=true
@@ -304,6 +339,10 @@ else
     echo -e "${YELLOW}Updating docker/supabase/.env...${NC}"
     update_env_var "$SUPABASE_ENV" "JWT_SECRET" "$JWT_SECRET"
     update_env_var "$SUPABASE_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
+    update_env_var "$SUPABASE_ENV" "POSTGRES_HOST" "db"
+    update_env_var "$SUPABASE_ENV" "POSTGRES_PORT" "5432"
+    update_env_var "$SUPABASE_ENV" "POSTGRES_DB" "postgres"
+    update_env_var "$SUPABASE_ENV" "POSTGRES_PASSWORD" "postgres"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$SUPABASE_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
@@ -422,41 +461,144 @@ echo -e "iOS Config:        ${GREEN}[SYNCED]${NC}"
 echo -e "\n${BLUE}=== Docker Container Management ===${NC}"
 cd "$PROJECT_ROOT/docker"
 
+# Check for existing volumes that might have corrupted data
+if docker volume ls | grep -q "modal"; then
+    VOLUME_EXISTS=true
+else
+    VOLUME_EXISTS=false
+fi
+
 if docker compose ps -q 2>/dev/null | grep -q .; then
     echo -e "${YELLOW}⚠️  Docker containers are currently running.${NC}"
     echo -e "${YELLOW}   They need to be restarted to apply the new JWT configuration.${NC}\n"
-    read -p "Restart Docker containers now? (Y/n): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        echo -e "\n${YELLOW}Stopping containers...${NC}"
-        docker compose down
+    
+    if [ "$VOLUME_EXISTS" = true ]; then
+        echo -e "${YELLOW}⚠️  Existing Docker volumes detected.${NC}"
+        echo -e "${YELLOW}   If you're experiencing database errors, you may need to clean volumes.${NC}\n"
+        echo -e "Choose an option:"
+        echo -e "  1) Restart containers (keeps data)"
+        echo -e "  2) Restart and clean volumes (⚠️  deletes all data - recommended for fresh setup)"
+        echo -e "  3) Skip restart"
+        read -p "Selection (1/2/3): " -n 1 -r
+        echo
         
-        echo -e "${YELLOW}Starting containers with new configuration...${NC}"
-        docker compose up -d
-        
-        echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
-        echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
-        
-        # Wait a bit for services to start
-        sleep 5
+        case $REPLY in
+            1)
+                echo -e "\n${YELLOW}Stopping containers...${NC}"
+                docker compose down
+                
+                echo -e "${YELLOW}Starting containers with new configuration...${NC}"
+                docker compose up -d
+                
+                echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
+                ;;
+            2)
+                echo -e "\n${RED}⚠️  This will delete all database data, uploads, and cached data.${NC}"
+                read -p "Are you absolutely sure? (type 'yes' to confirm): " confirm
+                if [ "$confirm" = "yes" ]; then
+                    echo -e "\n${YELLOW}Stopping containers and removing volumes...${NC}"
+                    docker compose down -v
+                    
+                    echo -e "${YELLOW}Starting fresh containers...${NC}"
+                    docker compose up -d
+                    
+                    echo -e "\n${GREEN}✓ Docker containers started with clean volumes${NC}"
+                else
+                    echo -e "${YELLOW}Cancelled. Doing regular restart instead...${NC}"
+                    docker compose down
+                    docker compose up -d
+                fi
+                ;;
+            3)
+                echo -e "${YELLOW}⚠️  Skipped Docker restart.${NC}"
+                echo -e "${YELLOW}   Run 'cd docker && docker compose down && docker compose up -d' to apply changes.${NC}"
+                cd "$PROJECT_ROOT"
+                exit 0
+                ;;
+            *)
+                echo -e "${YELLOW}Invalid selection. Doing regular restart...${NC}"
+                docker compose down
+                docker compose up -d
+                ;;
+        esac
     else
-        echo -e "${YELLOW}⚠️  Skipped Docker restart.${NC}"
-        echo -e "${YELLOW}   Run 'cd docker && docker compose down && docker compose up -d' to apply changes.${NC}"
+        read -p "Restart Docker containers now? (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo -e "\n${YELLOW}Stopping containers...${NC}"
+            docker compose down
+            
+            echo -e "${YELLOW}Starting containers with new configuration...${NC}"
+            docker compose up -d
+            
+            echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Skipped Docker restart.${NC}"
+            echo -e "${YELLOW}   Run 'cd docker && docker compose down && docker compose up -d' to apply changes.${NC}"
+        fi
     fi
+    
+    echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+    sleep 5
 else
     echo -e "${YELLOW}No Docker containers are currently running.${NC}"
-    read -p "Start Docker containers now? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "\n${YELLOW}Starting containers...${NC}"
-        docker compose up -d
+    
+    if [ "$VOLUME_EXISTS" = true ]; then
+        echo -e "${YELLOW}⚠️  Existing Docker volumes detected from previous installation.${NC}"
+        echo -e "${YELLOW}   If you're setting up on a fresh machine, you may want to clean them.${NC}\n"
+        echo -e "Choose an option:"
+        echo -e "  1) Start containers (reuse existing data)"
+        echo -e "  2) Clean volumes and start fresh (⚠️  deletes all data - recommended)"
+        echo -e "  3) Skip starting containers"
+        read -p "Selection (1/2/3): " -n 1 -r
+        echo
         
-        echo -e "\n${GREEN}✓ Docker containers started${NC}"
-        echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
-        
-        # Wait a bit for services to start
-        sleep 5
+        case $REPLY in
+            1)
+                echo -e "\n${YELLOW}Starting containers...${NC}"
+                docker compose up -d
+                echo -e "\n${GREEN}✓ Docker containers started${NC}"
+                ;;
+            2)
+                echo -e "\n${RED}⚠️  This will delete all database data, uploads, and cached data.${NC}"
+                read -p "Are you absolutely sure? (type 'yes' to confirm): " confirm
+                if [ "$confirm" = "yes" ]; then
+                    echo -e "\n${YELLOW}Removing old volumes...${NC}"
+                    docker compose down -v 2>/dev/null || true
+                    
+                    echo -e "${YELLOW}Starting fresh containers...${NC}"
+                    docker compose up -d
+                    
+                    echo -e "\n${GREEN}✓ Docker containers started with clean volumes${NC}"
+                else
+                    echo -e "${YELLOW}Cancelled. Starting with existing volumes...${NC}"
+                    docker compose up -d
+                fi
+                ;;
+            3)
+                echo -e "${YELLOW}⚠️  Skipped starting containers.${NC}"
+                echo -e "${YELLOW}   Run 'cd docker && docker compose up -d' when ready.${NC}"
+                cd "$PROJECT_ROOT"
+                exit 0
+                ;;
+            *)
+                echo -e "${YELLOW}Invalid selection. Starting with existing volumes...${NC}"
+                docker compose up -d
+                ;;
+        esac
+    else
+        read -p "Start Docker containers now? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "\n${YELLOW}Starting containers...${NC}"
+            docker compose up -d
+            
+            echo -e "\n${GREEN}✓ Docker containers started${NC}"
+        fi
     fi
+    
+    echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+    sleep 5
 fi
 
 cd "$PROJECT_ROOT"
