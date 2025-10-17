@@ -13,7 +13,7 @@ class SupabaseAuthService:
     """Service for interacting with Supabase Auth."""
 
     def __init__(self):
-        self.base_url = f"{settings.SUPABASE_URL}/auth/v1"
+        self.base_url = f"{settings.SUPABASE_KONG_URL}/auth/v1"
         self.headers = {
             "apikey": settings.SUPABASE_ANON_KEY,
             "Content-Type": "application/json",

@@ -61,7 +61,8 @@ start_all_services() {
 
     # Check if .env exists
     if [ ! -f ".env" ]; then
-        echo -e "${YELLOW}Warning: docker/.env not found. Run ./scripts/env.sh first.${NC}"
+        echo -e "${YELLOW}Warning: docker/.env not found.${NC}"
+        echo -e "${YELLOW}Run ./scripts/setup.sh to configure your environment.${NC}"
         read -p "Continue anyway? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then

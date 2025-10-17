@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     # Redis (for future caching/sessions)
     REDIS_URL: str = "redis://redis:6379/0"
 
-    # Supabase
-    SUPABASE_URL: str
+    # Supabase (SUPABASE_KONG_URL is the internal Docker network URL)
+    SUPABASE_KONG_URL: str
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
 

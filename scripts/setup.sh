@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Script to generate Supabase JWT keys and sync .env files across the project
-# This ensures consistency between root, supabase, and apps/api .env files
+# Modal Environment Setup Script
+# Generates Supabase JWT keys, syncs .env files, and configures iOS app
+# This consolidates environment configuration for both backend and iOS app
 
 set -e
 
@@ -20,6 +21,8 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 DOCKER_ENV="$PROJECT_ROOT/docker/.env"
 SUPABASE_ENV="$PROJECT_ROOT/docker/supabase/.env"
 API_ENV="$PROJECT_ROOT/apps/api/.env"
+IOS_CONFIG="$PROJECT_ROOT/apps/modal/Config.xcconfig"
+IOS_EXAMPLE="$PROJECT_ROOT/apps/modal/Config.xcconfig.example"
 
 echo -e "${BLUE}=== Modal Environment Configuration ===${NC}\n"
 
@@ -59,6 +62,22 @@ EOF
     # Return complete JWT
     echo "${header_base64}.${payload_base64}.${signature}"
 }
+
+# Function to update or append env variable
+update_env_var() {
+    local file=$1
+    local key=$2
+    local value=$3
+
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+        # Use | as delimiter since paths and URLs may contain /
+        sed -i.tmp "s|^${key}=.*|${key}=${value}|" "$file" && rm -f "$file.tmp"
+    else
+        echo "${key}=${value}" >> "$file"
+    fi
+}
+
+echo -e "${BLUE}=== Backend Configuration ===${NC}\n"
 
 # Check for existing JWT_SECRET
 EXISTING_JWT_SECRET=""
@@ -133,21 +152,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     read -p "Enter Spotify Client Secret: " SPOTIFY_CLIENT_SECRET
 fi
 
-# Function to update or append env variable
-update_env_var() {
-    local file=$1
-    local key=$2
-    local value=$3
-
-    if grep -q "^${key}=" "$file" 2>/dev/null; then
-        # Use | as delimiter since paths and URLs may contain /
-        sed -i.tmp "s|^${key}=.*|${key}=${value}|" "$file" && rm -f "$file.tmp"
-    else
-        echo "${key}=${value}" >> "$file"
-    fi
-}
-
-echo -e "\n${BLUE}=== Updating Environment Files ===${NC}"
+echo -e "\n${BLUE}=== Updating Backend Environment Files ===${NC}"
 
 # Create docker/.env if it doesn't exist
 if [ ! -f "$DOCKER_ENV" ]; then
@@ -161,7 +166,7 @@ DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
 REDIS_URL=redis://redis:6379/0
 
 # Supabase Configuration (uses container names for internal networking)
-SUPABASE_URL=http://kong:8000
+SUPABASE_KONG_URL=http://kong:8000
 ANON_KEY=${ANON_KEY}
 SUPABASE_ANON_KEY=${ANON_KEY}
 SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
@@ -199,6 +204,7 @@ else
     update_env_var "$DOCKER_ENV" "JWT_SECRET" "$JWT_SECRET"
     update_env_var "$DOCKER_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
     update_env_var "$DOCKER_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
+    update_env_var "$DOCKER_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$DOCKER_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
@@ -235,7 +241,7 @@ API_EXTERNAL_URL=http://localhost:8001
 SITE_URL=http://localhost:3000
 ADDITIONAL_REDIRECT_URLS=
 DISABLE_SIGNUP=false
-SUPABASE_PUBLIC_URL=http://localhost:8001
+SUPABASE_KONG_URL=http://kong:8000
 
 # Email Configuration
 ENABLE_EMAIL_SIGNUP=true
@@ -262,7 +268,6 @@ MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
 # Supabase Keys
 ANON_KEY=${ANON_KEY}
 SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
-SUPABASE_URL=http://localhost:8001
 
 # PostgREST Configuration
 PGRST_DB_SCHEMAS=public,storage,graphql_public
@@ -298,6 +303,7 @@ EOF
 else
     echo -e "${YELLOW}Updating docker/supabase/.env...${NC}"
     update_env_var "$SUPABASE_ENV" "JWT_SECRET" "$JWT_SECRET"
+    update_env_var "$SUPABASE_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$SUPABASE_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
@@ -320,7 +326,7 @@ JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 # Supabase Keys
-SUPABASE_URL=http://localhost:8001
+SUPABASE_PUBLIC_URL=http://localhost:8001
 SUPABASE_ANON_KEY=${ANON_KEY}
 SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
@@ -351,6 +357,7 @@ else
     update_env_var "$API_ENV" "JWT_SECRET" "$JWT_SECRET"
     update_env_var "$API_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
     update_env_var "$API_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
+    update_env_var "$API_ENV" "SUPABASE_PUBLIC_URL" "http://localhost:8001"
     update_env_var "$API_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
     update_env_var "$API_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
     update_env_var "$API_ENV" "SPOTIFY_CLIENT_ID" "$SPOTIFY_CLIENT_ID"
@@ -359,8 +366,8 @@ else
 fi
 
 # Update Kong configuration if template exists
-KONG_CONFIG="$PROJECT_ROOT/docker/supabase/kong.yml"
-KONG_TEMPLATE="$PROJECT_ROOT/docker/supabase/kong.yml.template"
+KONG_CONFIG="$PROJECT_ROOT/docker/supabase/volumes/api/kong.yml"
+KONG_TEMPLATE="$PROJECT_ROOT/docker/supabase/volumes/api/kong.yml.template"
 
 if [ -f "$KONG_TEMPLATE" ]; then
     echo -e "\n${YELLOW}Generating Kong configuration from template...${NC}"
@@ -375,15 +382,46 @@ if [ -f "$KONG_TEMPLATE" ]; then
     echo -e "${GREEN}✓ Generated Kong configuration${NC}"
 fi
 
+echo -e "\n${BLUE}=== iOS App Configuration ===${NC}\n"
+
+# Setup iOS Config.xcconfig
+if [ -f "$IOS_EXAMPLE" ]; then
+    if [ -f "$IOS_CONFIG" ]; then
+        echo -e "${YELLOW}⚠️  Config.xcconfig already exists!${NC}"
+        read -p "Do you want to update it with new Supabase keys? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            # Update Supabase keys in existing config
+            update_env_var "$IOS_CONFIG" "SUPABASE_URL" "http://localhost:8001"
+            update_env_var "$IOS_CONFIG" "SUPABASE_ANON_KEY" "$ANON_KEY"
+            echo -e "${GREEN}✓ Updated iOS Config.xcconfig with new keys${NC}"
+        fi
+    else
+        # Create new config from template
+        cp "$IOS_EXAMPLE" "$IOS_CONFIG"
+        update_env_var "$IOS_CONFIG" "SUPABASE_URL" "http://localhost:8001"
+        update_env_var "$IOS_CONFIG" "SUPABASE_ANON_KEY" "$ANON_KEY"
+        echo -e "${GREEN}✓ Created iOS Config.xcconfig from template${NC}"
+        echo -e "${YELLOW}📝 Please edit apps/modal/Config.xcconfig with your values:${NC}"
+        echo -e "   - API_BASE_URL (your ngrok or backend URL)"
+        echo -e "   - WEBSOCKET_URL (your WebSocket URL)"
+    fi
+else
+    echo -e "${YELLOW}⚠️  iOS Config.xcconfig.example not found, skipping iOS setup${NC}"
+fi
+
 echo -e "\n${GREEN}=== Configuration Summary ===${NC}"
 echo -e "JWT Secret:        ${GREEN}[SYNCED]${NC}"
 echo -e "ANON Key:          ${GREEN}[SYNCED]${NC}"
 echo -e "SERVICE_ROLE Key:  ${GREEN}[SYNCED]${NC}"
 echo -e "Google OAuth:      ${GREEN}[SYNCED]${NC}"
 echo -e "Spotify OAuth:     ${GREEN}[SYNCED]${NC}"
+echo -e "iOS Config:        ${GREEN}[SYNCED]${NC}"
 
 echo -e "\n${BLUE}=== Next Steps ===${NC}"
-echo -e "1. ${YELLOW}Restart Docker containers:${NC}"
+echo -e "1. ${YELLOW}Review and update iOS configuration if needed:${NC}"
+echo -e "   ${GREEN}apps/modal/Config.xcconfig${NC}"
+echo -e "\n2. ${YELLOW}Restart Docker containers:${NC}"
 echo -e "   ${GREEN}cd docker && docker compose down && docker compose up -d${NC}"
-echo -e "\n2. ${YELLOW}Or use the startup script:${NC}"
+echo -e "\n3. ${YELLOW}Or use the startup script:${NC}"
 echo -e "   ${GREEN}./scripts/startup.sh${NC}\n"
