@@ -77,7 +77,22 @@ update_env_var() {
     fi
 }
 
-echo -e "${BLUE}=== Backend Configuration ===${NC}\n"
+# Function to update or append iOS xcconfig variable (uses " = " format with spaces)
+update_xcconfig_var() {
+    local file=$1
+    local key=$2
+    local value=$3
+
+    # Check for key with or without spaces around =
+    if grep -q "^${key} *=" "$file" 2>/dev/null; then
+        # Use | as delimiter since paths and URLs may contain /
+        sed -i.tmp "s|^${key} *=.*|${key} = ${value}|" "$file" && rm -f "$file.tmp"
+    else
+        echo "${key} = ${value}" >> "$file"
+    fi
+}
+
+echo -e "${BLUE}=== JWT & Supabase Key Configuration ===${NC}\n"
 
 # Check for existing JWT_SECRET
 EXISTING_JWT_SECRET=""
@@ -112,18 +127,23 @@ echo -e "${YELLOW}Generating SERVICE_ROLE key...${NC}"
 SERVICE_ROLE_KEY=$(create_jwt "service_role" "$JWT_SECRET" "$EXPIRY_DATE")
 echo -e "${GREEN}✓ SERVICE_ROLE key generated${NC}"
 
+echo -e "\n${BLUE}=== OAuth Configuration ===${NC}\n"
+
 # Get OAuth credentials (preserve existing if available)
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 GOOGLE_REDIRECT_URI="http://localhost:8001/auth/v1/callback"
 
 if [ -f "$DOCKER_ENV" ]; then
-    GOOGLE_CLIENT_ID=$(grep "^GOOGLE_CLIENT_ID=" "$DOCKER_ENV" | cut -d= -f2 || echo "")
-    GOOGLE_CLIENT_SECRET=$(grep "^GOOGLE_CLIENT_SECRET=" "$DOCKER_ENV" | cut -d= -f2 || echo "")
-    GOOGLE_REDIRECT_URI=$(grep "^GOOGLE_REDIRECT_URI=" "$DOCKER_ENV" | cut -d= -f2 || echo "http://localhost:8001/auth/v1/callback")
+    GOOGLE_CLIENT_ID=$(grep "^GOOGLE_CLIENT_ID=" "$DOCKER_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+    GOOGLE_CLIENT_SECRET=$(grep "^GOOGLE_CLIENT_SECRET=" "$DOCKER_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+    GOOGLE_REDIRECT_URI=$(grep "^GOOGLE_REDIRECT_URI=" "$DOCKER_ENV" 2>/dev/null | cut -d= -f2 || echo "http://localhost:8001/auth/v1/callback")
 fi
 
-echo -e "\n${BLUE}=== OAuth Configuration ===${NC}"
+echo -e "${YELLOW}Current Google OAuth settings:${NC}"
+echo -e "  Client ID: ${GOOGLE_CLIENT_ID:-<not set>}"
+echo -e "  Redirect URI: ${GOOGLE_REDIRECT_URI}"
+
 read -p "Update Google OAuth credentials? (y/N): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -138,12 +158,16 @@ fi
 # Spotify OAuth credentials
 SPOTIFY_CLIENT_ID=""
 SPOTIFY_CLIENT_SECRET=""
-SPOTIFY_REDIRECT_URI="http://localhost:8000/api/v1/integrations/spotify/callback"
+SPOTIFY_REDIRECT_URI="modal://spotify/callback"
 
 if [ -f "$API_ENV" ]; then
-    SPOTIFY_CLIENT_ID=$(grep "^SPOTIFY_CLIENT_ID=" "$API_ENV" | cut -d= -f2 || echo "")
-    SPOTIFY_CLIENT_SECRET=$(grep "^SPOTIFY_CLIENT_SECRET=" "$API_ENV" | cut -d= -f2 || echo "")
+    SPOTIFY_CLIENT_ID=$(grep "^SPOTIFY_CLIENT_ID=" "$API_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+    SPOTIFY_CLIENT_SECRET=$(grep "^SPOTIFY_CLIENT_SECRET=" "$API_ENV" 2>/dev/null | cut -d= -f2 || echo "")
 fi
+
+echo -e "\n${YELLOW}Current Spotify OAuth settings:${NC}"
+echo -e "  Client ID: ${SPOTIFY_CLIENT_ID:-<not set>}"
+echo -e "  Redirect URI: ${SPOTIFY_REDIRECT_URI}"
 
 read -p "Update Spotify OAuth credentials? (y/N): " -n 1 -r
 echo
@@ -152,13 +176,48 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     read -p "Enter Spotify Client Secret: " SPOTIFY_CLIENT_SECRET
 fi
 
-echo -e "\n${BLUE}=== Updating Backend Environment Files ===${NC}"
+# Soniox API Key
+SONIOX_API_KEY=""
+if [ -f "$API_ENV" ]; then
+    SONIOX_API_KEY=$(grep "^SONIOX_API_KEY=" "$API_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+fi
 
-# Create docker/.env if it doesn't exist
-if [ ! -f "$DOCKER_ENV" ]; then
-    echo -e "${YELLOW}Creating docker/.env file...${NC}"
-    mkdir -p "$PROJECT_ROOT/docker"
-    cat > "$DOCKER_ENV" << EOF
+echo -e "\n${YELLOW}Current Soniox API Key: ${SONIOX_API_KEY:-<not set>}${NC}"
+read -p "Update Soniox API Key? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Enter Soniox API Key: " SONIOX_API_KEY
+fi
+
+# Gmail OAuth credentials (uses Web OAuth client, separate from Google Sign-In)
+GMAIL_CLIENT_ID=""
+GMAIL_CLIENT_SECRET=""
+GMAIL_REDIRECT_URI="http://localhost:8080/api/v1/integrations/gmail/callback"
+
+if [ -f "$API_ENV" ]; then
+    GMAIL_CLIENT_ID=$(grep "^GMAIL_CLIENT_ID=" "$API_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+    GMAIL_CLIENT_SECRET=$(grep "^GMAIL_CLIENT_SECRET=" "$API_ENV" 2>/dev/null | cut -d= -f2 || echo "")
+fi
+
+echo -e "\n${YELLOW}Current Gmail OAuth settings (Web client for backend integration):${NC}"
+echo -e "  Client ID: ${GMAIL_CLIENT_ID:-<not set>}"
+echo -e "  Redirect URI: ${GMAIL_REDIRECT_URI}"
+
+read -p "Update Gmail OAuth credentials? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Enter Gmail Web Client ID: " GMAIL_CLIENT_ID
+    read -p "Enter Gmail Web Client Secret: " GMAIL_CLIENT_SECRET
+fi
+
+echo -e "\n${BLUE}=== Writing Environment Files ===${NC}\n"
+
+# ============================================================================
+# 1. Docker .env
+# ============================================================================
+echo -e "${YELLOW}Writing docker/.env...${NC}"
+mkdir -p "$PROJECT_ROOT/docker"
+cat > "$DOCKER_ENV" << EOF
 # Database Configuration (uses container name for internal networking)
 DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
 POSTGRES_HOST=db
@@ -170,16 +229,78 @@ POSTGRES_PASSWORD=postgres
 REDIS_URL=redis://redis:6379/0
 
 # Supabase Configuration (uses container names for internal networking)
+SUPABASE_URL=http://localhost:8001
 SUPABASE_KONG_URL=http://kong:8000
-ANON_KEY=${ANON_KEY}
 SUPABASE_ANON_KEY=${ANON_KEY}
-SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
-SUPABASE_SERVICE_KEY=${SERVICE_ROLE_KEY}
+SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
 # JWT Configuration
 JWT_SECRET=${JWT_SECRET}
 JWT_ALGORITHM=HS256
+JWT_EXPIRY=3600
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# API Configuration
+DEBUG=false
+API_V1_PREFIX=/api/v1
+PROJECT_NAME=Modal API
+API_EXTERNAL_URL=http://localhost:8001
+SITE_URL=http://localhost:3000
+
+# OAuth Configuration - Google
+ENABLE_GOOGLE_OAUTH=true
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+GOOGLE_SKIP_NONCE_CHECK=true
+
+# OAuth Configuration - Apple
+APPLE_CLIENT_ID=
+APPLE_TEAM_ID=
+APPLE_KEY_ID=
+APPLE_PRIVATE_KEY=
+
+# OAuth Configuration - Spotify
+ENABLE_SPOTIFY_OAUTH=true
+SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+
+# OAuth Configuration - Gmail (Web client for backend integration)
+GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID}
+GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET}
+GMAIL_REDIRECT_URI=${GMAIL_REDIRECT_URI}
+
+# Additional Redirect URLs
+ADDITIONAL_REDIRECT_URLS=modal://auth/callback
+DISABLE_SIGNUP=false
+
+# Email Configuration
+ENABLE_EMAIL_SIGNUP=true
+ENABLE_EMAIL_AUTOCONFIRM=true
+
+# Phone Configuration
+ENABLE_PHONE_SIGNUP=false
+ENABLE_PHONE_AUTOCONFIRM=false
+
+# SMTP Configuration
+SMTP_ADMIN_EMAIL=admin@example.com
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+
+# Mailer URL paths
+MAILER_URLPATHS_INVITE=/auth/v1/verify
+MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify
+MAILER_URLPATHS_RECOVERY=/auth/v1/verify
+MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
+
+# PostgREST Configuration
+PGRST_DB_SCHEMAS=public,storage,graphql_public
+
+# Image Proxy
+IMGPROXY_ENABLE_WEBP_DETECTION=true
 
 # Studio Configuration
 STUDIO_DEFAULT_ORGANIZATION=Default Organization
@@ -193,57 +314,17 @@ LOGFLARE_API_KEY=dummy-key
 # Functions
 FUNCTIONS_VERIFY_JWT=true
 
-# API Configuration
-DEBUG=false
-API_V1_PREFIX=/api/v1
-PROJECT_NAME=Modal API
-
-# OAuth Configuration
-GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
-
-APPLE_CLIENT_ID=
-APPLE_TEAM_ID=
-APPLE_KEY_ID=
-APPLE_PRIVATE_KEY=
-
-# Spotify OAuth
-SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
+# Soniox Real-time Speech-to-Text
+SONIOX_API_KEY=${SONIOX_API_KEY}
 EOF
-    echo -e "${GREEN}✓ Created docker/.env${NC}"
-else
-    # Update existing docker/.env
-    echo -e "${YELLOW}Updating docker/.env...${NC}"
-    update_env_var "$DOCKER_ENV" "JWT_SECRET" "$JWT_SECRET"
-    update_env_var "$DOCKER_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
-    update_env_var "$DOCKER_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
-    update_env_var "$DOCKER_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
-    update_env_var "$DOCKER_ENV" "POSTGRES_HOST" "db"
-    update_env_var "$DOCKER_ENV" "POSTGRES_PORT" "5432"
-    update_env_var "$DOCKER_ENV" "POSTGRES_DB" "postgres"
-    update_env_var "$DOCKER_ENV" "POSTGRES_PASSWORD" "postgres"
-    update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
-    update_env_var "$DOCKER_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
-    update_env_var "$DOCKER_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
-    update_env_var "$DOCKER_ENV" "SPOTIFY_CLIENT_ID" "$SPOTIFY_CLIENT_ID"
-    update_env_var "$DOCKER_ENV" "SPOTIFY_CLIENT_SECRET" "$SPOTIFY_CLIENT_SECRET"
-    update_env_var "$DOCKER_ENV" "STUDIO_DEFAULT_ORGANIZATION" "Default Organization"
-    update_env_var "$DOCKER_ENV" "STUDIO_DEFAULT_PROJECT" "Default Project"
-    update_env_var "$DOCKER_ENV" "DASHBOARD_USERNAME" "supabase"
-    update_env_var "$DOCKER_ENV" "DASHBOARD_PASSWORD" "supabase"
-    update_env_var "$DOCKER_ENV" "LOGFLARE_API_KEY" "dummy-key"
-    update_env_var "$DOCKER_ENV" "FUNCTIONS_VERIFY_JWT" "true"
-    echo -e "${GREEN}✓ Updated docker/.env${NC}"
-fi
+echo -e "${GREEN}✓ docker/.env written${NC}"
 
-# Update docker/supabase/.env
-if [ ! -f "$SUPABASE_ENV" ]; then
-    echo -e "${YELLOW}Creating docker/supabase/.env...${NC}"
-    mkdir -p "$PROJECT_ROOT/docker/supabase"
-    cat > "$SUPABASE_ENV" << EOF
+# ============================================================================
+# 2. Supabase .env
+# ============================================================================
+echo -e "${YELLOW}Writing docker/supabase/.env...${NC}"
+mkdir -p "$PROJECT_ROOT/docker/supabase"
+cat > "$SUPABASE_ENV" << EOF
 # Database Configuration
 POSTGRES_PASSWORD=postgres
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
@@ -251,32 +332,28 @@ POSTGRES_HOST=db
 POSTGRES_PORT=5432
 POSTGRES_DB=postgres
 
-# Studio Configuration
-STUDIO_DEFAULT_ORGANIZATION=Default Organization
-STUDIO_DEFAULT_PROJECT=Default Project
-DASHBOARD_USERNAME=supabase
-DASHBOARD_PASSWORD=supabase
-
-# Analytics
-LOGFLARE_API_KEY=dummy-key
-
-# OAuth Configurations
-ENABLE_GOOGLE_OAUTH=true
-GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
-GOOGLE_SKIP_NONCE_CHECK=true
-
 # JWT Configuration
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRY=3600
 
 # Supabase Configuration
+SUPABASE_URL=http://localhost:8001
+SUPABASE_KONG_URL=http://kong:8000
 API_EXTERNAL_URL=http://localhost:8001
 SITE_URL=http://localhost:3000
-ADDITIONAL_REDIRECT_URLS=
+ADDITIONAL_REDIRECT_URLS=modal://auth/callback
 DISABLE_SIGNUP=false
-SUPABASE_KONG_URL=http://kong:8000
+
+# Supabase Keys
+SUPABASE_ANON_KEY=${ANON_KEY}
+SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
+
+# OAuth Configuration - Google
+ENABLE_GOOGLE_OAUTH=true
+GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+GOOGLE_SKIP_NONCE_CHECK=true
 
 # Email Configuration
 ENABLE_EMAIL_SIGNUP=true
@@ -299,10 +376,6 @@ MAILER_URLPATHS_INVITE=/auth/v1/verify
 MAILER_URLPATHS_CONFIRMATION=/auth/v1/verify
 MAILER_URLPATHS_RECOVERY=/auth/v1/verify
 MAILER_URLPATHS_EMAIL_CHANGE=/auth/v1/verify
-
-# Supabase Keys
-ANON_KEY=${ANON_KEY}
-SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
 
 # PostgREST Configuration
 PGRST_DB_SCHEMAS=public,storage,graphql_public
@@ -334,26 +407,15 @@ FUNCTIONS_VERIFY_JWT=true
 # Docker
 DOCKER_SOCKET_LOCATION=/var/run/docker.sock
 EOF
-    echo -e "${GREEN}✓ Created docker/supabase/.env${NC}"
-else
-    echo -e "${YELLOW}Updating docker/supabase/.env...${NC}"
-    update_env_var "$SUPABASE_ENV" "JWT_SECRET" "$JWT_SECRET"
-    update_env_var "$SUPABASE_ENV" "SUPABASE_KONG_URL" "http://kong:8000"
-    update_env_var "$SUPABASE_ENV" "POSTGRES_HOST" "db"
-    update_env_var "$SUPABASE_ENV" "POSTGRES_PORT" "5432"
-    update_env_var "$SUPABASE_ENV" "POSTGRES_DB" "postgres"
-    update_env_var "$SUPABASE_ENV" "POSTGRES_PASSWORD" "postgres"
-    update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
-    update_env_var "$SUPABASE_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
-    update_env_var "$SUPABASE_ENV" "GOOGLE_REDIRECT_URI" "$GOOGLE_REDIRECT_URI"
-    echo -e "${GREEN}✓ Updated docker/supabase/.env${NC}"
-fi
+echo -e "${GREEN}✓ docker/supabase/.env written${NC}"
 
-# Update apps/api/.env
-if [ ! -f "$API_ENV" ]; then
-    echo -e "${YELLOW}Creating apps/api/.env...${NC}"
-    mkdir -p "$PROJECT_ROOT/apps/api"
-    cat > "$API_ENV" << EOF
+# ============================================================================
+# 3. API .env
+# ============================================================================
+echo -e "${YELLOW}Writing apps/api/.env...${NC}"
+mkdir -p "$PROJECT_ROOT/apps/api"
+cat > "$API_ENV" << EOF
+# Database Configuration (0.0.0.0 for API to connect from host)
 DATABASE_URL=postgresql://postgres:postgres@0.0.0.0:5432/postgres
 
 # Redis Configuration
@@ -364,7 +426,8 @@ JWT_SECRET=${JWT_SECRET}
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Supabase Keys
+# Supabase Configuration
+SUPABASE_URL=http://localhost:8001
 SUPABASE_PUBLIC_URL=http://localhost:8001
 SUPABASE_ANON_KEY=${ANON_KEY}
 SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}
@@ -385,23 +448,65 @@ SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
 SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI}
 
+# Gmail OAuth Configuration (Web client for backend integration)
+GMAIL_CLIENT_ID=${GMAIL_CLIENT_ID}
+GMAIL_CLIENT_SECRET=${GMAIL_CLIENT_SECRET}
+GMAIL_REDIRECT_URI=${GMAIL_REDIRECT_URI}
+
+# Soniox Speech-to-Text
+SONIOX_API_KEY=${SONIOX_API_KEY}
+
 # Application Settings
 DEBUG=True
 API_V1_PREFIX=/api/v1
 PROJECT_NAME=Modal API
 EOF
-    echo -e "${GREEN}✓ Created apps/api/.env${NC}"
+echo -e "${GREEN}✓ apps/api/.env written${NC}"
+
+# ============================================================================
+# 4. iOS Config.xcconfig
+# ============================================================================
+echo -e "\n${BLUE}=== iOS App Configuration ===${NC}\n"
+
+if [ -f "$IOS_EXAMPLE" ]; then
+    if [ -f "$IOS_CONFIG" ]; then
+        echo -e "${YELLOW}⚠️  Config.xcconfig already exists!${NC}"
+        read -p "Update it with new Supabase keys? (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            # Update Supabase keys in existing config
+            update_xcconfig_var "$IOS_CONFIG" "SUPABASE_URL" "http:/\$()/localhost:8001"
+            update_xcconfig_var "$IOS_CONFIG" "SUPABASE_ANON_KEY" "$ANON_KEY"
+            echo -e "${GREEN}✓ Updated iOS Config.xcconfig with new keys${NC}"
+        fi
+    else
+        # Create new config from template
+        echo -e "${YELLOW}Creating iOS Config.xcconfig from template...${NC}"
+        cat > "$IOS_CONFIG" << EOF
+//
+//  Config.xcconfig
+//  modal
+//
+//  Environment configuration - DO NOT COMMIT THIS FILE
+//  Copy Config.xcconfig.example and fill in your values
+//
+
+// API Configuration
+API_BASE_URL = http://\$()/localhost:8080/api/v1
+WEBSOCKET_URL = ws://\$()/localhost:8080/api/v1
+
+// Supabase Configuration
+SUPABASE_URL = http:/\$()/localhost:8001
+SUPABASE_ANON_KEY = ${ANON_KEY}
+
+// Feature Flags
+DEBUG_LOGGING = YES
+EOF
+        echo -e "${GREEN}✓ Created iOS Config.xcconfig from template${NC}"
+        echo -e "${YELLOW}📝 Update API_BASE_URL and WEBSOCKET_URL in apps/modal/Config.xcconfig if needed${NC}"
+    fi
 else
-    echo -e "${YELLOW}Updating apps/api/.env...${NC}"
-    update_env_var "$API_ENV" "JWT_SECRET" "$JWT_SECRET"
-    update_env_var "$API_ENV" "SUPABASE_ANON_KEY" "$ANON_KEY"
-    update_env_var "$API_ENV" "SUPABASE_SERVICE_ROLE_KEY" "$SERVICE_ROLE_KEY"
-    update_env_var "$API_ENV" "SUPABASE_PUBLIC_URL" "http://localhost:8001"
-    update_env_var "$API_ENV" "GOOGLE_CLIENT_ID" "$GOOGLE_CLIENT_ID"
-    update_env_var "$API_ENV" "GOOGLE_CLIENT_SECRET" "$GOOGLE_CLIENT_SECRET"
-    update_env_var "$API_ENV" "SPOTIFY_CLIENT_ID" "$SPOTIFY_CLIENT_ID"
-    update_env_var "$API_ENV" "SPOTIFY_CLIENT_SECRET" "$SPOTIFY_CLIENT_SECRET"
-    echo -e "${GREEN}✓ Updated apps/api/.env${NC}"
+    echo -e "${YELLOW}⚠️  iOS Config.xcconfig.example not found, skipping iOS setup${NC}"
 fi
 
 # Update Kong configuration if template exists
@@ -421,33 +526,51 @@ if [ -f "$KONG_TEMPLATE" ]; then
     echo -e "${GREEN}✓ Generated Kong configuration${NC}"
 fi
 
-echo -e "\n${BLUE}=== iOS App Configuration ===${NC}\n"
-
-# Setup iOS Config.xcconfig
-if [ -f "$IOS_EXAMPLE" ]; then
-    if [ -f "$IOS_CONFIG" ]; then
-        echo -e "${YELLOW}⚠️  Config.xcconfig already exists!${NC}"
-        read -p "Do you want to update it with new Supabase keys? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            # Update Supabase keys in existing config
-            update_env_var "$IOS_CONFIG" "SUPABASE_URL" "http://localhost:8001"
-            update_env_var "$IOS_CONFIG" "SUPABASE_ANON_KEY" "$ANON_KEY"
-            echo -e "${GREEN}✓ Updated iOS Config.xcconfig with new keys${NC}"
+# ============================================================================
+# Run Database Migrations
+# ============================================================================
+run_migrations() {
+    echo -e "\n${BLUE}=== Database Migrations ===${NC}\n"
+    
+    # Wait for database to be ready
+    echo -e "${YELLOW}Waiting for database to be ready...${NC}"
+    local max_attempts=30
+    local attempt=0
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if docker exec supabase-db pg_isready -U postgres -h localhost >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ Database is ready${NC}"
+            break
+        fi
+        attempt=$((attempt + 1))
+        if [ $attempt -eq $max_attempts ]; then
+            echo -e "${RED}✗ Database did not become ready in time${NC}"
+            echo -e "${YELLOW}⚠️  You may need to run migrations manually:${NC}"
+            echo -e "   ${GREEN}cd apps/api && poetry run alembic upgrade head${NC}"
+            return 1
+        fi
+        sleep 2
+    done
+    
+    # Check if API container exists and is running
+    if docker ps --format "{{.Names}}" | grep -q "modal-api"; then
+        echo -e "${YELLOW}Running Alembic migrations inside API container...${NC}"
+        
+        # Run migrations inside the container
+        if docker exec modal-api poetry run alembic upgrade head; then
+            echo -e "${GREEN}✓ Database migrations completed successfully${NC}"
+        else
+            echo -e "${RED}✗ Database migrations failed${NC}"
+            echo -e "${YELLOW}⚠️  You may need to run migrations manually:${NC}"
+            echo -e "   ${GREEN}docker exec modal-api poetry run alembic upgrade head${NC}"
+            return 1
         fi
     else
-        # Create new config from template
-        cp "$IOS_EXAMPLE" "$IOS_CONFIG"
-        update_env_var "$IOS_CONFIG" "SUPABASE_URL" "http://localhost:8001"
-        update_env_var "$IOS_CONFIG" "SUPABASE_ANON_KEY" "$ANON_KEY"
-        echo -e "${GREEN}✓ Created iOS Config.xcconfig from template${NC}"
-        echo -e "${YELLOW}📝 Please edit apps/modal/Config.xcconfig with your values:${NC}"
-        echo -e "   - API_BASE_URL (your ngrok or backend URL)"
-        echo -e "   - WEBSOCKET_URL (your WebSocket URL)"
+        echo -e "${YELLOW}⚠️  API container not running, skipping migrations${NC}"
+        echo -e "${YELLOW}   Run migrations after starting containers:${NC}"
+        echo -e "   ${GREEN}docker exec modal-api poetry run alembic upgrade head${NC}"
     fi
-else
-    echo -e "${YELLOW}⚠️  iOS Config.xcconfig.example not found, skipping iOS setup${NC}"
-fi
+}
 
 echo -e "\n${GREEN}=== Configuration Summary ===${NC}"
 echo -e "JWT Secret:        ${GREEN}[SYNCED]${NC}"
@@ -455,6 +578,7 @@ echo -e "ANON Key:          ${GREEN}[SYNCED]${NC}"
 echo -e "SERVICE_ROLE Key:  ${GREEN}[SYNCED]${NC}"
 echo -e "Google OAuth:      ${GREEN}[SYNCED]${NC}"
 echo -e "Spotify OAuth:     ${GREEN}[SYNCED]${NC}"
+echo -e "Soniox API:        ${GREEN}[SYNCED]${NC}"
 echo -e "iOS Config:        ${GREEN}[SYNCED]${NC}"
 
 # Check if Docker containers are running and offer to restart them
@@ -471,7 +595,7 @@ fi
 if docker compose ps -q 2>/dev/null | grep -q .; then
     echo -e "${YELLOW}⚠️  Docker containers are currently running.${NC}"
     echo -e "${YELLOW}   They need to be restarted to apply the new JWT configuration.${NC}\n"
-    
+
     if [ "$VOLUME_EXISTS" = true ]; then
         echo -e "${YELLOW}⚠️  Existing Docker volumes detected.${NC}"
         echo -e "${YELLOW}   If you're experiencing database errors, you may need to clean volumes.${NC}\n"
@@ -481,15 +605,15 @@ if docker compose ps -q 2>/dev/null | grep -q .; then
         echo -e "  3) Skip restart"
         read -p "Selection (1/2/3): " -n 1 -r
         echo
-        
+
         case $REPLY in
             1)
                 echo -e "\n${YELLOW}Stopping containers...${NC}"
                 docker compose down
-                
+
                 echo -e "${YELLOW}Starting containers with new configuration...${NC}"
                 docker compose up -d
-                
+
                 echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
                 ;;
             2)
@@ -498,10 +622,10 @@ if docker compose ps -q 2>/dev/null | grep -q .; then
                 if [ "$confirm" = "yes" ]; then
                     echo -e "\n${YELLOW}Stopping containers and removing volumes...${NC}"
                     docker compose down -v
-                    
+
                     echo -e "${YELLOW}Starting fresh containers...${NC}"
                     docker compose up -d
-                    
+
                     echo -e "\n${GREEN}✓ Docker containers started with clean volumes${NC}"
                 else
                     echo -e "${YELLOW}Cancelled. Doing regular restart instead...${NC}"
@@ -527,22 +651,25 @@ if docker compose ps -q 2>/dev/null | grep -q .; then
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo -e "\n${YELLOW}Stopping containers...${NC}"
             docker compose down
-            
+
             echo -e "${YELLOW}Starting containers with new configuration...${NC}"
             docker compose up -d
-            
+
             echo -e "\n${GREEN}✓ Docker containers restarted with new configuration${NC}"
         else
             echo -e "${YELLOW}⚠️  Skipped Docker restart.${NC}"
             echo -e "${YELLOW}   Run 'cd docker && docker compose down && docker compose up -d' to apply changes.${NC}"
         fi
     fi
-    
+
     echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+
+    # Run database migrations
+    run_migrations
     sleep 5
 else
     echo -e "${YELLOW}No Docker containers are currently running.${NC}"
-    
+
     if [ "$VOLUME_EXISTS" = true ]; then
         echo -e "${YELLOW}⚠️  Existing Docker volumes detected from previous installation.${NC}"
         echo -e "${YELLOW}   If you're setting up on a fresh machine, you may want to clean them.${NC}\n"
@@ -552,7 +679,7 @@ else
         echo -e "  3) Skip starting containers"
         read -p "Selection (1/2/3): " -n 1 -r
         echo
-        
+
         case $REPLY in
             1)
                 echo -e "\n${YELLOW}Starting containers...${NC}"
@@ -565,10 +692,10 @@ else
                 if [ "$confirm" = "yes" ]; then
                     echo -e "\n${YELLOW}Removing old volumes...${NC}"
                     docker compose down -v 2>/dev/null || true
-                    
+
                     echo -e "${YELLOW}Starting fresh containers...${NC}"
                     docker compose up -d
-                    
+
                     echo -e "\n${GREEN}✓ Docker containers started with clean volumes${NC}"
                 else
                     echo -e "${YELLOW}Cancelled. Starting with existing volumes...${NC}"
@@ -592,19 +719,22 @@ else
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo -e "\n${YELLOW}Starting containers...${NC}"
             docker compose up -d
-            
+
             echo -e "\n${GREEN}✓ Docker containers started${NC}"
         fi
     fi
-    
+
     echo -e "${YELLOW}Waiting for services to become healthy (this may take 30-60 seconds)...${NC}"
+
+    # Run database migrations
+    run_migrations
     sleep 5
 fi
 
 cd "$PROJECT_ROOT"
 
 echo -e "\n${BLUE}=== Next Steps ===${NC}"
-echo -e "1. ${YELLOW}Review and update iOS configuration if needed:${NC}"
+echo -e "1. ${YELLOW}Review iOS configuration if needed:${NC}"
 echo -e "   ${GREEN}apps/modal/Config.xcconfig${NC}"
 echo -e "\n2. ${YELLOW}Use the startup script to build and run the iOS app:${NC}"
 echo -e "   ${GREEN}./scripts/startup.sh${NC}\n"
