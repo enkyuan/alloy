@@ -238,6 +238,8 @@ struct ContentView: View {
 - Descriptive variable names
 - Group related code
 - Extract complex views into components
+- Keep components small, reusable, and modular
+- Follow consistent UI designs based on views in the app
 
 ## 🚫 Common Mistakes to Avoid
 

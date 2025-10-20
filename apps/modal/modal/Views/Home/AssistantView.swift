@@ -51,109 +51,116 @@ struct AssistantView: View {
     // MARK: - View Components
     
     private var chatView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Show empty state icon when idle
-                    if messages.isEmpty && !isActiveSession {
-                        VStack {
-                            Spacer()
+        ZStack(alignment: .top) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Top anchor for transcription bubble positioning
+                        Color.clear
+                            .frame(height: 1)
+                            .id("top-anchor")
+                        
+                        // Show empty state icon when idle
+                        if messages.isEmpty && !isActiveSession {
+                            VStack {
+                                Spacer()
 
-                            Image("ModalIcon")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 80, height: 80)
-                                .foregroundStyle(.secondary.opacity(0.3))
+                                Image("ModalIcon")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 80, height: 80)
+                                    .foregroundStyle(.secondary.opacity(0.3))
 
-                            Spacer()
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 400)
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 400)
-                    }
 
-                    // Message history
-                    ForEach(messages) { message in
-                        MessageRow(message: message)
-                            .id(message.id)
+                        // Message history
+                        ForEach(messages) { message in
+                            MessageRow(message: message)
+                                .id(message.id)
+                        }
+                        
+                        // Invisible anchor at the very bottom for reliable scrolling
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom-anchor")
                     }
-
-                    // Show transcription bubble when active (connecting, recording, or processing)
-                    if isActiveSession {
-                        TranscriptionBubble(
-                            isConnecting: viewModel.isConnecting,
-                            isRecording: viewModel.isRecording,
-                            isProcessing: viewModel.isProcessingTranscription,
-                            partialText: viewModel.partialTranscription
-                        )
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                        .id("partial-transcription")
-                    }
+                    .padding(.top, shouldShowTranscriptionAtTop ? 100 : 20) // Extra space at top for floating bubble
+                    .padding(.bottom, 120) // Space for stepper navigation
+                }
+                .onChange(of: messages.count) { oldCount, newCount in
+                    // Scroll to new message when added (only when not actively recording)
+                    guard newCount > oldCount, !isActiveSession else { return }
                     
-                    // Invisible anchor at the very bottom for reliable scrolling
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom-anchor")
-                }
-                .padding(.top, 20)
-                .padding(.bottom, 120) // Space for stepper navigation
-            }
-            .onChange(of: messages.count) { oldCount, newCount in
-                // Scroll to new message when added
-                guard newCount > oldCount else { return }
-                
-                // Small delay to ensure view is rendered
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        if let lastMessage = messages.last {
-                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                        } else {
-                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                        }
-                    }
-                }
-            }
-            .onChange(of: isActiveSession) { wasActive, isActive in
-                // Scroll when bubble appears or disappears
-                if isActive {
-                    // Bubble just appeared - scroll to it
+                    // Small delay to ensure view is rendered
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo("partial-transcription", anchor: .bottom)
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            if let lastMessage = messages.last {
+                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            } else {
+                                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                            }
                         }
                     }
-                } else if wasActive && !isActive {
-                    // Bubble just disappeared - scroll to bottom (likely new message was added)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                }
+                .onChange(of: isActiveSession) { wasActive, isActive in
+                    // Scroll when session starts or ends
+                    if isActive {
+                        // Session just started - scroll to appropriate position
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation(.easeOut(duration: 0.25)) {
+                                if shouldShowTranscriptionAtTop {
+                                    // Scroll to top to show floating bubble
+                                    proxy.scrollTo("top-anchor", anchor: .top)
+                                } else {
+                                    // Few messages - scroll to bottom
+                                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                                }
+                            }
+                        }
+                    } else if wasActive && !isActive {
+                        // Session ended - scroll to bottom to show new message
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                            }
                         }
                     }
                 }
             }
-            .onChange(of: viewModel.partialTranscription) { oldValue, newValue in
-                // Only scroll when transcription first appears or grows significantly
-                // This prevents janky scrolling on every character
-                guard isActiveSession else { return }
-                
-                let oldWordCount = oldValue.split(separator: " ").count
-                let newWordCount = newValue.split(separator: " ").count
-                
-                // Scroll when: first word appears, or every 3 new words
-                if (oldWordCount == 0 && newWordCount > 0) || 
-                   (newWordCount > 0 && newWordCount % 3 == 0 && newWordCount > oldWordCount) {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo("partial-transcription", anchor: .bottom)
-                    }
+            
+            // Floating transcription bubble at top when there are many messages
+            if isActiveSession && shouldShowTranscriptionAtTop {
+                VStack {
+                    TranscriptionBubble(
+                        isConnecting: viewModel.isConnecting,
+                        isRecording: viewModel.isRecording,
+                        isProcessing: viewModel.isProcessingTranscription,
+                        partialText: viewModel.partialTranscription
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 20)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    
+                    Spacer()
                 }
+            }
             }
         }
-    }
-    
-    // MARK: - Computed Properties
+    }    // MARK: - Computed Properties
     
     /// True when button is pressed - shows the transcription bubble immediately
     private var isActiveSession: Bool {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
+    }
+    
+    /// Determines if transcription bubble should float at top (when there are many messages)
+    private var shouldShowTranscriptionAtTop: Bool {
+        // Show at top when there are 5 or more messages (conversation is getting long)
+        messages.count >= 5
     }
     
 
