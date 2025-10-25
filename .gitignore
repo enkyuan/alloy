@@ -30,6 +30,7 @@ Thumbs.db
 *~
 .vim/
 .gemini/
+.kiro/
 
 # Python
 __pycache__/
