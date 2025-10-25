@@ -83,7 +83,15 @@ start_all_services() {
     # Stop any running containers and remove them completely
     echo -e "${YELLOW}Stopping and removing existing containers...${NC}"
     docker compose down 2>/dev/null || true
-    
+
+    # Pull all required images first
+    echo -e "${YELLOW}Pulling Docker images...${NC}"
+    if docker compose pull --ignore-pull-failures 2>&1 | grep -v "Pulling" | grep -v "Waiting" | grep -v "Downloading" | grep -v "Extracting" || true; then
+        echo -e "${GREEN}✓ Images pulled successfully${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Some images may not have pulled, continuing...${NC}"
+    fi
+
     # Build the API container
     echo -e "${YELLOW}Building API container...${NC}"
     if docker compose build api 2>&1; then
@@ -92,7 +100,7 @@ start_all_services() {
         echo -e "${RED}✗ API build failed${NC}"
         echo -e "${YELLOW}Continuing with existing image if available...${NC}"
     fi
-    
+
     # Start all services
     echo -e "${YELLOW}Starting all services...${NC}"
     docker compose up -d
