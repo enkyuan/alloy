@@ -371,8 +371,10 @@ if docker compose ps -q 2>/dev/null | grep -q .; then
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}Pulling latest images...${NC}"
-        docker compose pull --ignore-pull-failures 2>&1 >/dev/null || true
+        docker compose pull || echo -e "${YELLOW}⚠️  Some images may have failed to pull${NC}"
+        echo -e "${YELLOW}Stopping containers...${NC}"
         docker compose down
+        echo -e "${YELLOW}Starting containers...${NC}"
         docker compose up -d
         echo -e "${GREEN}✓ Containers restarted${NC}"
     fi
@@ -380,8 +382,9 @@ else
     read -p "Start Docker containers? (Y/n): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-        echo -e "${YELLOW}Pulling images...${NC}"
-        docker compose pull --ignore-pull-failures 2>&1 >/dev/null || true
+        echo -e "${YELLOW}Pulling images (this may take a few minutes)...${NC}"
+        docker compose pull || echo -e "${YELLOW}⚠️  Some images may have failed to pull${NC}"
+        echo -e "${YELLOW}Starting containers...${NC}"
         docker compose up -d
         echo -e "${GREEN}✓ Containers started${NC}"
     fi

@@ -85,11 +85,11 @@ start_all_services() {
     docker compose down 2>/dev/null || true
 
     # Pull all required images first
-    echo -e "${YELLOW}Pulling Docker images...${NC}"
-    if docker compose pull --ignore-pull-failures 2>&1 | grep -v "Pulling" | grep -v "Waiting" | grep -v "Downloading" | grep -v "Extracting" || true; then
+    echo -e "${YELLOW}Pulling Docker images (this may take several minutes)...${NC}"
+    if docker compose pull 2>&1; then
         echo -e "${GREEN}✓ Images pulled successfully${NC}"
     else
-        echo -e "${YELLOW}⚠️  Some images may not have pulled, continuing...${NC}"
+        echo -e "${YELLOW}⚠️  Some images failed to pull, will try to use cached versions${NC}"
     fi
 
     # Build the API container
