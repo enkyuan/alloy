@@ -2,33 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
-	<key>CFBundleDisplayName</key>
-	<string>Modal</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Modal needs access to your microphone to listen to your voice commands and assist you.</string>
 	<key>API_BASE_URL</key>
 	<string>$(API_BASE_URL)</string>
-	<key>WEBSOCKET_URL</key>
-	<string>$(WEBSOCKET_URL)</string>
-	<key>SUPABASE_URL</key>
-	<string>$(SUPABASE_URL)</string>
-	<key>SUPABASE_ANON_KEY</key>
-	<string>$(SUPABASE_ANON_KEY)</string>
-	<key>DEBUG_LOGGING</key>
-	<string>$(DEBUG_LOGGING)</string>
-	<key>GIDClientID</key>
-	<string>1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -49,5 +24,24 @@
 			</array>
 		</dict>
 	</array>
+	<key>DEBUG_LOGGING</key>
+	<string>$(DEBUG_LOGGING)</string>
+	<key>GIDClientID</key>
+	<string>1021220745951-7mavjjtg16o9i91eb7rtcc6smpg3m1b9.apps.googleusercontent.com</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>WEBSOCKET_URL</key>
+	<string>$(WEBSOCKET_URL)</string>
 </dict>
 </plist>

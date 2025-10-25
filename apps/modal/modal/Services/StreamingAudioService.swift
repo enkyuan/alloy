@@ -96,7 +96,15 @@ class StreamingAudioService: NSObject {
         // Install tap - use nil format to let it use the hardware format automatically
         // This works on both simulator and device
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, time in
-            guard let self = self, let audioFile = self.audioFile else { return }
+            guard let self = self else { return }
+            
+            // Safety check: stop processing if we're no longer recording
+            guard self.isRecording else {
+                print("⚠️ Audio tap fired but not recording - ignoring buffer")
+                return
+            }
+            
+            guard let audioFile = self.audioFile else { return }
             
             do {
                 // Write to file (backup M4A recording)
@@ -104,6 +112,12 @@ class StreamingAudioService: NSObject {
                 
                 // Send each buffer immediately for real-time streaming
                 Task { @MainActor in
+                    // Double check we're still recording when callback executes
+                    guard self.isRecording else {
+                        print("⚠️ Recording stopped during buffer processing")
+                        return
+                    }
+                    
                     // Convert buffer to raw PCM (no WAV header) for streaming to Soniox
                     // This automatically mixes multi-channel audio to mono
                     let pcmData = AudioFormatConverter.pcmBufferToRawPCM(buffer: buffer)
@@ -134,22 +148,26 @@ class StreamingAudioService: NSObject {
     
     /// Stop streaming and return the recorded file URL
     func stopStreaming() -> URL? {
-        print("🛑 Stopping streaming audio capture")
+        print("🛑 Stopping streaming audio capture (isRecording: \(isRecording))")
         
         guard let engine = audioEngine else {
             print("⚠️ Audio engine not initialized")
+            isRecording = false
             return nil
         }
         
+        // First, set isRecording to false to stop any pending callbacks
+        isRecording = false
+        
+        // Then remove tap and stop engine
         let inputNode = engine.inputNode
         inputNode.removeTap(onBus: 0)
         engine.stop()
         
-        isRecording = false
         audioEngine = nil
         audioFile = nil
         
-        print("✅ Audio streaming stopped")
+        print("✅ Audio streaming stopped (tap removed, engine stopped)")
         return recordingURL
     }
     

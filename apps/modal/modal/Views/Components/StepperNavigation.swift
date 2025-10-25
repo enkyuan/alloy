@@ -125,8 +125,13 @@ struct StepperNavigation: View {
             )
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: assistantViewModel.isRecording)
-        .disabled(assistantViewModel.isProcessingTranscription)
-        .opacity(assistantViewModel.isProcessingTranscription ? 0.6 : 1.0)
+        .disabled(isButtonDisabled)
+        .opacity(isButtonDisabled ? 0.6 : 1.0)
+    }
+    
+    /// Button should be disabled when connecting or processing
+    private var isButtonDisabled: Bool {
+        assistantViewModel.isConnecting || assistantViewModel.isProcessingTranscription
     }
     
     @ViewBuilder

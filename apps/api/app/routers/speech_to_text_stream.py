@@ -6,13 +6,276 @@ from typing import Optional
 import websockets
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
+from sqlalchemy.orm import Session
 
+from app.database import SessionLocal
+from app.models.integration import Integration
 from app.services.auth import supabase_auth_service
 from app.services.soniox import soniox_service
+from app.services.spotify import spotify_service
+from app.services.spotify_controller import (
+    NoActiveDeviceError,
+    SearchNoResultsError,
+    SpotifyAPIError,
+    PremiumRequiredError,
+    spotify_controller,
+)
+from app.services.voice_agent import voice_agent_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stt", tags=["speech-to-text-streaming"])
+
+
+async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integration]:
+    """Get user's Spotify integration.
+    
+    Args:
+        user_id: User ID
+        db: Database session
+        
+    Returns:
+        Integration object or None if not found
+    """
+    integration = (
+        db.query(Integration)
+        .filter(
+            Integration.user_id == user_id,
+            Integration.service == "spotify",
+            Integration.is_active == True
+        )
+        .first()
+    )
+    return integration
+
+
+async def execute_spotify_command(
+    command_text: str,
+    user_id: str,
+    db: Session
+) -> dict:
+    """Execute a Spotify voice command.
+    
+    Args:
+        command_text: Voice command text
+        user_id: User ID
+        db: Database session
+        
+    Returns:
+        Response dictionary with command result or error
+    """
+    try:
+        # Check if user has Spotify integration
+        integration = await get_spotify_integration(user_id, db)
+        if not integration:
+            logger.warning(f"User {user_id} has no Spotify integration")
+            return {
+                "type": "command_error",
+                "message": "Spotify is not connected. Please connect Spotify in settings.",
+                "error_code": "NO_INTEGRATION"
+            }
+        
+        # Get valid access token (refresh if needed)
+        try:
+            access_token = await spotify_service.get_valid_token(integration, db)
+        except Exception as e:
+            logger.error(f"Failed to get valid token: {str(e)}")
+            return {
+                "type": "command_error",
+                "message": "Failed to authenticate with Spotify. Please reconnect in settings.",
+                "error_code": "AUTH_FAILED"
+            }
+        
+        # Parse command using voice agent
+        intent = voice_agent_service.parse_command(command_text, user_id)
+        
+        logger.info(
+            f"Executing command for user {user_id}: "
+            f"intent={intent.intent}, confidence={intent.confidence:.2f}"
+        )
+        
+        # Check if clarification is needed
+        if intent.requires_clarification:
+            clarification_msg = voice_agent_service.generate_clarification_request(intent)
+            return {
+                "type": "command_clarification",
+                "message": clarification_msg,
+                "intent": intent.intent,
+                "confidence": intent.confidence
+            }
+        
+        # Execute command based on intent
+        result = None
+        
+        if intent.intent == "play_track":
+            result = await spotify_controller.search_and_play_track(
+                query=intent.parameters.get("track", ""),
+                access_token=access_token,
+                artist=intent.parameters.get("artist")
+            )
+        
+        elif intent.intent == "play_playlist":
+            result = await spotify_controller.search_and_play_playlist(
+                query=intent.parameters.get("playlist", ""),
+                access_token=access_token,
+                user_playlists_only=False
+            )
+        
+        elif intent.intent == "play_album":
+            result = await spotify_controller.search_and_play_album(
+                query=intent.parameters.get("album", ""),
+                access_token=access_token,
+                artist=intent.parameters.get("artist")
+            )
+        
+        elif intent.intent == "pause":
+            result = await spotify_controller.pause_playback(access_token)
+        
+        elif intent.intent == "resume":
+            result = await spotify_controller.resume_playback(access_token)
+        
+        elif intent.intent == "next":
+            result = await spotify_controller.next_track(access_token)
+        
+        elif intent.intent == "previous":
+            result = await spotify_controller.previous_track(access_token)
+        
+        elif intent.intent == "set_volume":
+            volume = int(intent.parameters.get("level", 50))
+            result = await spotify_controller.set_volume(access_token, volume)
+        
+        elif intent.intent == "list_devices":
+            result = await spotify_controller.get_available_devices(access_token)
+        
+        elif intent.intent == "switch_device":
+            device_name = intent.parameters.get("device")
+            if not device_name:
+                return {
+                    "type": "command_error",
+                    "message": "Which device would you like to switch to?",
+                    "error_code": "MISSING_DEVICE"
+                }
+            result = await spotify_controller.switch_device(
+                access_token=access_token,
+                device_name=device_name,
+                start_playback=True
+            )
+        
+        # Handle follow-up commands with context
+        elif intent.intent == "play_another_by_artist":
+            # Check if context was resolved
+            if intent.parameters.get("_needs_clarification"):
+                return {
+                    "type": "command_error",
+                    "message": "I don't know which artist you're referring to. Try saying 'play [artist name]'",
+                    "error_code": "NO_CONTEXT"
+                }
+            
+            # Play more by the same artist
+            artist = intent.parameters.get("artist")
+            result = await spotify_controller.search_and_play_track(
+                query=artist,  # Search by artist name
+                access_token=access_token,
+                artist=artist
+            )
+        
+        elif intent.intent == "play_more_like_this":
+            # Check if context was resolved
+            if intent.parameters.get("_needs_clarification"):
+                return {
+                    "type": "command_error",
+                    "message": "I don't have a reference track. Try playing something first.",
+                    "error_code": "NO_CONTEXT"
+                }
+            
+            # For now, play more by the same artist (future: use recommendations API)
+            artist = intent.parameters.get("reference_artist")
+            result = await spotify_controller.search_and_play_track(
+                query=artist,
+                access_token=access_token,
+                artist=artist
+            )
+        
+        elif intent.intent == "play_from_same_album":
+            # Check if context was resolved
+            if intent.parameters.get("_needs_clarification"):
+                return {
+                    "type": "command_error",
+                    "message": "I don't know which album you're referring to. Try saying 'play album [album name]'",
+                    "error_code": "NO_CONTEXT"
+                }
+            
+            # Play the album
+            album = intent.parameters.get("album")
+            artist = intent.parameters.get("artist")
+            result = await spotify_controller.search_and_play_album(
+                query=album,
+                access_token=access_token,
+                artist=artist
+            )
+        
+        else:
+            logger.warning(f"Unknown or unsupported intent: {intent.intent}")
+            return {
+                "type": "command_error",
+                "message": "I didn't understand that command. Try saying something like 'play Bohemian Rhapsody'",
+                "error_code": "UNKNOWN_INTENT"
+            }
+        
+        # Update context with successful command
+        voice_agent_service.update_context(user_id, intent, result)
+        
+        # Generate user-friendly response
+        response_message = voice_agent_service.generate_response(result, intent)
+        
+        return {
+            "type": "command_result",
+            "success": True,
+            "message": response_message,
+            "data": result.data,
+            "intent": intent.intent
+        }
+    
+    except NoActiveDeviceError as e:
+        logger.warning(f"No active device for user {user_id}: {str(e)}")
+        return {
+            "type": "command_error",
+            "message": e.message,
+            "error_code": "NO_DEVICE"
+        }
+    
+    except SearchNoResultsError as e:
+        logger.warning(f"Search returned no results: {str(e)}")
+        return {
+            "type": "command_error",
+            "message": e.message,
+            "error_code": "NO_RESULTS",
+            "query": e.query
+        }
+    
+    except PremiumRequiredError as e:
+        logger.warning(f"Premium required for user {user_id}: {str(e)}")
+        return {
+            "type": "command_error",
+            "message": e.message,
+            "error_code": "PREMIUM_REQUIRED"
+        }
+    
+    except SpotifyAPIError as e:
+        logger.error(f"Spotify API error: {str(e)}", exc_info=True)
+        return {
+            "type": "command_error",
+            "message": "Something went wrong with Spotify. Please try again.",
+            "error_code": "API_ERROR"
+        }
+    
+    except Exception as e:
+        logger.error(f"Unexpected error executing command: {str(e)}", exc_info=True)
+        return {
+            "type": "command_error",
+            "message": "An unexpected error occurred. Please try again.",
+            "error_code": "INTERNAL_ERROR"
+        }
 
 
 @router.websocket("/stream")
@@ -36,6 +299,7 @@ async def stream_transcribe(
 
     soniox_ws = None
     final_tokens = []
+    db = None
 
     try:
         # Authenticate via token in query param
@@ -54,7 +318,11 @@ async def stream_transcribe(
             await websocket.close(code=1008)
             return
 
-        logger.info(f"User {user.get('id')} connected to STT stream")
+        user_id = user.get('id')
+        logger.info(f"User {user_id} connected to STT stream")
+        
+        # Get database session for Spotify integration queries
+        db = SessionLocal()
 
         # Connect to Soniox WebSocket
         try:
@@ -172,15 +440,42 @@ async def stream_transcribe(
         await websocket.send_json({"type": "ready"})
         logger.info("Sent ready signal to client")
 
-        # Receive audio chunks from client
+        # Receive audio chunks and command messages from client
         chunk_count = 0
         try:
             while True:
                 message = await websocket.receive()
 
-                # Handle text messages (control signals)
+                # Handle text messages (control signals and commands)
                 if "text" in message:
                     text_data = message["text"]
+                    
+                    # Check if it's a JSON command message
+                    try:
+                        json_data = json.loads(text_data)
+                        
+                        # Handle command messages
+                        if json_data.get("type") == "command":
+                            command_text = json_data.get("text", "")
+                            logger.info(f"Received command from user {user_id}: {command_text}")
+                            
+                            # Execute Spotify command
+                            command_response = await execute_spotify_command(
+                                command_text=command_text,
+                                user_id=user_id,
+                                db=db
+                            )
+                            
+                            # Send response back to client
+                            await websocket.send_json(command_response)
+                            logger.info(f"Sent command response: {command_response.get('type')}")
+                            continue
+                    
+                    except json.JSONDecodeError:
+                        # Not JSON, treat as control signal
+                        pass
+                    
+                    # Handle END signal
                     if text_data == "END":
                         logger.info("Received END signal from client")
                         # Send empty frame to Soniox to signal end of audio
@@ -228,6 +523,11 @@ async def stream_transcribe(
         if soniox_ws:
             try:
                 await soniox_ws.close()
+            except:
+                pass
+        if db:
+            try:
+                db.close()
             except:
                 pass
         if websocket.client_state == WebSocketState.CONNECTED:

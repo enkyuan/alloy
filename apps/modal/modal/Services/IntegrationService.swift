@@ -183,8 +183,8 @@ class IntegrationService {
         // Properly encode query parameters
         guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(backendURL)/integrations/spotify/exchange?code=\(encodedCode)&state=\(encodedState)") else {
-            print("❌ Failed to encode OAuth parameters")
+              let url = URL(string: "\(backendURL)/integrations/\(service.rawValue)/exchange?code=\(encodedCode)&state=\(encodedState)") else {
+            print("❌ Failed to encode OAuth parameters for \(service.displayName)")
             throw IntegrationError.oauthFailed
         }
 
@@ -290,24 +290,17 @@ class IntegrationService {
                     return
                 }
 
-                // For Spotify OAuth, we receive: modal://spotify/callback?code=...&state=...
-                if callbackURL.host == "spotify" && callbackURL.path == "/callback" {
-                    // Extract authorization code and state
-                    guard let code = queryItems.first(where: { $0.name == "code" })?.value,
-                          let state = queryItems.first(where: { $0.name == "state" })?.value else {
-                        print("❌ Missing code or state in callback")
-                        continuation.resume(throwing: IntegrationError.oauthFailed)
-                        return
-                    }
-
-                    print("✅ Received authorization code for \(service.displayName)")
-                    continuation.resume(returning: (code: code, state: state))
-                } else {
-                    // Fallback for services that don't need code exchange
-                    // This shouldn't happen with Spotify
-                    print("⚠️ Unexpected callback URL format: \(callbackURL)")
+                // OAuth callback format: modal://{service}/callback?code=...&state=...
+                // Extract authorization code and state from query parameters
+                guard let code = queryItems.first(where: { $0.name == "code" })?.value,
+                      let state = queryItems.first(where: { $0.name == "state" })?.value else {
+                    print("❌ Missing code or state in callback for \(service.displayName)")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
+                    return
                 }
+
+                print("✅ Received authorization code for \(service.displayName)")
+                continuation.resume(returning: (code: code, state: state))
             }
 
             // Use the retained context provider

@@ -84,13 +84,18 @@ start_all_services() {
     echo -e "${YELLOW}Stopping and removing existing containers...${NC}"
     docker compose down 2>/dev/null || true
     
-    # Build the API container to ensure dependencies are up to date
-    echo -e "${YELLOW}Building API container (ensuring dependencies are installed)...${NC}"
-    docker compose build api
+    # Build the API container
+    echo -e "${YELLOW}Building API container...${NC}"
+    if docker compose build api 2>&1; then
+        echo -e "${GREEN}✓ API built successfully${NC}"
+    else
+        echo -e "${RED}✗ API build failed${NC}"
+        echo -e "${YELLOW}Continuing with existing image if available...${NC}"
+    fi
     
-    # Start all services with fresh containers
-    echo -e "${YELLOW}Starting all services with fresh containers...${NC}"
-    docker compose up -d --force-recreate
+    # Start all services
+    echo -e "${YELLOW}Starting all services...${NC}"
+    docker compose up -d
     
     echo -e "${GREEN}✓ All services starting...${NC}"
     echo -e "${YELLOW}Note: Services may take 30-60 seconds to become healthy.${NC}"

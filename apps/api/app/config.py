@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # Gmail OAuth (reuses Google OAuth credentials)
     # No separate credentials needed - uses GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
-    GMAIL_REDIRECT_URI: str = "modal://gmail/callback"
+    GMAIL_REDIRECT_URI: Optional[str] = None
 
     # Soniox (Real-time Speech-to-Text)
     SONIOX_API_KEY: Optional[str] = None
