@@ -2,7 +2,12 @@
 //  AssistantView.swift
 //  modal
 //
-//  Main voice assistant interface
+//  Main voice assistant interface (patched - single-file replacement)
+//
+//  This version captures ScrollViewProxy early, centralizes scrolling helpers,
+//  and adds reliable, layout-aware triggers to reset the transcription bubble
+//  to the top of the screen when the content becomes full or transcription
+//  state changes. Paste this file over your existing AssistantView.swift.
 //
 
 import SwiftUI
@@ -17,7 +22,11 @@ struct AssistantView: View {
     @State private var showPermissionAlert = false
     @State private var contentHeight: CGFloat = 0
     @State private var visibleHeight: CGFloat = 0
-    
+
+    // Scroll proxy & pending behavior
+    @State private var scrollProxy: ScrollViewProxy? = nil
+    @State private var pendingScrollToTop: Bool = false
+
     // Computed property to avoid binding issues
     private var messages: [Message] {
         viewModel.conversationService.messages
@@ -34,14 +43,14 @@ struct AssistantView: View {
                 // Chat interface
                 chatView
             }
-            
+
             // Command mode indicator (top center)
             VStack {
                 CommandModeIndicator(isActive: viewModel.isInCommandMode)
                     .padding(.top, 60)
                 Spacer()
             }
-            
+
             // Spotify playback card (bottom, above navigation)
             VStack {
                 Spacer()
@@ -49,7 +58,7 @@ struct AssistantView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 120)
             }
-            
+
             // Device status indicator (top right)
             VStack {
                 HStack {
@@ -65,7 +74,7 @@ struct AssistantView: View {
                 }
                 Spacer()
             }
-            
+
             // Command feedback overlay (center)
             CommandFeedbackOverlay(
                 message: viewModel.commandFeedback,
@@ -85,44 +94,93 @@ struct AssistantView: View {
         } message: {
             Text("Modal needs microphone access to listen to your voice commands. Please enable it in Settings.")
         }
+        // Use a sheet that directly returns the view (avoid returning Void)
         .sheet(isPresented: $viewModel.showDeviceSelector) {
-            VStack {
-                DeviceSelectorView(
-                    devices: $viewModel.availableDevices,
-                    currentDevice: $viewModel.currentDevice,
-                    isLoading: $viewModel.isLoadingDevices,
-                    onDeviceSelected: { device in
-                        Task {
-                            await viewModel.switchToDevice(device)
-                            viewModel.showDeviceSelector = false
-                        }
-                    },
-                    onRefresh: {
-                        Task {
-                            await viewModel.fetchAvailableDevices()
-                        }
+            DeviceSelectorView(
+                devices: $viewModel.availableDevices,
+                currentDevice: $viewModel.currentDevice,
+                isLoading: $viewModel.isLoadingDevices,
+                onDeviceSelected: { device in
+                    Task {
+                        await viewModel.switchToDevice(device)
+                        viewModel.showDeviceSelector = false
                     }
-                )
-                .frame(maxWidth: .infinity, maxHeight: 500)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+                },
+                onRefresh: {
+                    Task {
+                        await viewModel.fetchAvailableDevices()
+                    }
+                }
+            )
+            .frame(maxWidth: .infinity, maxHeight: 500)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    // MARK: - Scrolling Helpers
+
+    /// Scroll to the top anchor ("top-anchor"). If proxy is not available yet, mark a pending request.
+    /// Use a small default delay so we run after a layout pass; `animated: false` is recommended when
+    /// jumping after content changes so the scroll is always visible.
+    private func scrollToTopAnchor(animated: Bool = true, delay: TimeInterval = 0.03) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard let proxy = scrollProxy else {
+                // proxy not available yet — remember to scroll when it appears
+                pendingScrollToTop = true
+                return
+            }
+            if animated {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo("top-anchor", anchor: .top)
+                }
+            } else {
+                proxy.scrollTo("top-anchor", anchor: .top)
+            }
+        }
+    }
+
+    /// Scroll to the bottom anchor ("bottom-anchor").
+    private func scrollToBottomAnchor(animated: Bool = true, delay: TimeInterval = 0.03) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            guard let proxy = scrollProxy else { return }
+            if animated {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("bottom-anchor", anchor: .bottom)
             }
         }
     }
 
     // MARK: - View Components
-    
+
     private var chatView: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
                 ScrollViewReader { proxy in
+                    // Capture proxy early so helpers can be used elsewhere
+                    Color.clear
+                        .frame(height: 0)
+                        .onAppear {
+                            if scrollProxy == nil {
+                                scrollProxy = proxy
+                                if pendingScrollToTop {
+                                    pendingScrollToTop = false
+                                    // satisfy immediately without additional delay and non-animated
+                                    scrollToTopAnchor(animated: false, delay: 0)
+                                }
+                            }
+                        }
+
                     ScrollView {
                         VStack(spacing: 16) {
                             // Top anchor for transcription bubble positioning
                             Color.clear
                                 .frame(height: 1)
                                 .id("top-anchor")
-                            
+
                             // Show empty state icon when idle
                             if messages.isEmpty && !isActiveSession {
                                 VStack {
@@ -145,7 +203,7 @@ struct AssistantView: View {
                                 MessageRow(message: message)
                                     .id(message.id)
                             }
-                            
+
                             // Inline transcription bubble (shown when few messages - at bottom)
                             if isActiveSession && !shouldShowTranscriptionAtTop {
                                 TranscriptionBubble(
@@ -156,7 +214,7 @@ struct AssistantView: View {
                                 )
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                             }
-                            
+
                             // Invisible anchor at the very bottom for reliable scrolling
                             Color.clear
                                 .frame(height: 1)
@@ -171,72 +229,64 @@ struct AssistantView: View {
                             }
                         )
                     }
+                    // Track content height (for shouldShowTranscriptionAtTop)
                     .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
                         contentHeight = height
                     }
+                    // When items are appended, scroll depending on transcription position
                     .onChange(of: messages.count) { oldCount, newCount in
-                        // Scroll to new message when added (only when not actively recording)
                         guard newCount > oldCount, !isActiveSession else { return }
-                        
-                        // Small delay to ensure view is rendered
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                if let lastMessage = messages.last {
-                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                                } else {
-                                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                                }
-                            }
+
+                        // Prefer an immediate non-animated jump when the content is now full so the
+                        // floating bubble becomes visible at the top reliably.
+                        if shouldShowTranscriptionAtTop {
+                            scrollToTopAnchor(animated: false, delay: 0.02)
+                        } else {
+                            scrollToBottomAnchor()
                         }
                     }
+                    // When the active session changes, reveal the bubble for the start of session
                     .onChange(of: isActiveSession) { wasActive, isActive in
-                        // Scroll when session starts or ends
                         if isActive {
-                            // Session just started - scroll to appropriate position
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    if shouldShowTranscriptionAtTop {
-                                        // Screen is full - scroll to top to show floating bubble
-                                        proxy.scrollTo("top-anchor", anchor: .top)
-                                    } else {
-                                        // Screen not full - scroll to bottom to show inline bubble
-                                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                                    }
-                                }
+                            // Session started: ensure bubble is visible (top if full, else bottom)
+                            if shouldShowTranscriptionAtTop {
+                                scrollToTopAnchor(animated: false, delay: 0.02)
+                            } else {
+                                scrollToBottomAnchor(animated: false, delay: 0.02)
                             }
                         } else if wasActive && !isActive {
-                            // Session ended - scroll to bottom to show new message
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                withAnimation(.easeOut(duration: 0.3)) {
-                                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                                }
-                            }
+                            // session ended — don't auto-scroll (let user stay where they are)
                         }
                     }
+                    // When the layout (content height) changes and bubble should be at top, ensure it's visible
+                    .onChange(of: contentHeight) { _ in
+                        guard isActiveSession && shouldShowTranscriptionAtTop else { return }
+                        // Non-animated immediate reveal after layout step
+                        scrollToTopAnchor(animated: false, delay: 0.02)
+                    }
+                    // When partial transcription text changes (bubble grows/shrinks), ensure visibility
+                    .onChange(of: viewModel.partialTranscription) { _ in
+                        guard isActiveSession && shouldShowTranscriptionAtTop else { return }
+                        scrollToTopAnchor(animated: false, delay: 0.02)
+                    }
+                    // When bubble position preference toggles, scroll appropriately
                     .onChange(of: shouldShowTranscriptionAtTop) { wasAtTop, isAtTop in
-                        // When bubble position changes during active session, scroll to show it
                         guard isActiveSession else { return }
-                        
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                if isAtTop {
-                                    // Bubble moved to top - scroll to show it
-                                    proxy.scrollTo("top-anchor", anchor: .top)
-                                } else {
-                                    // Bubble moved to bottom - scroll to show it
-                                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                                }
-                            }
+                        if isAtTop {
+                            scrollToTopAnchor(animated: false, delay: 0.02)
+                        } else {
+                            scrollToBottomAnchor(animated: false, delay: 0.02)
                         }
                     }
+                    // Capture visible height for heuristics
+                    .onAppear {
+                        visibleHeight = geometry.size.height
+                    }
+                    .onChange(of: geometry.size.height) { _, newHeight in
+                        visibleHeight = newHeight
+                    }
                 }
-                .onAppear {
-                    visibleHeight = geometry.size.height
-                }
-                .onChange(of: geometry.size.height) { _, newHeight in
-                    visibleHeight = newHeight
-                }
-                
+
                 // Floating transcription bubble at top when screen is full
                 if isActiveSession && shouldShowTranscriptionAtTop {
                     VStack {
@@ -249,31 +299,33 @@ struct AssistantView: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 20)
                         .transition(.opacity.combined(with: .move(edge: .top)))
-                        
+
                         Spacer()
                     }
                 }
             }
         }
-    }    // MARK: - Computed Properties
-    
-    /// True when button is pressed - shows the transcription bubble immediately
+    } // end chatView
+
+    // MARK: - Computed Properties
+
+    /// True when any part of the session is active - shows the transcription bubble immediately
     private var isActiveSession: Bool {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
-    
+
     /// Determines if transcription bubble should float at top (when screen is full of messages)
     /// Compares actual content height vs visible screen height
     private var shouldShowTranscriptionAtTop: Bool {
         guard visibleHeight > 0 && contentHeight > 0 else {
             return false
         }
-        
         // Show at top when content height exceeds visible height (screen is full and scrollable)
-        // Use smaller buffer to trigger earlier when screen fills up
+        // Use a buffer so the floating bubble kicks in slightly before absolute fullness
         return contentHeight > (visibleHeight - 100)
     }
-    
+
+    // MARK: - Permission Empty State View
 
     private var permissionEmptyStateView: some View {
         VStack(spacing: 32) {
@@ -381,7 +433,7 @@ private struct MessageRow: View {
 /// PreferenceKey for tracking content height in ScrollView
 private struct ContentHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    
+
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }

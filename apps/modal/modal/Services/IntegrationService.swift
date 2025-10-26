@@ -2,6 +2,7 @@ import Foundation
 import AuthenticationServices
 import Auth
 import Supabase
+import GoogleSignIn
 
 /// Service for managing third-party integrations
 @MainActor
@@ -120,8 +121,13 @@ class IntegrationService {
             throw IntegrationError.notAuthenticated
         }
 
-        // This manual flow is more robust and bypasses the crashing Supabase helper function.
-        // The app's backend still handles the secure OAuth token exchange with Supabase.
+        // Use native Google Sign-In for Gmail (avoids loopback blocking)
+        if service == .gmail || service == .googleCalendar {
+            try await connectGoogleService(service, authService: authService)
+            return
+        }
+
+        // For other services, use the web-based OAuth flow
         do {
             // 1. Get the auth URL from our own backend
             print("📡 Step 1: Getting OAuth URL from backend...")
@@ -151,6 +157,155 @@ class IntegrationService {
             print("❌ Unexpected OAuth error: \(error.localizedDescription)")
             throw IntegrationError.oauthFailed
         }
+    }
+
+    /// Connect Gmail or Google Calendar using native Google Sign-In SDK
+    private func connectGoogleService(_ service: ServiceType, authService: AuthenticationService) async throws {
+        guard let session = authService.session else {
+            throw IntegrationError.notAuthenticated
+        }
+
+        // Get root view controller for presenting Google Sign-In
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            throw IntegrationError.oauthFailed
+        }
+
+        // Configure scopes based on service
+        let scopes: [String]
+        switch service {
+        case .gmail:
+            scopes = [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/gmail.send"
+            ]
+        case .googleCalendar:
+            scopes = [
+                "https://www.googleapis.com/auth/calendar.readonly",
+                "https://www.googleapis.com/auth/calendar.events"
+            ]
+        default:
+            throw IntegrationError.oauthFailed
+        }
+
+        print("🔐 Requesting additional scopes for \(service.displayName): \(scopes)")
+
+        // Use Google Sign-In SDK to request additional scopes
+        return try await withCheckedThrowingContinuation { continuation in
+            // Configure Google Sign-In with the required scopes
+            guard let configuration = GIDSignIn.sharedInstance.configuration else {
+                print("❌ Google Sign-In not configured")
+                continuation.resume(throwing: IntegrationError.oauthFailed)
+                return
+            }
+            
+            // Create a new configuration with additional scopes
+            _ = GIDConfiguration(
+                clientID: configuration.clientID,
+                serverClientID: configuration.serverClientID,
+                hostedDomain: configuration.hostedDomain,
+                openIDRealm: configuration.openIDRealm
+            )
+            
+            // Request additional scopes by signing in again with the new scopes
+            GIDSignIn.sharedInstance.signIn(
+                withPresenting: rootViewController,
+                hint: nil,
+                additionalScopes: scopes
+            ) { result, error in
+                if let error = error {
+                    let nsError = error as NSError
+                    if nsError.code == -5 {
+                        print("ℹ️ User cancelled \(service.displayName) permission request")
+                        continuation.resume(throwing: IntegrationError.userCancelled)
+                        return
+                    }
+                    print("❌ Failed to request scopes: \(error.localizedDescription)")
+                    continuation.resume(throwing: IntegrationError.oauthFailed)
+                    return
+                }
+
+                guard let result = result,
+                      let idToken = result.user.idToken?.tokenString else {
+                    print("❌ Failed to get Google tokens after scope request")
+                    continuation.resume(throwing: IntegrationError.oauthFailed)
+                    return
+                }
+
+                let accessToken = result.user.accessToken.tokenString
+
+                print("✅ Got Google tokens with new scopes for \(service.displayName)")
+
+                // Send tokens to backend
+                Task {
+                    do {
+                        try await self.sendGoogleTokensToBackend(
+                            idToken: idToken,
+                            accessToken: accessToken,
+                            service: service,
+                            supabaseAccessToken: session.accessToken
+                        )
+
+                        // Update local state
+                        _ = await MainActor.run {
+                            self.connectedServices.insert(service)
+                        }
+
+                        print("✅ Successfully connected \(await service.displayName)")
+                        continuation.resume()
+                    } catch {
+                        print("❌ Failed to send tokens to backend: \(error.localizedDescription)")
+                        continuation.resume(throwing: IntegrationError.oauthFailed)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Send Google tokens to backend for Gmail/Calendar integration
+    private func sendGoogleTokensToBackend(
+        idToken: String,
+        accessToken: String,
+        service: ServiceType,
+        supabaseAccessToken: String
+    ) async throws {
+        // Map service to backend endpoint path
+        let endpointPath: String
+        switch service {
+        case .gmail:
+            endpointPath = "gmail"
+        case .googleCalendar:
+            endpointPath = "google-calendar"
+        default:
+            endpointPath = service.rawValue
+        }
+
+        let url = URL(string: "\(backendURL)/integrations/\(endpointPath)/connect-native")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(supabaseAccessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: String] = [
+            "id_token": idToken,
+            "access_token": accessToken
+        ]
+
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw IntegrationError.oauthFailed
+        }
+
+        if httpResponse.statusCode != 200 {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
+            print("❌ Backend returned error \(httpResponse.statusCode): \(errorMessage)")
+            throw IntegrationError.oauthFailed
+        }
+
+        print("✅ Successfully sent Google tokens to backend")
     }
 
     /// Disconnect a service

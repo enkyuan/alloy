@@ -295,15 +295,212 @@ build_ios_app() {
     cd "$PROJECT_ROOT"
 }
 
+# Function to validate URL
+validate_url() {
+    local url=$1
+    # Check if URL matches common patterns (http/https with domain)
+    if [[ "$url" =~ ^https?://[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to configure tunnel
+configure_tunnel() {
+    echo -e "\n${CYAN}=== Tunnel Configuration ===${NC}"
+    echo -e "${YELLOW}This will update all URLs to use your tunnel for remote access.${NC}\n"
+
+    echo -e "${BLUE}Configuration modes:${NC}"
+    echo -e "  ${GREEN}localhost${NC} - For simulator or same machine testing"
+    echo -e "  ${GREEN}tunnel${NC}    - For physical device testing (remote access)\n"
+
+    echo -e "${CYAN}Note: If using a single tunnel for both ports, enter the same URL twice.${NC}"
+    echo -e "${CYAN}Or enter 'localhost' for either to use local mode for that service.${NC}\n"
+
+    # Get Supabase URL (port 8000)
+    echo -e "${YELLOW}Enter tunnel URL for Supabase (port 8000):${NC}"
+    echo -e "${YELLOW}Examples: https://your-tunnel.tunn.dev OR localhost${NC}"
+    read -r supabase_input
+
+    if [ -z "$supabase_input" ]; then
+        echo -e "${RED}✗ No URL provided${NC}"
+        return 1
+    fi
+
+    # Get API URL (port 8080)
+    echo -e "\n${YELLOW}Enter tunnel URL for API (port 8080):${NC}"
+    echo -e "${YELLOW}Examples: https://your-tunnel.tunn.dev OR localhost${NC}"
+    read -r api_input
+
+    if [ -z "$api_input" ]; then
+        echo -e "${RED}✗ No URL provided${NC}"
+        return 1
+    fi
+
+    # Process Supabase URL
+    if [ "$supabase_input" = "localhost" ] || [ "$supabase_input" = "local" ]; then
+        SUPABASE_URL="http://localhost:8000"
+        SUPABASE_PROTOCOL="http"
+        SUPABASE_HOST="localhost:8000"
+    else
+        # Validate URL
+        if ! validate_url "$supabase_input"; then
+            echo -e "${RED}✗ Invalid Supabase URL format${NC}"
+            echo -e "${YELLOW}Expected format: https://your-domain.com${NC}"
+            return 1
+        fi
+
+        # Remove trailing slash
+        SUPABASE_URL="${supabase_input%/}"
+
+        # Determine protocol
+        if [[ "$SUPABASE_URL" == https://* ]]; then
+            SUPABASE_PROTOCOL="https"
+        else
+            SUPABASE_PROTOCOL="http"
+        fi
+
+        # Extract host without protocol
+        SUPABASE_HOST="${SUPABASE_URL#http://}"
+        SUPABASE_HOST="${SUPABASE_HOST#https://}"
+    fi
+
+    # Process API URL
+    if [ "$api_input" = "localhost" ] || [ "$api_input" = "local" ]; then
+        API_URL="http://localhost:8080"
+        API_PROTOCOL="http"
+        API_HOST="localhost:8080"
+        WS_PROTOCOL="ws"
+    else
+        # Validate URL
+        if ! validate_url "$api_input"; then
+            echo -e "${RED}✗ Invalid API URL format${NC}"
+            echo -e "${YELLOW}Expected format: https://your-domain.com${NC}"
+            return 1
+        fi
+
+        # Remove trailing slash
+        API_URL="${api_input%/}"
+
+        # Determine protocol
+        if [[ "$API_URL" == https://* ]]; then
+            API_PROTOCOL="https"
+            WS_PROTOCOL="wss"
+        else
+            API_PROTOCOL="http"
+            WS_PROTOCOL="ws"
+        fi
+
+        # Extract host without protocol
+        API_HOST="${API_URL#http://}"
+        API_HOST="${API_HOST#https://}"
+    fi
+
+    echo -e "\n${BLUE}Configuration Summary:${NC}"
+    echo -e "  ${CYAN}Supabase (port 8000):${NC}"
+    echo -e "    URL:           ${GREEN}${SUPABASE_URL}${NC}"
+    echo -e "    OAuth Redirect:${GREEN}${SUPABASE_URL}/auth/v1/callback${NC}"
+    echo -e "\n  ${CYAN}API (port 8080):${NC}"
+    echo -e "    URL:           ${GREEN}${API_URL}/api/v1${NC}"
+    echo -e "    WebSocket:     ${GREEN}${WS_PROTOCOL}://${API_HOST}/api/v1${NC}"
+    echo -e "    Gmail Redirect:${GREEN}${API_URL}/api/v1/integrations/gmail/callback${NC}"
+
+    echo -e "\n${YELLOW}Update configuration files with these URLs? (y/N):${NC} "
+    read -r confirm
+
+    if [[ ! $confirm =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Cancelled${NC}"
+        return 1
+    fi
+
+    # Update docker/.env
+    echo -e "\n${YELLOW}Updating docker/.env...${NC}"
+    if [ -f "$PROJECT_ROOT/docker/.env" ]; then
+        sed -i.bak "s|^SUPABASE_URL=.*|SUPABASE_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/docker/.env"
+        sed -i.bak "s|^SUPABASE_PUBLIC_URL=.*|SUPABASE_PUBLIC_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/docker/.env"
+        sed -i.bak "s|^API_EXTERNAL_URL=.*|API_EXTERNAL_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/docker/.env"
+        sed -i.bak "s|^GOOGLE_REDIRECT_URI=.*|GOOGLE_REDIRECT_URI=${SUPABASE_URL}/auth/v1/callback|" "$PROJECT_ROOT/docker/.env"
+        sed -i.bak "s|^GMAIL_REDIRECT_URI=.*|GMAIL_REDIRECT_URI=${API_URL}/api/v1/integrations/gmail/callback|" "$PROJECT_ROOT/docker/.env"
+        rm -f "$PROJECT_ROOT/docker/.env.bak"
+        echo -e "${GREEN}✓ Updated docker/.env${NC}"
+    fi
+
+    # Update docker/supabase/.env
+    echo -e "${YELLOW}Updating docker/supabase/.env...${NC}"
+    if [ -f "$PROJECT_ROOT/docker/supabase/.env" ]; then
+        sed -i.bak "s|^SUPABASE_URL=.*|SUPABASE_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/docker/supabase/.env"
+        sed -i.bak "s|^API_EXTERNAL_URL=.*|API_EXTERNAL_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/docker/supabase/.env"
+        sed -i.bak "s|^GOTRUE_GOOGLE_REDIRECT_URI=.*|GOTRUE_GOOGLE_REDIRECT_URI=${SUPABASE_URL}/auth/v1/callback|" "$PROJECT_ROOT/docker/supabase/.env"
+        sed -i.bak "s|^GMAIL_REDIRECT_URI=.*|GMAIL_REDIRECT_URI=${API_URL}/api/v1/integrations/gmail/callback|" "$PROJECT_ROOT/docker/supabase/.env"
+        rm -f "$PROJECT_ROOT/docker/supabase/.env.bak"
+        echo -e "${GREEN}✓ Updated docker/supabase/.env${NC}"
+    fi
+
+    # Update apps/api/.env
+    echo -e "${YELLOW}Updating apps/api/.env...${NC}"
+    if [ -f "$PROJECT_ROOT/apps/api/.env" ]; then
+        sed -i.bak "s|^SUPABASE_URL=.*|SUPABASE_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/apps/api/.env"
+        rm -f "$PROJECT_ROOT/apps/api/.env.bak"
+        echo -e "${GREEN}✓ Updated apps/api/.env${NC}"
+    fi
+
+    # Update iOS Config.xcconfig
+    echo -e "${YELLOW}Updating iOS Config.xcconfig...${NC}"
+    if [ -f "$PROJECT_ROOT/apps/modal/Config.xcconfig" ]; then
+        # Format for xcconfig (with $() escape)
+        FORMATTED_SUPABASE="${SUPABASE_PROTOCOL}:/\$()/${SUPABASE_HOST}"
+        FORMATTED_API="${API_PROTOCOL}:/\$()/${API_HOST}"
+        FORMATTED_WS="${WS_PROTOCOL}:/\$()/${API_HOST}"
+
+        sed -i.bak "s|^API_BASE_URL = .*|API_BASE_URL = ${FORMATTED_API}/api/v1|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
+        sed -i.bak "s|^WEBSOCKET_URL = .*|WEBSOCKET_URL = ${FORMATTED_WS}/api/v1|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
+        sed -i.bak "s|^SUPABASE_URL = .*|SUPABASE_URL = ${FORMATTED_SUPABASE}|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
+        rm -f "$PROJECT_ROOT/apps/modal/Config.xcconfig.bak"
+        echo -e "${GREEN}✓ Updated Config.xcconfig${NC}"
+    fi
+
+    echo -e "\n${GREEN}✓ All configuration files updated${NC}"
+
+    # Show reminders based on what was configured
+    NEEDS_REMINDERS=false
+    if [ "$supabase_input" != "localhost" ] && [ "$supabase_input" != "local" ]; then
+        NEEDS_REMINDERS=true
+    fi
+    if [ "$api_input" != "localhost" ] && [ "$api_input" != "local" ]; then
+        NEEDS_REMINDERS=true
+    fi
+
+    if [ "$NEEDS_REMINDERS" = true ]; then
+        echo -e "\n${YELLOW}⚠️  Important Reminders:${NC}"
+        if [ "$supabase_input" != "localhost" ] && [ "$supabase_input" != "local" ]; then
+            echo -e "  1. Update Google OAuth redirect URIs in Google Cloud Console:"
+            echo -e "     ${CYAN}${SUPABASE_URL}/auth/v1/callback${NC}"
+        fi
+        echo -e "  2. Restart Docker containers for changes to take effect:"
+        echo -e "     ${CYAN}cd docker && docker compose restart${NC}"
+        if [ "$supabase_input" != "localhost" ] && [ "$supabase_input" != "local" ]; then
+            echo -e "  3. Ensure your tunnel is running and forwarding port 8000"
+        fi
+        if [ "$api_input" != "localhost" ] && [ "$api_input" != "local" ]; then
+            echo -e "  4. Ensure your tunnel is running and forwarding port 8080"
+        fi
+    else
+        echo -e "\n${YELLOW}Note: Restart Docker containers for changes to take effect${NC}"
+        echo -e "     ${CYAN}cd docker && docker compose restart${NC}"
+    fi
+}
+
 # Main menu
 show_menu() {
     echo -e "\n${BLUE}=== Startup Options ===${NC}"
     echo -e "1) Start Docker containers only"
     echo -e "2) Start Docker + Build and run iOS app"
     echo -e "3) Build and run iOS app only"
-    echo -e "4) Check service status"
+    echo -e "4) Configure tunnel/port forwarding"
     echo -e "5) Stop/cleanup services"
-    echo -e "6) View logs"
+    echo -e "6) Check service status"
+    echo -e "7) View logs"
     echo -e "0) Exit"
     echo -e "\n${YELLOW}Select an option:${NC} "
 }
@@ -436,10 +633,11 @@ while true; do
         1)
             start_all_services
             echo -e "\n${GREEN}✓ All Docker services started${NC}"
-            echo -e "${YELLOW}API: http://localhost:8080${NC}"
-            echo -e "${YELLOW}Supabase: http://localhost:8000${NC}"
-            echo -e "${YELLOW}Database: localhost:5432${NC}"
-            echo -e "${YELLOW}Redis: redis:6379${NC}"
+            echo -e "${YELLOW}API:       http://localhost:8080${NC}"
+            echo -e "${YELLOW}Supabase:  http://localhost:8000${NC}"
+            echo -e "${YELLOW}Database:  localhost:5432${NC}"
+            echo -e "${YELLOW}Redis:     redis:6379${NC}"
+            echo -e "\n${CYAN}Tip: Use option 7 to configure tunnel for remote access${NC}"
             ;;
         2)
             start_all_services
@@ -450,12 +648,15 @@ while true; do
             build_ios_app
             ;;
         4)
-            check_status
+            configure_tunnel      
             ;;
         5)
             stop_services
             ;;
         6)
+            check_status
+            ;;
+        7)
             view_logs
             ;;
         0)

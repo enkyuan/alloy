@@ -18,6 +18,7 @@ from app.services.spotify_controller import (
     SearchNoResultsError,
     SpotifyAPIError,
     PremiumRequiredError,
+    AuthenticationError,
     spotify_controller,
 )
 from app.services.voice_agent import voice_agent_service
@@ -69,10 +70,12 @@ async def execute_spotify_command(
         integration = await get_spotify_integration(user_id, db)
         if not integration:
             logger.warning(f"User {user_id} has no Spotify integration")
+            error = AuthenticationError(reason="no_integration")
             return {
                 "type": "command_error",
-                "message": "Spotify is not connected. Please connect Spotify in settings.",
-                "error_code": "NO_INTEGRATION"
+                "message": error.message,
+                "error_code": error.error_code,
+                "suggestions": error.suggestions
             }
         
         # Get valid access token (refresh if needed)
@@ -80,10 +83,12 @@ async def execute_spotify_command(
             access_token = await spotify_service.get_valid_token(integration, db)
         except Exception as e:
             logger.error(f"Failed to get valid token: {str(e)}")
+            error = AuthenticationError(reason="refresh_failed")
             return {
                 "type": "command_error",
-                "message": "Failed to authenticate with Spotify. Please reconnect in settings.",
-                "error_code": "AUTH_FAILED"
+                "message": error.message,
+                "error_code": error.error_code,
+                "suggestions": error.suggestions
             }
         
         # Parse command using voice agent
@@ -241,7 +246,9 @@ async def execute_spotify_command(
         return {
             "type": "command_error",
             "message": e.message,
-            "error_code": "NO_DEVICE"
+            "error_code": e.error_code,
+            "suggestions": e.suggestions,
+            "available_devices": e.available_devices
         }
     
     except SearchNoResultsError as e:
@@ -249,8 +256,10 @@ async def execute_spotify_command(
         return {
             "type": "command_error",
             "message": e.message,
-            "error_code": "NO_RESULTS",
-            "query": e.query
+            "error_code": e.error_code,
+            "suggestions": e.suggestions,
+            "query": e.query,
+            "search_type": e.search_type
         }
     
     except PremiumRequiredError as e:
@@ -258,15 +267,40 @@ async def execute_spotify_command(
         return {
             "type": "command_error",
             "message": e.message,
-            "error_code": "PREMIUM_REQUIRED"
+            "error_code": e.error_code,
+            "suggestions": e.suggestions,
+            "feature": e.feature
+        }
+    
+    except AuthenticationError as e:
+        logger.error(f"Authentication error for user {user_id}: {str(e)}")
+        return {
+            "type": "command_error",
+            "message": e.message,
+            "error_code": e.error_code,
+            "suggestions": e.suggestions,
+            "reason": e.reason
         }
     
     except SpotifyAPIError as e:
         logger.error(f"Spotify API error: {str(e)}", exc_info=True)
+        
+        # Provide more specific error message based on status code
+        message = e.message
+        if e.status_code == 429:
+            message = "Spotify is rate limiting requests. Please wait a moment and try again."
+        elif e.status_code in [500, 502, 503, 504]:
+            message = "Spotify is experiencing technical difficulties. Please try again in a moment."
+        elif not message or message == "Failed to play track":
+            message = "Something went wrong with Spotify. Please try again."
+        
         return {
             "type": "command_error",
-            "message": "Something went wrong with Spotify. Please try again.",
-            "error_code": "API_ERROR"
+            "message": message,
+            "error_code": e.error_code,
+            "suggestions": e.suggestions,
+            "is_retryable": e.is_retryable,
+            "status_code": e.status_code
         }
     
     except Exception as e:
@@ -274,7 +308,12 @@ async def execute_spotify_command(
         return {
             "type": "command_error",
             "message": "An unexpected error occurred. Please try again.",
-            "error_code": "INTERNAL_ERROR"
+            "error_code": "INTERNAL_ERROR",
+            "suggestions": [
+                "Try your command again",
+                "Check your internet connection",
+                "Make sure Spotify is running"
+            ]
         }
 
 

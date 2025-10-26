@@ -1204,26 +1204,146 @@ async def gmail_exchange_code(
         )
 
 
+@router.post("/gmail/connect-native")
+async def connect_gmail_native(
+    request: Request,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Connect Gmail using native Google Sign-In SDK (iOS).
+
+    This endpoint receives ID token and access token from Google Sign-In SDK
+    and stores them for Gmail API access. This bypasses the loopback flow
+    that Google has deprecated.
+
+    Args:
+        request: FastAPI request object with id_token and access_token
+        authorization: Bearer token (Supabase) from Authorization header
+        db: Database session
+
+    Returns:
+        Success response with integration status
+
+    Raises:
+        HTTPException: If connection fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Google tokens from request body
+        body_data = await request.json()
+        google_id_token = body_data.get("id_token")
+        google_access_token = body_data.get("access_token")
+
+        if not google_access_token or not google_id_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing id_token or access_token in request body"
+            )
+
+        user_id = supabase_user["id"]
+
+        # Verify token works with Gmail API and get user's email
+        try:
+            gmail_svc = get_gmail_service(google_access_token)
+            profile = gmail_svc.get_profile()
+            gmail_email = profile.get("emailAddress")
+            logger.info(f"Successfully verified Gmail access for {gmail_email}")
+        except Exception as e:
+            logger.error(f"Failed to verify Gmail access: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or insufficient Gmail access token. Make sure Gmail scopes were granted."
+            )
+
+        # Store or update integration in database
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "gmail"
+        ).first()
+
+        # Note: Google Sign-In tokens typically expire in 1 hour
+        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+
+        if integration:
+            # Update existing integration
+            integration.access_token = google_access_token
+            integration.expires_at = token_expires_at
+            integration.is_active = True
+            integration.scope = "gmail.readonly gmail.send"
+            integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="gmail",
+                access_token=google_access_token,
+                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens via addScopes
+                expires_at=token_expires_at,
+                is_active=True,
+                scope="gmail.readonly gmail.send"
+            )
+            db.add(integration)
+
+        db.commit()
+
+        logger.info(f"Successfully connected Gmail via native SDK for user {user_id}")
+
+        return {
+            "success": True,
+            "message": "Gmail connected successfully",
+            "email": gmail_email
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to connect Gmail: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect Gmail: {str(e)}"
+        )
+
+
 @router.post("/gmail/sync")
 async def sync_gmail_from_google_signin(
     request: Request,
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Sync Gmail integration from Google Sign-In access token.
-    
+    """Sync Gmail integration from Google Sign-In access token (legacy).
+
     This endpoint is called automatically when a user signs in with Google
     and has granted Gmail scopes. The iOS app sends the Google OAuth access
     token, and we store it for Gmail API access.
-    
+
+    Note: This is deprecated in favor of /gmail/connect-native which uses
+    the native Google Sign-In SDK flow.
+
     Args:
         request: FastAPI request object
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         Success response with integration status
-        
+
     Raises:
         HTTPException: If sync fails
     """
@@ -1235,28 +1355,28 @@ async def sync_gmail_from_google_signin(
             )
 
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token"
             )
-        
+
         # Get Google access token from request body
         body_data = await request.json()
         google_access_token = body_data.get("access_token")
-        
+
         if not google_access_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Missing access_token in request body"
             )
-        
+
         user_id = supabase_user["id"]
-        
+
         # Verify token works with Gmail API and get user's email
         try:
             gmail_svc = get_gmail_service(google_access_token)
@@ -1269,16 +1389,16 @@ async def sync_gmail_from_google_signin(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or insufficient Gmail access token"
             )
-        
+
         # Store or update integration in database
         integration = db.query(Integration).filter(
             Integration.user_id == user_id,
             Integration.service == "gmail"
         ).first()
-        
+
         # Note: Google Sign-In tokens typically expire in 1 hour
         token_expires_at = datetime.utcnow() + timedelta(hours=1)
-        
+
         if integration:
             # Update existing integration
             integration.access_token = google_access_token
@@ -1299,17 +1419,17 @@ async def sync_gmail_from_google_signin(
                 scope="gmail.readonly gmail.send gmail.modify"
             )
             db.add(integration)
-        
+
         db.commit()
-        
+
         logger.info(f"Successfully synced Gmail integration for user {user_id}")
-        
+
         return {
             "success": True,
             "message": "Gmail synced successfully",
             "email": gmail_email
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:

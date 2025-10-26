@@ -1,5 +1,3 @@
-
-
 # Tunneling Guide
 
 How to use tools like ngrok, zrok, etc. to test the iOS app on another device.
@@ -21,11 +19,11 @@ SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 
 ```
 
-> **Note:**
->
-> -   Use `https://` instead of `http://` (tunnel provides SSL)
-> -   Use `wss://` instead of `ws://` for WebSocket (secure WebSocket)
-> -   You'll need to clarify with your tunnel provider how it routes to different ports (8000 vs 8080)
+**Important Notes:**
+
+-   Use `https://` instead of `http://` (tunnel provides SSL)
+-   Use `wss://` instead of `ws://` for WebSocket (secure WebSocket)
+-   You'll need to clarify with your tunnel provider how it routes to different ports (8000 vs 8080)
 
 Backend Configuration
 ---------------------
@@ -79,12 +77,12 @@ You need to understand how your tunnel `t-rh4czluc.tunn.dev` handles multiple po
 
 ### **OAuth Redirect URIs**
 
-> **Note:** You **MUST** update your Google Cloud Console with the new redirect URI:
->
-> 1.  Go to [Google Cloud Console](https://console.cloud.google.com/)
-> 2.  Navigate to APIs & Services → Credentials
-> 3.  Find your OAuth 2.0 Client ID
-> 4.  Add to **Authorized redirect URIs**: `https://t-rh4czluc.tunn.dev/auth/v1/callback`
+**Note:** You MUST update your Google Cloud Console with the new redirect URI:
+
+1.  Go to [Google Cloud Console](https://console.cloud.google.com/)
+2.  Navigate to APIs & Services → Credentials
+3.  Find your OAuth 2.0 Client ID
+4.  Add to **Authorized redirect URIs**: `https://t-rh4czluc.tunn.dev/auth/v1/callback`
 
 ### **Recommended Approach**
 

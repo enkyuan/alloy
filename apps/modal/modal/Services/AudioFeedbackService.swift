@@ -121,8 +121,9 @@ extension AudioFeedbackService: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didStart utterance: AVSpeechUtterance
     ) {
+        let speechString = utterance.speechString
         Task { @MainActor in
-            print("🔊 Started speaking: \"\(utterance.speechString)\"")
+            print("🔊 Started speaking: \"\(speechString)\"")
             self.isSpeaking = true
         }
     }
@@ -131,8 +132,9 @@ extension AudioFeedbackService: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didFinish utterance: AVSpeechUtterance
     ) {
+        let speechString = utterance.speechString
         Task { @MainActor in
-            print("✅ Finished speaking: \"\(utterance.speechString)\"")
+            print("✅ Finished speaking: \"\(speechString)\"")
             self.isSpeaking = false
         }
     }
@@ -141,8 +143,9 @@ extension AudioFeedbackService: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer,
         didCancel utterance: AVSpeechUtterance
     ) {
+        let speechString = utterance.speechString
         Task { @MainActor in
-            print("🛑 Cancelled speaking: \"\(utterance.speechString)\"")
+            print("🛑 Cancelled speaking: \"\(speechString)\"")
             self.isSpeaking = false
         }
     }

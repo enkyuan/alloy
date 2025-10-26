@@ -7,49 +7,29 @@ struct DeviceSelectorView: View {
     @Binding var isLoading: Bool
     let onDeviceSelected: (SpotifyDevice) -> Void
     let onRefresh: () -> Void
-    
+    @SwiftUI.Environment(\.dismiss) private var dismiss
+
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Spotify Devices")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(isLoading ? 360 : 0))
-                        .animation(isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isLoading)
-                }
-                .disabled(isLoading)
-            }
-            .padding()
-            
-            Divider()
-            
-            // Device list
             if isLoading && devices.isEmpty {
                 VStack(spacing: 16) {
                     ProgressView()
                     Text("Loading devices...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else if devices.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "speaker.slash")
+                    Image(systemName: deviceEmptyIcon)
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
-                    
+
                     Text("No Devices Available")
                         .font(.headline)
                         .foregroundColor(.primary)
-                    
+
                     Text("Open Spotify on a device to see it here")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
@@ -68,7 +48,7 @@ struct DeviceSelectorView: View {
                                     onDeviceSelected(device)
                                 }
                             )
-                            
+
                             if device.id != devices.last?.id {
                                 Divider()
                                     .padding(.leading, 60)
@@ -78,9 +58,45 @@ struct DeviceSelectorView: View {
                 }
             }
         }
-        .background(Color(.systemBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 5)
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("Devices")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: onRefresh) {
+                    if isLoading {
+                        ProgressView()
+                            .tint(.secondary)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .disabled(isLoading)
+            }
+        }
+        .presentationDragIndicator(.visible)
+        .interactiveDismissDisabled(false)
+    }
+
+    // MARK: - Helpers
+
+    private var deviceEmptyIcon: String {
+        let idiom = UIDevice.current.userInterfaceIdiom
+        
+        switch idiom {
+        case .phone:
+            if #available(iOS 15.0, *) {
+                return "iphone.gen2.slash"
+            } else {
+                return "iphone.gen1.slash"
+            }
+        case .pad:
+            return "ipad.slash"
+        default:
+            return "iphone.gen1.slash"
+        }
     }
 }
 
@@ -166,17 +182,19 @@ struct DeviceRow: View {
 }
 
 #Preview {
-    DeviceSelectorView(
-        devices: .constant([
-            SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75),
-            SpotifyDevice(id: "2", name: "MacBook Pro", type: "computer", isActive: false, volumePercent: 50),
-            SpotifyDevice(id: "3", name: "Living Room Speaker", type: "speaker", isActive: false, volumePercent: 30)
-        ]),
-        currentDevice: .constant(SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75)),
-        isLoading: .constant(false),
+    @Previewable @State var devices: [SpotifyDevice] = [
+        SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75),
+        SpotifyDevice(id: "2", name: "MacBook Pro", type: "computer", isActive: false, volumePercent: 50),
+        SpotifyDevice(id: "3", name: "Living Room Speaker", type: "speaker", isActive: false, volumePercent: 30)
+    ]
+    @Previewable @State var currentDevice: SpotifyDevice? = SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75)
+    @Previewable @State var isLoading = false
+    
+    return DeviceSelectorView(
+        devices: $devices,
+        currentDevice: $currentDevice,
+        isLoading: $isLoading,
         onDeviceSelected: { _ in },
         onRefresh: {}
     )
-    .frame(width: 350, height: 400)
-    .padding()
 }

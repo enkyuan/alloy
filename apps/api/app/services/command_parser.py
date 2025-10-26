@@ -1,8 +1,11 @@
 """Command parser service for voice-activated Spotify agent."""
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -293,14 +296,17 @@ class CommandParser:
         # Remove extra whitespace
         text = re.sub(r'\s+', ' ', text)
         
-        # Remove common filler words
+        # Remove common filler words (but preserve "like" when used in "like this")
         filler_words = [
-            r'\b(um|uh|like|you know|actually|basically|literally)\b',
+            r'\b(um|uh|you know|actually|basically|literally)\b',
             r'\b(hey|hi|hello)\b',
             r'\b(please|can you|could you|would you)\b',
         ]
         for pattern in filler_words:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # Remove "like" only when it's not part of "like this" or "like that"
+        text = re.sub(r'\blike\b(?!\s+(?:this|that))', '', text, flags=re.IGNORECASE)
         
         # Clean up extra spaces after removal
         text = re.sub(r'\s+', ' ', text).strip()

@@ -24,11 +24,18 @@ class AssistantViewModel {
     var isInCommandMode = false
     private var commandModeTimer: Task<Void, Never>?
     
+    // Command feedback states
+    var commandFeedback: String?
+    var isExecutingCommand = false
+    
     // Device management states
     var availableDevices: [SpotifyDevice] = []
     var currentDevice: SpotifyDevice?
     var isLoadingDevices = false
     var showDeviceSelector = false
+    
+    // Spotify playback states
+    var currentSpotifyTrack: SpotifyTrack?
     
     // Prevent concurrent connection attempts
     private var isStartingRecording = false
@@ -415,50 +422,45 @@ class AssistantViewModel {
     
     /// Switch to a different device
     func switchToDevice(_ device: SpotifyDevice) async {
-        do {
-            // Send switch_device command via WebSocket
-            let command = ["type": "command", "text": "switch to \(device.name)"]
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: command),
-                  let jsonString = String(data: jsonData, encoding: .utf8) else {
-                print("❌ Failed to create device switch command")
-                return
-            }
+        // Send switch_device command via WebSocket
+        let command = ["type": "command", "text": "switch to \(device.name)"]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: command),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            print("❌ Failed to create device switch command")
+            return
+        }
+        
+        // Set up one-time callback for device switch response
+        var responseReceived = false
+        webSocketSTTService.onCommandResult = { [weak self] result in
+            guard let self = self, !responseReceived else { return }
+            responseReceived = true
             
-            // Set up one-time callback for device switch response
-            var responseReceived = false
-            webSocketSTTService.onCommandResult = { [weak self] result in
-                guard let self = self, !responseReceived else { return }
-                responseReceived = true
-                
-                Task { @MainActor in
-                    if result["success"] as? Bool == true {
-                        // Update current device
-                        self.currentDevice = device
-                        
-                        // Update device list to reflect new active device
-                        self.availableDevices = self.availableDevices.map { d in
-                            SpotifyDevice(
-                                id: d.id,
-                                name: d.name,
-                                type: d.type,
-                                isActive: d.id == device.id,
-                                volumePercent: d.volumePercent
-                            )
-                        }
-                        
-                        print("✅ Switched to device: \(device.name)")
-                    } else {
-                        print("❌ Failed to switch device")
+            Task { @MainActor in
+                if result["success"] as? Bool == true {
+                    // Update current device
+                    self.currentDevice = device
+                    
+                    // Update device list to reflect new active device
+                    self.availableDevices = self.availableDevices.map { d in
+                        SpotifyDevice(
+                            id: d.id,
+                            name: d.name,
+                            type: d.type,
+                            isActive: d.id == device.id,
+                            volumePercent: d.volumePercent
+                        )
                     }
+                    
+                    print("✅ Switched to device: \(device.name)")
+                } else {
+                    print("❌ Failed to switch device")
                 }
             }
-            
-            // Send command
-            webSocketSTTService.sendMessage(jsonString)
-            
-        } catch {
-            print("❌ Failed to switch device: \(error)")
         }
+        
+        // Send command
+        webSocketSTTService.sendMessage(jsonString)
     }
     
     /// Toggle device selector visibility
