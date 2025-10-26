@@ -1,4 +1,6 @@
-# Modal
+<p align="center">
+  <img src="./docs/assets/wordmark.svg" alt="Wordmark" width="300" style="border-radius: 12px;" />
+</p>
 
 ## 🚀 Quick Start
 
