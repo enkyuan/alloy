@@ -3,10 +3,86 @@
 Common issues and solutions for the Modal application.
 
 ## Table of Contents
+- [API Container Issues](#api-container-issues)
 - [Database Issues](#database-issues)
 - [Docker Issues](#docker-issues)
+- [Colima Issues](#colima-issues)
 - [Environment Configuration](#environment-configuration)
 - [iOS Build Issues](#ios-build-issues)
+
+---
+
+## API Container Issues
+
+### API Container Keeps Restarting
+
+**Symptoms:**
+- `docker compose ps` shows `modal-api` with status "Restarting (1)"
+- iOS app can't connect to localhost:8080
+- Error: "ModuleNotFoundError: No module named 'redis'" (or other Python packages)
+
+**Root Cause:**
+The Docker image wasn't rebuilt after adding new Python dependencies to `pyproject.toml`.
+
+**Solution:**
+
+Quick Fix:
+```bash
+cd docker
+docker compose build api
+docker compose up -d api
+```
+
+Verify it's working:
+```bash
+# Check container status
+docker compose ps api
+
+# Should show: Up X seconds (healthy)
+
+# Test the API
+curl http://localhost:8080/health
+# Should return: {"status":"healthy","service":"Modal API","version":"1.0.0"}
+```
+
+**Prevention:**
+The startup script now automatically rebuilds the API container when you start services.
+
+### Missing Python Dependencies
+
+**Error:** `ModuleNotFoundError: No module named 'X'`
+
+**Fix:**
+```bash
+# Add the package to apps/api/pyproject.toml
+# Then rebuild:
+docker compose build api
+docker compose up -d api
+```
+
+### API Port Already in Use
+
+**Error:** `port is already allocated` (port 8080)
+
+**Fix:**
+```bash
+# Find what's using the port
+lsof -i :8080
+
+# Kill the process or change the port in docker-compose.yml
+```
+
+### API Logs
+
+View API logs:
+```bash
+docker compose logs -f api
+```
+
+View all logs:
+```bash
+docker compose logs -f
+```
 
 ---
 
@@ -24,7 +100,7 @@ Common issues and solutions for the Modal application.
 1. **JWT Configuration Mismatch**
    - Running containers have old JWT keys
    - Environment files updated but containers not restarted
-   
+
    **Solution:**
    ```bash
    # Full restart to apply new configuration
@@ -35,12 +111,12 @@ Common issues and solutions for the Modal application.
 
 2. **Port Conflict**
    - Port 5432 already in use by another PostgreSQL instance
-   
+
    **Solution:**
    ```bash
    # Check what's using port 5432
    lsof -i :5432
-   
+
    # Stop conflicting service or change port in .env
    # Edit docker/.env and docker/supabase/.env:
    POSTGRES_PORT=5433  # Use different port
@@ -50,20 +126,20 @@ Common issues and solutions for the Modal application.
    - Database volume has corrupted data or missing environment variables
    - Error: `FATAL: invalid value for parameter "port": ""`
    - Error: `Database directory appears to contain a database; Skipping initialization`
-   
+
    **Cause:**
    This happens when:
    - Setting up on a machine that previously had Modal installed
    - Docker volumes contain old data with incorrect configuration
    - POSTGRES_PORT variable is missing or empty in .env files
-   
+
    **Solution (Recommended - use setup script):**
    ```bash
    # Run setup script - it will detect volumes and offer to clean them
    ./scripts/setup.sh
    # Choose option 2: "Clean volumes and start fresh"
    ```
-   
+
    **Solution (Manual):**
    ```bash
    # ⚠️ WARNING: This deletes all data
@@ -75,11 +151,24 @@ Common issues and solutions for the Modal application.
 
 4. **Insufficient Resources**
    - Docker Desktop has insufficient memory/CPU
-   
+
    **Solution:**
    - Open Docker Desktop → Settings → Resources
    - Increase Memory to at least 4GB
    - Increase CPU to at least 2 cores
+
+### Database Connection Issues
+
+**Error:** Can't connect to database
+
+**Fix:**
+```bash
+# Check if database is running
+docker compose ps db
+
+# If not healthy, restart:
+docker compose restart db
+```
 
 **Check Database Logs:**
 ```bash
@@ -158,7 +247,120 @@ docker compose up -d
 
 ---
 
+## Colima Issues
+
+### Port Forwarding Not Working
+
+**Symptoms:**
+- Docker shows port mapping (e.g., `0.0.0.0:8000->8000/tcp`) but `curl http://localhost:8000` fails
+- Connection refused errors when accessing ports from host Mac
+- Services work fine inside Docker network but not accessible from macOS
+
+**Root Cause:**
+When using Colima (instead of Docker Desktop), port forwarding requires Colima to be fully initialized. Sometimes after changing port mappings or after system sleep/wake, Colima's port forwarding stops working.
+
+**Solution:**
+
+Restart Colima to reinitialize port forwarding:
+```bash
+colima stop
+colima start
+```
+
+After Colima restarts, test your ports:
+```bash
+curl http://localhost:8000/
+```
+
+**Verification:**
+```bash
+# Check that ports work inside Colima VM
+colima ssh -- curl -s http://localhost:8000/
+
+# Check from macOS
+curl http://localhost:8000/
+```
+
+Both should return responses (even if "Unauthorized" - that's OK, it means the service is accessible).
+
+**Prevention:**
+- After changing Docker port mappings in `.env` files, always restart Colima
+- After system sleep/wake, you may need to restart Colima
+- Consider using `colima start --foreground` during development to see connection issues immediately
+
+**Alternative Workarounds:**
+
+If restarting doesn't work:
+1. **Check Colima status:**
+   ```bash
+   colima status
+   ```
+
+2. **Use Colima VM IP directly:**
+   ```bash
+   # Get VM IP
+   colima ssh ip addr | grep "inet " | grep "192.168"
+
+   # Use that IP instead of localhost
+   curl http://192.168.5.1:8000/
+   ```
+
+3. **Rebuild Colima completely** (nuclear option):
+   ```bash
+   colima delete
+   colima start --cpu 4 --memory 8 --disk 60
+   ```
+
+---
+
 ## Environment Configuration
+
+### Tunnel Configuration
+
+When using a tunnel (e.g., ngrok, tunn.dev) for development with physical devices:
+
+#### iOS App Configuration
+
+**[apps/modal/Config.xcconfig](apps/modal/Config.xcconfig):**
+
+For localhost development (simulator):
+```xcconfig
+API_BASE_URL = http:/$()/localhost:8080/api/v1
+WEBSOCKET_URL = ws:/$()/localhost:8080/api/v1
+SUPABASE_URL = http:/$()/localhost:8000
+```
+
+For tunnel (physical device):
+```xcconfig
+// Use tunnel for all services (Kong routes to API internally)
+API_BASE_URL = https:/$()/your-tunnel-url.tunn.dev/api/v1
+WEBSOCKET_URL = wss:/$()/your-tunnel-url.tunn.dev/api/v1
+SUPABASE_URL = https:/$()/your-tunnel-url.tunn.dev
+```
+
+**Important:**
+- Use `https://` instead of `http://` (tunnel provides SSL)
+- Use `wss://` instead of `ws://` for WebSocket (secure WebSocket)
+- Route ALL traffic through port 8000 (Kong), which internally routes to your API on port 8080
+
+#### Backend Configuration
+
+**[docker/.env](docker/.env) and [docker/supabase/.env](docker/supabase/.env):**
+
+For tunnel configuration, update:
+```bash
+# API Configuration
+API_EXTERNAL_URL=https://your-tunnel-url.tunn.dev
+
+# OAuth - Google (must match Google Console configuration)
+GOOGLE_REDIRECT_URI=https://your-tunnel-url.tunn.dev/auth/v1/callback
+GOTRUE_GOOGLE_REDIRECT_URI=https://your-tunnel-url.tunn.dev/auth/v1/callback
+
+# Gmail OAuth
+GMAIL_REDIRECT_URI=https://your-tunnel-url.tunn.dev/api/v1/integrations/gmail/callback
+```
+
+**Critical:** Update your Google Cloud Console OAuth redirect URIs to match the tunnel URL.
 
 ### "SUPABASE_KONG_URL" variable is not set
 
@@ -255,11 +457,11 @@ docker compose up -d
 curl http://localhost:8080/health
 
 # Check Supabase is accessible
-curl http://localhost:8001/
+curl http://localhost:8000/
 
 # Verify iOS Config.xcconfig has correct URLs:
 # API_BASE_URL should point to your backend
-# SUPABASE_URL should be http://localhost:8001
+# SUPABASE_URL should be http://localhost:8000
 ```
 
 ---
@@ -302,6 +504,22 @@ When things go wrong, try these in order:
    ./scripts/setup.sh
    ./scripts/startup.sh
    ```
+
+---
+
+## Complete Reset
+
+If all else fails:
+```bash
+# Stop everything
+docker compose down -v
+
+# Rebuild everything
+docker compose build
+
+# Start fresh
+docker compose up -d
+```
 
 ---
 
@@ -389,4 +607,4 @@ If you're still stuck after trying these solutions:
 
 ---
 
-**Last Updated:** October 16, 2025
+**Last Updated:** January 2025

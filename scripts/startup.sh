@@ -436,8 +436,8 @@ while true; do
         1)
             start_all_services
             echo -e "\n${GREEN}✓ All Docker services started${NC}"
-            echo -e "${YELLOW}API: http://localhost:8000${NC}"
-            echo -e "${YELLOW}Supabase: http://localhost:8001${NC}"
+            echo -e "${YELLOW}API: http://localhost:8080${NC}"
+            echo -e "${YELLOW}Supabase: http://localhost:8000${NC}"
             echo -e "${YELLOW}Database: localhost:5432${NC}"
             echo -e "${YELLOW}Redis: redis:6379${NC}"
             ;;
