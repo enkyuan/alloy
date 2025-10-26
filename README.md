@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/assets/wordmark.svg" alt="Wordmark" width="300" style="border-radius: 12px;" />
+  <img src="./docs/assets/wordmark.svg" alt="Wordmark" width="300" style="border-radius: 20px;" />
 </p>
 
 ## 🚀 Quick Start
