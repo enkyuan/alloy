@@ -446,11 +446,12 @@ services:
       - ./supabase/volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
       - ./supabase/volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
       - ./supabase/volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - ./supabase/volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/init-scripts/96-_supabase.sql:Z
+      - ./supabase/volumes/db/logs.sql:/docker-entrypoint-initdb.d/init-scripts/97-logs.sql:Z
+      - ./supabase/volumes/db/init/data.sql:/docker-entrypoint-initdb.d/init-scripts/01-data.sql:Z
       - ./supabase/volumes/db/data:/var/lib/postgresql/data:Z
-      - ./supabase/volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/migrations/97-_supabase.sql:Z
-      - ./supabase/volumes/db/logs.sql:/docker-entrypoint-initdb.d/migrations/99-logs.sql:Z
       - ./supabase/volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
-      - ./supabase/volumes/db/storage_buckets.sql:/docker-entrypoint-initdb.d/migrations/98-storage-buckets.sql:Z
+      - ./supabase/volumes/db/storage_buckets.sql:/docker-entrypoint-initdb.d/migrations/98-storage-buckets.sql:Z  
       - db-config:/etc/postgresql-custom
     ports:
       - 5432:5432
