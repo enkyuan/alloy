@@ -175,7 +175,7 @@ services:
       DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
       DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
     volumes:
-      - ./volumes/api/kong.yml:/home/kong/temp.yml:ro,z
+      - ./supabase/volumes/api/kong.yml:/home/kong/temp.yml:ro,z
     entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
 
   auth:
