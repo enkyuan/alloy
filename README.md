@@ -1,36 +1,5 @@
 # Modal
 
-## 🏗️ Architecture
-
-```
-modal/
-├── apps/
-│   ├── api/              # FastAPI backend
-│   │   └── app/
-│   │       ├── models/       # SQLAlchemy database models
-│   │       ├── schemas/      # Pydantic request/response schemas
-│   │       ├── routers/      # API route handlers
-│   │       ├── services/     # Business logic layer
-│   │       ├── config.py     # Application configuration
-│   │       ├── database.py   # Database session management
-│   │       └── main.py       # FastAPI app entry point
-│   │
-│   └── modal/            # iOS SwiftUI app
-│       └── modal/
-│           ├── Views/        # Modular SwiftUI views
-│           │   ├── Root/         # App navigation root
-│           │   ├── Onboarding/   # Authentication flow
-│           │   ├── Home/         # Main app screens
-│           │   └── Components/   # Reusable UI components
-│           ├── Services/     # Business logic services
-│           ├── Config/       # App configuration
-│           └── Assets.xcassets/ # Images and colors
-│
-├── supabase/             # Local Supabase instance
-├── docs/                 # Documentation
-└── scripts/              # Utility scripts
-```
-
 ## 🚀 Quick Start
 
 ### Prerequisites
