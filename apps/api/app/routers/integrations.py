@@ -1520,17 +1520,141 @@ async def disconnect_gmail(
 # Google Calendar Integration Routes
 # =======================
 
+@router.post("/google-calendar/connect-native")
+async def connect_google_calendar_native(
+    request: Request,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Connect Google Calendar using native Google Sign-In SDK (iOS).
+
+    This endpoint receives ID token and access token from Google Sign-In SDK
+    and stores them for Calendar API access. This bypasses the loopback flow
+    that Google has deprecated.
+
+    Args:
+        request: FastAPI request object with id_token and access_token
+        authorization: Bearer token (Supabase) from Authorization header
+        db: Database session
+
+    Returns:
+        Success response with integration status
+
+    Raises:
+        HTTPException: If connection fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Google tokens from request body
+        body_data = await request.json()
+        google_id_token = body_data.get("id_token")
+        google_access_token = body_data.get("access_token")
+
+        if not google_access_token or not google_id_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing id_token or access_token in request body"
+            )
+
+        user_id = supabase_user["id"]
+
+        # Verify token works with Calendar API and get user's calendars
+        try:
+            calendar_svc = get_google_calendar_service(google_access_token)
+            calendars = calendar_svc.list_calendars()
+            primary_calendar = next(
+                (cal for cal in calendars if cal.get('id') == 'primary'),
+                calendars[0] if calendars else None
+            )
+            calendar_email = primary_calendar.get('id') if primary_calendar else 'primary'
+            logger.info(f"Successfully verified Calendar access for {calendar_email}")
+        except Exception as e:
+            logger.error(f"Failed to verify Calendar access: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or insufficient Calendar access token. Make sure Calendar scopes were granted."
+            )
+
+        # Store or update integration in database
+        integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "google_calendar"
+        ).first()
+
+        # Note: Google Sign-In tokens typically expire in 1 hour
+        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+
+        if integration:
+            # Update existing integration
+            integration.access_token = google_access_token
+            integration.expires_at = token_expires_at
+            integration.is_active = True
+            integration.scope = "calendar.readonly calendar.events"
+            integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="google_calendar",
+                access_token=google_access_token,
+                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens via addScopes
+                expires_at=token_expires_at,
+                is_active=True,
+                scope="calendar.readonly calendar.events"
+            )
+            db.add(integration)
+
+        db.commit()
+
+        logger.info(f"Successfully connected Google Calendar via native SDK for user {user_id}")
+
+        return {
+            "success": True,
+            "message": "Google Calendar connected successfully",
+            "calendar_id": calendar_email
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to connect Google Calendar: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect Google Calendar: {str(e)}"
+        )
+
+
 @router.post("/google-calendar/sync")
 async def sync_google_calendar_from_google_signin(
     request: Request,
     authorization: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Sync Google Calendar integration from Google Sign-In access token.
+    """Sync Google Calendar integration from Google Sign-In access token (legacy).
     
     This endpoint is called automatically when a user signs in with Google
     and has granted Calendar scopes. The iOS app sends the Google OAuth access
     token, and we store it for Calendar API access.
+
+    Note: This is deprecated in favor of /google-calendar/connect-native which uses
+    the native Google Sign-In SDK flow.
     
     Args:
         request: FastAPI request object

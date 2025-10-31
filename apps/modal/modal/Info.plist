@@ -19,8 +19,8 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.modal.app</string>
-				<string>modal</string>
+				<string>com.modi.app</string>
+				<string>modi</string>
 			</array>
 		</dict>
 	</array>
