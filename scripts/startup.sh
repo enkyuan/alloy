@@ -440,7 +440,7 @@ configure_tunnel() {
     # Update apps/api/.env
     echo -e "${YELLOW}Updating apps/api/.env...${NC}"
     if [ -f "$PROJECT_ROOT/apps/api/.env" ]; then
-        sed -i.bak "s|^SUPABASE_URL=.*|SUPABASE_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/apps/api/.env"
+        sed -i.bak "s|^SUPABASE_KONG_URL=.*|SUPABASE_KONG_URL=${SUPABASE_URL}|" "$PROJECT_ROOT/apps/api/.env"
         rm -f "$PROJECT_ROOT/apps/api/.env.bak"
         echo -e "${GREEN}✓ Updated apps/api/.env${NC}"
     fi
