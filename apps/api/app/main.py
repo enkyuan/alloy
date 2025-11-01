@@ -1,19 +1,15 @@
 """Main FastAPI application."""
 import logging
-import sys
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, integrations, speech_to_text_stream
+from app.logging_config import setup_logging
+from app.routers import auth, integrations, stt, gemini
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO if not settings.DEBUG else logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+# Configure Rich logging
+setup_logging(debug=settings.DEBUG)
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +35,8 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations.router, prefix=settings.API_V1_PREFIX)
-app.include_router(speech_to_text_stream.router, prefix=settings.API_V1_PREFIX)
+app.include_router(stt.router, prefix=settings.API_V1_PREFIX)
+app.include_router(gemini.router, prefix=settings.API_V1_PREFIX)
 
 logger.info(f"Starting {settings.PROJECT_NAME}")
 

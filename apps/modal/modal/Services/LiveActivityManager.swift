@@ -33,6 +33,12 @@ class LiveActivityManager {
             print("⚠️ Live Activities are not enabled")
             return
         }
+        
+        // Additional iOS version check to prevent system service errors
+        guard #available(iOS 16.1, *) else {
+            print("⚠️ Live Activities require iOS 16.1 or later")
+            return
+        }
 
         // End existing activity if any
         if currentActivity != nil {
@@ -55,6 +61,21 @@ class LiveActivityManager {
             print("✅ Live Activity started: \(activity.id)")
         } catch {
             print("❌ Failed to start Live Activity: \(error)")
+            
+            // Handle specific Activity errors to prevent system service conflicts
+            if #available(iOS 16.1, *) {
+                // ActivityKit errors are typically NSErrors or other system errors
+                // The specific error types depend on the underlying system issues
+                let nsError = error as NSError
+                switch nsError.code {
+                case -1: // Typical code for disabled activities
+                    print("   Live Activities may be disabled in Settings")
+                case -2: // Typical code for too many updates
+                    print("   Too many activity updates - throttled by system")
+                default:
+                    print("   Error code: \(nsError.code), description: \(nsError.localizedDescription)")
+                }
+            }
         }
     }
 

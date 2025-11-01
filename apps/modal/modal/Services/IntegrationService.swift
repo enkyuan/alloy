@@ -280,7 +280,7 @@ class IntegrationService {
             endpointPath = service.rawValue
         }
 
-        let url = URL(string: "\(backendURL)/integrations/\(endpointPath)/connect-native")!
+        let url = URL(string: "\(backendURL)/integrations/\(endpointPath)/sync")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(supabaseAccessToken)", forHTTPHeaderField: "Authorization")

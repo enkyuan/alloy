@@ -236,13 +236,13 @@ struct IntegrationsView: View {
     
     private func refreshIntegrations() async {
         // Fetch latest integration status from backend
-        // This will show Gmail as connected if user granted permissions during Google Sign-In
+        // This will detect integrations connected via Google Sign-In or other methods
         isCheckingIntegrations = true
         defer { isCheckingIntegrations = false }
         
         do {
             try await integrationService.fetchConnectedIntegrations(authService: authService)
-            print("✅ Refreshed integrations - Gmail connected: \(integrationService.isConnected(.gmail))")
+            print("✅ Refreshed integrations")
         } catch {
             print("⚠️ Failed to refresh integrations: \(error.localizedDescription)")
             // Don't show error to user - this is a background check

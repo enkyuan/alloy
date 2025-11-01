@@ -65,7 +65,7 @@ struct StepperNavigation: View {
 
             // Bottom controls (stepper indicators + push-to-talk button)
             HStack(spacing: 12) {
-                // Stepper indicators
+                // Stepper indicators (fixed position)
                 HStack(spacing: 12) {
                     ForEach(0..<content.count, id: \.self) { index in
                         stepIndicator(for: index)
@@ -83,9 +83,14 @@ struct StepperNavigation: View {
                     RoundedRectangle(cornerRadius: 20)
                         .fill(.ultraThinMaterial)
                 )
+                .animation(nil, value: shouldCenterNavigation) // Prevent animation on pill contents
                 
-                // Push-to-talk button
-                pushToTalkButton
+                // Push-to-talk button (fades out on Settings page)
+                if !shouldCenterNavigation {
+                    pushToTalkButton
+                        .transition(.opacity.combined(with: .scale))
+                        .animation(.easeInOut(duration: 0.3), value: shouldCenterNavigation)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 60)
@@ -141,8 +146,16 @@ struct StepperNavigation: View {
         Image(systemName: content[index].icon)
             .font(.system(size: isActive ? 14 : 12, weight: isActive ? .semibold : .regular))
             .foregroundColor(isActive ? .primary : .primary.opacity(0.3))
+            .frame(width: 20, height: 20) // Fixed frame to prevent layout shifts
             .scaleEffect(isActive ? 1.0 : 0.9)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isActive)
+    }
+    
+    // MARK: - Computed Properties
+    
+    /// Determines if navigation should be centered (when on Settings page - last page)
+    private var shouldCenterNavigation: Bool {
+        currentPage == content.count - 1
     }
     
     // MARK: - Helpers

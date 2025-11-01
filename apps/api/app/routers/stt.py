@@ -22,6 +22,7 @@ from app.services.spotify_controller import (
     spotify_controller,
 )
 from app.services.voice_agent import voice_agent_service
+from app.services.gemini import get_gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,78 @@ async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integra
         .first()
     )
     return integration
+
+
+async def generate_ai_response(
+    user_message: str,
+    user_id: str,
+    conversation_history: list = None
+) -> dict:
+    """Generate AI response using Gemini.
+    
+    Args:
+        user_message: User's transcribed message
+        user_id: User ID
+        conversation_history: Optional conversation history
+        
+    Returns:
+        Response dictionary with AI response or error
+    """
+    try:
+        gemini = get_gemini_service()
+        
+        # Build conversation context
+        messages = conversation_history or []
+        messages.append({"role": "user", "content": user_message})
+        
+        # System instruction for the voice assistant
+        system_instruction = """You are Modi, a helpful voice assistant. 
+        Keep responses concise and natural for voice interaction.
+        Be friendly, helpful, and conversational.
+        If asked to control Spotify, acknowledge the request but explain that music control is handled separately."""
+        
+        # Generate response
+        response_text = await gemini.generate_chat_response(
+            messages=messages,
+            system_instruction=system_instruction,
+            temperature=0.7
+        )
+        
+        logger.info(f"Generated AI response for user {user_id}")
+        
+        return {
+            "type": "ai_response",
+            "success": True,
+            "text": response_text,
+            "user_message": user_message
+        }
+        
+    except ImportError as e:
+        logger.error(f"Gemini package not installed: {str(e)}", exc_info=True)
+        return {
+            "type": "ai_error",
+            "success": False,
+            "message": "AI service is not available. Please contact support.",
+            "error": "google-genai package not installed"
+        }
+    except ValueError as e:
+        logger.error(f"Gemini configuration error: {str(e)}", exc_info=True)
+        return {
+            "type": "ai_error",
+            "success": False,
+            "message": "AI service is not configured. Please contact support.",
+            "error": str(e)
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate AI response: {str(e)}", exc_info=True)
+        logger.error(f"Error type: {type(e).__name__}")
+        return {
+            "type": "ai_error",
+            "success": False,
+            "message": f"I'm having trouble processing that right now: {str(e)}",
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
 
 
 async def execute_spotify_command(
@@ -317,6 +390,73 @@ async def execute_spotify_command(
         }
 
 
+async def stream_ai_response(
+    websocket: WebSocket,
+    user_message: str,
+    user_id: str,
+    conversation_history: list = None
+):
+    """Stream AI response chunks to client.
+    
+    Args:
+        websocket: WebSocket connection
+        user_message: User's message
+        user_id: User ID
+        conversation_history: Conversation history
+    """
+    try:
+        gemini = get_gemini_service()
+        
+        # Build conversation context
+        messages = conversation_history or []
+        messages.append({"role": "user", "content": user_message})
+        
+        # System instruction
+        system_instruction = """You are Modi, a helpful voice assistant. 
+        Keep responses concise and natural for voice interaction.
+        Be friendly, helpful, and conversational.
+        If asked to control Spotify, acknowledge the request but explain that music control is handled separately."""
+        
+        # Send start signal
+        await websocket.send_json({
+            "type": "ai_response_start",
+            "user_message": user_message
+        })
+        
+        # Stream response chunks
+        full_response = ""
+        async for chunk in gemini.generate_streaming_response(
+            prompt=user_message,
+            system_instruction=system_instruction,
+            temperature=0.7
+        ):
+            full_response += chunk
+            await websocket.send_json({
+                "type": "ai_response_chunk",
+                "chunk": chunk,
+                "full_text": full_response
+            })
+        
+        # Send completion signal
+        await websocket.send_json({
+            "type": "ai_response_complete",
+            "text": full_response
+        })
+        
+        logger.info(f"Streamed AI response for user {user_id}")
+        
+        return full_response
+        
+    except Exception as e:
+        logger.error(f"Failed to stream AI response: {str(e)}", exc_info=True)
+        await websocket.send_json({
+            "type": "ai_error",
+            "message": "I'm having trouble processing that right now.",
+            "error": str(e)
+        })
+        return None
+
+
 @router.websocket("/stream")
 async def stream_transcribe(
     websocket: WebSocket,
@@ -362,6 +502,9 @@ async def stream_transcribe(
         
         # Get database session for Spotify integration queries
         db = SessionLocal()
+        
+        # Conversation history for context
+        conversation_history = []
 
         # Connect to Soniox WebSocket
         try:
@@ -496,18 +639,63 @@ async def stream_transcribe(
                         # Handle command messages
                         if json_data.get("type") == "command":
                             command_text = json_data.get("text", "")
-                            logger.info(f"Received command from user {user_id}: {command_text}")
+                            mode = json_data.get("mode", "auto")  # auto, spotify, conversation
+                            stream = json_data.get("stream", False)  # Enable streaming responses
+                            logger.info(f"Received command from user {user_id} (mode={mode}, stream={stream}): {command_text}")
                             
-                            # Execute Spotify command
-                            command_response = await execute_spotify_command(
-                                command_text=command_text,
-                                user_id=user_id,
-                                db=db
+                            # Determine if this is a Spotify command or general conversation
+                            is_spotify_command = mode == "spotify" or (
+                                mode == "auto" and any(keyword in command_text.lower() for keyword in [
+                                    "play", "pause", "stop", "next", "previous", "skip",
+                                    "volume", "device", "playlist", "album", "song", "track"
+                                ])
                             )
                             
-                            # Send response back to client
-                            await websocket.send_json(command_response)
-                            logger.info(f"Sent command response: {command_response.get('type')}")
+                            if is_spotify_command:
+                                # Execute Spotify command
+                                command_response = await execute_spotify_command(
+                                    command_text=command_text,
+                                    user_id=user_id,
+                                    db=db
+                                )
+                                # Send response back to client
+                                await websocket.send_json(command_response)
+                            else:
+                                # Generate AI conversation response
+                                if stream:
+                                    # Stream response chunks
+                                    response_text = await stream_ai_response(
+                                        websocket=websocket,
+                                        user_message=command_text,
+                                        user_id=user_id,
+                                        conversation_history=conversation_history
+                                    )
+                                    
+                                    # Update conversation history
+                                    if response_text:
+                                        conversation_history.append({"role": "user", "content": command_text})
+                                        conversation_history.append({"role": "assistant", "content": response_text})
+                                else:
+                                    # Non-streaming response
+                                    command_response = await generate_ai_response(
+                                        user_message=command_text,
+                                        user_id=user_id,
+                                        conversation_history=conversation_history
+                                    )
+                                    
+                                    # Update conversation history
+                                    if command_response.get("success"):
+                                        conversation_history.append({"role": "user", "content": command_text})
+                                        conversation_history.append({"role": "assistant", "content": command_response.get("text", "")})
+                                    
+                                    # Send response back to client
+                                    await websocket.send_json(command_response)
+                                
+                                # Keep only last 20 messages for context
+                                if len(conversation_history) > 20:
+                                    conversation_history = conversation_history[-20:]
+                            
+                            logger.info(f"Sent command response")
                             continue
                     
                     except json.JSONDecodeError:

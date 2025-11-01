@@ -30,6 +30,7 @@ class WebSocketSTTService: NSObject {
     var onUnexpectedDisconnect: (() -> Void)?
     var onCommandResult: (([String: Any]) -> Void)?
     var onCommandError: ((String, String?) -> Void)?  // (message, errorCode)
+    var onAIResponse: (([String: Any]) -> Void)?  // For Gemini AI responses
     
     // MARK: - Initialization
     
@@ -253,9 +254,8 @@ class WebSocketSTTService: NSObject {
                     print("✅ Complete transcription: \(text)")
                     currentTranscription = text
                     onFinalTranscription?(text)
-                    // Properly disconnect after receiving complete transcription
-                    print("🔌 Auto-disconnecting after complete transcription")
-                    disconnect()
+                    // Keep WebSocket open for sending commands
+                    // Will be disconnected manually when needed
                 }
                 
             case "error":
@@ -273,6 +273,16 @@ class WebSocketSTTService: NSObject {
                     let errorCode = json["error_code"] as? String
                     print("❌ Command error: \(errorMsg) (code: \(errorCode ?? "none"))")
                     onCommandError?(errorMsg, errorCode)
+                }
+            
+            case "ai_response":
+                print("🤖 AI response received")
+                onAIResponse?(json)
+            
+            case "ai_error":
+                if let errorMsg = json["message"] as? String {
+                    print("❌ AI error: \(errorMsg)")
+                    onAIResponse?(json)  // Pass error through same callback
                 }
                 
             default:

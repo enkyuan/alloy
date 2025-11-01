@@ -2,12 +2,7 @@
 //  AssistantView.swift
 //  modal
 //
-//  Main voice assistant interface (patched - single-file replacement)
-//
-//  This version captures ScrollViewProxy early, centralizes scrolling helpers,
-//  and adds reliable, layout-aware triggers to reset the transcription bubble
-//  to the top of the screen when the content becomes full or transcription
-//  state changes. Paste this file over your existing AssistantView.swift.
+//  Main voice assistant interface with reliable auto-scroll behavior
 //
 
 import SwiftUI
@@ -20,12 +15,7 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var contentHeight: CGFloat = 0
-    @State private var visibleHeight: CGFloat = 0
-
-    // Scroll proxy & pending behavior
-    @State private var scrollProxy: ScrollViewProxy? = nil
-    @State private var pendingScrollToTop: Bool = false
+    @State private var scrollProxy: ScrollViewProxy?
 
     // Computed property to avoid binding issues
     private var messages: [Message] {
@@ -59,22 +49,6 @@ struct AssistantView: View {
                     .padding(.bottom, 120)
             }
 
-            // Device status indicator (top right)
-            VStack {
-                HStack {
-                    Spacer()
-                    DeviceStatusIndicator(
-                        device: viewModel.currentDevice,
-                        onTap: {
-                            viewModel.toggleDeviceSelector()
-                        }
-                    )
-                    .padding(.top, 60)
-                    .padding(.trailing, 16)
-                }
-                Spacer()
-            }
-
             // Command feedback overlay (center)
             CommandFeedbackOverlay(
                 message: viewModel.commandFeedback,
@@ -94,235 +68,121 @@ struct AssistantView: View {
         } message: {
             Text("Modal needs microphone access to listen to your voice commands. Please enable it in Settings.")
         }
-        // Use a sheet that directly returns the view (avoid returning Void)
-        .sheet(isPresented: $viewModel.showDeviceSelector) {
-            DeviceSelectorView(
-                devices: $viewModel.availableDevices,
-                currentDevice: $viewModel.currentDevice,
-                isLoading: $viewModel.isLoadingDevices,
-                onDeviceSelected: { device in
-                    Task {
-                        await viewModel.switchToDevice(device)
-                        viewModel.showDeviceSelector = false
-                    }
-                },
-                onRefresh: {
-                    Task {
-                        await viewModel.fetchAvailableDevices()
-                    }
-                }
-            )
-            .frame(maxWidth: .infinity, maxHeight: 500)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+    }
+
+    // MARK: - Computed Properties
+
+    /// True when any part of the session is active
+    private var isActiveSession: Bool {
+        viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
+    }
+
+    // MARK: - Auto-Scroll Helpers
+
+    private func scrollToLatestMessage(animated: Bool = true) {
+        guard let proxy = scrollProxy, !messages.isEmpty else { return }
+
+        let scrollAction = {
+            if let latestMessageId = messages.last?.id {
+                proxy.scrollTo(latestMessageId, anchor: .bottom)
+            }
+        }
+
+        if animated {
+            withAnimation(.easeOut(duration: 0.4)) {
+                scrollAction()
+            }
+        } else {
+            scrollAction()
         }
     }
 
-    // MARK: - Scrolling Helpers
+    private func scrollToShowTranscriptionBubble(animated: Bool = true) {
+        guard let proxy = scrollProxy else { return }
 
-    /// Scroll to the top anchor ("top-anchor"). If proxy is not available yet, mark a pending request.
-    /// Use a small default delay so we run after a layout pass; `animated: false` is recommended when
-    /// jumping after content changes so the scroll is always visible.
-    private func scrollToTopAnchor(animated: Bool = true, delay: TimeInterval = 0.03) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard let proxy = scrollProxy else {
-                // proxy not available yet — remember to scroll when it appears
-                pendingScrollToTop = true
-                return
-            }
-            if animated {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo("top-anchor", anchor: .top)
-                }
-            } else {
-                proxy.scrollTo("top-anchor", anchor: .top)
-            }
+        let scrollAction = {
+            proxy.scrollTo("bottom-anchor", anchor: .bottom)
         }
-    }
 
-    /// Scroll to the bottom anchor ("bottom-anchor").
-    private func scrollToBottomAnchor(animated: Bool = true, delay: TimeInterval = 0.03) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard let proxy = scrollProxy else { return }
-            if animated {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                }
-            } else {
-                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+        if animated {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scrollAction()
             }
+        } else {
+            scrollAction()
         }
     }
 
     // MARK: - View Components
 
     private var chatView: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
-                ScrollViewReader { proxy in
-                    // Capture proxy early so helpers can be used elsewhere
-                    Color.clear
-                        .frame(height: 0)
-                        .onAppear {
-                            if scrollProxy == nil {
-                                scrollProxy = proxy
-                                if pendingScrollToTop {
-                                    pendingScrollToTop = false
-                                    // satisfy immediately without additional delay and non-animated
-                                    scrollToTopAnchor(animated: false, delay: 0)
-                                }
-                            }
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Empty state when no messages
+                    if messages.isEmpty && !isActiveSession {
+                        VStack {
+                            Spacer()
+
+                            Image("ModalIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 80, height: 80)
+                                .foregroundStyle(.secondary.opacity(0.3))
+
+                            Spacer()
                         }
-
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            // Top anchor for transcription bubble positioning
-                            Color.clear
-                                .frame(height: 1)
-                                .id("top-anchor")
-
-                            // Show empty state icon when idle
-                            if messages.isEmpty && !isActiveSession {
-                                VStack {
-                                    Spacer()
-
-                                    Image("ModalIcon")
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: 80, height: 80)
-                                        .foregroundStyle(.secondary.opacity(0.3))
-
-                                    Spacer()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(minHeight: 400)
-                            }
-
-                            // Message history
-                            ForEach(messages) { message in
-                                MessageRow(message: message)
-                                    .id(message.id)
-                            }
-
-                            // Inline transcription bubble (shown when few messages - at bottom)
-                            if isActiveSession && !shouldShowTranscriptionAtTop {
-                                TranscriptionBubble(
-                                    isConnecting: viewModel.isConnecting,
-                                    isRecording: viewModel.isRecording,
-                                    isProcessing: viewModel.isProcessingTranscription,
-                                    partialText: viewModel.partialTranscription
-                                )
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                            }
-
-                            // Invisible anchor at the very bottom for reliable scrolling
-                            Color.clear
-                                .frame(height: 1)
-                                .id("bottom-anchor")
-                        }
-                        .padding(.top, shouldShowTranscriptionAtTop ? 100 : 20) // Extra space at top for floating bubble
-                        .padding(.bottom, 140) // Space for stepper navigation and inline bubble
-                        .background(
-                            GeometryReader { contentGeometry in
-                                Color.clear
-                                    .preference(key: ContentHeightPreferenceKey.self, value: contentGeometry.size.height)
-                            }
-                        )
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 400)
                     }
-                    // Track content height (for shouldShowTranscriptionAtTop)
-                    .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
-                        contentHeight = height
-                    }
-                    // When items are appended, scroll depending on transcription position
-                    .onChange(of: messages.count) { oldCount, newCount in
-                        guard newCount > oldCount, !isActiveSession else { return }
 
-                        // Prefer an immediate non-animated jump when the content is now full so the
-                        // floating bubble becomes visible at the top reliably.
-                        if shouldShowTranscriptionAtTop {
-                            scrollToTopAnchor(animated: false, delay: 0.02)
-                        } else {
-                            scrollToBottomAnchor()
-                        }
+                    // Message history
+                    ForEach(messages) { message in
+                        MessageRow(message: message)
+                            .id(message.id)
                     }
-                    // When the active session changes, reveal the bubble for the start of session
-                    .onChange(of: isActiveSession) { wasActive, isActive in
-                        if isActive {
-                            // Session started: ensure bubble is visible (top if full, else bottom)
-                            if shouldShowTranscriptionAtTop {
-                                scrollToTopAnchor(animated: false, delay: 0.02)
-                            } else {
-                                scrollToBottomAnchor(animated: false, delay: 0.02)
-                            }
-                        } else if wasActive && !isActive {
-                            // session ended — don't auto-scroll (let user stay where they are)
-                        }
-                    }
-                    // When the layout (content height) changes and bubble should be at top, ensure it's visible
-                    .onChange(of: contentHeight) { _ in
-                        guard isActiveSession && shouldShowTranscriptionAtTop else { return }
-                        // Non-animated immediate reveal after layout step
-                        scrollToTopAnchor(animated: false, delay: 0.02)
-                    }
-                    // When partial transcription text changes (bubble grows/shrinks), ensure visibility
-                    .onChange(of: viewModel.partialTranscription) { _ in
-                        guard isActiveSession && shouldShowTranscriptionAtTop else { return }
-                        scrollToTopAnchor(animated: false, delay: 0.02)
-                    }
-                    // When bubble position preference toggles, scroll appropriately
-                    .onChange(of: shouldShowTranscriptionAtTop) { wasAtTop, isAtTop in
-                        guard isActiveSession else { return }
-                        if isAtTop {
-                            scrollToTopAnchor(animated: false, delay: 0.02)
-                        } else {
-                            scrollToBottomAnchor(animated: false, delay: 0.02)
-                        }
-                    }
-                    // Capture visible height for heuristics
-                    .onAppear {
-                        visibleHeight = geometry.size.height
-                    }
-                    .onChange(of: geometry.size.height) { _, newHeight in
-                        visibleHeight = newHeight
-                    }
-                }
 
-                // Floating transcription bubble at top when screen is full
-                if isActiveSession && shouldShowTranscriptionAtTop {
-                    VStack {
+                    // Transcription bubble
+                    if isActiveSession {
                         TranscriptionBubble(
                             isConnecting: viewModel.isConnecting,
                             isRecording: viewModel.isRecording,
                             isProcessing: viewModel.isProcessingTranscription,
                             partialText: viewModel.partialTranscription
                         )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 20)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
 
-                        Spacer()
+                    // Bottom anchor for scrolling
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottom-anchor")
+                }
+                .padding(.top, 20)
+                .padding(.bottom, 140)
+            }
+            .onAppear {
+                scrollProxy = proxy
+            }
+            // Auto-scroll when new messages arrive
+            .onChange(of: messages.count) { oldCount, newCount in
+                guard newCount > oldCount else { return }
+
+                // Delay to ensure content renders
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    scrollToLatestMessage(animated: true)
+                }
+            }
+            // Handle session state changes
+            .onChange(of: isActiveSession) { wasActive, isActive in
+                if isActive && !wasActive {
+                    // Session starting - show transcription bubble
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        scrollToShowTranscriptionBubble(animated: true)
                     }
                 }
             }
         }
-    } // end chatView
-
-    // MARK: - Computed Properties
-
-    /// True when any part of the session is active - shows the transcription bubble immediately
-    private var isActiveSession: Bool {
-        viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
-    }
-
-    /// Determines if transcription bubble should float at top (when screen is full of messages)
-    /// Compares actual content height vs visible screen height
-    private var shouldShowTranscriptionAtTop: Bool {
-        guard visibleHeight > 0 && contentHeight > 0 else {
-            return false
-        }
-        // Show at top when content height exceeds visible height (screen is full and scrollable)
-        // Use a buffer so the floating bubble kicks in slightly before absolute fullness
-        return contentHeight > (visibleHeight - 100)
     }
 
     // MARK: - Permission Empty State View
@@ -428,17 +288,7 @@ private struct MessageRow: View {
     }
 }
 
-// MARK: - Preference Key
-
-/// PreferenceKey for tracking content height in ScrollView
-private struct ContentHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 #Preview {
     AssistantView(authService: AuthenticationService(), viewModel: AssistantViewModel())
 }
+

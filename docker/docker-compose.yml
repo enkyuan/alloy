@@ -89,6 +89,10 @@ services:
       DEBUG: ${DEBUG:-false}
       API_V1_PREFIX: /api/v1
       PROJECT_NAME: Modal API
+      
+      # Python logging
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
       # Apple OAuth
       APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}

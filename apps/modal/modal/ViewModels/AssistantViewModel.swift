@@ -75,12 +75,9 @@ class AssistantViewModel {
                 self.conversationService.addUserMessage(text)
                 print("📝 Message count after adding user message: \(self.conversationService.messages.count)")
                 
-                // TODO: Send to LLM and get response
-                // For now, add a placeholder response
+                // Send to Gemini via WebSocket command
                 Task {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
-                    self.conversationService.addAssistantMessage("I heard you say: \"\(text)\". I'm still learning how to respond!")
-                    print("📝 Message count after adding assistant message: \(self.conversationService.messages.count)")
+                    await self.sendToGemini(text)
                 }
             }
         }
@@ -97,13 +94,21 @@ class AssistantViewModel {
                     _ = self.streamingAudioService.stopStreaming()
                 }
                 
+                // Provide more helpful error message
+                var userMessage = "Connection lost during transcription."
+                if error.contains("Socket is not connected") {
+                    userMessage = "Connection to server was lost. Please check your internet connection and try again."
+                } else if error.contains("timeout") || error.contains("timed out") {
+                    userMessage = "Connection timed out. Please try again."
+                }
+                
                 self.errorMessage = error
                 self.showError = true
                 self.isProcessingTranscription = false
                 self.isConnecting = false
                 self.isStartingRecording = false
                 self.isRecording = false
-                self.conversationService.addAssistantMessage("Sorry, I couldn't transcribe that. Error: \(error)")
+                self.conversationService.addAssistantMessage(userMessage)
             }
         }
         
@@ -160,6 +165,81 @@ class AssistantViewModel {
     }
     
     // MARK: - Public Methods
+    
+    /// Send message to Gemini for AI response
+    private func sendToGemini(_ text: String) async {
+        print("🤖 Sending to Gemini: \"\(text)\"")
+        print("🔌 WebSocket connected: \(webSocketSTTService.isConnected)")
+        
+        // Check if WebSocket is still connected
+        guard webSocketSTTService.isConnected else {
+            print("❌ WebSocket not connected, cannot send to Gemini")
+            await MainActor.run {
+                self.conversationService.addAssistantMessage("Sorry, connection was lost. Please try again.")
+            }
+            return
+        }
+        
+        // Build conversation history for context
+        let messages = conversationService.messages.map { message in
+            ["role": message.isUser ? "user" : "assistant", "content": message.text]
+        }
+        
+        // Send command via WebSocket
+        let command: [String: Any] = [
+            "type": "command",
+            "text": text,
+            "mode": "conversation",  // Use conversation mode for Gemini
+            "stream": false  // Set to true if you want streaming responses
+        ]
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: command),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            print("❌ Failed to create Gemini command")
+            await MainActor.run {
+                self.conversationService.addAssistantMessage("Sorry, I couldn't process that request.")
+            }
+            return
+        }
+        
+        print("📤 Sending command JSON: \(jsonString)")
+        
+        // Set up callback for AI response
+        var responseReceived = false
+        webSocketSTTService.onAIResponse = { [weak self] response in
+            guard let self = self, !responseReceived else { return }
+            responseReceived = true
+            
+            Task { @MainActor in
+                print("🤖 AI Response callback triggered")
+                if let text = response["text"] as? String {
+                    print("🤖 Received Gemini response: \"\(text)\"")
+                    self.conversationService.addAssistantMessage(text)
+                    print("📝 Message count after adding assistant message: \(self.conversationService.messages.count)")
+                } else if let error = response["message"] as? String {
+                    print("❌ Gemini error: \(error)")
+                    self.conversationService.addAssistantMessage("Sorry, I encountered an error: \(error)")
+                } else {
+                    print("❌ Unknown response format: \(response)")
+                    self.conversationService.addAssistantMessage("Sorry, received an unexpected response.")
+                }
+            }
+        }
+        
+        // Send command
+        print("📤 Calling webSocketSTTService.sendMessage...")
+        webSocketSTTService.sendMessage(jsonString)
+        print("✅ Message sent, waiting for response...")
+        
+        // Timeout after 10 seconds
+        try? await Task.sleep(nanoseconds: 10_000_000_000)
+        if !responseReceived {
+            print("⚠️ Gemini response timeout")
+            await MainActor.run {
+                self.conversationService.addAssistantMessage("Sorry, the response took too long.")
+            }
+        }
+    }
     
     /// Start streaming recording
     func startStreamingRecording(authService: AuthenticationService) async {
@@ -308,13 +388,13 @@ class AssistantViewModel {
         // Send END signal to get final transcription
         webSocketSTTService.endRecording()
         
-        // Disconnect after receiving response (or timeout)
-        // Reduced timeout since WebSocket now auto-disconnects on "complete"
+        // Keep WebSocket open for sending commands after transcription
+        // Will be cleaned up when starting next recording session
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s (reduced from 3s)
+            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2s
             
             await MainActor.run {
-                print("⏰ 2s elapsed, ensuring cleanup (session: \(self.currentSessionId?.uuidString ?? "nil"))")
+                print("⏰ 2s elapsed, ensuring audio cleanup (session: \(self.currentSessionId?.uuidString ?? "nil"))")
                 
                 // CRITICAL: Stop audio engine if still running
                 if self.streamingAudioService.isRecording {
@@ -328,13 +408,7 @@ class AssistantViewModel {
                 self.partialTranscription = ""
                 self.currentSessionId = nil  // Invalidate session
                 
-                // Only disconnect if still connected (WebSocket auto-disconnects on "complete")
-                if self.webSocketSTTService.isConnected {
-                    print("⚠️ WebSocket still connected after timeout - force disconnecting")
-                    self.webSocketSTTService.disconnect()
-                } else {
-                    print("✅ WebSocket already disconnected, cleanup completed")
-                }
+                // Keep WebSocket connected for commands - will disconnect on next recording
             }
         }
     }

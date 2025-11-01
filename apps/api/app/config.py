@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Soniox (Real-time Speech-to-Text)
     SONIOX_API_KEY: Optional[str] = None
 
+    # Google Gemini AI
+    GEMINI_API_KEY: Optional[str] = None
+
     # Application
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"

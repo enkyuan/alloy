@@ -423,7 +423,7 @@ async def disconnect_service(
     """Disconnect a service integration.
     
     Args:
-        service: Service name to disconnect
+        service: Service name to disconnect (URL format with hyphens)
         authorization: Bearer token from Authorization header
         db: Database session
         
@@ -449,10 +449,17 @@ async def disconnect_service(
                 detail="Invalid or expired token"
             )
         
+        # Map URL service name to database service name
+        # URL uses hyphens (google-calendar), DB uses camelCase (googleCalendar)
+        service_name_map = {
+            "google-calendar": "googleCalendar"
+        }
+        db_service_name = service_name_map.get(service, service)
+        
         # Find and deactivate integration
         integration = db.query(Integration).filter(
             Integration.user_id == supabase_user["id"],
-            Integration.service == service
+            Integration.service == db_service_name
         ).first()
         
         if not integration:
@@ -466,7 +473,7 @@ async def disconnect_service(
         integration.updated_at = datetime.utcnow()
         db.commit()
         
-        logger.info(f"Successfully disconnected {service} for user {supabase_user['id']}")
+        logger.info(f"Successfully disconnected {db_service_name} for user {supabase_user['id']}")
         
         return {"success": True, "message": f"Successfully disconnected {service}"}
         
@@ -1440,80 +1447,7 @@ async def sync_gmail_from_google_signin(
         )
 
 
-@router.post("/gmail/disconnect")
-async def disconnect_gmail(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    """Disconnect Gmail integration.
 
-    Args:
-        authorization: Bearer token from Authorization header
-        db: Database session
-
-    Returns:
-        Success response
-
-    Raises:
-        HTTPException: If not authenticated or disconnection fails
-    """
-    try:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
-            )
-
-        access_token = authorization.replace("Bearer ", "")
-        supabase_user = await supabase_auth_service.get_user(access_token)
-
-        if not supabase_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-
-        # Find Gmail integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "gmail"
-        ).first()
-
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Gmail integration not found"
-            )
-
-        # Revoke Google OAuth token
-        if integration.access_token:
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        "https://oauth2.googleapis.com/revoke",
-                        params={"token": integration.access_token}
-                    )
-                logger.info(f"Revoked Gmail token for user {supabase_user['id']}")
-            except Exception as e:
-                logger.warning(f"Failed to revoke Gmail token: {e}")
-                # Continue with deletion even if revocation fails
-
-        # Delete integration from database
-        db.delete(integration)
-        db.commit()
-
-        logger.info(f"Successfully disconnected Gmail for user {supabase_user['id']}")
-
-        return {"success": True, "message": "Gmail disconnected successfully"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to disconnect Gmail: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disconnect Gmail: {str(e)}"
-        )
 
 
 # =======================
@@ -1528,12 +1462,12 @@ async def sync_google_calendar_from_google_signin(
 ):
     """Sync Google Calendar integration from Google Sign-In access token.
     
-    This endpoint is called automatically when a user signs in with Google
-    and has granted Calendar scopes. The iOS app sends the Google OAuth access
-    token, and we store it for Calendar API access.
+    This endpoint is called when a user signs in with Google and has granted
+    Calendar scopes. The iOS app sends the Google OAuth access token, and we
+    store it for Calendar API access.
     
     Args:
-        request: FastAPI request object
+        request: FastAPI request object with id_token and access_token
         authorization: Bearer token from Authorization header
         db: Database session
         
@@ -1561,19 +1495,20 @@ async def sync_google_calendar_from_google_signin(
                 detail="Invalid or expired token"
             )
         
-        # Get Google access token from request body
+        # Get Google tokens from request body
         body_data = await request.json()
+        google_id_token = body_data.get("id_token")
         google_access_token = body_data.get("access_token")
         
-        if not google_access_token:
+        if not google_access_token or not google_id_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing access_token in request body"
+                detail="Missing id_token or access_token in request body"
             )
         
         user_id = supabase_user["id"]
         
-        # Verify token works with Calendar API and get user's calendars
+        # Verify token works with Calendar API
         try:
             calendar_svc = get_google_calendar_service(google_access_token)
             calendars = calendar_svc.list_calendars()
@@ -1587,13 +1522,13 @@ async def sync_google_calendar_from_google_signin(
             logger.error(f"Failed to verify Calendar access: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or insufficient Calendar access token"
+                detail="Invalid or insufficient Calendar access token. Make sure Calendar scopes were granted."
             )
         
         # Store or update integration in database
         integration = db.query(Integration).filter(
             Integration.user_id == user_id,
-            Integration.service == "google_calendar"
+            Integration.service == "googleCalendar"
         ).first()
         
         # Note: Google Sign-In tokens typically expire in 1 hour
@@ -1611,9 +1546,9 @@ async def sync_google_calendar_from_google_signin(
             integration = Integration(
                 id=str(uuid.uuid4()),
                 user_id=user_id,
-                service="google_calendar",
+                service="googleCalendar",
                 access_token=google_access_token,
-                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens
+                refresh_token=None,  # Google Sign-In doesn't provide refresh tokens via addScopes
                 expires_at=token_expires_at,
                 is_active=True,
                 scope="calendar.readonly calendar.events"
@@ -1640,78 +1575,5 @@ async def sync_google_calendar_from_google_signin(
         )
 
 
-@router.post("/google-calendar/disconnect")
-async def disconnect_google_calendar(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
-    """Disconnect Google Calendar integration.
 
-    Args:
-        authorization: Bearer token from Authorization header
-        db: Database session
-
-    Returns:
-        Success response
-
-    Raises:
-        HTTPException: If not authenticated or disconnection fails
-    """
-    try:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
-            )
-
-        access_token = authorization.replace("Bearer ", "")
-        supabase_user = await supabase_auth_service.get_user(access_token)
-
-        if not supabase_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
-            )
-
-        # Find Google Calendar integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "google_calendar"
-        ).first()
-
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Google Calendar integration not found"
-            )
-
-        # Revoke Google OAuth token
-        if integration.access_token:
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        "https://oauth2.googleapis.com/revoke",
-                        params={"token": integration.access_token}
-                    )
-                logger.info(f"Revoked Google Calendar token for user {supabase_user['id']}")
-            except Exception as e:
-                logger.warning(f"Failed to revoke Google Calendar token: {e}")
-                # Continue with deletion even if revocation fails
-
-        # Delete integration from database
-        db.delete(integration)
-        db.commit()
-
-        logger.info(f"Successfully disconnected Google Calendar for user {supabase_user['id']}")
-
-        return {"success": True, "message": "Google Calendar disconnected successfully"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to disconnect Google Calendar: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disconnect Google Calendar: {str(e)}"
-        )
 
