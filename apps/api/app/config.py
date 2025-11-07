@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
     SPOTIFY_REDIRECT_URI: str = "modal://spotify/callback"
 
+    # Uber OAuth
+    UBER_CLIENT_ID: Optional[str] = None
+    UBER_CLIENT_SECRET: Optional[str] = None
+    UBER_REDIRECT_URI: str = "modal://uber/callback"
+
     # Gmail OAuth (reuses Google OAuth credentials)
     # No separate credentials needed - uses GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
     GMAIL_REDIRECT_URI: Optional[str] = None

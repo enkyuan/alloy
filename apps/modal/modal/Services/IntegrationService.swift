@@ -46,6 +46,10 @@ class IntegrationService {
             saveConnectedServices()
         }
     }
+    
+    // Track recently connected services to prevent them from being removed by backend refresh
+    private var recentlyConnectedServices: Set<ServiceType> = []
+    private var recentConnectionTime: Date?
     private let backendURL: String
     private var authSession: ASWebAuthenticationSession?
     private let contextProvider = WebAuthenticationPresentationContextProvider()
@@ -96,15 +100,59 @@ class IntegrationService {
 
         let integrationResponse = try JSONDecoder().decode(IntegrationListResponse.self, from: data)
 
-        // Update connected services
-        connectedServices.removeAll()
+        print("📡 Backend returned integrations: \(integrationResponse.integrations.map { "\($0.service):\($0.connected)" }.joined(separator: ", "))")
+
+        // Update connected services more conservatively
+        // Instead of clearing all and rebuilding, update based on backend response
+        let previousServices = connectedServices
+        
+        // Create a set of services from backend response
+        var backendServices: Set<ServiceType> = []
         for integration in integrationResponse.integrations where integration.connected {
-            if let serviceType = ServiceType(rawValue: integration.service) {
-                connectedServices.insert(serviceType)
+            print("🔍 Processing integration: service=\(integration.service), connected=\(integration.connected)")
+            
+            // Try direct mapping first
+            var serviceType = ServiceType(rawValue: integration.service)
+            
+            // If direct mapping fails, try snake_case to camelCase conversion
+            if serviceType == nil {
+                let convertedService = convertSnakeCaseToCamelCase(integration.service)
+                serviceType = ServiceType(rawValue: convertedService)
+                print("🔄 Converted '\(integration.service)' to '\(convertedService)'")
+            }
+            
+            if let serviceType = serviceType {
+                backendServices.insert(serviceType)
+                print("✅ Backend reports \(serviceType.displayName) as connected")
+            } else {
+                print("❌ Unknown service type from backend: \(integration.service)")
             }
         }
+        
+        // Merge backend services with recently connected services
+        var finalServices = backendServices
+        
+        // Protect recently connected services (within last 10 seconds)
+        if let recentTime = recentConnectionTime,
+           Date().timeIntervalSince(recentTime) < 10.0 {
+            print("🛡️ Protecting recently connected services: \(recentlyConnectedServices.map { $0.displayName }.joined(separator: ", "))")
+            finalServices.formUnion(recentlyConnectedServices)
+        } else {
+            // Clear recent connections after 10 seconds
+            recentlyConnectedServices.removeAll()
+            recentConnectionTime = nil
+        }
+        
+        // Only update if we got a meaningful response from backend or have recent connections
+        if !integrationResponse.integrations.isEmpty || !recentlyConnectedServices.isEmpty {
+            connectedServices = finalServices
+            print("📊 Updated connected services (merged backend + recent)")
+        } else {
+            print("⚠️ Backend returned empty integrations list and no recent connections, keeping local state")
+        }
 
-        print("✅ Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))")
+        print("📊 Connected services before: \(previousServices.map { $0.displayName }.joined(separator: ", "))")
+        print("📊 Connected services after: \(connectedServices.map { $0.displayName }.joined(separator: ", "))")
     }
 
     /// Check if a service is connected
@@ -249,9 +297,31 @@ class IntegrationService {
                         // Update local state
                         _ = await MainActor.run {
                             self.connectedServices.insert(service)
+                            // Mark as recently connected to protect from backend refresh
+                            self.recentlyConnectedServices.insert(service)
+                            self.recentConnectionTime = Date()
                         }
 
                         print("✅ Successfully connected \(await service.displayName)")
+                        
+                        // Refresh integrations from backend to ensure consistency
+                        // This is important because the backend might have additional logic
+                        // or the local state might not perfectly match the backend state
+                        print("🔄 Refreshing integrations from backend...")
+                        // Note: We don't await this to avoid blocking the UI
+                        Task {
+                            // Small delay to ensure backend has processed the integration
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                            
+                            do {
+                                try await self.fetchConnectedIntegrations(authService: authService)
+                                print("✅ Successfully refreshed integrations after connecting \(service.displayName)")
+                            } catch {
+                                print("⚠️ Failed to refresh integrations after connecting: \(error)")
+                                // Don't fail the connection if refresh fails
+                            }
+                        }
+                        
                         continuation.resume()
                     } catch {
                         print("❌ Failed to send tokens to backend: \(error.localizedDescription)")
@@ -301,11 +371,12 @@ class IntegrationService {
 
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
-            print("❌ Backend returned error \(httpResponse.statusCode): \(errorMessage)")
+            print("❌ Backend returned error \(httpResponse.statusCode) for \(service.displayName): \(errorMessage)")
             throw IntegrationError.oauthFailed
         }
 
-        print("✅ Successfully sent Google tokens to backend")
+        let responseString = String(data: data, encoding: .utf8) ?? "No response"
+        print("✅ Successfully sent \(service.displayName) tokens to backend. Response: \(responseString)")
     }
 
     /// Disconnect a service
@@ -314,16 +385,42 @@ class IntegrationService {
             throw IntegrationError.notAuthenticated
         }
 
-        // Call backend to revoke access
-        let url = URL(string: "\(backendURL)/integrations/\(service.rawValue)/disconnect")!
+        // Map service to backend endpoint path (use specific endpoints for Google services)
+        let endpointPath: String
+        switch service {
+        case .gmail:
+            endpointPath = "gmail"
+        case .googleCalendar:
+            endpointPath = "google-calendar"  // Use specific endpoint
+        default:
+            endpointPath = service.rawValue
+        }
+
+        print("🔍 Service: \(service), Raw Value: \(service.rawValue), Endpoint Path: \(endpointPath)")
+
+        // Call backend to revoke access using specific disconnect endpoints
+        // For Google Calendar, force the specific endpoint
+        let url: URL
+        if service == .googleCalendar {
+            url = URL(string: "\(backendURL)/integrations/google-calendar/disconnect")!
+        } else {
+            url = URL(string: "\(backendURL)/integrations/\(endpointPath)/disconnect")!
+        }
+        print("🔌 Disconnecting \(service.displayName) via URL: \(url.absoluteString)")
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw IntegrationError.disconnectFailed
+        }
+
+        if httpResponse.statusCode != 200 {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
+            print("❌ Backend returned error \(httpResponse.statusCode) when disconnecting \(service.displayName): \(errorMessage)")
             throw IntegrationError.disconnectFailed
         }
 
@@ -490,6 +587,16 @@ class IntegrationService {
 
         connectedServices = Set(serviceNames.compactMap { ServiceType(rawValue: $0) })
         print("📂 Loaded connected services: \(connectedServices.map { $0.displayName })")
+    }
+    
+    /// Convert snake_case to camelCase for service names
+    private func convertSnakeCaseToCamelCase(_ snakeCase: String) -> String {
+        let components = snakeCase.components(separatedBy: "_")
+        guard components.count > 1 else { return snakeCase }
+        
+        let first = components[0]
+        let rest = components.dropFirst().map { $0.capitalized }
+        return first + rest.joined()
     }
 
 }

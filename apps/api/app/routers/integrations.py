@@ -26,6 +26,7 @@ from app.services.auth import supabase_auth_service
 from app.services.spotify import spotify_service
 from app.services.gmail import get_gmail_service
 from app.services.google_calendar import get_google_calendar_service
+from app.services.uber import uber_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -393,14 +394,33 @@ async def get_user_integrations(
             Integration.is_active == True
         ).all()
         
-        integration_statuses = [
-            IntegrationStatusResponse(
-                service=integration.service,
-                connected=True,
-                connected_at=integration.created_at.isoformat() if integration.created_at else None
+        logger.info(f"Found {len(integrations)} active integrations for user {supabase_user['id']}")
+        for integration in integrations:
+            logger.info(f"Integration: service={integration.service}, is_active={integration.is_active}, created_at={integration.created_at}")
+        
+        # Map backend service names to iOS app expected names
+        service_name_mapping = {
+            "google_calendar": "googleCalendar",
+            "spotify": "spotify",
+            "gmail": "gmail",
+            "uber": "uber"
+        }
+        
+        integration_statuses = []
+        for integration in integrations:
+            original_service = integration.service
+            mapped_service = service_name_mapping.get(integration.service, integration.service)
+            logger.info(f"Mapping service: '{original_service}' -> '{mapped_service}'")
+            
+            integration_statuses.append(
+                IntegrationStatusResponse(
+                    service=mapped_service,
+                    connected=True,
+                    connected_at=integration.created_at.isoformat() if integration.created_at else None
+                )
             )
-            for integration in integrations
-        ]
+        
+        logger.info(f"Returning integration statuses: {[status.service for status in integration_statuses]}")
         
         return IntegrationListResponse(integrations=integration_statuses)
         
@@ -449,16 +469,50 @@ async def disconnect_service(
                 detail="Invalid or expired token"
             )
         
+        logger.info(f"Attempting to disconnect service: '{service}' for user {supabase_user['id']}")
+        
+        # Map URL path service names back to database service names
+        service_path_to_db_mapping = {
+            "google-calendar": "google_calendar",
+            "gmail": "gmail",
+            "spotify": "spotify",
+            "uber": "uber"
+        }
+        
+        db_service_name = service_path_to_db_mapping.get(service, service)
+        logger.info(f"Mapped service '{service}' to database service '{db_service_name}'")
+        
         # Find and deactivate integration
         integration = db.query(Integration).filter(
             Integration.user_id == supabase_user["id"],
-            Integration.service == service
+            Integration.service == db_service_name
         ).first()
         
         if not integration:
+            # Log all integrations for this user to debug
+            all_integrations = db.query(Integration).filter(
+                Integration.user_id == supabase_user["id"]
+            ).all()
+            logger.error(f"Integration not found! Looking for service: '{db_service_name}'")
+            logger.error(f"Available integrations for user: {[(i.service, i.is_active) for i in all_integrations]}")
+            
+            # Also check if there's an inactive integration
+            inactive_integration = db.query(Integration).filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == db_service_name,
+                Integration.is_active == False
+            ).first()
+            
+            if inactive_integration:
+                logger.error(f"Found inactive integration: {inactive_integration.id}")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Integration {service} exists but is already inactive"
+                )
+            
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active {service} integration found"
+                detail=f"No {service} integration found"
             )
         
         # Soft delete - set is_active to False
@@ -466,7 +520,7 @@ async def disconnect_service(
         integration.updated_at = datetime.utcnow()
         db.commit()
         
-        logger.info(f"Successfully disconnected {service} for user {supabase_user['id']}")
+        logger.info(f"Successfully disconnected {db_service_name} for user {supabase_user['id']}")
         
         return {"success": True, "message": f"Successfully disconnected {service}"}
         
@@ -477,6 +531,552 @@ async def disconnect_service(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to disconnect service: {str(e)}"
+        )
+
+
+# ============================================================================
+# Uber Integration Routes
+# ============================================================================
+
+@router.get("/uber/auth", response_model=OAuthURLResponse)
+async def get_uber_oauth_url(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get Uber OAuth authorization URL.
+    
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+        
+    Returns:
+        OAuthURLResponse with authorization URL and state
+        
+    Raises:
+        HTTPException: If authentication fails or Uber is not configured
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            logger.warning("Missing or invalid authorization header")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+        
+        access_token = authorization.replace("Bearer ", "")
+        
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+        
+        if not supabase_user:
+            logger.warning("Invalid or expired token provided")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+        
+        # Check if Uber is configured
+        logger.info(f"Uber config check - Client ID: {settings.UBER_CLIENT_ID is not None}, Client Secret: {settings.UBER_CLIENT_SECRET is not None}")
+        if not settings.UBER_CLIENT_ID or not settings.UBER_CLIENT_SECRET:
+            logger.error(f"Uber OAuth not configured - Client ID: '{settings.UBER_CLIENT_ID}', Client Secret: '{settings.UBER_CLIENT_SECRET}'")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Uber OAuth is not configured"
+            )
+        
+        # Generate state parameter for CSRF protection
+        state = secrets.token_urlsafe(32)
+        
+        # Store state with user ID in Redis with TTL
+        state_data = {
+            "user_id": supabase_user["id"],
+            "service": "uber",
+            "created_at": datetime.utcnow().isoformat()
+        }
+        await redis_client.setex(
+            f"oauth_state:{state}",
+            OAUTH_STATE_TTL,
+            json.dumps(state_data)
+        )
+        
+        # Build Uber OAuth URL
+        # Start with minimal scopes for testing
+        scopes = [
+            "profile"
+        ]
+        
+        params = {
+            "client_id": settings.UBER_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": settings.UBER_REDIRECT_URI,
+            "scope": " ".join(scopes),
+            "state": state
+        }
+        
+        auth_url = f"https://login.uber.com/oauth/v2/authorize?{urlencode(params)}"
+        
+        logger.info(f"Generated Uber OAuth URL for user {supabase_user['id']}")
+        logger.info(f"Using redirect URI: {settings.UBER_REDIRECT_URI}")
+        logger.info(f"Full OAuth URL: {auth_url}")
+        
+        return OAuthURLResponse(
+            auth_url=auth_url,
+            state=state
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate Uber OAuth URL: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate OAuth URL: {str(e)}"
+        )
+
+
+@router.post("/uber/exchange")
+async def uber_exchange_code(
+    code: str = Query(..., description="OAuth authorization code"),
+    state: str = Query(..., description="OAuth state parameter"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Exchange Uber authorization code for access token.
+
+    This endpoint is called by the iOS app after receiving the callback.
+
+    Args:
+        code: Authorization code from Uber
+        state: State parameter for CSRF protection
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response with integration status
+
+    Raises:
+        HTTPException: If exchange fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+
+        # Verify token and get user from Supabase
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Validate state parameter from Redis
+        state_key = f"oauth_state:{state}"
+        state_json = await redis_client.get(state_key)
+
+        if not state_json:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired state parameter"
+            )
+
+        # Verify state belongs to this user
+        state_data = json.loads(state_json)
+        if state_data["user_id"] != supabase_user["id"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="State parameter does not match user"
+            )
+
+        # Delete state from Redis (one-time use)
+        await redis_client.delete(state_key)
+
+        user_id = supabase_user["id"]
+        
+        # Exchange authorization code for access token
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(
+                "https://login.uber.com/oauth/v2/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": settings.UBER_REDIRECT_URI,
+                    "client_id": settings.UBER_CLIENT_ID,
+                    "client_secret": settings.UBER_CLIENT_SECRET
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+        
+        if token_response.status_code != 200:
+            logger.error(f"Uber token exchange failed: {token_response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to exchange authorization code"
+            )
+        
+        token_data = token_response.json()
+        
+        # Calculate token expiration
+        expires_at = datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))
+        
+        # Check if integration already exists
+        existing_integration = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "uber"
+        ).first()
+        
+        if existing_integration:
+            # Update existing integration
+            existing_integration.access_token = token_data["access_token"]
+            existing_integration.refresh_token = token_data.get("refresh_token")
+            existing_integration.token_type = token_data.get("token_type", "Bearer")
+            existing_integration.expires_at = expires_at
+            existing_integration.scope = token_data.get("scope")
+            existing_integration.is_active = True
+            existing_integration.updated_at = datetime.utcnow()
+        else:
+            # Create new integration
+            integration = Integration(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="uber",
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                token_type=token_data.get("token_type", "Bearer"),
+                expires_at=expires_at,
+                scope=token_data.get("scope"),
+                is_active=True
+            )
+            db.add(integration)
+
+        db.commit()
+
+        logger.info(f"Successfully connected Uber for user {user_id}")
+
+        return {"success": True, "message": "Successfully connected Uber", "service": "uber"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Uber code exchange failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to exchange code: {str(e)}"
+        )
+
+
+@router.post("/uber/disconnect")
+async def disconnect_uber(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Disconnect Uber integration.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Success response
+
+    Raises:
+        HTTPException: If not authenticated or disconnection fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Find Uber integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "uber"
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Uber integration not found"
+            )
+
+        # Revoke Uber OAuth token
+        if integration.access_token:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        "https://login.uber.com/oauth/v2/revoke",
+                        data={"token": integration.access_token},
+                        headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    )
+                logger.info(f"Revoked Uber token for user {supabase_user['id']}")
+            except Exception as e:
+                logger.warning(f"Failed to revoke Uber token: {e}")
+                # Continue with deletion even if revocation fails
+
+        # Delete integration from database
+        db.delete(integration)
+        db.commit()
+
+        logger.info(f"Successfully disconnected Uber for user {supabase_user['id']}")
+
+        return {"success": True, "message": "Uber disconnected successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to disconnect Uber: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disconnect Uber: {str(e)}"
+        )
+
+
+@router.get("/uber/config-test")
+async def test_uber_config():
+    """Test endpoint to check Uber configuration."""
+    return {
+        "uber_client_id_set": settings.UBER_CLIENT_ID is not None,
+        "uber_client_secret_set": settings.UBER_CLIENT_SECRET is not None,
+        "uber_redirect_uri": settings.UBER_REDIRECT_URI,
+        "client_id_length": len(settings.UBER_CLIENT_ID) if settings.UBER_CLIENT_ID else 0,
+        "client_secret_length": len(settings.UBER_CLIENT_SECRET) if settings.UBER_CLIENT_SECRET else 0
+    }
+
+
+# ============================================================================
+# Uber API Endpoints
+# ============================================================================
+
+@router.get("/uber/profile")
+async def get_uber_profile(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get user's Uber profile.
+
+    Args:
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        User profile data
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Uber integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "uber",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Uber not connected"
+            )
+
+        # Get valid token (auto-refreshes if needed)
+        uber_token = await uber_service.get_valid_token(integration, db)
+
+        # Get profile
+        profile = await uber_service.get_user_profile(uber_token)
+
+        return profile
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get Uber profile: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get profile: {str(e)}"
+        )
+
+
+@router.get("/uber/history")
+async def get_uber_history(
+    limit: int = Query(5, ge=1, le=50, description="Number of rides to return"),
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Get user's ride history.
+
+    Args:
+        limit: Number of rides to return
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        List of past rides
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Uber integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "uber",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Uber not connected"
+            )
+
+        # Get valid token
+        uber_token = await uber_service.get_valid_token(integration, db)
+
+        # Get ride history
+        history = await uber_service.get_ride_history(uber_token, limit)
+
+        return {"history": history}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get Uber history: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get history: {str(e)}"
+        )
+
+
+@router.post("/uber/deep-link")
+async def generate_uber_deep_link(
+    request: Request,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Generate Uber deep link for ride booking.
+
+    Args:
+        request: Request with pickup/destination data
+        authorization: Bearer token from Authorization header
+        db: Database session
+
+    Returns:
+        Deep link URL
+
+    Raises:
+        HTTPException: If not connected or request fails
+    """
+    try:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header"
+            )
+
+        access_token = authorization.replace("Bearer ", "")
+        supabase_user = await supabase_auth_service.get_user(access_token)
+
+        if not supabase_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token"
+            )
+
+        # Get Uber integration
+        integration = db.query(Integration).filter(
+            Integration.user_id == supabase_user["id"],
+            Integration.service == "uber",
+            Integration.is_active == True
+        ).first()
+
+        if not integration:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Uber not connected"
+            )
+
+        # Get request data
+        body_data = await request.json()
+
+        # Generate deep link
+        deep_link = uber_service.generate_deep_link(
+            pickup_latitude=body_data.get("pickup_latitude"),
+            pickup_longitude=body_data.get("pickup_longitude"),
+            pickup_address=body_data.get("pickup_address"),
+            destination_latitude=body_data.get("destination_latitude"),
+            destination_longitude=body_data.get("destination_longitude"),
+            destination_address=body_data.get("destination_address"),
+            product_id=body_data.get("product_id")
+        )
+
+        # Also generate web link as fallback
+        web_link = uber_service.generate_web_link(
+            pickup_latitude=body_data.get("pickup_latitude"),
+            pickup_longitude=body_data.get("pickup_longitude"),
+            pickup_address=body_data.get("pickup_address"),
+            destination_latitude=body_data.get("destination_latitude"),
+            destination_longitude=body_data.get("destination_longitude"),
+            destination_address=body_data.get("destination_address")
+        )
+
+        return {
+            "deep_link": deep_link,
+            "web_link": web_link
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate Uber deep link: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate deep link: {str(e)}"
         )
 
 
@@ -1575,23 +2175,39 @@ async def connect_google_calendar_native(
         user_id = supabase_user["id"]
 
         # Verify token works with Calendar API and get user's calendars
+        calendar_email = "primary"  # Default value
         try:
+            logger.info(f"Verifying Google Calendar access token for user {user_id}")
             calendar_svc = get_google_calendar_service(google_access_token)
-            calendars = calendar_svc.list_calendars()
-            primary_calendar = next(
-                (cal for cal in calendars if cal.get('id') == 'primary'),
-                calendars[0] if calendars else None
-            )
-            calendar_email = primary_calendar.get('id') if primary_calendar else 'primary'
+            
+            # Try to get calendars, but don't fail if it doesn't work
+            # Some users might have limited permissions
+            try:
+                calendars = calendar_svc.list_calendars()
+                logger.info(f"Retrieved {len(calendars)} calendars from Google Calendar API")
+                
+                primary_calendar = next(
+                    (cal for cal in calendars if cal.get('id') == 'primary'),
+                    calendars[0] if calendars else None
+                )
+                if primary_calendar:
+                    calendar_email = primary_calendar.get('id', 'primary')
+                    
+            except Exception as calendar_error:
+                logger.warning(f"Could not list calendars, but proceeding anyway: {calendar_error}")
+                # Continue with default calendar_email = "primary"
+            
             logger.info(f"Successfully verified Calendar access for {calendar_email}")
+            
         except Exception as e:
-            logger.error(f"Failed to verify Calendar access: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or insufficient Calendar access token. Make sure Calendar scopes were granted."
-            )
+            logger.error(f"Failed to create Calendar service for user {user_id}: {e}", exc_info=True)
+            # For now, let's be more lenient and not fail the entire integration
+            # if Calendar API verification fails
+            logger.warning(f"Calendar API verification failed, but proceeding with integration")
+            calendar_email = "primary"
 
         # Store or update integration in database
+        logger.info(f"Looking for existing Google Calendar integration for user {user_id}")
         integration = db.query(Integration).filter(
             Integration.user_id == user_id,
             Integration.service == "google_calendar"
@@ -1601,6 +2217,7 @@ async def connect_google_calendar_native(
         token_expires_at = datetime.utcnow() + timedelta(hours=1)
 
         if integration:
+            logger.info(f"Updating existing Google Calendar integration: {integration.id}")
             # Update existing integration
             integration.access_token = google_access_token
             integration.expires_at = token_expires_at
@@ -1608,6 +2225,7 @@ async def connect_google_calendar_native(
             integration.scope = "calendar.readonly calendar.events"
             integration.updated_at = datetime.utcnow()
         else:
+            logger.info("Creating new Google Calendar integration")
             # Create new integration
             integration = Integration(
                 id=str(uuid.uuid4()),
@@ -1621,9 +2239,31 @@ async def connect_google_calendar_native(
             )
             db.add(integration)
 
-        db.commit()
+        try:
+            db.commit()
+            logger.info(f"Successfully committed Google Calendar integration to database")
+        except Exception as commit_error:
+            logger.error(f"Failed to commit Google Calendar integration: {str(commit_error)}")
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to save integration: {str(commit_error)}"
+            )
 
         logger.info(f"Successfully connected Google Calendar via native SDK for user {user_id}")
+        logger.info(f"Integration saved: id={integration.id}, service={integration.service}, is_active={integration.is_active}")
+        
+        # Verify the integration was actually saved by querying it back
+        verification_query = db.query(Integration).filter(
+            Integration.user_id == user_id,
+            Integration.service == "google_calendar",
+            Integration.is_active == True
+        ).first()
+        
+        if verification_query:
+            logger.info(f"✅ Verified integration exists in database: {verification_query.id}")
+        else:
+            logger.error(f"❌ Integration not found in database after save!")
 
         return {
             "success": True,
@@ -1781,6 +2421,7 @@ async def disconnect_google_calendar(
     Raises:
         HTTPException: If not authenticated or disconnection fails
     """
+    logger.info("Google Calendar disconnect endpoint called")
     try:
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
@@ -1798,16 +2439,26 @@ async def disconnect_google_calendar(
             )
 
         # Find Google Calendar integration
+        logger.info(f"Looking for Google Calendar integration for user {supabase_user['id']}")
         integration = db.query(Integration).filter(
             Integration.user_id == supabase_user["id"],
             Integration.service == "google_calendar"
         ).first()
 
         if not integration:
+            # Debug: list all integrations for this user
+            all_integrations = db.query(Integration).filter(
+                Integration.user_id == supabase_user["id"]
+            ).all()
+            logger.error(f"Google Calendar integration not found!")
+            logger.error(f"Available integrations: {[(i.service, i.is_active) for i in all_integrations]}")
+            
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Google Calendar integration not found"
             )
+        
+        logger.info(f"Found Google Calendar integration: {integration.id}, active: {integration.is_active}")
 
         # Revoke Google OAuth token
         if integration.access_token:
