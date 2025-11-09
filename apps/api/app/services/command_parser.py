@@ -229,98 +229,6 @@ class CommandParser:
                 r"which\s+devices",
                 r"show\s+available\s+devices",
             ],
-            
-            # Gmail command patterns
-            "read_emails": [
-                r"read\s+(?:my\s+)?emails?",
-                r"check\s+(?:my\s+)?emails?",
-                r"show\s+(?:my\s+)?emails?",
-                r"what\s+emails?\s+do\s+i\s+have",
-                r"any\s+new\s+emails?",
-                r"get\s+(?:my\s+)?emails?",
-                r"list\s+(?:my\s+)?emails?",
-            ],
-            
-            "send_email": [
-                r"send\s+(?:an\s+)?email\s+to\s+(?P<recipient>.+)",
-                r"email\s+(?P<recipient>.+)",
-                r"compose\s+(?:an\s+)?email\s+to\s+(?P<recipient>.+)",
-                r"write\s+(?:an\s+)?email\s+to\s+(?P<recipient>.+)",
-            ],
-            
-            "search_emails": [
-                r"search\s+(?:for\s+)?emails?\s+(?:from\s+)?(?P<query>.+)",
-                r"find\s+emails?\s+(?:from\s+)?(?P<query>.+)",
-                r"look\s+for\s+emails?\s+(?:from\s+)?(?P<query>.+)",
-            ],
-            
-            # Google Calendar command patterns
-            "list_events": [
-                r"what\s+(?:are\s+)?(?:my\s+)?(?:upcoming\s+)?events?",
-                r"show\s+(?:my\s+)?(?:upcoming\s+)?events?",
-                r"list\s+(?:my\s+)?(?:upcoming\s+)?events?",
-                r"check\s+(?:my\s+)?calendar",
-                r"what\s+(?:is\s+)?(?:on\s+)?(?:my\s+)?calendar",
-                r"any\s+events?\s+today",
-                r"what\s+(?:do\s+)?i\s+have\s+(?:today|tomorrow|this\s+week)",
-            ],
-            
-            "create_event": [
-                r"create\s+(?:an\s+)?event\s+(?P<title>.+)",
-                r"schedule\s+(?:an\s+)?(?:event|meeting)\s+(?P<title>.+)",
-                r"add\s+(?:an\s+)?event\s+(?P<title>.+)",
-                r"book\s+(?:a\s+)?meeting\s+(?P<title>.+)",
-                r"set\s+(?:up\s+)?(?:a\s+)?meeting\s+(?P<title>.+)",
-            ],
-            
-            "find_event": [
-                r"find\s+(?:my\s+)?(?:event|meeting)\s+(?P<query>.+)",
-                r"search\s+(?:for\s+)?(?:event|meeting)\s+(?P<query>.+)",
-                r"when\s+is\s+(?:my\s+)?(?P<query>.+)",
-                r"what\s+time\s+is\s+(?:my\s+)?(?P<query>.+)",
-            ],
-            
-            # Uber command patterns
-            "book_ride": [
-                r"book\s+(?:a\s+)?(?:ride|uber)\s+to\s+(?P<destination>.+)",
-                r"get\s+(?:a\s+)?(?:ride|uber)\s+to\s+(?P<destination>.+)",
-                r"call\s+(?:an\s+)?uber\s+to\s+(?P<destination>.+)",
-                r"request\s+(?:a\s+)?ride\s+to\s+(?P<destination>.+)",
-                r"uber\s+to\s+(?P<destination>.+)",
-                r"take\s+me\s+to\s+(?P<destination>.+)",
-            ],
-            
-            "book_ride_from_to": [
-                r"book\s+(?:a\s+)?(?:ride|uber)\s+from\s+(?P<pickup>.+?)\s+to\s+(?P<destination>.+)",
-                r"get\s+(?:a\s+)?(?:ride|uber)\s+from\s+(?P<pickup>.+?)\s+to\s+(?P<destination>.+)",
-                r"uber\s+from\s+(?P<pickup>.+?)\s+to\s+(?P<destination>.+)",
-            ],
-            
-            "check_ride_status": [
-                r"check\s+(?:my\s+)?(?:ride|uber)\s+status",
-                r"where\s+is\s+my\s+(?:ride|uber)",
-                r"(?:ride|uber)\s+status",
-                r"how\s+long\s+(?:until|till)\s+my\s+(?:ride|uber)",
-            ],
-            
-            "cancel_ride": [
-                r"cancel\s+(?:my\s+)?(?:ride|uber)",
-                r"cancel\s+(?:the\s+)?ride",
-                r"stop\s+(?:my\s+)?(?:ride|uber)",
-            ],
-            
-            "get_ride_estimate": [
-                r"how\s+much\s+(?:would\s+)?(?:a\s+)?(?:ride|uber)\s+to\s+(?P<destination>.+)\s+cost",
-                r"(?:price|cost)\s+(?:estimate\s+)?(?:for\s+)?(?:ride|uber)\s+to\s+(?P<destination>.+)",
-                r"estimate\s+(?:for\s+)?(?:ride|uber)\s+to\s+(?P<destination>.+)",
-            ],
-            
-            "get_ride_history": [
-                r"show\s+(?:my\s+)?(?:ride|uber)\s+history",
-                r"(?:ride|uber)\s+history",
-                r"past\s+(?:rides|ubers)",
-                r"recent\s+(?:rides|ubers)",
-            ],
         }
     
     def _load_synonyms(self) -> dict:
@@ -371,18 +279,6 @@ class CommandParser:
             "next": ["next", "skip"],
             "previous": ["previous", "back"],
             "set_volume": ["volume"],
-            "read_emails": ["read", "check", "emails", "email"],
-            "send_email": ["send", "email", "compose"],
-            "search_emails": ["search", "find", "emails"],
-            "list_events": ["events", "calendar", "schedule"],
-            "create_event": ["create", "schedule", "event", "meeting"],
-            "find_event": ["find", "search", "when", "time"],
-            "book_ride": ["book", "ride", "uber", "get", "call"],
-            "book_ride_from_to": ["book", "ride", "uber", "from", "to"],
-            "check_ride_status": ["check", "status", "where", "ride"],
-            "cancel_ride": ["cancel", "stop", "ride"],
-            "get_ride_estimate": ["cost", "price", "estimate", "much"],
-            "get_ride_history": ["history", "past", "recent", "rides"],
         }
     
     def normalize_text(self, text: str) -> str:

@@ -13,7 +13,6 @@ from app.models.integration import Integration
 from app.services.auth import supabase_auth_service
 from app.services.soniox import soniox_service
 from app.services.spotify import spotify_service
-from app.services.uber import uber_service
 from app.services.spotify_controller import (
     NoActiveDeviceError,
     SearchNoResultsError,
@@ -21,13 +20,6 @@ from app.services.spotify_controller import (
     PremiumRequiredError,
     AuthenticationError,
     spotify_controller,
-)
-from app.services.uber_controller import (
-    UberControllerError,
-    NoLocationError,
-    RideBookingError,
-    AuthenticationError as UberAuthError,
-    uber_controller,
 )
 from app.services.voice_agent import voice_agent_service
 
@@ -58,34 +50,12 @@ async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integra
     return integration
 
 
-async def get_uber_integration(user_id: str, db: Session) -> Optional[Integration]:
-    """Get user's Uber integration.
-    
-    Args:
-        user_id: User ID
-        db: Database session
-        
-    Returns:
-        Integration object or None if not found
-    """
-    integration = (
-        db.query(Integration)
-        .filter(
-            Integration.user_id == user_id,
-            Integration.service == "uber",
-            Integration.is_active == True
-        )
-        .first()
-    )
-    return integration
-
-
-async def execute_voice_command(
+async def execute_spotify_command(
     command_text: str,
     user_id: str,
     db: Session
 ) -> dict:
-    """Execute a voice command across multiple services.
+    """Execute a Spotify voice command.
     
     Args:
         command_text: Voice command text
@@ -249,76 +219,11 @@ async def execute_voice_command(
                 artist=artist
             )
         
-        # Uber commands
-        elif intent.intent == "book_ride":
-            # Check if user has Uber integration
-            uber_integration = await get_uber_integration(user_id, db)
-            if not uber_integration:
-                return {
-                    "type": "command_error",
-                    "message": "Uber is not connected. Please connect Uber in settings.",
-                    "error_code": "NO_INTEGRATION"
-                }
-            
-            destination = intent.parameters.get("destination")
-            if not destination:
-                return {
-                    "type": "command_error",
-                    "message": "Where would you like to go?",
-                    "error_code": "MISSING_DESTINATION"
-                }
-            
-            # For voice commands, we use deep linking instead of API booking
-            result = uber_controller.generate_ride_deep_link(destination=destination)
-        
-        elif intent.intent == "book_ride_from_to":
-            uber_integration = await get_uber_integration(user_id, db)
-            if not uber_integration:
-                return {
-                    "type": "command_error",
-                    "message": "Uber is not connected. Please connect Uber in settings.",
-                    "error_code": "NO_INTEGRATION"
-                }
-            
-            pickup = intent.parameters.get("pickup")
-            destination = intent.parameters.get("destination")
-            
-            if not pickup or not destination:
-                return {
-                    "type": "command_error",
-                    "message": "Please specify both pickup and destination locations",
-                    "error_code": "MISSING_LOCATIONS"
-                }
-            
-            result = uber_controller.generate_ride_deep_link(
-                pickup=pickup,
-                destination=destination
-            )
-        
-        elif intent.intent == "get_ride_history":
-            uber_integration = await get_uber_integration(user_id, db)
-            if not uber_integration:
-                return {
-                    "type": "command_error",
-                    "message": "Uber is not connected. Please connect Uber in settings.",
-                    "error_code": "NO_INTEGRATION"
-                }
-            
-            try:
-                uber_token = await uber_service.get_valid_token(uber_integration, db)
-                result = await uber_controller.get_ride_history(uber_token)
-            except Exception as e:
-                return {
-                    "type": "command_error",
-                    "message": "Failed to get ride history. Please try reconnecting Uber.",
-                    "error_code": "UBER_API_ERROR"
-                }
-        
         else:
             logger.warning(f"Unknown or unsupported intent: {intent.intent}")
             return {
                 "type": "command_error",
-                "message": "I didn't understand that command. Try saying something like 'play Bohemian Rhapsody' or 'book a ride to the airport'",
+                "message": "I didn't understand that command. Try saying something like 'play Bohemian Rhapsody'",
                 "error_code": "UNKNOWN_INTENT"
             }
         
@@ -398,43 +303,6 @@ async def execute_voice_command(
             "status_code": e.status_code
         }
     
-    except NoLocationError as e:
-        logger.warning(f"Location error for user {user_id}: {str(e)}")
-        return {
-            "type": "command_error",
-            "message": e.message,
-            "error_code": e.error_code,
-            "suggestions": e.suggestions
-        }
-    
-    except RideBookingError as e:
-        logger.error(f"Ride booking error for user {user_id}: {str(e)}")
-        return {
-            "type": "command_error",
-            "message": e.message,
-            "error_code": e.error_code,
-            "suggestions": e.suggestions
-        }
-    
-    except UberAuthError as e:
-        logger.error(f"Uber authentication error for user {user_id}: {str(e)}")
-        return {
-            "type": "command_error",
-            "message": e.message,
-            "error_code": e.error_code,
-            "suggestions": e.suggestions,
-            "reason": e.reason
-        }
-    
-    except UberControllerError as e:
-        logger.error(f"Uber controller error: {str(e)}", exc_info=True)
-        return {
-            "type": "command_error",
-            "message": e.message,
-            "error_code": e.error_code,
-            "suggestions": e.suggestions
-        }
-    
     except Exception as e:
         logger.error(f"Unexpected error executing command: {str(e)}", exc_info=True)
         return {
@@ -444,7 +312,7 @@ async def execute_voice_command(
             "suggestions": [
                 "Try your command again",
                 "Check your internet connection",
-                "Make sure your services are connected"
+                "Make sure Spotify is running"
             ]
         }
 
@@ -630,8 +498,8 @@ async def stream_transcribe(
                             command_text = json_data.get("text", "")
                             logger.info(f"Received command from user {user_id}: {command_text}")
                             
-                            # Execute voice command
-                            command_response = await execute_voice_command(
+                            # Execute Spotify command
+                            command_response = await execute_spotify_command(
                                 command_text=command_text,
                                 user_id=user_id,
                                 db=db

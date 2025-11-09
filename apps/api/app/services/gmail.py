@@ -208,61 +208,6 @@ class GmailService:
             logger.error(f"Failed to get Gmail profile: {error}")
             raise
 
-    def get_recent_emails(self, max_results: int = 5) -> List[Dict[str, Any]]:
-        """Get recent emails with parsed headers for voice responses.
-        
-        Args:
-            max_results: Maximum number of emails to return
-            
-        Returns:
-            List of emails with parsed from, subject, and snippet
-            
-        Raises:
-            HttpError: If Gmail API request fails
-        """
-        try:
-            # Get recent messages from inbox
-            messages = self.get_messages(
-                max_results=max_results,
-                label_ids=['INBOX']
-            )
-            
-            recent_emails = []
-            
-            for message in messages:
-                try:
-                    # Get full message details
-                    message_detail = self.get_message_detail(message['id'])
-                    
-                    # Parse headers
-                    headers = message_detail.get('payload', {}).get('headers', [])
-                    from_header = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
-                    subject_header = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No subject')
-                    
-                    # Extract sender name from "Name <email>" format
-                    sender_name = from_header
-                    if '<' in from_header:
-                        sender_name = from_header.split('<')[0].strip().strip('"')
-                    
-                    recent_emails.append({
-                        'id': message['id'],
-                        'from': sender_name,
-                        'subject': subject_header,
-                        'snippet': message_detail.get('snippet', ''),
-                        'thread_id': message_detail.get('threadId', '')
-                    })
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to parse message {message['id']}: {str(e)}")
-                    continue
-            
-            logger.info(f"Retrieved {len(recent_emails)} recent emails")
-            return recent_emails
-            
-        except HttpError as error:
-            logger.error(f"Failed to get recent emails: {error}")
-            raise
-
 
 # Singleton instance that can be initialized per-request
 gmail_service: Optional[GmailService] = None
