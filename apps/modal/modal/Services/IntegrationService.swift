@@ -16,25 +16,34 @@ class IntegrationService {
 
     enum ServiceType: String {
         case spotify
-        case uber
         case gmail
         case googleCalendar
+        case discord
 
         var displayName: String {
             switch self {
             case .spotify: return "Spotify"
-            case .uber: return "Uber"
             case .gmail: return "Gmail"
             case .googleCalendar: return "Google Calendar"
+            case .discord: return "Discord"
             }
         }
 
         var oauthEndpoint: String {
             switch self {
             case .spotify: return "/integrations/spotify/auth"
-            case .uber: return "/integrations/uber/auth"
             case .gmail: return "/integrations/gmail/auth"
             case .googleCalendar: return "/integrations/google-calendar/auth"
+            case .discord: return "/integrations/discord/auth"
+            }
+        }
+        
+        var backendServiceName: String {
+            switch self {
+            case .spotify: return "spotify"
+            case .gmail: return "gmail"
+            case .googleCalendar: return "google-calendar"
+            case .discord: return "discord"
             }
         }
     }
@@ -315,7 +324,7 @@ class IntegrationService {
         }
 
         // Call backend to revoke access
-        let url = URL(string: "\(backendURL)/integrations/\(service.rawValue)/disconnect")!
+        let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
@@ -338,7 +347,7 @@ class IntegrationService {
         // Properly encode query parameters
         guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(backendURL)/integrations/\(service.rawValue)/exchange?code=\(encodedCode)&state=\(encodedState)") else {
+              let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/exchange?code=\(encodedCode)&state=\(encodedState)") else {
             print("❌ Failed to encode OAuth parameters for \(service.displayName)")
             throw IntegrationError.oauthFailed
         }

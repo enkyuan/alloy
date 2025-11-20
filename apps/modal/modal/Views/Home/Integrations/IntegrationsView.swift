@@ -26,7 +26,6 @@ struct IntegrationsView: View {
     
     private var hasConnectedIntegrations: Bool {
         integrationService.isConnected(.spotify) ||
-        integrationService.isConnected(.uber) ||
         integrationService.isConnected(.gmail) ||
         integrationService.isConnected(.googleCalendar)
     }
@@ -105,15 +104,8 @@ struct IntegrationsView: View {
                 isConnected: integrationService.isConnected(.spotify),
                 action: { handleIntegration(.spotify) }
             )
-            
-            // Uber
-            Card.integration(
-                iconName: "UberLogo",
-                serviceName: "Uber",
-                description: "Book rides and check trip status",
-                isConnected: integrationService.isConnected(.uber),
-                action: { handleIntegration(.uber) }
-            )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
             
             // Gmail
             Card.integration(
@@ -134,6 +126,29 @@ struct IntegrationsView: View {
                 isConnected: integrationService.isConnected(.googleCalendar),
                 action: { handleIntegration(.googleCalendar) }
             )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
+
+            // Discord
+            Card.integration(
+                iconName: "DiscordIcon",
+                serviceName: "Discord",
+                description: "Send messages and manage servers",
+                isConnected: integrationService.isConnected(.discord),
+                action: { handleIntegration(.discord) }
+            )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
+
+            // Uber
+            Card.integration(
+                iconName: "UberLogo",
+                serviceName: "Uber",
+                description: "Book rides and check trip status",
+                isConnected: false,
+                action: {}
+            )
+            .disabled(true)
             
             // DoorDash
             Card.integration(
@@ -145,21 +160,21 @@ struct IntegrationsView: View {
             )
             .disabled(true)
             
-            // Apple Music
-            Card.integration(
-                iconName: "AppleMusicIcon",
-                serviceName: "Apple Music",
-                description: "Listen to your favorite artists",
-                isConnected: false,
-                action: {}
-            )
-            .disabled(true)
-            
             // Instacart
             Card.integration(
                 iconName: "InstacartIcon",
                 serviceName: "Instacart",
                 description: "Groceries delivered in minutes",
+                isConnected: false,
+                action: {}
+            )
+            .disabled(true)
+
+            // Apple Music
+            Card.integration(
+                iconName: "AppleMusicIcon",
+                serviceName: "Apple Music",
+                description: "Listen to your favorite artists",
                 isConnected: false,
                 action: {}
             )
