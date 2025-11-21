@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     TODOIST_CLIENT_SECRET: Optional[str] = None
     TODOIST_REDIRECT_URI: Optional[str] = None
 
+    # Calendly OAuth
+    CALENDLY_CLIENT_ID: Optional[str] = None
+    CALENDLY_CLIENT_SECRET: Optional[str] = None
+    CALENDLY_REDIRECT_URI: Optional[str] = None
+
     # Gmail OAuth (reuses Google OAuth credentials)
     # No separate credentials needed - uses GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
     GMAIL_REDIRECT_URI: Optional[str] = None

@@ -151,6 +151,17 @@ struct IntegrationsView: View {
             .opacity(isCheckingIntegrations ? 0.6 : 1.0)
             .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
 
+            // Calendly
+            Card.integration(
+                iconName: "CalendlyIcon",
+                serviceName: "Calendly",
+                description: "Schedule and manage meetings",
+                isConnected: integrationService.isConnected(.calendly),
+                action: { handleIntegration(.calendly) }
+            )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
+
             // Uber
             Card.integration(
                 iconName: "UberLogo",
