@@ -19,6 +19,7 @@ class IntegrationService {
         case gmail
         case googleCalendar
         case discord
+        case todoist
 
         var displayName: String {
             switch self {
@@ -26,6 +27,7 @@ class IntegrationService {
             case .gmail: return "Gmail"
             case .googleCalendar: return "Google Calendar"
             case .discord: return "Discord"
+            case .todoist: return "Todoist"
             }
         }
 
@@ -35,6 +37,7 @@ class IntegrationService {
             case .gmail: return "/integrations/gmail/auth"
             case .googleCalendar: return "/integrations/google-calendar/auth"
             case .discord: return "/integrations/discord/auth"
+            case .todoist: return "/integrations/todoist/auth"
             }
         }
         
@@ -44,6 +47,7 @@ class IntegrationService {
             case .gmail: return "gmail"
             case .googleCalendar: return "google-calendar"
             case .discord: return "discord"
+            case .todoist: return "todoist"
             }
         }
     }

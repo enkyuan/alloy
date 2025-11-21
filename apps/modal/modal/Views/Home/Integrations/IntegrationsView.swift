@@ -140,6 +140,17 @@ struct IntegrationsView: View {
             .opacity(isCheckingIntegrations ? 0.6 : 1.0)
             .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
 
+            // Todoist
+            Card.integration(
+                iconName: "TodoistIcon",
+                serviceName: "Todoist",
+                description: "Manage tasks and to-do lists",
+                isConnected: integrationService.isConnected(.todoist),
+                action: { handleIntegration(.todoist) }
+            )
+            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
+
             // Uber
             Card.integration(
                 iconName: "UberLogo",
