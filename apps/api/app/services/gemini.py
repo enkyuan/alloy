@@ -1,4 +1,5 @@
 """Google Gemini AI service for conversational AI."""
+
 import logging
 from typing import Optional, List, Dict, Any
 
@@ -18,7 +19,7 @@ class GeminiService:
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize Gemini service.
-        
+
         Args:
             api_key: Optional API key. If not provided, uses GEMINI_API_KEY from settings.
         """
@@ -27,12 +28,12 @@ class GeminiService:
                 "google-genai package is not installed. "
                 "Install it with: pip install google-genai"
             )
-        
+
         self.api_key = api_key or settings.GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
             raise ValueError("GEMINI_API_KEY is required")
-        
+
         logger.info("Initializing Gemini client...")
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-2.0-flash-exp"  # Using latest flash model
@@ -43,19 +44,19 @@ class GeminiService:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
         """Generate a response from Gemini.
-        
+
         Args:
             prompt: User prompt/message
             system_instruction: Optional system instruction to guide the model
             temperature: Sampling temperature (0.0-2.0)
             max_tokens: Maximum tokens to generate
-            
+
         Returns:
             Generated text response
-            
+
         Raises:
             Exception: If generation fails
         """
@@ -65,16 +66,14 @@ class GeminiService:
             }
             if max_tokens:
                 config["max_output_tokens"] = max_tokens
-            
+
             if system_instruction:
                 config["system_instruction"] = system_instruction
 
             response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=config
+                model=self.model, contents=prompt, config=config
             )
-            
+
             logger.info(f"Generated Gemini response for prompt: {prompt[:50]}...")
             return response.text
 
@@ -86,30 +85,27 @@ class GeminiService:
         self,
         messages: List[Dict[str, str]],
         system_instruction: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ) -> str:
         """Generate a response in a chat context.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content' keys
             system_instruction: Optional system instruction
             temperature: Sampling temperature
-            
+
         Returns:
             Generated text response
         """
         try:
             logger.info(f"Generating chat response with {len(messages)} messages")
             logger.debug(f"Messages: {messages}")
-            
+
             # Convert messages to Gemini format
             contents = []
             for msg in messages:
                 role = "user" if msg["role"] == "user" else "model"
-                contents.append({
-                    "role": role,
-                    "parts": [{"text": msg["content"]}]
-                })
+                contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
             config = {
                 "temperature": temperature,
@@ -120,11 +116,9 @@ class GeminiService:
 
             logger.info(f"Calling Gemini API with model: {self.model}")
             response = self.client.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=config
+                model=self.model, contents=contents, config=config
             )
-            
+
             logger.info(f"Successfully generated chat response")
             logger.debug(f"Response: {response.text[:100]}...")
             return response.text
@@ -139,15 +133,15 @@ class GeminiService:
         self,
         prompt: str,
         system_instruction: Optional[str] = None,
-        temperature: float = 0.7
+        temperature: float = 0.7,
     ):
         """Generate a streaming response from Gemini.
-        
+
         Args:
             prompt: User prompt/message
             system_instruction: Optional system instruction
             temperature: Sampling temperature
-            
+
         Yields:
             Text chunks as they are generated
         """
@@ -159,17 +153,17 @@ class GeminiService:
                 config["system_instruction"] = system_instruction
 
             response = self.client.models.generate_content_stream(
-                model=self.model,
-                contents=prompt,
-                config=config
+                model=self.model, contents=prompt, config=config
             )
-            
+
             for chunk in response:
                 if chunk.text:
                     yield chunk.text
 
         except Exception as e:
-            logger.error(f"Failed to generate streaming response: {str(e)}", exc_info=True)
+            logger.error(
+                f"Failed to generate streaming response: {str(e)}", exc_info=True
+            )
             raise
 
 
@@ -179,7 +173,7 @@ gemini_service: Optional[GeminiService] = None
 
 def get_gemini_service() -> GeminiService:
     """Get or create Gemini service instance.
-    
+
     Returns:
         GeminiService instance
     """

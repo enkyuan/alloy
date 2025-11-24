@@ -1,11 +1,12 @@
 """Main FastAPI application."""
+
 import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.logging_config import setup_logging
+from app.logging import setup_logging
 from app.routers import auth, integrations, stt, gemini
 
 # Configure Rich logging
@@ -20,7 +21,7 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_PREFIX}/docs",
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
     version="1.0.0",
-    description="Modal API"
+    description="Modal API",
 )
 
 # Configure CORS
@@ -45,11 +46,7 @@ logger.info(f"Starting {settings.PROJECT_NAME}")
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
     logger.debug("Health check requested")
-    return {
-        "status": "healthy",
-        "service": settings.PROJECT_NAME,
-        "version": "1.0.0"
-    }
+    return {"status": "healthy", "service": settings.PROJECT_NAME, "version": "1.0.0"}
 
 
 @app.get("/")
@@ -59,5 +56,5 @@ async def root():
         "message": settings.PROJECT_NAME,
         "version": "1.0.0",
         "docs": f"{settings.API_V1_PREFIX}/docs",
-        "health": "/health"
+        "health": "/health",
     }

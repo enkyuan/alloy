@@ -1,4 +1,5 @@
 """Database configuration and session management."""
+
 import logging
 
 from sqlalchemy import create_engine
@@ -16,7 +17,7 @@ engine = create_engine(
     pool_size=5,  # Maximum number of database connections
     max_overflow=10,  # Maximum overflow size of the pool
     pool_recycle=3600,  # Recycle connections after 1 hour
-    echo=settings.DEBUG
+    echo=settings.DEBUG,
 )
 
 # Create session factory
@@ -28,10 +29,10 @@ Base = declarative_base()
 
 def get_db():
     """Dependency to get database session.
-    
+
     Yields:
         Session: SQLAlchemy database session
-        
+
     Note:
         This is used as a FastAPI dependency to manage database sessions.
         The session is automatically closed after the request is complete.

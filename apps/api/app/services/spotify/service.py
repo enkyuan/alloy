@@ -1,12 +1,23 @@
-"""Spotify Controller for voice command execution."""
+"""Spotify service for high-level command orchestration."""
+
 import asyncio
 import logging
-from dataclasses import dataclass
+import re
 from functools import wraps
 from typing import Optional, TYPE_CHECKING, Callable, Any
 
+from app.services.spotify.client import SpotifyClient
+from app.services.spotify.exceptions import (
+    SpotifyAPIError,
+    NoActiveDeviceError,
+    SearchNoResultsError,
+    PremiumRequiredError,
+    AuthenticationError,
+)
+from app.services.spotify.models import CommandResult
+
 if TYPE_CHECKING:
-    from app.services.spotify import SpotifyService
+    from app.services.spotify.client import SpotifyClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,305 +29,82 @@ logger = logging.getLogger(__name__)
 
 def retry_on_transient_error(max_retries: int = 2, delay: float = 1.0):
     """Decorator to retry operations on transient errors.
-    
+
     Args:
         max_retries: Maximum number of retry attempts
         delay: Delay in seconds between retries
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> Any:
             last_error = None
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     return await func(*args, **kwargs)
                 except SpotifyAPIError as e:
                     last_error = e
-                    
+
                     # Only retry if error is marked as retryable
                     if not e.is_retryable or attempt >= max_retries:
                         raise
-                    
+
                     # Log retry attempt
                     logger.warning(
                         f"Transient error in {func.__name__}, "
                         f"attempt {attempt + 1}/{max_retries + 1}: {str(e)}"
                     )
-                    
+
                     # Wait before retrying (exponential backoff)
-                    wait_time = delay * (2 ** attempt)
+                    wait_time = delay * (2**attempt)
                     await asyncio.sleep(wait_time)
-                
-                except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError, AuthenticationError):
+
+                except (
+                    NoActiveDeviceError,
+                    SearchNoResultsError,
+                    PremiumRequiredError,
+                    AuthenticationError,
+                ):
                     # Don't retry these errors
                     raise
-                
+
                 except Exception as e:
                     # For unknown errors, don't retry
                     last_error = e
                     raise
-            
+
             # If we get here, all retries failed
             if last_error:
                 raise last_error
-        
+
         return wrapper
+
     return decorator
 
 
 # ============================================================================
-# Custom Exceptions
+# Spotify Service
 # ============================================================================
 
 
-class SpotifyControllerError(Exception):
-    """Base exception for SpotifyController errors."""
-    
-    def __init__(self, message: str, error_code: str = "SPOTIFY_ERROR", suggestions: Optional[list[str]] = None):
-        """Initialize error with message, code, and optional suggestions.
-        
-        Args:
-            message: User-friendly error message
-            error_code: Machine-readable error code
-            suggestions: Optional list of suggestions for the user
-        """
-        self.message = message
-        self.error_code = error_code
-        self.suggestions = suggestions or []
-        super().__init__(self.message)
+class SpotifyService:
+    """High-level service for executing Spotify commands from voice agent."""
 
-
-class NoActiveDeviceError(SpotifyControllerError):
-    """Raised when no active Spotify device is found."""
-    
-    def __init__(
-        self,
-        message: str = "No active Spotify device found. Please open Spotify on a device.",
-        available_devices: Optional[list[str]] = None
-    ):
-        """Initialize with message and optional list of available devices.
-        
-        Args:
-            message: User-friendly error message
-            available_devices: Optional list of available device names
-        """
-        suggestions = []
-        if available_devices:
-            suggestions = [
-                f"Try opening Spotify on: {', '.join(available_devices)}",
-                "Make sure Spotify is running on at least one device"
-            ]
-        else:
-            suggestions = [
-                "Open Spotify on your phone, computer, or speaker",
-                "Make sure the device is connected to the internet",
-                "Try refreshing your Spotify app"
-            ]
-        
-        super().__init__(message, "NO_DEVICE", suggestions)
-        self.available_devices = available_devices or []
-
-
-class SearchNoResultsError(SpotifyControllerError):
-    """Raised when search returns no results."""
-    
-    def __init__(
-        self,
-        query: str,
-        search_type: str = "track",
-        suggestions: Optional[list[str]] = None
-    ):
-        """Initialize with query, search type, and optional suggestions.
-        
-        Args:
-            query: The search query that returned no results
-            search_type: Type of content searched (track, album, playlist, artist)
-            suggestions: Optional list of alternative suggestions
-        """
-        message = f"Couldn't find {search_type} '{query}'"
-        
-        # Generate helpful suggestions
-        default_suggestions = [
-            "Try being more specific with the name",
-            "Check the spelling",
-            f"Try including the artist name for {search_type}s"
-        ]
-        
-        if search_type == "playlist":
-            default_suggestions = [
-                "Try searching for a different playlist",
-                "Make sure the playlist name is spelled correctly",
-                "Try creating the playlist first in Spotify"
-            ]
-        
-        super().__init__(
-            message,
-            "NO_RESULTS",
-            suggestions or default_suggestions
-        )
-        self.query = query
-        self.search_type = search_type
-
-
-class SpotifyAPIError(SpotifyControllerError):
-    """Raised when Spotify API call fails."""
-    
-    def __init__(
-        self,
-        message: str,
-        original_error: Optional[Exception] = None,
-        is_retryable: bool = False,
-        status_code: Optional[int] = None
-    ):
-        """Initialize with message, original error, and retry information.
-        
-        Args:
-            message: User-friendly error message
-            original_error: The original exception that caused this error
-            is_retryable: Whether the operation can be retried
-            status_code: HTTP status code if applicable
-        """
-        suggestions = []
-        
-        # Provide context-specific suggestions based on status code
-        if status_code == 429:
-            suggestions = [
-                "Spotify is rate limiting requests",
-                "Please wait a moment and try again"
-            ]
-            is_retryable = True
-        elif status_code == 503:
-            suggestions = [
-                "Spotify service is temporarily unavailable",
-                "Please try again in a few moments"
-            ]
-            is_retryable = True
-        elif status_code in [500, 502, 504]:
-            suggestions = [
-                "Spotify is experiencing technical difficulties",
-                "Please try again later"
-            ]
-            is_retryable = True
-        elif is_retryable:
-            suggestions = ["Please try your command again"]
-        else:
-            suggestions = [
-                "Check your internet connection",
-                "Try reconnecting Spotify in settings"
-            ]
-        
-        super().__init__(message, "API_ERROR", suggestions)
-        self.original_error = original_error
-        self.is_retryable = is_retryable
-        self.status_code = status_code
-
-
-class PremiumRequiredError(SpotifyControllerError):
-    """Raised when operation requires Spotify Premium."""
-    
-    def __init__(
-        self,
-        message: str = "This feature requires Spotify Premium",
-        feature: Optional[str] = None
-    ):
-        """Initialize with message and optional feature name.
-        
-        Args:
-            message: User-friendly error message
-            feature: The specific feature that requires premium
-        """
-        suggestions = [
-            "Upgrade to Spotify Premium to use this feature",
-            "Try using the Spotify app directly for free tier features"
-        ]
-        
-        if feature:
-            message = f"{feature} requires Spotify Premium"
-        
-        super().__init__(message, "PREMIUM_REQUIRED", suggestions)
-        self.feature = feature
-
-
-class AuthenticationError(SpotifyControllerError):
-    """Raised when authentication fails."""
-    
-    def __init__(
-        self,
-        message: str = "Failed to authenticate with Spotify",
-        reason: Optional[str] = None
-    ):
-        """Initialize with message and optional reason.
-        
-        Args:
-            message: User-friendly error message
-            reason: Optional reason for authentication failure
-        """
-        suggestions = [
-            "Try reconnecting Spotify in settings",
-            "Make sure you're logged into Spotify",
-            "Check that you've granted the necessary permissions"
-        ]
-        
-        if reason == "token_expired":
-            message = "Your Spotify session has expired"
-            suggestions = [
-                "Please reconnect Spotify in settings",
-                "This usually happens after being logged out"
-            ]
-        elif reason == "no_integration":
-            message = "Spotify is not connected"
-            suggestions = [
-                "Connect Spotify in the app settings",
-                "Make sure you complete the Spotify authorization"
-            ]
-        elif reason == "refresh_failed":
-            message = "Failed to refresh your Spotify session"
-            suggestions = [
-                "Please reconnect Spotify in settings",
-                "You may need to log out and log back in"
-            ]
-        
-        super().__init__(message, "AUTH_ERROR", suggestions)
-        self.reason = reason
-
-
-# ============================================================================
-# Data Models
-# ============================================================================
-
-
-@dataclass
-class CommandResult:
-    """Result of a command execution."""
-    success: bool
-    message: str
-    data: dict
-    error: Optional[str] = None
-
-
-# ============================================================================
-# Spotify Controller
-# ============================================================================
-
-
-class SpotifyController:
-    """Controller for executing Spotify commands from voice agent."""
-
-    def __init__(self, spotify_service: "SpotifyService"):
-        """Initialize SpotifyController.
+    def __init__(self, client: Optional["SpotifyClient"] = None):
+        """Initialize SpotifyService.
 
         Args:
-            spotify_service: SpotifyService instance for API calls
+            client: SpotifyClient instance for API calls (defaults to singleton)
         """
-        self.spotify = spotify_service
-    
+        self.client = client or spotify_client
+
     def _check_premium_error(self, error: Exception) -> bool:
         """Check if error indicates premium requirement.
-        
+
         Args:
             error: Exception to check
-            
+
         Returns:
             True if error indicates premium is required
         """
@@ -327,33 +115,32 @@ class SpotifyController:
             "requires premium",
             "player command failed: premium required",
             "restriction",
-            "restricted"
+            "restricted",
         ]
         return any(indicator in error_str for indicator in premium_indicators)
-    
+
     def _extract_status_code(self, error: Exception) -> Optional[int]:
         """Extract HTTP status code from exception.
-        
+
         Args:
             error: Exception to extract status code from
-            
+
         Returns:
             Status code if found, None otherwise
         """
         # Try different ways to get status code
-        if hasattr(error, 'status_code'):
+        if hasattr(error, "status_code"):
             return error.status_code
-        if hasattr(error, 'response') and hasattr(error.response, 'status_code'):
+        if hasattr(error, "response") and hasattr(error.response, "status_code"):
             return error.response.status_code
-        
+
         # Try to parse from error message
         error_str = str(error)
-        if 'status code' in error_str.lower():
-            import re
-            match = re.search(r'status code[:\s]+(\d+)', error_str, re.IGNORECASE)
+        if "status code" in error_str.lower():
+            match = re.search(r"status code[:\s]+(\d+)", error_str, re.IGNORECASE)
             if match:
                 return int(match.group(1))
-        
+
         return None
 
     async def get_active_device(self, access_token: str) -> Optional[str]:
@@ -370,13 +157,15 @@ class SpotifyController:
         """
         try:
             # First check current playback for active device
-            playback = await self.spotify.get_current_playback(access_token)
+            playback = await self.client.get_current_playback(access_token)
             if playback.get("device") and playback["device"].get("id"):
-                logger.info(f"Found active device from playback: {playback['device']['name']}")
+                logger.info(
+                    f"Found active device from playback: {playback['device']['name']}"
+                )
                 return playback["device"]["id"]
 
             # Fallback: get available devices and use first one
-            devices_response = await self.spotify.get_available_devices(access_token)
+            devices_response = await self.client.get_available_devices(access_token)
             devices = devices_response.get("devices", [])
 
             if not devices:
@@ -397,23 +186,22 @@ class SpotifyController:
         except Exception as e:
             logger.error(f"Failed to get active device: {str(e)}")
             # Check if it's an HTTP error with status code
-            status_code = getattr(e, 'status_code', None)
-            if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+            status_code = getattr(e, "status_code", None)
+            if hasattr(e, "response") and hasattr(e.response, "status_code"):
                 status_code = e.response.status_code
-            
+
             raise SpotifyAPIError(
                 "Failed to get device information",
                 original_error=e,
-                is_retryable=status_code in [429, 500, 502, 503, 504] if status_code else False,
-                status_code=status_code
+                is_retryable=status_code in [429, 500, 502, 503, 504]
+                if status_code
+                else False,
+                status_code=status_code,
             )
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_track(
-        self,
-        query: str,
-        access_token: str,
-        artist: Optional[str] = None
+        self, query: str, access_token: str, artist: Optional[str] = None
     ) -> CommandResult:
         """Search for a track and play it (most popular result).
 
@@ -440,11 +228,8 @@ class SpotifyController:
             logger.info(f"Searching for track: {search_query}")
 
             # Search for track
-            search_results = await self.spotify.search(
-                access_token=access_token,
-                query=search_query,
-                types="track",
-                limit=10
+            search_results = await self.client.search(
+                access_token=access_token, query=search_query, types="track", limit=10
             )
 
             tracks = search_results.get("tracks", {}).get("items", [])
@@ -456,7 +241,7 @@ class SpotifyController:
                 if not artist:
                     suggestions.append("Try including the artist name")
                 suggestions.append("Check the spelling of the track name")
-                
+
                 raise SearchNoResultsError(query, "track", suggestions)
 
             # Select most popular track (highest popularity score)
@@ -474,7 +259,9 @@ class SpotifyController:
             if not device_id:
                 # Get available devices for better error message
                 try:
-                    devices_response = await self.spotify.get_available_devices(access_token)
+                    devices_response = await self.client.get_available_devices(
+                        access_token
+                    )
                     devices = devices_response.get("devices", [])
                     device_names = [d.get("name") for d in devices if d.get("name")]
                     raise NoActiveDeviceError(available_devices=device_names)
@@ -485,17 +272,15 @@ class SpotifyController:
 
             # Play the track
             try:
-                await self.spotify.play(
-                    access_token=access_token,
-                    uri=track_uri,
-                    device_id=device_id
+                await self.client.play(
+                    access_token=access_token, uri=track_uri, device_id=device_id
                 )
             except Exception as play_error:
                 # Check if it's a premium requirement error
                 if self._check_premium_error(play_error):
                     raise PremiumRequiredError(
                         "Playing specific tracks requires Spotify Premium",
-                        feature="Track playback"
+                        feature="Track playback",
                     )
                 raise
 
@@ -508,39 +293,42 @@ class SpotifyController:
                     "album": selected_track.get("album", {}).get("name", ""),
                     "uri": track_uri,
                     "track_id": track_id,
-                    "album_art": selected_track.get("album", {}).get("images", [{}])[0].get("url") if selected_track.get("album", {}).get("images") else None
-                }
+                    "album_art": selected_track.get("album", {})
+                    .get("images", [{}])[0]
+                    .get("url")
+                    if selected_track.get("album", {}).get("images")
+                    else None,
+                },
             )
 
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
             logger.error(f"Failed to search and play track: {str(e)}", exc_info=True)
-            
+
             # Check for premium requirement
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
                     "Playing specific tracks requires Spotify Premium",
-                    feature="Track playback"
+                    feature="Track playback",
                 )
-            
+
             # Extract status code and determine if retryable
             status_code = self._extract_status_code(e)
-            is_retryable = status_code in [429, 500, 502, 503, 504] if status_code else False
-            
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+
             raise SpotifyAPIError(
                 "Failed to play track",
                 original_error=e,
                 is_retryable=is_retryable,
-                status_code=status_code
+                status_code=status_code,
             )
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_playlist(
-        self,
-        query: str,
-        access_token: str,
-        user_playlists_only: bool = False
+        self, query: str, access_token: str, user_playlists_only: bool = False
     ) -> CommandResult:
         """Search for a playlist and play it.
 
@@ -559,38 +347,35 @@ class SpotifyController:
             SpotifyAPIError: If API call fails
         """
         try:
-            logger.info(f"Searching for playlist: {query} (user_only={user_playlists_only})")
+            logger.info(
+                f"Searching for playlist: {query} (user_only={user_playlists_only})"
+            )
 
             playlists = []
 
             if user_playlists_only:
                 # Search user's playlists
-                user_playlists_response = await self.spotify.get_user_playlists(
-                    access_token=access_token,
-                    limit=50
+                user_playlists_response = await self.client.get_user_playlists(
+                    access_token=access_token, limit=50
                 )
                 all_playlists = user_playlists_response.get("items", [])
 
                 # Filter by query (case-insensitive)
                 query_lower = query.lower()
                 playlists = [
-                    p for p in all_playlists
-                    if query_lower in p["name"].lower()
+                    p for p in all_playlists if query_lower in p["name"].lower()
                 ]
             else:
                 # Search all playlists
-                search_results = await self.spotify.search(
-                    access_token=access_token,
-                    query=query,
-                    types="playlist",
-                    limit=10
+                search_results = await self.client.search(
+                    access_token=access_token, query=query, types="playlist", limit=10
                 )
                 playlists = search_results.get("playlists", {}).get("items", [])
 
             if not playlists:
                 suggestions = [
                     "Check the spelling of the playlist name",
-                    "Try searching for a different playlist"
+                    "Try searching for a different playlist",
                 ]
                 if user_playlists_only:
                     suggestions.append("Make sure the playlist exists in your library")
@@ -608,7 +393,9 @@ class SpotifyController:
             device_id = await self.get_active_device(access_token)
             if not device_id:
                 try:
-                    devices_response = await self.spotify.get_available_devices(access_token)
+                    devices_response = await self.client.get_available_devices(
+                        access_token
+                    )
                     devices = devices_response.get("devices", [])
                     device_names = [d.get("name") for d in devices if d.get("name")]
                     raise NoActiveDeviceError(available_devices=device_names)
@@ -619,16 +406,14 @@ class SpotifyController:
 
             # Play the playlist
             try:
-                await self.spotify.play(
-                    access_token=access_token,
-                    uri=playlist_uri,
-                    device_id=device_id
+                await self.client.play(
+                    access_token=access_token, uri=playlist_uri, device_id=device_id
                 )
             except Exception as play_error:
                 if self._check_premium_error(play_error):
                     raise PremiumRequiredError(
                         "Playing playlists requires Spotify Premium",
-                        feature="Playlist playback"
+                        feature="Playlist playback",
                     )
                 raise
 
@@ -640,37 +425,36 @@ class SpotifyController:
                     "uri": playlist_uri,
                     "playlist_id": playlist_id,
                     "owner": selected_playlist.get("owner", {}).get("display_name", ""),
-                    "tracks_total": selected_playlist.get("tracks", {}).get("total", 0)
-                }
+                    "tracks_total": selected_playlist.get("tracks", {}).get("total", 0),
+                },
             )
 
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
             logger.error(f"Failed to search and play playlist: {str(e)}", exc_info=True)
-            
+
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
                     "Playing playlists requires Spotify Premium",
-                    feature="Playlist playback"
+                    feature="Playlist playback",
                 )
-            
+
             status_code = self._extract_status_code(e)
-            is_retryable = status_code in [429, 500, 502, 503, 504] if status_code else False
-            
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+
             raise SpotifyAPIError(
                 "Failed to play playlist",
                 original_error=e,
                 is_retryable=is_retryable,
-                status_code=status_code
+                status_code=status_code,
             )
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_album(
-        self,
-        query: str,
-        access_token: str,
-        artist: Optional[str] = None
+        self, query: str, access_token: str, artist: Optional[str] = None
     ) -> CommandResult:
         """Search for an album and play it.
 
@@ -697,22 +481,17 @@ class SpotifyController:
             logger.info(f"Searching for album: {search_query}")
 
             # Search for album
-            search_results = await self.spotify.search(
-                access_token=access_token,
-                query=search_query,
-                types="album",
-                limit=10
+            search_results = await self.client.search(
+                access_token=access_token, query=search_query, types="album", limit=10
             )
 
             albums = search_results.get("albums", {}).get("items", [])
             if not albums:
-                suggestions = [
-                    "Check the spelling of the album name"
-                ]
+                suggestions = ["Check the spelling of the album name"]
                 if not artist:
                     suggestions.append("Try including the artist name")
                 suggestions.append("Make sure the album is available on Spotify")
-                
+
                 raise SearchNoResultsError(query, "album", suggestions)
 
             # Select first album (most relevant)
@@ -728,7 +507,9 @@ class SpotifyController:
             device_id = await self.get_active_device(access_token)
             if not device_id:
                 try:
-                    devices_response = await self.spotify.get_available_devices(access_token)
+                    devices_response = await self.client.get_available_devices(
+                        access_token
+                    )
                     devices = devices_response.get("devices", [])
                     device_names = [d.get("name") for d in devices if d.get("name")]
                     raise NoActiveDeviceError(available_devices=device_names)
@@ -739,16 +520,14 @@ class SpotifyController:
 
             # Play the album
             try:
-                await self.spotify.play(
-                    access_token=access_token,
-                    uri=album_uri,
-                    device_id=device_id
+                await self.client.play(
+                    access_token=access_token, uri=album_uri, device_id=device_id
                 )
             except Exception as play_error:
                 if self._check_premium_error(play_error):
                     raise PremiumRequiredError(
                         "Playing albums requires Spotify Premium",
-                        feature="Album playback"
+                        feature="Album playback",
                     )
                 raise
 
@@ -762,29 +541,32 @@ class SpotifyController:
                     "album_id": album_id,
                     "release_date": selected_album.get("release_date", ""),
                     "total_tracks": selected_album.get("total_tracks", 0),
-                    "album_art": selected_album.get("images", [{}])[0].get("url") if selected_album.get("images") else None
-                }
+                    "album_art": selected_album.get("images", [{}])[0].get("url")
+                    if selected_album.get("images")
+                    else None,
+                },
             )
 
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
             logger.error(f"Failed to search and play album: {str(e)}", exc_info=True)
-            
+
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
-                    "Playing albums requires Spotify Premium",
-                    feature="Album playback"
+                    "Playing albums requires Spotify Premium", feature="Album playback"
                 )
-            
+
             status_code = self._extract_status_code(e)
-            is_retryable = status_code in [429, 500, 502, 503, 504] if status_code else False
-            
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+
             raise SpotifyAPIError(
                 "Failed to play album",
                 original_error=e,
                 is_retryable=is_retryable,
-                status_code=status_code
+                status_code=status_code,
             )
 
     async def pause_playback(self, access_token: str) -> CommandResult:
@@ -804,16 +586,9 @@ class SpotifyController:
 
             device_id = await self.get_active_device(access_token)
 
-            await self.spotify.pause(
-                access_token=access_token,
-                device_id=device_id
-            )
+            await self.client.pause(access_token=access_token, device_id=device_id)
 
-            return CommandResult(
-                success=True,
-                message="Playback paused",
-                data={}
-            )
+            return CommandResult(success=True, message="Playback paused", data={})
 
         except Exception as e:
             logger.error(f"Failed to pause playback: {str(e)}", exc_info=True)
@@ -839,16 +614,9 @@ class SpotifyController:
             if not device_id:
                 raise NoActiveDeviceError()
 
-            await self.spotify.play(
-                access_token=access_token,
-                device_id=device_id
-            )
+            await self.client.play(access_token=access_token, device_id=device_id)
 
-            return CommandResult(
-                success=True,
-                message="Playback resumed",
-                data={}
-            )
+            return CommandResult(success=True, message="Playback resumed", data={})
 
         except NoActiveDeviceError:
             raise
@@ -873,16 +641,9 @@ class SpotifyController:
 
             device_id = await self.get_active_device(access_token)
 
-            await self.spotify.skip_next(
-                access_token=access_token,
-                device_id=device_id
-            )
+            await self.client.skip_next(access_token=access_token, device_id=device_id)
 
-            return CommandResult(
-                success=True,
-                message="Skipped to next track",
-                data={}
-            )
+            return CommandResult(success=True, message="Skipped to next track", data={})
 
         except Exception as e:
             logger.error(f"Failed to skip track: {str(e)}", exc_info=True)
@@ -905,26 +666,19 @@ class SpotifyController:
 
             device_id = await self.get_active_device(access_token)
 
-            await self.spotify.skip_previous(
-                access_token=access_token,
-                device_id=device_id
+            await self.client.skip_previous(
+                access_token=access_token, device_id=device_id
             )
 
             return CommandResult(
-                success=True,
-                message="Skipped to previous track",
-                data={}
+                success=True, message="Skipped to previous track", data={}
             )
 
         except Exception as e:
             logger.error(f"Failed to skip back: {str(e)}", exc_info=True)
             raise SpotifyAPIError(f"Failed to skip back: {str(e)}", e)
 
-    async def set_volume(
-        self,
-        access_token: str,
-        volume_percent: int
-    ) -> CommandResult:
+    async def set_volume(self, access_token: str, volume_percent: int) -> CommandResult:
         """Set playback volume.
 
         Args:
@@ -945,16 +699,16 @@ class SpotifyController:
 
             device_id = await self.get_active_device(access_token)
 
-            await self.spotify.set_volume(
+            await self.client.set_volume(
                 access_token=access_token,
                 volume_percent=volume_percent,
-                device_id=device_id
+                device_id=device_id,
             )
 
             return CommandResult(
                 success=True,
                 message=f"Volume set to {volume_percent}%",
-                data={"volume": volume_percent}
+                data={"volume": volume_percent},
             )
 
         except Exception as e:
@@ -976,7 +730,7 @@ class SpotifyController:
         try:
             logger.info("Getting available devices")
 
-            devices_response = await self.spotify.get_available_devices(access_token)
+            devices_response = await self.client.get_available_devices(access_token)
             devices = devices_response.get("devices", [])
 
             device_list = [
@@ -985,7 +739,7 @@ class SpotifyController:
                     "name": d["name"],
                     "type": d["type"],
                     "is_active": d.get("is_active", False),
-                    "volume_percent": d.get("volume_percent", 0)
+                    "volume_percent": d.get("volume_percent", 0),
                 }
                 for d in devices
             ]
@@ -997,9 +751,7 @@ class SpotifyController:
                 message = f"Available devices: {', '.join(device_names)}"
 
             return CommandResult(
-                success=True,
-                message=message,
-                data={"devices": device_list}
+                success=True, message=message, data={"devices": device_list}
             )
 
         except Exception as e:
@@ -1011,7 +763,7 @@ class SpotifyController:
         access_token: str,
         device_name: Optional[str] = None,
         device_id: Optional[str] = None,
-        start_playback: bool = True
+        start_playback: bool = True,
     ) -> CommandResult:
         """Switch playback to a different device.
 
@@ -1032,7 +784,7 @@ class SpotifyController:
             logger.info(f"Switching device: name={device_name}, id={device_id}")
 
             # Get available devices
-            devices_response = await self.spotify.get_available_devices(access_token)
+            devices_response = await self.client.get_available_devices(access_token)
             devices = devices_response.get("devices", [])
 
             if not devices:
@@ -1047,18 +799,17 @@ class SpotifyController:
             elif device_name:
                 # Find by name (case-insensitive, fuzzy match)
                 device_name_lower = device_name.lower()
-                
+
                 # First try exact match
                 target_device = next(
-                    (d for d in devices if d["name"].lower() == device_name_lower),
-                    None
+                    (d for d in devices if d["name"].lower() == device_name_lower), None
                 )
-                
+
                 # If no exact match, try partial match
                 if not target_device:
                     target_device = next(
                         (d for d in devices if device_name_lower in d["name"].lower()),
-                        None
+                        None,
                     )
 
             if not target_device:
@@ -1069,10 +820,10 @@ class SpotifyController:
                 )
 
             # Transfer playback to target device
-            await self.spotify.transfer_playback(
+            await self.client.transfer_playback(
                 access_token=access_token,
                 device_id=target_device["id"],
-                play=start_playback
+                play=start_playback,
             )
 
             logger.info(f"Successfully switched to device: {target_device['name']}")
@@ -1083,8 +834,8 @@ class SpotifyController:
                 data={
                     "device_id": target_device["id"],
                     "device_name": target_device["name"],
-                    "device_type": target_device["type"]
-                }
+                    "device_type": target_device["type"],
+                },
             )
 
         except NoActiveDeviceError:
@@ -1094,8 +845,8 @@ class SpotifyController:
             raise SpotifyAPIError(f"Failed to switch device: {str(e)}", e)
 
 
-# Import spotify_service singleton
-from app.services.spotify import spotify_service
+# Import client singleton (at module level to avoid circular import)
+from app.services.spotify.client import spotify_client
 
 # Create singleton instance
-spotify_controller = SpotifyController(spotify_service=spotify_service)
+spotify_service = SpotifyService(client=spotify_client)

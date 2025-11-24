@@ -1,4 +1,5 @@
 """Integration routes for third-party service OAuth connections."""
+
 import json
 import logging
 import secrets
@@ -9,7 +10,16 @@ from urllib.parse import urlencode
 
 import httpx
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Query, Response, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Header,
+    Query,
+    Response,
+    Request,
+)
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -20,10 +30,10 @@ from app.models.user import User
 from app.schemas.integration import (
     OAuthURLResponse,
     IntegrationStatusResponse,
-    IntegrationListResponse
+    IntegrationListResponse,
 )
 from app.services.auth import supabase_auth_service
-from app.services.spotify import spotify_service
+from app.services.spotify import spotify_client
 from app.services.gmail import get_gmail_service
 from app.services.google_calendar import get_google_calendar_service
 
@@ -31,7 +41,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 # Redis client for OAuth state storage
-redis_client = redis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+redis_client = redis.from_url(
+    settings.REDIS_URL, encoding="utf-8", decode_responses=True
+)
 
 # OAuth state TTL (15 minutes)
 OAUTH_STATE_TTL = 900
@@ -39,18 +51,17 @@ OAUTH_STATE_TTL = 900
 
 @router.get("/spotify/auth", response_model=OAuthURLResponse)
 async def get_spotify_oauth_url(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Get Spotify OAuth authorization URL.
-    
+
     Args:
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         OAuthURLResponse with authorization URL and state
-        
+
     Raises:
         HTTPException: If authentication fails or Spotify is not configured
     """
@@ -59,84 +70,78 @@ async def get_spotify_oauth_url(
             logger.warning("Missing or invalid authorization header")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             logger.warning("Invalid or expired token provided")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Check if Spotify is configured
         if not settings.SPOTIFY_CLIENT_ID or not settings.SPOTIFY_CLIENT_SECRET:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Spotify OAuth is not configured"
+                detail="Spotify OAuth is not configured",
             )
-        
+
         # Generate state parameter for CSRF protection
         state = secrets.token_urlsafe(32)
-        
+
         # Store state with user ID in Redis with TTL
         state_data = {
             "user_id": supabase_user["id"],
             "service": "spotify",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat(),
         }
         await redis_client.setex(
-            f"oauth_state:{state}",
-            OAUTH_STATE_TTL,
-            json.dumps(state_data)
+            f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
         )
-        
+
         # Build Spotify OAuth URL
         scopes = [
             "user-read-email",
             "user-read-private",
             "user-modify-playback-state",
             "user-read-playback-state",
-            "user-read-currently-playing"
+            "user-read-currently-playing",
         ]
-        
+
         params = {
             "client_id": settings.SPOTIFY_CLIENT_ID,
             "response_type": "code",
             "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
             "scope": " ".join(scopes),
             "state": state,
-            "show_dialog": "false"
+            "show_dialog": "false",
         }
-        
+
         auth_url = f"https://accounts.spotify.com/authorize?{urlencode(params)}"
-        
+
         logger.info(f"Generated Spotify OAuth URL for user {supabase_user['id']}")
-        
-        return OAuthURLResponse(
-            auth_url=auth_url,
-            state=state
-        )
-        
+
+        return OAuthURLResponse(auth_url=auth_url, state=state)
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to generate Spotify OAuth URL: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate OAuth URL: {str(e)}"
+            detail=f"Failed to generate OAuth URL: {str(e)}",
         )
 
 
 @router.post("/spotify/sync")
 async def sync_spotify_integration(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Sync Spotify integration from Supabase to our database.
 
@@ -156,7 +161,7 @@ async def sync_spotify_integration(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -167,7 +172,7 @@ async def sync_spotify_integration(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         user_id = supabase_user["id"]
@@ -176,29 +181,29 @@ async def sync_spotify_integration(
         # Note: Supabase handles the OAuth tokens, we just track the connection
         # Get user's identities to see if Spotify is linked
         identities = supabase_user.get("identities", [])
-        has_spotify = any(identity.get("provider") == "spotify" for identity in identities)
+        has_spotify = any(
+            identity.get("provider") == "spotify" for identity in identities
+        )
 
         if not has_spotify:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Spotify not linked in Supabase"
+                detail="Spotify not linked in Supabase",
             )
 
         # Create or update integration record
-        integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "spotify"
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.service == "spotify")
+            .first()
+        )
 
         if integration:
             integration.is_active = True
             integration.updated_at = datetime.utcnow()
         else:
             integration = Integration(
-                id=str(uuid.uuid4()),
-                user_id=user_id,
-                service="spotify",
-                is_active=True
+                id=str(uuid.uuid4()), user_id=user_id, service="spotify", is_active=True
             )
             db.add(integration)
 
@@ -214,7 +219,7 @@ async def sync_spotify_integration(
         logger.error(f"Failed to sync Spotify integration: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync integration: {str(e)}"
+            detail=f"Failed to sync integration: {str(e)}",
         )
 
 
@@ -223,7 +228,7 @@ async def spotify_exchange_code(
     code: str = Query(..., description="OAuth authorization code"),
     state: str = Query(..., description="OAuth state parameter"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Exchange Spotify authorization code for access token.
 
@@ -245,7 +250,7 @@ async def spotify_exchange_code(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -256,7 +261,7 @@ async def spotify_exchange_code(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Validate state parameter from Redis
@@ -266,7 +271,7 @@ async def spotify_exchange_code(
         if not state_json:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired state parameter"
+                detail="Invalid or expired state parameter",
             )
 
         # Verify state belongs to this user
@@ -274,14 +279,14 @@ async def spotify_exchange_code(
         if state_data["user_id"] != supabase_user["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="State parameter does not match user"
+                detail="State parameter does not match user",
             )
 
         # Delete state from Redis (one-time use)
         await redis_client.delete(state_key)
 
         user_id = supabase_user["id"]
-        
+
         # Exchange authorization code for access token
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
@@ -291,29 +296,32 @@ async def spotify_exchange_code(
                     "code": code,
                     "redirect_uri": settings.SPOTIFY_REDIRECT_URI,
                     "client_id": settings.SPOTIFY_CLIENT_ID,
-                    "client_secret": settings.SPOTIFY_CLIENT_SECRET
+                    "client_secret": settings.SPOTIFY_CLIENT_SECRET,
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-        
+
         if token_response.status_code != 200:
             logger.error(f"Spotify token exchange failed: {token_response.text}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange authorization code"
+                detail="Failed to exchange authorization code",
             )
-        
+
         token_data = token_response.json()
-        
+
         # Calculate token expiration
-        expires_at = datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))
-        
+        expires_at = datetime.utcnow() + timedelta(
+            seconds=token_data.get("expires_in", 3600)
+        )
+
         # Check if integration already exists
-        existing_integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "spotify"
-        ).first()
-        
+        existing_integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.service == "spotify")
+            .first()
+        )
+
         if existing_integration:
             # Update existing integration
             existing_integration.access_token = token_data["access_token"]
@@ -334,7 +342,7 @@ async def spotify_exchange_code(
                 token_type=token_data.get("token_type", "Bearer"),
                 expires_at=expires_at,
                 scope=token_data.get("scope"),
-                is_active=True
+                is_active=True,
             )
             db.add(integration)
 
@@ -342,32 +350,35 @@ async def spotify_exchange_code(
 
         logger.info(f"Successfully connected Spotify for user {user_id}")
 
-        return {"success": True, "message": "Successfully connected Spotify", "service": "spotify"}
-        
+        return {
+            "success": True,
+            "message": "Successfully connected Spotify",
+            "service": "spotify",
+        }
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Spotify code exchange failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to exchange code: {str(e)}"
+            detail=f"Failed to exchange code: {str(e)}",
         )
 
 
 @router.get("", response_model=IntegrationListResponse)
 async def get_user_integrations(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Get all integrations for the authenticated user.
-    
+
     Args:
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         List of user integrations
-        
+
     Raises:
         HTTPException: If authentication fails
     """
@@ -375,61 +386,65 @@ async def get_user_integrations(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Get user integrations from database
-        integrations = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.is_active == True
-        ).all()
-        
+        integrations = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.is_active == True,
+            )
+            .all()
+        )
+
         integration_statuses = [
             IntegrationStatusResponse(
                 service=integration.service,
                 connected=True,
-                connected_at=integration.created_at.isoformat() if integration.created_at else None
+                connected_at=integration.created_at.isoformat()
+                if integration.created_at
+                else None,
             )
             for integration in integrations
         ]
-        
+
         return IntegrationListResponse(integrations=integration_statuses)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to get integrations: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get integrations: {str(e)}"
+            detail=f"Failed to get integrations: {str(e)}",
         )
 
 
 @router.post("/{service}/disconnect")
 async def disconnect_service(
-    service: str,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    service: str, authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Disconnect a service integration.
-    
+
     Args:
         service: Service name to disconnect (URL format with hyphens)
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         Success message
-        
+
     Raises:
         HTTPException: If disconnection fails
     """
@@ -437,53 +452,57 @@ async def disconnect_service(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Map URL service name to database service name
         # URL uses hyphens (google-calendar), DB uses camelCase (googleCalendar)
-        service_name_map = {
-            "google-calendar": "googleCalendar"
-        }
+        service_name_map = {"google-calendar": "googleCalendar"}
         db_service_name = service_name_map.get(service, service)
-        
+
         # Find and deactivate integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == db_service_name
-        ).first()
-        
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == db_service_name,
+            )
+            .first()
+        )
+
         if not integration:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No active {service} integration found"
+                detail=f"No active {service} integration found",
             )
-        
+
         # Soft delete - set is_active to False
         integration.is_active = False
         integration.updated_at = datetime.utcnow()
         db.commit()
-        
-        logger.info(f"Successfully disconnected {db_service_name} for user {supabase_user['id']}")
-        
+
+        logger.info(
+            f"Successfully disconnected {db_service_name} for user {supabase_user['id']}"
+        )
+
         return {"success": True, "message": f"Successfully disconnected {service}"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to disconnect {service}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disconnect service: {str(e)}"
+            detail=f"Failed to disconnect service: {str(e)}",
         )
 
 
@@ -491,10 +510,10 @@ async def disconnect_service(
 # Spotify API Endpoints
 # ============================================================================
 
+
 @router.get("/spotify/playback")
 async def get_spotify_playback(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Get current Spotify playback state.
 
@@ -512,7 +531,7 @@ async def get_spotify_playback(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -521,27 +540,30 @@ async def get_spotify_playback(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token (auto-refreshes if needed)
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Get playback state
-        playback = await spotify_service.get_current_playback(spotify_token)
+        playback = await spotify_client.get_current_playback(spotify_token)
 
         return playback
 
@@ -551,7 +573,7 @@ async def get_spotify_playback(
         logger.error(f"Failed to get Spotify playback: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get playback: {str(e)}"
+            detail=f"Failed to get playback: {str(e)}",
         )
 
 
@@ -560,7 +582,7 @@ async def spotify_play(
     uri: Optional[str] = Query(None, description="Spotify URI to play"),
     device_id: Optional[str] = Query(None, description="Device ID"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Start or resume Spotify playback.
 
@@ -580,7 +602,7 @@ async def spotify_play(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -589,27 +611,30 @@ async def spotify_play(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Play
-        await spotify_service.play(spotify_token, uri, device_id)
+        await spotify_client.play(spotify_token, uri, device_id)
 
         return {"success": True, "message": "Playback started"}
 
@@ -619,7 +644,7 @@ async def spotify_play(
         logger.error(f"Failed to play Spotify: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to play: {str(e)}"
+            detail=f"Failed to play: {str(e)}",
         )
 
 
@@ -627,7 +652,7 @@ async def spotify_play(
 async def spotify_pause(
     device_id: Optional[str] = Query(None, description="Device ID"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Pause Spotify playback.
 
@@ -646,7 +671,7 @@ async def spotify_pause(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -655,27 +680,30 @@ async def spotify_pause(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Pause
-        await spotify_service.pause(spotify_token, device_id)
+        await spotify_client.pause(spotify_token, device_id)
 
         return {"success": True, "message": "Playback paused"}
 
@@ -685,7 +713,7 @@ async def spotify_pause(
         logger.error(f"Failed to pause Spotify: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to pause: {str(e)}"
+            detail=f"Failed to pause: {str(e)}",
         )
 
 
@@ -693,7 +721,7 @@ async def spotify_pause(
 async def spotify_next(
     device_id: Optional[str] = Query(None, description="Device ID"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Skip to next track.
 
@@ -712,7 +740,7 @@ async def spotify_next(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -721,27 +749,30 @@ async def spotify_next(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Skip
-        await spotify_service.skip_next(spotify_token, device_id)
+        await spotify_client.skip_next(spotify_token, device_id)
 
         return {"success": True, "message": "Skipped to next track"}
 
@@ -751,7 +782,7 @@ async def spotify_next(
         logger.error(f"Failed to skip Spotify track: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to skip: {str(e)}"
+            detail=f"Failed to skip: {str(e)}",
         )
 
 
@@ -759,7 +790,7 @@ async def spotify_next(
 async def spotify_previous(
     device_id: Optional[str] = Query(None, description="Device ID"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Skip to previous track.
 
@@ -778,7 +809,7 @@ async def spotify_previous(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -787,27 +818,30 @@ async def spotify_previous(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Skip back
-        await spotify_service.skip_previous(spotify_token, device_id)
+        await spotify_client.skip_previous(spotify_token, device_id)
 
         return {"success": True, "message": "Skipped to previous track"}
 
@@ -817,7 +851,7 @@ async def spotify_previous(
         logger.error(f"Failed to skip back Spotify track: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to skip back: {str(e)}"
+            detail=f"Failed to skip back: {str(e)}",
         )
 
 
@@ -827,7 +861,7 @@ async def spotify_search(
     type: str = Query("track,artist,album", description="Types to search"),
     limit: int = Query(10, ge=1, le=50, description="Results limit"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Search Spotify catalog.
 
@@ -848,7 +882,7 @@ async def spotify_search(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -857,27 +891,30 @@ async def spotify_search(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Search
-        results = await spotify_service.search(spotify_token, q, type, limit)
+        results = await spotify_client.search(spotify_token, q, type, limit)
 
         return results
 
@@ -887,7 +924,7 @@ async def spotify_search(
         logger.error(f"Failed to search Spotify: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to search: {str(e)}"
+            detail=f"Failed to search: {str(e)}",
         )
 
 
@@ -896,7 +933,7 @@ async def spotify_set_volume(
     volume: int = Query(..., ge=0, le=100, description="Volume percent"),
     device_id: Optional[str] = Query(None, description="Device ID"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Set Spotify playback volume.
 
@@ -916,7 +953,7 @@ async def spotify_set_volume(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -925,27 +962,30 @@ async def spotify_set_volume(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Spotify integration
-        integration = db.query(Integration).filter(
-            Integration.user_id == supabase_user["id"],
-            Integration.service == "spotify",
-            Integration.is_active == True
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == supabase_user["id"],
+                Integration.service == "spotify",
+                Integration.is_active == True,
+            )
+            .first()
+        )
 
         if not integration:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Spotify not connected"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Spotify not connected"
             )
 
         # Get valid token
         spotify_token = await spotify_service.get_valid_token(integration, db)
 
         # Set volume
-        await spotify_service.set_volume(spotify_token, volume, device_id)
+        await spotify_client.set_volume(spotify_token, volume, device_id)
 
         return {"success": True, "message": f"Volume set to {volume}%"}
 
@@ -955,7 +995,7 @@ async def spotify_set_volume(
         logger.error(f"Failed to set Spotify volume: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to set volume: {str(e)}"
+            detail=f"Failed to set volume: {str(e)}",
         )
 
 
@@ -963,20 +1003,20 @@ async def spotify_set_volume(
 # Gmail Integration Routes
 # =======================
 
+
 @router.get("/gmail/auth", response_model=OAuthURLResponse)
 async def get_gmail_oauth_url(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Get Gmail OAuth authorization URL.
-    
+
     Args:
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         OAuthURLResponse with authorization URL and state
-        
+
     Raises:
         HTTPException: If authentication fails or Gmail is not configured
     """
@@ -985,51 +1025,49 @@ async def get_gmail_oauth_url(
             logger.warning("Missing or invalid authorization header")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             logger.warning("Invalid or expired token provided")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Check if Gmail is configured
         if not settings.GMAIL_CLIENT_ID or not settings.GMAIL_CLIENT_SECRET:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Gmail OAuth is not configured"
+                detail="Gmail OAuth is not configured",
             )
-        
+
         # Generate state parameter for CSRF protection
         state = secrets.token_urlsafe(32)
-        
+
         # Store state with user ID in Redis with TTL
         state_data = {
             "user_id": supabase_user["id"],
             "service": "gmail",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.utcnow().isoformat(),
         }
         await redis_client.setex(
-            f"oauth_state:{state}",
-            OAUTH_STATE_TTL,
-            json.dumps(state_data)
+            f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
         )
-        
+
         # Build Google OAuth URL with Gmail scopes
         scopes = [
             "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.send",
             "https://www.googleapis.com/auth/gmail.modify",
-            "https://www.googleapis.com/auth/userinfo.email"
+            "https://www.googleapis.com/auth/userinfo.email",
         ]
-        
+
         params = {
             "client_id": settings.GMAIL_CLIENT_ID,
             "response_type": "code",
@@ -1037,25 +1075,22 @@ async def get_gmail_oauth_url(
             "scope": " ".join(scopes),
             "state": state,
             "access_type": "offline",  # Request refresh token
-            "prompt": "consent"  # Force consent screen to get refresh token
+            "prompt": "consent",  # Force consent screen to get refresh token
         }
-        
+
         auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urlencode(params)}"
-        
+
         logger.info(f"Generated Gmail OAuth URL for user {supabase_user['id']}")
-        
-        return OAuthURLResponse(
-            auth_url=auth_url,
-            state=state
-        )
-        
+
+        return OAuthURLResponse(auth_url=auth_url, state=state)
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to generate Gmail OAuth URL: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate OAuth URL: {str(e)}"
+            detail=f"Failed to generate OAuth URL: {str(e)}",
         )
 
 
@@ -1064,7 +1099,7 @@ async def gmail_exchange_code(
     code: str = Query(..., description="OAuth authorization code"),
     state: str = Query(..., description="OAuth state parameter"),
     authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Exchange Gmail authorization code for access token.
 
@@ -1086,7 +1121,7 @@ async def gmail_exchange_code(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -1097,7 +1132,7 @@ async def gmail_exchange_code(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Validate state parameter from Redis
@@ -1107,7 +1142,7 @@ async def gmail_exchange_code(
         if not state_json:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired state parameter"
+                detail="Invalid or expired state parameter",
             )
 
         # Verify state belongs to this user
@@ -1115,14 +1150,14 @@ async def gmail_exchange_code(
         if state_data["user_id"] != supabase_user["id"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="State parameter does not match user"
+                detail="State parameter does not match user",
             )
 
         # Delete state from Redis (one-time use)
         await redis_client.delete(state_key)
 
         user_id = supabase_user["id"]
-        
+
         # Exchange authorization code for access token
         async with httpx.AsyncClient() as client:
             token_response = await client.post(
@@ -1132,16 +1167,16 @@ async def gmail_exchange_code(
                     "code": code,
                     "redirect_uri": settings.GMAIL_REDIRECT_URI,
                     "client_id": settings.GMAIL_CLIENT_ID,
-                    "client_secret": settings.GMAIL_CLIENT_SECRET
+                    "client_secret": settings.GMAIL_CLIENT_SECRET,
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-        
+
         if token_response.status_code != 200:
             logger.error(f"Gmail token exchange failed: {token_response.text}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange authorization code"
+                detail="Failed to exchange authorization code",
             )
 
         token_data = token_response.json()
@@ -1153,7 +1188,7 @@ async def gmail_exchange_code(
             logger.error("No access token in Gmail response")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No access token received from Google"
+                detail="No access token received from Google",
             )
 
         # Get user's Gmail profile to verify the connection
@@ -1164,10 +1199,11 @@ async def gmail_exchange_code(
         logger.info(f"Successfully authenticated Gmail for {gmail_email}")
 
         # Store or update integration in database
-        integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "gmail"
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.service == "gmail")
+            .first()
+        )
 
         if integration:
             # Update existing integration
@@ -1187,7 +1223,7 @@ async def gmail_exchange_code(
                 refresh_token=refresh_token,
                 expires_at=datetime.utcnow() + timedelta(seconds=expires_in),
                 is_active=True,
-                scope="gmail.readonly gmail.send gmail.modify"
+                scope="gmail.readonly gmail.send gmail.modify",
             )
             db.add(integration)
 
@@ -1198,7 +1234,7 @@ async def gmail_exchange_code(
         return {
             "success": True,
             "message": "Gmail connected successfully",
-            "email": gmail_email
+            "email": gmail_email,
         }
 
     except HTTPException:
@@ -1207,15 +1243,13 @@ async def gmail_exchange_code(
         logger.error(f"Failed to exchange Gmail code: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to connect Gmail: {str(e)}"
+            detail=f"Failed to connect Gmail: {str(e)}",
         )
 
 
 @router.post("/gmail/connect-native")
 async def connect_gmail_native(
-    request: Request,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    request: Request, authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Connect Gmail using native Google Sign-In SDK (iOS).
 
@@ -1238,7 +1272,7 @@ async def connect_gmail_native(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -1249,7 +1283,7 @@ async def connect_gmail_native(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Google tokens from request body
@@ -1260,7 +1294,7 @@ async def connect_gmail_native(
         if not google_access_token or not google_id_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing id_token or access_token in request body"
+                detail="Missing id_token or access_token in request body",
             )
 
         user_id = supabase_user["id"]
@@ -1275,14 +1309,15 @@ async def connect_gmail_native(
             logger.error(f"Failed to verify Gmail access: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or insufficient Gmail access token. Make sure Gmail scopes were granted."
+                detail="Invalid or insufficient Gmail access token. Make sure Gmail scopes were granted.",
             )
 
         # Store or update integration in database
-        integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "gmail"
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.service == "gmail")
+            .first()
+        )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
         token_expires_at = datetime.utcnow() + timedelta(hours=1)
@@ -1304,7 +1339,7 @@ async def connect_gmail_native(
                 refresh_token=None,  # Google Sign-In doesn't provide refresh tokens via addScopes
                 expires_at=token_expires_at,
                 is_active=True,
-                scope="gmail.readonly gmail.send"
+                scope="gmail.readonly gmail.send",
             )
             db.add(integration)
 
@@ -1315,7 +1350,7 @@ async def connect_gmail_native(
         return {
             "success": True,
             "message": "Gmail connected successfully",
-            "email": gmail_email
+            "email": gmail_email,
         }
 
     except HTTPException:
@@ -1324,15 +1359,13 @@ async def connect_gmail_native(
         logger.error(f"Failed to connect Gmail: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to connect Gmail: {str(e)}"
+            detail=f"Failed to connect Gmail: {str(e)}",
         )
 
 
 @router.post("/gmail/sync")
 async def sync_gmail_from_google_signin(
-    request: Request,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    request: Request, authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Sync Gmail integration from Google Sign-In access token (legacy).
 
@@ -1358,7 +1391,7 @@ async def sync_gmail_from_google_signin(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
@@ -1369,7 +1402,7 @@ async def sync_gmail_from_google_signin(
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get Google access token from request body
@@ -1379,7 +1412,7 @@ async def sync_gmail_from_google_signin(
         if not google_access_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing access_token in request body"
+                detail="Missing access_token in request body",
             )
 
         user_id = supabase_user["id"]
@@ -1394,14 +1427,15 @@ async def sync_gmail_from_google_signin(
             logger.error(f"Failed to verify Gmail access: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or insufficient Gmail access token"
+                detail="Invalid or insufficient Gmail access token",
             )
 
         # Store or update integration in database
-        integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "gmail"
-        ).first()
+        integration = (
+            db.query(Integration)
+            .filter(Integration.user_id == user_id, Integration.service == "gmail")
+            .first()
+        )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
         token_expires_at = datetime.utcnow() + timedelta(hours=1)
@@ -1423,7 +1457,7 @@ async def sync_gmail_from_google_signin(
                 refresh_token=None,  # Google Sign-In doesn't provide refresh tokens
                 expires_at=token_expires_at,
                 is_active=True,
-                scope="gmail.readonly gmail.send gmail.modify"
+                scope="gmail.readonly gmail.send gmail.modify",
             )
             db.add(integration)
 
@@ -1434,7 +1468,7 @@ async def sync_gmail_from_google_signin(
         return {
             "success": True,
             "message": "Gmail synced successfully",
-            "email": gmail_email
+            "email": gmail_email,
         }
 
     except HTTPException:
@@ -1443,37 +1477,33 @@ async def sync_gmail_from_google_signin(
         logger.error(f"Failed to sync Gmail: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync Gmail: {str(e)}"
+            detail=f"Failed to sync Gmail: {str(e)}",
         )
-
-
-
 
 
 # =======================
 # Google Calendar Integration Routes
 # =======================
 
+
 @router.post("/google-calendar/sync")
 async def sync_google_calendar_from_google_signin(
-    request: Request,
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    request: Request, authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Sync Google Calendar integration from Google Sign-In access token.
-    
+
     This endpoint is called when a user signs in with Google and has granted
     Calendar scopes. The iOS app sends the Google OAuth access token, and we
     store it for Calendar API access.
-    
+
     Args:
         request: FastAPI request object with id_token and access_token
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         Success response with integration status
-        
+
     Raises:
         HTTPException: If sync fails
     """
@@ -1481,59 +1511,64 @@ async def sync_google_calendar_from_google_signin(
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
 
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Get Google tokens from request body
         body_data = await request.json()
         google_id_token = body_data.get("id_token")
         google_access_token = body_data.get("access_token")
-        
+
         if not google_access_token or not google_id_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing id_token or access_token in request body"
+                detail="Missing id_token or access_token in request body",
             )
-        
+
         user_id = supabase_user["id"]
-        
+
         # Verify token works with Calendar API
         try:
             calendar_svc = get_google_calendar_service(google_access_token)
             calendars = calendar_svc.list_calendars()
             primary_calendar = next(
-                (cal for cal in calendars if cal.get('id') == 'primary'),
-                calendars[0] if calendars else None
+                (cal for cal in calendars if cal.get("id") == "primary"),
+                calendars[0] if calendars else None,
             )
-            calendar_email = primary_calendar.get('id') if primary_calendar else 'primary'
+            calendar_email = (
+                primary_calendar.get("id") if primary_calendar else "primary"
+            )
             logger.info(f"Successfully verified Calendar access for {calendar_email}")
         except Exception as e:
             logger.error(f"Failed to verify Calendar access: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or insufficient Calendar access token. Make sure Calendar scopes were granted."
+                detail="Invalid or insufficient Calendar access token. Make sure Calendar scopes were granted.",
             )
-        
+
         # Store or update integration in database
-        integration = db.query(Integration).filter(
-            Integration.user_id == user_id,
-            Integration.service == "googleCalendar"
-        ).first()
-        
+        integration = (
+            db.query(Integration)
+            .filter(
+                Integration.user_id == user_id, Integration.service == "googleCalendar"
+            )
+            .first()
+        )
+
         # Note: Google Sign-In tokens typically expire in 1 hour
         token_expires_at = datetime.utcnow() + timedelta(hours=1)
-        
+
         if integration:
             # Update existing integration
             integration.access_token = google_access_token
@@ -1551,29 +1586,27 @@ async def sync_google_calendar_from_google_signin(
                 refresh_token=None,  # Google Sign-In doesn't provide refresh tokens via addScopes
                 expires_at=token_expires_at,
                 is_active=True,
-                scope="calendar.readonly calendar.events"
+                scope="calendar.readonly calendar.events",
             )
             db.add(integration)
-        
+
         db.commit()
-        
-        logger.info(f"Successfully synced Google Calendar integration for user {user_id}")
-        
+
+        logger.info(
+            f"Successfully synced Google Calendar integration for user {user_id}"
+        )
+
         return {
             "success": True,
             "message": "Google Calendar synced successfully",
-            "calendar_id": calendar_email
+            "calendar_id": calendar_email,
         }
-    
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to sync Google Calendar: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync Google Calendar: {str(e)}"
+            detail=f"Failed to sync Google Calendar: {str(e)}",
         )
-
-
-
-

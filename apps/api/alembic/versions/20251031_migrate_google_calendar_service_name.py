@@ -5,13 +5,14 @@ Revises: 825310236a51
 Create Date: 2025-10-31
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20251031_migrate_gc'
-down_revision = '825310236a51'
+revision = "20251031_migrate_gc"
+down_revision = "825310236a51"
 branch_labels = None
 depends_on = None
 

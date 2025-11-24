@@ -1,4 +1,5 @@
 """Integration model for third-party service OAuth tokens."""
+
 from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
@@ -8,7 +9,7 @@ from app.database import Base
 
 class Integration(Base):
     """Integration model representing OAuth connections to third-party services.
-    
+
     Attributes:
         id: Unique identifier for the integration
         user_id: Reference to the user who owns this integration
@@ -22,7 +23,7 @@ class Integration(Base):
         created_at: Timestamp when the integration was created
         updated_at: Timestamp when the integration was last updated
     """
-    
+
     __tablename__ = "integrations"
 
     id = Column(String, primary_key=True, index=True)
@@ -39,4 +40,3 @@ class Integration(Base):
 
     # Relationship
     user = relationship("User", back_populates="integrations")
-

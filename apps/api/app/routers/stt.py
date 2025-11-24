@@ -12,14 +12,14 @@ from app.database import SessionLocal
 from app.models.integration import Integration
 from app.services.auth import supabase_auth_service
 from app.services.soniox import soniox_service
-from app.services.spotify import spotify_service
-from app.services.spotify_controller import (
+from app.services.spotify import (
+    spotify_service,
+    spotify_client,
     NoActiveDeviceError,
     SearchNoResultsError,
     SpotifyAPIError,
     PremiumRequiredError,
     AuthenticationError,
-    spotify_controller,
 )
 from app.services.voice_agent import voice_agent_service
 from app.services.gemini import get_gemini_service
@@ -31,11 +31,11 @@ router = APIRouter(prefix="/stt", tags=["speech-to-text-streaming"])
 
 async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integration]:
     """Get user's Spotify integration.
-    
+
     Args:
         user_id: User ID
         db: Database session
-        
+
     Returns:
         Integration object or None if not found
     """
@@ -44,7 +44,7 @@ async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integra
         .filter(
             Integration.user_id == user_id,
             Integration.service == "spotify",
-            Integration.is_active == True
+            Integration.is_active == True,
         )
         .first()
     )
@@ -52,56 +52,52 @@ async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integra
 
 
 async def generate_ai_response(
-    user_message: str,
-    user_id: str,
-    conversation_history: list = None
+    user_message: str, user_id: str, conversation_history: list = None
 ) -> dict:
     """Generate AI response using Gemini.
-    
+
     Args:
         user_message: User's transcribed message
         user_id: User ID
         conversation_history: Optional conversation history
-        
+
     Returns:
         Response dictionary with AI response or error
     """
     try:
         gemini = get_gemini_service()
-        
+
         # Build conversation context
         messages = conversation_history or []
         messages.append({"role": "user", "content": user_message})
-        
+
         # System instruction for the voice assistant
         system_instruction = """You are Modi, a helpful voice assistant. 
         Keep responses concise and natural for voice interaction.
         Be friendly, helpful, and conversational.
         If asked to control Spotify, acknowledge the request but explain that music control is handled separately."""
-        
+
         # Generate response
         response_text = await gemini.generate_chat_response(
-            messages=messages,
-            system_instruction=system_instruction,
-            temperature=0.7
+            messages=messages, system_instruction=system_instruction, temperature=0.7
         )
-        
+
         logger.info(f"Generated AI response for user {user_id}")
-        
+
         return {
             "type": "ai_response",
             "success": True,
             "text": response_text,
-            "user_message": user_message
+            "user_message": user_message,
         }
-        
+
     except ImportError as e:
         logger.error(f"Gemini package not installed: {str(e)}", exc_info=True)
         return {
             "type": "ai_error",
             "success": False,
             "message": "AI service is not available. Please contact support.",
-            "error": "google-genai package not installed"
+            "error": "google-genai package not installed",
         }
     except ValueError as e:
         logger.error(f"Gemini configuration error: {str(e)}", exc_info=True)
@@ -109,7 +105,7 @@ async def generate_ai_response(
             "type": "ai_error",
             "success": False,
             "message": "AI service is not configured. Please contact support.",
-            "error": str(e)
+            "error": str(e),
         }
     except Exception as e:
         logger.error(f"Failed to generate AI response: {str(e)}", exc_info=True)
@@ -119,22 +115,18 @@ async def generate_ai_response(
             "success": False,
             "message": f"I'm having trouble processing that right now: {str(e)}",
             "error": str(e),
-            "error_type": type(e).__name__
+            "error_type": type(e).__name__,
         }
 
 
-async def execute_spotify_command(
-    command_text: str,
-    user_id: str,
-    db: Session
-) -> dict:
+async def execute_spotify_command(command_text: str, user_id: str, db: Session) -> dict:
     """Execute a Spotify voice command.
-    
+
     Args:
         command_text: Voice command text
         user_id: User ID
         db: Database session
-        
+
     Returns:
         Response dictionary with command result or error
     """
@@ -148,9 +140,9 @@ async def execute_spotify_command(
                 "type": "command_error",
                 "message": error.message,
                 "error_code": error.error_code,
-                "suggestions": error.suggestions
+                "suggestions": error.suggestions,
             }
-        
+
         # Get valid access token (refresh if needed)
         try:
             access_token = await spotify_service.get_valid_token(integration, db)
@@ -161,84 +153,84 @@ async def execute_spotify_command(
                 "type": "command_error",
                 "message": error.message,
                 "error_code": error.error_code,
-                "suggestions": error.suggestions
+                "suggestions": error.suggestions,
             }
-        
+
         # Parse command using voice agent
         intent = voice_agent_service.parse_command(command_text, user_id)
-        
+
         logger.info(
             f"Executing command for user {user_id}: "
             f"intent={intent.intent}, confidence={intent.confidence:.2f}"
         )
-        
+
         # Check if clarification is needed
         if intent.requires_clarification:
-            clarification_msg = voice_agent_service.generate_clarification_request(intent)
+            clarification_msg = voice_agent_service.generate_clarification_request(
+                intent
+            )
             return {
                 "type": "command_clarification",
                 "message": clarification_msg,
                 "intent": intent.intent,
-                "confidence": intent.confidence
+                "confidence": intent.confidence,
             }
-        
+
         # Execute command based on intent
         result = None
-        
+
         if intent.intent == "play_track":
-            result = await spotify_controller.search_and_play_track(
+            result = await spotify_service.search_and_play_track(
                 query=intent.parameters.get("track", ""),
                 access_token=access_token,
-                artist=intent.parameters.get("artist")
+                artist=intent.parameters.get("artist"),
             )
-        
+
         elif intent.intent == "play_playlist":
-            result = await spotify_controller.search_and_play_playlist(
+            result = await spotify_service.search_and_play_playlist(
                 query=intent.parameters.get("playlist", ""),
                 access_token=access_token,
-                user_playlists_only=False
+                user_playlists_only=False,
             )
-        
+
         elif intent.intent == "play_album":
-            result = await spotify_controller.search_and_play_album(
+            result = await spotify_service.search_and_play_album(
                 query=intent.parameters.get("album", ""),
                 access_token=access_token,
-                artist=intent.parameters.get("artist")
+                artist=intent.parameters.get("artist"),
             )
-        
+
         elif intent.intent == "pause":
-            result = await spotify_controller.pause_playback(access_token)
-        
+            result = await spotify_service.pause_playback(access_token)
+
         elif intent.intent == "resume":
-            result = await spotify_controller.resume_playback(access_token)
-        
+            result = await spotify_service.resume_playback(access_token)
+
         elif intent.intent == "next":
-            result = await spotify_controller.next_track(access_token)
-        
+            result = await spotify_service.next_track(access_token)
+
         elif intent.intent == "previous":
-            result = await spotify_controller.previous_track(access_token)
-        
+            result = await spotify_service.previous_track(access_token)
+
         elif intent.intent == "set_volume":
             volume = int(intent.parameters.get("level", 50))
-            result = await spotify_controller.set_volume(access_token, volume)
-        
+            result = await spotify_service.set_volume(access_token, volume)
+
         elif intent.intent == "list_devices":
-            result = await spotify_controller.get_available_devices(access_token)
-        
+            result = await spotify_service.get_available_devices(access_token)
+
         elif intent.intent == "switch_device":
             device_name = intent.parameters.get("device")
             if not device_name:
                 return {
                     "type": "command_error",
                     "message": "Which device would you like to switch to?",
-                    "error_code": "MISSING_DEVICE"
+                    "error_code": "MISSING_DEVICE",
                 }
-            result = await spotify_controller.switch_device(
-                access_token=access_token,
-                device_name=device_name,
-                start_playback=True
+            result = await spotify_service.switch_device(
+                access_token=access_token, device_name=device_name, start_playback=True
             )
-        
+
         # Handle follow-up commands with context
         elif intent.intent == "play_another_by_artist":
             # Check if context was resolved
@@ -246,74 +238,70 @@ async def execute_spotify_command(
                 return {
                     "type": "command_error",
                     "message": "I don't know which artist you're referring to. Try saying 'play [artist name]'",
-                    "error_code": "NO_CONTEXT"
+                    "error_code": "NO_CONTEXT",
                 }
-            
+
             # Play more by the same artist
             artist = intent.parameters.get("artist")
-            result = await spotify_controller.search_and_play_track(
+            result = await spotify_service.search_and_play_track(
                 query=artist,  # Search by artist name
                 access_token=access_token,
-                artist=artist
+                artist=artist,
             )
-        
+
         elif intent.intent == "play_more_like_this":
             # Check if context was resolved
             if intent.parameters.get("_needs_clarification"):
                 return {
                     "type": "command_error",
                     "message": "I don't have a reference track. Try playing something first.",
-                    "error_code": "NO_CONTEXT"
+                    "error_code": "NO_CONTEXT",
                 }
-            
+
             # For now, play more by the same artist (future: use recommendations API)
             artist = intent.parameters.get("reference_artist")
-            result = await spotify_controller.search_and_play_track(
-                query=artist,
-                access_token=access_token,
-                artist=artist
+            result = await spotify_service.search_and_play_track(
+                query=artist, access_token=access_token, artist=artist
             )
-        
+
         elif intent.intent == "play_from_same_album":
             # Check if context was resolved
             if intent.parameters.get("_needs_clarification"):
                 return {
                     "type": "command_error",
                     "message": "I don't know which album you're referring to. Try saying 'play album [album name]'",
-                    "error_code": "NO_CONTEXT"
+                    "error_code": "NO_CONTEXT",
                 }
-            
+
             # Play the album
             album = intent.parameters.get("album")
             artist = intent.parameters.get("artist")
-            result = await spotify_controller.search_and_play_album(
-                query=album,
-                access_token=access_token,
-                artist=artist
+            result = await spotify_service.search_and_play_album(
+                query=album, access_token=access_token, artist=artist
             )
-        
+
         else:
             logger.warning(f"Unknown or unsupported intent: {intent.intent}")
             return {
                 "type": "command_error",
                 "message": "I didn't understand that command. Try saying something like 'play Bohemian Rhapsody'",
-                "error_code": "UNKNOWN_INTENT"
+                "error_code": "UNKNOWN_INTENT",
             }
-        
+
         # Update context with successful command
         voice_agent_service.update_context(user_id, intent, result)
-        
+
         # Generate user-friendly response
         response_message = voice_agent_service.generate_response(result, intent)
-        
+
         return {
             "type": "command_result",
             "success": True,
             "message": response_message,
             "data": result.data,
-            "intent": intent.intent
+            "intent": intent.intent,
         }
-    
+
     except NoActiveDeviceError as e:
         logger.warning(f"No active device for user {user_id}: {str(e)}")
         return {
@@ -321,9 +309,9 @@ async def execute_spotify_command(
             "message": e.message,
             "error_code": e.error_code,
             "suggestions": e.suggestions,
-            "available_devices": e.available_devices
+            "available_devices": e.available_devices,
         }
-    
+
     except SearchNoResultsError as e:
         logger.warning(f"Search returned no results: {str(e)}")
         return {
@@ -332,9 +320,9 @@ async def execute_spotify_command(
             "error_code": e.error_code,
             "suggestions": e.suggestions,
             "query": e.query,
-            "search_type": e.search_type
+            "search_type": e.search_type,
         }
-    
+
     except PremiumRequiredError as e:
         logger.warning(f"Premium required for user {user_id}: {str(e)}")
         return {
@@ -342,9 +330,9 @@ async def execute_spotify_command(
             "message": e.message,
             "error_code": e.error_code,
             "suggestions": e.suggestions,
-            "feature": e.feature
+            "feature": e.feature,
         }
-    
+
     except AuthenticationError as e:
         logger.error(f"Authentication error for user {user_id}: {str(e)}")
         return {
@@ -352,30 +340,32 @@ async def execute_spotify_command(
             "message": e.message,
             "error_code": e.error_code,
             "suggestions": e.suggestions,
-            "reason": e.reason
+            "reason": e.reason,
         }
-    
+
     except SpotifyAPIError as e:
         logger.error(f"Spotify API error: {str(e)}", exc_info=True)
-        
+
         # Provide more specific error message based on status code
         message = e.message
         if e.status_code == 429:
-            message = "Spotify is rate limiting requests. Please wait a moment and try again."
+            message = (
+                "Spotify is rate limiting requests. Please wait a moment and try again."
+            )
         elif e.status_code in [500, 502, 503, 504]:
             message = "Spotify is experiencing technical difficulties. Please try again in a moment."
         elif not message or message == "Failed to play track":
             message = "Something went wrong with Spotify. Please try again."
-        
+
         return {
             "type": "command_error",
             "message": message,
             "error_code": e.error_code,
             "suggestions": e.suggestions,
             "is_retryable": e.is_retryable,
-            "status_code": e.status_code
+            "status_code": e.status_code,
         }
-    
+
     except Exception as e:
         logger.error(f"Unexpected error executing command: {str(e)}", exc_info=True)
         return {
@@ -385,8 +375,8 @@ async def execute_spotify_command(
             "suggestions": [
                 "Try your command again",
                 "Check your internet connection",
-                "Make sure Spotify is running"
-            ]
+                "Make sure Spotify is running",
+            ],
         }
 
 
@@ -394,10 +384,10 @@ async def stream_ai_response(
     websocket: WebSocket,
     user_message: str,
     user_id: str,
-    conversation_history: list = None
+    conversation_history: list = None,
 ):
     """Stream AI response chunks to client.
-    
+
     Args:
         websocket: WebSocket connection
         user_message: User's message
@@ -406,54 +396,54 @@ async def stream_ai_response(
     """
     try:
         gemini = get_gemini_service()
-        
+
         # Build conversation context
         messages = conversation_history or []
         messages.append({"role": "user", "content": user_message})
-        
+
         # System instruction
         system_instruction = """You are Modi, a helpful voice assistant. 
         Keep responses concise and natural for voice interaction.
         Be friendly, helpful, and conversational.
         If asked to control Spotify, acknowledge the request but explain that music control is handled separately."""
-        
+
         # Send start signal
-        await websocket.send_json({
-            "type": "ai_response_start",
-            "user_message": user_message
-        })
-        
+        await websocket.send_json(
+            {"type": "ai_response_start", "user_message": user_message}
+        )
+
         # Stream response chunks
         full_response = ""
         async for chunk in gemini.generate_streaming_response(
-            prompt=user_message,
-            system_instruction=system_instruction,
-            temperature=0.7
+            prompt=user_message, system_instruction=system_instruction, temperature=0.7
         ):
             full_response += chunk
-            await websocket.send_json({
-                "type": "ai_response_chunk",
-                "chunk": chunk,
-                "full_text": full_response
-            })
-        
+            await websocket.send_json(
+                {
+                    "type": "ai_response_chunk",
+                    "chunk": chunk,
+                    "full_text": full_response,
+                }
+            )
+
         # Send completion signal
-        await websocket.send_json({
-            "type": "ai_response_complete",
-            "text": full_response
-        })
-        
+        await websocket.send_json(
+            {"type": "ai_response_complete", "text": full_response}
+        )
+
         logger.info(f"Streamed AI response for user {user_id}")
-        
+
         return full_response
-        
+
     except Exception as e:
         logger.error(f"Failed to stream AI response: {str(e)}", exc_info=True)
-        await websocket.send_json({
-            "type": "ai_error",
-            "message": "I'm having trouble processing that right now.",
-            "error": str(e)
-        })
+        await websocket.send_json(
+            {
+                "type": "ai_error",
+                "message": "I'm having trouble processing that right now.",
+                "error": str(e),
+            }
+        )
         return None
 
 
@@ -497,21 +487,24 @@ async def stream_transcribe(
             await websocket.close(code=1008)
             return
 
-        user_id = user.get('id')
+        user_id = user.get("id")
         logger.info(f"User {user_id} connected to STT stream")
-        
+
         # Get database session for Spotify integration queries
         db = SessionLocal()
-        
+
         # Conversation history for context
         conversation_history = []
 
         # Connect to Soniox WebSocket
         try:
+            logger.info(f"🔌 Connecting to Soniox WebSocket for user {user_id}...")
             soniox_ws = await websockets.connect(soniox_service.WEBSOCKET_URL)
-            logger.info("Connected to Soniox WebSocket")
+            logger.info(f"✅ Connected to Soniox WebSocket for user {user_id}")
         except Exception as e:
-            logger.error(f"Failed to connect to Soniox: {e}")
+            logger.error(
+                f"❌ Failed to connect to Soniox for user {user_id}: {e}", exc_info=True
+            )
             await websocket.send_json(
                 {
                     "type": "error",
@@ -530,8 +523,9 @@ async def stream_transcribe(
             language_hints=["en"],
             enable_endpoint_detection=False,  # We'll handle endpoint manually
         )
+        logger.info(f"📤 Sending Soniox config for user {user_id}: {config}")
         await soniox_ws.send(json.dumps(config))
-        logger.info(f"Sent Soniox config: {config}")
+        logger.info(f"✅ Soniox config sent successfully for user {user_id}")
 
         # Start listening to Soniox responses
         async def listen_to_soniox():
@@ -613,11 +607,11 @@ async def stream_transcribe(
 
         # Start Soniox listener task
         soniox_task = asyncio.create_task(listen_to_soniox())
-        
+
         # Give Soniox a moment to process the config and be ready
         # This prevents 408 timeout on first chunks
         await asyncio.sleep(0.1)
-        
+
         # Now send ready message to client
         await websocket.send_json({"type": "ready"})
         logger.info("Sent ready signal to client")
@@ -631,77 +625,120 @@ async def stream_transcribe(
                 # Handle text messages (control signals and commands)
                 if "text" in message:
                     text_data = message["text"]
-                    
+
                     # Check if it's a JSON command message
                     try:
                         json_data = json.loads(text_data)
-                        
+
                         # Handle command messages
                         if json_data.get("type") == "command":
                             command_text = json_data.get("text", "")
-                            mode = json_data.get("mode", "auto")  # auto, spotify, conversation
-                            stream = json_data.get("stream", False)  # Enable streaming responses
-                            logger.info(f"Received command from user {user_id} (mode={mode}, stream={stream}): {command_text}")
-                            
+                            mode = json_data.get(
+                                "mode", "auto"
+                            )  # auto, spotify, conversation
+                            stream = json_data.get(
+                                "stream", False
+                            )  # Enable streaming responses
+                            logger.info(
+                                f"Received command from user {user_id} (mode={mode}, stream={stream}): {command_text}"
+                            )
+
                             # Determine if this is a Spotify command or general conversation
                             is_spotify_command = mode == "spotify" or (
-                                mode == "auto" and any(keyword in command_text.lower() for keyword in [
-                                    "play", "pause", "stop", "next", "previous", "skip",
-                                    "volume", "device", "playlist", "album", "song", "track"
-                                ])
+                                mode == "auto"
+                                and any(
+                                    keyword in command_text.lower()
+                                    for keyword in [
+                                        "play",
+                                        "pause",
+                                        "stop",
+                                        "next",
+                                        "previous",
+                                        "skip",
+                                        "volume",
+                                        "device",
+                                        "playlist",
+                                        "album",
+                                        "song",
+                                        "track",
+                                    ]
+                                )
                             )
-                            
+
                             if is_spotify_command:
                                 # Execute Spotify command
                                 command_response = await execute_spotify_command(
-                                    command_text=command_text,
-                                    user_id=user_id,
-                                    db=db
+                                    command_text=command_text, user_id=user_id, db=db
                                 )
                                 # Send response back to client
                                 await websocket.send_json(command_response)
                             else:
                                 # Generate AI conversation response
+                                logger.info(
+                                    f"🤖 Generating AI response for user {user_id} (stream={stream})"
+                                )
                                 if stream:
                                     # Stream response chunks
                                     response_text = await stream_ai_response(
                                         websocket=websocket,
                                         user_message=command_text,
                                         user_id=user_id,
-                                        conversation_history=conversation_history
+                                        conversation_history=conversation_history,
                                     )
-                                    
+
                                     # Update conversation history
                                     if response_text:
-                                        conversation_history.append({"role": "user", "content": command_text})
-                                        conversation_history.append({"role": "assistant", "content": response_text})
+                                        conversation_history.append(
+                                            {"role": "user", "content": command_text}
+                                        )
+                                        conversation_history.append(
+                                            {
+                                                "role": "assistant",
+                                                "content": response_text,
+                                            }
+                                        )
                                 else:
                                     # Non-streaming response
                                     command_response = await generate_ai_response(
                                         user_message=command_text,
                                         user_id=user_id,
-                                        conversation_history=conversation_history
+                                        conversation_history=conversation_history,
                                     )
-                                    
+
+                                    logger.info(
+                                        f"🤖 Generated AI response: {command_response.get('type')} (success={command_response.get('success')})"
+                                    )
+
                                     # Update conversation history
                                     if command_response.get("success"):
-                                        conversation_history.append({"role": "user", "content": command_text})
-                                        conversation_history.append({"role": "assistant", "content": command_response.get("text", "")})
-                                    
+                                        conversation_history.append(
+                                            {"role": "user", "content": command_text}
+                                        )
+                                        conversation_history.append(
+                                            {
+                                                "role": "assistant",
+                                                "content": command_response.get(
+                                                    "text", ""
+                                                ),
+                                            }
+                                        )
+
                                     # Send response back to client
+                                    logger.info(f"📤 Sending AI response to client")
                                     await websocket.send_json(command_response)
-                                
+                                    logger.info(f"✅ AI response sent successfully")
+
                                 # Keep only last 20 messages for context
                                 if len(conversation_history) > 20:
                                     conversation_history = conversation_history[-20:]
-                            
-                            logger.info(f"Sent command response")
+
+                            logger.info(f"✅ Command processed successfully")
                             continue
-                    
+
                     except json.JSONDecodeError:
                         # Not JSON, treat as control signal
                         pass
-                    
+
                     # Handle END signal
                     if text_data == "END":
                         logger.info("Received END signal from client")
@@ -719,12 +756,25 @@ async def stream_transcribe(
                     # Client now sends raw PCM data (no WAV header)
                     # Forward directly to Soniox
                     if len(audio_chunk) > 0:
-                        await soniox_ws.send(audio_chunk)
-                        logger.debug(
-                            f"Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
-                        )
+                        try:
+                            await soniox_ws.send(audio_chunk)
+                            logger.debug(
+                                f"📦 Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"❌ Failed to send chunk #{chunk_count} to Soniox: {e}",
+                                exc_info=True,
+                            )
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": f"Failed to send audio to transcription service: {str(e)}",
+                                }
+                            )
+                            break
                     else:
-                        logger.warning(f"Chunk #{chunk_count}: empty chunk, skipping")
+                        logger.warning(f"⚠️ Chunk #{chunk_count}: empty chunk, skipping")
 
                     # Send acknowledgment to client
                     await websocket.send_json(

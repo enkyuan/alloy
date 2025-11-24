@@ -1,4 +1,5 @@
 """Authentication routes for OAuth and user management."""
+
 import logging
 from datetime import datetime
 
@@ -27,10 +28,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(
-    request: RefreshTokenRequest,
-    db: Session = Depends(get_db)
-):
+async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     """Refresh access token using refresh token.
 
     Args:
@@ -56,8 +54,7 @@ async def refresh_token(
         if not user:
             logger.warning(f"User not found in database: {supabase_user['id']}")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         logger.info(f"Successfully refreshed token for user: {user.email}")
@@ -66,7 +63,7 @@ async def refresh_token(
             token_type="bearer",
             expires_in=supabase_response.get("expires_in", 3600),
             refresh_token=supabase_response.get("refresh_token"),
-            user=UserResponse.model_validate(user)
+            user=UserResponse.model_validate(user),
         )
 
     except HTTPException:
@@ -75,27 +72,24 @@ async def refresh_token(
         logger.error(f"Token refresh failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Token refresh failed: {str(e)}"
+            detail=f"Token refresh failed: {str(e)}",
         )
 
 
 @router.post("/sync", response_model=UserResponse)
-async def sync_user(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
-):
+async def sync_user(authorization: str = Header(None), db: Session = Depends(get_db)):
     """Sync user from Supabase to our database.
-    
+
     Called by iOS app after successful Supabase authentication.
     This endpoint creates or updates the user in our local database.
-    
+
     Args:
         authorization: Bearer token from Authorization header
         db: Database session
-        
+
     Returns:
         UserResponse with synced user data
-        
+
     Raises:
         HTTPException: If authentication fails or sync error occurs
     """
@@ -104,39 +98,43 @@ async def sync_user(
             logger.warning("Missing or invalid authorization header")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
-        
+
         if not supabase_user:
             logger.warning("Invalid or expired token provided")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
-        
+
         # Get or create user in our database
         user = db.query(User).filter(User.id == supabase_user["id"]).first()
-        
+
         if not user:
             # Create new user
             logger.info(f"Creating new user: {supabase_user['email']}")
             user = User(
                 id=supabase_user["id"],
                 email=supabase_user["email"],
-                username=supabase_user.get("user_metadata", {}).get("preferred_username"),
-                full_name=supabase_user.get("user_metadata", {}).get("full_name") or
-                          supabase_user.get("user_metadata", {}).get("name"),
-                avatar_url=supabase_user.get("user_metadata", {}).get("avatar_url") or
-                          supabase_user.get("user_metadata", {}).get("picture"),
-                provider=supabase_user.get("app_metadata", {}).get("provider", "google"),
+                username=supabase_user.get("user_metadata", {}).get(
+                    "preferred_username"
+                ),
+                full_name=supabase_user.get("user_metadata", {}).get("full_name")
+                or supabase_user.get("user_metadata", {}).get("name"),
+                avatar_url=supabase_user.get("user_metadata", {}).get("avatar_url")
+                or supabase_user.get("user_metadata", {}).get("picture"),
+                provider=supabase_user.get("app_metadata", {}).get(
+                    "provider", "google"
+                ),
                 provider_id=supabase_user.get("user_metadata", {}).get("sub"),
                 is_verified=True,
-                last_login=datetime.utcnow()
+                last_login=datetime.utcnow(),
             )
             db.add(user)
         else:
@@ -145,32 +143,33 @@ async def sync_user(
             user.last_login = datetime.utcnow()
             user.is_verified = True
             if not user.avatar_url:
-                user.avatar_url = supabase_user.get("user_metadata", {}).get("avatar_url") or \
-                                 supabase_user.get("user_metadata", {}).get("picture")
+                user.avatar_url = supabase_user.get("user_metadata", {}).get(
+                    "avatar_url"
+                ) or supabase_user.get("user_metadata", {}).get("picture")
             if not user.full_name:
-                user.full_name = supabase_user.get("user_metadata", {}).get("full_name") or \
-                                supabase_user.get("user_metadata", {}).get("name")
-        
+                user.full_name = supabase_user.get("user_metadata", {}).get(
+                    "full_name"
+                ) or supabase_user.get("user_metadata", {}).get("name")
+
         db.commit()
         db.refresh(user)
-        
+
         logger.info(f"Successfully synced user: {user.email}")
         return UserResponse.model_validate(user)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Failed to sync user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync user: {str(e)}"
+            detail=f"Failed to sync user: {str(e)}",
         )
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
-    authorization: str = Header(None),
-    db: Session = Depends(get_db)
+    authorization: str = Header(None), db: Session = Depends(get_db)
 ):
     """Get current authenticated user.
 
@@ -189,11 +188,11 @@ async def get_current_user(
             logger.warning("Missing or invalid authorization header in /me endpoint")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header"
+                detail="Missing or invalid authorization header",
             )
-        
+
         access_token = authorization.replace("Bearer ", "")
-        
+
         # Verify token and get user from Supabase
         supabase_user = await supabase_auth_service.get_user(access_token)
 
@@ -201,7 +200,7 @@ async def get_current_user(
             logger.warning("Invalid or expired token in /me endpoint")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token"
+                detail="Invalid or expired token",
             )
 
         # Get user from database
@@ -210,8 +209,7 @@ async def get_current_user(
         if not user:
             logger.warning(f"User not found in database: {supabase_user['id']}")
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
         logger.info(f"Successfully retrieved user: {user.email}")
@@ -223,5 +221,5 @@ async def get_current_user(
         logger.error(f"Failed to get user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {str(e)}"
+            detail=f"Failed to get user: {str(e)}",
         )

@@ -1,4 +1,5 @@
 """Supabase authentication service."""
+
 import logging
 from typing import Optional, Dict, Any
 
@@ -24,7 +25,9 @@ class SupabaseAuthService:
             "Content-Type": "application/json",
         }
 
-    async def verify_google_token(self, id_token: str, nonce: Optional[str] = None) -> Dict[str, Any]:
+    async def verify_google_token(
+        self, id_token: str, nonce: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Verify Google ID token with Supabase.
 
         Args:
@@ -43,14 +46,14 @@ class SupabaseAuthService:
             "provider": "google",
             "id_token": id_token,
         }
-        
+
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/token",
                     json=payload,
                     headers=self.headers,
-                    params={"grant_type": "id_token"}
+                    params={"grant_type": "id_token"},
                 )
                 response.raise_for_status()
                 logger.info("Successfully verified Google token")
@@ -80,7 +83,7 @@ class SupabaseAuthService:
                         "id_token": id_token,
                     },
                     headers=self.headers,
-                    params={"grant_type": "id_token"}
+                    params={"grant_type": "id_token"},
                 )
                 response.raise_for_status()
                 logger.info("Successfully verified Apple token")
@@ -105,7 +108,7 @@ class SupabaseAuthService:
                     headers={
                         **self.headers,
                         "Authorization": f"Bearer {access_token}",
-                    }
+                    },
                 )
                 if response.status_code == 200:
                     logger.info("Successfully retrieved user from Supabase")
@@ -134,7 +137,7 @@ class SupabaseAuthService:
                     f"{self.base_url}/token",
                     json={"refresh_token": refresh_token},
                     headers=self.headers,
-                    params={"grant_type": "refresh_token"}
+                    params={"grant_type": "refresh_token"},
                 )
                 response.raise_for_status()
                 logger.info("Successfully refreshed token")
@@ -159,7 +162,7 @@ class SupabaseAuthService:
                     headers={
                         **self.headers,
                         "Authorization": f"Bearer {access_token}",
-                    }
+                    },
                 )
                 success = response.status_code == 204
                 if success:

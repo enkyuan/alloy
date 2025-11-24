@@ -1,4 +1,5 @@
 """Application configuration and settings management."""
+
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -6,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables.
-    
+
     All settings are loaded from the .env file or environment variables.
     Required settings will raise an error if not provided.
     """
@@ -58,17 +59,14 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Modal API"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        case_sensitive=True
-    )
-    
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+
     # Computed properties - Gmail reuses Google OAuth credentials
     @property
     def GMAIL_CLIENT_ID(self) -> Optional[str]:
         """Gmail uses the same Google OAuth client ID."""
         return self.GOOGLE_CLIENT_ID
-    
+
     @property
     def GMAIL_CLIENT_SECRET(self) -> Optional[str]:
         """Gmail uses the same Google OAuth client secret."""
