@@ -2,7 +2,7 @@
   <img src="./docs/assets/wordmark.svg" alt="Wordmark" width="300" style="border-radius: 24px;" />
 </p>
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -10,7 +10,7 @@
 - **iOS**: macOS with Xcode 15.0+, iOS 17.0+ SDK
 - **Database**: Docker (for local Supabase) or Supabase Cloud account
 
-### 1. Clone and Setup Environment
+### Clone and Setup Environment
 
 ```bash
 # Clone the repository
@@ -25,16 +25,20 @@ cp supabase/.env.example supabase/.env
 # Edit .env files with your credentials
 ```
 
-### 2. Start Supabase (Local Development)
+### Start the Stack (Unified Docker Compose)
+
+The project uses a unified Docker Compose configuration to run all services (API, Worker, Supabase, Kafka, RabbitMQ, Redis).
 
 ```bash
-cd supabase
-docker-compose up -d
+cd docker
+docker compose up -d
 ```
 
 **Important**: Make sure `skip_nonce_check = true` is set for Google OAuth in `supabase/config.toml`.
 
-### 3. Start the Backend API
+### Development (Optional)
+
+If you want to run the backend locally for development (instead of in Docker):
 
 ```bash
 cd apps/api
@@ -53,7 +57,7 @@ API will be available at:
 - **Docs**: http://localhost:8000/api/v1/docs
 - **Health**: http://localhost:8000/health
 
-### 4. Configure iOS App
+### Configure iOS App
 
 Update Google OAuth credentials in `apps/modal/modal/Info.plist`:
 - Add your Google Client ID
@@ -63,7 +67,7 @@ Update Supabase configuration in `apps/modal/modal/Config/SupabaseConfig.swift`:
 - Set `supabaseURL` to your Supabase instance
 - Set `supabaseAnonKey` to your Supabase anon key
 
-### 5. Run iOS App
+### Run iOS App
 
 ```bash
 # Open Xcode project
@@ -74,14 +78,14 @@ cd apps/modal
 xcodebuild -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro'
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Setup Guide](docs/SETUP.md) - Detailed setup instructions
 - [Docker Guide](docs/DOCKER.md) - Running with Docker Compose
 - [Architecture Guide](docs/ARCHITECTURE.md) - System design and patterns
 - [API Documentation](docs/API.md) - Backend API reference
 
-## 🏛️ Technology Stack
+## Technology Stack
 
 ### Backend
 - **FastAPI**: Modern Python web framework
@@ -90,7 +94,10 @@ xcodebuild -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro
 - **Pydantic**: Data validation
 - **PostgreSQL**: Primary database
 - **Supabase**: Authentication and additional services
-- **Redis**: Caching (optional)
+- **Redis**: Caching and TaskIQ broker
+- **Kafka**: Event streaming
+- **RabbitMQ**: Message broker
+- **TaskIQ**: Distributed task queue
 
 ### Frontend (iOS)
 - **SwiftUI**: Declarative UI framework
@@ -104,7 +111,7 @@ xcodebuild -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro
 - **Docker Compose**: Multi-container orchestration
 - **Kong**: API gateway (Supabase)
 
-## 🧪 Testing
+## Testing
 
 ### Backend Tests
 ```bash
@@ -119,7 +126,7 @@ cd apps/modal
 xcodebuild test -scheme modal -destination 'platform=iOS Simulator,name=iPhone 15 Pro'
 ```
 
-## 🚢 Deployment
+## Deployment
 
 ### Backend Deployment
 
@@ -137,7 +144,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
 2. Upload to App Store Connect
 3. Submit for TestFlight or App Store review
 
-## 🔧 Development
+## Development
 
 ### Code Style
 

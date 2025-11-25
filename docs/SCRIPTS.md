@@ -2,7 +2,7 @@
 
 This directory contains utility scripts for the Modal project.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Generate and sync environment variables
@@ -14,7 +14,7 @@ This directory contains utility scripts for the Modal project.
 
 ---
 
-## 📋 Scripts Overview
+## Scripts Overview
 
 ### 1. env.sh - Environment Configuration
 
@@ -46,11 +46,11 @@ chmod +x scripts/env.sh
 3. Update Spotify OAuth credentials? (y/N)
 
 **Key Features**:
-- ✅ Ensures consistency across all .env files
-- ✅ Preserves existing OAuth credentials
-- ✅ Creates backups before modifying files
-- ✅ Validates required fields
-- ✅ Updates Kong gateway configuration
+- Ensures consistency across all .env files
+- Preserves existing OAuth credentials
+- Creates backups before modifying files
+- Validates required fields
+- Updates Kong gateway configuration
 
 **Output**:
 ```
@@ -150,35 +150,35 @@ Provides a sub-menu with 4 shutdown options:
 **1. Stop containers (keep data)**
 - Runs: `docker compose stop`
 - Stops containers but keeps them
-- Data preserved: ✅ Database, Redis, all volumes
+- Data preserved: Database, Redis, all volumes
 - Use case: Temporary shutdown, fastest restart
 
 **2. Remove containers (keep volumes/data)**
 - Runs: `docker compose down`
 - Removes containers but keeps volumes
-- Data preserved: ✅ Database, Redis data
+- Data preserved: Database, Redis data
 - Use case: Clean restart, reclaim some memory
 
-**3. Remove containers and volumes** (⚠️ Destructive)
+**3. Remove containers and volumes** (Destructive)
 - Runs: `docker compose down -v`
 - Removes containers AND volumes
-- Data preserved: ❌ All data deleted
+- Data preserved: All data deleted
 - Requires confirmation: Type "yes"
 - Use case: Fresh start, testing migrations
 
-**4. Full cleanup** (⚠️ Very Destructive)
+**4. Full cleanup** (Very Destructive)
 - Runs: `docker compose down -v --rmi all`
 - Removes containers, volumes, AND images
-- Data preserved: ❌ Everything deleted
+- Data preserved: Everything deleted
 - Requires confirmation: Type "yes"
 - Use case: Free disk space, force rebuild
 
 | Option | Containers | Volumes | Images | Database | Redis | Restart Speed |
 |--------|-----------|---------|--------|----------|-------|---------------|
-| 1 | Stop | Keep | Keep | ✅ Kept | ✅ Kept | Instant |
-| 2 | Remove | Keep | Keep | ✅ Kept | ✅ Kept | Fast |
-| 3 | Remove | Delete | Keep | ❌ Lost | ❌ Lost | Medium |
-| 4 | Remove | Delete | Delete | ❌ Lost | ❌ Lost | Slow (rebuild) |
+| 1 | Stop | Keep | Keep | Kept | Kept | Instant |
+| 2 | Remove | Keep | Keep | Kept | Kept | Fast |
+| 3 | Remove | Delete | Keep | Lost | Lost | Medium |
+| 4 | Remove | Delete | Delete | Lost | Lost | Slow (rebuild) |
 
 #### Option 6: View Logs
 Options to view:
@@ -190,7 +190,7 @@ Options to view:
 ```
 === Available iOS Simulators ===
 
-★ Currently Booted:
+Currently Booted:
   ▸ iPhone 15 Pro
 
 All Available Devices:
@@ -228,7 +228,7 @@ After starting services:
 
 ---
 
-## 🔄 Typical Workflow
+## Typical Workflow
 
 ### First Time Setup
 
@@ -279,7 +279,7 @@ After starting services:
 
 ---
 
-## 🛠 Prerequisites
+## Prerequisites
 
 ### Required Tools
 
@@ -300,7 +300,7 @@ After starting services:
 
 ---
 
-## 📁 File Structure
+## File Structure
 
 ```
 .
@@ -318,13 +318,13 @@ After starting services:
 
 ---
 
-## 🔒 Security Best Practices
+## Security Best Practices
 
 ### 1. Environment Files
-- ✅ All `.env` files are in `.gitignore`
-- ✅ Never commit sensitive keys
-- ✅ Use different keys per environment (dev/staging/prod)
-- ✅ Rotate keys periodically
+- All `.env` files are in `.gitignore`
+- Never commit sensitive keys
+- Use different keys per environment (dev/staging/prod)
+- Rotate keys periodically
 
 ### 2. JWT Tokens
 - Generated JWTs expire in year 2099 (development only)
@@ -347,7 +347,7 @@ kong.yml.backup.20241012_143022
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### env.sh Issues
 
@@ -397,7 +397,7 @@ sudo apt-get install openssl
 
 ---
 
-## 🔧 Advanced Usage
+## Advanced Usage
 
 ### Running Services Separately
 
@@ -461,7 +461,7 @@ poetry run alembic revision --autogenerate -m "description"
 
 ---
 
-## 📚 Related Documentation
+## Related Documentation
 
 - [README.md](/README.md) - Project overview
 - [CLAUDE.md](/CLAUDE.md) - AI assistant guide
@@ -472,7 +472,7 @@ poetry run alembic revision --autogenerate -m "description"
 
 ---
 
-## 🆘 Getting Help
+## Getting Help
 
 1. **Check the Troubleshooting section** above
 2. **Review related documentation** (links above)
@@ -485,7 +485,7 @@ poetry run alembic revision --autogenerate -m "description"
 
 ---
 
-## 📝 Notes
+## Notes
 
 - Scripts are designed for **development** environments
 - For **production**, use proper secret management (AWS Secrets Manager, Vault, etc.)
@@ -494,7 +494,7 @@ poetry run alembic revision --autogenerate -m "description"
 
 ---
 
-## ✅ Quick Reference
+## Quick Reference
 
 ```bash
 # Generate/sync environment variables

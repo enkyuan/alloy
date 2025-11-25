@@ -541,16 +541,16 @@ docker compose up -d
 ### When to Re-run Setup
 
 Run `./scripts/setup.sh` when:
-- ✅ Cloning the repository on a new machine
-- ✅ Rotating JWT secrets
-- ✅ Updating OAuth credentials
-- ✅ After pulling changes that affect environment configuration
-- ✅ When you see "field required" errors for environment variables
+- Cloning the repository on a new machine
+- Rotating JWT secrets
+- Updating OAuth credentials
+- After pulling changes that affect environment configuration
+- When you see "field required" errors for environment variables
 
 Do NOT re-run setup when:
-- ❌ Just restarting containers (use `docker compose restart`)
-- ❌ Building iOS app (use `./scripts/startup.sh`)
-- ❌ Making code changes
+- Just restarting containers (use `docker compose restart`)
+- Building iOS app (use `./scripts/startup.sh`)
+- Making code changes
 
 ### Setup + Startup Workflow
 

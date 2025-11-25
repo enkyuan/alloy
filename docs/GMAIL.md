@@ -652,13 +652,13 @@ curl -X POST http://localhost:8080/api/v1/integrations/gmail/disconnect \
 
 ## Security
 
-- ✅ OAuth 2.0 standard
-- ✅ CSRF protection via state parameter (manual flow)
-- ✅ Access tokens stored encrypted in database
-- ✅ Tokens scoped to Gmail API only
-- ✅ User can revoke access anytime
-- ✅ Automatic token expiration
-- ✅ Token revocation on disconnect
+- OAuth 2.0 standard
+- CSRF protection via state parameter (manual flow)
+- Access tokens stored encrypted in database
+- Tokens scoped to Gmail API only
+- User can revoke access anytime
+- Automatic token expiration
+- Token revocation on disconnect
 
 ---
 
@@ -666,7 +666,7 @@ curl -X POST http://localhost:8080/api/v1/integrations/gmail/disconnect \
 
 **You asked:** "If the user signs in with Google, can it just use that account?"
 
-**Answer:** **YES!** ✅
+**Answer:** **YES!**
 
 - Automatic Gmail integration via Google Sign-In
 - No separate OAuth flow needed

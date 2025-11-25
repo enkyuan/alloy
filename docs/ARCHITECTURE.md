@@ -69,9 +69,9 @@ Modal is a full-stack application with three main components:
               │
 ┌─────────────▼───────────────────────┐
 │       Services (Business Logic)     │
-│  - Core business logic              │
-│  - External API integration         │
-│  - Complex operations               │
+│  - Pipeline (Voice/Command)         │
+│  - Workspace (Gmail/Calendar)       │
+│  - Spotify                          │
 └─────────────┬───────────────────────┘
               │
 ┌─────────────▼───────────────────────┐
@@ -116,6 +116,32 @@ Router (format response via Pydantic)
 Client Response
 ```
 
+#### Event Driven Architecture
+
+In addition to the synchronous request/response flow, the application uses an event-driven approach for long-running tasks and voice processing.
+
+```
+Voice Input
+    ↓
+API (Producer)
+    ↓
+Kafka (Event Stream)
+    ↓
+Worker (Consumer)
+    ↓
+TaskIQ (Task Queue)
+    ↓
+RabbitMQ/Redis
+    ↓
+Service Execution
+```
+
+**Components**:
+- **Kafka**: Handles high-throughput voice and command events.
+- **TaskIQ**: Manages background tasks (e.g., email syncing, calendar updates).
+- **RabbitMQ**: Message broker for TaskIQ.
+- **Worker**: Dedicated service for processing background jobs.
+
 ### Frontend Architecture (iOS)
 
 #### MVVM Pattern
@@ -149,14 +175,19 @@ Client Response
 Views/
 ├── Root/           # Top-level navigation
 ├── Onboarding/     # Authentication flow
-│   ├── OnboardingView.swift (View)
-│   └── OnboardingViewModel.swift (ViewModel)
 ├── Home/           # Main app screens
 └── Components/     # Reusable UI components
-    ├── AnimatedText.swift
-    ├── ShimmeringText.swift
-    ├── AuthButton.swift
-    └── ServicePreviewCard.swift
+```
+
+### Backend Structure
+
+```
+app/
+├── services/
+│   ├── pipeline/   # Voice processing & Command parsing
+│   ├── workspace/  # External integrations (Gmail, Calendar)
+│   └── spotify/    # Spotify integration
+└── workers/        # Background task workers
 ```
 
 ## Authentication Flow
@@ -426,7 +457,7 @@ do {
 } catch AuthError.invalidCredentials {
     showError(message: "Invalid email or password")
 } catch {
-    print("❌ Error: \(error)")  // Detailed logging
+    print("Error: \(error)")  // Detailed logging
     showError(message: "Something went wrong. Please try again.")
 }
 ```
@@ -517,7 +548,7 @@ Suitable for:
 - Include request IDs for tracing
 
 **iOS**:
-- Console logging with emoji prefixes (✅, ❌, ⚠️)
+- Console logging with prefixes (SUCCESS, ERROR, WARN)
 - Crash reporting (future: Sentry or similar)
 
 ### Metrics

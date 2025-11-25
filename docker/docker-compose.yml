@@ -9,6 +9,8 @@
 # Services:
 #   - Modal API (FastAPI)
 #   - Redis (Caching & Sessions)
+#   - Kafka (Event streaming)
+#   - RabbitMQ (Message broker for TaskIQ)
 #   - Supabase Stack (Auth, Database, Storage, etc.)
 
 name: modal
@@ -40,6 +42,79 @@ services:
       - redis-data:/data
     command: redis-server --appendonly yes
 
+  kafka:
+    container_name: modal-kafka
+    image: confluentinc/cp-kafka:7.6.0
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_PORT:-9092}:9092"
+    networks:
+      - modal_network
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  zookeeper:
+    container_name: modal-zookeeper
+    image: confluentinc/cp-zookeeper:7.6.0
+    restart: unless-stopped
+    ports:
+      - "${ZOOKEEPER_PORT:-2181}:2181"
+    networks:
+      - modal_network
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 2
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    container_name: modal-rabbitmq
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - modal_network
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   api:
     container_name: modal-api
     build:
@@ -53,6 +128,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       db:
         condition: service_healthy
     environment:
@@ -61,6 +140,22 @@ services:
 
       # Redis
       REDIS_URL: ${REDIS_URL}
+
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-modal-api}
+
+      # RabbitMQ (for TaskIQ)
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-admin}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+
+      # TaskIQ
+      TASKIQ_BROKER: ${TASKIQ_BROKER:-redis}  # Options: redis, rabbitmq
+      TASKIQ_RESULT_BACKEND: ${TASKIQ_RESULT_BACKEND:-redis}
 
       # Supabase
       SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
@@ -111,6 +206,53 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
+      - ../apps/api/app:/app/app:ro
+
+  worker:
+    container_name: modal-worker
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks:
+      - modal_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+
+      # Kafka (Worker might produce/consume too)
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-modal-worker}
+
+      # RabbitMQ
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://admin:admin@rabbitmq:5672/}
+
+      # TaskIQ
+      TASKIQ_BROKER: ${TASKIQ_BROKER:-redis}
+      TASKIQ_RESULT_BACKEND: ${TASKIQ_RESULT_BACKEND:-redis}
+
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      
+      # Application
+      DEBUG: ${DEBUG:-false}
+      PROJECT_NAME: Modal Worker
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      
+    command: ["taskiq", "worker", "app.core.taskiq:broker", "app.services.pipeline.tasks", "app.services.workspace.tasks"]
+    volumes:
       - ../apps/api/app:/app/app:ro
 
   # ============================================================================
@@ -509,4 +651,12 @@ services:
 volumes:
   db-config:
   redis-data:
+    driver: local
+  kafka-data:
+    driver: local
+  zookeeper-data:
+    driver: local
+  zookeeper-logs:
+    driver: local
+  rabbitmq-data:
     driver: local
