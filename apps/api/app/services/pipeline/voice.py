@@ -1,10 +1,15 @@
 """Voice agent service for command orchestration."""
 
 import logging
-from dataclasses import dataclass
+import json
+import re
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Optional
 
+import redis.asyncio as redis
+
+from app.core.config import settings
 from app.services.pipeline.cmd_parser import (
     CommandContext,
     CommandIntent,
@@ -13,6 +18,11 @@ from app.services.pipeline.cmd_parser import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Redis client
+redis_client = redis.from_url(
+    settings.REDIS_URL, encoding="utf-8", decode_responses=True
+)
 
 
 @dataclass
@@ -35,10 +45,9 @@ class VoiceAgentService:
             parser: Optional CommandParser instance (uses singleton if not provided)
         """
         self.parser = parser or command_parser
-        self.contexts: dict[str, CommandContext] = {}
 
-    def get_or_create_context(self, user_id: str) -> CommandContext:
-        """Get or create command context for a user.
+    async def get_context(self, user_id: str) -> CommandContext:
+        """Get command context for a user from Redis.
 
         Args:
             user_id: User identifier
@@ -46,18 +55,67 @@ class VoiceAgentService:
         Returns:
             CommandContext for the user
         """
-        if user_id not in self.contexts:
-            self.contexts[user_id] = CommandContext(user_id=user_id)
-        else:
-            # Check if context has expired and reset if needed
-            context = self.contexts[user_id]
-            if context.is_expired():
-                logger.info(f"Context expired for user {user_id}, resetting")
-                context.reset()
+        key = f"voice_context:{user_id}"
+        data = await redis_client.get(key)
 
-        return self.contexts[user_id]
+        context = CommandContext(user_id=user_id)
 
-    def update_context(
+        if data:
+            try:
+                data_dict = json.loads(data)
+                # Restore context fields
+                context.last_command = data_dict.get("last_command")
+                context.last_intent = data_dict.get("last_intent")
+                context.active_device_id = data_dict.get("active_device_id")
+                context.conversation_history = data_dict.get("conversation_history", [])
+                context.last_track = data_dict.get("last_track")
+                context.last_artist = data_dict.get("last_artist")
+                context.last_album = data_dict.get("last_album")
+                context.last_playlist = data_dict.get("last_playlist")
+                context.last_genre = data_dict.get("last_genre")
+
+                if data_dict.get("timestamp"):
+                    context.timestamp = datetime.fromisoformat(
+                        data_dict.get("timestamp")
+                    )
+
+                # Check expiry
+                if context.is_expired():
+                    logger.info(f"Context expired for user {user_id}, resetting")
+                    context.reset()
+
+            except Exception as e:
+                logger.error(f"Failed to load context for {user_id}: {e}")
+                # Return fresh context on error
+
+        return context
+
+    async def save_context(self, context: CommandContext) -> None:
+        """Save command context to Redis.
+
+        Args:
+            context: CommandContext to save
+        """
+        key = f"voice_context:{context.user_id}"
+
+        data = {
+            "user_id": context.user_id,
+            "last_command": context.last_command,
+            "last_intent": context.last_intent,
+            "active_device_id": context.active_device_id,
+            "conversation_history": context.conversation_history,
+            "timestamp": context.timestamp.isoformat() if context.timestamp else None,
+            "last_track": context.last_track,
+            "last_artist": context.last_artist,
+            "last_album": context.last_album,
+            "last_playlist": context.last_playlist,
+            "last_genre": context.last_genre,
+        }
+
+        # Save with TTL (e.g., 1 hour to keep it around longer than the logic timeout)
+        await redis_client.setex(key, 3600, json.dumps(data))
+
+    async def update_context(
         self,
         user_id: str,
         intent: CommandIntent,
@@ -70,7 +128,7 @@ class VoiceAgentService:
             intent: Executed command intent
             result: Optional command result
         """
-        context = self.get_or_create_context(user_id)
+        context = await self.get_context(user_id)
 
         # Update timestamp to keep context alive
         context.update_timestamp()
@@ -133,7 +191,9 @@ class VoiceAgentService:
             f"album={context.last_album}, playlist={context.last_playlist}"
         )
 
-    def parse_command(self, text: str, user_id: str) -> CommandIntent:
+        await self.save_context(context)
+
+    async def parse_command(self, text: str, user_id: str) -> CommandIntent:
         """Parse a voice command with user context.
 
         Args:
@@ -143,7 +203,7 @@ class VoiceAgentService:
         Returns:
             Parsed CommandIntent
         """
-        context = self.get_or_create_context(user_id)
+        context = await self.get_context(user_id)
         intent = self.parser.parse_command(text, context)
 
         logger.info(

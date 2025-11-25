@@ -110,6 +110,7 @@ class GoogleCalendarService:
         description: Optional[str] = None,
         location: Optional[str] = None,
         attendees: Optional[List[str]] = None,
+        recurrence: Optional[List[str]] = None,
         calendar_id: str = "primary",
     ) -> Dict[str, Any]:
         """Create a new calendar event.
@@ -121,6 +122,7 @@ class GoogleCalendarService:
             description: Event description (optional)
             location: Event location (optional)
             attendees: List of attendee email addresses (optional)
+            recurrence: List of RRULE strings (optional)
             calendar_id: Calendar ID (default: 'primary')
 
         Returns:
@@ -141,6 +143,18 @@ class GoogleCalendarService:
                     "timeZone": "UTC",
                 },
             }
+
+            if description:
+                event["description"] = description
+
+            if location:
+                event["location"] = location
+
+            if attendees:
+                event["attendees"] = [{"email": email} for email in attendees]
+
+            if recurrence:
+                event["recurrence"] = recurrence
 
             if description:
                 event["description"] = description
@@ -323,6 +337,63 @@ class GoogleCalendarService:
             time_min=time_min,
             time_max=time_max,
         )
+
+    def check_free_busy(
+        self,
+        time_min: datetime,
+        time_max: datetime,
+        items: List[Dict[str, str]] = [{"id": "primary"}],
+    ) -> Dict[str, Any]:
+        """Check free/busy status for calendars.
+
+        Args:
+            time_min: Start of check period
+            time_max: End of check period
+            items: List of calendar IDs to check (default: primary)
+
+        Returns:
+            Free/busy information
+        """
+        try:
+            body = {
+                "timeMin": time_min.isoformat() + "Z",
+                "timeMax": time_max.isoformat() + "Z",
+                "items": items,
+            }
+            result = self.service.freebusy().query(body=body).execute()
+            logger.info("Checked free/busy status")
+            return result
+        except HttpError as error:
+            logger.error(f"Failed to check free/busy: {error}")
+            raise
+
+    def patch_event(
+        self,
+        event_id: str,
+        body: Dict[str, Any],
+        calendar_id: str = "primary",
+    ) -> Dict[str, Any]:
+        """Patch an existing event (partial update).
+
+        Args:
+            event_id: Event ID
+            body: Dictionary of fields to update
+            calendar_id: Calendar ID (default: 'primary')
+
+        Returns:
+            Updated event object
+        """
+        try:
+            updated_event = (
+                self.service.events()
+                .patch(calendarId=calendar_id, eventId=event_id, body=body)
+                .execute()
+            )
+            logger.info(f"Patched event: {event_id}")
+            return updated_event
+        except HttpError as error:
+            logger.error(f"Failed to patch event: {error}")
+            raise
 
 
 # Singleton instance that can be initialized per-request

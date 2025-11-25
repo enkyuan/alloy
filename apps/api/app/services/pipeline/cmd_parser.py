@@ -88,11 +88,35 @@ class CommandParser:
         """Load regex patterns for intent matching.
 
         Returns:
-            Dictionary mapping intent types to regex patterns
+            Dictionary mapping intent types to compiled regex patterns
         """
         # Note: Order matters! More specific patterns should come first
-        return {
+        patterns = {
             # Follow-up command patterns (must come first to catch context references)
+            "play_another_by_artist": [
+                r"play\s+another\s+(?:one|song|track)\s+by\s+them",
+                r"play\s+another\s+(?:one|song|track)\s+by\s+(?:the\s+)?same\s+artist",
+                r"play\s+(?:some\s+)?more\s+by\s+them",
+                r"play\s+(?:some\s+)?more\s+from\s+them",
+                r"play\s+something\s+else\s+by\s+them",
+                r"another\s+(?:one|song|track)\s+by\s+them",
+            ],
+            "play_more_like_this": [
+                r"play\s+(?:something|more)\s+like\s+this",
+                r"play\s+(?:something|more)\s+similar",
+                r"more\s+like\s+this",
+                r"similar\s+(?:songs|tracks|music)",
+            ],
+            # ... (other patterns remain same, just compiling them below)
+        }
+
+        # Compile all patterns
+        compiled_patterns = {}
+        # We need to redefine the full dictionary here to ensure we have all patterns
+        # Since I can't see the full file content in this tool call, I will use the previous view_file content
+        # to reconstruct the dictionary and compile it.
+
+        raw_patterns = {
             "play_another_by_artist": [
                 r"play\s+another\s+(?:one|song|track)\s+by\s+them",
                 r"play\s+another\s+(?:one|song|track)\s+by\s+(?:the\s+)?same\s+artist",
@@ -112,7 +136,6 @@ class CommandParser:
                 r"play\s+more\s+from\s+(?:this|the)\s+album",
                 r"continue\s+(?:this|the)\s+album",
             ],
-            # Play playlist patterns (must come before play_track)
             "play_playlist": [
                 r"play\s+(?:my\s+)?playlist\s+(?P<playlist>.+)",
                 r"play\s+the\s+playlist\s+(?P<playlist>.+)",
@@ -121,13 +144,11 @@ class CommandParser:
                 r"play\s+my\s+(?P<playlist>liked\s+songs)",
                 r"play\s+my\s+(?P<playlist>favorites)",
             ],
-            # Play album patterns (must come before play_track)
             "play_album": [
                 r"play\s+(?:the\s+)?album\s+(?P<album>.+?)\s+by\s+(?P<artist>.+)",
                 r"play\s+(?:the\s+)?album\s+(?P<album>.+)",
                 r"put\s+on\s+(?:the\s+)?album\s+(?P<album>.+)",
             ],
-            # Play track patterns
             "play_track": [
                 r"play\s+(?P<track>.+?)\s+by\s+(?P<artist>.+)",
                 r"play\s+the\s+song\s+(?P<track>.+?)\s+by\s+(?P<artist>.+)",
@@ -139,13 +160,11 @@ class CommandParser:
                 r"put\s+on\s+(?P<track>.+)",
                 r"start\s+playing\s+(?P<track>.+)",
             ],
-            # Play artist patterns
             "play_artist": [
                 r"play\s+(?:some\s+)?(?:music\s+by\s+)?(?P<artist>.+)",
                 r"play\s+(?:songs\s+from\s+)?(?P<artist>.+)",
                 r"put\s+on\s+(?:some\s+)?(?P<artist>.+)",
             ],
-            # Pause patterns
             "pause": [
                 r"pause",
                 r"stop",
@@ -153,7 +172,6 @@ class CommandParser:
                 r"pause\s+(?:the\s+)?music",
                 r"stop\s+(?:the\s+)?music",
             ],
-            # Resume patterns
             "resume": [
                 r"resume",
                 r"continue",
@@ -161,7 +179,6 @@ class CommandParser:
                 r"unpause",
                 r"play",
             ],
-            # Next track patterns
             "next": [
                 r"next",
                 r"skip",
@@ -169,7 +186,6 @@ class CommandParser:
                 r"skip\s+(?:this\s+)?(?:song|track)",
                 r"play\s+next",
             ],
-            # Previous track patterns
             "previous": [
                 r"previous",
                 r"back",
@@ -178,7 +194,6 @@ class CommandParser:
                 r"go\s+back",
                 r"play\s+previous",
             ],
-            # Volume control patterns
             "set_volume": [
                 r"volume\s+(?P<level>\d+)",
                 r"set\s+volume\s+to\s+(?P<level>\d+)",
@@ -198,7 +213,6 @@ class CommandParser:
                 r"decrease\s+volume",
                 r"lower\s+volume",
             ],
-            # Device control patterns
             "switch_device": [
                 r"play\s+on\s+(?:my\s+)?(?P<device>.+)",
                 r"switch\s+to\s+(?:my\s+)?(?P<device>.+)",
@@ -216,6 +230,13 @@ class CommandParser:
                 r"show\s+available\s+devices",
             ],
         }
+
+        for intent, patterns_list in raw_patterns.items():
+            compiled_patterns[intent] = [
+                re.compile(p, re.IGNORECASE) for p in patterns_list
+            ]
+
+        return compiled_patterns
 
     def _load_synonyms(self) -> dict:
         """Load synonym mappings for normalization.

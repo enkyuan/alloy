@@ -10,6 +10,8 @@ FastAPI backend for Modal voice assistant with Google OAuth and Supabase integra
 - 🗄️ Database migrations with Alembic
 - 🔄 JWT token refresh
 - 📝 OpenAPI documentation
+- ⚡ Background tasks with TaskIQ
+- 📨 Event streaming with Kafka & RabbitMQ
 
 ## Setup
 
@@ -78,8 +80,9 @@ alembic upgrade head
 # Development with hot reload
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Or with Docker
-docker-compose up api
+# Or with Unified Docker Compose (Recommended)
+cd ../../docker
+docker compose up -d
 ```
 
 ## API Endpoints
@@ -159,9 +162,17 @@ app/
 ├── routers/             # API routes
 │   ├── __init__.py
 │   └── auth.py
-└── services/            # Business logic
-    ├── __init__.py
-    └── supabase_auth.py
+├── services/            # Business logic
+│   ├── __init__.py
+│   ├── pipeline/        # Voice & Command processing
+│   │   ├── voice.py
+│   │   ├── cmd_parser.py
+│   │   └── tasks.py
+│   ├── workspace/       # Integrations (Gmail, Calendar, etc.)
+│   │   └── tasks.py
+│   └── auth.py
+└── workers/             # TaskIQ workers
+    └── __init__.py
 ```
 
 ### Testing
@@ -194,7 +205,7 @@ See the iOS app code for implementation details.
 1. **Database connection fails**
    - Ensure PostgreSQL is running
    - Check DATABASE_URL in .env
-   - Verify docker-compose services are up
+   - Verify docker compose services are up
 
 2. **Supabase authentication fails**
    - Verify SUPABASE_URL and keys are correct
