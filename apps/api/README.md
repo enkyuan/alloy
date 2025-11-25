@@ -4,14 +4,14 @@ FastAPI backend for Modal voice assistant with Google OAuth and Supabase integra
 
 ## Features
 
-- 🔐 Google OAuth authentication via Supabase
-- 🍎 Apple Sign In support
-- 👤 User management with PostgreSQL
-- 🗄️ Database migrations with Alembic
-- 🔄 JWT token refresh
-- 📝 OpenAPI documentation
-- ⚡ Background tasks with TaskIQ
-- 📨 Event streaming with Kafka & RabbitMQ
+- Google OAuth authentication via Supabase
+- Apple Sign In support
+- User management with PostgreSQL
+- Database migrations with Alembic
+- JWT token refresh
+- OpenAPI documentation
+- Background tasks with TaskIQ
+- Event streaming with Kafka & RabbitMQ
 
 ## Setup
 
@@ -216,7 +216,3 @@ See the iOS app code for implementation details.
    - Check that ID token is fresh (not expired)
    - Verify the token is for the correct Google OAuth client
    - Ensure Supabase project has correct Google credentials
-
-## License
-
-MIT
