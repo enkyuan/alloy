@@ -2,17 +2,45 @@
 
 import logging
 
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
-from app.logging import setup_logging
+from app.core.config import settings
+from app.core.logging import setup_logging
 from app.routers import auth, integrations, stt, gemini
+from app.core.kafka import kafka_service
+from app.core.taskiq import broker
+from app.workers.kafka import start_voice_input_consumer
 
 # Configure Rich logging
 setup_logging(debug=settings.DEBUG)
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await kafka_service.start()
+    await broker.startup()
+
+    # Start consumer in background
+    consumer_task = asyncio.create_task(start_voice_input_consumer())
+
+    yield
+
+    # Shutdown
+    consumer_task.cancel()
+    try:
+        await consumer_task
+    except asyncio.CancelledError:
+        pass
+
+    await broker.shutdown()
+    await kafka_service.stop()
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -22,6 +50,7 @@ app = FastAPI(
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
     version="1.0.0",
     description="Modal API",
+    lifespan=lifespan,
 )
 
 # Configure CORS

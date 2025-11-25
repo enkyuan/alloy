@@ -7,7 +7,7 @@ from typing import Optional
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.integration import Integration
 
 logger = logging.getLogger(__name__)

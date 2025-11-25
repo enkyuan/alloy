@@ -5,7 +5,7 @@ import json
 from typing import Optional, Callable, Dict, Any
 import asyncio
 
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

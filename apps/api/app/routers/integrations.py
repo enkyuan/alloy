@@ -23,8 +23,8 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.database import get_db
+from app.core.config import settings
+from app.core.database import get_db
 from app.models.integration import Integration
 from app.models.user import User
 from app.schemas.integration import (
@@ -34,8 +34,8 @@ from app.schemas.integration import (
 )
 from app.services.auth import supabase_auth_service
 from app.services.spotify import spotify_client
-from app.services.gmail import get_gmail_service
-from app.services.google_calendar import get_google_calendar_service
+from app.services.workspace.gmail import get_gmail_service
+from app.services.workspace.gcalendar import get_google_calendar_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])

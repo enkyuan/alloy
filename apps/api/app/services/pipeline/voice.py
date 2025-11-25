@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from app.services.command_parser import (
+from app.services.pipeline.cmd_parser import (
     CommandContext,
     CommandIntent,
     CommandParser,

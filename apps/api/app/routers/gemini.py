@@ -8,9 +8,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.core.database import get_db
 from app.services.auth import supabase_auth_service
-from app.services.gemini import get_gemini_service
+from app.services.pipeline.gemini import get_gemini_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini", tags=["gemini"])

@@ -8,10 +8,10 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.core.database import SessionLocal
 from app.models.integration import Integration
 from app.services.auth import supabase_auth_service
-from app.services.soniox import soniox_service
+from app.services.pipeline.soniox import soniox_service
 from app.services.spotify import (
     spotify_service,
     spotify_client,
@@ -21,8 +21,11 @@ from app.services.spotify import (
     PremiumRequiredError,
     AuthenticationError,
 )
-from app.services.voice_agent import voice_agent_service
-from app.services.gemini import get_gemini_service
+from app.services.pipeline.voice import voice_agent_service
+from app.services.pipeline.gemini import get_gemini_service
+from app.core.kafka import kafka_service
+import uuid
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -481,6 +484,9 @@ async def stream_transcribe(
 
         user = await supabase_auth_service.get_user(token)
         if not user:
+            logger.warning(
+                f"Authentication failed: Invalid token provided. Token: {token[:10]}..."
+            )
             await websocket.send_json(
                 {"type": "error", "message": "Invalid or expired token"}
             )
@@ -488,10 +494,17 @@ async def stream_transcribe(
             return
 
         user_id = user.get("id")
-        logger.info(f"User {user_id} connected to STT stream")
+        session_id = str(uuid.uuid4())
+        logger.info(f"User {user_id} connected to STT stream (session_id={session_id})")
 
         # Get database session for Spotify integration queries
-        db = SessionLocal()
+        try:
+            db = SessionLocal()
+            logger.debug(f"Database session created for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to create database session: {e}", exc_info=True)
+            await websocket.close(code=1011)
+            return
 
         # Conversation history for context
         conversation_history = []
@@ -584,6 +597,29 @@ async def stream_transcribe(
                                 {"type": "final", "text": final_text, "is_final": True}
                             )
                             logger.info(f"✅ Final tokens: {final_text}")
+
+                            # Publish to Kafka
+                            try:
+                                logger.info(
+                                    f"Publishing final transcription to Kafka for user {user_id}"
+                                )
+                                await kafka_service.send_message(
+                                    "voice.input",
+                                    {
+                                        "user_id": user_id,
+                                        "session_id": session_id,
+                                        "text": final_text,
+                                        "timestamp": datetime.utcnow().isoformat(),
+                                        "metadata": {"source": "soniox"},
+                                    },
+                                )
+                                logger.info(
+                                    f"Successfully published to voice.input: {final_text[:50]}..."
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to publish to Kafka: {e}", exc_info=True
+                                )
 
                     # Check if session finished
                     if response.get("finished"):
