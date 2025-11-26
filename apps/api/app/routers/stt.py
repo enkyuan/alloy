@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models.integration import Integration
-from app.services.auth import supabase_auth_service
+from app.services.user.auth import supabase_auth_service
 from app.services.pipeline.soniox import soniox_service
 from app.services.spotify import (
     spotify_service,

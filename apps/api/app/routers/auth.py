@@ -13,7 +13,7 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     UserResponse,
 )
-from app.services.auth import supabase_auth_service
+from app.services.user.auth import supabase_auth_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])

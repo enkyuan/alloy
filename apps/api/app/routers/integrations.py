@@ -32,7 +32,7 @@ from app.schemas.integration import (
     IntegrationStatusResponse,
     IntegrationListResponse,
 )
-from app.services.auth import supabase_auth_service
+from app.services.user.auth import supabase_auth_service
 from app.services.spotify import spotify_client
 from app.services.workspace.gmail import get_gmail_service
 from app.services.workspace.gcalendar import get_google_calendar_service
