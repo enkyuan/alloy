@@ -82,7 +82,7 @@ struct modalApp: App {
                     // Handle integration callbacks (Spotify, Uber, etc.)
                     // ASWebAuthenticationSession handles these automatically, so we don't need to do anything
                     if url.scheme == "modal" {
-                        if url.host == "spotify" || url.host == "uber" || url.host == "gmail" {
+                        if url.host == "spotify" || url.host == "gmail" {
                             print("🟢 Integration callback detected: \(url.host ?? "unknown")")
                             print("   ASWebAuthenticationSession will handle this automatically")
                             // Don't pass to Supabase - let ASWebAuthenticationSession handle it
