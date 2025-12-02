@@ -166,8 +166,8 @@ def setup_logging(debug: bool = False):
     # Log startup message
     logger = logging.getLogger(__name__)
     if RICH_AVAILABLE:
-        logger.info("✨ [bold green]Rich logging initialized[/bold green]")
+        logger.info("[bold green]Rich logging initialized[/bold green]")
     else:
-        logger.info("📝 Standard logging initialized")
+        logger.info("Standard logging initialized")
 
     return logging.getLogger()

@@ -25,9 +25,9 @@ class KafkaService:
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
             )
             await self.producer.start()
-            logger.info("✅ Kafka producer started successfully")
+            logger.info("Kafka producer started successfully")
         except Exception as e:
-            logger.error(f"❌ Failed to start Kafka producer: {e}", exc_info=True)
+            logger.error(f"Failed to start Kafka producer: {e}", exc_info=True)
 
     async def stop(self):
         """Stop the Kafka producer."""
@@ -50,10 +50,10 @@ class KafkaService:
             key_bytes = key.encode("utf-8") if key else None
             logger.debug(f"Sending message to topic {topic} (key={key})")
             await self.producer.send_and_wait(topic, value=value, key=key_bytes)
-            logger.info(f"✅ Sent message to topic {topic}")
+            logger.info(f"Sent message to topic {topic}")
         except Exception as e:
             logger.error(
-                f"❌ Failed to send message to Kafka topic {topic}: {e}", exc_info=True
+                f"Failed to send message to Kafka topic {topic}: {e}", exc_info=True
             )
 
     async def consume_messages(
@@ -69,7 +69,7 @@ class KafkaService:
                 value_deserializer=lambda x: json.loads(x.decode("utf-8")),
             )
             await consumer.start()
-            logger.info(f"✅ Consumer started for topic {topic}")
+            logger.info(f"Consumer started for topic {topic}")
             try:
                 async for msg in consumer:
                     logger.debug(f"Received message from {topic}: {msg.value}")
@@ -84,7 +84,7 @@ class KafkaService:
                 logger.info(f"Consumer stopped for topic {topic}")
         except Exception as e:
             logger.error(
-                f"❌ Failed to start consumer for topic {topic}: {e}", exc_info=True
+                f"Failed to start consumer for topic {topic}: {e}", exc_info=True
             )
 
 

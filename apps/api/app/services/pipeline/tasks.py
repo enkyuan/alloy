@@ -21,11 +21,11 @@ async def fetch_context(user_id: str, session_id: str, text: str) -> Dict[str, A
             "history": [],  # Would fetch from DB
             "preferences": {},  # Would fetch from DB
         }
-        logger.info(f"✅ Context fetched successfully for session {session_id}")
+        logger.info(f"Context fetched successfully for session {session_id}")
         return context
     except Exception as e:
         logger.error(
-            f"❌ Failed to fetch context for session {session_id}: {e}", exc_info=True
+            f"Failed to fetch context for session {session_id}: {e}", exc_info=True
         )
         raise
 
@@ -46,11 +46,11 @@ async def process_llm(context: Dict[str, Any]) -> Dict[str, Any]:
             "response_text": f"Processed: {context.get('text')}",
             "context": context,
         }
-        logger.info(f"✅ LLM processing complete for session {session_id}")
+        logger.info(f"LLM processing complete for session {session_id}")
         return decision_output
     except Exception as e:
         logger.error(
-            f"❌ LLM processing failed for session {session_id}: {e}", exc_info=True
+            f"LLM processing failed for session {session_id}: {e}", exc_info=True
         )
         raise
 
@@ -70,8 +70,8 @@ async def route_task(decision: Dict[str, Any]) -> Dict[str, Any]:
             # Execute command
             pass
 
-        logger.info(f"✅ Task routed successfully: {action}")
+        logger.info(f"Task routed successfully: {action}")
         return {"status": "routed", "decision": decision}
     except Exception as e:
-        logger.error(f"❌ Failed to route task {action}: {e}", exc_info=True)
+        logger.error(f"Failed to route task {action}: {e}", exc_info=True)
         raise

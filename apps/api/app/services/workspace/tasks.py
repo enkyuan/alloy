@@ -89,11 +89,11 @@ async def summarize_emails(user_id: str, count: int = 5) -> str:
         summary = f"Here are your last {len(messages)} emails:\n" + "\n".join(
             summary_lines
         )
-        logger.info(f"✅ Emails summarized for {user_id}")
+        logger.info(f"Emails summarized for {user_id}")
         return summary
 
     except Exception as e:
-        logger.error(f"❌ Failed to summarize emails for {user_id}: {e}", exc_info=True)
+        logger.error(f"Failed to summarize emails for {user_id}: {e}", exc_info=True)
         return f"Failed to summarize emails: {str(e)}"
     finally:
         await asyncio.to_thread(db.close)
@@ -144,11 +144,11 @@ async def check_schedule(user_id: str) -> str:
             event_lines.append(f"- {time_str}: {summary}")
 
         result = f"You have {len(events)} meetings today:\n" + "\n".join(event_lines)
-        logger.info(f"✅ Schedule checked for {user_id}")
+        logger.info(f"Schedule checked for {user_id}")
         return result
 
     except Exception as e:
-        logger.error(f"❌ Failed to check schedule for {user_id}: {e}", exc_info=True)
+        logger.error(f"Failed to check schedule for {user_id}: {e}", exc_info=True)
         return f"Failed to check schedule: {str(e)}"
     finally:
         await asyncio.to_thread(db.close)
@@ -191,11 +191,11 @@ async def create_meeting(
         event = await asyncio.to_thread(service.create_event, summary, start, end)
 
         result = f"Created meeting '{summary}' at {start.strftime('%I:%M %p')}"
-        logger.info(f"✅ Meeting created for {user_id}")
+        logger.info(f"Meeting created for {user_id}")
         return result
 
     except Exception as e:
-        logger.error(f"❌ Failed to create meeting for {user_id}: {e}", exc_info=True)
+        logger.error(f"Failed to create meeting for {user_id}: {e}", exc_info=True)
         return f"Failed to create meeting: {str(e)}"
     finally:
         await asyncio.to_thread(db.close)

@@ -511,12 +511,12 @@ async def stream_transcribe(
 
         # Connect to Soniox WebSocket
         try:
-            logger.info(f"🔌 Connecting to Soniox WebSocket for user {user_id}...")
+            logger.info(f"Connecting to Soniox WebSocket for user {user_id}...")
             soniox_ws = await websockets.connect(soniox_service.WEBSOCKET_URL)
-            logger.info(f"✅ Connected to Soniox WebSocket for user {user_id}")
+            logger.info(f"Connected to Soniox WebSocket for user {user_id}")
         except Exception as e:
             logger.error(
-                f"❌ Failed to connect to Soniox for user {user_id}: {e}", exc_info=True
+                f"Failed to connect to Soniox for user {user_id}: {e}", exc_info=True
             )
             await websocket.send_json(
                 {
@@ -536,9 +536,9 @@ async def stream_transcribe(
             language_hints=["en"],
             enable_endpoint_detection=False,  # We'll handle endpoint manually
         )
-        logger.info(f"📤 Sending Soniox config for user {user_id}: {config}")
+        logger.info(f"Sending Soniox config for user {user_id}: {config}")
         await soniox_ws.send(json.dumps(config))
-        logger.info(f"✅ Soniox config sent successfully for user {user_id}")
+        logger.info(f"Soniox config sent successfully for user {user_id}")
 
         # Start listening to Soniox responses
         async def listen_to_soniox():
@@ -589,14 +589,14 @@ async def stream_transcribe(
                                     "is_final": False,
                                 }
                             )
-                            logger.info(f"📝 Partial: {full_text}")
+                            logger.info(f"Partial: {full_text}")
 
                         # Send final update if we have new final tokens
                         if new_final_tokens:
                             await websocket.send_json(
                                 {"type": "final", "text": final_text, "is_final": True}
                             )
-                            logger.info(f"✅ Final tokens: {final_text}")
+                            logger.info(f"Final tokens: {final_text}")
 
                             # Publish to Kafka
                             try:
@@ -629,7 +629,7 @@ async def stream_transcribe(
                             {"type": "complete", "text": complete_text}
                         )
                         logger.info(
-                            f"🏁 Session finished. Complete text: {complete_text}"
+                            f"Session finished. Complete text: {complete_text}"
                         )
                         break
 
@@ -711,7 +711,7 @@ async def stream_transcribe(
                             else:
                                 # Generate AI conversation response
                                 logger.info(
-                                    f"🤖 Generating AI response for user {user_id} (stream={stream})"
+                                    f"Generating AI response for user {user_id} (stream={stream})"
                                 )
                                 if stream:
                                     # Stream response chunks
@@ -742,7 +742,7 @@ async def stream_transcribe(
                                     )
 
                                     logger.info(
-                                        f"🤖 Generated AI response: {command_response.get('type')} (success={command_response.get('success')})"
+                                        f"Generated AI response: {command_response.get('type')} (success={command_response.get('success')})"
                                     )
 
                                     # Update conversation history
@@ -760,15 +760,15 @@ async def stream_transcribe(
                                         )
 
                                     # Send response back to client
-                                    logger.info(f"📤 Sending AI response to client")
+                                    logger.info(f"Sending AI response to client")
                                     await websocket.send_json(command_response)
-                                    logger.info(f"✅ AI response sent successfully")
+                                    logger.info(f"AI response sent successfully")
 
                                 # Keep only last 20 messages for context
                                 if len(conversation_history) > 20:
                                     conversation_history = conversation_history[-20:]
 
-                            logger.info(f"✅ Command processed successfully")
+                            logger.info(f"Command processed successfully")
                             continue
 
                     except json.JSONDecodeError:
@@ -795,11 +795,11 @@ async def stream_transcribe(
                         try:
                             await soniox_ws.send(audio_chunk)
                             logger.debug(
-                                f"📦 Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
+                                f"Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
                             )
                         except Exception as e:
                             logger.error(
-                                f"❌ Failed to send chunk #{chunk_count} to Soniox: {e}",
+                                f"Failed to send chunk #{chunk_count} to Soniox: {e}",
                                 exc_info=True,
                             )
                             await websocket.send_json(
@@ -810,7 +810,7 @@ async def stream_transcribe(
                             )
                             break
                     else:
-                        logger.warning(f"⚠️ Chunk #{chunk_count}: empty chunk, skipping")
+                        logger.warning(f"Chunk #{chunk_count}: empty chunk, skipping")
 
                     # Send acknowledgment to client
                     await websocket.send_json(

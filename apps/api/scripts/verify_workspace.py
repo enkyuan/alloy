@@ -25,12 +25,12 @@ async def verify_workspace_services():
         # Test Create Draft
         service.create_draft("test@example.com", "Subject", "Body")
         mock_gmail.users().drafts().create.assert_called()
-        logger.info("✅ Gmail: create_draft")
+        logger.info("[SUCCESS] Gmail: create_draft")
 
         # Test List Labels
         service.list_labels()
         mock_gmail.users().labels().list.assert_called()
-        logger.info("✅ Gmail: list_labels")
+        logger.info("[SUCCESS] Gmail: list_labels")
 
     # 2. Verify Calendar Enhancements
     logger.info("Verifying Calendar Service...")
@@ -47,12 +47,12 @@ async def verify_workspace_services():
         # Verify recurrence was passed in body
         call_args = mock_calendar.events().insert.call_args[1]
         assert "recurrence" in call_args["body"]
-        logger.info("✅ Calendar: create_event with recurrence")
+        logger.info("[SUCCESS] Calendar: create_event with recurrence")
 
         # Test Free/Busy
         service.check_free_busy(start, end)
         mock_calendar.freebusy().query.assert_called()
-        logger.info("✅ Calendar: check_free_busy")
+        logger.info("[SUCCESS] Calendar: check_free_busy")
 
     logger.info("Verification complete.")
 
