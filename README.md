@@ -183,7 +183,7 @@ See [Deployment Guide](docs/DEPLOYMENT.md) for detailed instructions.
    - Add services in `apps/modal/modal/Services/`
    - Update configuration in `apps/modal/modal/Config/`
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Backend Issues
 
