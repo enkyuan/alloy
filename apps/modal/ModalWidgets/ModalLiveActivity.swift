@@ -1,25 +1,15 @@
-//
-//  ModalLiveActivity.swift
-//  ModalWidgets
-//
-//  Live Activity widget for Modal voice assistant
-//
 
 import ActivityKit
 import WidgetKit
 import SwiftUI
 
-// MARK: - Live Activity Widget
 
 struct ModalLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ModalActivityAttributes.self) { context in
-            // Lock screen/banner UI
             LiveActivityView(context: context)
         } dynamicIsland: { context in
-            // Dynamic Island UI
             DynamicIsland {
-                // Expanded view
                 DynamicIslandExpandedRegion(.leading) {
                     expandedLeadingView(context: context)
                 }
@@ -33,19 +23,15 @@ struct ModalLiveActivity: Widget {
                     expandedBottomView(context: context)
                 }
             } compactLeading: {
-                // Compact leading (left side of notch)
                 compactLeadingView(context: context)
             } compactTrailing: {
-                // Compact trailing (right side of notch)
                 compactTrailingView(context: context)
             } minimal: {
-                // Minimal view (when multiple activities)
                 minimalView(context: context)
             }
         }
     }
 
-    // MARK: - Compact Views (Dynamic Island)
 
     @ViewBuilder
     private func compactLeadingView(context: ActivityViewContext<ModalActivityAttributes>) -> some View {
@@ -71,7 +57,6 @@ struct ModalLiveActivity: Widget {
             .foregroundStyle(.tint)
     }
 
-    // MARK: - Expanded Views (Dynamic Island)
 
     @ViewBuilder
     private func expandedLeadingView(context: ActivityViewContext<ModalActivityAttributes>) -> some View {
@@ -105,7 +90,6 @@ struct ModalLiveActivity: Widget {
     private func expandedCenterView(context: ActivityViewContext<ModalActivityAttributes>) -> some View {
         VStack(spacing: 8) {
             if let track = context.state.currentTrack {
-                // Music playback info
                 Text(track.name)
                     .font(.headline)
                     .lineLimit(1)
@@ -115,7 +99,6 @@ struct ModalLiveActivity: Widget {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else if let task = context.state.currentTask {
-                // Task info
                 Text(task)
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
@@ -127,11 +110,9 @@ struct ModalLiveActivity: Widget {
     @ViewBuilder
     private func expandedBottomView(context: ActivityViewContext<ModalActivityAttributes>) -> some View {
         if let progress = context.state.taskProgress {
-            // Progress bar for tasks
             ProgressView(value: progress)
                 .tint(.blue)
         } else if context.state.isPlayingMusic {
-            // Music controls placeholder
             HStack(spacing: 20) {
                 Button(intent: SkipPreviousIntent()) {
                     Image(systemName: "backward.fill")
@@ -152,13 +133,11 @@ struct ModalLiveActivity: Widget {
         }
     }
 
-    // MARK: - Lock Screen View
 
     @ViewBuilder
     private func LiveActivityView(context: ActivityViewContext<ModalActivityAttributes>) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                // Icon
                 Image(systemName: statusIcon(for: context.state.status))
                     .font(.title2)
                     .foregroundStyle(.tint)
@@ -166,7 +145,6 @@ struct ModalLiveActivity: Widget {
                     .background(Color.gray.opacity(0.2))
                     .cornerRadius(8)
 
-                // Content
                 VStack(alignment: .leading, spacing: 4) {
                     Text(context.state.status.rawValue)
                         .font(.headline)
@@ -185,13 +163,11 @@ struct ModalLiveActivity: Widget {
 
                 Spacer()
 
-                // Time
                 Text(context.state.updatedAt, style: .relative)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
-            // Progress bar if applicable
             if let progress = context.state.taskProgress {
                 ProgressView(value: progress)
                     .tint(.blue)
@@ -202,7 +178,6 @@ struct ModalLiveActivity: Widget {
         .activitySystemActionForegroundColor(.white)
     }
 
-    // MARK: - Helpers
 
     private func statusIcon(for status: ModalActivityAttributes.ContentState.ActivityStatus) -> String {
         switch status {
@@ -222,13 +197,11 @@ struct ModalLiveActivity: Widget {
     }
 }
 
-// MARK: - App Intents for Controls
 
 struct PlayPauseIntent: AppIntent {
     static var title: LocalizedStringResource = "Play/Pause"
 
     func perform() async throws -> some IntentResult {
-        // TODO: Implement play/pause logic
         return .result()
     }
 }
@@ -237,7 +210,6 @@ struct SkipNextIntent: AppIntent {
     static var title: LocalizedStringResource = "Skip Next"
 
     func perform() async throws -> some IntentResult {
-        // TODO: Implement skip next logic
         return .result()
     }
 }
@@ -246,12 +218,10 @@ struct SkipPreviousIntent: AppIntent {
     static var title: LocalizedStringResource = "Skip Previous"
 
     func perform() async throws -> some IntentResult {
-        // TODO: Implement skip previous logic
         return .result()
     }
 }
 
-// MARK: - Preview
 
 #Preview("Live Activity", as: .content, using: ModalActivityAttributes()) {
     ModalLiveActivity()

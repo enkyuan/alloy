@@ -10,9 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.routers import auth, integrations, stt, gemini
-from app.core.kafka import kafka_service
+from app.core.event_backbone import event_backbone
 from app.core.taskiq import broker
-from app.workers.kafka import start_voice_input_consumer
+from app.workers.consumer import start_stream_consumer
 
 # Configure Rich logging
 setup_logging(debug=settings.DEBUG)
@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await kafka_service.start()
+    await event_backbone.connect()
     await broker.startup()
 
     # Start consumer in background
-    consumer_task = asyncio.create_task(start_voice_input_consumer())
+    consumer_task = asyncio.create_task(start_stream_consumer())
 
     yield
 
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
         pass
 
     await broker.shutdown()
-    await kafka_service.stop()
+    await event_backbone.close()
 
 
 # Create FastAPI app

@@ -1,4 +1,5 @@
 """Discord API service."""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -41,9 +42,9 @@ class DiscordService:
                         "grant_type": "refresh_token",
                         "refresh_token": integration.refresh_token,
                         "client_id": settings.DISCORD_CLIENT_ID,
-                        "client_secret": settings.DISCORD_CLIENT_SECRET
+                        "client_secret": settings.DISCORD_CLIENT_SECRET,
                     },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
 
                 if response.status_code != 200:
@@ -55,7 +56,9 @@ class DiscordService:
                 # Update integration
                 integration.access_token = token_data["access_token"]
                 integration.expires_at = datetime.utcnow() + timedelta(
-                    seconds=token_data.get("expires_in", 604800)  # Discord tokens last 7 days
+                    seconds=token_data.get(
+                        "expires_in", 604800
+                    )  # Discord tokens last 7 days
                 )
                 integration.updated_at = datetime.utcnow()
 
@@ -64,7 +67,9 @@ class DiscordService:
 
                 db.commit()
 
-                logger.info(f"Successfully refreshed Discord token for user {integration.user_id}")
+                logger.info(
+                    f"Successfully refreshed Discord token for user {integration.user_id}"
+                )
                 return integration.access_token
 
         except Exception as e:
@@ -85,8 +90,10 @@ class DiscordService:
             Exception: If token refresh fails
         """
         # Check if token is expired or expires soon (within 1 hour)
-        if integration.expires_at and \
-           integration.expires_at < datetime.utcnow() + timedelta(hours=1):
+        if (
+            integration.expires_at
+            and integration.expires_at < datetime.utcnow() + timedelta(hours=1)
+        ):
             logger.info("Discord token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
@@ -111,7 +118,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -134,7 +141,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me/guilds",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -157,7 +164,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me/connections",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -185,7 +192,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -193,7 +200,9 @@ class DiscordService:
 
             return response.json()
 
-    async def get_guild_channels(self, access_token: str, guild_id: str) -> List[Dict[str, Any]]:
+    async def get_guild_channels(
+        self, access_token: str, guild_id: str
+    ) -> List[Dict[str, Any]]:
         """Get channels in a guild.
 
         Args:
@@ -209,7 +218,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}/channels",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -218,10 +227,7 @@ class DiscordService:
             return response.json()
 
     async def get_guild_members(
-        self,
-        access_token: str,
-        guild_id: str,
-        limit: int = 100
+        self, access_token: str, guild_id: str, limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get members in a guild.
 
@@ -240,7 +246,7 @@ class DiscordService:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}/members",
                 params={"limit": min(limit, 1000)},
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -268,7 +274,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/channels/{channel_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -277,10 +283,7 @@ class DiscordService:
             return response.json()
 
     async def get_channel_messages(
-        self,
-        access_token: str,
-        channel_id: str,
-        limit: int = 50
+        self, access_token: str, channel_id: str, limit: int = 50
     ) -> List[Dict[str, Any]]:
         """Get messages from a channel.
 
@@ -299,7 +302,7 @@ class DiscordService:
             response = await client.get(
                 f"{self.BASE_URL}/channels/{channel_id}/messages",
                 params={"limit": min(limit, 100)},
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -308,11 +311,7 @@ class DiscordService:
             return response.json()
 
     async def send_message(
-        self,
-        access_token: str,
-        channel_id: str,
-        content: str,
-        tts: bool = False
+        self, access_token: str, channel_id: str, content: str, tts: bool = False
     ) -> Dict[str, Any]:
         """Send a message to a channel.
 
@@ -332,7 +331,7 @@ class DiscordService:
             response = await client.post(
                 f"{self.BASE_URL}/channels/{channel_id}/messages",
                 json={"content": content, "tts": tts},
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -341,10 +340,7 @@ class DiscordService:
             return response.json()
 
     async def delete_message(
-        self,
-        access_token: str,
-        channel_id: str,
-        message_id: str
+        self, access_token: str, channel_id: str, message_id: str
     ) -> None:
         """Delete a message.
 
@@ -359,18 +355,14 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
                 raise Exception(f"Failed to delete message: {response.text}")
 
     async def add_reaction(
-        self,
-        access_token: str,
-        channel_id: str,
-        message_id: str,
-        emoji: str
+        self, access_token: str, channel_id: str, message_id: str, emoji: str
     ) -> None:
         """Add a reaction to a message.
 
@@ -386,7 +378,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.put(
                 f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -411,7 +403,7 @@ class DiscordService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/voice/regions",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -440,7 +432,7 @@ class DiscordService:
             response = await client.post(
                 f"{self.BASE_URL}/users/@me/channels",
                 json={"recipient_id": recipient_id},
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
