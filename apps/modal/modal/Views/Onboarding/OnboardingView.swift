@@ -1,18 +1,15 @@
 import SwiftUI
 import GoogleSignIn
 
-/// Main onboarding screen with authentication options
 struct OnboardingView: View {
-    // MARK: - Properties
-    
+
     @State private var viewModel = OnboardingViewModel()
-    @Bindable var authService: AuthenticationService
+    @Bindable var authService: AuthService
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var isAuthenticating = false
-    
-    // MARK: - Body
-    
+
+
     var body: some View {
         VStack(spacing: 0) {
             conversationalTextSection
@@ -34,15 +31,14 @@ struct OnboardingView: View {
             }
         }
     }
-    
-    // MARK: - View Components
-    
+
+
     private var conversationalTextSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             AnimatedText(typing: "Hey Modi,", show: $viewModel.showGreeting)
                 .font(.system(size: 28, weight: .medium))
                 .foregroundColor(.primary.opacity(0.9))
-            
+
             AnimatedText(
                 fadeIn: viewModel.currentPhrase,
                 opacity: viewModel.phraseOpacity,
@@ -59,7 +55,7 @@ struct OnboardingView: View {
         .padding(.horizontal, 32)
         .padding(.top, 80)
     }
-    
+
     private var previewCardSection: some View {
         ZStack {
             switch viewModel.currentPhraseIndex {
@@ -74,7 +70,7 @@ struct OnboardingView: View {
         .padding(.top, 20)
         .padding(.horizontal, 32)
     }
-    
+
     private var authenticationSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             titleSection
@@ -82,13 +78,13 @@ struct OnboardingView: View {
         }
         .padding(.bottom, 40)
     }
-    
+
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Meet Modal")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(.primary)
-            
+
             Text("Your agentic voice assistant")
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -97,7 +93,7 @@ struct OnboardingView: View {
         .padding(.horizontal, 32)
         .padding(.bottom, 16)
     }
-    
+
     private var authButtonsSection: some View {
         VStack(spacing: 12) {
             AuthButton(
@@ -121,7 +117,7 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, 32)
     }
-    
+
     private var loadingOverlay: some View {
         ZStack {
             Color.black.opacity(0.3)
@@ -131,46 +127,44 @@ struct OnboardingView: View {
                 .tint(.white)
         }
     }
-    
-    // MARK: - Authentication Handlers
-    
+
+
     private func handleGoogleSignIn() {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
             showError(message: "Unable to get root view controller")
             return
         }
-        
+
         isAuthenticating = true
-        
-        // Use Google Sign-In SDK
+
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 isAuthenticating = false
                 let nsError = error as NSError
                 if nsError.code == -5 {
-                    print("ℹ️ User cancelled Google Sign-In")
+                    print("User cancelled Google Sign-In")
                     return
                 }
                 showError(message: "Google Sign-In failed: \(error.localizedDescription)")
                 return
             }
-            
+
             guard let result = result,
                   let idToken = result.user.idToken?.tokenString else {
                 isAuthenticating = false
                 showError(message: "Failed to get Google tokens")
                 return
             }
-            
+
             let accessToken = result.user.accessToken.tokenString
-            
-            print("✅ Got Google tokens for: \(result.user.profile?.email ?? "unknown")")
-            
+
+            print("Got Google tokens for: \(result.user.profile?.email ?? "unknown")")
+
             Task { @MainActor in
                 do {
                     try await authService.authenticateWithGoogle(idToken: idToken, accessToken: accessToken)
-                    print("✅ Successfully authenticated!")
+                    print("Successfully authenticated!")
                     isAuthenticating = false
                 } catch {
                     isAuthenticating = false
@@ -179,20 +173,17 @@ struct OnboardingView: View {
             }
         }
     }
-    
+
     private func handleAppleSignIn() {
-        // TODO: Implement Apple Sign In
         print("Apple Sign In tapped")
     }
-    
+
     private func handleEmailSignIn() {
-        // TODO: Implement Email Sign In
         print("Email Sign In tapped")
     }
-    
+
     private func showError(message: String) {
         errorMessage = message
         showError = true
     }
 }
-

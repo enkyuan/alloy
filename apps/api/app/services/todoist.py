@@ -1,4 +1,5 @@
 """Todoist API service."""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -40,9 +41,9 @@ class TodoistService:
                     data={
                         "client_id": settings.TODOIST_CLIENT_ID,
                         "client_secret": settings.TODOIST_CLIENT_SECRET,
-                        "refresh_token": integration.refresh_token
+                        "refresh_token": integration.refresh_token,
                     },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
 
                 if response.status_code != 200:
@@ -59,7 +60,9 @@ class TodoistService:
 
                 db.commit()
 
-                logger.info(f"Successfully refreshed Todoist token for user {integration.user_id}")
+                logger.info(
+                    f"Successfully refreshed Todoist token for user {integration.user_id}"
+                )
                 return integration.access_token
 
         except Exception as e:
@@ -77,8 +80,10 @@ class TodoistService:
             Valid access token
         """
         # Todoist tokens don't expire, but check just in case
-        if integration.expires_at and \
-           integration.expires_at < datetime.utcnow() + timedelta(days=30):
+        if (
+            integration.expires_at
+            and integration.expires_at < datetime.utcnow() + timedelta(days=30)
+        ):
             logger.info("Todoist token expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
@@ -103,7 +108,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/projects",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -127,7 +132,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/projects/{project_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -141,7 +146,7 @@ class TodoistService:
         name: str,
         color: Optional[str] = None,
         parent_id: Optional[str] = None,
-        is_favorite: bool = False
+        is_favorite: bool = False,
     ) -> Dict[str, Any]:
         """Create a new project.
 
@@ -168,7 +173,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/projects",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -182,7 +187,7 @@ class TodoistService:
         project_id: str,
         name: Optional[str] = None,
         color: Optional[str] = None,
-        is_favorite: Optional[bool] = None
+        is_favorite: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Update a project.
 
@@ -211,7 +216,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/projects/{project_id}",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -232,7 +237,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/projects/{project_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -247,7 +252,7 @@ class TodoistService:
         access_token: str,
         project_id: Optional[str] = None,
         label: Optional[str] = None,
-        filter_query: Optional[str] = None
+        filter_query: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get active tasks.
 
@@ -275,7 +280,7 @@ class TodoistService:
             response = await client.get(
                 f"{self.BASE_URL}/tasks",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -299,7 +304,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/tasks/{task_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -316,7 +321,7 @@ class TodoistService:
         due_string: Optional[str] = None,
         due_date: Optional[str] = None,
         priority: int = 1,
-        labels: Optional[List[str]] = None
+        labels: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Create a new task.
 
@@ -352,7 +357,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/tasks",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -369,7 +374,7 @@ class TodoistService:
         due_string: Optional[str] = None,
         due_date: Optional[str] = None,
         priority: Optional[int] = None,
-        labels: Optional[List[str]] = None
+        labels: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Update a task.
 
@@ -407,7 +412,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -428,7 +433,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}/close",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -447,7 +452,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}/reopen",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -466,7 +471,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/tasks/{task_id}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -491,7 +496,7 @@ class TodoistService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/labels",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -504,7 +509,7 @@ class TodoistService:
         access_token: str,
         name: str,
         color: Optional[str] = None,
-        is_favorite: bool = False
+        is_favorite: bool = False,
     ) -> Dict[str, Any]:
         """Create a new label.
 
@@ -528,7 +533,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/labels",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -544,7 +549,7 @@ class TodoistService:
         self,
         access_token: str,
         task_id: Optional[str] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get comments for a task or project.
 
@@ -569,7 +574,7 @@ class TodoistService:
             response = await client.get(
                 f"{self.BASE_URL}/comments",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -582,7 +587,7 @@ class TodoistService:
         access_token: str,
         content: str,
         task_id: Optional[str] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a comment on a task or project.
 
@@ -608,7 +613,7 @@ class TodoistService:
             response = await client.post(
                 f"{self.BASE_URL}/comments",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:

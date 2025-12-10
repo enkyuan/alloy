@@ -1,40 +1,26 @@
-//
-//  ModalActivityAttributes.swift
-//  modal
-//
-//  Live Activity attributes for displaying app state on Dynamic Island and Lock Screen
-//
 
 import ActivityKit
 import Foundation
 
-/// Attributes defining the Live Activity structure for Modal
 struct ModalActivityAttributes: ActivityAttributes {
-    // MARK: - Static Content (doesn't change during activity lifetime)
 
-    /// Content that remains constant throughout the activity
     public struct ContentState: Codable, Hashable {
-        // Current state
         var status: ActivityStatus
         var statusMessage: String
 
-        // Spotify playback (if active)
         var isPlayingMusic: Bool
         var currentTrack: Track?
 
-        // Task/command info
         var currentTask: String?
-        var taskProgress: Double? // 0.0 to 1.0
+        var taskProgress: Double?
 
-        // Timestamp
         var updatedAt: Date
 
-        // MARK: - Nested Types
 
         struct Track: Codable, Hashable {
             let name: String
             let artist: String
-            let albumArt: String? // URL string
+            let albumArt: String?
             let isPlaying: Bool
         }
 
@@ -48,16 +34,12 @@ struct ModalActivityAttributes: ActivityAttributes {
         }
     }
 
-    // MARK: - Fixed Attributes
 
-    /// User-facing name for the activity
     var activityName: String = "Modal Assistant"
 }
 
-// MARK: - Convenience Initializers
 
 extension ModalActivityAttributes.ContentState {
-    /// Create an idle state
     static func idle() -> Self {
         ModalActivityAttributes.ContentState(
             status: .idle,
@@ -70,7 +52,6 @@ extension ModalActivityAttributes.ContentState {
         )
     }
 
-    /// Create a listening state
     static func listening() -> Self {
         ModalActivityAttributes.ContentState(
             status: .listening,
@@ -83,7 +64,6 @@ extension ModalActivityAttributes.ContentState {
         )
     }
 
-    /// Create a processing state
     static func processing(message: String) -> Self {
         ModalActivityAttributes.ContentState(
             status: .processing,
@@ -96,7 +76,6 @@ extension ModalActivityAttributes.ContentState {
         )
     }
 
-    /// Create a music playing state
     static func playingMusic(track: Track) -> Self {
         ModalActivityAttributes.ContentState(
             status: .playingMusic,
@@ -109,7 +88,6 @@ extension ModalActivityAttributes.ContentState {
         )
     }
 
-    /// Create a task execution state
     static func executingTask(task: String, progress: Double?) -> Self {
         ModalActivityAttributes.ContentState(
             status: .executingTask,

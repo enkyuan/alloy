@@ -74,15 +74,8 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Modal API"
 
-    # Kafka
-    KAFKA_BOOTSTRAP_SERVERS: str = "kafka:9092"
-    KAFKA_CLIENT_ID: str = "modal-api"
-
-    # RabbitMQ
-    RABBITMQ_URL: str = "amqp://admin:admin@rabbitmq:5672/"
-
     # TaskIQ
-    TASKIQ_BROKER: str = "rabbitmq"  # Options: redis, rabbitmq
+    TASKIQ_BROKER: str = "redis"  # Options: redis
     TASKIQ_RESULT_BACKEND: str = "redis"
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)

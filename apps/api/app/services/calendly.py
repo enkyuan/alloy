@@ -1,4 +1,5 @@
 """Calendly API service."""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -41,9 +42,9 @@ class CalendlyService:
                         "grant_type": "refresh_token",
                         "refresh_token": integration.refresh_token,
                         "client_id": settings.CALENDLY_CLIENT_ID,
-                        "client_secret": settings.CALENDLY_CLIENT_SECRET
+                        "client_secret": settings.CALENDLY_CLIENT_SECRET,
                     },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"}
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
 
                 if response.status_code != 200:
@@ -64,7 +65,9 @@ class CalendlyService:
 
                 db.commit()
 
-                logger.info(f"Successfully refreshed Calendly token for user {integration.user_id}")
+                logger.info(
+                    f"Successfully refreshed Calendly token for user {integration.user_id}"
+                )
                 return integration.access_token
 
         except Exception as e:
@@ -85,8 +88,10 @@ class CalendlyService:
             Exception: If token refresh fails
         """
         # Check if token is expired or expires soon (within 5 minutes)
-        if integration.expires_at and \
-           integration.expires_at < datetime.utcnow() + timedelta(minutes=5):
+        if (
+            integration.expires_at
+            and integration.expires_at < datetime.utcnow() + timedelta(minutes=5)
+        ):
             logger.info("Calendly token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
@@ -111,7 +116,7 @@ class CalendlyService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/me",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -124,10 +129,7 @@ class CalendlyService:
     # ============================================================================
 
     async def get_event_types(
-        self,
-        access_token: str,
-        user_uri: str,
-        active: Optional[bool] = None
+        self, access_token: str, user_uri: str, active: Optional[bool] = None
     ) -> List[Dict[str, Any]]:
         """Get user's event types.
 
@@ -150,7 +152,7 @@ class CalendlyService:
             response = await client.get(
                 f"{self.BASE_URL}/event_types",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -158,7 +160,9 @@ class CalendlyService:
 
             return response.json().get("collection", [])
 
-    async def get_event_type(self, access_token: str, event_type_uuid: str) -> Dict[str, Any]:
+    async def get_event_type(
+        self, access_token: str, event_type_uuid: str
+    ) -> Dict[str, Any]:
         """Get a specific event type.
 
         Args:
@@ -174,7 +178,7 @@ class CalendlyService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/event_types/{event_type_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -194,7 +198,7 @@ class CalendlyService:
         status: Optional[str] = None,
         min_start_time: Optional[str] = None,
         max_start_time: Optional[str] = None,
-        count: int = 20
+        count: int = 20,
     ) -> List[Dict[str, Any]]:
         """Get scheduled events.
 
@@ -229,7 +233,7 @@ class CalendlyService:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -238,9 +242,7 @@ class CalendlyService:
             return response.json().get("collection", [])
 
     async def get_scheduled_event(
-        self,
-        access_token: str,
-        event_uuid: str
+        self, access_token: str, event_uuid: str
     ) -> Dict[str, Any]:
         """Get a specific scheduled event.
 
@@ -257,7 +259,7 @@ class CalendlyService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -266,10 +268,7 @@ class CalendlyService:
             return response.json().get("resource", {})
 
     async def cancel_scheduled_event(
-        self,
-        access_token: str,
-        event_uuid: str,
-        reason: Optional[str] = None
+        self, access_token: str, event_uuid: str, reason: Optional[str] = None
     ) -> None:
         """Cancel a scheduled event.
 
@@ -289,7 +288,7 @@ class CalendlyService:
             response = await client.post(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}/cancellation",
                 json=data if data else None,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -304,7 +303,7 @@ class CalendlyService:
         access_token: str,
         event_uuid: str,
         status: Optional[str] = None,
-        count: int = 100
+        count: int = 100,
     ) -> List[Dict[str, Any]]:
         """Get invitees for a scheduled event.
 
@@ -328,7 +327,7 @@ class CalendlyService:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}/invitees",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -336,11 +335,7 @@ class CalendlyService:
 
             return response.json().get("collection", [])
 
-    async def get_invitee(
-        self,
-        access_token: str,
-        invitee_uuid: str
-    ) -> Dict[str, Any]:
+    async def get_invitee(self, access_token: str, invitee_uuid: str) -> Dict[str, Any]:
         """Get a specific invitee.
 
         Args:
@@ -356,7 +351,7 @@ class CalendlyService:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/invitees/{invitee_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -374,7 +369,7 @@ class CalendlyService:
         url: str,
         events: List[str],
         organization_uri: str,
-        scope: str = "organization"
+        scope: str = "organization",
     ) -> Dict[str, Any]:
         """Create a webhook subscription.
 
@@ -395,14 +390,14 @@ class CalendlyService:
             "url": url,
             "events": events,
             "organization": organization_uri,
-            "scope": scope
+            "scope": scope,
         }
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.BASE_URL}/webhook_subscriptions",
                 json=data,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 201]:
@@ -411,10 +406,7 @@ class CalendlyService:
             return response.json().get("resource", {})
 
     async def get_webhooks(
-        self,
-        access_token: str,
-        organization_uri: str,
-        scope: Optional[str] = None
+        self, access_token: str, organization_uri: str, scope: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get webhook subscriptions.
 
@@ -437,7 +429,7 @@ class CalendlyService:
             response = await client.get(
                 f"{self.BASE_URL}/webhook_subscriptions",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
@@ -458,7 +450,7 @@ class CalendlyService:
         async with httpx.AsyncClient() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/webhook_subscriptions/{webhook_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code not in [200, 204]:
@@ -469,9 +461,7 @@ class CalendlyService:
     # ============================================================================
 
     async def get_organization_membership(
-        self,
-        access_token: str,
-        user_uri: str
+        self, access_token: str, user_uri: str
     ) -> Dict[str, Any]:
         """Get user's organization membership.
 
@@ -491,11 +481,13 @@ class CalendlyService:
             response = await client.get(
                 f"{self.BASE_URL}/organization_memberships",
                 params=params,
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
             if response.status_code != 200:
-                raise Exception(f"Failed to get organization membership: {response.text}")
+                raise Exception(
+                    f"Failed to get organization membership: {response.text}"
+                )
 
             collection = response.json().get("collection", [])
             return collection[0] if collection else {}

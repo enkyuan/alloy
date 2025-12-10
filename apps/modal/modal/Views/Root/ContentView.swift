@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// Root view that routes between authenticated and unauthenticated states
 struct ContentView: View {
-    @State private var authService = AuthenticationService()
+    @State private var authService = AuthService()
     private var integrationService = IntegrationService.shared
     @State private var showIntegrations = false
     @State private var hasCompletedOnboarding = false
-    
+
     var body: some View {
         Group {
             if authService.isAuthenticated && hasCompletedOnboarding {
@@ -14,7 +13,6 @@ struct ContentView: View {
             } else {
                 OnboardingView(authService: authService)
                     .sheet(isPresented: $showIntegrations, onDismiss: {
-                        // Complete onboarding when integrations modal is dismissed
                         if authService.isAuthenticated {
                             hasCompletedOnboarding = true
                         }
@@ -23,7 +21,6 @@ struct ContentView: View {
                     }
                     .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
                         if isAuthenticated {
-                            // Show integrations modal after authentication
                             showIntegrations = true
                         }
                     }
@@ -32,9 +29,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Previews
 
 #Preview("Content View") {
     ContentView()
 }
-

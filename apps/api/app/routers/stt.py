@@ -23,7 +23,7 @@ from app.services.spotify import (
 )
 from app.services.pipeline.voice import voice_agent_service
 from app.services.pipeline.gemini import get_gemini_service
-from app.core.kafka import kafka_service
+from app.core.event_backbone import event_backbone
 import uuid
 from datetime import datetime
 
@@ -598,27 +598,20 @@ async def stream_transcribe(
                             )
                             logger.info(f"Final tokens: {final_text}")
 
-                            # Publish to Kafka
+                            # Publish to Redis Event Backbone
                             try:
                                 logger.info(
-                                    f"Publishing final transcription to Kafka for user {user_id}"
+                                    f"Publishing final transcription to Redis for user {user_id}"
                                 )
-                                await kafka_service.send_message(
-                                    "voice.input",
-                                    {
-                                        "user_id": user_id,
-                                        "session_id": session_id,
-                                        "text": final_text,
-                                        "timestamp": datetime.utcnow().isoformat(),
-                                        "metadata": {"source": "soniox"},
-                                    },
+                                await event_backbone.produce_voice_input(
+                                    user_id=user_id, text=final_text
                                 )
                                 logger.info(
-                                    f"Successfully published to voice.input: {final_text[:50]}..."
+                                    f"Successfully published to stream:voice_input: {final_text[:50]}..."
                                 )
                             except Exception as e:
                                 logger.error(
-                                    f"Failed to publish to Kafka: {e}", exc_info=True
+                                    f"Failed to publish to Redis: {e}", exc_info=True
                                 )
 
                     # Check if session finished
@@ -628,9 +621,7 @@ async def stream_transcribe(
                         await websocket.send_json(
                             {"type": "complete", "text": complete_text}
                         )
-                        logger.info(
-                            f"Session finished. Complete text: {complete_text}"
-                        )
+                        logger.info(f"Session finished. Complete text: {complete_text}")
                         break
 
             except websockets.exceptions.ConnectionClosed:

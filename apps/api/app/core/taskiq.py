@@ -1,8 +1,7 @@
 from typing import Optional
 
 from taskiq import TaskiqEvents
-from taskiq_aio_pika import AioPikaBroker
-from taskiq_redis import RedisAsyncResultBackend
+from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from app.core.config import settings
 
@@ -12,8 +11,8 @@ result_backend = RedisAsyncResultBackend(
 )
 
 # Configure Broker
-broker = AioPikaBroker(
-    url=settings.RABBITMQ_URL,
+broker = ListQueueBroker(
+    url=settings.REDIS_URL,
     result_backend=result_backend,
 )
 
