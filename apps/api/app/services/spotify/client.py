@@ -1,7 +1,7 @@
 """Spotify API client for low-level API operations."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -53,10 +53,10 @@ class SpotifyClient:
 
                 # Update integration
                 integration.access_token = token_data["access_token"]
-                integration.expires_at = datetime.utcnow() + timedelta(
+                integration.expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=token_data.get("expires_in", 3600)
                 )
-                integration.updated_at = datetime.utcnow()
+                integration.updated_at = datetime.now(timezone.utc)
 
                 # Spotify doesn't always return new refresh token
                 if "refresh_token" in token_data:
@@ -89,7 +89,7 @@ class SpotifyClient:
         # Check if token is expired or expires soon (within 5 minutes)
         if (
             integration.expires_at
-            and integration.expires_at < datetime.utcnow() + timedelta(minutes=5)
+            and integration.expires_at < datetime.now(timezone.utc) + timedelta(minutes=5)
         ):
             logger.info("Token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)

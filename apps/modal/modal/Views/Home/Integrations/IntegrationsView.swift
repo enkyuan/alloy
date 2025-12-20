@@ -12,78 +12,82 @@ struct IntegrationsView: View {
     @State private var isCheckingIntegrations = false
     @SwiftUI.Environment(\.dismiss) private var dismiss
 
-
-    init(authService: AuthService, integrationService: IntegrationService, isOnboarding: Bool = false) {
+    init(
+        authService: AuthService, integrationService: IntegrationService, isOnboarding: Bool = false
+    ) {
         self.authService = authService
         self.integrationService = integrationService
         self.isOnboarding = isOnboarding
     }
 
-
     private var hasConnectedIntegrations: Bool {
-        integrationService.isConnected(.spotify) ||
-        integrationService.isConnected(.gmail) ||
-        integrationService.isConnected(.googleCalendar)
+        integrationService.isConnected(.spotify) || integrationService.isConnected(.gmail)
+            || integrationService.isConnected(.googleCalendar)
     }
-
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        Text("Link your favorite apps to unlock Modal's full potential")
-                            .font(.system(size: 16, weight: .regular))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        integrationsGrid
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                }
-
-                footerSection
-            }
-            .background(Color(uiColor: .systemBackground))
-            .navigationTitle("Add Integrations")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                if !isOnboarding {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.secondary)
+            mainContent
+                .toolbar {
+                    if !isOnboarding {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(action: { dismiss() }) {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                 }
-            }
-            .interactiveDismissDisabled(isOnboarding)
-            .task {
-                await refreshIntegrations()
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK") { }
-            } message: {
-                Text(errorMessage)
-            }
-            .alert("Disconnect Service", isPresented: $showDisconnectAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Disconnect", role: .destructive) {
+                .interactiveDismissDisabled(isOnboarding)
+                .task {
+                    await refreshIntegrations()
+                }
+                .alert("Error", isPresented: $showError) {
+                    Button("OK") {}
+                } message: {
+                    Text(errorMessage)
+                }
+                .alert("Disconnect Service", isPresented: $showDisconnectAlert) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Disconnect", role: .destructive) {
+                        if let service = serviceToDisconnect {
+                            disconnectService(service)
+                        }
+                    }
+                } message: {
                     if let service = serviceToDisconnect {
-                        disconnectService(service)
+                        Text(
+                            "Are you sure you want to disconnect \(service.displayName)? You can reconnect it anytime."
+                        )
                     }
                 }
-            } message: {
-                if let service = serviceToDisconnect {
-                    Text("Are you sure you want to disconnect \(service.displayName)? You can reconnect it anytime.")
-                }
-            }
         }
     }
 
+    private var mainContent: some View {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(spacing: 20) {
+                    Text("Link your favorite apps to unlock Modal's full potential")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    integrationsGrid
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 120)  // Extra padding for footer
+            }
+
+            footerSection
+        }
+        .background(Color(uiColor: .systemBackground))
+        .navigationTitle("Add Integrations")
+        .navigationBarTitleDisplayMode(.large)
+    }
 
     private var integrationsGrid: some View {
         VStack(spacing: 16) {
@@ -186,21 +190,55 @@ struct IntegrationsView: View {
     }
 
     private var footerSection: some View {
-        Button(action: { dismiss() }) {
-            Text(hasConnectedIntegrations ? "Continue" : "Skip for now")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(hasConnectedIntegrations ? Color.green : Color.black)
-                .cornerRadius(16)
-                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hasConnectedIntegrations)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 20)
-        .background(Color(uiColor: .systemBackground))
-    }
+        VStack(spacing: 0) {
+            // Progressive blur overlay that blurs content behind
+            ZStack {
+                // Visual effect blur with progressive intensity
+                VisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+                    .frame(height: 80)
 
+                // Gradient overlay for progressive fade to solid background
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: Color(uiColor: .systemBackground).opacity(0.4), location: 0.6),
+                        .init(color: Color(uiColor: .systemBackground), location: 1.0),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 80)
+            }
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black.opacity(0.3), location: 0.3),
+                        .init(color: .black, location: 1.0),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
+            // Button section with solid background
+            Button(action: { dismiss() }) {
+                Text(hasConnectedIntegrations ? "Continue" : "Skip for now")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(hasConnectedIntegrations ? Color.green : Color.black)
+                    .cornerRadius(16)
+                    .animation(
+                        .spring(response: 0.3, dampingFraction: 0.7),
+                        value: hasConnectedIntegrations)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 20)
+            .background(Color(uiColor: .systemBackground))
+        }
+    }
 
     private func handleIntegration(_ service: IntegrationService.ServiceType) {
         if integrationService.isConnected(service) {
@@ -217,18 +255,22 @@ struct IntegrationsView: View {
                 try await integrationService.connectService(service, authService: authService)
             } catch let error as IntegrationError {
                 guard case .userCancelled = error else {
-                    errorMessage = "Failed to connect \(service.displayName): \(error.localizedDescription)"
+                    errorMessage =
+                        "Failed to connect \(service.displayName): \(error.localizedDescription)"
                     showError = true
                     return
                 }
                 print("User cancelled \(service.displayName) connection")
             } catch {
                 let nsError = error as NSError
-                if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession" && nsError.code == 1 {
+                if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession"
+                    && nsError.code == 1
+                {
                     print("User cancelled OAuth flow")
                     return
                 }
-                errorMessage = "Failed to connect \(service.displayName): \(error.localizedDescription)"
+                errorMessage =
+                    "Failed to connect \(service.displayName): \(error.localizedDescription)"
                 showError = true
             }
         }
@@ -239,7 +281,8 @@ struct IntegrationsView: View {
             do {
                 try await integrationService.disconnectService(service, authService: authService)
             } catch {
-                errorMessage = "Failed to disconnect \(service.displayName): \(error.localizedDescription)"
+                errorMessage =
+                    "Failed to disconnect \(service.displayName): \(error.localizedDescription)"
                 showError = true
             }
         }
@@ -259,3 +302,16 @@ struct IntegrationsView: View {
 
 }
 
+// MARK: - VisualEffectView Helper
+
+private struct VisualEffectView: UIViewRepresentable {
+    var effect: UIVisualEffect?
+
+    func makeUIView(context: UIViewRepresentableContext<Self>) -> UIVisualEffectView {
+        UIVisualEffectView()
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: UIViewRepresentableContext<Self>) {
+        uiView.effect = effect
+    }
+}

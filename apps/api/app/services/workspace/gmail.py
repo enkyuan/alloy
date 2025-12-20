@@ -93,7 +93,7 @@ class GmailService:
             HttpError: If Gmail API request fails
         """
         try:
-            request_params = {"userId": "me", "maxResults": max_results}
+            request_params: Dict[str, Any] = {"userId": "me", "maxResults": max_results}
 
             if query:
                 request_params["q"] = query

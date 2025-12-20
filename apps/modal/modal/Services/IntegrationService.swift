@@ -1,15 +1,14 @@
-import Foundation
-import AuthenticationServices
 import Auth
-import Supabase
+import AuthenticationServices
+import Foundation
 import GoogleSignIn
+import Supabase
 
 @MainActor
 @Observable
 class IntegrationService {
 
     static let shared = IntegrationService()
-
 
     enum ServiceType: String {
         case spotify
@@ -53,7 +52,6 @@ class IntegrationService {
         }
     }
 
-
     private var connectedServices: Set<ServiceType> = [] {
         didSet {
             saveConnectedServices()
@@ -69,14 +67,12 @@ class IntegrationService {
         !connectedServices.isEmpty
     }
 
-
     nonisolated private init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
         Task { @MainActor in
             self.loadConnectedServices()
         }
     }
-
 
     func fetchConnectedIntegrations(authService: AuthService) async throws {
         guard let session = authService.session else {
@@ -90,7 +86,8 @@ class IntegrationService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+            httpResponse.statusCode == 200
+        else {
             throw IntegrationError.fetchFailed
         }
 
@@ -112,7 +109,9 @@ class IntegrationService {
             }
         }
 
-        print("Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))")
+        print(
+            "Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))"
+        )
     }
 
     func isConnected(_ service: ServiceType) -> Bool {
@@ -142,7 +141,8 @@ class IntegrationService {
             print("Received callback - Code: \(code.prefix(20))..., State: \(state.prefix(20))...")
 
             print("Step 3: Exchanging authorization code...")
-            try await exchangeCode(code: code, state: state, accessToken: session.accessToken, service: service)
+            try await exchangeCode(
+                code: code, state: state, accessToken: session.accessToken, service: service)
 
             DispatchQueue.main.async {
                 self.connectedServices.insert(service)
@@ -159,13 +159,15 @@ class IntegrationService {
         }
     }
 
-    private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws {
+    private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws
+    {
         guard let session = authService.session else {
             throw IntegrationError.notAuthenticated
         }
 
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let rootViewController = windowScene.windows.first?.rootViewController else {
+            let rootViewController = windowScene.windows.first?.rootViewController
+        else {
             throw IntegrationError.oauthFailed
         }
 
@@ -174,12 +176,12 @@ class IntegrationService {
         case .gmail:
             scopes = [
                 "https://www.googleapis.com/auth/gmail.readonly",
-                "https://www.googleapis.com/auth/gmail.send"
+                "https://www.googleapis.com/auth/gmail.send",
             ]
         case .googleCalendar:
             scopes = [
                 "https://www.googleapis.com/auth/calendar.readonly",
-                "https://www.googleapis.com/auth/calendar.events"
+                "https://www.googleapis.com/auth/calendar.events",
             ]
         default:
             throw IntegrationError.oauthFailed
@@ -219,7 +221,8 @@ class IntegrationService {
                 }
 
                 guard let result = result,
-                      let idToken = result.user.idToken?.tokenString else {
+                    let idToken = result.user.idToken?.tokenString
+                else {
                     print("Failed to get Google tokens after scope request")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
                     return
@@ -277,7 +280,7 @@ class IntegrationService {
 
         let body: [String: String] = [
             "id_token": idToken,
-            "access_token": accessToken
+            "access_token": accessToken,
         ]
 
         request.httpBody = try JSONEncoder().encode(body)
@@ -302,7 +305,8 @@ class IntegrationService {
             throw IntegrationError.notAuthenticated
         }
 
-        let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
+        let url = URL(
+            string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
@@ -310,7 +314,8 @@ class IntegrationService {
         let (_, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
+            httpResponse.statusCode == 200
+        else {
             throw IntegrationError.disconnectFailed
         }
 
@@ -319,11 +324,16 @@ class IntegrationService {
         print("Successfully disconnected \(service.displayName)")
     }
 
-
-    private func exchangeCode(code: String, state: String, accessToken: String, service: ServiceType) async throws {
+    private func exchangeCode(
+        code: String, state: String, accessToken: String, service: ServiceType
+    ) async throws {
         guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/exchange?code=\(encodedCode)&state=\(encodedState)") else {
+            let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            let url = URL(
+                string:
+                    "\(backendURL)/integrations/\(service.backendServiceName)/exchange?code=\(encodedCode)&state=\(encodedState)"
+            )
+        else {
             print("Failed to encode OAuth parameters for \(service.displayName)")
             throw IntegrationError.oauthFailed
         }
@@ -387,7 +397,9 @@ class IntegrationService {
         }
     }
 
-    private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (code: String, state: String) {
+    private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (
+        code: String, state: String
+    ) {
         return try await withCheckedThrowingContinuation { continuation in
             self.authSession = ASWebAuthenticationSession(
                 url: url,
@@ -398,7 +410,8 @@ class IntegrationService {
                 if let error = error {
                     let nsError = error as NSError
                     if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession"
-                        && nsError.code == 1 {
+                        && nsError.code == 1
+                    {
                         print("User cancelled OAuth for \(service.displayName)")
                         continuation.resume(throwing: IntegrationError.userCancelled)
                         return
@@ -416,15 +429,19 @@ class IntegrationService {
 
                 print("Received callback URL: \(callbackURL.absoluteString)")
 
-                guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                      let queryItems = components.queryItems else {
+                guard
+                    let components = URLComponents(
+                        url: callbackURL, resolvingAgainstBaseURL: false),
+                    let queryItems = components.queryItems
+                else {
                     print("Could not parse callback URL components")
                     continuation.resume(throwing: IntegrationError.noCallbackURL)
                     return
                 }
 
                 guard let code = queryItems.first(where: { $0.name == "code" })?.value,
-                      let state = queryItems.first(where: { $0.name == "state" })?.value else {
+                    let state = queryItems.first(where: { $0.name == "state" })?.value
+                else {
                     print("Missing code or state in callback for \(service.displayName)")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
                     return
@@ -447,7 +464,6 @@ class IntegrationService {
         }
     }
 
-
     private func saveConnectedServices() {
         let serviceNames = connectedServices.map { $0.rawValue }
         UserDefaults.standard.set(serviceNames, forKey: connectedServicesKey)
@@ -455,7 +471,10 @@ class IntegrationService {
     }
 
     private func loadConnectedServices() {
-        guard let serviceNames = UserDefaults.standard.array(forKey: connectedServicesKey) as? [String] else {
+        guard
+            let serviceNames = UserDefaults.standard.array(forKey: connectedServicesKey)
+                as? [String]
+        else {
             print("No saved connected services found")
             return
         }
@@ -466,26 +485,31 @@ class IntegrationService {
 
 }
 
-
-class WebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+class WebAuthenticationPresentationContextProvider: NSObject,
+    ASWebAuthenticationPresentationContextProviding
+{
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }),
-              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first else {
-            if let fallbackScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first,
-               let fallbackWindow = fallbackScene.windows.first(where: { $0.isKeyWindow }) ?? fallbackScene.windows.first {
-                return fallbackWindow
-            }
-            print("Warning: Could not find key window for OAuth presentation")
-            return UIWindow()
+        let scenes = UIApplication.shared.connectedScenes
+        let windowScene =
+            scenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+            ?? scenes.compactMap { $0 as? UIWindowScene }.first
+
+        if let windowScene = windowScene {
+            return windowScene.windows.first { $0.isKeyWindow }
+                ?? windowScene.windows.first
+                ?? UIWindow(windowScene: windowScene)
         }
-        return window
+
+        print("Warning: Could not find any UIWindowScene for OAuth presentation")
+        // Fallback: try to create a window with any available window scene
+        if let anyScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            return UIWindow(windowScene: anyScene)
+        }
+        // Last resort: return a basic window (may not work properly for presentation)
+        fatalError("No UIWindowScene available for OAuth presentation")
     }
 }
-
 
 enum IntegrationError: LocalizedError {
     case notAuthenticated

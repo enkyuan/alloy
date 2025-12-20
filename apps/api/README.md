@@ -11,7 +11,7 @@ FastAPI backend for Modal voice assistant with Google OAuth and Supabase integra
 - JWT token refresh
 - OpenAPI documentation
 - Background tasks with TaskIQ
-- Event streaming with Kafka & RabbitMQ
+- Event streaming with Redis
 
 ## Setup
 

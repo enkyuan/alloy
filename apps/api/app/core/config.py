@@ -19,9 +19,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
 
     # Supabase (SUPABASE_KONG_URL is the internal Docker network URL)
-    SUPABASE_KONG_URL: str
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_KONG_URL: Optional[str] = None
     SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_SERVICE_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
     # JWT (for custom tokens if needed)
     JWT_SECRET: str
@@ -48,16 +50,19 @@ class Settings(BaseSettings):
     DISCORD_CLIENT_ID: Optional[str] = None
     DISCORD_CLIENT_SECRET: Optional[str] = None
     DISCORD_REDIRECT_URI: Optional[str] = None
+    DISCORD_API_BASE_URL: str = "https://discord.com/api/v10"
 
     # Todoist OAuth
     TODOIST_CLIENT_ID: Optional[str] = None
     TODOIST_CLIENT_SECRET: Optional[str] = None
     TODOIST_REDIRECT_URI: Optional[str] = None
+    TODOIST_API_BASE_URL: str = "https://api.todoist.com/rest/v2"
 
     # Calendly OAuth
     CALENDLY_CLIENT_ID: Optional[str] = None
     CALENDLY_CLIENT_SECRET: Optional[str] = None
     CALENDLY_REDIRECT_URI: Optional[str] = None
+    CALENDLY_API_BASE_URL: str = "https://api.calendly.com"
 
     # Gmail OAuth (reuses Google OAuth credentials)
     # No separate credentials needed - uses GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
@@ -78,7 +83,18 @@ class Settings(BaseSettings):
     TASKIQ_BROKER: str = "redis"  # Options: redis
     TASKIQ_RESULT_BACKEND: str = "redis"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(
+        env_file=".env", case_sensitive=True, extra="ignore"
+    )
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Fallback logic for Supabase URLs and Keys
+        if not self.SUPABASE_KONG_URL and self.SUPABASE_URL:
+            self.SUPABASE_KONG_URL = self.SUPABASE_URL
+
+        if not self.SUPABASE_SERVICE_ROLE_KEY and self.SUPABASE_SERVICE_KEY:
+            self.SUPABASE_SERVICE_ROLE_KEY = self.SUPABASE_SERVICE_KEY
 
     # Computed properties - Gmail reuses Google OAuth credentials
     @property

@@ -1,13 +1,13 @@
 """Discord API service."""
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.integration import Integration
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DiscordService:
     """Service for Discord API operations."""
 
-    BASE_URL = "https://discord.com/api/v10"
+    BASE_URL = settings.DISCORD_API_BASE_URL
 
     async def refresh_token(self, integration: Integration, db: Session) -> str:
         """Refresh Discord access token.
@@ -55,12 +55,12 @@ class DiscordService:
 
                 # Update integration
                 integration.access_token = token_data["access_token"]
-                integration.expires_at = datetime.utcnow() + timedelta(
+                integration.expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=token_data.get(
                         "expires_in", 604800
                     )  # Discord tokens last 7 days
                 )
-                integration.updated_at = datetime.utcnow()
+                integration.updated_at = datetime.now(timezone.utc)
 
                 if "refresh_token" in token_data:
                     integration.refresh_token = token_data["refresh_token"]
@@ -92,7 +92,7 @@ class DiscordService:
         # Check if token is expired or expires soon (within 1 hour)
         if (
             integration.expires_at
-            and integration.expires_at < datetime.utcnow() + timedelta(hours=1)
+            and integration.expires_at < datetime.now(timezone.utc) + timedelta(hours=1)
         ):
             logger.info("Discord token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)

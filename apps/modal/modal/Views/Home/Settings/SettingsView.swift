@@ -1,10 +1,10 @@
-
 import SwiftUI
 
 struct SettingsView: View {
 
     @Bindable var authService: AuthService
     @Bindable var integrationService: IntegrationService
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var showIntegrations = false
@@ -12,166 +12,121 @@ struct SettingsView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var showStickyHeader = false
 
-
     var body: some View {
-        ZStack(alignment: .top) {
-            ScrollView {
-                VStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Settings")
-                            .font(.system(size: 34, weight: .bold))
-                            .foregroundStyle(Color(uiColor: .label))
-                            .padding(.horizontal, 20)
-                            .padding(.top, 56)
-                            .padding(.bottom, 16)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        GeometryReader { geometry in
-                            Color.clear.preference(
-                                key: ScrollOffsetPreferenceKey.self,
-                                value: geometry.frame(in: .named("scroll")).minY
-                            )
-                        }
-                    )
-
-                    VStack(spacing: 24) {
-                        VStack(spacing: 0) {
-                            settingsButton(
-                                icon: "app.connected.to.app.below.fill",
-                                iconColor: .blue,
-                                title: "Connected Services",
-                                action: { showIntegrations = true }
-                            )
-                        }
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .cornerRadius(12)
-
-                        VStack(spacing: 0) {
-                            settingsButton(
-                                icon: "waveform",
-                                iconColor: .purple,
-                                title: "Voice & Speech",
-                                action: { /* Coming soon */ }
-                            )
-
-                            Divider()
-                                .padding(.leading, 56)
-
-                            settingsButton(
-                                icon: "globe",
-                                iconColor: .green,
-                                title: "Language",
-                                action: { /* Coming soon */ }
-                            )
-
-                            Divider()
-                                .padding(.leading, 56)
-
-                            settingsButton(
-                                icon: "hand.raised",
-                                iconColor: .orange,
-                                title: "Privacy",
-                                action: { /* Coming soon */ }
-                            )
-                        }
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .cornerRadius(12)
-
-                        VStack(spacing: 0) {
-                            HStack {
-                                HStack(spacing: 12) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.gray)
-                                            .frame(width: 28, height: 28)
-
-                                        Image(systemName: "info.circle")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundStyle(.white)
-                                    }
-
-                                    Text("Version")
-                                        .foregroundStyle(Color(uiColor: .label))
-                                }
-
-                                Spacer()
-                                Text("1.0.0")
-                                    .foregroundStyle(Color(uiColor: .secondaryLabel))
-                            }
-                            .padding(16)
-                        }
-                        .background(Color(uiColor: .secondarySystemBackground))
-                        .cornerRadius(12)
-
-                        Button {
-                            Task {
-                                try? await authService.signOut()
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                    .foregroundStyle(.red)
-                                Text("Sign out")
-                                    .foregroundStyle(.red)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .padding(.bottom, 100)
+        NavigationStack {
+            settingsContent
+                .sheet(isPresented: $showIntegrations) {
+                    IntegrationsView(
+                        authService: authService, integrationService: integrationService)
                 }
-            }
-            .coordinateSpace(name: "scroll")
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                scrollOffset = value
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showStickyHeader = value < -80
-                }
-            }
-
-            if showStickyHeader {
-                VStack(spacing: 0) {
-                    HStack {
-                        Spacer()
-                        Text("Settings")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(Color(uiColor: .label))
-                        Spacer()
+                .alert("Sign Out", isPresented: $showSignOutConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Sign Out", role: .destructive) {
+                        handleSignOut()
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        ZStack {
-                            Color(uiColor: .systemBackground).opacity(0.98)
-                        }
-                    )
+                } message: {
+                    Text("Are you sure you want to sign out?")
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .zIndex(1)
-            }
-        }
-        .sheet(isPresented: $showIntegrations) {
-            IntegrationsView(authService: authService, integrationService: integrationService)
-        }
-        .alert("Sign Out", isPresented: $showSignOutConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Sign Out", role: .destructive) {
-                handleSignOut()
-            }
-        } message: {
-            Text("Are you sure you want to sign out?")
-        }
-        .alert("Error", isPresented: $showError) {
-            Button("OK") { }
-        } message: {
-            Text(errorMessage)
+                .alert("Error", isPresented: $showError) {
+                    Button("OK") {}
+                } message: {
+                    Text(errorMessage)
+                }
+                .coordinateSpace(name: "scroll")
+                .navigationTitle(Text("Settings"))
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 
+    private var settingsContent: some View {
+        List {
+            Section {
+                themeRow(
+                    theme: .system,
+                    title: "System",
+                    subtitle: "Automatic based on device settings",
+                    iconColor: Color(uiColor: .systemGray),
+                    iconTextColor: .white
+                )
+
+                themeRow(
+                    theme: .light,
+                    title: "Light",
+                    subtitle: "Always use the light appearance",
+                    iconColor: .white,
+                    iconTextColor: .black
+                )
+
+                themeRow(
+                    theme: .dark,
+                    title: "Dark",
+                    subtitle: "Always use the dark appearance",
+                    iconColor: .black,
+                    iconTextColor: .white
+                )
+            }
+            .listRowBackground(Color(uiColor: .tertiarySystemGroupedBackground))
+
+            Section {
+                settingsButton(
+                    icon: "app.connected.to.app.below.fill",
+                    iconColor: .blue,
+                    title: "Connected Services",
+                    action: { showIntegrations = true }
+                )
+
+                settingsButton(
+                    icon: "WaveformIcon",
+                    iconColor: .purple,
+                    title: "Voice & Speech",
+                    isSystemIcon: false,
+                    iconSize: 22,
+                    action: { /* Coming soon */  }
+                )
+
+                settingsButton(
+                    icon: "globe",
+                    iconColor: .green,
+                    title: "Language",
+                    action: { /* Coming soon */  }
+                )
+
+                settingsButton(
+                    icon: "hand.raised",
+                    iconColor: .orange,
+                    title: "Privacy",
+                    action: { /* Coming soon */  }
+                )
+            }
+            .listRowBackground(Color(uiColor: .tertiarySystemGroupedBackground))
+
+            Section {
+                Button(action: {
+                    Task {
+                        try? await authService.signOut()
+                    }
+                }) {
+                    HStack {
+                        Spacer()
+                        Text("Sign out")
+                        Spacer()
+                    }
+                    .foregroundStyle(.red)
+                }
+            }
+            .listRowBackground(Color(uiColor: .tertiarySystemGroupedBackground))
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: .systemBackground))
+    }
 
     @ViewBuilder
-    private func settingsButton(icon: String, iconColor: Color, title: String, action: @escaping () -> Void) -> some View {
+    private func settingsButton(
+        icon: String, iconColor: Color, title: String, isSystemIcon: Bool = true,
+        iconSize: CGFloat = 14,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {
@@ -179,9 +134,18 @@ struct SettingsView: View {
                         .fill(iconColor)
                         .frame(width: 28, height: 28)
 
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                    if isSystemIcon {
+                        Image(systemName: icon)
+                            .font(.system(size: iconSize, weight: .semibold))
+                            .foregroundStyle(.white)
+                    } else {
+                        Image(icon)
+                            .resizable()
+                            .renderingMode(.template)
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: iconSize, height: iconSize)
+                            .foregroundStyle(.white)
+                    }
                 }
 
                 Text(title)
@@ -190,14 +154,62 @@ struct SettingsView: View {
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
             }
-            .padding(16)
-            .contentShape(Rectangle())
         }
     }
 
+    @ViewBuilder
+    private func themeRow(
+        theme: AppTheme,
+        title: String,
+        subtitle: String,
+        iconColor: Color,
+        iconTextColor: Color
+    ) -> some View {
+        Button(action: {
+            withAnimation {
+                themeManager.currentTheme = theme
+            }
+        }) {
+            HStack(spacing: 16) {
+                // Icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(iconColor)
+                        .frame(width: 48, height: 48)
+
+                    Text("Aa")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(iconTextColor)
+                }
+
+                // Text
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(Color.primary)
+
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Checkmark
+                if themeManager.currentTheme == theme {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.blue)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
 
     private func handleSignOut() {
         Task {
@@ -216,7 +228,6 @@ struct SettingsView: View {
 #Preview {
     SettingsView(authService: AuthService(), integrationService: IntegrationService.shared)
 }
-
 
 struct ScrollOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0

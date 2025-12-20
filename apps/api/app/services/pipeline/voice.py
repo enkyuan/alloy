@@ -4,8 +4,9 @@ import logging
 import json
 import re
 from dataclasses import dataclass, asdict
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from datetime import datetime, timezone
+from typing import Optional, List
 
 import redis.asyncio as redis
 
@@ -67,7 +68,7 @@ class VoiceAgentService:
                 context.last_command = data_dict.get("last_command")
                 context.last_intent = data_dict.get("last_intent")
                 context.active_device_id = data_dict.get("active_device_id")
-                context.conversation_history = data_dict.get("conversation_history", [])
+                context.conversation_history = data_dict.get("conversation_history") or []
                 context.last_track = data_dict.get("last_track")
                 context.last_artist = data_dict.get("last_artist")
                 context.last_album = data_dict.get("last_album")
@@ -140,7 +141,7 @@ class VoiceAgentService:
             {
                 "command": intent.raw_text,
                 "intent": intent.intent,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "success": result.success if result else None,
             }
         )
@@ -401,7 +402,7 @@ class VoiceAgentService:
                 return f"Did you mean '{track_name}' by {artist_name}?"
 
             # Multiple options
-            suggestions = []
+            suggestions: List[str] = []
             for i, track in enumerate(options[:3], 1):  # Limit to top 3
                 track_name = track.get("name", "")
                 artist_name = track.get("artist", "")
@@ -428,7 +429,7 @@ class VoiceAgentService:
                 artist_name = album.get("artist", "")
                 return f"Did you mean album '{album_name}' by {artist_name}?"
 
-            suggestions = []
+            suggestions: List[str] = []
             for album in options[:3]:
                 album_name = album.get("name", "")
                 artist_name = album.get("artist", "")

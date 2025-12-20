@@ -1,6 +1,7 @@
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from typing import List
 
 from app.core.taskiq import broker
 from app.core.database import SessionLocal
@@ -79,7 +80,7 @@ async def summarize_emails(user_id: str, count: int = 5) -> str:
         detail_tasks = [fetch_detail(msg["id"]) for msg in messages]
         details = await asyncio.gather(*detail_tasks)
 
-        summary_lines = []
+        summary_lines: List[str] = []
         for msg in details:
             headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
             subject = headers.get("Subject", "(No Subject)")
@@ -129,7 +130,7 @@ async def check_schedule(user_id: str) -> str:
         if not events:
             return "You have no meetings scheduled for today."
 
-        event_lines = []
+        event_lines: List[str] = []
         for event in events:
             start = event["start"].get("dateTime", event["start"].get("date"))
             summary = event.get("summary", "(No Title)")

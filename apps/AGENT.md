@@ -1,6 +1,3 @@
-
-# GEMINI.md
-
 ## Project Context
 **Modal** is an agentic voice assistant engineered for ultra-low latency interaction and complex task execution.
 * **Core Philosophy:** Voice-first design that decouples conversational speed ("Fast Path") from heavy-duty task execution ("Slow Path").

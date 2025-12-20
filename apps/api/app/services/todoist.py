@@ -1,13 +1,13 @@
 """Todoist API service."""
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.integration import Integration
 
 logger = logging.getLogger(__name__)
@@ -16,58 +16,32 @@ logger = logging.getLogger(__name__)
 class TodoistService:
     """Service for Todoist API operations."""
 
-    BASE_URL = "https://api.todoist.com/rest/v2"
+    BASE_URL = settings.TODOIST_API_BASE_URL
 
     async def refresh_token(self, integration: Integration, db: Session) -> str:
         """Refresh Todoist access token.
 
+        Note: Todoist tokens do not expire, so this method just updates
+        our internal expiration timestamp to keep the integration active.
+
         Args:
-            integration: Integration model with refresh token
+            integration: Integration model
             db: Database session
 
         Returns:
-            New access token
-
-        Raises:
-            Exception: If token refresh fails
+            Current access token
         """
-        try:
-            if not integration.refresh_token:
-                raise Exception("No refresh token available")
+        # Todoist tokens don't expire, just extend the database timestamp
+        # to prevent get_valid_token from complaining
+        integration.expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 10)
+        integration.updated_at = datetime.now(timezone.utc)
 
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://todoist.com/oauth/access_token",
-                    data={
-                        "client_id": settings.TODOIST_CLIENT_ID,
-                        "client_secret": settings.TODOIST_CLIENT_SECRET,
-                        "refresh_token": integration.refresh_token,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
+        db.commit()
 
-                if response.status_code != 200:
-                    logger.error(f"Todoist token refresh failed: {response.text}")
-                    raise Exception(f"Failed to refresh token: {response.text}")
-
-                token_data = response.json()
-
-                # Update integration
-                integration.access_token = token_data["access_token"]
-                # Todoist tokens don't expire, but we'll set a far future date
-                integration.expires_at = datetime.utcnow() + timedelta(days=365 * 10)
-                integration.updated_at = datetime.utcnow()
-
-                db.commit()
-
-                logger.info(
-                    f"Successfully refreshed Todoist token for user {integration.user_id}"
-                )
-                return integration.access_token
-
-        except Exception as e:
-            logger.error(f"Failed to refresh Todoist token: {str(e)}", exc_info=True)
-            raise
+        logger.info(
+            f"Successfully extended Todoist token validity for user {integration.user_id}"
+        )
+        return integration.access_token
 
     async def get_valid_token(self, integration: Integration, db: Session) -> str:
         """Get valid access token.
@@ -82,7 +56,7 @@ class TodoistService:
         # Todoist tokens don't expire, but check just in case
         if (
             integration.expires_at
-            and integration.expires_at < datetime.utcnow() + timedelta(days=30)
+            and integration.expires_at < datetime.now(timezone.utc) + timedelta(days=30)
         ):
             logger.info("Todoist token expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
@@ -163,7 +137,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {"name": name, "is_favorite": is_favorite}
+        data: Dict[str, Any] = {"name": name, "is_favorite": is_favorite}
         if color:
             data["color"] = color
         if parent_id:
@@ -204,7 +178,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {}
+        data: Dict[str, Any] = {}
         if name is not None:
             data["name"] = name
         if color is not None:
@@ -341,7 +315,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {"content": content, "priority": priority}
+        data: Dict[str, Any] = {"content": content, "priority": priority}
         if description:
             data["description"] = description
         if project_id:
@@ -394,7 +368,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {}
+        data: Dict[str, Any] = {}
         if content is not None:
             data["content"] = content
         if description is not None:
@@ -525,7 +499,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {"name": name, "is_favorite": is_favorite}
+        data: Dict[str, Any] = {"name": name, "is_favorite": is_favorite}
         if color:
             data["color"] = color
 
@@ -603,7 +577,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        data = {"content": content}
+        data: Dict[str, Any] = {"content": content}
         if task_id:
             data["task_id"] = task_id
         if project_id:

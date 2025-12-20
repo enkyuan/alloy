@@ -1,13 +1,13 @@
 """Calendly API service."""
 
 import logging
-from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.core.config import settings
 from app.models.integration import Integration
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class CalendlyService:
     """Service for Calendly API operations."""
 
-    BASE_URL = "https://api.calendly.com"
+    BASE_URL = settings.CALENDLY_API_BASE_URL
 
     async def refresh_token(self, integration: Integration, db: Session) -> str:
         """Refresh Calendly access token.
@@ -55,10 +55,10 @@ class CalendlyService:
 
                 # Update integration
                 integration.access_token = token_data["access_token"]
-                integration.expires_at = datetime.utcnow() + timedelta(
+                integration.expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=token_data.get("expires_in", 7200)
                 )
-                integration.updated_at = datetime.utcnow()
+                integration.updated_at = datetime.now(timezone.utc)
 
                 if "refresh_token" in token_data:
                     integration.refresh_token = token_data["refresh_token"]
@@ -90,7 +90,7 @@ class CalendlyService:
         # Check if token is expired or expires soon (within 5 minutes)
         if (
             integration.expires_at
-            and integration.expires_at < datetime.utcnow() + timedelta(minutes=5)
+            and integration.expires_at < datetime.now(timezone.utc) + timedelta(minutes=5)
         ):
             logger.info("Calendly token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)

@@ -1,7 +1,7 @@
 """Authentication routes for OAuth and user management."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
@@ -49,6 +49,12 @@ async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_
 
         # Get user from database
         supabase_user = supabase_response.get("user")
+        if not supabase_user:
+            logger.warning("No user found in Supabase response")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found in Supabase"
+            )
+
         user = db.query(User).filter(User.id == supabase_user["id"]).first()
 
         if not user:
@@ -134,13 +140,13 @@ async def sync_user(authorization: str = Header(None), db: Session = Depends(get
                 ),
                 provider_id=supabase_user.get("user_metadata", {}).get("sub"),
                 is_verified=True,
-                last_login=datetime.utcnow(),
+                last_login=datetime.now(timezone.utc),
             )
             db.add(user)
         else:
             # Update existing user
             logger.info(f"Updating existing user: {user.email}")
-            user.last_login = datetime.utcnow()
+            user.last_login = datetime.now(timezone.utc)
             user.is_verified = True
             if not user.avatar_url:
                 user.avatar_url = supabase_user.get("user_metadata", {}).get(

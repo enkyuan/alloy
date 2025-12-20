@@ -1,7 +1,7 @@
 """Google Calendar API service for calendar operations."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 from google.auth.transport.requests import Request
@@ -52,7 +52,7 @@ class GoogleCalendarService:
         """
         try:
             if time_min is None:
-                time_min = datetime.utcnow()
+                time_min = datetime.now(timezone.utc)
 
             params = {
                 "calendarId": calendar_id,
@@ -132,7 +132,7 @@ class GoogleCalendarService:
             HttpError: If Calendar API request fails
         """
         try:
-            event = {
+            event: Dict[str, Any] = {
                 "summary": summary,
                 "start": {
                     "dateTime": start_time.isoformat(),
@@ -305,7 +305,7 @@ class GoogleCalendarService:
         Raises:
             HttpError: If Calendar API request fails
         """
-        time_min = datetime.utcnow()
+        time_min = datetime.now(timezone.utc)
         time_max = time_min + timedelta(days=days)
 
         return self.list_events(
@@ -327,7 +327,7 @@ class GoogleCalendarService:
         Raises:
             HttpError: If Calendar API request fails
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         time_min = now.replace(hour=0, minute=0, second=0, microsecond=0)
         time_max = time_min + timedelta(days=1)
 

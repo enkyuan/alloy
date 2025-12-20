@@ -2,9 +2,9 @@
 
 import logging
 import re
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class CommandContext:
     last_command: Optional[str] = None
     last_intent: Optional[str] = None
     active_device_id: Optional[str] = None
-    conversation_history: list = None
+    conversation_history: List[Dict[str, Any]] = field(default_factory=list)
     timestamp: Optional[datetime] = None
     last_track: Optional[str] = None
     last_artist: Optional[str] = None
@@ -41,10 +41,8 @@ class CommandContext:
 
     def __post_init__(self):
         """Initialize mutable defaults."""
-        if self.conversation_history is None:
-            self.conversation_history = []
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
 
     def is_expired(self) -> bool:
         """Check if context has expired based on timeout.
@@ -55,7 +53,7 @@ class CommandContext:
         if not self.timestamp:
             return True
 
-        elapsed = (datetime.utcnow() - self.timestamp).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
         return elapsed > self.CONTEXT_TIMEOUT_SECONDS
 
     def reset(self) -> None:
@@ -63,7 +61,7 @@ class CommandContext:
         self.last_command = None
         self.last_intent = None
         self.conversation_history = []
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
         self.last_track = None
         self.last_artist = None
         self.last_playlist = None
@@ -72,7 +70,7 @@ class CommandContext:
 
     def update_timestamp(self) -> None:
         """Update timestamp to current time."""
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
 
 
 class CommandParser:

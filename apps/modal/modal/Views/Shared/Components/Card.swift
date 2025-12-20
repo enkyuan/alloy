@@ -7,7 +7,6 @@ struct Card: View {
         case integration(IntegrationData)
     }
 
-
     struct ServicePreviewData {
         let iconName: String
         let serviceName: String
@@ -23,9 +22,7 @@ struct Card: View {
         let action: () -> Void
     }
 
-
     let type: CardType
-
 
     var body: some View {
         switch type {
@@ -35,7 +32,6 @@ struct Card: View {
             integrationCard(data)
         }
     }
-
 
     private func servicePreviewCard(_ data: ServicePreviewData) -> some View {
         Group {
@@ -96,13 +92,10 @@ struct Card: View {
         .cornerRadius(12)
     }
 
-
     private func integrationCard(_ data: IntegrationData) -> some View {
         Button(action: data.action) {
             HStack(spacing: 16) {
-                Image(data.iconName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                AdaptiveIcon(name: data.iconName)
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -143,6 +136,33 @@ struct Card: View {
     }
 }
 
+// MARK: - AdaptiveIcon
+
+private struct AdaptiveIcon: View {
+    let name: String
+
+    var body: some View {
+        if name == "UberLogo" {
+            UberLogoAdaptive()
+        } else {
+            Image(name)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        }
+    }
+}
+
+struct UberLogoAdaptive: View {
+    @SwiftUI.Environment(\.colorScheme) private var colorScheme: ColorScheme
+
+    var body: some View {
+        Image(colorScheme == .dark ? "UberLogoDark" : "UberLogoLight")
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+    }
+}
+
+// MARK: - Convenience Initializers
 
 extension Card {
     static func servicePreview(
@@ -151,12 +171,14 @@ extension Card {
         shimmerText: String,
         albumCover: String? = nil
     ) -> Card {
-        Card(type: .servicePreview(ServicePreviewData(
-            iconName: iconName,
-            serviceName: serviceName,
-            shimmerText: shimmerText,
-            albumCover: albumCover
-        )))
+        Card(
+            type: .servicePreview(
+                ServicePreviewData(
+                    iconName: iconName,
+                    serviceName: serviceName,
+                    shimmerText: shimmerText,
+                    albumCover: albumCover
+                )))
     }
 
     static func integration(
@@ -166,12 +188,15 @@ extension Card {
         isConnected: Bool = false,
         action: @escaping () -> Void
     ) -> Card {
-        Card(type: .integration(IntegrationData(
-            iconName: iconName,
-            serviceName: serviceName,
-            description: description,
-            isConnected: isConnected,
-            action: action
-        )))
+        Card(
+            type: .integration(
+                IntegrationData(
+                    iconName: iconName,
+                    serviceName: serviceName,
+                    description: description,
+                    isConnected: isConnected,
+                    action: action
+                )))
     }
 }
+

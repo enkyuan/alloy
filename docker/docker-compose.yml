@@ -156,6 +156,16 @@ services:
       TASKIQ_BROKER: redis
       TASKIQ_RESULT_BACKEND: redis
 
+      # Supabase
+      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
@@ -409,29 +419,6 @@ services:
       IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION}
     volumes:
       - ./supabase/volumes/storage:/var/lib/storage:z
-
-  functions:
-    container_name: supabase-edge-functions
-    image: supabase/edge-runtime:v1.36.1
-    networks:
-      - modal_network
-    restart: unless-stopped
-    depends_on:
-      analytics:
-        condition: service_healthy
-    environment:
-      JWT_SECRET: ${JWT_SECRET}
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
-    volumes:
-      - ./supabase/volumes/functions:/home/deno/functions:Z
-    command:
-      - start
-      - --main-service
-      - /home/deno/functions/main
 
   meta:
     container_name: supabase-meta

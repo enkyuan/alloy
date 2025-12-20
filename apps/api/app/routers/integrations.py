@@ -4,7 +4,7 @@ import json
 import logging
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -23,8 +23,8 @@ from fastapi import (
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.config import settings
-from app.database import get_db
+from app.core.config import settings
+from app.core.database import get_db
 from app.models.integration import Integration
 from app.models.user import User
 from app.schemas.integration import (
@@ -32,10 +32,10 @@ from app.schemas.integration import (
     IntegrationStatusResponse,
     IntegrationListResponse,
 )
-from app.services.auth import supabase_auth_service
-from app.services.spotify import spotify_service
-from app.services.gmail import get_gmail_service
-from app.services.google_calendar import get_google_calendar_service
+from app.services.user.auth import supabase_auth_service
+from app.services.spotify import spotify_service, spotify_client
+from app.services.workspace.gmail import get_gmail_service
+from app.services.workspace.gcalendar import get_google_calendar_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -99,7 +99,7 @@ async def get_spotify_oauth_url(
         state_data = {
             "user_id": supabase_user["id"],
             "service": "spotify",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await redis_client.setex(
             f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
@@ -200,7 +200,7 @@ async def sync_spotify_integration(
 
         if integration:
             integration.is_active = True
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             integration = Integration(
                 id=str(uuid.uuid4()), user_id=user_id, service="spotify", is_active=True
@@ -311,7 +311,7 @@ async def spotify_exchange_code(
         token_data = token_response.json()
 
         # Calculate token expiration
-        expires_at = datetime.utcnow() + timedelta(
+        expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=token_data.get("expires_in", 3600)
         )
 
@@ -330,7 +330,7 @@ async def spotify_exchange_code(
             existing_integration.expires_at = expires_at
             existing_integration.scope = token_data.get("scope")
             existing_integration.is_active = True
-            existing_integration.updated_at = datetime.utcnow()
+            existing_integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -513,7 +513,7 @@ async def disconnect_service(
 
         # Soft delete - set is_active to False
         integration.is_active = False
-        integration.updated_at = datetime.utcnow()
+        integration.updated_at = datetime.now(timezone.utc)
         db.commit()
 
         logger.info(
@@ -586,10 +586,10 @@ async def get_spotify_playback(
             )
 
         # Get valid token (auto-refreshes if needed)
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Get playback state
-        playback = await spotify_service.get_current_playback(spotify_token)
+        playback = await spotify_client.get_current_playback(spotify_token)
 
         return playback
 
@@ -657,10 +657,10 @@ async def spotify_play(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Play
-        await spotify_service.play(spotify_token, uri, device_id)
+        await spotify_client.play(spotify_token, uri, device_id)
 
         return {"success": True, "message": "Playback started"}
 
@@ -726,10 +726,10 @@ async def spotify_pause(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Pause
-        await spotify_service.pause(spotify_token, device_id)
+        await spotify_client.pause(spotify_token, device_id)
 
         return {"success": True, "message": "Playback paused"}
 
@@ -795,10 +795,10 @@ async def spotify_next(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Skip
-        await spotify_service.skip_next(spotify_token, device_id)
+        await spotify_client.skip_next(spotify_token, device_id)
 
         return {"success": True, "message": "Skipped to next track"}
 
@@ -864,10 +864,10 @@ async def spotify_previous(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Skip back
-        await spotify_service.skip_previous(spotify_token, device_id)
+        await spotify_client.skip_previous(spotify_token, device_id)
 
         return {"success": True, "message": "Skipped to previous track"}
 
@@ -937,10 +937,10 @@ async def spotify_search(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Search
-        results = await spotify_service.search(spotify_token, q, type, limit)
+        results = await spotify_client.search(spotify_token, q, type, limit)
 
         return results
 
@@ -1008,10 +1008,10 @@ async def spotify_set_volume(
             )
 
         # Get valid token
-        spotify_token = await spotify_service.get_valid_token(integration, db)
+        spotify_token = await spotify_client.get_valid_token(integration, db)
 
         # Set volume
-        await spotify_service.set_volume(spotify_token, volume, device_id)
+        await spotify_client.set_volume(spotify_token, volume, device_id)
 
         return {"success": True, "message": f"Volume set to {volume}%"}
 
@@ -1080,7 +1080,7 @@ async def get_gmail_oauth_url(
         state_data = {
             "user_id": supabase_user["id"],
             "service": "gmail",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await redis_client.setex(
             f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
@@ -1235,10 +1235,10 @@ async def gmail_exchange_code(
             # Update existing integration
             integration.access_token = gmail_access_token
             integration.refresh_token = refresh_token
-            integration.expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+            integration.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
             integration.is_active = True
             integration.scope = "gmail.readonly gmail.send gmail.modify"
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -1247,7 +1247,7 @@ async def gmail_exchange_code(
                 service="gmail",
                 access_token=gmail_access_token,
                 refresh_token=refresh_token,
-                expires_at=datetime.utcnow() + timedelta(seconds=expires_in),
+                expires_at=datetime.now(timezone.utc) + timedelta(seconds=expires_in),
                 is_active=True,
                 scope="gmail.readonly gmail.send gmail.modify",
             )
@@ -1346,7 +1346,7 @@ async def connect_gmail_native(
         )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
-        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         if integration:
             # Update existing integration
@@ -1354,7 +1354,7 @@ async def connect_gmail_native(
             integration.expires_at = token_expires_at
             integration.is_active = True
             integration.scope = "gmail.readonly gmail.send"
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -1464,7 +1464,7 @@ async def sync_gmail_from_google_signin(
         )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
-        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         if integration:
             # Update existing integration
@@ -1472,7 +1472,7 @@ async def sync_gmail_from_google_signin(
             integration.expires_at = token_expires_at
             integration.is_active = True
             integration.scope = "gmail.readonly gmail.send gmail.modify"
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -1672,7 +1672,7 @@ async def connect_google_calendar_native(
         )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
-        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         if integration:
             # Update existing integration
@@ -1680,7 +1680,7 @@ async def connect_google_calendar_native(
             integration.expires_at = token_expires_at
             integration.is_active = True
             integration.scope = "calendar.readonly calendar.events"
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -1800,7 +1800,7 @@ async def sync_google_calendar_from_google_signin(
         )
 
         # Note: Google Sign-In tokens typically expire in 1 hour
-        token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         if integration:
             # Update existing integration
@@ -1808,7 +1808,7 @@ async def sync_google_calendar_from_google_signin(
             integration.expires_at = token_expires_at
             integration.is_active = True
             integration.scope = "calendar.readonly calendar.events"
-            integration.updated_at = datetime.utcnow()
+            integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -1983,7 +1983,7 @@ async def get_discord_oauth_url(
         state_data = {
             "user_id": supabase_user["id"],
             "service": "discord",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await redis_client.setex(
             f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
@@ -2134,7 +2134,7 @@ async def discord_exchange_code(
         token_data = token_response.json()
 
         # Calculate token expiration (Discord tokens last 7 days)
-        expires_at = datetime.utcnow() + timedelta(
+        expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=token_data.get("expires_in", 604800)
         )
 
@@ -2153,7 +2153,7 @@ async def discord_exchange_code(
             existing_integration.expires_at = expires_at
             existing_integration.scope = token_data.get("scope")
             existing_integration.is_active = True
-            existing_integration.updated_at = datetime.utcnow()
+            existing_integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -2535,7 +2535,7 @@ async def get_todoist_oauth_url(
         state_data = {
             "user_id": supabase_user["id"],
             "service": "todoist",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await redis_client.setex(
             f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
@@ -2674,7 +2674,7 @@ async def todoist_exchange_code(
         token_data = token_response.json()
 
         # Todoist tokens don't expire, set far future date
-        expires_at = datetime.utcnow() + timedelta(days=365 * 10)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 10)
 
         # Check if integration already exists
         existing_integration = (
@@ -2689,7 +2689,7 @@ async def todoist_exchange_code(
             existing_integration.token_type = "Bearer"
             existing_integration.expires_at = expires_at
             existing_integration.is_active = True
-            existing_integration.updated_at = datetime.utcnow()
+            existing_integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(
@@ -3087,7 +3087,7 @@ async def get_calendly_oauth_url(
         state_data = {
             "user_id": supabase_user["id"],
             "service": "calendly",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         await redis_client.setex(
             f"oauth_state:{state}", OAUTH_STATE_TTL, json.dumps(state_data)
@@ -3227,7 +3227,7 @@ async def calendly_exchange_code(
         token_data = token_response.json()
 
         # Calculate token expiration
-        expires_at = datetime.utcnow() + timedelta(
+        expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=token_data.get("expires_in", 7200)
         )
 
@@ -3246,7 +3246,7 @@ async def calendly_exchange_code(
             existing_integration.expires_at = expires_at
             existing_integration.scope = token_data.get("scope")
             existing_integration.is_active = True
-            existing_integration.updated_at = datetime.utcnow()
+            existing_integration.updated_at = datetime.now(timezone.utc)
         else:
             # Create new integration
             integration = Integration(

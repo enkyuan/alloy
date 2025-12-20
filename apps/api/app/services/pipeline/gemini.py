@@ -1,14 +1,8 @@
 """Google Gemini AI service for conversational AI."""
 
 import logging
+from google import genai
 from typing import Optional, List, Dict, Any
-
-try:
-    from google import genai
-except ImportError:
-    # Fallback if google-genai is not installed
-    genai = None
-
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,7 +55,7 @@ class GeminiService:
             Exception: If generation fails
         """
         try:
-            config = {
+            config: Dict[str, Any] = {
                 "temperature": temperature,
             }
             if max_tokens:
@@ -75,7 +69,7 @@ class GeminiService:
             )
 
             logger.info(f"Generated Gemini response for prompt: {prompt[:50]}...")
-            return response.text
+            return response.text or ""
 
         except Exception as e:
             logger.error(f"Failed to generate Gemini response: {str(e)}", exc_info=True)
@@ -107,7 +101,7 @@ class GeminiService:
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-            config = {
+            config: Dict[str, Any] = {
                 "temperature": temperature,
             }
             if system_instruction:
@@ -121,7 +115,7 @@ class GeminiService:
 
             logger.info(f"Successfully generated chat response")
             logger.debug(f"Response: {response.text[:100]}...")
-            return response.text
+            return response.text or ""
 
         except Exception as e:
             logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
@@ -146,7 +140,7 @@ class GeminiService:
             Text chunks as they are generated
         """
         try:
-            config = {
+            config: Dict[str, Any] = {
                 "temperature": temperature,
             }
             if system_instruction:
