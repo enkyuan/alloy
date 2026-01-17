@@ -1,5 +1,6 @@
 """Integration model for third-party service OAuth tokens."""
 
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship

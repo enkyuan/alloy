@@ -70,7 +70,7 @@ class DiscordService:
                 logger.info(
                     f"Successfully refreshed Discord token for user {integration.user_id}"
                 )
-                return integration.access_token
+                return str(integration.access_token)
 
         except Exception as e:
             logger.error(f"Failed to refresh Discord token: {str(e)}", exc_info=True)
@@ -97,7 +97,7 @@ class DiscordService:
             logger.info("Discord token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
-        return integration.access_token
+        return str(integration.access_token)
 
     # ============================================================================
     # User

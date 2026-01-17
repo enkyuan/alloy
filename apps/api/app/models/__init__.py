@@ -1,8 +1,9 @@
 """Models package."""
 
-from app.models.conversation import Conversation
-from app.models.integration import Integration
-from app.models.user import User
-from app.models.vector_embedding import VectorEmbedding
+from .conversation import Conversation
+from .integration import Integration
+from .message import Message
+from .user import User
+from .vector_embedding import VectorEmbedding
 
-__all__ = ["User", "Integration", "Conversation", "VectorEmbedding"]
+__all__ = ["User", "Integration", "Conversation", "Message", "VectorEmbedding"]

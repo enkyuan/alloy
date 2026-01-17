@@ -68,7 +68,7 @@ class CalendlyService:
                 logger.info(
                     f"Successfully refreshed Calendly token for user {integration.user_id}"
                 )
-                return integration.access_token
+                return str(integration.access_token)
 
         except Exception as e:
             logger.error(f"Failed to refresh Calendly token: {str(e)}", exc_info=True)
@@ -95,7 +95,7 @@ class CalendlyService:
             logger.info("Calendly token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
-        return integration.access_token
+        return str(integration.access_token)
 
     # ============================================================================
     # User
@@ -144,7 +144,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        params = {"user": user_uri}
+        params: Dict[str, str] = {"user": user_uri}
         if active is not None:
             params["active"] = str(active).lower()
 
@@ -217,7 +217,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        params = {"count": count}
+        params: Dict[str, str | int] = {"count": count}
         if user_uri:
             params["user"] = user_uri
         if organization_uri:
@@ -319,7 +319,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        params = {"count": count}
+        params: Dict[str, str | int] = {"count": count}
         if status:
             params["status"] = status
 

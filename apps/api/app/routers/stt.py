@@ -1,125 +1,22 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional, cast
 
 import websockets
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
-from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
-from app.models.integration import Integration
+from app.core.redis import get_redis_client, RedisKeys
+from app.core.events import UserTranscriptionReceived
 from app.services.user.auth import supabase_auth_service
 from app.services.pipeline.soniox import soniox_service
-from app.services.spotify import (
-    spotify_service,
-    spotify_client,
-    NoActiveDeviceError,
-    SearchNoResultsError,
-    SpotifyAPIError,
-    PremiumRequiredError,
-    AuthenticationError,
-)
-from app.services.pipeline.voice import voice_agent_service
-from app.services.pipeline.gemini import get_gemini_service
-from app.core.event_backbone import event_backbone
-import uuid
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stt", tags=["speech-to-text-streaming"])
-
-
-async def get_spotify_integration(user_id: str, db: Session) -> Optional[Integration]:
-    """Get user's Spotify integration.
-
-    Args:
-        user_id: User ID
-        db: Database session
-
-    Returns:
-        Integration object or None if not found
-    """
-    integration = (
-        db.query(Integration)
-        .filter(
-            Integration.user_id == user_id,
-            Integration.service == "spotify",
-            Integration.is_active == True,
-        )
-        .first()
-    )
-    return integration
-
-
-async def generate_ai_response(
-    user_message: str, user_id: str, conversation_history: list = None
-) -> dict:
-    """Generate AI response using Gemini.
-
-    Args:
-        user_message: User's transcribed message
-        user_id: User ID
-        conversation_history: Optional conversation history
-
-    Returns:
-        Response dictionary with AI response or error
-    """
-    try:
-        gemini = get_gemini_service()
-
-        # Build conversation context
-        messages = conversation_history or []
-        messages.append({"role": "user", "content": user_message})
-
-        # System instruction for the voice assistant
-        system_instruction = """You are Modi, a helpful voice assistant. 
-        Keep responses concise and natural for voice interaction.
-        Be friendly, helpful, and conversational.
-        If asked to control Spotify, acknowledge the request but explain that music control is handled separately."""
-
-        # Generate response
-        response_text = await gemini.generate_chat_response(
-            messages=messages, system_instruction=system_instruction, temperature=0.7
-        )
-
-        logger.info(f"Generated AI response for user {user_id}")
-
-        return {
-            "type": "ai_response",
-            "success": True,
-            "text": response_text,
-            "user_message": user_message,
-        }
-
-    except ImportError as e:
-        logger.error(f"Gemini package not installed: {str(e)}", exc_info=True)
-        return {
-            "type": "ai_error",
-            "success": False,
-            "message": "AI service is not available. Please contact support.",
-            "error": "google-genai package not installed",
-        }
-    except ValueError as e:
-        logger.error(f"Gemini configuration error: {str(e)}", exc_info=True)
-        return {
-            "type": "ai_error",
-            "success": False,
-            "message": "AI service is not configured. Please contact support.",
-            "error": str(e),
-        }
-    except Exception as e:
-        logger.error(f"Failed to generate AI response: {str(e)}", exc_info=True)
-        logger.error(f"Error type: {type(e).__name__}")
-        return {
-            "type": "ai_error",
-            "success": False,
-            "message": f"I'm having trouble processing that right now: {str(e)}",
-            "error": str(e),
-            "error_type": type(e).__name__,
-        }
 
 
 async def execute_spotify_command(command_text: str, user_id: str, db: Session) -> dict:
@@ -160,7 +57,7 @@ async def execute_spotify_command(command_text: str, user_id: str, db: Session) 
             }
 
         # Parse command using voice agent
-        intent = voice_agent_service.parse_command(command_text, user_id)
+        intent = await voice_agent_service.parse_command(command_text, user_id)
 
         logger.info(
             f"Executing command for user {user_id}: "
@@ -180,7 +77,7 @@ async def execute_spotify_command(command_text: str, user_id: str, db: Session) 
             }
 
         # Execute command based on intent
-        result = None
+        result: Optional[SpotifyCommandResult] = None
 
         if intent.intent == "play_track":
             result = await spotify_service.search_and_play_track(
@@ -291,17 +188,31 @@ async def execute_spotify_command(command_text: str, user_id: str, db: Session) 
                 "error_code": "UNKNOWN_INTENT",
             }
 
+        if result is None:
+            return {
+                "type": "command_error",
+                "message": "I couldn't execute that command. Please try again.",
+                "error_code": "UNKNOWN_RESULT",
+            }
+
+        voice_result = VoiceCommandResult(
+            success=result.success,
+            message=result.message,
+            data=result.data,
+            error=result.error,
+        )
+
         # Update context with successful command
-        voice_agent_service.update_context(user_id, intent, result)
+        await voice_agent_service.update_context(user_id, intent, voice_result)
 
         # Generate user-friendly response
-        response_message = voice_agent_service.generate_response(result, intent)
+        response_message = voice_agent_service.generate_response(voice_result, intent)
 
         return {
             "type": "command_result",
             "success": True,
             "message": response_message,
-            "data": result.data,
+            "data": voice_result.data,
             "intent": intent.intent,
         }
 
@@ -387,7 +298,7 @@ async def stream_ai_response(
     websocket: WebSocket,
     user_message: str,
     user_id: str,
-    conversation_history: list = None,
+    conversation_history: Optional[list[dict[str, str]]] = None,
 ):
     """Stream AI response chunks to client.
 
@@ -494,6 +405,13 @@ async def stream_transcribe(
             return
 
         user_id = user.get("id")
+        if not user_id:
+            await websocket.send_json(
+                {"type": "error", "message": "User ID missing from token"}
+            )
+            await websocket.close(code=1008)
+            return
+        user_id = str(user_id)
         session_id = str(uuid.uuid4())
         logger.info(f"User {user_id} connected to STT stream (session_id={session_id})")
 
@@ -545,6 +463,7 @@ async def stream_transcribe(
             """Listen for responses from Soniox and forward to client."""
             nonlocal final_tokens
             try:
+                assert soniox_ws is not None
                 async for message in soniox_ws:
                     response = json.loads(message)
 
@@ -603,11 +522,31 @@ async def stream_transcribe(
                                 logger.info(
                                     f"Publishing final transcription to Redis for user {user_id}"
                                 )
-                                await event_backbone.produce_voice_input(
-                                    user_id=user_id, text=final_text
+                                from app.core.redis import get_redis_client, RedisKeys
+                                from app.core.events import UserTranscriptionReceived, EventsRegistry
+                                
+                                redis_conn = await get_redis_client()
+                                
+                                # Create event
+                                event = UserTranscriptionReceived(content=final_text)
+                                event_json = event.model_dump_json()
+                                
+                                # Push to Stream
+                                # Entry format: { "type": "user.transcription", "payload": json_string, "user_id": user_id }
+                                entry = {
+                                    "type": "user.transcription",
+                                    "payload": str(event_json),
+                                    "user_id": str(user_id),
+                                    "timestamp": str(datetime.now(timezone.utc).timestamp()),
+                                }
+                                
+                                await redis_conn.xadd(
+                                    RedisKeys.STREAM_VOICE_INPUT,
+                                    cast(dict[Any, Any], entry),
                                 )
+                                
                                 logger.info(
-                                    f"Successfully published to stream:voice_input: {final_text[:50]}..."
+                                    f"Successfully published to {RedisKeys.STREAM_VOICE_INPUT}: {final_text[:50]}..."
                                 )
                             except Exception as e:
                                 logger.error(

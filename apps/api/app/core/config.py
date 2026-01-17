@@ -89,6 +89,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # No extra runtime overrides.
         # Fallback logic for Supabase URLs and Keys
         if not self.SUPABASE_KONG_URL and self.SUPABASE_URL:
             self.SUPABASE_KONG_URL = self.SUPABASE_URL

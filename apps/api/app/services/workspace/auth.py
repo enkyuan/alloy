@@ -30,7 +30,7 @@ async def get_valid_google_token(integration: Integration, db: Session) -> str:
         integration.expires_at
         and integration.expires_at > datetime.now(timezone.utc) + timedelta(minutes=5)
     ):
-        return integration.access_token
+        return str(integration.access_token)
 
     logger.info(f"Refreshing Google token for user {integration.user_id}")
 
@@ -68,7 +68,7 @@ async def get_valid_google_token(integration: Integration, db: Session) -> str:
             await asyncio.to_thread(db.refresh, integration)
 
             logger.info("Successfully refreshed Google token")
-            return integration.access_token
+            return str(integration.access_token)
 
     except Exception as e:
         logger.error(f"Error refreshing Google token: {e}")

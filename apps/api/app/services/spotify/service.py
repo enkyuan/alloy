@@ -6,6 +6,9 @@ import re
 from functools import wraps
 from typing import Optional, TYPE_CHECKING, Callable, Any
 
+from sqlalchemy.orm import Session
+
+from app.models.integration import Integration
 from app.services.spotify.client import SpotifyClient
 from app.services.spotify.exceptions import (
     SpotifyAPIError,
@@ -98,6 +101,10 @@ class SpotifyService:
             client: SpotifyClient instance for API calls (defaults to singleton)
         """
         self.client = client or spotify_client
+
+    async def get_valid_token(self, integration: Integration, db: Session) -> str:
+        """Get a valid Spotify access token using the client helper."""
+        return await self.client.get_valid_token(integration, db)
 
     def _check_premium_error(self, error: Exception) -> bool:
         """Check if error indicates premium requirement.

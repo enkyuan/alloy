@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List
 
-from app.core.taskiq import broker
+from app.core.broker import broker
 from app.core.database import SessionLocal
 from app.models.integration import Integration
 from app.services.workspace.auth import get_valid_google_token

@@ -55,7 +55,7 @@ class GeminiService:
             Exception: If generation fails
         """
         try:
-            config: Dict[str, Any] = {
+            config: Any = {
                 "temperature": temperature,
             }
             if max_tokens:
@@ -80,16 +80,18 @@ class GeminiService:
         messages: List[Dict[str, str]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.7,
-    ) -> str:
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Any:
         """Generate a response in a chat context.
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
             system_instruction: Optional system instruction
             temperature: Sampling temperature
+            tools: Optional list of tool definitions
 
         Returns:
-            Generated text response
+            Generated response object (containing text or function calls)
         """
         try:
             logger.info(f"Generating chat response with {len(messages)} messages")
@@ -101,12 +103,15 @@ class GeminiService:
                 role = "user" if msg["role"] == "user" else "model"
                 contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
-            config: Dict[str, Any] = {
+            config: Any = {
                 "temperature": temperature,
             }
             if system_instruction:
                 config["system_instruction"] = system_instruction
                 logger.debug(f"Using system instruction: {system_instruction[:100]}...")
+
+            if tools:
+                config["tools"] = tools
 
             logger.info(f"Calling Gemini API with model: {self.model}")
             response = self.client.models.generate_content(
@@ -114,8 +119,14 @@ class GeminiService:
             )
 
             logger.info(f"Successfully generated chat response")
-            logger.debug(f"Response: {response.text[:100]}...")
-            return response.text or ""
+            # Return the full response object to handle function calls
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Messages that failed: {messages}")
+            raise
 
         except Exception as e:
             logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
@@ -140,7 +151,7 @@ class GeminiService:
             Text chunks as they are generated
         """
         try:
-            config: Dict[str, Any] = {
+            config: Any = {
                 "temperature": temperature,
             }
             if system_instruction:

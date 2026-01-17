@@ -2,7 +2,6 @@
 
 import logging
 
-import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,9 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.routers import auth, integrations, stt, gemini
-from app.core.event_backbone import event_backbone
-from app.core.taskiq import broker
-from app.workers.consumer import start_stream_consumer
+from app.core.broker import broker
 
 # Configure Rich logging
 setup_logging(debug=settings.DEBUG)
@@ -23,23 +20,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    await event_backbone.connect()
     await broker.startup()
-
-    # Start consumer in background
-    consumer_task = asyncio.create_task(start_stream_consumer())
 
     yield
 
     # Shutdown
-    consumer_task.cancel()
-    try:
-        await consumer_task
-    except asyncio.CancelledError:
-        pass
-
     await broker.shutdown()
-    await event_backbone.close()
 
 
 # Create FastAPI app

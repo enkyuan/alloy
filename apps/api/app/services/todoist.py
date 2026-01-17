@@ -41,7 +41,7 @@ class TodoistService:
         logger.info(
             f"Successfully extended Todoist token validity for user {integration.user_id}"
         )
-        return integration.access_token
+        return str(integration.access_token)
 
     async def get_valid_token(self, integration: Integration, db: Session) -> str:
         """Get valid access token.
@@ -61,7 +61,7 @@ class TodoistService:
             logger.info("Todoist token expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
-        return integration.access_token
+        return str(integration.access_token)
 
     # ============================================================================
     # Projects

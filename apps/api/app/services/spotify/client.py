@@ -67,7 +67,7 @@ class SpotifyClient:
                 logger.info(
                     f"Successfully refreshed Spotify token for user {integration.user_id}"
                 )
-                return integration.access_token
+                return str(integration.access_token)
 
         except Exception as e:
             logger.error(f"Failed to refresh Spotify token: {str(e)}", exc_info=True)
@@ -94,7 +94,7 @@ class SpotifyClient:
             logger.info("Token expired or expiring soon, refreshing...")
             return await self.refresh_token(integration, db)
 
-        return integration.access_token
+        return str(integration.access_token)
 
     async def get_current_playback(self, access_token: str) -> dict:
         """Get user's current playback state.
@@ -142,7 +142,7 @@ class SpotifyClient:
         if device_id:
             url += f"?device_id={device_id}"
 
-        body = {}
+        body: dict[str, object] = {}
         if uri:
             if uri.startswith("spotify:track:"):
                 body["uris"] = [uri]

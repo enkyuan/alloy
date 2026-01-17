@@ -5,7 +5,7 @@ import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -127,7 +127,7 @@ async def get_spotify_oauth_url(
 
         logger.info(f"Generated Spotify OAuth URL for user {supabase_user['id']}")
 
-        return OAuthURLResponse(auth_url=auth_url, state=state)
+        return OAuthURLResponse(authUrl=auth_url, state=state)
 
     except HTTPException:
         raise
@@ -421,9 +421,8 @@ async def get_user_integrations(
 
         integration_statuses = []
         for integration in integrations:
-            mapped_service = service_name_mapping.get(
-                integration.service, integration.service
-            )
+            service_key = str(integration.service)
+            mapped_service = service_name_mapping.get(service_key, service_key)
             integration_statuses.append(
                 IntegrationStatusResponse(
                     service=mapped_service,
@@ -1108,7 +1107,7 @@ async def get_gmail_oauth_url(
 
         logger.info(f"Generated Gmail OAuth URL for user {supabase_user['id']}")
 
-        return OAuthURLResponse(auth_url=auth_url, state=state)
+        return OAuthURLResponse(authUrl=auth_url, state=state)
 
     except HTTPException:
         raise
@@ -1561,7 +1560,7 @@ async def disconnect_gmail(
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         "https://oauth2.googleapis.com/revoke",
-                        params={"token": integration.access_token},
+                        params={"token": str(integration.access_token)},
                     )
                 logger.info(f"Revoked Gmail token for user {supabase_user['id']}")
             except Exception as e:
@@ -1899,7 +1898,7 @@ async def disconnect_google_calendar(
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         "https://oauth2.googleapis.com/revoke",
-                        params={"token": integration.access_token},
+                        params={"token": str(integration.access_token)},
                     )
                 logger.info(
                     f"Revoked Google Calendar token for user {supabase_user['id']}"
@@ -2006,7 +2005,7 @@ async def get_discord_oauth_url(
         logger.info(f"Using redirect URI: {settings.DISCORD_REDIRECT_URI}")
         logger.info(f"Full OAuth URL: {auth_url}")
 
-        return OAuthURLResponse(auth_url=auth_url, state=state)
+        return OAuthURLResponse(authUrl=auth_url, state=state)
 
     except HTTPException:
         raise
@@ -2554,7 +2553,7 @@ async def get_todoist_oauth_url(
 
         logger.info(f"Generated Todoist OAuth URL for user {supabase_user['id']}")
 
-        return OAuthURLResponse(auth_url=auth_url, state=state)
+        return OAuthURLResponse(authUrl=auth_url, state=state)
 
     except HTTPException:
         raise
@@ -3105,7 +3104,7 @@ async def get_calendly_oauth_url(
 
         logger.info(f"Generated Calendly OAuth URL for user {supabase_user['id']}")
 
-        return OAuthURLResponse(auth_url=auth_url, state=state)
+        return OAuthURLResponse(authUrl=auth_url, state=state)
 
     except HTTPException:
         raise
@@ -3289,7 +3288,7 @@ async def calendly_exchange_code(
 
 @router.get("/calendly/events")
 async def get_calendly_events(
-    status: Optional[str] = Query(None, description="Filter by status"),
+    event_status: Optional[str] = Query(None, description="Filter by status"),
     min_start_time: Optional[str] = Query(
         None, description="Minimum start time (ISO 8601)"
     ),
@@ -3357,12 +3356,18 @@ async def get_calendly_events(
         # Get current user to get user URI
         user_info = await calendly_service.get_current_user(calendly_token)
         user_uri = user_info.get("uri")
+        if user_uri is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Calendly user URI not available",
+            )
+        user_uri = cast(str, user_uri)
 
         # Get events
         events = await calendly_service.get_scheduled_events(
             calendly_token,
             user_uri=user_uri,
-            status=status,
+            status=event_status,
             min_start_time=min_start_time,
             max_start_time=max_start_time,
             count=count,
@@ -3440,6 +3445,12 @@ async def get_calendly_event_types(
         # Get current user to get user URI
         user_info = await calendly_service.get_current_user(calendly_token)
         user_uri = user_info.get("uri")
+        if user_uri is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Calendly user URI not available",
+            )
+        user_uri = cast(str, user_uri)
 
         # Get event types
         event_types = await calendly_service.get_event_types(

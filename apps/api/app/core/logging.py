@@ -24,7 +24,7 @@ LOGGER_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 class LoggerConfig(BaseModel):
     """Logger configuration model."""
 
-    handlers: list
+    handlers: list[logging.Handler]
     format: str | None = None
     date_format: str | None = None
     logger_file: Path | None = None
@@ -52,7 +52,7 @@ def get_logger_config(debug: bool = False) -> LoggerConfig:
     except (OSError, PermissionError):
         logger_file = None
 
-    handlers = []
+    handlers: list[logging.Handler] = []
 
     # Use Rich logging if available
     if RICH_AVAILABLE:
@@ -147,7 +147,7 @@ def setup_logging(debug: bool = False):
     # Configure root logger with Rich handlers
     logging.basicConfig(
         level=logger_config.level,
-        format=logger_config.format,
+        format=logger_config.format or LOGGER_FORMAT,
         datefmt=logger_config.date_format,
         handlers=logger_config.handlers,
         force=True,  # Override any existing configuration
