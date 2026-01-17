@@ -1,0 +1,23 @@
+QApplication: invalid style override 'kvantum' passed, ignoring it.
+	Available styles: qt5ct-style, Windows, Fusion
+[0/1] Planning build
+Building for debugging...
+[0/25] Write sources
+[1/25] Write swift-version-5BD8B568FD16BF8B.txt
+[3/6] Compiling milo SettingsView.swift
+[4/6] Emitting module milo
+[4/7] Compiling milo-App stub.c
+[5/7] Write Objects.LinkFileList
+[6/7] Linking milo-App
+Build complete! (7.22s)
+Planning...
+Waiting for device to be connected...
+Installing to device: Enkang’s iPhone (udid: 00008110-0008158E3460201E)
+
+[Unpacking app] ...[Unpacking app] 100%
+[Preparing device]   0%[Preparing device]  50%[Preparing device] 100%
+[Provisioning]   0%[Provisioning]  33%
+The following certificates must be revoked:
+- Apple Development: Enkang Yuan (expires 9 Feb 2026 at 8:07 PM)
+
+Cancelled.

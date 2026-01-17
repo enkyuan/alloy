@@ -12,47 +12,151 @@ This worker acts as the central brain:
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
 import uuid
-
-from sqlalchemy.orm import Session
-from app.core.database import SessionLocal
+import hashlib
 from app.core.redis import get_redis_client, RedisKeys
-from app.core.events import UserTranscriptionReceived, AgentResponse, ToolCall
+from app.core.events import UserTranscriptionReceived, AgentResponse, ToolCall, ToolResult
+from app.core.config import settings
 from app.services.pipeline.gemini import get_gemini_service
 from app.services.pipeline.tasks import execute_tool_call
+from app.services.integrations import list_tool_specs
+import app.services.integrations.tools  # ensure tool registration
 
 logger = logging.getLogger(__name__)
 
-# Define available tools (schema for Gemini)
-TOOLS = [
-    {
-        "function_declarations": [
-            {
-                "name": "spotify_play",
-                "description": "Play a song, artist, or album on Spotify.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "query": {
-                            "type": "STRING",
-                            "description": "The song, artist, or album name to play."
-                        }
-                    },
-                    "required": ["query"]
+HISTORY_LIMIT = settings.HERMES_HISTORY_LIMIT
+CACHE_TTL_SECONDS = settings.HERMES_CACHE_TTL_SECONDS
+
+SYSTEM_INSTRUCTION = (
+    "You are a helpful voice assistant. "
+    "Use tools to control integrations when needed. "
+    "If a tool result is provided, respond succinctly to the user."
+)
+
+
+def _history_key(user_id: str) -> str:
+    return f"hermes:history:{user_id}"
+
+def _response_cache_key(payload: dict) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"hermes:cache:{digest}"
+
+def _cache_hit_key() -> str:
+    return "hermes:cache:hit"
+
+def _cache_miss_key() -> str:
+    return "hermes:cache:miss"
+
+def _tools_fingerprint() -> list[dict[str, object]]:
+    return [
+        {
+            "name": spec.name,
+            "description": spec.description,
+            "parameters": spec.parameters,
+        }
+        for spec in list_tool_specs()
+    ]
+
+
+async def _append_history(redis, user_id: str, role: str, content: str) -> None:
+    entry = {"role": role, "content": content}
+    await redis.rpush(_history_key(user_id), json.dumps(entry))
+    if HISTORY_LIMIT and HISTORY_LIMIT > 0:
+        await redis.ltrim(_history_key(user_id), -HISTORY_LIMIT, -1)
+
+
+async def _get_history(redis, user_id: str) -> list[dict[str, str]]:
+    raw_items = await redis.lrange(_history_key(user_id), 0, -1)
+    messages: list[dict[str, str]] = []
+    for item in raw_items:
+        try:
+            if isinstance(item, bytes):
+                item = item.decode("utf-8")
+            data = json.loads(item)
+            if isinstance(data, dict) and "role" in data and "content" in data:
+                messages.append(
+                    {"role": str(data["role"]), "content": str(data["content"])}
+                )
+        except Exception:
+            continue
+    return messages
+
+
+async def _dispatch_tool_calls(redis, user_id: str, function_calls) -> None:
+    for fc in function_calls:
+        logger.info(f"LLM requested tool: {fc.name}")
+
+        tool_call_id = str(uuid.uuid4())
+        tool_args = {}
+        if fc.args:
+            for key, value in fc.args.items():
+                tool_args[key] = value
+
+        await execute_tool_call.kiq(
+            user_id=user_id,
+            tool_name=fc.name,
+            tool_args=tool_args,
+            tool_call_id=tool_call_id,
+        )
+
+        tc_event = ToolCall(
+            tool_name=fc.name, tool_args=tool_args, tool_call_id=tool_call_id
+        )
+        await redis.publish(
+            RedisKeys.CHANNEL_USER_UPDATES,
+            json.dumps(
+                {
+                    "type": "tool.call",
+                    "user_id": user_id,
+                    "payload": tc_event.model_dump_json(),
                 }
-            },
+            ),
+        )
+
+
+async def _handle_llm_response(redis, user_id: str, response) -> None:
+    function_calls = []
+    if hasattr(response, "candidates") and response.candidates:
+        for part in response.candidates[0].content.parts:
+            if part.function_call:
+                function_calls.append(part.function_call)
+
+    if function_calls:
+        await _dispatch_tool_calls(redis, user_id, function_calls)
+        return
+
+    response_text = response.text or ""
+    if response_text:
+        await _append_history(redis, user_id, "assistant", response_text)
+    response_event = AgentResponse(content=response_text)
+    await redis.publish(
+        RedisKeys.CHANNEL_USER_UPDATES,
+        json.dumps(
             {
-                "name": "spotify_pause",
-                "description": "Pause Spotify playback.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {},
-                }
+                "type": "agent.response",
+                "user_id": user_id,
+                "payload": response_event.model_dump_json(),
             }
-        ]
-    }
-]
+        ),
+    )
+    logger.info(f"Published agent response: {response_text[:30]}...")
+
+def _build_tools_payload():
+    declarations = []
+    for spec in list_tool_specs():
+        declarations.append(
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.parameters,
+            }
+        )
+    return [{"function_declarations": declarations}] if declarations else []
+
+
+# Define available tools (schema for Gemini)
+TOOLS = _build_tools_payload()
 
 async def process_voice_input_stream():
     """Main loop for consuming voice input events."""
@@ -121,75 +225,128 @@ async def handle_message(data: dict):
     # Call LLM (Gemini) with Tools
     try:
         gemini = get_gemini_service()
-        response = await gemini.generate_chat_response(
-            messages=[{"role": "user", "content": transcription.content}],
-            system_instruction="You are a helpful voice assistant. Use tools to control Spotify.",
-            tools=TOOLS
-        )
-        
-        # Check for function calls
-        # Note: This parsing depends on the exact structure of the google-genai response object
-        # which can be complex. We'll support the 'function_calls' attribute if present.
-        
-        function_calls = []
-        if hasattr(response, "candidates") and response.candidates:
-            for part in response.candidates[0].content.parts:
-                if part.function_call:
-                    function_calls.append(part.function_call)
-
         redis = await get_redis_client()
-
-        if function_calls:
-            for fc in function_calls:
-                logger.info(f"LLM requested tool: {fc.name}")
-                
-                # Dispatch to Taskiq (Slow Path)
-                tool_call_id = str(uuid.uuid4())
-                
-                # Convert args to dict
-                tool_args = {}
-                if fc.args:
-                    for key, value in fc.args.items():
-                        tool_args[key] = value
-
-                await execute_tool_call.kiq(
-                    user_id=user_id,
-                    tool_name=fc.name,
-                    tool_args=tool_args,
-                    tool_call_id=tool_call_id
-                )
-                
-                # Publish ToolCall event to UI
-                tc_event = ToolCall(tool_name=fc.name, tool_args=tool_args, tool_call_id=tool_call_id)
-                await redis.publish(
-                    RedisKeys.CHANNEL_USER_UPDATES,
-                    json.dumps({
-                        "type": "tool.call",
-                        "user_id": user_id,
-                        "payload": tc_event.model_dump_json()
-                    })
-                )
-        
-        else:
-            # Normal text response
-            response_text = response.text or ""
-            response_event = AgentResponse(content=response_text)
-            
+        await _append_history(redis, user_id, "user", transcription.content)
+        history = await _get_history(redis, user_id)
+        cache_payload = {
+            "messages": history,
+            "system": SYSTEM_INSTRUCTION,
+            "tools": _tools_fingerprint(),
+        }
+        cached_response = await redis.get(_response_cache_key(cache_payload))
+        if cached_response:
+            await redis.incr(_cache_hit_key())
+            if isinstance(cached_response, bytes):
+                cached_response = cached_response.decode("utf-8")
+            response_event = AgentResponse(content=str(cached_response))
             await redis.publish(
                 RedisKeys.CHANNEL_USER_UPDATES,
-                json.dumps({
-                    "type": "agent.response",
-                    "user_id": user_id,
-                    "payload": response_event.model_dump_json()
-                })
+                json.dumps(
+                    {
+                        "type": "agent.response",
+                        "user_id": user_id,
+                        "payload": response_event.model_dump_json(),
+                    }
+                ),
             )
-            logger.info(f"Published agent response: {response_text[:30]}...")
+            await _append_history(redis, user_id, "assistant", str(cached_response))
+            return
+        await redis.incr(_cache_miss_key())
+        response = await gemini.generate_chat_response(
+            messages=history,
+            system_instruction=SYSTEM_INSTRUCTION,
+            tools=TOOLS
+        )
+        await _handle_llm_response(redis, user_id, response)
+        if response.text:
+            await redis.setex(
+                _response_cache_key(cache_payload),
+                CACHE_TTL_SECONDS,
+                response.text,
+            )
 
     except Exception as e:
         logger.error(f"LLM Generation failed: {e}", exc_info=True)
+
+
+async def process_tool_results():
+    """Listen for tool results and continue the Hermes loop."""
+    redis = await get_redis_client()
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
+    logger.info("LLM Worker listening for tool results")
+    try:
+        while True:
+            message = await pubsub.get_message(
+                ignore_subscribe_messages=True, timeout=1.0
+            )
+            if message is None:
+                await asyncio.sleep(0)
+                continue
+
+            raw = message.get("data")
+            if not raw:
+                continue
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            if event.get("type") != "tool.result":
+                continue
+
+            payload = event.get("payload")
+            user_id = event.get("user_id")
+            if not payload or not user_id:
+                continue
+
+            try:
+                tool_result = ToolResult.model_validate_json(payload)
+            except Exception:
+                continue
+
+            user_id = str(user_id)
+            summary = tool_result.result_str or tool_result.error or ""
+            if not summary:
+                continue
+
+            await _append_history(
+                redis, user_id, "assistant", f"Tool result for {tool_result.tool_name}: {summary}"
+            )
+            history = await _get_history(redis, user_id)
+            gemini = get_gemini_service()
+            response = await gemini.generate_chat_response(
+                messages=history,
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=TOOLS,
+            )
+            await _handle_llm_response(redis, user_id, response)
+            if response.text:
+                cache_payload = {
+                    "messages": history,
+                    "system": SYSTEM_INSTRUCTION,
+                    "tools": _tools_fingerprint(),
+                }
+                await redis.setex(
+                    _response_cache_key(cache_payload),
+                    CACHE_TTL_SECONDS,
+                    response.text,
+                )
+    finally:
+        await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)
+        await pubsub.close()
 
 if __name__ == "__main__":
     from app.core.config import settings
     # Setup logging
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(process_voice_input_stream())
+    async def _run():
+        await asyncio.gather(
+            process_voice_input_stream(),
+            process_tool_results(),
+        )
+
+    asyncio.run(_run())

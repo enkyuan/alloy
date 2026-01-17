@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.routers import auth, integrations, stt, gemini
+from app.routers import auth, integrations, stt, gemini, tools
 from app.core.broker import broker
 
 # Configure Rich logging
@@ -53,6 +53,7 @@ app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations.router, prefix=settings.API_V1_PREFIX)
 app.include_router(stt.router, prefix=settings.API_V1_PREFIX)
 app.include_router(gemini.router, prefix=settings.API_V1_PREFIX)
+app.include_router(tools.router, prefix=settings.API_V1_PREFIX)
 
 logger.info(f"Starting {settings.PROJECT_NAME}")
 
