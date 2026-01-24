@@ -2,12 +2,6 @@
   <img src="docs/assets/banner.svg" alt="Modal Banner" width="100%" style="border-radius: 16px;" />
 </p>
 
-<p align="center">
-  <b>Modal</b> is an agentic voice assistant engineered for ultra-low latency interaction and complex task execution.
-</p>
-
----
-
 ## Overview
 
 Modal decouples conversational speed from heavy-duty task execution to deliver a voice-first experience that feels instantaneous. It leverages a split-pipeline architecture using Redis streams for real-time voice processing and distributed queues for agentic tools.
@@ -25,28 +19,25 @@ Modal decouples conversational speed from heavy-duty task execution to deliver a
 
 ## Quick Start
 
-> **Prerequisites:** Docker Desktop, Python 3.11+, Xcode 15+
+> **Prerequisites:** Docker Desktop, Python 3.11+, Xcode 15+, [Bun](https://bun.sh)
 
-### Environment Setup
+### CLI Setup & Usage
 
-Initialize configuration and sync environment variables:
+The project is managed via a CLI tool.
 
-```bash
-./scripts/setup.sh
-```
+1. Navigate to the CLI directory:
+   ```bash
+   cd apps/cli
+   ```
 
-### Start Services
+2. Install dependencies:
+   ```bash
+   bun i
+   ```
 
-Launch the Docker stack and build the iOS client:
-
-```bash
-modal-cli startup
-```
-
-Or if running from the CLI directory:
-
-```bash
-cd apps/cli && bun run src/index.ts startup
-```
+3. Run the CLI (opens interactive menu for setup, startup, etc.):
+   ```bash
+   bun dev
+   ```
 
 For detailed manual configuration, please refer to the **[Setup Guide](docs/SETUP.md)**.
