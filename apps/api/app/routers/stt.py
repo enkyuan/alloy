@@ -9,10 +9,10 @@ import websockets
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
-from app.core.redis import get_redis_client, RedisKeys
 from app.core.events import UserTranscriptionReceived
-from app.services.user.auth import supabase_auth_service
+from app.core.redis import RedisKeys, get_redis_client
 from app.services.pipeline.soniox import soniox_service
+from app.services.user.auth import supabase_auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,7 @@ async def publish_transcription(
     }
     if session_id:
         entry["session_id"] = session_id
-    await redis_conn.xadd(
-        RedisKeys.STREAM_VOICE_INPUT, cast(dict[Any, Any], entry)
-    )
+    await redis_conn.xadd(RedisKeys.STREAM_VOICE_INPUT, cast(dict[Any, Any], entry))
 
 
 async def forward_hermes_updates(
@@ -77,6 +75,52 @@ async def forward_hermes_updates(
         await pubsub.close()
 
 
+async def stream_hermes_updates(
+    websocket: WebSocket,
+    redis_conn,
+    user_id: str,
+):
+    """Continuously forward Hermes updates for a user from Redis pubsub to the websocket."""
+    pubsub = redis_conn.pubsub()
+    await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
+    try:
+        while True:
+            try:
+                message = await pubsub.get_message(
+                    ignore_subscribe_messages=True, timeout=1.0
+                )
+                if message is None:
+                    await asyncio.sleep(0.1)
+                    continue
+
+                data = message.get("data")
+                if not data:
+                    continue
+
+                try:
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+
+                if event.get("user_id") != user_id:
+                    continue
+
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.send_json(event)
+                else:
+                    break
+            except Exception as e:
+                logger.error(f"Error relaying Hermes update: {e}")
+                await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        logger.info("Hermes stream task cancelled")
+    finally:
+        await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)
+        await pubsub.close()
+
+
 @router.websocket("/stream")
 async def stream_transcribe(
     websocket: WebSocket,
@@ -95,19 +139,23 @@ async def stream_transcribe(
     - JSON with errors: {"type": "error", "message": "..."}
     """
     await websocket.accept()
+    logger.info("WebSocket connection accepted")
 
     soniox_ws = None
+    hermes_task = None
     final_tokens = []
 
     try:
         # Authenticate via token in query param
         if not token:
+            logger.warning("No authentication token provided")
             await websocket.send_json(
                 {"type": "error", "message": "Missing authentication token"}
             )
             await websocket.close(code=1008)
             return
 
+        logger.info(f"Authenticating user with token: {token[:10]}...")
         user = await supabase_auth_service.get_user(token)
         if not user:
             logger.warning(
@@ -121,6 +169,7 @@ async def stream_transcribe(
 
         user_id = user.get("id")
         if not user_id:
+            logger.error("User object missing ID")
             await websocket.send_json(
                 {"type": "error", "message": "User ID missing from token"}
             )
@@ -128,9 +177,11 @@ async def stream_transcribe(
             return
         user_id = str(user_id)
         session_id = str(uuid.uuid4())
-        logger.info(f"User {user_id} connected to STT stream (session_id={session_id})")
+        logger.info(f"User {user_id} authenticated. Starting STT session {session_id}")
 
+        logger.info("Connecting to Redis...")
         redis_conn = await get_redis_client()
+        logger.info("Redis connected")
 
         # Connect to Soniox WebSocket
         try:
@@ -147,7 +198,7 @@ async def stream_transcribe(
                     "message": f"Failed to connect to transcription service: {str(e)}",
                 }
             )
-            await websocket.close()
+            await websocket.close(code=1011, reason="Soniox connection failed")
             return
 
         # Send Soniox configuration
@@ -176,10 +227,6 @@ async def stream_transcribe(
                     if response.get("error_code"):
                         error_msg = f"Soniox error {response['error_code']}: {response.get('error_message', 'Unknown error')}"
                         logger.error(error_msg)
-                        await websocket.send_json(
-                            {"type": "error", "message": error_msg}
-                        )
-                        continue
                         await websocket.send_json(
                             {"type": "error", "message": error_msg}
                         )
@@ -222,26 +269,6 @@ async def stream_transcribe(
                             )
                             logger.info(f"Final tokens: {final_text}")
 
-                            # Publish to Hermes stream
-                            try:
-                                logger.info(
-                                    f"Publishing final transcription to Redis for user {user_id}"
-                                )
-                                user_id_str = cast(str, user_id)
-                                await publish_transcription(
-                                    redis_conn,
-                                    user_id_str,
-                                    final_text,
-                                    session_id=session_id,
-                                )
-                                logger.info(
-                                    f"Successfully published to {RedisKeys.STREAM_VOICE_INPUT}: {final_text[:50]}..."
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to publish to Redis: {e}", exc_info=True
-                                )
-
                     # Check if session finished
                     if response.get("finished"):
                         # Send complete transcription
@@ -267,12 +294,18 @@ async def stream_transcribe(
         # This prevents 408 timeout on first chunks
         await asyncio.sleep(0.1)
 
+        # Start Hermes listener task
+        hermes_task = asyncio.create_task(
+            stream_hermes_updates(websocket, redis_conn, user_id)
+        )
+
         # Now send ready message to client
         await websocket.send_json({"type": "ready"})
         logger.info("Sent ready signal to client")
 
         # Receive audio chunks and command messages from client
         chunk_count = 0
+        transcription_active = True
         try:
             while True:
                 message = await websocket.receive()
@@ -300,18 +333,7 @@ async def stream_transcribe(
                             await publish_transcription(
                                 redis_conn, user_id, command_text, session_id=session_id
                             )
-                            responded = await forward_hermes_updates(
-                                websocket, redis_conn, user_id, timeout=20.0
-                            )
-                            if not responded:
-                                await websocket.send_json(
-                                    {
-                                        "type": "error",
-                                        "message": "Hermes timed out waiting for a response.",
-                                    }
-                                )
-
-                            logger.info("Command processed via Hermes")
+                            logger.info("Command queued for Hermes")
                             continue
 
                     except json.JSONDecodeError:
@@ -321,11 +343,37 @@ async def stream_transcribe(
                     # Handle END signal
                     if text_data == "END":
                         logger.info("Received END signal from client")
-                        # Send empty frame to Soniox to signal end of audio
-                        await soniox_ws.send("")
-                        # Wait for final response from Soniox
-                        await soniox_task
-                        break
+                        if transcription_active:
+                            transcription_active = False
+                            # Send empty frame to Soniox to signal end of audio
+                            await soniox_ws.send("")
+                            # Wait for final response from Soniox
+                            await soniox_task
+
+                            # Publish the complete transcription to Hermes/Redis now
+                            complete_text = "".join([t["text"] for t in final_tokens])
+                            if complete_text.strip():
+                                try:
+                                    logger.info(
+                                        f"Publishing complete transcription to Redis for user {user_id}"
+                                    )
+                                    await publish_transcription(
+                                        redis_conn,
+                                        user_id,
+                                        complete_text,
+                                        session_id=session_id,
+                                    )
+                                    logger.info(
+                                        f"Successfully published complete utterance: {complete_text[:50]}..."
+                                    )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Failed to publish to Redis: {e}",
+                                        exc_info=True,
+                                    )
+
+                        # Do NOT break here; keep connection open for Hermes updates
+                        continue
 
                 # Handle binary messages (audio chunks)
                 elif "bytes" in message:
@@ -335,23 +383,27 @@ async def stream_transcribe(
                     # Client now sends raw PCM data (no WAV header)
                     # Forward directly to Soniox
                     if len(audio_chunk) > 0:
-                        try:
-                            await soniox_ws.send(audio_chunk)
-                            logger.debug(
-                                f"Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to send chunk #{chunk_count} to Soniox: {e}",
-                                exc_info=True,
-                            )
-                            await websocket.send_json(
-                                {
-                                    "type": "error",
-                                    "message": f"Failed to send audio to transcription service: {str(e)}",
-                                }
-                            )
-                            break
+                        if transcription_active:
+                            try:
+                                await soniox_ws.send(audio_chunk)
+                                logger.debug(
+                                    f"Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to send chunk #{chunk_count} to Soniox: {e}",
+                                    exc_info=True,
+                                )
+                                await websocket.send_json(
+                                    {
+                                        "type": "error",
+                                        "message": f"Failed to send audio to transcription service: {str(e)}",
+                                    }
+                                )
+                                break
+                        else:
+                            # Silently ignore chunks after END
+                            pass
                     else:
                         logger.warning(f"Chunk #{chunk_count}: empty chunk, skipping")
 
@@ -371,6 +423,7 @@ async def stream_transcribe(
         if websocket.client_state == WebSocketState.CONNECTED:
             try:
                 await websocket.send_json({"type": "error", "message": str(e)})
+                await websocket.close(code=1011, reason="Internal server error")
             except:
                 pass
 
@@ -380,6 +433,12 @@ async def stream_transcribe(
             try:
                 await soniox_ws.close()
             except:
+                pass
+        if hermes_task:
+            hermes_task.cancel()
+            try:
+                await hermes_task
+            except asyncio.CancelledError:
                 pass
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()

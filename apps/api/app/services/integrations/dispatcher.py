@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Type
 
 from pydantic import BaseModel
-
 from sqlalchemy.orm import Session
 
 from app.models.integration import Integration
@@ -63,7 +62,6 @@ def tool_spec_from_model(
         "type": "object",
         "properties": schema.get("properties", {}),
         "required": schema.get("required", []),
-        "additionalProperties": False,
     }
     return ToolSpec(name=name, description=description, parameters=parameters)
 

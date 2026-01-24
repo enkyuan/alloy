@@ -13,12 +13,12 @@ import redis.asyncio as redis
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
-    status,
     Header,
+    HTTPException,
     Query,
-    Response,
     Request,
+    Response,
+    status,
 )
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -28,14 +28,14 @@ from app.core.database import get_db
 from app.models.integration import Integration
 from app.models.user import User
 from app.schemas.integration import (
-    OAuthURLResponse,
-    IntegrationStatusResponse,
     IntegrationListResponse,
+    IntegrationStatusResponse,
+    OAuthURLResponse,
 )
+from app.services.spotify import spotify_client, spotify_service
 from app.services.user.auth import supabase_auth_service
-from app.services.spotify import spotify_service, spotify_client
-from app.services.workspace.gmail import get_gmail_service
 from app.services.workspace.gcalendar import get_google_calendar_service
+from app.services.workspace.gmail import get_gmail_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
@@ -1234,7 +1234,9 @@ async def gmail_exchange_code(
             # Update existing integration
             integration.access_token = gmail_access_token
             integration.refresh_token = refresh_token
-            integration.expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+            integration.expires_at = datetime.now(timezone.utc) + timedelta(
+                seconds=expires_in
+            )
             integration.is_active = True
             integration.scope = "gmail.readonly gmail.send gmail.modify"
             integration.updated_at = datetime.now(timezone.utc)
@@ -2039,7 +2041,7 @@ async def discord_oauth_callback(
     )
 
     # Redirect to iOS app with code and state
-    redirect_url = f"modal://discord/callback?code={code}&state={state}"
+    redirect_url = f"milo://discord/callback?code={code}&state={state}"
     logger.info(f"Redirecting to iOS app: {redirect_url}")
 
     return RedirectResponse(url=redirect_url)
@@ -2583,7 +2585,7 @@ async def todoist_oauth_callback(
         Redirect to iOS app with code and state
     """
     # Redirect to iOS app with code and state
-    redirect_url = f"modal://todoist/callback?code={code}&state={state}"
+    redirect_url = f"milo://todoist/callback?code={code}&state={state}"
     return RedirectResponse(url=redirect_url)
 
 
@@ -3134,7 +3136,7 @@ async def calendly_oauth_callback(
         Redirect to iOS app with code and state
     """
     # Redirect to iOS app with code and state
-    redirect_url = f"modal://calendly/callback?code={code}&state={state}"
+    redirect_url = f"milo://calendly/callback?code={code}&state={state}"
     return RedirectResponse(url=redirect_url)
 
 

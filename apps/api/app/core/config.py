@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # Spotify OAuth
     SPOTIFY_CLIENT_ID: Optional[str] = None
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
-    SPOTIFY_REDIRECT_URI: str = "modal://spotify/callback"
+    SPOTIFY_REDIRECT_URI: str = "milo://spotify/callback"
 
     # Discord OAuth
     DISCORD_CLIENT_ID: Optional[str] = None
@@ -73,6 +73,7 @@ class Settings(BaseSettings):
 
     # Google Gemini AI
     GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3-flash-preview"
 
     # Application
     DEBUG: bool = False

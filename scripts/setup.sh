@@ -20,7 +20,7 @@ PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 DOCKER_ENV="$PROJECT_ROOT/docker/.env"
 SUPABASE_ENV="$PROJECT_ROOT/docker/supabase/.env"
 API_ENV="$PROJECT_ROOT/apps/api/.env"
-IOS_CONFIG="$PROJECT_ROOT/apps/modal/Config.xcconfig"
+IOS_CONFIG="$PROJECT_ROOT/apps/milo/Config.xcconfig"
 
 echo -e "${BLUE}=== Modal Environment Configuration ===${NC}\n"
 
@@ -37,14 +37,14 @@ create_jwt() {
     local role=$1
     local secret=$2
     local expiry=$3
-    
+
     header='{"alg":"HS256","typ":"JWT"}'
     payload="{\"iss\":\"supabase\",\"role\":\"$role\",\"iat\":$(date +%s),\"exp\":$expiry}"
-    
+
     header_base64=$(echo -n "$header" | base64url_encode)
     payload_base64=$(echo -n "$payload" | base64url_encode)
     signature=$(echo -n "${header_base64}.${payload_base64}" | openssl dgst -sha256 -hmac "$secret" -binary | base64url_encode)
-    
+
     echo "${header_base64}.${payload_base64}.${signature}"
 }
 
@@ -53,7 +53,7 @@ update_env_var() {
     local file=$1
     local key=$2
     local value=$3
-    
+
     if grep -q "^${key}=" "$file" 2>/dev/null; then
         sed -i.tmp "s|^${key}=.*|${key}=${value}|" "$file" && rm -f "$file.tmp"
     else
@@ -154,7 +154,7 @@ PROJECT_NAME=Modal API
 API_PORT=8080
 API_EXTERNAL_URL=http://localhost:8000
 SITE_URL=http://localhost:3000
-ADDITIONAL_REDIRECT_URLS=modal://auth/callback,modal://spotify/callback
+ADDITIONAL_REDIRECT_URLS=milo://auth/callback,milo://spotify/callback
 DISABLE_SIGNUP=false
 
 # Email Configuration
@@ -237,7 +237,7 @@ APPLE_PRIVATE_KEY=
 # OAuth - Spotify
 SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-SPOTIFY_REDIRECT_URI=modal://spotify/callback
+SPOTIFY_REDIRECT_URI=milo://spotify/callback
 
 # Gmail OAuth
 GMAIL_REDIRECT_URI=http://localhost:8080/api/v1/integrations/gmail/callback
@@ -281,7 +281,7 @@ APPLE_PRIVATE_KEY=
 # Spotify OAuth
 SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-SPOTIFY_REDIRECT_URI=modal://spotify/callback
+SPOTIFY_REDIRECT_URI=milo://spotify/callback
 
 # Gmail OAuth
 GMAIL_REDIRECT_URI=http://localhost:8080/api/v1/integrations/gmail/callback
@@ -345,7 +345,7 @@ GOTRUE_EXTERNAL_APPLE_SECRET=
 ENABLE_SPOTIFY_OAUTH=true
 SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
 SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
-SPOTIFY_REDIRECT_URI=modal://spotify/callback
+SPOTIFY_REDIRECT_URI=milo://spotify/callback
 
 GMAIL_REDIRECT_URI=http://localhost:8080/api/v1/integrations/gmail/callback
 
@@ -410,13 +410,13 @@ echo -e "\n${BLUE}=== iOS Configuration ===${NC}"
 
 if [ -f "$IOS_CONFIG" ]; then
     echo -e "${YELLOW}iOS Config.xcconfig found${NC}"
-    
+
     # Get current SUPABASE_URL if it exists
     CURRENT_SUPABASE_URL=""
     if grep -q "^SUPABASE_URL" "$IOS_CONFIG"; then
         CURRENT_SUPABASE_URL=$(grep "^SUPABASE_URL" "$IOS_CONFIG" | sed 's/.*= //' | sed 's|http:/\$()/||' | sed 's|https:/\$()/||')
     fi
-    
+
     # Ask user for SUPABASE_URL
     echo -e "\n${YELLOW}Enter SUPABASE_URL for iOS app:${NC}"
     echo -e "  Examples:"
@@ -431,7 +431,7 @@ if [ -f "$IOS_CONFIG" ]; then
         read -p "SUPABASE_URL [localhost:8000]: " IOS_SUPABASE_URL
         IOS_SUPABASE_URL=${IOS_SUPABASE_URL:-localhost:8000}
     fi
-    
+
     # Determine protocol
     if [[ "$IOS_SUPABASE_URL" == *".loca.lt"* ]] || [[ "$IOS_SUPABASE_URL" == *".ngrok"* ]] || [[ "$IOS_SUPABASE_URL" == *".tunn.dev"* ]] || [[ "$IOS_SUPABASE_URL" == "https://"* ]]; then
         PROTOCOL="https"
@@ -440,24 +440,24 @@ if [ -f "$IOS_CONFIG" ]; then
         PROTOCOL="http"
         IOS_SUPABASE_URL=${IOS_SUPABASE_URL#http://}
     fi
-    
+
     # Format for xcconfig (with $() escape)
     FORMATTED_URL="${PROTOCOL}:/\$()/${IOS_SUPABASE_URL}"
-    
+
     # Update or add SUPABASE_URL
     if grep -q "^SUPABASE_URL" "$IOS_CONFIG"; then
         sed -i.tmp "s|^SUPABASE_URL.*|SUPABASE_URL = ${FORMATTED_URL}|" "$IOS_CONFIG" && rm -f "$IOS_CONFIG.tmp"
     else
         echo "SUPABASE_URL = ${FORMATTED_URL}" >> "$IOS_CONFIG"
     fi
-    
+
     # Update or add SUPABASE_ANON_KEY
     if grep -q "^SUPABASE_ANON_KEY" "$IOS_CONFIG"; then
         sed -i.tmp "s|^SUPABASE_ANON_KEY.*|SUPABASE_ANON_KEY = ${ANON_KEY}|" "$IOS_CONFIG" && rm -f "$IOS_CONFIG.tmp"
     else
         echo "SUPABASE_ANON_KEY = ${ANON_KEY}" >> "$IOS_CONFIG"
     fi
-    
+
     echo -e "${GREEN}✓ Updated iOS Config.xcconfig${NC}"
     echo -e "  SUPABASE_URL = ${FORMATTED_URL}"
     echo -e "  SUPABASE_ANON_KEY = [SYNCED]"
@@ -470,7 +470,7 @@ echo -e "Files synced:"
 echo -e "  - ${GREEN}docker/.env${NC}"
 echo -e "  - ${GREEN}docker/supabase/.env${NC}"
 echo -e "  - ${GREEN}apps/api/.env${NC}"
-echo -e "  - ${GREEN}apps/modal/Config.xcconfig${NC}"
+echo -e "  - ${GREEN}apps/milo/Config.xcconfig${NC}"
 echo -e "\nSynced values:"
 echo -e "  JWT Secret:        ${GREEN}[SYNCED]${NC}"
 echo -e "  ANON Key:          ${GREEN}[SYNCED]${NC}"
@@ -509,5 +509,6 @@ fi
 cd "$PROJECT_ROOT"
 
 echo -e "\n${BLUE}=== Next Steps ===${NC}"
-echo -e "1. Update iOS config: ${GREEN}apps/modal/Config.xcconfig${NC}"
-echo -e "2. Run startup script: ${GREEN}./scripts/startup.sh${NC}\n"
+echo -e "1. Update iOS config: ${GREEN}apps/milo/Config.xcconfig${NC}"
+echo -e "2. Run startup: ${GREEN}modal-cli startup${NC}"
+echo -e "   Or: ${GREEN}cd apps/cli && bun run src/index.ts startup${NC}\n"

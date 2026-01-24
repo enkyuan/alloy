@@ -5,7 +5,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 try:
     from rich.console import Console
@@ -23,6 +23,8 @@ LOGGER_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 
 class LoggerConfig(BaseModel):
     """Logger configuration model."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     handlers: list[logging.Handler]
     format: str | None = None

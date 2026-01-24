@@ -146,11 +146,12 @@ async def chat_completion(
 
         # Generate response
         gemini = get_gemini_service()
-        response_text = await gemini.generate_chat_response(
+        response = await gemini.generate_chat_response(
             messages=messages,
             system_instruction=request.system_instruction,
             temperature=request.temperature,
         )
+        response_text = response.text or ""
 
         logger.info(f"Generated chat response for user {supabase_user['id']}")
 

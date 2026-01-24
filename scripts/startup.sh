@@ -50,7 +50,7 @@ wait_for_service() {
     done
 
     echo -e "\n${RED}✗ ${service_name} failed to become healthy${NC}"
-    
+
     # Show helpful troubleshooting info for database
     if [ "$service_name" = "supabase-db" ]; then
         echo -e "${YELLOW}Troubleshooting tips:${NC}"
@@ -59,7 +59,7 @@ wait_for_service() {
         echo -e "  3. Run ${GREEN}./scripts/setup.sh${NC} to regenerate configuration"
         echo -e "  4. Try a full cleanup: ${GREEN}docker compose down -v${NC} then restart"
     fi
-    
+
     return 1
 }
 
@@ -104,15 +104,15 @@ start_all_services() {
     # Start all services
     echo -e "${YELLOW}Starting all services...${NC}"
     docker compose up -d
-    
+
     echo -e "${GREEN}✓ All services starting...${NC}"
     echo -e "${YELLOW}Note: Services may take 30-60 seconds to become healthy.${NC}"
-    
+
     # Wait for critical services to be healthy
     echo -e "\n${YELLOW}Waiting for critical services to be healthy...${NC}"
     wait_for_service "supabase-db" || echo -e "${YELLOW}⚠️  Database may still be starting up${NC}"
     wait_for_service "modal-redis" || echo -e "${YELLOW}⚠️  Redis may still be starting up${NC}"
-    
+
     echo -e "\n${GREEN}✓ Core services are healthy${NC}"
 
     cd "$PROJECT_ROOT"
@@ -211,7 +211,7 @@ build_ios_app() {
 
     # Build the app
     echo -e "\n${YELLOW}Building app...${NC}"
-    cd "$PROJECT_ROOT/apps/modal"
+    cd "$PROJECT_ROOT/apps/milo"
 
     # Determine if xcpretty is available
     if command -v xcpretty &> /dev/null; then
@@ -224,8 +224,8 @@ build_ios_app() {
     set -o pipefail
 
     xcodebuild \
-        -project modal.xcodeproj \
-        -scheme modal \
+        -project milo.xcodeproj \
+        -scheme milo \
         -sdk iphonesimulator \
         -destination "id=$SIMULATOR_UDID" \
         -configuration Debug \
@@ -244,10 +244,10 @@ build_ios_app() {
         echo -e "\n${YELLOW}Installing app on simulator...${NC}"
 
         # Find the built app (check local build dir first, then DerivedData)
-        APP_PATH=$(find "$PROJECT_ROOT/apps/modal/build" -name "modal.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
+        APP_PATH=$(find "$PROJECT_ROOT/apps/milo/build" -name "milo.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
 
         if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "modal.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "milo.app" -type d -path "*Build/Products/Debug-iphonesimulator*" 2>/dev/null | head -n 1)
         fi
 
         if [ -n "$APP_PATH" ]; then
@@ -268,7 +268,7 @@ build_ios_app() {
 
             # Launch app on the selected simulator
             echo -e "\n${YELLOW}Launching app on ${SELECTED_SIM}...${NC}"
-            if xcrun simctl launch "$SIMULATOR_UDID" com.app.modal 2>&1; then
+            if xcrun simctl launch "$SIMULATOR_UDID" com.modal.milo 2>&1; then
                 echo -e "${GREEN}✓ App launched successfully on ${SELECTED_SIM}${NC}"
                 echo -e "\n${CYAN}════════════════════════════════════════${NC}"
                 echo -e "${GREEN}✓ Build and Launch Complete!${NC}"
@@ -447,16 +447,16 @@ configure_tunnel() {
 
     # Update iOS Config.xcconfig
     echo -e "${YELLOW}Updating iOS Config.xcconfig...${NC}"
-    if [ -f "$PROJECT_ROOT/apps/modal/Config.xcconfig" ]; then
+    if [ -f "$PROJECT_ROOT/apps/milo/Config.xcconfig" ]; then
         # Format for xcconfig (with $() escape)
-        FORMATTED_SUPABASE="${SUPABASE_PROTOCOL}:/\$()/${SUPABASE_HOST}"
-        FORMATTED_API="${API_PROTOCOL}:/\$()/${API_HOST}"
-        FORMATTED_WS="${WS_PROTOCOL}:/\$()/${API_HOST}"
+        FORMATTED_SUPABASE="${SUPABASE_PROTOCOL}:/"'$()'"/${SUPABASE_HOST}"
+        FORMATTED_API="${API_PROTOCOL}:/"'$()'"/${API_HOST}"
+        FORMATTED_WS="${WS_PROTOCOL}:/"'$()'"/${API_HOST}"
 
-        sed -i.bak "s|^API_BASE_URL = .*|API_BASE_URL = ${FORMATTED_API}/api/v1|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
-        sed -i.bak "s|^WEBSOCKET_URL = .*|WEBSOCKET_URL = ${FORMATTED_WS}/api/v1|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
-        sed -i.bak "s|^SUPABASE_URL = .*|SUPABASE_URL = ${FORMATTED_SUPABASE}|" "$PROJECT_ROOT/apps/modal/Config.xcconfig"
-        rm -f "$PROJECT_ROOT/apps/modal/Config.xcconfig.bak"
+        sed -i.bak "s|^API_BASE_URL = .*|API_BASE_URL = ${FORMATTED_API}/api/v1|" "$PROJECT_ROOT/apps/milo/Config.xcconfig"
+        sed -i.bak "s|^WEBSOCKET_URL = .*|WEBSOCKET_URL = ${FORMATTED_WS}/api/v1|" "$PROJECT_ROOT/apps/milo/Config.xcconfig"
+        sed -i.bak "s|^SUPABASE_URL = .*|SUPABASE_URL = ${FORMATTED_SUPABASE}|" "$PROJECT_ROOT/apps/milo/Config.xcconfig"
+        rm -f "$PROJECT_ROOT/apps/milo/Config.xcconfig.bak"
         echo -e "${GREEN}✓ Updated Config.xcconfig${NC}"
     fi
 
@@ -648,7 +648,7 @@ while true; do
             build_ios_app
             ;;
         4)
-            configure_tunnel      
+            configure_tunnel
             ;;
         5)
             stop_services

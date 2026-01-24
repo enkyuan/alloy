@@ -10,17 +10,23 @@ This worker acts as the central brain:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import uuid
-import hashlib
-from app.core.redis import get_redis_client, RedisKeys
-from app.core.events import UserTranscriptionReceived, AgentResponse, ToolCall, ToolResult
+
+import app.services.integrations.tools  # ensure tool registration
 from app.core.config import settings
+from app.core.events import (
+    AgentResponse,
+    ToolCall,
+    ToolResult,
+    UserTranscriptionReceived,
+)
+from app.core.redis import RedisKeys, get_redis_client
+from app.services.integrations import list_tool_specs
 from app.services.pipeline.gemini import get_gemini_service
 from app.services.pipeline.tasks import execute_tool_call
-from app.services.integrations import list_tool_specs
-import app.services.integrations.tools  # ensure tool registration
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +43,20 @@ SYSTEM_INSTRUCTION = (
 def _history_key(user_id: str) -> str:
     return f"hermes:history:{user_id}"
 
+
 def _response_cache_key(payload: dict) -> str:
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return f"hermes:cache:{digest}"
 
+
 def _cache_hit_key() -> str:
     return "hermes:cache:hit"
 
+
 def _cache_miss_key() -> str:
     return "hermes:cache:miss"
+
 
 def _tools_fingerprint() -> list[dict[str, object]]:
     return [
@@ -118,17 +128,32 @@ async def _dispatch_tool_calls(redis, user_id: str, function_calls) -> None:
 async def _handle_llm_response(redis, user_id: str, response) -> None:
     function_calls = []
     if hasattr(response, "candidates") and response.candidates:
-        for part in response.candidates[0].content.parts:
-            if part.function_call:
-                function_calls.append(part.function_call)
+        candidate = response.candidates[0]
+        if (
+            hasattr(candidate, "content")
+            and candidate.content
+            and hasattr(candidate.content, "parts")
+            and candidate.content.parts
+        ):
+            for part in candidate.content.parts:
+                if part.function_call:
+                    function_calls.append(part.function_call)
 
     if function_calls:
         await _dispatch_tool_calls(redis, user_id, function_calls)
         return
 
     response_text = response.text or ""
-    if response_text:
-        await _append_history(redis, user_id, "assistant", response_text)
+    if not response_text:
+        logger.warning("Gemini returned an empty response")
+        # Don't send "Sorry" here if it was just a transient overload or empty safety block
+        # just logging warning is often enough, or we can send a fallback.
+        # But if we crashed before, we definitely sent nothing.
+        # Let's send a fallback only if we really got nothing.
+        if not function_calls:
+            response_text = "Sorry, I couldn't generate a response right now."
+
+    await _append_history(redis, user_id, "assistant", response_text)
     response_event = AgentResponse(content=response_text)
     await redis.publish(
         RedisKeys.CHANNEL_USER_UPDATES,
@@ -141,6 +166,7 @@ async def _handle_llm_response(redis, user_id: str, response) -> None:
         ),
     )
     logger.info(f"Published agent response: {response_text[:30]}...")
+
 
 def _build_tools_payload():
     declarations = []
@@ -158,17 +184,18 @@ def _build_tools_payload():
 # Define available tools (schema for Gemini)
 TOOLS = _build_tools_payload()
 
+
 async def process_voice_input_stream():
     """Main loop for consuming voice input events."""
     redis = await get_redis_client()
-    
+
     # Create consumer group if not exists
     try:
         await redis.xgroup_create(
             RedisKeys.STREAM_VOICE_INPUT,
             RedisKeys.GROUP_LLM_WORKER,
             id="0",
-            mkstream=True
+            mkstream=True,
         )
     except Exception as e:
         if "BUSYGROUP" not in str(e):
@@ -184,7 +211,7 @@ async def process_voice_input_stream():
                 consumername="llm_worker_1",
                 streams={RedisKeys.STREAM_VOICE_INPUT: ">"},
                 count=1,
-                block=2000 
+                block=2000,
             )
 
             if not streams:
@@ -195,31 +222,38 @@ async def process_voice_input_stream():
                     try:
                         await handle_message(data)
                         # Acknowledge message
-                        await redis.xack(RedisKeys.STREAM_VOICE_INPUT, RedisKeys.GROUP_LLM_WORKER, message_id)
+                        await redis.xack(
+                            RedisKeys.STREAM_VOICE_INPUT,
+                            RedisKeys.GROUP_LLM_WORKER,
+                            message_id,
+                        )
                     except Exception as e:
-                        logger.error(f"Error processing message {message_id}: {e}", exc_info=True)
+                        logger.error(
+                            f"Error processing message {message_id}: {e}", exc_info=True
+                        )
 
         except Exception as e:
             logger.error(f"Error in LLM worker loop: {e}")
             await asyncio.sleep(1)
 
+
 async def handle_message(data: dict):
     """Business logic for handling a single voice event."""
     event_type = data.get("type")
-    
+
     if event_type != "user.transcription":
         return
 
     payload_json = data.get("payload")
     user_id = data.get("user_id")
-    
+
     if not payload_json or not user_id:
         logger.warning("Received invalid message payload or missing user_id")
         return
 
     # Deserialize event
     transcription = UserTranscriptionReceived.model_validate_json(payload_json)
-    
+
     logger.info(f"Processing transcription for user {user_id}: {transcription.content}")
 
     # Call LLM (Gemini) with Tools
@@ -253,9 +287,7 @@ async def handle_message(data: dict):
             return
         await redis.incr(_cache_miss_key())
         response = await gemini.generate_chat_response(
-            messages=history,
-            system_instruction=SYSTEM_INSTRUCTION,
-            tools=TOOLS
+            messages=history, system_instruction=SYSTEM_INSTRUCTION, tools=TOOLS
         )
         await _handle_llm_response(redis, user_id, response)
         if response.text:
@@ -267,6 +299,21 @@ async def handle_message(data: dict):
 
     except Exception as e:
         logger.error(f"LLM Generation failed: {e}", exc_info=True)
+        if user_id:
+            redis = await get_redis_client()
+            response_event = AgentResponse(
+                content="Sorry, I ran into an error while generating a response."
+            )
+            await redis.publish(
+                RedisKeys.CHANNEL_USER_UPDATES,
+                json.dumps(
+                    {
+                        "type": "agent.response",
+                        "user_id": user_id,
+                        "payload": response_event.model_dump_json(),
+                    }
+                ),
+            )
 
 
 async def process_tool_results():
@@ -314,35 +361,59 @@ async def process_tool_results():
                 continue
 
             await _append_history(
-                redis, user_id, "assistant", f"Tool result for {tool_result.tool_name}: {summary}"
+                redis,
+                user_id,
+                "assistant",
+                f"Tool result for {tool_result.tool_name}: {summary}",
             )
             history = await _get_history(redis, user_id)
             gemini = get_gemini_service()
-            response = await gemini.generate_chat_response(
-                messages=history,
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=TOOLS,
-            )
-            await _handle_llm_response(redis, user_id, response)
-            if response.text:
-                cache_payload = {
-                    "messages": history,
-                    "system": SYSTEM_INSTRUCTION,
-                    "tools": _tools_fingerprint(),
-                }
-                await redis.setex(
-                    _response_cache_key(cache_payload),
-                    CACHE_TTL_SECONDS,
-                    response.text,
+            try:
+                response = await gemini.generate_chat_response(
+                    messages=history,
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=TOOLS,
+                )
+                await _handle_llm_response(redis, user_id, response)
+                if response.text:
+                    cache_payload = {
+                        "messages": history,
+                        "system": SYSTEM_INSTRUCTION,
+                        "tools": _tools_fingerprint(),
+                    }
+                    await redis.setex(
+                        _response_cache_key(cache_payload),
+                        CACHE_TTL_SECONDS,
+                        response.text,
+                    )
+            except Exception as e:
+                logger.error(
+                    f"LLM Generation failed after tool result: {e}", exc_info=True
+                )
+                response_event = AgentResponse(
+                    content="Sorry, I ran into an error while generating a response."
+                )
+                await redis.publish(
+                    RedisKeys.CHANNEL_USER_UPDATES,
+                    json.dumps(
+                        {
+                            "type": "agent.response",
+                            "user_id": user_id,
+                            "payload": response_event.model_dump_json(),
+                        }
+                    ),
                 )
     finally:
         await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)
         await pubsub.close()
 
+
 if __name__ == "__main__":
     from app.core.config import settings
+
     # Setup logging
     logging.basicConfig(level=logging.INFO)
+
     async def _run():
         await asyncio.gather(
             process_voice_input_stream(),

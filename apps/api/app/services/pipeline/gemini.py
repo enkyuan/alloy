@@ -1,8 +1,10 @@
 """Google Gemini AI service for conversational AI."""
 
 import logging
+from typing import Any, Dict, List, Optional
+
 from google import genai
-from typing import Optional, List, Dict, Any
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ class GeminiService:
 
         logger.info("Initializing Gemini client...")
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-2.0-flash-exp"  # Using latest flash model
+        self.model = settings.GEMINI_MODEL
         logger.info(f"Gemini client initialized with model: {self.model}")
 
     async def generate_response(
@@ -121,12 +123,6 @@ class GeminiService:
             logger.info(f"Successfully generated chat response")
             # Return the full response object to handle function calls
             return response
-
-        except Exception as e:
-            logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Messages that failed: {messages}")
-            raise
 
         except Exception as e:
             logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)

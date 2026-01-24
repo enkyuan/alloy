@@ -1,0 +1,747 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		83601AD82E9B947A00C9B0A6 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AD72E9B947A00C9B0A6 /* GoogleSignIn */; };
+		83601ADA2E9B947A00C9B0A6 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AD92E9B947A00C9B0A6 /* GoogleSignInSwift */; };
+		83601AE22E9C42E300C9B0A6 /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE12E9C42E300C9B0A6 /* Auth */; };
+		83601AE42E9C42E300C9B0A6 /* Functions in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE32E9C42E300C9B0A6 /* Functions */; };
+		83601AE62E9C42E300C9B0A6 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE52E9C42E300C9B0A6 /* PostgREST */; };
+		83601AE82E9C42E300C9B0A6 /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE72E9C42E300C9B0A6 /* Realtime */; };
+		83601AEA2E9C42E300C9B0A6 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE92E9C42E300C9B0A6 /* Storage */; };
+		83601AEC2E9C42F400C9B0A6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AEB2E9C42F400C9B0A6 /* Supabase */; };
+		8371499A2F245D5D00F1678C /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 8371499B2F245D5D00F1678C /* MCP */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		830FBFF72E9B7AE200C65E4A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 830FBFDD2E9B7AE100C65E4A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 830FBFE42E9B7AE100C65E4A;
+			remoteInfo = milo;
+		};
+		830FC0012E9B7AE200C65E4A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 830FBFDD2E9B7AE100C65E4A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 830FBFE42E9B7AE100C65E4A;
+			remoteInfo = milo;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		830FBFE52E9B7AE100C65E4A /* milo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = milo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		830FBFF62E9B7AE200C65E4A /* miloTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = miloTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		830FC0002E9B7AE200C65E4A /* miloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = miloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		83D7700C2EA14DF90039A407 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		830FC0082E9B7AE200C65E4A /* Exceptions for "milo" folder in "milo" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 830FBFE42E9B7AE100C65E4A /* milo */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		830FBFE72E9B7AE100C65E4A /* milo */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				830FC0082E9B7AE200C65E4A /* Exceptions for "milo" folder in "milo" target */,
+			);
+			path = milo;
+			sourceTree = "<group>";
+		};
+		830FBFF92E9B7AE200C65E4A /* miloTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = miloTests;
+			sourceTree = "<group>";
+		};
+		830FC0032E9B7AE200C65E4A /* miloUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = miloUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		830FBFE22E9B7AE100C65E4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				83601AD82E9B947A00C9B0A6 /* GoogleSignIn in Frameworks */,
+				83601ADA2E9B947A00C9B0A6 /* GoogleSignInSwift in Frameworks */,
+				83601AEA2E9C42E300C9B0A6 /* Storage in Frameworks */,
+				83601AE42E9C42E300C9B0A6 /* Functions in Frameworks */,
+				83601AEC2E9C42F400C9B0A6 /* Supabase in Frameworks */,
+				83601AE82E9C42E300C9B0A6 /* Realtime in Frameworks */,
+				83601AE22E9C42E300C9B0A6 /* Auth in Frameworks */,
+				83601AE62E9C42E300C9B0A6 /* PostgREST in Frameworks */,
+				8371499A2F245D5D00F1678C /* MCP in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFF32E9B7AE200C65E4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFFD2E9B7AE200C65E4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		830FBFDC2E9B7AE100C65E4A = {
+			isa = PBXGroup;
+			children = (
+				83D7700C2EA14DF90039A407 /* Config.xcconfig */,
+				830FBFE72E9B7AE100C65E4A /* milo */,
+				830FBFF92E9B7AE200C65E4A /* miloTests */,
+				830FC0032E9B7AE200C65E4A /* miloUITests */,
+				83601AD52E9B937900C9B0A6 /* Frameworks */,
+				830FBFE62E9B7AE100C65E4A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		830FBFE62E9B7AE100C65E4A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				830FBFE52E9B7AE100C65E4A /* milo.app */,
+				830FBFF62E9B7AE200C65E4A /* miloTests.xctest */,
+				830FC0002E9B7AE200C65E4A /* miloUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		83601AD52E9B937900C9B0A6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		830FBFE42E9B7AE100C65E4A /* milo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 830FC0092E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "milo" */;
+			buildPhases = (
+				830FBFE12E9B7AE100C65E4A /* Sources */,
+				830FBFE22E9B7AE100C65E4A /* Frameworks */,
+				830FBFE32E9B7AE100C65E4A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				830FBFE72E9B7AE100C65E4A /* milo */,
+			);
+			name = milo;
+			packageProductDependencies = (
+				83601AD72E9B947A00C9B0A6 /* GoogleSignIn */,
+				83601AD92E9B947A00C9B0A6 /* GoogleSignInSwift */,
+				83601AE12E9C42E300C9B0A6 /* Auth */,
+				83601AE32E9C42E300C9B0A6 /* Functions */,
+				83601AE52E9C42E300C9B0A6 /* PostgREST */,
+				83601AE72E9C42E300C9B0A6 /* Realtime */,
+				83601AE92E9C42E300C9B0A6 /* Storage */,
+				83601AEB2E9C42F400C9B0A6 /* Supabase */,
+				8371499B2F245D5D00F1678C /* MCP */,
+			);
+			productName = milo;
+			productReference = 830FBFE52E9B7AE100C65E4A /* milo.app */;
+			productType = "com.apple.product-type.application";
+		};
+		830FBFF52E9B7AE200C65E4A /* miloTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 830FC00E2E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "miloTests" */;
+			buildPhases = (
+				830FBFF22E9B7AE200C65E4A /* Sources */,
+				830FBFF32E9B7AE200C65E4A /* Frameworks */,
+				830FBFF42E9B7AE200C65E4A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				830FBFF82E9B7AE200C65E4A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				830FBFF92E9B7AE200C65E4A /* miloTests */,
+			);
+			name = miloTests;
+			packageProductDependencies = (
+			);
+			productName = miloTests;
+			productReference = 830FBFF62E9B7AE200C65E4A /* miloTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		830FBFFF2E9B7AE200C65E4A /* miloUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 830FC0112E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "miloUITests" */;
+			buildPhases = (
+				830FBFFC2E9B7AE200C65E4A /* Sources */,
+				830FBFFD2E9B7AE200C65E4A /* Frameworks */,
+				830FBFFE2E9B7AE200C65E4A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				830FC0022E9B7AE200C65E4A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				830FC0032E9B7AE200C65E4A /* miloUITests */,
+			);
+			name = miloUITests;
+			packageProductDependencies = (
+			);
+			productName = miloUITests;
+			productReference = 830FC0002E9B7AE200C65E4A /* miloUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		830FBFDD2E9B7AE100C65E4A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					830FBFE42E9B7AE100C65E4A = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					830FBFF52E9B7AE200C65E4A = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 830FBFE42E9B7AE100C65E4A;
+					};
+					830FBFFF2E9B7AE200C65E4A = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 830FBFE42E9B7AE100C65E4A;
+					};
+				};
+			};
+			buildConfigurationList = 830FBFE02E9B7AE100C65E4A /* Build configuration list for PBXProject "milo" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 830FBFDC2E9B7AE100C65E4A;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				83601AD62E9B93CF00C9B0A6 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				83D7700E2EA1B84C0039A407 /* XCRemoteSwiftPackageReference "swiftui-toasts" */,
+				837149992F245D5D00F1678C /* XCRemoteSwiftPackageReference "swift-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 830FBFE62E9B7AE100C65E4A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				830FBFE42E9B7AE100C65E4A /* milo */,
+				830FBFF52E9B7AE200C65E4A /* miloTests */,
+				830FBFFF2E9B7AE200C65E4A /* miloUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		830FBFE32E9B7AE100C65E4A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFF42E9B7AE200C65E4A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFFE2E9B7AE200C65E4A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		830FBFE12E9B7AE100C65E4A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFF22E9B7AE200C65E4A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		830FBFFC2E9B7AE200C65E4A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		830FBFF82E9B7AE200C65E4A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 830FBFE42E9B7AE100C65E4A /* milo */;
+			targetProxy = 830FBFF72E9B7AE200C65E4A /* PBXContainerItemProxy */;
+		};
+		830FC0022E9B7AE200C65E4A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 830FBFE42E9B7AE100C65E4A /* milo */;
+			targetProxy = 830FC0012E9B7AE200C65E4A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		830FC00A2E9B7AE200C65E4A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83D7700C2EA14DF90039A407 /* Config.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = milo/milo.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = milo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Milo;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Milo needs access to your microphone to listen to your voice commands and assist you.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.milo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		830FC00B2E9B7AE200C65E4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83D7700C2EA14DF90039A407 /* Config.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = milo/milo.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = milo/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Milo;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Milo needs access to your microphone to listen to your voice commands and assist you.";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.milo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		830FC00C2E9B7AE200C65E4A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		830FC00D2E9B7AE200C65E4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		830FC00F2E9B7AE200C65E4A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.miloTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/milo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/milo";
+			};
+			name = Debug;
+		};
+		830FC0102E9B7AE200C65E4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.miloTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/milo.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/milo";
+			};
+			name = Release;
+		};
+		830FC0122E9B7AE200C65E4A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.miloUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = milo;
+			};
+			name = Debug;
+		};
+		830FC0132E9B7AE200C65E4A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = LV2H5878PX;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.app.miloUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = milo;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		830FBFE02E9B7AE100C65E4A /* Build configuration list for PBXProject "milo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				830FC00C2E9B7AE200C65E4A /* Debug */,
+				830FC00D2E9B7AE200C65E4A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		830FC0092E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "milo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				830FC00A2E9B7AE200C65E4A /* Debug */,
+				830FC00B2E9B7AE200C65E4A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		830FC00E2E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "miloTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				830FC00F2E9B7AE200C65E4A /* Debug */,
+				830FC0102E9B7AE200C65E4A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		830FC0112E9B7AE200C65E4A /* Build configuration list for PBXNativeTarget "miloUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				830FC0122E9B7AE200C65E4A /* Debug */,
+				830FC0132E9B7AE200C65E4A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		83601AD62E9B93CF00C9B0A6 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
+			};
+		};
+		83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+		837149992F245D5D00F1678C /* XCRemoteSwiftPackageReference "swift-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/modelcontextprotocol/swift-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.2;
+			};
+		};
+		83D7700E2EA1B84C0039A407 /* XCRemoteSwiftPackageReference "swiftui-toasts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sunghyun-k/swiftui-toasts";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		83601AD72E9B947A00C9B0A6 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AD62E9B93CF00C9B0A6 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		83601AD92E9B947A00C9B0A6 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AD62E9B93CF00C9B0A6 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+		83601AE12E9C42E300C9B0A6 /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+		83601AE32E9C42E300C9B0A6 /* Functions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Functions;
+		};
+		83601AE52E9C42E300C9B0A6 /* PostgREST */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = PostgREST;
+		};
+		83601AE72E9C42E300C9B0A6 /* Realtime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Realtime;
+		};
+		83601AE92E9C42E300C9B0A6 /* Storage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Storage;
+		};
+		83601AEB2E9C42F400C9B0A6 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		8371499B2F245D5D00F1678C /* MCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 837149992F245D5D00F1678C /* XCRemoteSwiftPackageReference "swift-sdk" */;
+			productName = MCP;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 830FBFDD2E9B7AE100C65E4A /* Project object */;
+}
