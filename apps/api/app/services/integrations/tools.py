@@ -14,9 +14,8 @@ from app.services.todoist import todoist_service
 
 
 class SpotifyPlayArgs(BaseModel):
-    query: str = Field(
-        description="Song, artist, album, or playlist name to play."
-    )
+    query: str = Field(description="Song name to play.")
+    artist: Optional[str] = Field(default=None, description="Optional artist name.")
 
 
 SPOTIFY_PLAY = tool_spec_from_model(
@@ -32,10 +31,65 @@ async def spotify_play(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]
     query = str(args.get("query", "")).strip()
     if not query:
         raise ValueError("Missing required arg: query")
+    artist = args.get("artist")
     result = await spotify_service.search_and_play_track(
-        query=query, access_token=access_token
+        query=query, access_token=access_token, artist=str(artist) if artist else None
     )
     return {"status": "playing", "query": query, "data": result.data}
+
+
+class SpotifyPlayAlbumArgs(BaseModel):
+    album: str = Field(description="Album name to play.")
+    artist: Optional[str] = Field(default=None, description="Optional artist name.")
+
+
+SPOTIFY_PLAY_ALBUM = tool_spec_from_model(
+    name="spotify.play_album",
+    description="Play an album on Spotify.",
+    model=SpotifyPlayAlbumArgs,
+)
+
+
+@register_tool(SPOTIFY_PLAY_ALBUM)
+async def spotify_play_album(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]:
+    access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    album = str(args.get("album", "")).strip()
+    if not album:
+        raise ValueError("Missing required arg: album")
+    artist = args.get("artist")
+    result = await spotify_service.search_and_play_album(
+        query=album, access_token=access_token, artist=str(artist) if artist else None
+    )
+    return {"status": "playing", "album": album, "data": result.data}
+
+
+class SpotifyPlayPlaylistArgs(BaseModel):
+    playlist: str = Field(description="Playlist name to play.")
+    user_playlists_only: Optional[bool] = Field(
+        default=False, description="Only search the user's playlists."
+    )
+
+
+SPOTIFY_PLAY_PLAYLIST = tool_spec_from_model(
+    name="spotify.play_playlist",
+    description="Play a playlist on Spotify.",
+    model=SpotifyPlayPlaylistArgs,
+)
+
+
+@register_tool(SPOTIFY_PLAY_PLAYLIST)
+async def spotify_play_playlist(
+    ctx: ToolContext, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    playlist = str(args.get("playlist", "")).strip()
+    if not playlist:
+        raise ValueError("Missing required arg: playlist")
+    user_only = bool(args.get("user_playlists_only", False))
+    result = await spotify_service.search_and_play_playlist(
+        query=playlist, access_token=access_token, user_playlists_only=user_only
+    )
+    return {"status": "playing", "playlist": playlist, "data": result.data}
 
 
 class SpotifyPauseArgs(BaseModel):
@@ -108,6 +162,74 @@ async def spotify_resume(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, An
     access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
     result = await spotify_service.resume_playback(access_token)
     return {"status": "resumed", "data": result.data}
+
+
+class SpotifySetVolumeArgs(BaseModel):
+    level: int = Field(description="Volume level (0-100).")
+
+
+SPOTIFY_SET_VOLUME = tool_spec_from_model(
+    name="spotify.set_volume",
+    description="Set Spotify playback volume.",
+    model=SpotifySetVolumeArgs,
+)
+
+
+@register_tool(SPOTIFY_SET_VOLUME)
+async def spotify_set_volume(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]:
+    access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    level = args.get("level")
+    if level is None:
+        raise ValueError("Missing required arg: level")
+    result = await spotify_service.set_volume(access_token, int(level))
+    return {"status": "volume_set", "data": result.data}
+
+
+class SpotifyListDevicesArgs(BaseModel):
+    pass
+
+
+SPOTIFY_LIST_DEVICES = tool_spec_from_model(
+    name="spotify.list_devices",
+    description="List available Spotify playback devices.",
+    model=SpotifyListDevicesArgs,
+)
+
+
+@register_tool(SPOTIFY_LIST_DEVICES)
+async def spotify_list_devices(
+    ctx: ToolContext, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    result = await spotify_service.get_available_devices(access_token)
+    return {"status": "devices", "data": result.data}
+
+
+class SpotifySwitchDeviceArgs(BaseModel):
+    device_name: Optional[str] = Field(default=None, description="Name of device.")
+    device_id: Optional[str] = Field(default=None, description="Device ID.")
+
+
+SPOTIFY_SWITCH_DEVICE = tool_spec_from_model(
+    name="spotify.switch_device",
+    description="Switch Spotify playback to a device.",
+    model=SpotifySwitchDeviceArgs,
+)
+
+
+@register_tool(SPOTIFY_SWITCH_DEVICE)
+async def spotify_switch_device(
+    ctx: ToolContext, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    device_name = args.get("device_name")
+    device_id = args.get("device_id")
+    result = await spotify_service.switch_device(
+        access_token,
+        device_name=str(device_name) if device_name else None,
+        device_id=str(device_id) if device_id else None,
+    )
+    return {"status": "switched", "data": result.data}
 
 
 class TodoistCreateTaskArgs(BaseModel):

@@ -25,7 +25,7 @@ async def publish_transcription(
     text: str,
     session_id: Optional[str] = None,
 ) -> None:
-    """Publish a typed Hermes transcription event to the Redis stream."""
+    """Publish a typed Agent transcription event to the Redis stream."""
     event = UserTranscriptionReceived(content=text)
     entry = {
         "type": "user.transcription",
@@ -44,7 +44,7 @@ async def forward_hermes_updates(
     user_id: str,
     timeout: float = 15.0,
 ) -> bool:
-    """Forward Hermes updates for a user from Redis pubsub to the websocket."""
+    """Forward Agent updates for a user from Redis pubsub to the websocket."""
     pubsub = redis_conn.pubsub()
     await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
     try:
@@ -80,7 +80,7 @@ async def stream_hermes_updates(
     redis_conn,
     user_id: str,
 ):
-    """Continuously forward Hermes updates for a user from Redis pubsub to the websocket."""
+    """Continuously forward Agent updates for a user from Redis pubsub to the websocket."""
     pubsub = redis_conn.pubsub()
     await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
     try:
@@ -112,10 +112,10 @@ async def stream_hermes_updates(
                 else:
                     break
             except Exception as e:
-                logger.error(f"Error relaying Hermes update: {e}")
+                logger.error(f"Error relaying Agent update: {e}")
                 await asyncio.sleep(1)
     except asyncio.CancelledError:
-        logger.info("Hermes stream task cancelled")
+        logger.info("Agent stream task cancelled")
     finally:
         await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)
         await pubsub.close()
@@ -294,7 +294,7 @@ async def stream_transcribe(
         # This prevents 408 timeout on first chunks
         await asyncio.sleep(0.1)
 
-        # Start Hermes listener task
+        # Start Agent listener task
         hermes_task = asyncio.create_task(
             stream_hermes_updates(websocket, redis_conn, user_id)
         )
@@ -333,7 +333,7 @@ async def stream_transcribe(
                             await publish_transcription(
                                 redis_conn, user_id, command_text, session_id=session_id
                             )
-                            logger.info("Command queued for Hermes")
+                            logger.info("Command queued for Agent")
                             continue
 
                     except json.JSONDecodeError:
@@ -350,7 +350,7 @@ async def stream_transcribe(
                             # Wait for final response from Soniox
                             await soniox_task
 
-                            # Publish the complete transcription to Hermes/Redis now
+                            # Publish the complete transcription to Agent/Redis now
                             complete_text = "".join([t["text"] for t in final_tokens])
                             if complete_text.strip():
                                 try:
@@ -372,7 +372,7 @@ async def stream_transcribe(
                                         exc_info=True,
                                     )
 
-                        # Do NOT break here; keep connection open for Hermes updates
+                        # Do NOT break here; keep connection open for Agent updates
                         continue
 
                 # Handle binary messages (audio chunks)

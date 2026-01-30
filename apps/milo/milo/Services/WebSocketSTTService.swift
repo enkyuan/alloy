@@ -30,6 +30,7 @@ class WebSocketSTTService: NSObject {
     var onUnexpectedDisconnect: (() -> Void)?
     var onCommandResult: (([String: Any]) -> Void)?
     var onCommandError: ((String, String?) -> Void)?
+    var onCommandQueued: ((String) -> Void)?
     var onAIResponse: (([String: Any]) -> Void)?
 
     nonisolated init(backendURL: String = Environment.websocketURL) {
@@ -278,7 +279,7 @@ class WebSocketSTTService: NSObject {
                     onCommandError?(errorMsg, errorCode)
                 }
 
-            case "ai_response", "agent.response":
+            case "ai_response", "agent.response", "agent.error":
                 print("AI response received")
                 onAIResponse?(json)
 
@@ -290,6 +291,9 @@ class WebSocketSTTService: NSObject {
 
             case "command_queued":
                 print("Command queued")
+                if let text = json["text"] as? String {
+                    onCommandQueued?(text)
+                }
 
             case "tool.call":
                 // This message contains a tool call request from the agent
@@ -357,16 +361,32 @@ class WebSocketSTTService: NSObject {
                             switch action {
                             case "pause":
                                 print("Client: Pausing Spotify playback")
-                                SpotifyAppService.shared.pause()
+                                Task { @MainActor in
+                                    SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                                        SpotifyAppService.shared.pause()
+                                    }
+                                }
                             case "resume":
                                 print("Client: Resuming Spotify playback")
-                                SpotifyAppService.shared.resume()
+                                Task { @MainActor in
+                                    SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                                        SpotifyAppService.shared.resume()
+                                    }
+                                }
                             case "next":
                                 print("Client: Skipping to next track")
-                                SpotifyAppService.shared.skipNext()
+                                Task { @MainActor in
+                                    SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                                        SpotifyAppService.shared.skipNext()
+                                    }
+                                }
                             case "previous":
                                 print("Client: Skipping to previous track")
-                                SpotifyAppService.shared.skipPrevious()
+                                Task { @MainActor in
+                                    SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                                        SpotifyAppService.shared.skipPrevious()
+                                    }
+                                }
                             default:
                                 print("Unknown action: \(action)")
                             }

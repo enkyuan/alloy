@@ -42,6 +42,9 @@ class SpotifyAppService: NSObject {
     private let returnToMiloURL = URL(string: "milo://spotify-return")
     private var pendingReturnToMiloAfterAuth = false
     private var intentBackgroundTask: UIBackgroundTaskIdentifier?
+    private var allowConnectionAttempts = false
+    private var connectionAttemptDeadline: Date?
+    private let connectionAttemptWindowSeconds: TimeInterval = 6.0
 
     private override init() {
         super.init()
@@ -59,6 +62,27 @@ class SpotifyAppService: NSObject {
             appRemote?.delegate = self
             appRemote?.connectionParameters.accessToken = accessToken
         #endif
+    }
+
+    // MARK: - Connection Attempt Window
+
+    private func beginConnectionAttemptWindow(duration: TimeInterval? = nil) {
+        allowConnectionAttempts = true
+        let seconds = duration ?? connectionAttemptWindowSeconds
+        connectionAttemptDeadline = Date().addingTimeInterval(seconds)
+    }
+
+    private func shouldAttemptConnection() -> Bool {
+        guard allowConnectionAttempts else { return false }
+        if let deadline = connectionAttemptDeadline {
+            return Date() <= deadline
+        }
+        return true
+    }
+
+    private func endConnectionAttemptWindow() {
+        allowConnectionAttempts = false
+        connectionAttemptDeadline = nil
     }
 
     // MARK: - Token Persistence
@@ -93,8 +117,13 @@ class SpotifyAppService: NSObject {
                 return
             }
 
+            if !shouldAttemptConnection() && !triggerAuthorization {
+                return
+            }
+
             if appRemote.isConnected {
                 isConnected = true
+                endConnectionAttemptWindow()
                 processPendingActionsIfConnected()
                 return
             }
@@ -114,6 +143,7 @@ class SpotifyAppService: NSObject {
                     if isSpotifyInstalled {
                         print(
                             "SpotifyAppService: Missing access token, starting authorization flow.")
+                        beginConnectionAttemptWindow()
                         authorize()
                     } else {
                         print("SpotifyAppService: Spotify is not installed, cannot authorize.")
@@ -139,6 +169,7 @@ class SpotifyAppService: NSObject {
 
             isAuthorizing = true
             isConnecting = true
+            beginConnectionAttemptWindow()
             appRemote.authorizeAndPlayURI("")
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
@@ -160,6 +191,7 @@ class SpotifyAppService: NSObject {
                 return
             }
 
+            beginConnectionAttemptWindow()
             pendingReturnToMiloAfterAuth = true
             appRemote.authorizeAndPlayURI(uri) { success in
                 if !success {
@@ -182,6 +214,7 @@ class SpotifyAppService: NSObject {
                 return
             }
 
+            beginConnectionAttemptWindow()
             if let activeTask = intentBackgroundTask,
                 activeTask != UIBackgroundTaskIdentifier.invalid
             {
@@ -216,6 +249,19 @@ class SpotifyAppService: NSObject {
             }
 
             scheduleReturnToMilo(after: returnDelay)
+        #endif
+    }
+
+    @MainActor
+    func openSpotify() {
+        #if canImport(UIKit)
+            guard isSpotifyInstalled else {
+                print("SpotifyAppService: Spotify is not installed.")
+                return
+            }
+            if let url = URL(string: "spotify:") {
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            }
         #endif
     }
 
@@ -396,7 +442,9 @@ class SpotifyAppService: NSObject {
             guard let appRemote = appRemote else { return }
 
             if !appRemote.isConnected {
-                connect(triggerAuthorization: true)
+                if shouldAttemptConnection() {
+                    connect(triggerAuthorization: false)
+                }
                 return
             }
 
@@ -496,6 +544,7 @@ class SpotifyAppService: NSObject {
             isConnected = true
             isAuthorizing = false
             isConnecting = false
+            endConnectionAttemptWindow()
             appRemote.playerAPI?.delegate = self
             appRemote.playerAPI?.subscribe(toPlayerState: { _, error in
                 if let error = error {
@@ -511,6 +560,7 @@ class SpotifyAppService: NSObject {
             isConnected = false
             isAuthorizing = false
             isConnecting = false
+            endConnectionAttemptWindow()
             if let error = error {
                 print("SpotifyAppService: Connection failed - \(error.localizedDescription)")
             } else {
@@ -518,20 +568,13 @@ class SpotifyAppService: NSObject {
             }
 
             clearTokenIfAuthError(error)
-
-            if !pendingPlayerActions.isEmpty {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    guard let self = self else { return }
-                    if self.isConnecting || self.isAuthorizing { return }
-                    self.connect(triggerAuthorization: true)
-                }
-            }
         }
 
         func appRemote(_ appRemote: SPTAppRemote, didDisconnectWithError error: Error?) {
             isConnected = false
             isAuthorizing = false
             isConnecting = false
+            endConnectionAttemptWindow()
             if let error = error {
                 print("SpotifyAppService: Disconnected - \(error.localizedDescription)")
             } else {
@@ -539,14 +582,6 @@ class SpotifyAppService: NSObject {
             }
 
             clearTokenIfAuthError(error)
-
-            if !pendingPlayerActions.isEmpty {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                    guard let self = self else { return }
-                    if self.isConnecting || self.isAuthorizing { return }
-                    self.connect(triggerAuthorization: true)
-                }
-            }
         }
     }
 
@@ -559,3 +594,4 @@ class SpotifyAppService: NSObject {
         }
     }
 #endif
+

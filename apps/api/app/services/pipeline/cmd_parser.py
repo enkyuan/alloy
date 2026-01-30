@@ -4,7 +4,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,39 @@ class CommandParser:
         self.patterns = self._load_patterns()
         self.synonyms = self._load_synonyms()
         self.intent_keywords = self._load_intent_keywords()
+        self.query_noise_patterns = self._load_query_noise_patterns()
+
+    def _load_query_noise_patterns(self) -> list[str]:
+        """Load phrases to strip from extracted play queries."""
+        return [
+            r"\bhey\s+milo\b",
+            r"\bmilo\b",
+            r"\bhey\b",
+            r"\bhi\b",
+            r"\bcan you\b",
+            r"\bcould you\b",
+            r"\bwould you\b",
+            r"\bplease\b",
+            r"\bplay\b",
+            r"\bon spotify\b",
+            r"\bin spotify\b",
+            r"\bwith spotify\b",
+            r"\bspotify\b",
+            r"\bfor me\b",
+            r"\bthe song\b",
+            r"\bthe track\b",
+            r"\bthe album\b",
+        ]
+
+    def _clean_query_value(self, value: str) -> str:
+        """Clean noise phrases from extracted entity values."""
+        cleaned = value
+        for pattern in self.query_noise_patterns:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+        cleaned = cleaned.replace("?", "").replace('"', "")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
 
     def _load_patterns(self) -> dict:
         """Load regex patterns for intent matching.
@@ -301,7 +334,7 @@ class CommandParser:
         # Remove common filler words (but preserve "like" when used in "like this")
         filler_words = [
             r"\b(um|uh|you know|actually|basically|literally)\b",
-            r"\b(hey|hi|hello)\b",
+            r"\b(hey|hi|hello|milo)\b",
             r"\b(please|can you|could you|would you)\b",
         ]
         for pattern in filler_words:
@@ -332,10 +365,15 @@ class CommandParser:
         # Return first match with high confidence
         for intent_type, patterns in self.patterns.items():
             for pattern in patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
+                if isinstance(pattern, re.Pattern):
+                    match = pattern.search(text)
+                    pattern_text = pattern.pattern
+                else:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    pattern_text = pattern
                 if match:
                     # Calculate confidence based on match quality
-                    confidence = self._calculate_confidence(text, pattern, match)
+                    confidence = self._calculate_confidence(text, pattern_text, match)
                     # Return immediately for high-confidence matches
                     if confidence >= 0.8:
                         return intent_type, confidence
@@ -346,9 +384,14 @@ class CommandParser:
 
         for intent_type, patterns in self.patterns.items():
             for pattern in patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
+                if isinstance(pattern, re.Pattern):
+                    match = pattern.search(text)
+                    pattern_text = pattern.pattern
+                else:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    pattern_text = pattern
                 if match:
-                    confidence = self._calculate_confidence(text, pattern, match)
+                    confidence = self._calculate_confidence(text, pattern_text, match)
                     if confidence > best_confidence:
                         best_confidence = confidence
                         best_match = intent_type
@@ -425,7 +468,10 @@ class CommandParser:
 
         # Try each pattern to extract entities
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            if isinstance(pattern, re.Pattern):
+                match = pattern.search(text)
+            else:
+                match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 # Extract named groups as entities
                 entities.update(match.groupdict())
@@ -434,7 +480,10 @@ class CommandParser:
         # Clean up extracted entities
         for key, value in entities.items():
             if value:
-                entities[key] = value.strip()
+                cleaned = value.strip()
+                if key in {"track", "artist", "album", "playlist"}:
+                    cleaned = self._clean_query_value(cleaned)
+                entities[key] = cleaned
 
         # Extract numbers for volume commands
         if intent in ["set_volume", "volume_up", "volume_down"]:

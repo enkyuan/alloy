@@ -84,9 +84,9 @@ class Settings(BaseSettings):
     TASKIQ_BROKER: str = "redis"  # Options: redis
     TASKIQ_RESULT_BACKEND: str = "redis"
 
-    # Hermes
-    HERMES_HISTORY_LIMIT: Optional[int] = 200
-    HERMES_CACHE_TTL_SECONDS: int = 300
+    # Agent pipeline
+    AGENT_HISTORY_LIMIT: Optional[int] = 200
+    AGENT_CACHE_TTL_SECONDS: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=True, extra="ignore"

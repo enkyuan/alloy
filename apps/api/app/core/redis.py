@@ -1,13 +1,15 @@
 """
-Redis configuration for Hermes event backbone.
+Redis configuration for Agent event backbone.
 """
 
+import logging
 from typing import Optional
 
 import redis.asyncio as redis
-from loguru import logger
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Global Redis Client
 redis_client: Optional[redis.Redis] = None
@@ -37,13 +39,13 @@ async def close_redis_client():
 
 class RedisKeys:
     """Central registry of Redis keys and stream names."""
-    
+
     # Streams
     STREAM_VOICE_INPUT = "stream:voice_input"
-    
+
     # Consumer Groups
     GROUP_LLM_WORKER = "group:llm_worker"
-    
+
     # Channels (Pub/Sub)
     CHANNEL_USER_UPDATES = "channel:user_updates"
 

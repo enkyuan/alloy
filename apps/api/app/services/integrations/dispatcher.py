@@ -1,4 +1,4 @@
-"""Generic integration tool dispatcher for Hermes."""
+"""Generic integration tool dispatcher for Agent."""
 
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Type

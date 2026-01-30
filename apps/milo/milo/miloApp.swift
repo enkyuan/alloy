@@ -114,10 +114,7 @@ struct MiloApp: App {
         .onChange(of: scenePhase) { oldPhase, newPhase in
             switch newPhase {
             case .active:
-                print("App active, ensuring Spotify is connected")
-                if SpotifyAppService.shared.accessToken != nil {
-                    SpotifyAppService.shared.connect(triggerAuthorization: false)
-                }
+                print("App active")
             case .background:
                 print("App entering background, keeping Spotify connected for playback")
             // Keep connection alive for background playback control

@@ -1,5 +1,5 @@
 """
-Taskiq Tasks for Hermes "Slow Path".
+Taskiq Tasks for Agent "Slow Path".
 
 These tasks are executed by background workers when the LLM determines
 a tool call is needed that takes time or side-effects (e.g. Spotify API).

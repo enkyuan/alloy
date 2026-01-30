@@ -2,21 +2,20 @@
 
 from fastapi import APIRouter
 
-from app.core.redis import get_redis_client
-
-from app.services.integrations import list_tool_specs
 import app.services.integrations.tools  # ensure tool registration
+from app.core.redis import get_redis_client
+from app.services.integrations import list_tool_specs
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
-CACHE_KEY_PREFIX = "hermes:cache:"
-HIT_KEY = "hermes:cache:hit"
-MISS_KEY = "hermes:cache:miss"
+CACHE_KEY_PREFIX = "agent:cache:"
+HIT_KEY = "agent:cache:hit"
+MISS_KEY = "agent:cache:miss"
 
 
 @router.get("")
 async def list_tools():
-    """List available Hermes tool definitions."""
+    """List available Agent tool definitions."""
     return {
         "tools": [
             {
@@ -31,7 +30,7 @@ async def list_tools():
 
 @router.get("/cache/metrics")
 async def cache_metrics():
-    """Return Hermes cache metrics."""
+    """Return Agent cache metrics."""
     redis = await get_redis_client()
     hit = await redis.get(HIT_KEY)
     miss = await redis.get(MISS_KEY)
@@ -43,7 +42,7 @@ async def cache_metrics():
 
 @router.post("/cache/clear")
 async def clear_cache():
-    """Clear Hermes cache entries."""
+    """Clear Agent cache entries."""
     redis = await get_redis_client()
     deleted = 0
     async for key in redis.scan_iter(f"{CACHE_KEY_PREFIX}*"):

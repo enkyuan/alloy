@@ -7,10 +7,28 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var scrollProxy: ScrollViewProxy?
+    @State private var lastScrolledPairCount = 0
+    @State private var scrollViewHeight: CGFloat = 0
 
     private var messages: [Message] {
         viewModel.conversationService.messages
+    }
+
+    private var lastUserMessageId: UUID? {
+        messages.last(where: { $0.isUser })?.id
+    }
+
+    private var currentPlaybackItem: MusicPlaybackItem? {
+        guard let track = viewModel.currentSpotifyTrack else { return nil }
+        return MusicPlaybackItem(
+            title: track.name,
+            artist: track.artist,
+            albumArtUrl: track.albumArtUrl,
+            isPlaying: true,
+            elapsed: nil,
+            duration: TimeInterval(track.durationMs) / 1000,
+            platform: .spotify
+        )
     }
 
     var body: some View {
@@ -29,9 +47,29 @@ struct AssistantView: View {
 
             VStack {
                 Spacer()
-                SpotifyPlaybackCard(track: viewModel.currentSpotifyTrack)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 120)
+                MusicMiniPlayer(
+                    item: currentPlaybackItem,
+                    onPlayPause: {
+                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                            SpotifyAppService.shared.resume()
+                        }
+                    },
+                    onNext: {
+                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                            SpotifyAppService.shared.skipNext()
+                        }
+                    },
+                    onPrevious: {
+                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
+                            SpotifyAppService.shared.skipPrevious()
+                        }
+                    },
+                    onRoute: {
+                        SpotifyAppService.shared.openSpotify()
+                    }
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 120)
             }
 
             CommandFeedbackOverlay(
@@ -39,6 +77,7 @@ struct AssistantView: View {
                 isExecuting: viewModel.isExecutingCommand
             )
         }
+        .ignoresSafeArea(edges: .top)
         .task {
             await checkSetup()
         }
@@ -55,7 +94,7 @@ struct AssistantView: View {
             )
         }
         .alert("Connection Issue", isPresented: $viewModel.showError) {
-            Button("OK") { }
+            Button("OK") {}
         } message: {
             Text(viewModel.errorMessage ?? "Something went wrong. Please try again.")
         }
@@ -65,84 +104,74 @@ struct AssistantView: View {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
 
-    private func scrollToLatestMessage(animated: Bool = true) {
-        guard let proxy = scrollProxy, !messages.isEmpty else { return }
+    private func userAnchorId(for id: UUID) -> String {
+        "user-anchor-\(id.uuidString)"
+    }
 
-        let scrollAction = {
-            if let latestMessageId = messages.last?.id {
-                proxy.scrollTo(latestMessageId, anchor: .bottom)
-            }
-        }
-
-        if animated {
-            withAnimation(.easeOut(duration: 0.4)) {
-                scrollAction()
-            }
-        } else {
-            scrollAction()
+    private func scrollToLatestPair(using proxy: ScrollViewProxy) {
+        guard let latestUserMessageId = lastUserMessageId else { return }
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.9, blendDuration: 0.2)) {
+            proxy.scrollTo(userAnchorId(for: latestUserMessageId), anchor: .top)
         }
     }
 
-    private func scrollToShowTranscriptionBubble(animated: Bool = true) {
-        guard let proxy = scrollProxy else { return }
+    @ViewBuilder private var chatView: some View {
+        GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Color.clear
+                            .frame(height: 1)
+                            .id("top-anchor")
 
-        let scrollAction = {
-            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-        }
+                        if messages.isEmpty && !isActiveSession {
+                            AssistantGreetingView()
+                        }
 
-        if animated {
-            withAnimation(.easeOut(duration: 0.3)) {
-                scrollAction()
-            }
-        } else {
-            scrollAction()
-        }
-    }
+                        ForEach(messages) { message in
+                            if message.isUser {
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(userAnchorId(for: message.id))
+                            }
+                            MessageRow(message: message)
+                                .id(message.id)
+                        }
 
-    private var chatView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 16) {
-                    if messages.isEmpty && !isActiveSession {
-                        AssistantGreetingView()
+                        if isActiveSession {
+                            TranscriptionBubble(
+                                isConnecting: viewModel.isConnecting,
+                                isRecording: viewModel.isRecording,
+                                isProcessing: viewModel.isProcessingTranscription,
+                                partialText: viewModel.partialTranscription
+                            )
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            .id("transcription-bubble")
+                        }
+
+                        Color.clear
+                            .frame(height: scrollViewHeight)
+                            .id("bottom-spacer")
                     }
-
-                    ForEach(messages) { message in
-                        MessageRow(message: message)
-                            .id(message.id)
-                    }
-
-                    if isActiveSession {
-                        TranscriptionBubble(
-                            isConnecting: viewModel.isConnecting,
-                            isRecording: viewModel.isRecording,
-                            isProcessing: viewModel.isProcessingTranscription,
-                            partialText: viewModel.partialTranscription
-                        )
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom-anchor")
+                    .padding(.top, 4)
+                    .padding(.bottom, 140)
                 }
-                .padding(.top, 20)
-                .padding(.bottom, 140)
-            }
-            .onAppear {
-                scrollProxy = proxy
-            }
-            .onChange(of: messages.count) { oldCount, newCount in
-                guard newCount > oldCount else { return }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    scrollToLatestMessage(animated: true)
+                .onAppear {
+                    scrollViewHeight = geo.size.height
                 }
-            }
-            .onChange(of: isActiveSession) { wasActive, isActive in
-                if isActive && !wasActive {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        scrollToShowTranscriptionBubble(animated: true)
+                .onChange(of: geo.size.height) { _, newHeight in
+                    scrollViewHeight = newHeight
+                }
+                .onChange(of: messages.count) { _, newCount in
+                    guard newCount > 0 else {
+                        lastScrolledPairCount = 0
+                        return
+                    }
+                    let pairCount = newCount / 2
+                    guard pairCount > lastScrolledPairCount else { return }
+                    lastScrolledPairCount = pairCount
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                        scrollToLatestPair(using: proxy)
                     }
                 }
             }
@@ -316,7 +345,6 @@ private struct MessageRow: View {
             if message.isUser {
                 Spacer()
             }
-
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
                 AnimatedText(
                     fadeIn: message.text,
@@ -341,4 +369,3 @@ private struct MessageRow: View {
         .padding(.vertical, 4)
     }
 }
-
