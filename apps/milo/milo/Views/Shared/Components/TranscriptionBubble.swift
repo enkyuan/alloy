@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct TranscriptionBubble: View {
@@ -64,39 +63,13 @@ struct TranscriptionBubble: View {
     }
 }
 
-
 private struct PartialTranscriptionText: View {
     let text: String
-    @State private var displayedWords: [String] = []
 
     var body: some View {
-        Text(displayedWords.joined(separator: " "))
+        Text(text)
             .font(.body)
             .foregroundStyle(.primary.opacity(0.7))
-            .onAppear {
-                displayedWords = text.split(separator: " ").map(String.init)
-            }
-            .onChange(of: text) { oldValue, newValue in
-                let oldWords = oldValue.split(separator: " ").map(String.init)
-                let newWords = newValue.split(separator: " ").map(String.init)
-
-                if newWords.count > oldWords.count {
-                    let addedWords = Array(newWords[oldWords.count...])
-
-                    for (index, word) in addedWords.enumerated() {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.05) {
-                            withAnimation(.easeOut(duration: 0.3)) {
-                                displayedWords.append(word)
-                            }
-                        }
-                    }
-                } else if newWords != oldWords {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        displayedWords = newWords
-                    }
-                }
-            }
+            .animation(.easeOut(duration: 0.1), value: text)
     }
 }
-
-

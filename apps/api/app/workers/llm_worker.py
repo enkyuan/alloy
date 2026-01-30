@@ -9,6 +9,8 @@ This worker acts as the central brain:
 5. If Text: Pushes 'agent.response' events to Redis.
 """
 
+from redis.client import Redis
+from redis.asyncio.client import Redis
 import asyncio
 import hashlib
 import json
@@ -69,14 +71,14 @@ def _tools_fingerprint() -> list[dict[str, object]]:
     ]
 
 
-async def _append_history(redis, user_id: str, role: str, content: str) -> None:
+async def _append_history(redis: Redis, user_id: str, role: str, content: str) -> None:
     entry = {"role": role, "content": content}
     await redis.rpush(_history_key(user_id), json.dumps(entry))
     if HISTORY_LIMIT and HISTORY_LIMIT > 0:
         await redis.ltrim(_history_key(user_id), -HISTORY_LIMIT, -1)
 
 
-async def _get_history(redis, user_id: str) -> list[dict[str, str]]:
+async def _get_history(redis: Redis, user_id: str) -> list[dict[str, str]]:
     raw_items = await redis.lrange(_history_key(user_id), 0, -1)
     messages: list[dict[str, str]] = []
     for item in raw_items:
@@ -93,7 +95,7 @@ async def _get_history(redis, user_id: str) -> list[dict[str, str]]:
     return messages
 
 
-async def _dispatch_tool_calls(redis, user_id: str, function_calls) -> None:
+async def _dispatch_tool_calls(redis: Redis, user_id: str, function_calls) -> None:
     for fc in function_calls:
         logger.info(f"LLM requested tool: {fc.name}")
 
@@ -125,7 +127,7 @@ async def _dispatch_tool_calls(redis, user_id: str, function_calls) -> None:
         )
 
 
-async def _handle_llm_response(redis, user_id: str, response) -> None:
+async def _handle_llm_response(redis: Redis, user_id: str, response) -> None:
     function_calls = []
     if hasattr(response, "candidates") and response.candidates:
         candidate = response.candidates[0]
@@ -290,12 +292,16 @@ async def handle_message(data: dict):
             messages=history, system_instruction=SYSTEM_INSTRUCTION, tools=TOOLS
         )
         await _handle_llm_response(redis, user_id, response)
-        if response.text:
-            await redis.setex(
-                _response_cache_key(cache_payload),
-                CACHE_TTL_SECONDS,
-                response.text,
-            )
+        try:
+            if response.text:
+                await redis.setex(
+                    _response_cache_key(cache_payload),
+                    CACHE_TTL_SECONDS,
+                    response.text,
+                )
+        except ValueError:
+            # response.text raises ValueError if content is purely function calls
+            pass
 
     except Exception as e:
         logger.error(f"LLM Generation failed: {e}", exc_info=True)
@@ -375,17 +381,20 @@ async def process_tool_results():
                     tools=TOOLS,
                 )
                 await _handle_llm_response(redis, user_id, response)
-                if response.text:
-                    cache_payload = {
-                        "messages": history,
-                        "system": SYSTEM_INSTRUCTION,
-                        "tools": _tools_fingerprint(),
-                    }
-                    await redis.setex(
-                        _response_cache_key(cache_payload),
-                        CACHE_TTL_SECONDS,
-                        response.text,
-                    )
+                try:
+                    if response.text:
+                        cache_payload = {
+                            "messages": history,
+                            "system": SYSTEM_INSTRUCTION,
+                            "tools": _tools_fingerprint(),
+                        }
+                        await redis.setex(
+                            _response_cache_key(cache_payload),
+                            CACHE_TTL_SECONDS,
+                            response.text,
+                        )
+                except ValueError:
+                    pass
             except Exception as e:
                 logger.error(
                     f"LLM Generation failed after tool result: {e}", exc_info=True

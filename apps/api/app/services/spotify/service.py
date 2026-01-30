@@ -94,7 +94,7 @@ def retry_on_transient_error(max_retries: int = 2, delay: float = 1.0):
 class SpotifyService:
     """High-level service for executing Spotify commands from voice agent."""
 
-    def __init__(self, client: Optional["SpotifyClient"] = None):
+    def __init__(self, client: Optional["SpotifyClient"] = None) -> None:
         """Initialize SpotifyService.
 
         Args:
@@ -171,7 +171,7 @@ class SpotifyService:
                 )
                 return playback["device"]["id"]
 
-            # Fallback: get available devices and use first one
+            # Fallback: get available devices
             devices_response = await self.client.get_available_devices(access_token)
             devices = devices_response.get("devices", [])
 
@@ -179,14 +179,22 @@ class SpotifyService:
                 logger.warning("No devices available")
                 return None
 
+            # Filter out restricted devices
+            valid_devices = [d for d in devices if not d.get("is_restricted", False)]
+            
+            if not valid_devices:
+                logger.warning("All available devices are restricted")
+                # Fallback to all devices but log warning, in case user wants to try anyway
+                valid_devices = devices
+
             # Prefer active device
-            for device in devices:
+            for device in valid_devices:
                 if device.get("is_active"):
                     logger.info(f"Found active device: {device['name']}")
                     return device["id"]
 
-            # Use first available device
-            first_device = devices[0]
+            # Use first available valid device
+            first_device = valid_devices[0]
             logger.info(f"Using first available device: {first_device['name']}")
             return first_device["id"]
 
@@ -227,6 +235,13 @@ class SpotifyService:
             SpotifyAPIError: If API call fails
         """
         try:
+            # Initialize variables to avoid potential UnboundLocalError in exception handler
+            track_name = None
+            track_artist = None
+            track_uri = None
+            track_id = None
+            selected_track = None
+
             # Build search query
             search_query = query
             if artist:
@@ -308,7 +323,35 @@ class SpotifyService:
                 },
             )
 
-        except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
+        except NoActiveDeviceError:
+            # If no active device, we still return success with the URI
+            # This allows the client-side 'tool.call' interceptor to handle playback locally
+            # while the agent remains happy that the intent was processed.
+            
+            if not track_uri or not selected_track:
+                 # If we failed before finding a track, we can't provide a URI
+                 raise
+
+            logger.info(f"No active device found (backend), but returning URI for client logic: {track_uri}")
+            return CommandResult(
+                success=True,
+                message=f"Found '{track_name}' by {track_artist}. attempting to play on device...",
+                data={
+                    "track_name": track_name,
+                    "artist": track_artist,
+                    "album": selected_track.get("album", {}).get("name", ""),
+                    "uri": track_uri,
+                    "track_id": track_id,
+                    "album_art": selected_track.get("album", {})
+                    .get("images", [{}])[0]
+                    .get("url")
+                    if selected_track.get("album", {}).get("images")
+                    else None,
+                    "action_required": "client_playback" 
+                },
+            )
+
+        except (SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
             logger.error(f"Failed to search and play track: {str(e)}", exc_info=True)
@@ -592,6 +635,14 @@ class SpotifyService:
             logger.info("Pausing playback")
 
             device_id = await self.get_active_device(access_token)
+            
+            if not device_id:
+                logger.info("No active device found (backend), but returning action for client logic")
+                return CommandResult(
+                    success=True,
+                    message="Pause requested - client should handle",
+                    data={"action_required": "client_playback", "action": "pause"},
+                )
 
             await self.client.pause(access_token=access_token, device_id=device_id)
 
@@ -619,14 +670,17 @@ class SpotifyService:
 
             device_id = await self.get_active_device(access_token)
             if not device_id:
-                raise NoActiveDeviceError()
+                logger.info("No active device found (backend), but returning action for client logic")
+                return CommandResult(
+                    success=True,
+                    message="Resume requested - client should handle",
+                    data={"action_required": "client_playback", "action": "resume"},
+                )
 
             await self.client.play(access_token=access_token, device_id=device_id)
 
             return CommandResult(success=True, message="Playback resumed", data={})
 
-        except NoActiveDeviceError:
-            raise
         except Exception as e:
             logger.error(f"Failed to resume playback: {str(e)}", exc_info=True)
             raise SpotifyAPIError(f"Failed to resume: {str(e)}", e)
@@ -647,6 +701,14 @@ class SpotifyService:
             logger.info("Skipping to next track")
 
             device_id = await self.get_active_device(access_token)
+            
+            if not device_id:
+                logger.info("No active device found (backend), but returning action for client logic")
+                return CommandResult(
+                    success=True,
+                    message="Next requested - client should handle",
+                    data={"action_required": "client_playback", "action": "next"},
+                )
 
             await self.client.skip_next(access_token=access_token, device_id=device_id)
 
@@ -672,6 +734,14 @@ class SpotifyService:
             logger.info("Skipping to previous track")
 
             device_id = await self.get_active_device(access_token)
+            
+            if not device_id:
+                logger.info("No active device found (backend), but returning action for client logic")
+                return CommandResult(
+                    success=True,
+                    message="Previous requested - client should handle",
+                    data={"action_required": "client_playback", "action": "previous"},
+                )
 
             await self.client.skip_previous(
                 access_token=access_token, device_id=device_id

@@ -33,14 +33,24 @@ class SpotifyClient:
             if not integration.refresh_token:
                 raise Exception("No refresh token available")
 
+            # Debug credentials
+            c_id = settings.SPOTIFY_CLIENT_ID
+            c_sec = settings.SPOTIFY_CLIENT_SECRET
+            
+            if not c_id or not c_sec:
+                logger.error("Spotify credentials missing in settings")
+                raise Exception("Missing Spotify credentials")
+
+            logger.info(f"Attempting token refresh. ClientID: {c_id[:4]}*** (len={len(c_id)}), Secret len: {len(c_sec)}")
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     "https://accounts.spotify.com/api/token",
                     data={
                         "grant_type": "refresh_token",
                         "refresh_token": integration.refresh_token,
-                        "client_id": settings.SPOTIFY_CLIENT_ID,
-                        "client_secret": settings.SPOTIFY_CLIENT_SECRET,
+                        "client_id": c_id,
+                        "client_secret": c_sec,
                     },
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
@@ -87,12 +97,15 @@ class SpotifyClient:
             Exception: If token refresh fails
         """
         # Check if token is expired or expires soon (within 5 minutes)
-        if (
-            integration.expires_at
-            and integration.expires_at < datetime.now(timezone.utc) + timedelta(minutes=5)
-        ):
-            logger.info("Token expired or expiring soon, refreshing...")
-            return await self.refresh_token(integration, db)
+        if integration.expires_at:
+            # Ensure expires_at is timezone-aware for comparison
+            expires_at = integration.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
+            if expires_at < datetime.now(timezone.utc) + timedelta(minutes=5):
+                logger.info("Token expired or expiring soon, refreshing...")
+                return await self.refresh_token(integration, db)
 
         return str(integration.access_token)
 

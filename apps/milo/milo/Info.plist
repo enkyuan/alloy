@@ -4,6 +4,10 @@
 <dict>
 	<key>API_BASE_URL</key>
 	<string>$(API_BASE_URL)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>spotify</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -23,6 +27,14 @@
 				<string>milo</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.modal.milo</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>milo</string>
+			</array>
+  		</dict>
 	</array>
 	<key>DEBUG_LOGGING</key>
 	<string>$(DEBUG_LOGGING)</string>
@@ -35,6 +47,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>spotify</string>
+	</array>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SUPABASE_URL</key>
@@ -42,8 +58,11 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>audio</string>
 	</array>
 	<key>WEBSOCKET_URL</key>
 	<string>$(WEBSOCKET_URL)</string>
+	<key>SPOTIFY_CLIENT_ID</key>
+	<string>$(SPOTIFY_CLIENT_ID)</string>
 </dict>
 </plist>

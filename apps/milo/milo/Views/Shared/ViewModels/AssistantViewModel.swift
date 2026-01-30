@@ -234,19 +234,77 @@ class AssistantViewModel {
         }
 
         print("Calling webSocketSTTService.sendMessage...")
+        
+        // Check if websocket is connected before sending
+        guard webSocketSTTService.isConnected else {
+            print("WebSocket not connected - using on-device fallback immediately")
+            await handleOnDeviceFallback(text)
+            return
+        }
+        
         webSocketSTTService.sendMessage(jsonString)
         print("Message sent, waiting for response...")
 
+
         geminiTimeoutTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
             guard !responseReceived, self.isAwaitingGeminiResponse else { return }
             guard self.webSocketSTTService.isConnected else {
                 print("Skipping Gemini timeout message - WebSocket disconnected")
                 return
             }
-            print("Gemini response timeout")
+            print("Gemini response timeout - trying on-device fallback")
             self.isAwaitingGeminiResponse = false
-            self.conversationService.addAssistantMessage("Sorry, the response took too long.")
+            
+            // Try on-device command parsing as fallback
+            await self.handleOnDeviceFallback(text)
+        }
+    }
+    
+    /// Handle commands on-device when backend is completely unavailable
+    /// This is a pure fallback - backend handles all parsing/reasoning normally
+    private func handleOnDeviceFallback(_ text: String) async {
+        print("Backend unavailable - using on-device fallback for: \(text)")
+        
+        let command = OnDeviceCommandParser.shared.parseCommand(text)
+        
+        switch command {
+        case .play(let query):
+            print("On-device: Play command")
+            if query.isEmpty {
+                conversationService.addAssistantMessage("Resuming playback.")
+                SpotifyAppService.shared.resume()
+            } else {
+                conversationService.addAssistantMessage(
+                    "I'm offline. I found '\(query)' but need a connection to search and play. I can help with basic controls: pause, skip, and resume."
+                )
+            }
+            
+        case .pause:
+            print("On-device: Pause")
+            conversationService.addAssistantMessage("Pausing playback.")
+            SpotifyAppService.shared.pause()
+            
+        case .resume:
+            print("On-device: Resume")
+            conversationService.addAssistantMessage("Resuming playback.")
+            SpotifyAppService.shared.resume()
+            
+        case .skipNext:
+            print("On-device: Skip next")
+            conversationService.addAssistantMessage("Skipping to next track.")
+            SpotifyAppService.shared.skipNext()
+            
+        case .skipPrevious:
+            print("On-device: Skip previous")
+            conversationService.addAssistantMessage("Going back to previous track.")
+            SpotifyAppService.shared.skipPrevious()
+            
+        case .unknown:
+            print("On-device: Unknown command")
+            conversationService.addAssistantMessage(
+                "I'm offline. I can help with basic playback: pause, resume, skip next, and previous."
+            )
         }
     }
 

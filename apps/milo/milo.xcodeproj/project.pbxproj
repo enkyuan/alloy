@@ -16,6 +16,8 @@
 		83601AEA2E9C42E300C9B0A6 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AE92E9C42E300C9B0A6 /* Storage */; };
 		83601AEC2E9C42F400C9B0A6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 83601AEB2E9C42F400C9B0A6 /* Supabase */; };
 		8371499A2F245D5D00F1678C /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 8371499B2F245D5D00F1678C /* MCP */; };
+		83C155A22F2C6B7F00E888B3 /* SpotifyiOS.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83C155A02F2C6AB400E888B3 /* SpotifyiOS.xcframework */; };
+		83C155A32F2C6B7F00E888B3 /* SpotifyiOS.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 83C155A02F2C6AB400E888B3 /* SpotifyiOS.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,10 +37,25 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		83C155A42F2C6B7F00E888B3 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				83C155A32F2C6B7F00E888B3 /* SpotifyiOS.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		830FBFE52E9B7AE100C65E4A /* milo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = milo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		830FBFF62E9B7AE200C65E4A /* miloTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = miloTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		830FC0002E9B7AE200C65E4A /* miloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = miloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		83C155A02F2C6AB400E888B3 /* SpotifyiOS.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = SpotifyiOS.xcframework; sourceTree = "<group>"; };
 		83D7700C2EA14DF90039A407 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -86,6 +103,7 @@
 				83601AE82E9C42E300C9B0A6 /* Realtime in Frameworks */,
 				83601AE22E9C42E300C9B0A6 /* Auth in Frameworks */,
 				83601AE62E9C42E300C9B0A6 /* PostgREST in Frameworks */,
+				83C155A22F2C6B7F00E888B3 /* SpotifyiOS.xcframework in Frameworks */,
 				8371499A2F245D5D00F1678C /* MCP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,6 +150,7 @@
 		83601AD52E9B937900C9B0A6 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				83C155A02F2C6AB400E888B3 /* SpotifyiOS.xcframework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -146,6 +165,7 @@
 				830FBFE12E9B7AE100C65E4A /* Sources */,
 				830FBFE22E9B7AE100C65E4A /* Frameworks */,
 				830FBFE32E9B7AE100C65E4A /* Resources */,
+				83C155A42F2C6B7F00E888B3 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);

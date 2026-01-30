@@ -21,6 +21,8 @@ class WebSocketSTTService: NSObject {
 
     var isConnected: Bool = false
     var currentTranscription: String = ""
+    private var keepaliveTimer: Timer?
+    private var lastPlayedUri: String?  // Track last played URI to prevent duplicates
     var onTranscriptionUpdate: ((String) -> Void)?
     var onFinalTranscription: ((String) -> Void)?
     var onError: ((String) -> Void)?
@@ -56,6 +58,9 @@ class WebSocketSTTService: NSObject {
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
 
+        // Start keepalive timer to prevent idle timeout
+        startKeepalive()
+
         receiveMessage()
     }
 
@@ -63,8 +68,13 @@ class WebSocketSTTService: NSObject {
         print(
             "Disconnecting WebSocket (isConnected: \(isConnected), connectionId: \(currentConnectionId?.uuidString ?? "nil"))"
         )
+
+        // Stop keepalive timer
+        stopKeepalive()
+
         isConnected = false
         currentConnectionId = nil
+        lastPlayedUri = nil  // Reset played URI tracker
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
         currentTranscription = ""
@@ -225,9 +235,10 @@ class WebSocketSTTService: NSObject {
 
             case "partial":
                 if let text = json["text"] as? String {
-                    if Environment.isDebugLoggingEnabled {
-                        print("Partial: \(text)")
-                    }
+                    // Commented out to prevent excessive logging
+                    // if Environment.isDebugLoggingEnabled {
+                    //     print("Partial: \(text)")
+                    // }
                     currentTranscription = text
                     onTranscriptionUpdate?(text)
                 }
@@ -280,6 +291,116 @@ class WebSocketSTTService: NSObject {
             case "command_queued":
                 print("Command queued")
 
+            case "tool.call":
+                // This message contains a tool call request from the agent
+                if let payloadStr = json["payload"] as? String,
+                    let payloadData = payloadStr.data(using: .utf8),
+                    let payload = try? JSONSerialization.jsonObject(with: payloadData)
+                        as? [String: Any],
+                    let toolName = payload["tool_name"] as? String,
+                    toolName == "spotify.play"
+                {
+
+                    print("Received spotify.play tool call: \(payload)")
+
+                    if let toolArgs = payload["tool_args"] as? [String: Any] {
+                        // Extract query or URI if available
+                        let query = toolArgs["query"] as? String
+                        let uri = toolArgs["uri"] as? String
+
+                        if let uri = uri, !uri.isEmpty {
+                            print("Playing URI: \(uri)")
+                            Task { @MainActor in
+                                SpotifyAppService.shared.authorizeAndPlay(uri: uri)
+                            }
+                        } else if let query = query, !query.isEmpty {
+                            print(
+                                "Playing query via search is not fully supported yet, attempting to parse URI from query if possible or just log"
+                            )
+                            // Ideally we would search here if we had a search tool, but for now we might assume query is a URI or we just can't do it easily without a search step.
+                            // If the backend already failed to find a device, it means the backend tried to use the Web API.
+                            // If we want to use the local app, we need a URI.
+                            // For this specific 'Bohemian Rhapsody' request, it's a search term.
+                            print("Query: \(query)")
+                        }
+                    }
+                }
+
+                // Pass to AI response handler so UI can update if needed (or just log)
+                // We forward it as an ai_response-like event so the UI can perhaps show "Executing tool..."
+                onAIResponse?(json)
+
+            case "tool.result":
+                // This message contains the result of a tool execution (from backend)
+                print("Tool result received")
+
+                // Check if this is a Spotify tool result we should handle client-side
+                if let payloadStr = json["payload"] as? String,
+                    let payloadData = payloadStr.data(using: .utf8),
+                    let payload = try? JSONSerialization.jsonObject(with: payloadData)
+                        as? [String: Any],
+                    let toolName = payload["tool_name"] as? String,
+                    toolName.starts(with: "spotify.")
+                {
+
+                    // Extract the result data
+                    if let result = payload["result"] as? [String: Any],
+                        let data = result["data"] as? [String: Any],
+                        let actionRequired = data["action_required"] as? String,
+                        actionRequired == "client_playback"
+                    {
+
+                        print("Backend requested client-side playback action")
+
+                        // Handle different Spotify actions
+                        if let action = data["action"] as? String {
+                            switch action {
+                            case "pause":
+                                print("Client: Pausing Spotify playback")
+                                SpotifyAppService.shared.pause()
+                            case "resume":
+                                print("Client: Resuming Spotify playback")
+                                SpotifyAppService.shared.resume()
+                            case "next":
+                                print("Client: Skipping to next track")
+                                SpotifyAppService.shared.skipNext()
+                            case "previous":
+                                print("Client: Skipping to previous track")
+                                SpotifyAppService.shared.skipPrevious()
+                            default:
+                                print("Unknown action: \(action)")
+                            }
+                        } else if let uri = data["uri"] as? String, !uri.isEmpty {
+                            // Play action with URI
+                            print("Spotify tool result contains URI: \(uri)")
+
+                            // Only play if this is a new URI (prevent duplicate plays)
+                            if lastPlayedUri != uri {
+                                print(
+                                    "Backend requested client-side playback, playing URI via Spotify SDK"
+                                )
+                                lastPlayedUri = uri
+                                Task { @MainActor in
+                                    SpotifyAppService.shared.authorizeAndPlay(uri: uri)
+                                }
+
+                                // Clear the lastPlayedUri after 10 seconds to allow replaying
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+                                    [weak self] in
+                                    self?.lastPlayedUri = nil
+                                }
+                            } else {
+                                print("Duplicate play request for same URI, skipping")
+                            }
+                        }
+                    } else {
+                        print("Backend handled playback via Web API")
+                    }
+                }
+
+                // Forward to UI to show the result/error
+                onAIResponse?(json)
+
             default:
                 print("Unknown message type: \(type)")
             }
@@ -316,6 +437,45 @@ extension WebSocketSTTService: URLSessionWebSocketDelegate {
             if wasConnected {
                 print("Unexpected WebSocket closure detected")
                 self.onUnexpectedDisconnect?()
+            }
+        }
+    }
+
+    // MARK: - Keepalive
+
+    private func startKeepalive() {
+        stopKeepalive()  // Clear any existing timer
+
+        // Send ping every 15 seconds to keep connection alive
+        keepaliveTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.sendPing()
+            }
+        }
+        print("Started keepalive timer")
+    }
+
+    private func stopKeepalive() {
+        // Ensure timer invalidation happens on the main actor
+        if !Thread.isMainThread {
+            DispatchQueue.main.sync { [weak self] in
+                self?.keepaliveTimer?.invalidate()
+                self?.keepaliveTimer = nil
+            }
+        } else {
+            keepaliveTimer?.invalidate()
+            keepaliveTimer = nil
+        }
+        print("Stopped keepalive timer")
+    }
+
+    private func sendPing() {
+        webSocketTask?.sendPing { error in
+            if let error = error {
+                print("Ping failed: \(error.localizedDescription)")
+            } else {
+                print("Ping sent successfully")
             }
         }
     }
