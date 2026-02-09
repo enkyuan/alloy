@@ -263,7 +263,7 @@ async function buildIosApp() {
 
   spinner.message("Launching app...");
   try {
-    execSync(`xcrun simctl launch ${selectedUdid} com.modal.milo`, {
+    execSync(`xcrun simctl launch ${selectedUdid} com.tangram.labs.milo`, {
       stdio: "inherit",
     });
     spinner.stop("App launched successfully");

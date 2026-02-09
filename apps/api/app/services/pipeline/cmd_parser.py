@@ -1,3 +1,5 @@
+# TODO: FIX COMPUTED CONFIDENCE LEVELS
+
 """Command parser service for voice-activated Spotify agent."""
 
 import logging
@@ -86,8 +88,8 @@ class CommandParser:
     def _load_query_noise_patterns(self) -> list[str]:
         """Load phrases to strip from extracted play queries."""
         return [
-            r"\bhey\s+milo\b",
-            r"\bmilo\b",
+            r"\bhey\s+haven\b",
+            r"\bhaven\b",
             r"\bhey\b",
             r"\bhi\b",
             r"\bcan you\b",
@@ -334,7 +336,7 @@ class CommandParser:
         # Remove common filler words (but preserve "like" when used in "like this")
         filler_words = [
             r"\b(um|uh|you know|actually|basically|literally)\b",
-            r"\b(hey|hi|hello|milo)\b",
+            r"\b(hey|hi|hello|haven)\b",
             r"\b(please|can you|could you|would you)\b",
         ]
         for pattern in filler_words:

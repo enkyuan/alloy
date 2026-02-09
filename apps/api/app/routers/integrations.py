@@ -31,6 +31,7 @@ from app.schemas.integration import (
     IntegrationListResponse,
     IntegrationStatusResponse,
     OAuthURLResponse,
+    SpotifySyncRequest,
 )
 from app.services.spotify import spotify_client, spotify_service
 from app.services.user.auth import supabase_auth_service
@@ -141,13 +142,16 @@ async def get_spotify_oauth_url(
 
 @router.post("/spotify/sync")
 async def sync_spotify_integration(
-    authorization: str = Header(None), db: Session = Depends(get_db)
+    request: SpotifySyncRequest,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
 ):
-    """Sync Spotify integration from Supabase to our database.
+    """Sync Spotify integration from client-provided tokens.
 
-    Called by iOS app after successful Supabase Spotify OAuth.
+    Called by iOS app after successful Supabase Spotify OAuth (or native auth).
 
     Args:
+        request: Request body containing tokens
         authorization: Bearer token from Authorization header
         db: Database session
 
@@ -177,19 +181,13 @@ async def sync_spotify_integration(
 
         user_id = supabase_user["id"]
 
-        # Check if user has Spotify linked in Supabase
-        # Note: Supabase handles the OAuth tokens, we just track the connection
-        # Get user's identities to see if Spotify is linked
-        identities = supabase_user.get("identities", [])
-        has_spotify = any(
-            identity.get("provider") == "spotify" for identity in identities
-        )
-
-        if not has_spotify:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Spotify not linked in Supabase",
-            )
+        # Calculate expiration
+        expires_at = None
+        if request.expires_in:
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=request.expires_in)
+        else:
+            # Default to 1 hour if not provided
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
         # Create or update integration record
         integration = (
@@ -199,11 +197,21 @@ async def sync_spotify_integration(
         )
 
         if integration:
+            integration.access_token = request.access_token
+            if request.refresh_token:
+                integration.refresh_token = request.refresh_token
+            integration.expires_at = expires_at
             integration.is_active = True
             integration.updated_at = datetime.now(timezone.utc)
         else:
             integration = Integration(
-                id=str(uuid.uuid4()), user_id=user_id, service="spotify", is_active=True
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                service="spotify",
+                access_token=request.access_token,
+                refresh_token=request.refresh_token,
+                expires_at=expires_at,
+                is_active=True,
             )
             db.add(integration)
 
@@ -2041,7 +2049,7 @@ async def discord_oauth_callback(
     )
 
     # Redirect to iOS app with code and state
-    redirect_url = f"milo://discord/callback?code={code}&state={state}"
+    redirect_url = f"havenos://discord/callback?code={code}&state={state}"
     logger.info(f"Redirecting to iOS app: {redirect_url}")
 
     return RedirectResponse(url=redirect_url)
@@ -2585,7 +2593,7 @@ async def todoist_oauth_callback(
         Redirect to iOS app with code and state
     """
     # Redirect to iOS app with code and state
-    redirect_url = f"milo://todoist/callback?code={code}&state={state}"
+    redirect_url = f"havenos://todoist/callback?code={code}&state={state}"
     return RedirectResponse(url=redirect_url)
 
 
@@ -3136,7 +3144,7 @@ async def calendly_oauth_callback(
         Redirect to iOS app with code and state
     """
     # Redirect to iOS app with code and state
-    redirect_url = f"milo://calendly/callback?code={code}&state={state}"
+    redirect_url = f"havenos://calendly/callback?code={code}&state={state}"
     return RedirectResponse(url=redirect_url)
 
 

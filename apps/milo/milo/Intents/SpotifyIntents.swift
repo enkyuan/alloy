@@ -10,7 +10,7 @@ struct OpenSpotifyIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         await MainActor.run {
             SpotifyAppService.shared.openSpotifyAndReturnToMilo()
-        }
+        } 
         return .result(dialog: "Opening Spotify")
     }
 }

@@ -12,7 +12,7 @@ This class simplifies building agents that need both conversation management and
 
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,6 @@ from app.services.agent.events import (
     AgentResponse,
     AgentSpeechSent,
     EventInstance,
-    EventType,
-    ToolCall,
-    ToolResult,
     UserTranscriptionReceived,
 )
 from app.services.agent.nodes.base import Node
@@ -115,7 +112,7 @@ class ReasoningNode(Node):
         ctx = self._build_conversation_context()
 
         # 2. Let subclass do specialized processing
-        logger.info(f"💬 Processing context: {ctx.events}")
+        logger.info(f"Processing context: {ctx.events}")
         async for chunk in self.process_context(ctx):
             # Save the event to the conversation history.
             self.add_event(chunk)

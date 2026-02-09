@@ -2,7 +2,7 @@
 import ActivityKit
 import Foundation
 
-struct MiloActivityAttributes: ActivityAttributes {
+struct HavenOSActivityAttributes: ActivityAttributes {
 
     public struct ContentState: Codable, Hashable {
         var status: ActivityStatus
@@ -39,9 +39,9 @@ struct MiloActivityAttributes: ActivityAttributes {
 }
 
 
-extension MiloActivityAttributes.ContentState {
+extension HavenOSActivityAttributes.ContentState {
     static func idle() -> Self {
-        MiloActivityAttributes.ContentState(
+        HavenOSActivityAttributes.ContentState(
             status: .idle,
             statusMessage: "Ready",
             isPlayingMusic: false,
@@ -53,7 +53,7 @@ extension MiloActivityAttributes.ContentState {
     }
 
     static func listening() -> Self {
-        MiloActivityAttributes.ContentState(
+        HavenOSActivityAttributes.ContentState(
             status: .listening,
             statusMessage: "Listening...",
             isPlayingMusic: false,
@@ -65,7 +65,7 @@ extension MiloActivityAttributes.ContentState {
     }
 
     static func processing(message: String) -> Self {
-        MiloActivityAttributes.ContentState(
+        HavenOSActivityAttributes.ContentState(
             status: .processing,
             statusMessage: message,
             isPlayingMusic: false,
@@ -77,7 +77,7 @@ extension MiloActivityAttributes.ContentState {
     }
 
     static func playingMusic(track: Track) -> Self {
-        MiloActivityAttributes.ContentState(
+        HavenOSActivityAttributes.ContentState(
             status: .playingMusic,
             statusMessage: "Now Playing",
             isPlayingMusic: true,
@@ -89,7 +89,7 @@ extension MiloActivityAttributes.ContentState {
     }
 
     static func executingTask(task: String, progress: Double?) -> Self {
-        MiloActivityAttributes.ContentState(
+        HavenOSActivityAttributes.ContentState(
             status: .executingTask,
             statusMessage: task,
             isPlayingMusic: false,

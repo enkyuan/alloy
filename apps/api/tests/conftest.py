@@ -8,9 +8,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 import fakeredis.aioredis
-
 # Ensure app can be imported
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from unittest.mock import MagicMock, patch, AsyncMock
+
 
 from app.main import app
 from app.core.database import Base, get_db
@@ -110,3 +112,60 @@ async def async_client_fixture(session) -> AsyncGenerator:
         yield ac
     
     app.dependency_overrides.clear()
+
+@pytest.fixture(name="test_client")
+def test_client_fixture(session):
+    """Provide a synchronous TestClient for WebSocket tests."""
+    
+    # Override Redis with FakeRedis
+    fake_redis = fakeredis.aioredis.FakeRedis()
+    async def override_get_redis():
+        return fake_redis
+    
+    # Override DB with test session
+    def override_get_db():
+        try:
+            yield session
+        finally:
+            pass
+
+    app.dependency_overrides[get_redis_client] = override_get_redis
+    app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(app) as client:
+        yield client
+    
+    app.dependency_overrides.clear()
+
+@pytest.fixture
+def mock_supabase_auth():
+    """
+    Mock the supabase_auth_service singleton methods.
+    We modify the instance directly because it is imported in many places
+    and patching the variable in one module won't affect others that already imported it.
+    """
+    from app.services.user.auth import supabase_auth_service
+
+    # Save original methods
+    original_get_user = supabase_auth_service.get_user
+    original_refresh_token = supabase_auth_service.refresh_token
+
+    # Create mocks
+    mock_get = AsyncMock()
+    mock_refresh = AsyncMock()
+
+    # Apply mocks
+    supabase_auth_service.get_user = mock_get
+    supabase_auth_service.refresh_token = mock_refresh
+
+    # Yield the service (or the mocks if preferred, but tests access .get_user on the service)
+    # To match usage: mock_supabase_auth.get_user.return_value = ...
+    # We can yield a simple object holder if we want, or just yield the service
+    # which has the mocks attached.
+    # The tests use `mock_supabase_auth.get_user`, so yielding the service works
+    # because `supabase_auth_service.get_user` IS the mock.
+    yield supabase_auth_service
+
+    # Restore original methods
+    supabase_auth_service.get_user = original_get_user
+    supabase_auth_service.refresh_token = original_refresh_token

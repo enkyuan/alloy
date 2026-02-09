@@ -87,13 +87,6 @@ struct SettingsView: View {
                 )
 
                 settingsButton(
-                    icon: "globe",
-                    iconColor: .green,
-                    title: "Language",
-                    action: { /* Coming soon */  }
-                )
-
-                settingsButton(
                     icon: "hand.raised",
                     iconColor: .orange,
                     title: "Privacy",

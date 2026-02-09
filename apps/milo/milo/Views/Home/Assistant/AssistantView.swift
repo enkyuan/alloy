@@ -7,15 +7,17 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var lastScrolledPairCount = 0
-    @State private var scrollViewHeight: CGFloat = 0
+    @State private var topVisibleItemId: String?
+    @State private var isFollowingLatest = true
+
+    private let latestAnchorId = "latest-anchor"
 
     private var messages: [Message] {
         viewModel.conversationService.messages
     }
 
-    private var lastUserMessageId: UUID? {
-        messages.last(where: { $0.isUser })?.id
+    private var messageIdList: [UUID] {
+        messages.map(\.id)
     }
 
     private var currentPlaybackItem: MusicPlaybackItem? {
@@ -104,77 +106,63 @@ struct AssistantView: View {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
 
-    private func userAnchorId(for id: UUID) -> String {
-        "user-anchor-\(id.uuidString)"
+    private func messageItemId(for id: UUID) -> String {
+        "message-\(id.uuidString)"
     }
 
-    private func scrollToLatestPair(using proxy: ScrollViewProxy) {
-        guard let latestUserMessageId = lastUserMessageId else { return }
+    private func followLatestIfNeeded() {
+        guard isFollowingLatest else { return }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.9, blendDuration: 0.2)) {
-            proxy.scrollTo(userAnchorId(for: latestUserMessageId), anchor: .top)
+            topVisibleItemId = latestAnchorId
         }
     }
 
     @ViewBuilder private var chatView: some View {
-        GeometryReader { geo in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(spacing: 16) {
-                        Color.clear
-                            .frame(height: 1)
-                            .id("top-anchor")
+        ScrollView {
+            LazyVStack(spacing: 16) {
+                Color.clear
+                    .frame(height: 1)
+                    .id(latestAnchorId)
 
-                        if messages.isEmpty && !isActiveSession {
-                            AssistantGreetingView()
-                        }
-
-                        ForEach(messages) { message in
-                            if message.isUser {
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id(userAnchorId(for: message.id))
-                            }
-                            MessageRow(message: message)
-                                .id(message.id)
-                        }
-
-                        if isActiveSession {
-                            TranscriptionBubble(
-                                isConnecting: viewModel.isConnecting,
-                                isRecording: viewModel.isRecording,
-                                isProcessing: viewModel.isProcessingTranscription,
-                                partialText: viewModel.partialTranscription
-                            )
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
-                            .id("transcription-bubble")
-                        }
-
-                        Color.clear
-                            .frame(height: scrollViewHeight)
-                            .id("bottom-spacer")
-                    }
-                    .padding(.top, 4)
-                    .padding(.bottom, 140)
+                if isActiveSession {
+                    TranscriptionBubble(
+                        isConnecting: viewModel.isConnecting,
+                        isRecording: viewModel.isRecording,
+                        isProcessing: viewModel.isProcessingTranscription,
+                        partialText: viewModel.partialTranscription
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .id("transcription-bubble")
                 }
-                .onAppear {
-                    scrollViewHeight = geo.size.height
+
+                if messages.isEmpty && !isActiveSession {
+                    AssistantGreetingView()
                 }
-                .onChange(of: geo.size.height) { _, newHeight in
-                    scrollViewHeight = newHeight
-                }
-                .onChange(of: messages.count) { _, newCount in
-                    guard newCount > 0 else {
-                        lastScrolledPairCount = 0
-                        return
-                    }
-                    let pairCount = newCount / 2
-                    guard pairCount > lastScrolledPairCount else { return }
-                    lastScrolledPairCount = pairCount
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                        scrollToLatestPair(using: proxy)
-                    }
+
+                ForEach(messages) { message in
+                    MessageRow(message: message)
+                        .id(messageItemId(for: message.id))
                 }
             }
+            .padding(.top, 4)
+            .padding(.bottom, 140)
+            .scrollTargetLayout()
+        }
+        .scrollPosition(id: $topVisibleItemId, anchor: .top)
+        .defaultScrollAnchor(.top, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .sizeChanges)
+        .onAppear {
+            topVisibleItemId = latestAnchorId
+            isFollowingLatest = true
+        }
+        .onChange(of: messageIdList) { _, _ in
+            followLatestIfNeeded()
+        }
+        .onChange(of: isActiveSession) { _, _ in
+            followLatestIfNeeded()
+        }
+        .onChange(of: topVisibleItemId) { _, newValue in
+            isFollowingLatest = (newValue == nil || newValue == latestAnchorId)
         }
     }
 

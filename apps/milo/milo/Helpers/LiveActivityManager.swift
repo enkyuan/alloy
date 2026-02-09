@@ -6,7 +6,7 @@ import Foundation
 @Observable
 class LiveActivityManager {
 
-    private(set) var currentActivity: Activity<MiloActivityAttributes>?
+    private(set) var currentActivity: Activity<HavenOSActivityAttributes>?
     private(set) var isActivityActive: Bool = false
 
 
@@ -17,7 +17,7 @@ class LiveActivityManager {
     }
 
 
-    func startActivity(initialState: MiloActivityAttributes.ContentState) {
+    func startActivity(initialState: HavenOSActivityAttributes.ContentState) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             print("Live Activities are not enabled")
             return
@@ -35,7 +35,7 @@ class LiveActivityManager {
         }
 
         do {
-            let attributes = MiloActivityAttributes()
+            let attributes = HavenOSActivityAttributes()
             let activity = try Activity.request(
                 attributes: attributes,
                 content: .init(state: initialState, staleDate: nil),
@@ -63,7 +63,7 @@ class LiveActivityManager {
         }
     }
 
-    func updateActivity(newState: MiloActivityAttributes.ContentState) async {
+    func updateActivity(newState: HavenOSActivityAttributes.ContentState) async {
         guard let activity = currentActivity else {
             print("No active Live Activity to update")
             return
@@ -81,7 +81,7 @@ class LiveActivityManager {
             return
         }
 
-        let finalState = MiloActivityAttributes.ContentState.idle()
+        let finalState = HavenOSActivityAttributes.ContentState.idle()
         let finalContent = ActivityContent(state: finalState, staleDate: nil)
 
         await activity.end(finalContent, dismissalPolicy: dismissalPolicy)
@@ -93,19 +93,19 @@ class LiveActivityManager {
     }
 
     func updateWithSpotifyTrack(name: String, artist: String, albumArt: String?, isPlaying: Bool) async {
-        let track = MiloActivityAttributes.ContentState.Track(
+        let track = HavenOSActivityAttributes.ContentState.Track(
             name: name,
             artist: artist,
             albumArt: albumArt,
             isPlaying: isPlaying
         )
 
-        let newState = MiloActivityAttributes.ContentState.playingMusic(track: track)
+        let newState = HavenOSActivityAttributes.ContentState.playingMusic(track: track)
         await updateActivity(newState: newState)
     }
 
     func updateWithTask(description: String, progress: Double?) async {
-        let newState = MiloActivityAttributes.ContentState.executingTask(
+        let newState = HavenOSActivityAttributes.ContentState.executingTask(
             task: description,
             progress: progress
         )
@@ -113,18 +113,18 @@ class LiveActivityManager {
     }
 
     func setListening() async {
-        let newState = MiloActivityAttributes.ContentState.listening()
+        let newState = HavenOSActivityAttributes.ContentState.listening()
         await updateActivity(newState: newState)
     }
 
     func setIdle() async {
-        let newState = MiloActivityAttributes.ContentState.idle()
+        let newState = HavenOSActivityAttributes.ContentState.idle()
         await updateActivity(newState: newState)
     }
 
 
     private func checkForExistingActivities() {
-        let activities = Activity<MiloActivityAttributes>.activities
+        let activities = Activity<HavenOSActivityAttributes>.activities
         if let activity = activities.first {
             currentActivity = activity
             isActivityActive = true
@@ -139,8 +139,8 @@ extension LiveActivityManager {
         startActivity(initialState: .idle())
     }
 
-    func updateStatus(_ status: MiloActivityAttributes.ContentState.ActivityStatus, message: String) async {
-        let newState = MiloActivityAttributes.ContentState(
+    func updateStatus(_ status: HavenOSActivityAttributes.ContentState.ActivityStatus, message: String) async {
+        let newState = HavenOSActivityAttributes.ContentState(
             status: status,
             statusMessage: message,
             isPlayingMusic: false,

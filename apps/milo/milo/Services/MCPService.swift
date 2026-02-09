@@ -62,4 +62,3 @@ class MCPService {
 enum MCPServiceError: Error {
     case notConnected
 }
-

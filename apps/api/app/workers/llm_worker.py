@@ -93,7 +93,7 @@ def _normalize_spotify_query(query: str, artist: str | None = None) -> str:
     text = re.sub(r"\b(on|in|with)\s+spotify\b", "", text)
     text = re.sub(r"\bspotify\b", "", text)
     text = re.sub(
-        r"\b(play|please|could you|can you|would you|hey|hi|milo)\b", "", text
+        r"\b(play|please|could you|can you|would you|hey|hi|haven)\b", "", text
     )
     text = re.sub(r"[^a-z0-9\s]", "", text)
     text = re.sub(r"\s+", " ", text).strip()

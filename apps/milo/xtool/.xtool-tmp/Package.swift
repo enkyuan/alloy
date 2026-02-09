@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
 import PackageDescription
 let package = Package(
-    name: "milo-Builder",
+    name: "havenos-Builder",
     platforms: [
         .iOS("26.0"),
     ],
@@ -10,9 +10,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-    name: "milo-App",
+    name: "havenos-App",
     dependencies: [
-        .product(name: "milo", package: "RootPackage"),
+        .product(name: "havenos", package: "RootPackage"),
     ],
     linkerSettings: [
     .unsafeFlags([

@@ -268,7 +268,7 @@ build_ios_app() {
 
             # Launch app on the selected simulator
             echo -e "\n${YELLOW}Launching app on ${SELECTED_SIM}...${NC}"
-            if xcrun simctl launch "$SIMULATOR_UDID" com.modal.milo 2>&1; then
+            if xcrun simctl launch "$SIMULATOR_UDID" com.tangram.labs.milo 2>&1; then
                 echo -e "${GREEN}✓ App launched successfully on ${SELECTED_SIM}${NC}"
                 echo -e "\n${CYAN}════════════════════════════════════════${NC}"
                 echo -e "${GREEN}✓ Build and Launch Complete!${NC}"

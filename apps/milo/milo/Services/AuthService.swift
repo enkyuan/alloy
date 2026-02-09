@@ -47,17 +47,44 @@ class AuthService {
         }
 
         Task { @MainActor in
-            for await state in supabase.auth.authStateChanges {
-                if state.event == .signedIn {
-                    print("Auth state changed: Signed in")
-                    await handleAuthStateChange(session: state.session)
-                } else if state.event == .signedOut {
-                    print("Auth state changed: Signed out")
-                    session = nil
-                    currentUser = nil
+            if ProcessInfo.processInfo.arguments.contains("--mock-auth") {
+                print("Mock Auth Detected")
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                self.setupMockSession()
+            } else {
+                for await state in supabase.auth.authStateChanges {
+                    if state.event == .signedIn {
+                        print("Auth state changed: Signed in")
+                        await handleAuthStateChange(session: state.session)
+                    } else if state.event == .signedOut {
+                        print("Auth state changed: Signed out")
+                        session = nil
+                        currentUser = nil
+                    }
                 }
             }
         }
+    }
+    
+    private func setupMockSession() {
+        // Create a dummy user
+        self.currentUser = User(
+            id: "test_user_id",
+            email: "test@example.com",
+            username: "Test User",
+            fullName: "Test User",
+            avatarUrl: nil,
+            provider: "google",
+            isActive: true,
+            isVerified: true,
+            createdAt: "2024-01-01T00:00:00Z"
+        )
+        
+        // We can't easily mock Supabase Session without private initializers usually,
+        // but we can rely on currentUser being set if we update isAuthenticated logic,
+        // OR we can try to JSON decode a fake session if the struct allows it.
+        // For simplicity, let's allow isAuthenticated to be true if currentUser is set in mock mode.
+        // To do this clean, we'll modify isAuthenticated property below.
     }
 
 

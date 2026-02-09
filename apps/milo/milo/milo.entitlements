@@ -4,11 +4,11 @@
 <dict>
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.app.milo</string>
+		<string>group.com.tangram.labs.milo</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)com.app.milo</string>
+		<string>$(AppIdentifierPrefix)com.tangram.labs.milo</string>
 		<string>$(AppIdentifierPrefix)com.google.GIDSignIn</string>
 	</array>
 </dict>

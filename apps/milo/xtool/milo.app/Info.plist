@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>milo</string>
+	<string>havenos</string>
 	<key>CFBundleExecutable</key>
-	<string>milo</string>
+	<string>havenos</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.modal.milo</string>
+	<string>com.tangram.labs.milo</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>milo</string>
+	<string>havenos</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

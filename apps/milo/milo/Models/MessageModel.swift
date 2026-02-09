@@ -20,20 +20,20 @@ class ConversationService {
     var messages: [Message] = []
 
     func addMessage(_ message: Message) {
-        messages.append(message)
+        messages.insert(message, at: 0)
     }
 
     func addUserMessage(_ text: String) {
         print("ConversationService: Adding user message: \"\(text)\"")
         let message = Message(text: text, isUser: true)
-        messages.append(message)
+        messages.insert(message, at: 0)
         print("ConversationService: Messages array now has \(messages.count) messages")
     }
 
     func addAssistantMessage(_ text: String) {
         print("ConversationService: Adding assistant message: \"\(text)\"")
         let message = Message(text: text, isUser: false)
-        messages.append(message)
+        messages.insert(message, at: 0)
         print("ConversationService: Messages array now has \(messages.count) messages")
     }
 

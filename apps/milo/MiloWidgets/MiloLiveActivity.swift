@@ -4,9 +4,9 @@ import WidgetKit
 import SwiftUI
 
 
-struct MiloLiveActivity: Widget {
+struct HavenOSLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: MiloActivityAttributes.self) { context in
+        ActivityConfiguration(for: HavenOSActivityAttributes.self) { context in
             LiveActivityView(context: context)
         } dynamicIsland: { context in
             DynamicIsland {
@@ -34,13 +34,13 @@ struct MiloLiveActivity: Widget {
 
 
     @ViewBuilder
-    private func compactLeadingView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func compactLeadingView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         Image(systemName: statusIcon(for: context.state.status))
             .foregroundStyle(.tint)
     }
 
     @ViewBuilder
-    private func compactTrailingView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func compactTrailingView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         if context.state.isPlayingMusic {
             Image(systemName: "music.note")
                 .foregroundStyle(.pink)
@@ -52,14 +52,14 @@ struct MiloLiveActivity: Widget {
     }
 
     @ViewBuilder
-    private func minimalView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func minimalView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         Image(systemName: statusIcon(for: context.state.status))
             .foregroundStyle(.tint)
     }
 
 
     @ViewBuilder
-    private func expandedLeadingView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func expandedLeadingView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Image(systemName: statusIcon(for: context.state.status))
                 .font(.title2)
@@ -72,7 +72,7 @@ struct MiloLiveActivity: Widget {
     }
 
     @ViewBuilder
-    private func expandedTrailingView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func expandedTrailingView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         if let track = context.state.currentTrack {
             VStack(alignment: .trailing, spacing: 4) {
                 Image(systemName: track.isPlaying ? "play.fill" : "pause.fill")
@@ -87,7 +87,7 @@ struct MiloLiveActivity: Widget {
     }
 
     @ViewBuilder
-    private func expandedCenterView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func expandedCenterView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         VStack(spacing: 8) {
             if let track = context.state.currentTrack {
                 Text(track.name)
@@ -108,7 +108,7 @@ struct MiloLiveActivity: Widget {
     }
 
     @ViewBuilder
-    private func expandedBottomView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func expandedBottomView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         if let progress = context.state.taskProgress {
             ProgressView(value: progress)
                 .tint(.blue)
@@ -135,7 +135,7 @@ struct MiloLiveActivity: Widget {
 
 
     @ViewBuilder
-    private func LiveActivityView(context: ActivityViewContext<MiloActivityAttributes>) -> some View {
+    private func LiveActivityView(context: ActivityViewContext<HavenOSActivityAttributes>) -> some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 Image(systemName: statusIcon(for: context.state.status))
@@ -179,7 +179,7 @@ struct MiloLiveActivity: Widget {
     }
 
 
-    private func statusIcon(for status: MiloActivityAttributes.ContentState.ActivityStatus) -> String {
+    private func statusIcon(for status: HavenOSActivityAttributes.ContentState.ActivityStatus) -> String {
         switch status {
         case .idle:
             return "circle"
@@ -223,12 +223,12 @@ struct SkipPreviousIntent: AppIntent {
 }
 
 
-#Preview("Live Activity", as: .content, using: MiloActivityAttributes()) {
-    MiloLiveActivity()
+#Preview("Live Activity", as: .content, using: HavenOSActivityAttributes()) {
+    HavenOSLiveActivity()
 } contentStates: {
-    MiloActivityAttributes.ContentState.idle()
-    MiloActivityAttributes.ContentState.listening()
-    MiloActivityAttributes.ContentState.playingMusic(
+    HavenOSActivityAttributes.ContentState.idle()
+    HavenOSActivityAttributes.ContentState.listening()
+    HavenOSActivityAttributes.ContentState.playingMusic(
         track: .init(
             name: "Bohemian Rhapsody",
             artist: "Queen",

@@ -23,13 +23,13 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.modal.milo</string>
+				<string>com.tangram.labs.milo</string>
 				<string>milo</string>
 			</array>
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.modal.milo</string>
+			<string>com.tangram.labs.milo</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>milo</string>

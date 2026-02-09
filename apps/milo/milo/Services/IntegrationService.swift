@@ -117,8 +117,17 @@ class IntegrationService {
     }
 
     func connectService(_ service: ServiceType, authService: AuthService) async throws {
-        print("Initiating OAuth for \(service.displayName)")
+        if ProcessInfo.processInfo.arguments.contains("--mock-auth") {
+            print("[Mock] simulating connection to \(service.displayName)")
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
+            DispatchQueue.main.async {
+                self.connectedServices.insert(service)
+            }
+            return
+        }
 
+        print("Initiating OAuth for \(service.displayName)")
+        
         guard let session = authService.session else {
             print("Not authenticated")
             throw IntegrationError.notAuthenticated

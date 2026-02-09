@@ -168,14 +168,14 @@ class SpotifyService:
             devices = devices_response.get("devices", [])
 
             if not devices:
-                logger.warning("No devices available")
+                logger.debug("No devices available")
                 return None
 
             # Filter out restricted devices
             valid_devices = [d for d in devices if not d.get("is_restricted", False)]
 
             if not valid_devices:
-                logger.warning("All available devices are restricted")
+                logger.debug("All available devices are restricted")
                 # Fallback to all devices but log warning, in case user wants to try anyway
                 valid_devices = devices
 
@@ -346,7 +346,7 @@ class SpotifyService:
                 # If we failed before finding a track, we can't provide a URI
                 raise
 
-            logger.info(
+            logger.debug(
                 f"No active device found (backend), but returning URI for client logic: {track_uri}"
             )
             return CommandResult(

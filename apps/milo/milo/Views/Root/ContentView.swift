@@ -24,6 +24,11 @@ struct ContentView: View {
                             showIntegrations = true
                         }
                     }
+                    .onAppear {
+                        if authService.isAuthenticated {
+                            showIntegrations = true
+                        }
+                    }
             }
         }
     }

@@ -17,6 +17,34 @@ class IntegrationConnectRequest(BaseModel):
     redirect_uri: Optional[str] = Field(None, description="OAuth redirect URI")
 
 
+class EmailSyncRequest(BaseModel):
+    """Schema for syncing Email (Gmail/Outlook) integrations.
+    
+    Attributes:
+        access_token: OAuth access token
+        id_token: ID token (optional, often used for Google)
+        refresh_token: Refresh token (optional)
+        expires_in: Token expiration in seconds (optional)
+    """
+    access_token: str
+    id_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
+class SpotifySyncRequest(BaseModel):
+    """Schema for syncing Spotify integration.
+    
+    Attributes:
+        access_token: OAuth access token
+        refresh_token: Refresh token (optional)
+        expires_in: Token expiration in seconds (optional)
+    """
+    access_token: str
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
+
+
 # Response Schemas
 
 

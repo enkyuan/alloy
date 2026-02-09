@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Milo-iOS-Default-1024x1024@1x.png",
+      "filename" : "HavenOS-iOS-Default-1024x1024@1x.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Milo - Dark-iOS-Dark-1024x1024@1x.png",
+      "filename" : "HavenOS - Dark-iOS-Dark-1024x1024@1x.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

@@ -308,7 +308,19 @@ async def stream_transcribe(
         transcription_active = True
         try:
             while True:
-                message = await websocket.receive()
+                try:
+                    message = await websocket.receive()
+                except RuntimeError as e:
+                    if 'Cannot call "receive" once a disconnect' in str(
+                        e
+                    ):
+                        logger.info("Client already disconnected")
+                        break
+                    raise
+
+                if message.get("type") == "websocket.disconnect":
+                    logger.info("Client disconnected")
+                    break
 
                 # Handle text messages (control signals and commands)
                 if "text" in message:
