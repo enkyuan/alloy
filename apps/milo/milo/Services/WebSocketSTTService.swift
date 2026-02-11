@@ -4,6 +4,11 @@ import Foundation
 @Observable
 class WebSocketSTTService: NSObject {
 
+    struct SpotifyPlaybackUpdate {
+        let track: SpotifyTrack?
+        let isPlaying: Bool
+    }
+
     private let backendURL: String
     private var webSocketTask: URLSessionWebSocketTask?
     private var _session: URLSession?
@@ -32,6 +37,7 @@ class WebSocketSTTService: NSObject {
     var onCommandError: ((String, String?) -> Void)?
     var onCommandQueued: ((String) -> Void)?
     var onAIResponse: (([String: Any]) -> Void)?
+    var onSpotifyPlaybackUpdate: ((SpotifyPlaybackUpdate) -> Void)?
 
     nonisolated init(backendURL: String = Environment.websocketURL) {
         self.backendURL = backendURL
@@ -168,6 +174,94 @@ class WebSocketSTTService: NSObject {
         }
     }
 
+    private func parsePayload(from json: [String: Any]) -> [String: Any]? {
+        guard let payloadStr = json["payload"] as? String,
+            let payloadData = payloadStr.data(using: .utf8),
+            let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any]
+        else {
+            return nil
+        }
+        return payload
+    }
+
+    private func spotifyTrack(from data: [String: Any]) -> SpotifyTrack? {
+        let name = (data["track_name"] as? String)
+            ?? (data["name"] as? String)
+            ?? (data["album_name"] as? String)
+            ?? (data["playlist_name"] as? String)
+        guard let name, !name.isEmpty else { return nil }
+
+        let artist = (data["artist"] as? String) ?? (data["owner"] as? String) ?? "Spotify"
+        let album = (data["album"] as? String)
+            ?? (data["album_name"] as? String)
+            ?? (data["playlist_name"] as? String)
+            ?? ""
+        let uri = (data["uri"] as? String) ?? ""
+        let albumArt = (data["album_art"] as? String) ?? (data["album_art_url"] as? String)
+        let durationMs = (data["duration_ms"] as? Int) ?? 0
+
+        let rawId = (data["track_id"] as? String) ?? uri
+        let id = rawId.isEmpty ? "spotify-\(name.lowercased())-\(artist.lowercased())" : rawId
+
+        return SpotifyTrack(
+            id: id,
+            name: name,
+            artist: artist,
+            album: album,
+            uri: uri,
+            albumArtUrl: albumArt,
+            durationMs: durationMs
+        )
+    }
+
+    private func playbackState(for toolName: String, data: [String: Any]) -> Bool? {
+        switch toolName {
+        case "spotify.pause":
+            return false
+        case "spotify.play", "spotify.play_album", "spotify.play_playlist", "spotify.resume",
+            "spotify.next", "spotify.previous":
+            return true
+        default:
+            break
+        }
+
+        if let action = data["action"] as? String {
+            switch action {
+            case "pause":
+                return false
+            case "resume", "next", "previous":
+                return true
+            default:
+                break
+            }
+        }
+
+        return nil
+    }
+
+    private func publishSpotifyPlaybackUpdate(toolName: String, data: [String: Any]) {
+        guard toolName != "spotify.add_to_queue" else {
+            print("Skipping mini player update for queue action")
+            return
+        }
+
+        guard let isPlaying = playbackState(for: toolName, data: data) else {
+            return
+        }
+
+        let track = spotifyTrack(from: data)
+        if let track {
+            print(
+                "Publishing Spotify playback update: \(track.name) by \(track.artist), isPlaying=\(isPlaying)"
+            )
+        } else {
+            print(
+                "Publishing Spotify playback state update without track metadata, isPlaying=\(isPlaying)"
+            )
+        }
+        onSpotifyPlaybackUpdate?(SpotifyPlaybackUpdate(track: track, isPlaying: isPlaying))
+    }
+
     private func receiveMessage() {
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
@@ -297,10 +391,7 @@ class WebSocketSTTService: NSObject {
 
             case "tool.call":
                 // This message contains a tool call request from the agent
-                if let payloadStr = json["payload"] as? String,
-                    let payloadData = payloadStr.data(using: .utf8),
-                    let payload = try? JSONSerialization.jsonObject(with: payloadData)
-                        as? [String: Any],
+                if let payload = parsePayload(from: json),
                     let toolName = payload["tool_name"] as? String,
                     toolName == "spotify.play"
                 {
@@ -339,18 +430,17 @@ class WebSocketSTTService: NSObject {
                 print("Tool result received")
 
                 // Check if this is a Spotify tool result we should handle client-side
-                if let payloadStr = json["payload"] as? String,
-                    let payloadData = payloadStr.data(using: .utf8),
-                    let payload = try? JSONSerialization.jsonObject(with: payloadData)
-                        as? [String: Any],
+                if let payload = parsePayload(from: json),
                     let toolName = payload["tool_name"] as? String,
                     toolName.starts(with: "spotify.")
                 {
 
+                    let result = payload["result"] as? [String: Any]
+                    let data = result?["data"] as? [String: Any] ?? [:]
+                    publishSpotifyPlaybackUpdate(toolName: toolName, data: data)
+
                     // Extract the result data
-                    if let result = payload["result"] as? [String: Any],
-                        let data = result["data"] as? [String: Any],
-                        let actionRequired = data["action_required"] as? String,
+                    if let actionRequired = data["action_required"] as? String,
                         actionRequired == "client_playback"
                     {
 

@@ -22,13 +22,14 @@ struct AssistantView: View {
 
     private var currentPlaybackItem: MusicPlaybackItem? {
         guard let track = viewModel.currentSpotifyTrack else { return nil }
+        let duration = track.durationMs > 0 ? TimeInterval(track.durationMs) / 1000 : nil
         return MusicPlaybackItem(
             title: track.name,
             artist: track.artist,
             albumArtUrl: track.albumArtUrl,
-            isPlaying: true,
+            isPlaying: viewModel.isSpotifyPlaying,
             elapsed: nil,
-            duration: TimeInterval(track.durationMs) / 1000,
+            duration: duration,
             platform: .spotify
         )
     }
@@ -49,22 +50,29 @@ struct AssistantView: View {
 
             VStack {
                 Spacer()
-                MusicMiniPlayer(
+                MiniPlayer(
                     item: currentPlaybackItem,
                     onPlayPause: {
                         SpotifyAppService.shared.openSpotifyAndReturnToMilo {
-                            SpotifyAppService.shared.resume()
+                            if viewModel.isSpotifyPlaying {
+                                SpotifyAppService.shared.pause()
+                            } else {
+                                SpotifyAppService.shared.resume()
+                            }
                         }
+                        viewModel.isSpotifyPlaying.toggle()
                     },
                     onNext: {
                         SpotifyAppService.shared.openSpotifyAndReturnToMilo {
                             SpotifyAppService.shared.skipNext()
                         }
+                        viewModel.isSpotifyPlaying = true
                     },
                     onPrevious: {
                         SpotifyAppService.shared.openSpotifyAndReturnToMilo {
                             SpotifyAppService.shared.skipPrevious()
                         }
+                        viewModel.isSpotifyPlaying = true
                     },
                     onRoute: {
                         SpotifyAppService.shared.openSpotify()
@@ -117,6 +125,12 @@ struct AssistantView: View {
         }
     }
 
+    private func updateFollowState(from newTopVisibleItemId: String?) {
+        // Ignore transient nil updates produced during layout recalculation.
+        guard let newTopVisibleItemId else { return }
+        isFollowingLatest = (newTopVisibleItemId == latestAnchorId)
+    }
+
     @ViewBuilder private var chatView: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
@@ -162,7 +176,7 @@ struct AssistantView: View {
             followLatestIfNeeded()
         }
         .onChange(of: topVisibleItemId) { _, newValue in
-            isFollowingLatest = (newValue == nil || newValue == latestAnchorId)
+            updateFollowState(from: newValue)
         }
     }
 

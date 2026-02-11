@@ -169,6 +169,11 @@ class CommandParser:
                 r"play\s+more\s+from\s+(?:this|the)\s+album",
                 r"continue\s+(?:this|the)\s+album",
             ],
+            "play_track_from_playlist": [
+                r"play\s+(?P<track>.+?)\s+from\s+(?:my\s+)?playlist\s+(?P<playlist>.+)",
+                r"play\s+(?P<track>.+?)\s+in\s+(?:my\s+)?playlist\s+(?P<playlist>.+)",
+                r"play\s+(?P<track>.+?)\s+from\s+playlist\s+(?P<playlist>.+)",
+            ],
             "play_playlist": [
                 r"play\s+(?:my\s+)?playlist\s+(?P<playlist>.+)",
                 r"play\s+the\s+playlist\s+(?P<playlist>.+)",
@@ -176,6 +181,12 @@ class CommandParser:
                 r"start\s+(?:my\s+)?playlist\s+(?P<playlist>.+)",
                 r"play\s+my\s+(?P<playlist>liked\s+songs)",
                 r"play\s+my\s+(?P<playlist>favorites)",
+            ],
+            "add_to_queue": [
+                r"add\s+(?P<track>.+?)\s+by\s+(?P<artist>.+?)\s+to\s+(?:the\s+)?queue",
+                r"add\s+(?P<track>.+?)\s+to\s+(?:the\s+)?queue",
+                r"queue\s+(?P<track>.+?)\s+by\s+(?P<artist>.+)",
+                r"queue\s+(?P<track>.+)",
             ],
             "play_album": [
                 r"play\s+(?:the\s+)?album\s+(?P<album>.+?)\s+by\s+(?P<artist>.+)",
@@ -309,7 +320,9 @@ class CommandParser:
         """
         return {
             "play_track": ["play", "song", "track"],
+            "play_track_from_playlist": ["play", "track", "playlist"],
             "play_playlist": ["playlist"],
+            "add_to_queue": ["queue", "add"],
             "play_album": ["album"],
             "pause": ["pause", "stop"],
             "resume": ["resume", "continue", "unpause"],
@@ -627,7 +640,15 @@ class CommandParser:
         if intent == "play_track" and not parameters.get("track"):
             return True
 
+        if intent == "play_track_from_playlist" and (
+            not parameters.get("track") or not parameters.get("playlist")
+        ):
+            return True
+
         if intent == "play_playlist" and not parameters.get("playlist"):
+            return True
+
+        if intent == "add_to_queue" and not parameters.get("track"):
             return True
 
         if intent == "play_album" and not parameters.get("album"):

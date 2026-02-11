@@ -15,6 +15,7 @@ from app.services.agent.nodes.conversation_context import ConversationContext
 from app.services.agent.nodes.reasoning import ReasoningNode
 from app.services.integrations import list_tool_specs
 from app.services.pipeline.cmd_parser import command_parser
+from app.services.pipeline.conversation_router import conversation_router
 from app.services.pipeline.gemini import get_gemini_service
 
 logger = logging.getLogger(__name__)
@@ -65,19 +66,30 @@ class AgentReasoningNode(ReasoningNode):
 
         last_event = context.events[-1] if context.events else None
         if isinstance(last_event, UserTranscriptionReceived):
+            route_decision = conversation_router.decide(last_event.content)
             logger.debug(
-                "Parsing intent from latest user message", extra={"user_id": user_id}
+                "Conversation router decision",
+                extra={
+                    "user_id": user_id,
+                    "should_parse_as_command": route_decision.should_parse_as_command,
+                    "reason": route_decision.reason,
+                },
             )
-            intent = command_parser.parse_command(last_event.content)
-            if intent and not intent.requires_clarification:
-                tool_call = _intent_to_tool_call(intent, user_id)
-                if tool_call:
-                    logger.info(
-                        "Routing via parser intent",
-                        extra={"user_id": user_id, "intent": intent.intent},
-                    )
-                    yield tool_call
-                    return
+
+            if route_decision.should_parse_as_command:
+                logger.debug(
+                    "Parsing intent from latest user message", extra={"user_id": user_id}
+                )
+                intent = command_parser.parse_command(last_event.content)
+                if intent and not intent.requires_clarification:
+                    tool_call = _intent_to_tool_call(intent, user_id)
+                    if tool_call:
+                        logger.info(
+                            "Routing via parser intent",
+                            extra={"user_id": user_id, "intent": intent.intent},
+                        )
+                        yield tool_call
+                        return
 
         messages = _events_to_messages(context.events)
         if not messages:
@@ -220,6 +232,24 @@ def _extract_function_calls(response: Any) -> List[Dict[str, Any]]:
 def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
     params = intent.parameters or {}
 
+    if intent.intent == "play_track_from_playlist":
+        track = params.get("track")
+        playlist = params.get("playlist")
+        if not track or not playlist:
+            return None
+        tool_args: Dict[str, Any] = {
+            "query": track,
+            "playlist_name": playlist,
+        }
+        if params.get("artist"):
+            tool_args["artist"] = params["artist"]
+        return ToolCall(
+            tool_name="spotify.play",
+            tool_args=tool_args,
+            tool_call_id=str(uuid.uuid4()),
+            user_id=user_id,
+        )
+
     if intent.intent == "play_track":
         track = params.get("track")
         if not track:
@@ -255,9 +285,31 @@ def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
         playlist = params.get("playlist")
         if not playlist:
             return None
+        raw_text = (getattr(intent, "raw_text", "") or "").lower()
+        user_only = (
+            "my playlist" in raw_text
+            or "my playlists" in raw_text
+            or str(playlist).lower() in {"liked songs", "favorites"}
+        )
         return ToolCall(
             tool_name="spotify.play_playlist",
-            tool_args={"playlist": playlist},
+            tool_args={"playlist": playlist, "user_playlists_only": user_only},
+            tool_call_id=str(uuid.uuid4()),
+            user_id=user_id,
+        )
+
+    if intent.intent == "add_to_queue":
+        track = params.get("track")
+        if not track:
+            return None
+        tool_args: Dict[str, Any] = {"query": track}
+        if params.get("artist"):
+            tool_args["artist"] = params["artist"]
+        if params.get("playlist"):
+            tool_args["playlist_name"] = params["playlist"]
+        return ToolCall(
+            tool_name="spotify.add_to_queue",
+            tool_args=tool_args,
             tool_call_id=str(uuid.uuid4()),
             user_id=user_id,
         )

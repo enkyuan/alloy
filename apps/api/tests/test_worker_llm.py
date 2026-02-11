@@ -109,6 +109,28 @@ async def test_llm_chat_response(mock_redis_worker, mock_gemini):
     ai_msg = json.loads(history[1])
     assert ai_msg["content"] == "I am a helpful AI."
 
+
+@pytest.mark.asyncio
+async def test_conversation_router_blocks_implicit_music_phrase_fast_path(
+    mock_redis_worker, mock_gemini, mock_execute_tool
+):
+    user_id = "test_user_conversation_router"
+    transcription = "I like to play songs when I code"
+
+    event = UserTranscriptionReceived(content=transcription)
+    data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": event.model_dump_json(),
+    }
+
+    await llm_worker.handle_message(data)
+
+    # Should be treated as conversation and go to LLM, not tool fast-path.
+    mock_execute_tool.assert_not_called()
+    mock_gemini.generate_chat_response.assert_called_once()
+
+
 @pytest.mark.asyncio
 async def test_llm_tool_call(mock_redis_worker, mock_gemini, mock_taskiq):
     user_id = "test_user_tool"
@@ -144,3 +166,25 @@ async def test_llm_tool_call(mock_redis_worker, mock_gemini, mock_taskiq):
     assert call_kwargs["user_id"] == user_id
     assert call_kwargs["tool_name"] == "google.calendar.list"
     assert call_kwargs["tool_args"] == {"limit": 5}
+
+
+@pytest.mark.asyncio
+async def test_fast_path_add_to_queue(mock_redis_worker, mock_taskiq, mock_execute_tool):
+    user_id = "test_user_queue"
+    transcription = "add bohemian rhapsody by queen to queue"
+
+    event = UserTranscriptionReceived(content=transcription)
+    data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": event.model_dump_json(),
+    }
+
+    await llm_worker.handle_message(data)
+
+    mock_execute_tool.assert_called_once()
+    args = mock_execute_tool.call_args
+    assert args[0][0] == user_id
+    assert args[0][1] == "spotify.add_to_queue"
+    assert args[0][2]["query"] == "bohemian rhapsody"
+    assert args[0][2]["artist"] == "queen"

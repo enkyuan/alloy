@@ -31,6 +31,7 @@ from app.core.redis import RedisKeys, get_redis_client
 from app.services.integrations import list_tool_specs
 from app.services.integrations.dispatcher import execute_tool
 from app.services.pipeline.cmd_parser import CommandIntent, command_parser
+from app.services.pipeline.conversation_router import conversation_router
 from app.services.pipeline.gemini import get_gemini_service
 from app.services.pipeline.tasks import execute_tool_call
 
@@ -108,6 +109,20 @@ def _spotify_cache_key(query: str, artist: str | None = None) -> str:
 def _intent_to_tool_call(intent: CommandIntent) -> tuple[str, dict] | None:
     params = intent.parameters or {}
 
+    if intent.intent == "play_track_from_playlist":
+        track = params.get("track")
+        playlist = params.get("playlist")
+        if not track or not playlist:
+            return None
+        artist = params.get("artist")
+        tool_args: dict[str, Any] = {
+            "query": str(track),
+            "playlist_name": str(playlist),
+        }
+        if artist:
+            tool_args["artist"] = str(artist)
+        return "spotify.play", tool_args
+
     if intent.intent == "play_track":
         track = params.get("track")
         if not track:
@@ -133,7 +148,28 @@ def _intent_to_tool_call(intent: CommandIntent) -> tuple[str, dict] | None:
         playlist = params.get("playlist")
         if not playlist:
             return None
-        return "spotify.play_playlist", {"playlist": playlist}
+        raw_text = (intent.raw_text or "").lower()
+        user_only = (
+            "my playlist" in raw_text
+            or "my playlists" in raw_text
+            or str(playlist).lower() in {"liked songs", "favorites"}
+        )
+        return "spotify.play_playlist", {
+            "playlist": playlist,
+            "user_playlists_only": user_only,
+        }
+
+    if intent.intent == "add_to_queue":
+        track = params.get("track")
+        if not track:
+            return None
+        artist = params.get("artist")
+        tool_args: dict[str, Any] = {"query": str(track)}
+        if artist:
+            tool_args["artist"] = str(artist)
+        if params.get("playlist"):
+            tool_args["playlist_name"] = str(params["playlist"])
+        return "spotify.add_to_queue", tool_args
 
     if intent.intent == "pause":
         return "spotify.pause", {}
@@ -499,12 +535,20 @@ def _tool_result_response(tool_result: ToolResult) -> str:
 
     status = result.get("status")
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    message = result.get("message")
 
     if tool_result.tool_name.startswith("spotify."):
+        if data.get("requires_clarification") and isinstance(message, str):
+            return message
+
+        if isinstance(message, str) and message.strip():
+            return message
+
         if tool_result.tool_name in {
             "spotify.play",
             "spotify.play_album",
             "spotify.play_playlist",
+            "spotify.add_to_queue",
         }:
             track_name = (
                 data.get("track_name")
@@ -513,6 +557,12 @@ def _tool_result_response(tool_result: ToolResult) -> str:
                 or result.get("playlist")
             )
             artist = data.get("artist")
+            if tool_result.tool_name == "spotify.add_to_queue":
+                if track_name and artist:
+                    return f"Added {track_name} by {artist} to your queue."
+                if track_name:
+                    return f"Added {track_name} to your queue."
+                return "Added to your queue."
             if track_name and artist:
                 return f"Playing {track_name} by {artist}."
             if track_name:
@@ -524,8 +574,12 @@ def _tool_result_response(tool_result: ToolResult) -> str:
         if tool_result.tool_name == "spotify.resume":
             return "Resuming playback."
         if tool_result.tool_name == "spotify.next":
+            if data.get("verified") is False:
+                return "I sent next, but I could not confirm playback changed."
             return "Skipping to the next track."
         if tool_result.tool_name == "spotify.previous":
+            if data.get("verified") is False:
+                return "I sent previous, but I could not confirm playback changed."
             return "Going back to the previous track."
         if tool_result.tool_name == "spotify.set_volume":
             level = result.get("volume") or data.get("volume") or data.get("level")
@@ -620,19 +674,30 @@ async def handle_message(data: dict):
         redis = await get_redis_client()
         await _append_history(redis, user_id, "user", transcription.content)
 
-        intent = command_parser.parse_command(transcription.content)
-        if intent and not intent.requires_clarification:
-            tool_call = _intent_to_tool_call(intent)
-            if tool_call:
-                tool_name, tool_args = tool_call
-                if tool_name == "spotify.play":
-                    used_cache = await _try_cached_spotify_play(
-                        redis, str(user_id), tool_args
-                    )
-                    if used_cache:
-                        return
-                await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
-                return
+        route_decision = conversation_router.decide(transcription.content)
+        logger.info(
+            "Conversation router decision",
+            extra={
+                "user_id": str(user_id),
+                "should_parse_as_command": route_decision.should_parse_as_command,
+                "reason": route_decision.reason,
+            },
+        )
+
+        if route_decision.should_parse_as_command:
+            intent = command_parser.parse_command(transcription.content)
+            if intent and not intent.requires_clarification:
+                tool_call = _intent_to_tool_call(intent)
+                if tool_call:
+                    tool_name, tool_args = tool_call
+                    if tool_name == "spotify.play":
+                        used_cache = await _try_cached_spotify_play(
+                            redis, str(user_id), tool_args
+                        )
+                        if used_cache:
+                            return
+                    await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
+                    return
 
         gemini = get_gemini_service()
         history = await _get_history(redis, user_id)

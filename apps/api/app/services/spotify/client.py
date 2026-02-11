@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from sqlalchemy.orm import Session
@@ -300,12 +300,15 @@ class SpotifyClient:
             if response.status_code not in [200, 204]:
                 raise Exception(f"Failed to set volume: {response.text}")
 
-    async def get_user_playlists(self, access_token: str, limit: int = 20) -> dict:
+    async def get_user_playlists(
+        self, access_token: str, limit: int = 20, offset: int = 0
+    ) -> dict:
         """Get user's playlists.
 
         Args:
             access_token: Valid Spotify access token
             limit: Number of playlists to return
+            offset: Playlist offset for pagination
 
         Returns:
             User's playlists
@@ -316,7 +319,7 @@ class SpotifyClient:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://api.spotify.com/v1/me/playlists",
-                params={"limit": limit},
+                params={"limit": limit, "offset": offset},
                 headers={"Authorization": f"Bearer {access_token}"},
             )
 
@@ -324,6 +327,60 @@ class SpotifyClient:
                 raise Exception(f"Failed to get playlists: {response.text}")
 
             return response.json()
+
+    async def get_playlist_tracks(
+        self, access_token: str, playlist_id: str, max_items: int = 200
+    ) -> list[dict[str, Any]]:
+        """Get tracks for a playlist.
+
+        Args:
+            access_token: Valid Spotify access token
+            playlist_id: Playlist ID
+            max_items: Maximum number of track rows to fetch
+
+        Returns:
+            List of playlist track rows from Spotify
+
+        Raises:
+            Exception: If API call fails
+        """
+        if max_items <= 0:
+            return []
+
+        items: list[dict[str, Any]] = []
+        next_url: Optional[str] = (
+            f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks"
+        )
+        page_limit = min(100, max_items)
+
+        async with httpx.AsyncClient() as client:
+            while next_url and len(items) < max_items:
+                params = {
+                    "limit": page_limit,
+                    # Keep payload focused on fields used by matching logic.
+                    "fields": "items(track(id,name,uri,popularity,artists(name),album(name,images))),next",
+                }
+                response = await client.get(
+                    next_url,
+                    params=params,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+                if response.status_code != 200:
+                    raise Exception(f"Failed to get playlist tracks: {response.text}")
+
+                payload = response.json()
+                page_items = payload.get("items", [])
+                if isinstance(page_items, list):
+                    for row in page_items:
+                        if isinstance(row, dict):
+                            items.append(row)
+                            if len(items) >= max_items:
+                                break
+                next_value = payload.get("next")
+                next_url = str(next_value) if isinstance(next_value, str) else None
+
+        return items[:max_items]
 
     async def get_available_devices(self, access_token: str) -> dict:
         """Get user's available devices.
@@ -370,6 +427,33 @@ class SpotifyClient:
 
             if response.status_code not in [200, 204]:
                 raise Exception(f"Failed to transfer playback: {response.text}")
+
+    async def add_to_queue(
+        self, access_token: str, uri: str, device_id: Optional[str] = None
+    ) -> None:
+        """Add a track to the current playback queue.
+
+        Args:
+            access_token: Valid Spotify access token
+            uri: Spotify track URI
+            device_id: Optional target device ID
+
+        Raises:
+            Exception: If API call fails
+        """
+        params: dict[str, str] = {"uri": uri}
+        if device_id:
+            params["device_id"] = device_id
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.spotify.com/v1/me/player/queue",
+                params=params,
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+
+            if response.status_code not in [200, 204]:
+                raise Exception(f"Failed to add to queue: {response.text}")
 
 
 # Create singleton instance

@@ -48,7 +48,7 @@ struct MusicPlaybackItem: Equatable {
     let platform: Platform
 }
 
-struct MusicMiniPlayer: View {
+struct MiniPlayer: View {
     let item: MusicPlaybackItem?
     var onPlayPause: (() -> Void)?
     var onNext: (() -> Void)?
@@ -58,12 +58,12 @@ struct MusicMiniPlayer: View {
     @State private var appear = false
 
     var body: some View {
-        if let item = item {
+        if let item {
             playerCard(item: item)
                 .opacity(appear ? 1 : 0)
-                .offset(y: appear ? 0 : 16)
+                .offset(y: appear ? 0 : 20)
                 .onAppear {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) {
                         appear = true
                     }
                 }
@@ -75,150 +75,180 @@ struct MusicMiniPlayer: View {
         ZStack {
             backgroundArtwork(item: item)
 
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
                 )
 
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
                 headerRow(item: item)
-
                 progressRow(item: item)
-
                 controlsRow(item: item)
             }
-            .padding(18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 170)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: Color.black.opacity(0.35), radius: 14, x: 0, y: 10)
+        .frame(height: 182)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.34), radius: 16, x: 0, y: 10)
     }
 
     private func headerRow(item: MusicPlaybackItem) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             artworkThumb(urlString: item.albumArtUrl)
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(.white)
                     .lineLimit(1)
 
                 Text(item.artist)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.88))
                     .lineLimit(1)
             }
 
             Spacer()
 
-            VStack(spacing: 6) {
+            HStack(spacing: 6) {
                 Image(systemName: item.platform.symbolName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
+                    .font(.system(size: 11, weight: .semibold))
                 Text(item.platform.displayName)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .semibold))
             }
+            .foregroundStyle(.white.opacity(0.82))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.16), in: Capsule())
         }
     }
 
     private func progressRow(item: MusicPlaybackItem) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             GeometryReader { proxy in
                 let width = proxy.size.width
                 let progress = normalizedProgress(item: item)
+
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(height: 4)
+                        .fill(Color.white.opacity(0.26))
+                        .frame(height: 5)
+
                     Capsule()
-                        .fill(Color.white.opacity(0.75))
-                        .frame(width: max(10, width * progress), height: 4)
+                        .fill(Color.white.opacity(0.96))
+                        .frame(width: max(12, width * progress), height: 5)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 5)
 
             HStack {
                 Text(formatTime(item.elapsed ?? 0))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
                 Spacer()
-
                 Text("-\(formatTime(remainingTime(item)))")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
             }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.75))
         }
     }
 
     private func controlsRow(item: MusicPlaybackItem) -> some View {
-        HStack(spacing: 28) {
-            Button {
-                onPrevious?()
-            } label: {
+        HStack {
+            Spacer(minLength: 0)
+
+            Button(action: { onPrevious?() }) {
                 Image(systemName: "backward.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 21, weight: .semibold))
+                    .frame(width: 38, height: 38)
             }
+            .buttonStyle(.plain)
 
-            Button {
-                onPlayPause?()
-            } label: {
+            Button(action: { onPlayPause?() }) {
                 Image(systemName: item.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 22, weight: .bold))
+                    .frame(width: 46, height: 46)
+                    .background(Color.white.opacity(0.22), in: Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                    )
             }
+            .buttonStyle(.plain)
 
-            Button {
-                onNext?()
-            } label: {
+            Button(action: { onNext?() }) {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 21, weight: .semibold))
+                    .frame(width: 38, height: 38)
             }
+            .buttonStyle(.plain)
 
-            Spacer()
+            Spacer(minLength: 20)
 
-            Button {
-                onRoute?()
-            } label: {
+            Button(action: { onRoute?() }) {
                 Image(systemName: "airplayaudio")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 32, height: 32)
+                    .background(Color.white.opacity(0.12), in: Circle())
             }
+            .buttonStyle(.plain)
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(.white)
     }
 
     private func backgroundArtwork(item: MusicPlaybackItem) -> some View {
         Group {
-            if let urlString = item.albumArtUrl, let url = URL(string: urlString) {
+            if let albumArtUrl = item.albumArtUrl,
+                let url = URL(string: albumArtUrl)
+            {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .blur(radius: 20)
-                            .overlay(Color.black.opacity(0.35))
-                    case .failure, .empty:
-                        Color.black.opacity(0.65)
+                            .blur(radius: 28)
+                            .overlay(
+                                LinearGradient(
+                                    colors: [
+                                        Color.black.opacity(0.35),
+                                        Color.black.opacity(0.56),
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    case .empty, .failure:
+                        lockscreenFallbackGradient
                     @unknown default:
-                        Color.black.opacity(0.65)
+                        lockscreenFallbackGradient
                     }
                 }
             } else {
-                Color.black.opacity(0.65)
+                lockscreenFallbackGradient
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+    }
+
+    private var lockscreenFallbackGradient: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.13, green: 0.16, blue: 0.21),
+                Color(red: 0.07, green: 0.09, blue: 0.12),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     private func artworkThumb(urlString: String?) -> some View {
         Group {
-            if let urlString = urlString, let url = URL(string: urlString) {
+            if let urlString,
+                let url = URL(string: urlString)
+            {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
@@ -226,28 +256,37 @@ struct MusicMiniPlayer: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     case .failure, .empty:
-                        Color.white.opacity(0.15)
+                        Color.white.opacity(0.16)
                     @unknown default:
-                        Color.white.opacity(0.15)
+                        Color.white.opacity(0.16)
                     }
                 }
             } else {
-                Color.white.opacity(0.15)
+                Color.white.opacity(0.16)
+                    .overlay(
+                        Image(systemName: "music.note")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.65))
+                    )
             }
         }
-        .frame(width: 48, height: 48)
+        .frame(width: 56, height: 56)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
         )
     }
 
     private func normalizedProgress(item: MusicPlaybackItem) -> CGFloat {
-        guard let elapsed = item.elapsed, let duration = item.duration, duration > 0 else {
-            return 0.3
+        guard let elapsed = item.elapsed,
+            let duration = item.duration,
+            duration > 0
+        else {
+            return item.isPlaying ? 0.35 : 0.0
         }
-        return min(max(CGFloat(elapsed / duration), 0.05), 1.0)
+
+        return min(max(CGFloat(elapsed / duration), 0), 1)
     }
 
     private func remainingTime(_ item: MusicPlaybackItem) -> TimeInterval {

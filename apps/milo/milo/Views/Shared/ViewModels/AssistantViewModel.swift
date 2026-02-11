@@ -32,6 +32,7 @@ class AssistantViewModel {
     var showDeviceSelector = false
 
     var currentSpotifyTrack: SpotifyTrack?
+    var isSpotifyPlaying = false
 
     private var isStartingRecording = false
 
@@ -124,6 +125,13 @@ class AssistantViewModel {
             }
         }
 
+        webSocketSTTService.onSpotifyPlaybackUpdate = { [weak self] update in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.applySpotifyPlaybackUpdate(update)
+            }
+        }
+
         streamingAudioService.onAudioChunk = { [weak self] (pcmData: Data) in
             guard let self = self else { return }
 
@@ -149,6 +157,21 @@ class AssistantViewModel {
 
                 self.webSocketSTTService.disconnect()
             }
+        }
+    }
+
+    private func applySpotifyPlaybackUpdate(_ update: WebSocketSTTService.SpotifyPlaybackUpdate) {
+        isSpotifyPlaying = update.isPlaying
+
+        if let track = update.track {
+            currentSpotifyTrack = track
+            print(
+                "AssistantViewModel: Updated mini player track to '\(track.name)' by '\(track.artist)' (isPlaying=\(update.isPlaying))"
+            )
+        } else {
+            print(
+                "AssistantViewModel: Updated playback state without track metadata (isPlaying=\(update.isPlaying))"
+            )
         }
     }
 
@@ -273,6 +296,7 @@ class AssistantViewModel {
             print("On-device: Play command")
             if query.isEmpty {
                 conversationService.addAssistantMessage("Resuming playback.")
+                isSpotifyPlaying = true
                 SpotifyAppService.shared.resume()
             } else {
                 conversationService.addAssistantMessage(
@@ -283,21 +307,25 @@ class AssistantViewModel {
         case .pause:
             print("On-device: Pause")
             conversationService.addAssistantMessage("Pausing playback.")
+            isSpotifyPlaying = false
             SpotifyAppService.shared.pause()
-            
+
         case .resume:
             print("On-device: Resume")
             conversationService.addAssistantMessage("Resuming playback.")
+            isSpotifyPlaying = true
             SpotifyAppService.shared.resume()
-            
+
         case .skipNext:
             print("On-device: Skip next")
             conversationService.addAssistantMessage("Skipping to next track.")
+            isSpotifyPlaying = true
             SpotifyAppService.shared.skipNext()
-            
+
         case .skipPrevious:
             print("On-device: Skip previous")
             conversationService.addAssistantMessage("Going back to previous track.")
+            isSpotifyPlaying = true
             SpotifyAppService.shared.skipPrevious()
             
         case .unknown:
