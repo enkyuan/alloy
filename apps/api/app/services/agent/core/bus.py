@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from app.services.agent.bridge import Bridge
+    from app.services.agent.core.bridge import Bridge
 
-from app.services.agent.events import AgentHandoff, Authorize, ToolCall
+from app.services.agent.core.agent_events import AgentHandoff, Authorize, ToolCall
 
 
 class Message(BaseModel):

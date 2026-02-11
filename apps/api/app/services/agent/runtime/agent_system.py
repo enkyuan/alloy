@@ -10,12 +10,12 @@ A utility for building voice agent systems.
 import logging
 from typing import Dict, Optional
 
-from app.services.agent.bridge import Bridge
-from app.services.agent.bus import Bus, Message
-from app.services.agent.events import AgentResponse
-from app.services.agent.harness import ConversationHarness
+from app.services.agent.core.bridge import Bridge
+from app.services.agent.core.bus import Bus, Message
+from app.services.agent.core.agent_events import AgentResponse
 from app.services.agent.nodes.reasoning import ReasoningNode
-from app.services.agent.user_bridge import create_user_bridge
+from app.services.agent.runtime.conversation_harness import ConversationHarness
+from app.services.agent.core.user_channel import create_user_bridge
 
 logger = logging.getLogger(__name__)
 

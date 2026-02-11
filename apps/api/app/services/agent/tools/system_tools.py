@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
 
 from pydantic import BaseModel, Field
 
-from app.services.agent.events import AgentResponse, EndCall
+from app.services.agent.core.agent_events import AgentResponse, EndCall
 from app.services.agent.tools.tool_types import ToolDefinition
 from app.services.agent.utils.str import is_e164_phone_number
 

@@ -8,7 +8,7 @@ to specialized processing methods in ReasoningNode subclasses.
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Union
 
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     AgentResponse,
     AgentSpeechSent,
     EventInstance,

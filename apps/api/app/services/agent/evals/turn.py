@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 from app.services.agent.evals.similarity_utils import is_similar_dict, is_similar_text
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     AgentResponse,
     DTMFOutputEvent,
     EndCall,
@@ -20,7 +20,7 @@ from app.services.agent.events import (
     TransferCall,
     UserTranscriptionReceived,
 )
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     ToolCall as EventToolCall,
 )
 

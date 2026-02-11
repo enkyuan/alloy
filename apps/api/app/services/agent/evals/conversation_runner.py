@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from app.services.agent.evals.similarity_utils import is_similar_str
 from app.services.agent.evals.turn import Turn
-from app.services.agent.events import EventInstance
+from app.services.agent.core.agent_events import EventInstance
 from app.services.agent.nodes.conversation_context import ConversationContext
 from app.services.agent.nodes.reasoning import ReasoningNode
 

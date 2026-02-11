@@ -651,6 +651,101 @@ class SpotifyService:
             )
             return None
 
+    async def _play_track_queue_first(
+        self,
+        *,
+        access_token: str,
+        device_id: str,
+        track_uri: str,
+        track_id: str,
+        track_name: str,
+    ) -> dict[str, Any]:
+        """Execute a queue-first playback strategy with stall recovery.
+
+        Strategy:
+        1) Add track to queue.
+        2) If playback is active, skip next to advance to queued track.
+        3) If no active playback context, cold-start with direct play.
+        4) Verify expected track and recover with direct play on mismatch.
+        """
+        had_playback_context = False
+        previous_track_id = ""
+        queue_advanced = False
+        direct_play_used = False
+
+        try:
+            current_playback = await self.client.get_current_playback(access_token)
+            previous_track_id = str(current_playback.get("item", {}).get("id", ""))
+            is_playing_now = bool(current_playback.get("is_playing", False))
+            had_playback_context = bool(previous_track_id) or is_playing_now
+        except Exception as exc:
+            logger.warning(
+                "Unable to snapshot playback before queue-first play",
+                extra={"error": str(exc), "track_name": track_name},
+            )
+
+        logger.info(
+            "Queue-first playback: adding track to queue",
+            extra={
+                "track_name": track_name,
+                "track_id": track_id,
+                "device_id": device_id,
+                "had_playback_context": had_playback_context,
+            },
+        )
+        await self.client.add_to_queue(
+            access_token=access_token,
+            uri=track_uri,
+            device_id=device_id,
+        )
+
+        if had_playback_context:
+            try:
+                await self.client.skip_next(access_token=access_token, device_id=device_id)
+                queue_advanced = True
+                logger.info(
+                    "Queue-first playback advanced with skip-next",
+                    extra={"track_name": track_name, "device_id": device_id},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Queue-first skip-next failed; falling back to direct play",
+                    extra={"error": str(exc), "track_name": track_name},
+                )
+                await self.client.play(
+                    access_token=access_token, uri=track_uri, device_id=device_id
+                )
+                direct_play_used = True
+        else:
+            logger.info(
+                "Queue-first detected cold start; using direct play bootstrap",
+                extra={"track_name": track_name, "device_id": device_id},
+            )
+            await self.client.play(access_token=access_token, uri=track_uri, device_id=device_id)
+            direct_play_used = True
+
+        verified = await self._verify_playback_track(access_token, track_id)
+        stalled_recovery_used = False
+
+        if verified is False and not direct_play_used:
+            logger.warning(
+                "Queue-first verification mismatch; attempting direct-play recovery",
+                extra={"track_name": track_name, "track_id": track_id},
+            )
+            await self.client.play(access_token=access_token, uri=track_uri, device_id=device_id)
+            direct_play_used = True
+            stalled_recovery_used = True
+            verified = await self._verify_playback_track(access_token, track_id)
+
+        return {
+            "queue_first": True,
+            "queue_advanced": queue_advanced,
+            "direct_play_used": direct_play_used,
+            "stalled_recovery_used": stalled_recovery_used,
+            "previous_track_id": previous_track_id or None,
+            "verified": verified,
+        }
+
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_track(
         self,
@@ -690,8 +785,12 @@ class SpotifyService:
                 raise NoActiveDeviceError()
 
             try:
-                await self.client.play(
-                    access_token=access_token, uri=track_uri, device_id=device_id
+                playback_meta = await self._play_track_queue_first(
+                    access_token=access_token,
+                    device_id=device_id,
+                    track_uri=track_uri,
+                    track_id=track_id,
+                    track_name=track_name,
                 )
             except Exception as play_error:
                 if self._check_premium_error(play_error):
@@ -701,20 +800,21 @@ class SpotifyService:
                     )
                 raise
 
-            verified = await self._verify_playback_track(access_token, track_id)
+            verified = playback_meta.get("verified")
             if verified is False:
                 logger.warning(
                     "Track playback command acknowledged but verification mismatch",
                     extra={
                         "requested_track_id": track_id,
                         "requested_track_name": track_name,
+                        "queue_first": True,
                     },
                 )
 
             return CommandResult(
                 success=True,
                 message=f"Now playing '{track_name}' by {track_artist}",
-                data={**payload, "verified": verified},
+                data={**payload, **playback_meta},
             )
 
         except NoActiveDeviceError:

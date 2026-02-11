@@ -14,7 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 logger = logging.getLogger(__name__)
 from pydantic import TypeAdapter
 
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     AgentSpeechSent,
     AgentStartedSpeaking,
     AgentStoppedSpeaking,
@@ -25,7 +25,7 @@ from app.services.agent.events import (
     UserTranscriptionReceived,
     UserUnknownInputReceived,
 )
-from app.services.agent.harness_types import (
+from app.services.agent.runtime.ws_types import (
     AgentSpeechInput,
     AgentStateInput,
     CustomInput,

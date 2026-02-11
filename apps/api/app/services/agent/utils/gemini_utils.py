@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, cast
 
 from google.genai import types
 
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     AgentResponse,
     DTMFInputEvent,
     DTMFOutputEvent,

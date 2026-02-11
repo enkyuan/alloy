@@ -13,13 +13,13 @@ from typing import TYPE_CHECKING, Any, Callable, List, Optional, Type, TypeVar, 
 
 logger = logging.getLogger(__name__)
 
-from app.services.agent.bus import Bus, Message
-from app.services.agent.events import (
+from app.services.agent.core.bus import Bus, Message
+from app.services.agent.core.agent_events import (
     EventInstance,
     EventsRegistry,
     EventTypeOrAlias,
 )
-from app.services.agent.routes import RouteBuilder, RouteHandler
+from app.services.agent.core.route_builder import RouteBuilder, RouteHandler
 
 if TYPE_CHECKING:
     from app.services.agent.nodes.reasoning import Node

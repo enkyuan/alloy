@@ -39,9 +39,9 @@ from typing import TYPE_CHECKING, Union
 logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 
-from app.services.agent.bridge import Bridge
-from app.services.agent.bus import Message
-from app.services.agent.events import (
+from app.services.agent.core.bridge import Bridge
+from app.services.agent.core.bus import Message
+from app.services.agent.core.agent_events import (
     AgentError,
     AgentResponse,
     Authorize,
@@ -55,7 +55,7 @@ from app.services.agent.events import (
 )
 
 if TYPE_CHECKING:
-    from app.services.agent.harness import ConversationHarness
+    from app.services.agent.runtime.conversation_harness import ConversationHarness
 
 
 def create_user_bridge(harness: "ConversationHarness", authorized_node: str) -> Bridge:

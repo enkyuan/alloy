@@ -10,10 +10,8 @@ This worker acts as the central process that consumes user transcriptions:
 """
 
 import asyncio
-import hashlib
 import json
 import logging
-import re
 import uuid
 from typing import Any
 
@@ -26,18 +24,43 @@ from app.core.events import (
     ToolCall,
     ToolResult,
     UserTranscriptionReceived,
+    is_supported_event_version,
+    parse_event_envelope,
 )
 from app.core.redis import RedisKeys, get_redis_client
-from app.services.integrations import list_tool_specs
 from app.services.integrations.dispatcher import execute_tool
-from app.services.pipeline.cmd_parser import CommandIntent, command_parser
+from app.services.pipeline.cmd_parser import command_parser
 from app.services.pipeline.conversation_router import conversation_router
 from app.services.pipeline.gemini import get_gemini_service
 from app.services.pipeline.tasks import execute_tool_call
+from app.workers.helpers.cache_keys import (
+    cache_hit_key as _cache_hit_key,
+    cache_miss_key as _cache_miss_key,
+    response_cache_key as _response_cache_key,
+)
+from app.workers.helpers.command_mapping import (
+    intent_to_tool_call as _intent_to_tool_call,
+)
+from app.workers.helpers.llm_response import (
+    handle_llm_response as _handle_llm_response,
+)
+from app.workers.helpers.redis_events import (
+    append_history as _append_history,
+    cache_spotify_result as _cache_spotify_result,
+    get_history as _get_history,
+    publish_user_update as _publish_user_update,
+    try_cached_spotify_play as _try_cached_spotify_play,
+)
+from app.workers.helpers.result_text import format_tool_result_response
+from app.workers.helpers.tool_schema import (
+    build_tools_payload as _build_tools_payload,
+    tools_fingerprint as _tools_fingerprint,
+)
 
 logger = logging.getLogger(__name__)
 
-HISTORY_LIMIT = settings.AGENT_HISTORY_LIMIT
+# Normalize optional config to concrete ints for downstream helpers.
+HISTORY_LIMIT: int = settings.AGENT_HISTORY_LIMIT or 0
 CACHE_TTL_SECONDS = settings.AGENT_CACHE_TTL_SECONDS
 SPOTIFY_CACHE_TTL_SECONDS = 60 * 60
 
@@ -60,290 +83,6 @@ def _is_quota_error(error: Exception) -> bool:
     return any(marker in message for marker in quota_markers)
 
 
-def _history_key(user_id: str) -> str:
-    return f"agent:history:{user_id}"
-
-
-def _response_cache_key(payload: dict) -> str:
-    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-    return f"agent:cache:{digest}"
-
-
-def _cache_hit_key() -> str:
-    return "agent:cache:hit"
-
-
-def _cache_miss_key() -> str:
-    return "agent:cache:miss"
-
-
-def _tools_fingerprint() -> list[dict[str, object]]:
-    return [
-        {
-            "name": spec.name,
-            "description": spec.description,
-            "parameters": spec.parameters,
-        }
-        for spec in list_tool_specs()
-    ]
-
-
-def _normalize_spotify_query(query: str, artist: str | None = None) -> str:
-    text = f"{query} {artist or ''}".lower()
-    text = re.sub(r"\b(on|in|with)\s+spotify\b", "", text)
-    text = re.sub(r"\bspotify\b", "", text)
-    text = re.sub(
-        r"\b(play|please|could you|can you|would you|hey|hi|haven)\b", "", text
-    )
-    text = re.sub(r"[^a-z0-9\s]", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def _spotify_cache_key(query: str, artist: str | None = None) -> str:
-    normalized = _normalize_spotify_query(query, artist)
-    return f"spotify:cache:track:{normalized}"
-
-
-def _intent_to_tool_call(intent: CommandIntent) -> tuple[str, dict] | None:
-    params = intent.parameters or {}
-
-    if intent.intent == "play_track_from_playlist":
-        track = params.get("track")
-        playlist = params.get("playlist")
-        if not track or not playlist:
-            return None
-        artist = params.get("artist")
-        tool_args: dict[str, Any] = {
-            "query": str(track),
-            "playlist_name": str(playlist),
-        }
-        if artist:
-            tool_args["artist"] = str(artist)
-        return "spotify.play", tool_args
-
-    if intent.intent == "play_track":
-        track = params.get("track")
-        if not track:
-            return None
-        artist = params.get("artist")
-        query = track
-        tool_args = {"query": query}
-        if artist:
-            tool_args["artist"] = artist
-            tool_args["query"] = f"{track} by {artist}"
-        return "spotify.play", tool_args
-
-    if intent.intent == "play_album":
-        album = params.get("album")
-        if not album:
-            return None
-        tool_args = {"album": album}
-        if params.get("artist"):
-            tool_args["artist"] = params["artist"]
-        return "spotify.play_album", tool_args
-
-    if intent.intent == "play_playlist":
-        playlist = params.get("playlist")
-        if not playlist:
-            return None
-        raw_text = (intent.raw_text or "").lower()
-        user_only = (
-            "my playlist" in raw_text
-            or "my playlists" in raw_text
-            or str(playlist).lower() in {"liked songs", "favorites"}
-        )
-        return "spotify.play_playlist", {
-            "playlist": playlist,
-            "user_playlists_only": user_only,
-        }
-
-    if intent.intent == "add_to_queue":
-        track = params.get("track")
-        if not track:
-            return None
-        artist = params.get("artist")
-        tool_args: dict[str, Any] = {"query": str(track)}
-        if artist:
-            tool_args["artist"] = str(artist)
-        if params.get("playlist"):
-            tool_args["playlist_name"] = str(params["playlist"])
-        return "spotify.add_to_queue", tool_args
-
-    if intent.intent == "pause":
-        return "spotify.pause", {}
-
-    if intent.intent == "resume":
-        return "spotify.resume", {}
-
-    if intent.intent == "next":
-        return "spotify.next", {}
-
-    if intent.intent == "previous":
-        return "spotify.previous", {}
-
-    if intent.intent == "set_volume":
-        level = params.get("level")
-        if level is None:
-            return None
-        return "spotify.set_volume", {"level": level}
-
-    if intent.intent == "list_devices":
-        return "spotify.list_devices", {}
-
-    if intent.intent == "switch_device":
-        device = params.get("device")
-        if not device:
-            return None
-        return "spotify.switch_device", {"device_name": device}
-
-    return None
-
-
-async def _append_history(redis: Any, user_id: str, role: str, content: str) -> None:
-    entry = {"role": role, "content": content}
-    await redis.rpush(_history_key(user_id), json.dumps(entry))
-    if HISTORY_LIMIT and HISTORY_LIMIT > 0:
-        await redis.ltrim(_history_key(user_id), -HISTORY_LIMIT, -1)
-
-
-async def _get_history(redis: Any, user_id: str) -> list[dict[str, str]]:
-    raw_items = await redis.lrange(_history_key(user_id), 0, -1)
-    messages: list[dict[str, str]] = []
-    for item in raw_items:
-        try:
-            if isinstance(item, bytes):
-                item = item.decode("utf-8")
-            data = json.loads(item)
-            if isinstance(data, dict) and "role" in data and "content" in data:
-                messages.append(
-                    {"role": str(data["role"]), "content": str(data["content"])}
-                )
-        except Exception:
-            continue
-    return messages
-
-
-async def _dispatch_tool_call(
-    redis: Any, user_id: str, tool_name: str, tool_args: dict
-) -> None:
-    tool_call_id = str(uuid.uuid4())
-    logger.info(
-        "Dispatching tool call",
-        extra={
-            "user_id": user_id,
-            "tool_name": tool_name,
-            "tool_call_id": tool_call_id,
-        },
-    )
-    await execute_tool_call.kiq(
-        user_id=user_id,
-        tool_name=tool_name,
-        tool_args=tool_args,
-        tool_call_id=tool_call_id,
-    )
-
-    tc_event = ToolCall(
-        tool_name=tool_name, tool_args=tool_args, tool_call_id=tool_call_id
-    )
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "tool.call",
-                "user_id": user_id,
-                "payload": tc_event.model_dump_json(),
-            }
-        ),
-    )
-
-
-async def _cache_spotify_result(redis: Any, tool_result: ToolResult) -> None:
-    if tool_result.tool_name != "spotify.play":
-        return
-    if not isinstance(tool_result.result, dict):
-        return
-    data = tool_result.result.get("data")
-    if not isinstance(data, dict):
-        return
-    uri = data.get("uri")
-    track_name = data.get("track_name")
-    artist = data.get("artist")
-    if not uri or not track_name:
-        return
-
-    query = tool_result.tool_args.get("query") if tool_result.tool_args else None
-    if not query:
-        query = track_name
-
-    cache_key = _spotify_cache_key(str(query), str(artist) if artist else None)
-    payload = {
-        "uri": uri,
-        "track_name": track_name,
-        "artist": artist,
-    }
-    await redis.setex(cache_key, SPOTIFY_CACHE_TTL_SECONDS, json.dumps(payload))
-
-
-async def _try_cached_spotify_play(redis: Any, user_id: str, tool_args: dict) -> bool:
-    query = str(tool_args.get("query", "")).strip()
-    if not query:
-        return False
-    artist = tool_args.get("artist")
-    cache_key = _spotify_cache_key(query, str(artist) if artist else None)
-    cached = await redis.get(cache_key)
-    if not cached:
-        return False
-    try:
-        payload = json.loads(cached)
-    except Exception:
-        return False
-    uri = payload.get("uri")
-    if not uri:
-        return False
-
-    tool_call_id = str(uuid.uuid4())
-    tc_event = ToolCall(
-        tool_name="spotify.play",
-        tool_args={"uri": uri},
-        tool_call_id=tool_call_id,
-    )
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "tool.call",
-                "user_id": user_id,
-                "payload": tc_event.model_dump_json(),
-            }
-        ),
-    )
-
-    track_name = payload.get("track_name")
-    artist_name = payload.get("artist")
-    if track_name and artist_name:
-        response_text = f"Playing {track_name} by {artist_name}."
-    elif track_name:
-        response_text = f"Playing {track_name}."
-    else:
-        response_text = "Playing on Spotify."
-
-    await _append_history(redis, user_id, "assistant", response_text)
-    response_event = AgentResponse(content=response_text)
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "agent.response",
-                "user_id": user_id,
-                "payload": response_event.model_dump_json(),
-            }
-        ),
-    )
-    return True
-
-
 async def _execute_tool_fast(
     redis: Any, user_id: str, tool_name: str, tool_args: dict
 ) -> None:
@@ -360,15 +99,12 @@ async def _execute_tool_fast(
     tc_event = ToolCall(
         tool_name=tool_name, tool_args=tool_args, tool_call_id=tool_call_id
     )
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "tool.call",
-                "user_id": user_id,
-                "payload": tc_event.model_dump_json(),
-            }
-        ),
+    await _publish_user_update(
+        redis,
+        event_type="tool.call",
+        user_id=user_id,
+        payload=tc_event,
+        metadata={"source": "llm_worker.fast_path"},
     )
 
     result_data = None
@@ -397,206 +133,41 @@ async def _execute_tool_fast(
         metadata={"fast_path": True},
     )
 
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "tool.result",
-                "user_id": user_id,
-                "payload": tool_result.model_dump_json(),
-            }
-        ),
+    await _publish_user_update(
+        redis,
+        event_type="tool.result",
+        user_id=user_id,
+        payload=tool_result,
+        metadata={"source": "llm_worker.fast_path"},
     )
 
-    await _cache_spotify_result(redis, tool_result)
+    await _cache_spotify_result(
+        redis,
+        tool_result,
+        spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
+    )
 
-    response_text = _tool_result_response(tool_result)
+    response_text = format_tool_result_response(tool_result)
     if response_text:
-        await _append_history(redis, user_id, "assistant", response_text)
+        await _append_history(
+            redis,
+            user_id,
+            "assistant",
+            response_text,
+            history_limit=HISTORY_LIMIT,
+        )
         response_event = AgentResponse(content=response_text)
-        await redis.publish(
-            RedisKeys.CHANNEL_USER_UPDATES,
-            json.dumps(
-                {
-                    "type": "agent.response",
-                    "user_id": user_id,
-                    "payload": response_event.model_dump_json(),
-                }
-            ),
-        )
-
-
-async def _dispatch_tool_calls(redis: Any, user_id: str, function_calls) -> None:
-    for fc in function_calls:
-        logger.info(f"LLM requested tool: {fc.name}")
-
-        tool_call_id = str(uuid.uuid4())
-        tool_args = {}
-        if fc.args:
-            for key, value in fc.args.items():
-                tool_args[key] = value
-
-        await execute_tool_call.kiq(
+        await _publish_user_update(
+            redis,
+            event_type="agent.response",
             user_id=user_id,
-            tool_name=fc.name,
-            tool_args=tool_args,
-            tool_call_id=tool_call_id,
+            payload=response_event,
+            metadata={"source": "llm_worker.fast_path"},
         )
-
-        tc_event = ToolCall(
-            tool_name=fc.name, tool_args=tool_args, tool_call_id=tool_call_id
-        )
-        await redis.publish(
-            RedisKeys.CHANNEL_USER_UPDATES,
-            json.dumps(
-                {
-                    "type": "tool.call",
-                    "user_id": user_id,
-                    "payload": tc_event.model_dump_json(),
-                }
-            ),
-        )
-
-
-async def _handle_llm_response(redis: Any, user_id: str, response) -> None:
-    function_calls = []
-    if hasattr(response, "candidates") and response.candidates:
-        candidate = response.candidates[0]
-        if (
-            hasattr(candidate, "content")
-            and candidate.content
-            and hasattr(candidate.content, "parts")
-            and candidate.content.parts
-        ):
-            for part in candidate.content.parts:
-                if part.function_call:
-                    function_calls.append(part.function_call)
-
-    if function_calls:
-        logger.info(
-            "LLM returned tool calls",
-            extra={"user_id": user_id, "count": len(function_calls)},
-        )
-        await _dispatch_tool_calls(redis, user_id, function_calls)
-        return
-
-    response_text = response.text or ""
-    if not response_text:
-        logger.warning("Gemini returned an empty response")
-        # Don't send "Sorry" here if it was just a transient overload or empty safety block
-        # just logging warning is often enough, or we can send a fallback.
-        # But if we crashed before, we definitely sent nothing.
-        # Let's send a fallback only if we really got nothing.
-        if not function_calls:
-            response_text = "Sorry, I couldn't generate a response right now."
-
-    await _append_history(redis, user_id, "assistant", response_text)
-    logger.debug("Publishing agent response", extra={"user_id": user_id})
-    response_event = AgentResponse(content=response_text)
-    await redis.publish(
-        RedisKeys.CHANNEL_USER_UPDATES,
-        json.dumps(
-            {
-                "type": "agent.response",
-                "user_id": user_id,
-                "payload": response_event.model_dump_json(),
-            }
-        ),
-    )
-    logger.info(f"Published agent response: {response_text[:30]}...")
-
-
-def _build_tools_payload():
-    declarations = []
-    for spec in list_tool_specs():
-        declarations.append(
-            {
-                "name": spec.name,
-                "description": spec.description,
-                "parameters": spec.parameters,
-            }
-        )
-    return [{"function_declarations": declarations}] if declarations else []
 
 
 # Define available tools (schema for Gemini)
 TOOLS = _build_tools_payload()
-
-
-def _tool_result_response(tool_result: ToolResult) -> str:
-    if tool_result.error:
-        return f"Sorry, I couldn't complete that. {tool_result.error}"
-
-    result = tool_result.result
-    if isinstance(result, str):
-        return result
-    if not isinstance(result, dict):
-        return "Done."
-
-    status = result.get("status")
-    data = result.get("data") if isinstance(result.get("data"), dict) else {}
-    message = result.get("message")
-
-    if tool_result.tool_name.startswith("spotify."):
-        if data.get("requires_clarification") and isinstance(message, str):
-            return message
-
-        if isinstance(message, str) and message.strip():
-            return message
-
-        if tool_result.tool_name in {
-            "spotify.play",
-            "spotify.play_album",
-            "spotify.play_playlist",
-            "spotify.add_to_queue",
-        }:
-            track_name = (
-                data.get("track_name")
-                or result.get("query")
-                or result.get("album")
-                or result.get("playlist")
-            )
-            artist = data.get("artist")
-            if tool_result.tool_name == "spotify.add_to_queue":
-                if track_name and artist:
-                    return f"Added {track_name} by {artist} to your queue."
-                if track_name:
-                    return f"Added {track_name} to your queue."
-                return "Added to your queue."
-            if track_name and artist:
-                return f"Playing {track_name} by {artist}."
-            if track_name:
-                return f"Playing {track_name}."
-            return "Playing on Spotify."
-
-        if tool_result.tool_name == "spotify.pause":
-            return "Paused."
-        if tool_result.tool_name == "spotify.resume":
-            return "Resuming playback."
-        if tool_result.tool_name == "spotify.next":
-            if data.get("verified") is False:
-                return "I sent next, but I could not confirm playback changed."
-            return "Skipping to the next track."
-        if tool_result.tool_name == "spotify.previous":
-            if data.get("verified") is False:
-                return "I sent previous, but I could not confirm playback changed."
-            return "Going back to the previous track."
-        if tool_result.tool_name == "spotify.set_volume":
-            level = result.get("volume") or data.get("volume") or data.get("level")
-            if isinstance(level, int):
-                return f"Volume set to {level}%."
-            return "Volume updated."
-        if tool_result.tool_name == "spotify.list_devices":
-            devices = data.get("devices")
-            if isinstance(devices, list):
-                return f"Found {len(devices)} devices."
-            return "Here are your available devices."
-
-    if isinstance(status, str) and status:
-        return status
-
-    return "Done."
-
 
 async def process_voice_input_stream():
     """Main loop for consuming voice input events."""
@@ -652,17 +223,31 @@ async def process_voice_input_stream():
 
 async def handle_message(data: dict):
     """Business logic for handling a single voice event."""
-    event_type = data.get("type")
+    try:
+        envelope = parse_event_envelope(data)
+    except Exception as exc:
+        logger.warning("Invalid stream envelope", extra={"error": str(exc), "data": data})
+        return
 
+    if not is_supported_event_version(envelope.version):
+        logger.warning(
+            "Unsupported stream envelope version",
+            extra={"version": envelope.version},
+        )
+        return
+
+    event_type = envelope.type
     if event_type != "user.transcription":
         return
 
-    payload_json = data.get("payload")
-    user_id = data.get("user_id")
+    payload = envelope.payload
+    user_id = envelope.user_id
 
-    if not payload_json or not user_id:
+    if payload is None or not user_id:
         logger.warning("Received invalid message payload or missing user_id")
         return
+
+    payload_json = payload if isinstance(payload, str) else json.dumps(payload)
 
     # Deserialize event
     transcription = UserTranscriptionReceived.model_validate_json(payload_json)
@@ -672,7 +257,13 @@ async def handle_message(data: dict):
     # Call LLM (Gemini) with Tools
     try:
         redis = await get_redis_client()
-        await _append_history(redis, user_id, "user", transcription.content)
+        await _append_history(
+            redis,
+            user_id,
+            "user",
+            transcription.content,
+            history_limit=HISTORY_LIMIT,
+        )
 
         route_decision = conversation_router.decide(transcription.content)
         logger.info(
@@ -692,7 +283,10 @@ async def handle_message(data: dict):
                     tool_name, tool_args = tool_call
                     if tool_name == "spotify.play":
                         used_cache = await _try_cached_spotify_play(
-                            redis, str(user_id), tool_args
+                            redis,
+                            str(user_id),
+                            tool_args,
+                            history_limit=HISTORY_LIMIT,
                         )
                         if used_cache:
                             return
@@ -713,24 +307,35 @@ async def handle_message(data: dict):
             if isinstance(cached_response, bytes):
                 cached_response = cached_response.decode("utf-8")
             response_event = AgentResponse(content=str(cached_response))
-            await redis.publish(
-                RedisKeys.CHANNEL_USER_UPDATES,
-                json.dumps(
-                    {
-                        "type": "agent.response",
-                        "user_id": user_id,
-                        "payload": response_event.model_dump_json(),
-                    }
-                ),
+            await _publish_user_update(
+                redis,
+                event_type="agent.response",
+                user_id=str(user_id),
+                payload=response_event,
+                metadata={"source": "llm_worker.cache_hit"},
             )
-            await _append_history(redis, user_id, "assistant", str(cached_response))
+            await _append_history(
+                redis,
+                user_id,
+                "assistant",
+                str(cached_response),
+                history_limit=HISTORY_LIMIT,
+            )
             return
         await redis.incr(_cache_miss_key())
         logger.debug("Cache miss", extra={"user_id": user_id})
         response = await gemini.generate_chat_response(
             messages=history, system_instruction=SYSTEM_INSTRUCTION, tools=TOOLS
         )
-        await _handle_llm_response(redis, user_id, response)
+        await _handle_llm_response(
+            redis,
+            user_id,
+            response,
+            execute_tool_call_task=execute_tool_call,
+            publish_user_update=_publish_user_update,
+            append_history=_append_history,
+            history_limit=HISTORY_LIMIT,
+        )
         try:
             if response.text:
                 await redis.setex(
@@ -751,29 +356,23 @@ async def handle_message(data: dict):
                     error="Gemini quota exhausted.",
                     code="gemini_quota",
                 )
-                await redis.publish(
-                    RedisKeys.CHANNEL_USER_UPDATES,
-                    json.dumps(
-                        {
-                            "type": "agent.error",
-                            "user_id": user_id,
-                            "payload": error_event.model_dump_json(),
-                        }
-                    ),
+                await _publish_user_update(
+                    redis,
+                    event_type="agent.error",
+                    user_id=str(user_id),
+                    payload=error_event,
+                    metadata={"source": "llm_worker.quota_error"},
                 )
             else:
                 response_event = AgentResponse(
                     content="Sorry, I ran into an error while generating a response."
                 )
-                await redis.publish(
-                    RedisKeys.CHANNEL_USER_UPDATES,
-                    json.dumps(
-                        {
-                            "type": "agent.response",
-                            "user_id": user_id,
-                            "payload": response_event.model_dump_json(),
-                        }
-                    ),
+                await _publish_user_update(
+                    redis,
+                    event_type="agent.response",
+                    user_id=str(user_id),
+                    payload=response_event,
+                    metadata={"source": "llm_worker.exception_fallback"},
                 )
 
 
@@ -803,16 +402,31 @@ async def process_tool_results():
             except json.JSONDecodeError:
                 continue
 
-            if event.get("type") != "tool.result":
+            try:
+                envelope = parse_event_envelope(event)
+            except Exception:
                 continue
 
-            payload = event.get("payload")
-            user_id = event.get("user_id")
+            if not is_supported_event_version(envelope.version):
+                logger.warning(
+                    "Skipping unsupported pubsub envelope version",
+                    extra={"version": envelope.version},
+                )
+                continue
+
+            if envelope.type != "tool.result":
+                continue
+
+            payload = envelope.payload
+            user_id = envelope.user_id
             if not payload or not user_id:
                 continue
 
             try:
-                tool_result = ToolResult.model_validate_json(payload)
+                if isinstance(payload, str):
+                    tool_result = ToolResult.model_validate_json(payload)
+                else:
+                    tool_result = ToolResult.model_validate(payload)
             except Exception:
                 continue
 
@@ -820,23 +434,30 @@ async def process_tool_results():
             if tool_result.metadata and tool_result.metadata.get("fast_path"):
                 continue
 
-            await _cache_spotify_result(redis, tool_result)
+            await _cache_spotify_result(
+                redis,
+                tool_result,
+                spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
+            )
 
-            response_text = _tool_result_response(tool_result)
+            response_text = format_tool_result_response(tool_result)
             if not response_text:
                 continue
 
-            await _append_history(redis, user_id, "assistant", response_text)
+            await _append_history(
+                redis,
+                user_id,
+                "assistant",
+                response_text,
+                history_limit=HISTORY_LIMIT,
+            )
             response_event = AgentResponse(content=response_text)
-            await redis.publish(
-                RedisKeys.CHANNEL_USER_UPDATES,
-                json.dumps(
-                    {
-                        "type": "agent.response",
-                        "user_id": user_id,
-                        "payload": response_event.model_dump_json(),
-                    }
-                ),
+            await _publish_user_update(
+                redis,
+                event_type="agent.response",
+                user_id=user_id,
+                payload=response_event,
+                metadata={"source": "llm_worker.tool_result_loop"},
             )
     finally:
         await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)

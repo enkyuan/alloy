@@ -10,7 +10,7 @@ from app.core.events import (
     ToolResult,
     UserTranscriptionReceived,
 )
-from app.services.agent.bus import Message
+from app.services.agent.core.bus import Message
 from app.services.agent.nodes.conversation_context import ConversationContext
 from app.services.agent.nodes.reasoning import ReasoningNode
 from app.services.integrations import list_tool_specs

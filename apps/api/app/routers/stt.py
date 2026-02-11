@@ -9,7 +9,7 @@ import websockets
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
-from app.core.events import UserTranscriptionReceived
+from app.core.events import UserTranscriptionReceived, build_event_envelope
 from app.core.redis import RedisKeys, get_redis_client
 from app.services.pipeline.soniox import soniox_service
 from app.services.user.auth import supabase_auth_service
@@ -27,14 +27,19 @@ async def publish_transcription(
 ) -> None:
     """Publish a typed Agent transcription event to the Redis stream."""
     event = UserTranscriptionReceived(content=text)
-    entry = {
-        "type": "user.transcription",
-        "payload": event.model_dump_json(),
-        "user_id": user_id,
+    metadata: dict[str, Any] = {
         "timestamp": str(datetime.now(timezone.utc).timestamp()),
+        "source": "stt.router",
     }
     if session_id:
-        entry["session_id"] = session_id
+        metadata["session_id"] = session_id
+
+    entry = build_event_envelope(
+        event_type="user.transcription",
+        user_id=user_id,
+        payload=event,
+        metadata=metadata,
+    )
     await redis_conn.xadd(RedisKeys.STREAM_VOICE_INPUT, cast(dict[Any, Any], entry))
 
 

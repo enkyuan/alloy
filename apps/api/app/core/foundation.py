@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Any, cast
 from redis.asyncio import Redis
 from app.core.config import settings
+from app.core.events import UserTranscriptionReceived, build_event_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,13 @@ class EventBackbone:
         assert self.redis is not None
 
         stream_key = "stream:voice_input"
-        entry = {"user_id": user_id, "text": text, "timestamp": str(time.time())}
+        event = UserTranscriptionReceived(content=text, user_id=user_id)
+        entry = build_event_envelope(
+            event_type="user.transcription",
+            user_id=user_id,
+            payload=event,
+            metadata={"timestamp": str(time.time()), "source": "core.foundation"},
+        )
 
         try:
             # XADD returns the ID of the added entry

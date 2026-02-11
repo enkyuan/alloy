@@ -11,8 +11,8 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 
 logger = logging.getLogger(__name__)
 
-from app.services.agent.call_request import CallRequest, PreCallResult
-from app.services.agent.voice_agent_system import VoiceAgentSystem
+from app.services.agent.core.call_models import CallRequest, PreCallResult
+from app.services.agent.runtime.agent_system import VoiceAgentSystem
 
 # Load environment variables from .env file
 load_dotenv()

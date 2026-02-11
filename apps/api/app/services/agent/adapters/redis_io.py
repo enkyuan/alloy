@@ -5,36 +5,46 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from pydantic import BaseModel
 
-from app.core.events import EventInstance, EventsRegistry
+from app.core.events import (
+    EventInstance,
+    EventsRegistry,
+    build_event_envelope,
+    is_supported_event_version,
+    parse_event_envelope,
+)
 from app.core.redis import RedisKeys, get_redis_client
 
 logger = logging.getLogger(__name__)
 
 
 def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
-    event_type = envelope.get("type")
-    payload = envelope.get("payload")
-    user_id = envelope.get("user_id")
-
-    if not event_type or payload is None:
+    try:
+        parsed = parse_event_envelope(envelope)
+    except Exception as exc:
+        logger.warning(f"Invalid event envelope: {exc}")
         return []
 
-    event_cls = EventsRegistry.get_type(event_type)
+    if not is_supported_event_version(parsed.version):
+        logger.warning(f"Unsupported event version: {parsed.version}")
+        return []
+
+    event_cls = EventsRegistry.get_type(parsed.type)
     if event_cls is None:
         return []
 
     try:
+        payload = parsed.payload
         if isinstance(payload, str):
             event = event_cls.model_validate_json(payload)
         else:
             event = event_cls.model_validate(payload)
     except Exception as exc:
-        logger.warning(f"Failed to parse event payload for {event_type}: {exc}")
+        logger.warning(f"Failed to parse event payload for {parsed.type}: {exc}")
         return []
 
-    if hasattr(event, "user_id") and getattr(event, "user_id") is None and user_id:
+    if hasattr(event, "user_id") and getattr(event, "user_id") is None and parsed.user_id:
         try:
-            setattr(event, "user_id", str(user_id))
+            setattr(event, "user_id", str(parsed.user_id))
         except Exception:
             pass
 
@@ -182,16 +192,12 @@ class RedisPublisher:
                 pass
 
         payload = event.model_dump_json()
-        await redis.publish(
-            self.channel,
-            json.dumps(
-                {
-                    "type": event_alias,
-                    "user_id": user_id,
-                    "payload": payload,
-                }
-            ),
+        envelope = build_event_envelope(
+            event_type=event_alias,
+            user_id=user_id,
+            payload=payload,
         )
+        await redis.publish(self.channel, json.dumps(envelope))
         logger.debug(
             "Published event",
             extra={"channel": self.channel, "type": event_alias, "user_id": user_id},

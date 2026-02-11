@@ -19,12 +19,12 @@ from typing import (
 
 logger = logging.getLogger(__name__)
 
-from app.services.agent.bus import Message
-from app.services.agent.events import EventType, EventTypeOrAlias
+from app.services.agent.core.bus import Message
+from app.services.agent.core.agent_events import EventType, EventTypeOrAlias
 from app.services.agent.utils.aio import await_tasks_safe
 
 if TYPE_CHECKING:
-    from app.services.agent.bridge import Bridge
+    from app.services.agent.core.bridge import Bridge
 
 # We do not support async handlers here because these event handlers should be synchronous.
 OnEventHandler = Union[

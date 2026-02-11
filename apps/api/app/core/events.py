@@ -7,7 +7,7 @@ Ported from the original agent system events module.
 
 import json
 import uuid
-from typing import Any, Dict, Optional, Type, TypeVar, Union
+from typing import Any, Dict, Optional, Type, TypeVar, Union, cast
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,7 @@ T = TypeVar("T")
 EventInstance = T
 EventType = Type[T]
 EventTypeOrAlias = Union[EventType, str]
+EVENT_SCHEMA_VERSION = "1.0"
 
 
 # --- Core Pydantic Models ---
@@ -61,6 +62,60 @@ class ToolCall(BaseModel):
     tool_call_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     raw_response: Dict = Field(default_factory=dict)
     user_id: Optional[str] = None
+
+
+class EventEnvelope(BaseModel):
+    """Versioned event envelope used for Redis stream/pubsub transport."""
+
+    version: str = EVENT_SCHEMA_VERSION
+    type: str
+    user_id: Optional[str] = None
+    payload: Any
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+def _coerce_payload(payload: Union[BaseModel, Dict[str, Any], str]) -> Union[str, Dict[str, Any]]:
+    if isinstance(payload, BaseModel):
+        return payload.model_dump_json()
+    if isinstance(payload, dict):
+        return payload
+    return str(payload)
+
+
+def build_event_envelope(
+    *,
+    event_type: str,
+    user_id: Optional[str],
+    payload: Union[BaseModel, Dict[str, Any], str],
+    metadata: Optional[Dict[str, Any]] = None,
+    version: str = EVENT_SCHEMA_VERSION,
+) -> Dict[str, Any]:
+    """Build a validated versioned event envelope."""
+    envelope = EventEnvelope(
+        version=version,
+        type=event_type,
+        user_id=user_id,
+        payload=_coerce_payload(payload),
+        metadata=cast(Any, metadata or {}),
+    )
+    return envelope.model_dump()
+
+
+def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
+    """Validate and parse an incoming event envelope.
+
+    Accepts legacy envelopes without a version by defaulting to EVENT_SCHEMA_VERSION.
+    """
+    candidate = dict(raw)
+    candidate.setdefault("version", EVENT_SCHEMA_VERSION)
+    return EventEnvelope.model_validate(candidate)
+
+
+def is_supported_event_version(version: str) -> bool:
+    """Return whether an envelope version is supported by this runtime."""
+    return str(version).split(".", maxsplit=1)[0] == EVENT_SCHEMA_VERSION.split(
+        ".", maxsplit=1
+    )[0]
 
 
 class EndCall(BaseModel):

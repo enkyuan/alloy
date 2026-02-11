@@ -7,7 +7,7 @@ ResponseOutputMessage = object
 ResponseOutputRefusal = object
 ResponseOutputText = object
 
-from app.services.agent.events import (
+from app.services.agent.core.agent_events import (
     AgentResponse,
     EventInstance,
     EventType,

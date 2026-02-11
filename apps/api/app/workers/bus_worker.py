@@ -14,8 +14,8 @@ from app.services.agent.adapters.redis_io import (
     RedisPubSubInput,
     RedisStreamInput,
 )
-from app.services.agent.bridge import Bridge
-from app.services.agent.bus import Bus, Message
+from app.services.agent.core.bridge import Bridge
+from app.services.agent.core.bus import Bus, Message
 from app.services.agent.nodes.agent_reasoning import AgentReasoningNode
 from app.services.pipeline.tasks import execute_tool_call
 

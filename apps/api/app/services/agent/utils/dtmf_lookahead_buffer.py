@@ -2,7 +2,7 @@ from collections.abc import Generator
 import re
 from typing import Union
 
-from app.services.agent.events import AgentResponse, DTMFOutputEvent
+from app.services.agent.core.agent_events import AgentResponse, DTMFOutputEvent
 
 DTMF_EXPRESSION = "dtmf="
 

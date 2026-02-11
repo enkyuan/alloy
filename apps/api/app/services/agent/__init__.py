@@ -1,16 +1,16 @@
 # Core agent system components
 # Bus system
-from app.services.agent.bridge import Bridge
-from app.services.agent.bus import Bus, Message
-from app.services.agent.call_request import AgentConfig, CallRequest, PreCallResult
+from app.services.agent.core.bridge import Bridge
+from app.services.agent.core.bus import Bus, Message
+from app.services.agent.core.call_models import AgentConfig, CallRequest, PreCallResult
 from app.services.agent.nodes.conversation_context import ConversationContext
 
 # Reasoning components
 from app.services.agent.nodes.reasoning import Node, ReasoningNode
-from app.services.agent.routes import RouteBuilder, RouteConfig
-from app.services.agent.user_bridge import register_observability_event
-from app.services.agent.voice_agent_app import VoiceAgentApp
-from app.services.agent.voice_agent_system import VoiceAgentSystem
+from app.services.agent.core.route_builder import RouteBuilder, RouteConfig
+from app.services.agent.runtime.agent_system import VoiceAgentSystem
+from app.services.agent.runtime.agent_app import VoiceAgentApp
+from app.services.agent.core.user_channel import register_observability_event
 
 __all__ = [
     "Bridge",
