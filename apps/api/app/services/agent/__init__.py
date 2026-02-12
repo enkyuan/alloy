@@ -6,10 +6,11 @@ from app.services.agent.core.call_models import AgentConfig, CallRequest, PreCal
 from app.services.agent.nodes.conversation_context import ConversationContext
 
 # Reasoning components
-from app.services.agent.nodes.reasoning import Node, ReasoningNode
+from app.services.agent.nodes.node_base import NodeBase
+from app.services.agent.nodes.reasoning_node import ReasoningNode
 from app.services.agent.core.route_builder import RouteBuilder, RouteConfig
-from app.services.agent.runtime.agent_system import VoiceAgentSystem
-from app.services.agent.runtime.agent_app import VoiceAgentApp
+from app.services.agent.runtime.agent_app import AgentApp
+from app.services.agent.runtime.agent_system import AgentSystem
 from app.services.agent.core.user_channel import register_observability_event
 
 __all__ = [
@@ -19,12 +20,12 @@ __all__ = [
     "CallRequest",
     "AgentConfig",
     "ConversationContext",
-    "Node",
+    "NodeBase",
     "PreCallResult",
     "ReasoningNode",
     "RouteBuilder",
     "RouteConfig",
-    "VoiceAgentApp",
-    "VoiceAgentSystem",
+    "AgentApp",
+    "AgentSystem",
     "register_observability_event",
 ]

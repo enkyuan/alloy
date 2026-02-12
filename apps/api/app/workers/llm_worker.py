@@ -15,7 +15,6 @@ import logging
 import uuid
 from typing import Any
 
-import app.services.integrations.tools  # ensure tool registration
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.events import (
@@ -29,17 +28,17 @@ from app.core.events import (
 )
 from app.core.redis import RedisKeys, get_redis_client
 from app.services.integrations.dispatcher import execute_tool
-from app.services.pipeline.cmd_parser import command_parser
-from app.services.pipeline.conversation_router import conversation_router
-from app.services.pipeline.gemini import get_gemini_service
-from app.services.pipeline.tasks import execute_tool_call
+from app.services.parser import command_parser
+from app.services.pipeline.routers.router import pipeline_router
+from app.services.pipeline.services.gemini_service import get_gemini_service
+from app.services.pipeline.helpers.tool_tasks import execute_tool_call
 from app.workers.helpers.cache_keys import (
     cache_hit_key as _cache_hit_key,
     cache_miss_key as _cache_miss_key,
     response_cache_key as _response_cache_key,
 )
-from app.workers.helpers.command_mapping import (
-    intent_to_tool_call as _intent_to_tool_call,
+from app.workers.helpers.intent_mapping import (
+    map_intent_to_tool_call as _map_intent_to_tool_call,
 )
 from app.workers.helpers.llm_response import (
     handle_llm_response as _handle_llm_response,
@@ -51,8 +50,8 @@ from app.workers.helpers.redis_events import (
     publish_user_update as _publish_user_update,
     try_cached_spotify_play as _try_cached_spotify_play,
 )
-from app.workers.helpers.result_text import format_tool_result_response
-from app.workers.helpers.tool_schema import (
+from app.workers.helpers.response_text import format_response_text
+from app.workers.helpers.tools_payload import (
     build_tools_payload as _build_tools_payload,
     tools_fingerprint as _tools_fingerprint,
 )
@@ -147,7 +146,7 @@ async def _execute_tool_fast(
         spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
     )
 
-    response_text = format_tool_result_response(tool_result)
+    response_text = format_response_text(tool_result)
     if response_text:
         await _append_history(
             redis,
@@ -168,6 +167,7 @@ async def _execute_tool_fast(
 
 # Define available tools (schema for Gemini)
 TOOLS = _build_tools_payload()
+
 
 async def process_voice_input_stream():
     """Main loop for consuming voice input events."""
@@ -226,7 +226,9 @@ async def handle_message(data: dict):
     try:
         envelope = parse_event_envelope(data)
     except Exception as exc:
-        logger.warning("Invalid stream envelope", extra={"error": str(exc), "data": data})
+        logger.warning(
+            "Invalid stream envelope", extra={"error": str(exc), "data": data}
+        )
         return
 
     if not is_supported_event_version(envelope.version):
@@ -265,9 +267,9 @@ async def handle_message(data: dict):
             history_limit=HISTORY_LIMIT,
         )
 
-        route_decision = conversation_router.decide(transcription.content)
+        route_decision = pipeline_router.decide(transcription.content)
         logger.info(
-            "Conversation router decision",
+            "Pipeline router decision",
             extra={
                 "user_id": str(user_id),
                 "should_parse_as_command": route_decision.should_parse_as_command,
@@ -275,23 +277,41 @@ async def handle_message(data: dict):
             },
         )
 
-        if route_decision.should_parse_as_command:
-            intent = command_parser.parse_command(transcription.content)
-            if intent and not intent.requires_clarification:
-                tool_call = _intent_to_tool_call(intent)
-                if tool_call:
-                    tool_name, tool_args = tool_call
-                    if tool_name == "spotify.play":
-                        used_cache = await _try_cached_spotify_play(
-                            redis,
-                            str(user_id),
-                            tool_args,
-                            history_limit=HISTORY_LIMIT,
-                        )
-                        if used_cache:
-                            return
-                    await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
-                    return
+        intent = command_parser.parse_command(
+            transcription.content,
+            alternatives=transcription.alternatives,
+        )
+        parser_command_like = bool(intent.parser_meta.get("command_like", False))
+        should_fast_path_parse = (
+            route_decision.should_parse_as_command or parser_command_like
+        )
+        logger.info(
+            "Parser decision",
+            extra={
+                "user_id": str(user_id),
+                "intent": intent.intent,
+                "confidence": round(intent.confidence, 4),
+                "requires_clarification": intent.requires_clarification,
+                "parser_command_like": parser_command_like,
+                "should_fast_path_parse": should_fast_path_parse,
+            },
+        )
+
+        if should_fast_path_parse and not intent.requires_clarification:
+            tool_call = _map_intent_to_tool_call(intent)
+            if tool_call:
+                tool_name, tool_args = tool_call
+                if tool_name == "spotify.play":
+                    used_cache = await _try_cached_spotify_play(
+                        redis,
+                        str(user_id),
+                        tool_args,
+                        history_limit=HISTORY_LIMIT,
+                    )
+                    if used_cache:
+                        return
+                await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
+                return
 
         gemini = get_gemini_service()
         history = await _get_history(redis, user_id)
@@ -440,7 +460,7 @@ async def process_tool_results():
                 spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
             )
 
-            response_text = format_tool_result_response(tool_result)
+            response_text = format_response_text(tool_result)
             if not response_text:
                 continue
 

@@ -22,7 +22,7 @@ from app.services.agent.core.agent_events import (
 from app.services.agent.core.route_builder import RouteBuilder, RouteHandler
 
 if TYPE_CHECKING:
-    from app.services.agent.nodes.reasoning import Node
+    from app.services.agent.nodes.node_base import NodeBase
 
 T = TypeVar("T")
 
@@ -39,7 +39,7 @@ class Bridge:
     :class:`RouteBuilder` and execute it.
     """
 
-    def __init__(self, node: Union["Node", str, Any]):
+    def __init__(self, node: Union["NodeBase", str, Any]):
         """Create bridge for node.
 
         Args:
@@ -55,7 +55,6 @@ class Bridge:
 
         # event_pattern → (method, broadcast_event).
         self.routes: dict[EventTypeOrAlias, List[RouteHandler]] = defaultdict(list)
-        self.scheduled_tasks: List[asyncio.Task] = []  # Background tasks for periodic execution.
         self.scheduled_tasks: List[
             asyncio.Task
         ] = []  # Background tasks for periodic execution.

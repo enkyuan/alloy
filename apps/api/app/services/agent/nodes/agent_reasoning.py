@@ -12,11 +12,11 @@ from app.core.events import (
 )
 from app.services.agent.core.bus import Message
 from app.services.agent.nodes.conversation_context import ConversationContext
-from app.services.agent.nodes.reasoning import ReasoningNode
+from app.services.agent.nodes.reasoning_node import ReasoningNode
 from app.services.integrations import list_tool_specs
-from app.services.pipeline.cmd_parser import command_parser
-from app.services.pipeline.conversation_router import conversation_router
-from app.services.pipeline.gemini import get_gemini_service
+from app.services.parser import command_parser
+from app.services.pipeline.routers.router import pipeline_router
+from app.services.pipeline.services.gemini_service import get_gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +66,9 @@ class AgentReasoningNode(ReasoningNode):
 
         last_event = context.events[-1] if context.events else None
         if isinstance(last_event, UserTranscriptionReceived):
-            route_decision = conversation_router.decide(last_event.content)
+            route_decision = pipeline_router.decide(last_event.content)
             logger.debug(
-                "Conversation router decision",
+                "Pipeline router decision",
                 extra={
                     "user_id": user_id,
                     "should_parse_as_command": route_decision.should_parse_as_command,
@@ -76,20 +76,37 @@ class AgentReasoningNode(ReasoningNode):
                 },
             )
 
-            if route_decision.should_parse_as_command:
-                logger.debug(
-                    "Parsing intent from latest user message", extra={"user_id": user_id}
-                )
-                intent = command_parser.parse_command(last_event.content)
-                if intent and not intent.requires_clarification:
-                    tool_call = _intent_to_tool_call(intent, user_id)
-                    if tool_call:
-                        logger.info(
-                            "Routing via parser intent",
-                            extra={"user_id": user_id, "intent": intent.intent},
-                        )
-                        yield tool_call
-                        return
+            logger.debug(
+                "Parsing intent from latest user message", extra={"user_id": user_id}
+            )
+            intent = command_parser.parse_command(
+                last_event.content,
+                alternatives=last_event.alternatives,
+            )
+            parser_command_like = bool(intent.parser_meta.get("command_like", False))
+            should_fast_path_parse = (
+                route_decision.should_parse_as_command or parser_command_like
+            )
+            logger.debug(
+                "Parser decision",
+                extra={
+                    "user_id": user_id,
+                    "intent": intent.intent,
+                    "confidence": round(intent.confidence, 4),
+                    "parser_command_like": parser_command_like,
+                    "should_fast_path_parse": should_fast_path_parse,
+                },
+            )
+
+            if should_fast_path_parse and not intent.requires_clarification:
+                tool_call = _intent_to_tool_call(intent, user_id)
+                if tool_call:
+                    logger.info(
+                        "Routing via parser intent",
+                        extra={"user_id": user_id, "intent": intent.intent},
+                    )
+                    yield tool_call
+                    return
 
         messages = _events_to_messages(context.events)
         if not messages:

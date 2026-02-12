@@ -190,7 +190,7 @@ services:
         "worker",
         "app.core.broker:broker",
         "app.services.pipeline.tasks",
-        "app.services.workspace.tasks",
+        "app.services.integrations.workspace.tasks",
       ]
     volumes:
       - ../apps/api/app:/app/app:ro

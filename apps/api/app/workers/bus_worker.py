@@ -17,7 +17,7 @@ from app.services.agent.adapters.redis_io import (
 from app.services.agent.core.bridge import Bridge
 from app.services.agent.core.bus import Bus, Message
 from app.services.agent.nodes.agent_reasoning import AgentReasoningNode
-from app.services.pipeline.tasks import execute_tool_call
+from app.services.pipeline.helpers.tool_tasks import execute_tool_call
 
 SYSTEM_INSTRUCTION = (
     "You are a helpful voice assistant. "

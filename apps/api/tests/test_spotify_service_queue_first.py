@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.services.spotify.client import SpotifyClient
-from app.services.spotify.service import SpotifyService
+from app.services.integrations.spotify.client import SpotifyClient
+from app.services.integrations.spotify.service import SpotifyService
 
 
 @pytest.mark.asyncio

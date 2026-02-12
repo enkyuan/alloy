@@ -9,7 +9,7 @@ from app.services.integrations.dispatcher import (
     register_tool,
     tool_spec_from_model,
 )
-from app.services.spotify import spotify_service
+from app.services.integrations.spotify import spotify_service
 from app.services.todoist import todoist_service
 
 

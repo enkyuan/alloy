@@ -12,15 +12,15 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 logger = logging.getLogger(__name__)
 
 from app.services.agent.core.call_models import CallRequest, PreCallResult
-from app.services.agent.runtime.agent_system import VoiceAgentSystem
+from app.services.agent.runtime.agent_system import AgentSystem
 
 # Load environment variables from .env file
 load_dotenv()
 
 
-class VoiceAgentApp:
+class AgentApp:
     """
-    VoiceAgentApp abstracts away the HTTP and websocket handling,
+    AgentApp abstracts away the HTTP and websocket handling,
     which should be invisible to developers, because this transport may change
     in the future (eg to WebRTC).
     """
@@ -154,7 +154,7 @@ class VoiceAgentApp:
             }
         )
 
-        system = VoiceAgentSystem(websocket)
+        system = AgentSystem(websocket)
 
         try:
             # Handler configures nodes and bridges, then starts system

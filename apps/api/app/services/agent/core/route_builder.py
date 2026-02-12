@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 from app.services.agent.core.bus import Message
 from app.services.agent.core.agent_events import EventType, EventTypeOrAlias
-from app.services.agent.utils.aio import await_tasks_safe
+from app.services.agent.utils.async_tasks import await_tasks_safe
 
 if TYPE_CHECKING:
     from app.services.agent.core.bridge import Bridge

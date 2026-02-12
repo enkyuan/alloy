@@ -1,3 +1,5 @@
+import pytest
+
 from app.core.events import (
     AgentResponse,
     build_event_envelope,
@@ -42,3 +44,14 @@ def test_supported_event_version_uses_major_semver_compatibility():
     assert is_supported_event_version("1.7")
     assert not is_supported_event_version("2.0")
 
+
+def test_parse_event_envelope_rejects_unsupported_major_version():
+    envelope = {
+        "version": "2.0",
+        "type": "agent.response",
+        "user_id": "user_123",
+        "payload": AgentResponse(content="hello").model_dump_json(),
+    }
+
+    with pytest.raises(ValueError, match="Unsupported event envelope version"):
+        parse_event_envelope(envelope)

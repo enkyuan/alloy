@@ -1,9 +1,9 @@
 from app.services.agent.nodes.agent_reasoning import AgentReasoningNode
-from app.services.agent.nodes.base import Node
-from app.services.agent.nodes.reasoning import ReasoningNode
+from app.services.agent.nodes.node_base import NodeBase
+from app.services.agent.nodes.reasoning_node import ReasoningNode
 
 __all__ = [
-    "Node",
+    "NodeBase",
     "ReasoningNode",
     "AgentReasoningNode",
 ]

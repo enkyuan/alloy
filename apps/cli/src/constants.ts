@@ -1,12 +1,15 @@
 import chalk from "chalk";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const CLI_SRC_DIR = import.meta.dir ?? dirname(fileURLToPath(import.meta.url));
 
 export const APP_NAME = "modal-cli";
 export const PACKAGE_NAME = "@modal/cli";
 export const VERSION = "0.1.0";
 export const APP_DESCRIPTION =
   "Minimal TUI for exploring and running Modal scripts";
-export const DEFAULT_SCRIPTS_DIR =
-  "/Users/enkyuan/Desktop/Projects/modal/scripts";
+export const DEFAULT_SCRIPTS_DIR = join(CLI_SRC_DIR, "..", "scripts");
 
 export const LOGO_LINES = [
   "███╗   ███╗ ██████╗ ██████╗  █████╗ ██╗     ",

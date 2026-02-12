@@ -25,7 +25,7 @@ from app.services.agent.core.agent_events import (
     UserTranscriptionReceived,
     UserUnknownInputReceived,
 )
-from app.services.agent.runtime.ws_types import (
+from app.services.agent.runtime.websocket_types import (
     AgentSpeechInput,
     AgentStateInput,
     CustomInput,

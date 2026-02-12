@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 @pytest.fixture
 def mock_supabase():
-    with patch("app.routers.gemini.supabase_auth_service") as mock:
+    with patch("app.routers.routers_gemini.supabase_auth_service") as mock:
         mock.get_user = AsyncMock(return_value={"id": "test_user_id"})
         yield mock
 
 @pytest.fixture
 def mock_gemini_service():
-    with patch("app.routers.gemini.get_gemini_service") as mock_get:
+    with patch("app.routers.routers_gemini.get_gemini_service") as mock_get:
         service_mock = MagicMock()
         service_mock.generate_response = AsyncMock(return_value="Mocked response")
         service_mock.generate_chat_response = AsyncMock()

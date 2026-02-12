@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 @pytest.fixture
 def mock_tool_specs():
-    with patch("app.routers.tools.list_tool_specs") as mock:
+    with patch("app.routers.routers_tools.list_tool_specs") as mock:
         # Mock ToolSpec object
         spec = MagicMock()
         spec.name = "test_tool"
@@ -23,8 +23,8 @@ def mock_redis():
     async def get_redis():
         return fake_redis
     
-    # Patch the function in app.routers.tools since it calls it directly
-    with patch("app.routers.tools.get_redis_client", side_effect=get_redis):
+    # Patch the function in app.routers.routers_tools since it calls it directly
+    with patch("app.routers.routers_tools.get_redis_client", side_effect=get_redis):
         yield fake_redis
 
 @pytest.mark.asyncio

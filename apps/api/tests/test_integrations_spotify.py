@@ -12,7 +12,7 @@ from app.models.user import User
 
 @pytest.fixture
 def mock_settings():
-    with patch("app.routers.integrations.settings") as mock:
+    with patch("app.routers.integrations.integrations_spotify.settings") as mock:
         mock.SPOTIFY_CLIENT_ID = "test_client_id"
         mock.SPOTIFY_CLIENT_SECRET = "test_client_secret"
         mock.SPOTIFY_REDIRECT_URI = "http://localhost/callback"
@@ -20,7 +20,7 @@ def mock_settings():
 
 @pytest.fixture
 def mock_redis_global():
-    with patch("app.routers.integrations.redis_client") as mock:
+    with patch("app.routers.integrations.integrations_spotify.redis_client") as mock:
         mock.setex = AsyncMock()
         mock.get = AsyncMock(return_value=None)
         mock.delete = AsyncMock()
@@ -132,8 +132,8 @@ async def test_spotify_playback_success(async_client: AsyncClient, mock_supabase
     }
 
     # 2. Mock Spotify Client Service
-    # We need to patch app.routers.integrations.spotify_client
-    with patch("app.routers.integrations.spotify_client") as mock_spotify:
+    # We need to patch app.routers.integrations.integrations_spotify.spotify_client
+    with patch("app.routers.integrations.integrations_spotify.spotify_client") as mock_spotify:
         mock_spotify.get_valid_token = AsyncMock(return_value="valid_access_token")
         mock_spotify.get_current_playback = AsyncMock(return_value={
             "is_playing": True,

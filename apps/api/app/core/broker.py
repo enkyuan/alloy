@@ -2,9 +2,7 @@
 Taskiq configuration for background job processing.
 """
 
-from typing import Optional
 
-from taskiq import TaskiqScheduler
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from app.core.config import settings

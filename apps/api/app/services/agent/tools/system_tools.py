@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.services.agent.core.agent_events import AgentResponse, EndCall
 from app.services.agent.tools.tool_types import ToolDefinition
-from app.services.agent.utils.str import is_e164_phone_number
+from app.services.agent.utils.phone_numbers import is_e164_phone_number
 
 try:
     from google.genai import types as gemini_types

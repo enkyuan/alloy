@@ -74,7 +74,9 @@ class EventEnvelope(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-def _coerce_payload(payload: Union[BaseModel, Dict[str, Any], str]) -> Union[str, Dict[str, Any]]:
+def _coerce_payload(
+    payload: Union[BaseModel, Dict[str, Any], str],
+) -> Union[str, Dict[str, Any]]:
     if isinstance(payload, BaseModel):
         return payload.model_dump_json()
     if isinstance(payload, dict):
@@ -108,14 +110,18 @@ def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
     """
     candidate = dict(raw)
     candidate.setdefault("version", EVENT_SCHEMA_VERSION)
-    return EventEnvelope.model_validate(candidate)
+    envelope = EventEnvelope.model_validate(candidate)
+    if not is_supported_event_version(envelope.version):
+        raise ValueError(f"Unsupported event envelope version: {envelope.version}")
+    return envelope
 
 
 def is_supported_event_version(version: str) -> bool:
     """Return whether an envelope version is supported by this runtime."""
-    return str(version).split(".", maxsplit=1)[0] == EVENT_SCHEMA_VERSION.split(
-        ".", maxsplit=1
-    )[0]
+    return (
+        str(version).split(".", maxsplit=1)[0]
+        == EVENT_SCHEMA_VERSION.split(".", maxsplit=1)[0]
+    )
 
 
 class EndCall(BaseModel):
@@ -175,6 +181,7 @@ class UserTranscriptionReceived(BaseModel):
     """User transcription received event."""
 
     content: str
+    alternatives: list[str] = Field(default_factory=list)
     user_id: Optional[str] = None
 
 

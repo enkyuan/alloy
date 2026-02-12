@@ -8,8 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.routers import auth, integrations, stt, gemini, tools
 from app.core.broker import broker
+from app.routers import (
+    integrations,
+    routers_auth,
+    routers_gemini,
+    routers_stt,
+    routers_tools,
+)
 
 # Configure Rich logging
 setup_logging(debug=settings.DEBUG)
@@ -42,18 +48,19 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Update this in production
+    allow_origins=settings.cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+logger.info("Configured CORS origins", extra={"origins": settings.cors_allow_origins})
 
 # Include routers
-app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
+app.include_router(routers_auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(integrations.router, prefix=settings.API_V1_PREFIX)
-app.include_router(stt.router, prefix=settings.API_V1_PREFIX)
-app.include_router(gemini.router, prefix=settings.API_V1_PREFIX)
-app.include_router(tools.router, prefix=settings.API_V1_PREFIX)
+app.include_router(routers_stt.router, prefix=settings.API_V1_PREFIX)
+app.include_router(routers_gemini.router, prefix=settings.API_V1_PREFIX)
+app.include_router(routers_tools.router, prefix=settings.API_V1_PREFIX)
 
 logger.info(f"Starting {settings.PROJECT_NAME}")
 

@@ -92,7 +92,6 @@ def create_user_bridge(harness: "ConversationHarness", authorized_node: str) -> 
             result = event.result_str if event.result_str is not None else event.error
         else:
             result = None
-        return await harness.send_tool_call(event.tool_name, event.tool_args, event.tool_call_id, result)
         return await harness.send_tool_call(
             event.tool_name, event.tool_args, event.tool_call_id, result
         )

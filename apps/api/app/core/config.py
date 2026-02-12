@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Modal API"
+    CORS_ALLOW_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
     # TaskIQ
     TASKIQ_BROKER: str = "redis"  # Options: redis
@@ -112,6 +113,19 @@ class Settings(BaseSettings):
     def GMAIL_CLIENT_SECRET(self) -> Optional[str]:
         """Gmail uses the same Google OAuth client secret."""
         return self.GOOGLE_CLIENT_SECRET
+
+    @property
+    def cors_allow_origins(self) -> list[str]:
+        """Return parsed CORS origins from comma-delimited config."""
+        origins = [
+            origin.strip()
+            for origin in self.CORS_ALLOW_ORIGINS.split(",")
+            if origin.strip()
+        ]
+        if origins:
+            return origins
+        # Safe default for local frontend development.
+        return ["http://localhost:3000"]
 
 
 # Global settings instance

@@ -1,5 +1,5 @@
 """
-VoiceAgentSystem
+AgentSystem
 
 A utility for building voice agent systems.
 
@@ -13,14 +13,14 @@ from typing import Dict, Optional
 from app.services.agent.core.bridge import Bridge
 from app.services.agent.core.bus import Bus, Message
 from app.services.agent.core.agent_events import AgentResponse
-from app.services.agent.nodes.reasoning import ReasoningNode
+from app.services.agent.nodes.reasoning_node import ReasoningNode
 from app.services.agent.runtime.conversation_harness import ConversationHarness
 from app.services.agent.core.user_channel import create_user_bridge
 
 logger = logging.getLogger(__name__)
 
 
-class VoiceAgentSystem:
+class AgentSystem:
     """
     System builder for voice agent applications.
 
@@ -83,9 +83,7 @@ class VoiceAgentSystem:
             self.with_bridge(node.id, bridge)
         return self
 
-    def with_speaking_node(
-        self, node: ReasoningNode, bridge: Bridge
-    ) -> "VoiceAgentSystem":
+    def with_speaking_node(self, node: ReasoningNode, bridge: Bridge) -> "AgentSystem":
         """
         Add the speaking reasoning node and optional bridge, setting it as the authorized agent.
 
@@ -99,10 +97,10 @@ class VoiceAgentSystem:
         if self.authorized_node is None:
             self.authorized_node = bridge.node_id
             self._setup_authorized_infrastructure(authorized_node=bridge.node_id)
-            logger.info(f"VoiceAgentSystem: Set authorized agent to '{bridge.node_id}'")
+            logger.info(f"AgentSystem: Set authorized agent to '{bridge.node_id}'")
         elif self.authorized_node != bridge.node_id:
             logger.warning(
-                f"VoiceAgentSystem: Authorized agent already set to '{self.authorized_node}', "
+                f"AgentSystem: Authorized agent already set to '{self.authorized_node}', "
                 f"ignoring '{bridge.node_id}'"
             )
 
@@ -111,7 +109,7 @@ class VoiceAgentSystem:
             result = result.with_bridge(bridge.node_id, bridge)
         return result
 
-    def with_main_bridge(self, bridge: Bridge) -> "VoiceAgentSystem":
+    def with_main_bridge(self, bridge: Bridge) -> "AgentSystem":
         """
         Add the main bridge using the authorized agent name.
 
@@ -125,7 +123,7 @@ class VoiceAgentSystem:
             raise ValueError("Must call with_main_node() before with_main_bridge()")
         return self.with_bridge(self.authorized_node, bridge)
 
-    def with_bridge(self, name: str, bridge: Bridge) -> "VoiceAgentSystem":
+    def with_bridge(self, name: str, bridge: Bridge) -> "AgentSystem":
         """
         Add bridge to the system.
 
@@ -144,13 +142,13 @@ class VoiceAgentSystem:
 
         # Register all bridges quietly first
         for name, bridge in self.bridges.items():
-            logger.debug(f"VoiceAgentSystem: Registering bridge '{name}'")
+            logger.debug(f"AgentSystem: Registering bridge '{name}'")
             self.bus.register_bridge(name, bridge)
 
         # Initialize all reasoning nodes quietly
         for name, component in self.components.items():
             if hasattr(component, "start"):
-                logger.debug(f"VoiceAgentSystem: Starting component '{name}'")
+                logger.debug(f"AgentSystem: Starting component '{name}'")
                 await component.start()
 
         # Start bus (which will show the summary) then other components
@@ -161,37 +159,37 @@ class VoiceAgentSystem:
         for _, bridge in self.bridges.items():
             await bridge.start()
 
-        logger.info("VoiceAgentSystem: All components started successfully")
+        logger.info("AgentSystem: All components started successfully")
 
     async def cleanup(self):
         """Clean shutdown of the voice agent system."""
-        logger.info("VoiceAgentSystem: Starting system cleanup")
+        logger.info("AgentSystem: Starting system cleanup")
 
         # Stop bridges first.
-        logger.debug(f"VoiceAgentSystem: Stopping {len(self.bridges)} bridges")
+        logger.debug(f"AgentSystem: Stopping {len(self.bridges)} bridges")
         for name, bridge in self.bridges.items():
-            logger.debug(f"VoiceAgentSystem: Stopping bridge '{name}'")
+            logger.debug(f"AgentSystem: Stopping bridge '{name}'")
             try:
                 await bridge.stop()
             except Exception as e:
-                logger.error(f"VoiceAgentSystem: Error stopping bridge '{name}': {e}")
+                logger.error(f"AgentSystem: Error stopping bridge '{name}': {e}")
                 raise e
 
         # Cleanup reasoning nodes.
-        logger.debug(f"VoiceAgentSystem: Cleaning up {len(self.components)} components")
+        logger.debug(f"AgentSystem: Cleaning up {len(self.components)} components")
         for name, component in self.components.items():
             if hasattr(component, "cleanup"):
-                logger.debug(f"VoiceAgentSystem: Cleaning up component '{name}'")
+                logger.debug(f"AgentSystem: Cleaning up component '{name}'")
                 await component.cleanup()
 
         # Then stop infrastructure.
-        logger.debug("VoiceAgentSystem: Cleaning up ConversationHarness")
+        logger.debug("AgentSystem: Cleaning up ConversationHarness")
         await self.harness.cleanup()
 
-        logger.debug("VoiceAgentSystem: Cleaning up Bus")
+        logger.debug("AgentSystem: Cleaning up Bus")
         await self.bus.cleanup()
 
-        logger.info("VoiceAgentSystem: System cleanup completed")
+        logger.info("AgentSystem: System cleanup completed")
 
     async def wait_for_shutdown(self):
         """Wait until system should shut down (WebSocket disconnect)."""
@@ -204,7 +202,7 @@ class VoiceAgentSystem:
         Args:
             message (str): Initial greeting message.
         """
-        logger.info(f"VoiceAgentSystem: Sending initial message: '{message[:50]}...'")
+        logger.info(f"AgentSystem: Sending initial message: '{message[:50]}...'")
         source = self.authorized_node or "system"
         await self.bus.broadcast(
             Message(source=source, event=AgentResponse(content=message))
@@ -213,7 +211,7 @@ class VoiceAgentSystem:
         # Add to main node conversation history.
         if self.main_node and hasattr(self.main_node, "add_event"):
             logger.debug(
-                "VoiceAgentSystem: Adding initial message to main node conversation history"
+                "AgentSystem: Adding initial message to main node conversation history"
             )
             self.main_node.add_event(AgentResponse(content=message))
 
