@@ -14,8 +14,6 @@ import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, AsyncGenerator, List, Optional, cast
 
-logger = logging.getLogger(__name__)
-
 from app.services.agent.core.agent_events import (
     AgentGenerationComplete,
     AgentResponse,
@@ -24,8 +22,11 @@ from app.services.agent.core.agent_events import (
     UserTranscriptionReceived,
 )
 from app.services.agent.core.bus import Message
-from app.services.agent.nodes.conversation_context import ConversationContext
+from app.services.agent.evals.conversation_context import ConversationContext
 from app.services.agent.nodes.node_base import NodeBase
+
+logger = logging.getLogger(__name__)
+
 
 if TYPE_CHECKING:
     pass

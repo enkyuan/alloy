@@ -2,9 +2,10 @@ import logging
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Optional
 from uuid import uuid4
 
+from app.services.agent.core.bus import Message
+
 logger = logging.getLogger(__name__)
 
-from app.services.agent.core.bus import Message
 
 if TYPE_CHECKING:
     from app.services.agent.core.bridge import Bridge

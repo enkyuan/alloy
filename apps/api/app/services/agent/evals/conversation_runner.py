@@ -10,8 +10,8 @@ from typing import List, Optional
 from app.services.agent.evals.similarity_utils import is_similar_str
 from app.services.agent.evals.conversation_turn import Turn
 from app.services.agent.core.agent_events import EventInstance
-from app.services.agent.nodes.conversation_context import ConversationContext
-from app.services.agent.nodes.reasoning_node import ReasoningNode
+from app.services.agent.evals.conversation_context import ConversationContext
+from app.services.agent.nodes.node_reasoning import ReasoningNode
 
 
 class ConversationRunner:

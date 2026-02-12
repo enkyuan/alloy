@@ -11,8 +11,8 @@ from app.core.events import (
     UserTranscriptionReceived,
 )
 from app.services.agent.core.bus import Message
-from app.services.agent.nodes.conversation_context import ConversationContext
-from app.services.agent.nodes.reasoning_node import ReasoningNode
+from app.services.agent.evals.conversation_context import ConversationContext
+from app.services.agent.nodes.node_reasoning import ReasoningNode
 from app.services.integrations import list_tool_specs
 from app.services.parser import command_parser
 from app.services.pipeline.routers.router import pipeline_router
@@ -52,8 +52,8 @@ class AgentReasoningNode(ReasoningNode):
         logger.debug("Processing message", extra={"user_id": user_id})
         self._add_event_for_user(user_id, message.event)
 
-        ctx = self._build_conversation_context(user_id)
-        async for chunk in self.process_context(ctx):
+        conversation_context = self._build_conversation_context(user_id)
+        async for chunk in self.process_context(conversation_context):
             self._add_event_for_user(user_id, chunk)
             yield chunk
 
@@ -99,7 +99,7 @@ class AgentReasoningNode(ReasoningNode):
             )
 
             if should_fast_path_parse and not intent.requires_clarification:
-                tool_call = _intent_to_tool_call(intent, user_id)
+                tool_call = _build_tool_call_from_intent(intent, user_id)
                 if tool_call:
                     logger.info(
                         "Routing via parser intent",
@@ -108,30 +108,30 @@ class AgentReasoningNode(ReasoningNode):
                     yield tool_call
                     return
 
-        messages = _events_to_messages(context.events)
-        if not messages:
+        conversation_messages = _build_conversation_messages(context.events)
+        if not conversation_messages:
             logger.debug("No messages to process", extra={"user_id": user_id})
             return
 
         try:
             logger.debug("Requesting Gemini response", extra={"user_id": user_id})
             response = await get_gemini_service().generate_chat_response(
-                messages=messages,
+                messages=conversation_messages,
                 system_instruction=self.system_prompt,
-                tools=_build_tools_payload(),
+                tools=_build_tool_payload(),
             )
-        except Exception as exc:
+        except Exception:
             logger.error("Gemini failure", exc_info=True, extra={"user_id": user_id})
             yield AgentError(error="Gemini request failed.", user_id=user_id)
             return
 
-        function_calls = _extract_function_calls(response)
-        if function_calls:
+        response_function_calls = _extract_response_function_calls(response)
+        if response_function_calls:
             logger.info(
                 "Gemini requested tool calls",
-                extra={"user_id": user_id, "count": len(function_calls)},
+                extra={"user_id": user_id, "count": len(response_function_calls)},
             )
-            for call in function_calls:
+            for call in response_function_calls:
                 yield ToolCall(
                     tool_name=call["name"],
                     tool_args=call.get("args", {}),
@@ -155,7 +155,7 @@ class AgentReasoningNode(ReasoningNode):
 
     def _add_event_for_user(self, user_id: str, event: Any) -> None:
         events = self._events_by_user.setdefault(user_id, [])
-        _append_event(events, event)
+        _append_conversation_event(events, event)
 
     def _build_conversation_context(
         self, user_id: Optional[str] = None
@@ -177,7 +177,7 @@ class AgentReasoningNode(ReasoningNode):
         )
 
 
-def _append_event(events: List[Any], event: Any) -> None:
+def _append_conversation_event(events: List[Any], event: Any) -> None:
     if isinstance(event, Message):
         event = event.event
 
@@ -193,7 +193,7 @@ def _append_event(events: List[Any], event: Any) -> None:
     events.append(event)
 
 
-def _events_to_messages(events: List[Any]) -> List[Dict[str, str]]:
+def _build_conversation_messages(events: List[Any]) -> List[Dict[str, str]]:
     messages: List[Dict[str, str]] = []
     for event in events:
         if isinstance(event, UserTranscriptionReceived):
@@ -212,7 +212,7 @@ def _events_to_messages(events: List[Any]) -> List[Dict[str, str]]:
     return messages
 
 
-def _build_tools_payload() -> List[Dict[str, Any]]:
+def _build_tool_payload() -> List[Dict[str, Any]]:
     declarations = []
     for spec in list_tool_specs():
         declarations.append(
@@ -225,7 +225,7 @@ def _build_tools_payload() -> List[Dict[str, Any]]:
     return [{"function_declarations": declarations}] if declarations else []
 
 
-def _extract_function_calls(response: Any) -> List[Dict[str, Any]]:
+def _extract_response_function_calls(response: Any) -> List[Dict[str, Any]]:
     function_calls: List[Dict[str, Any]] = []
     if hasattr(response, "candidates") and response.candidates:
         candidate = response.candidates[0]
@@ -246,7 +246,7 @@ def _extract_function_calls(response: Any) -> List[Dict[str, Any]]:
     return function_calls
 
 
-def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
+def _build_tool_call_from_intent(intent, user_id: str) -> Optional[ToolCall]:
     params = intent.parameters or {}
 
     if intent.intent == "play_track_from_playlist":
@@ -254,15 +254,15 @@ def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
         playlist = params.get("playlist")
         if not track or not playlist:
             return None
-        tool_args: Dict[str, Any] = {
+        play_from_playlist_args: Dict[str, Any] = {
             "query": track,
             "playlist_name": playlist,
         }
         if params.get("artist"):
-            tool_args["artist"] = params["artist"]
+            play_from_playlist_args["artist"] = params["artist"]
         return ToolCall(
             tool_name="spotify.play",
-            tool_args=tool_args,
+            tool_args=play_from_playlist_args,
             tool_call_id=str(uuid.uuid4()),
             user_id=user_id,
         )
@@ -272,14 +272,13 @@ def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
         if not track:
             return None
         artist = params.get("artist")
-        query = track
-        tool_args: Dict[str, Any] = {"query": query}
+        play_track_args: Dict[str, Any] = {"query": track}
         if artist:
-            tool_args["artist"] = artist
-            tool_args["query"] = f"{track} by {artist}"
+            play_track_args["artist"] = artist
+            play_track_args["query"] = f"{track} by {artist}"
         return ToolCall(
             tool_name="spotify.play",
-            tool_args=tool_args,
+            tool_args=play_track_args,
             tool_call_id=str(uuid.uuid4()),
             user_id=user_id,
         )
@@ -288,12 +287,12 @@ def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
         album = params.get("album")
         if not album:
             return None
-        tool_args = {"album": album}
+        play_album_args: Dict[str, Any] = {"album": album}
         if params.get("artist"):
-            tool_args["artist"] = params["artist"]
+            play_album_args["artist"] = params["artist"]
         return ToolCall(
             tool_name="spotify.play_album",
-            tool_args=tool_args,
+            tool_args=play_album_args,
             tool_call_id=str(uuid.uuid4()),
             user_id=user_id,
         )
@@ -319,14 +318,14 @@ def _intent_to_tool_call(intent, user_id: str) -> Optional[ToolCall]:
         track = params.get("track")
         if not track:
             return None
-        tool_args: Dict[str, Any] = {"query": track}
+        queue_args: Dict[str, Any] = {"query": track}
         if params.get("artist"):
-            tool_args["artist"] = params["artist"]
+            queue_args["artist"] = params["artist"]
         if params.get("playlist"):
-            tool_args["playlist_name"] = params["playlist"]
+            queue_args["playlist_name"] = params["playlist"]
         return ToolCall(
             tool_name="spotify.add_to_queue",
-            tool_args=tool_args,
+            tool_args=queue_args,
             tool_call_id=str(uuid.uuid4()),
             user_id=user_id,
         )

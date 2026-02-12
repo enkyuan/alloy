@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from app.services.agent.core.bridge import Bridge
 from app.services.agent.core.bus import Bus, Message
 from app.services.agent.core.agent_events import AgentResponse
-from app.services.agent.nodes.reasoning_node import ReasoningNode
+from app.services.agent.nodes.node_reasoning import ReasoningNode
 from app.services.agent.runtime.conversation_harness import ConversationHarness
 from app.services.agent.core.user_channel import create_user_bridge
 
