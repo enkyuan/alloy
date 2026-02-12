@@ -10,8 +10,6 @@ from asyncio import QueueEmpty
 from typing import Any, Dict, List, Optional, cast
 
 from fastapi import WebSocket, WebSocketDisconnect
-
-logger = logging.getLogger(__name__)
 from pydantic import TypeAdapter
 
 from app.services.agent.core.agent_events import (
@@ -25,7 +23,7 @@ from app.services.agent.core.agent_events import (
     UserTranscriptionReceived,
     UserUnknownInputReceived,
 )
-from app.services.agent.runtime.websocket_types import (
+from app.types.websocket import (
     AgentSpeechInput,
     AgentStateInput,
     CustomInput,
@@ -43,6 +41,8 @@ from app.services.agent.runtime.websocket_types import (
     TransferOutput,
     UserStateInput,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class State:

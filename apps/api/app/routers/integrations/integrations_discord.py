@@ -98,8 +98,6 @@ async def get_discord_oauth_url(
         auth_url = f"https://discord.com/api/oauth2/authorize?{urlencode(params)}"
 
         logger.info(f"Generated Discord OAuth URL for user {supabase_user['id']}")
-        logger.info(f"Using redirect URI: {settings.DISCORD_REDIRECT_URI}")
-        logger.info(f"Full OAuth URL: {auth_url}")
 
         return OAuthURLResponse(authUrl=auth_url, state=state)
 
@@ -130,13 +128,11 @@ async def discord_oauth_callback(
     Returns:
         Redirect to iOS app with code and state
     """
-    logger.info(
-        f"Discord OAuth callback received - code: {code[:20]}..., state: {state[:20]}..."
-    )
+    logger.info("Discord OAuth callback received")
 
     # Redirect to iOS app with code and state
     redirect_url = f"havenos://discord/callback?code={code}&state={state}"
-    logger.info(f"Redirecting to iOS app: {redirect_url}")
+    logger.debug("Redirecting Discord OAuth callback to iOS app")
 
     return RedirectResponse(url=redirect_url)
 

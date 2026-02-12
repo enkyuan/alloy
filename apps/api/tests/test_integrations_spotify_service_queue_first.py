@@ -9,7 +9,7 @@ from app.services.integrations.spotify.service import SpotifyService
 
 
 @pytest.mark.asyncio
-async def test_queue_first_uses_skip_when_playback_is_active():
+async def test_integrations_spotify_service_queue_first_uses_skip_when_playback_is_active():
     client = SimpleNamespace(
         get_current_playback=AsyncMock(
             return_value={"is_playing": True, "item": {"id": "current-track"}}
@@ -39,7 +39,7 @@ async def test_queue_first_uses_skip_when_playback_is_active():
 
 
 @pytest.mark.asyncio
-async def test_queue_first_bootstraps_with_direct_play_on_cold_start():
+async def test_integrations_spotify_service_queue_first_bootstraps_with_direct_play_on_cold_start():
     client = SimpleNamespace(
         get_current_playback=AsyncMock(return_value={"is_playing": False, "item": {}}),
         add_to_queue=AsyncMock(),
@@ -67,7 +67,7 @@ async def test_queue_first_bootstraps_with_direct_play_on_cold_start():
 
 
 @pytest.mark.asyncio
-async def test_queue_first_recovers_with_direct_play_on_verification_mismatch():
+async def test_integrations_spotify_service_queue_first_recovers_with_direct_play_on_verification_mismatch():
     client = SimpleNamespace(
         get_current_playback=AsyncMock(
             return_value={"is_playing": True, "item": {"id": "old-id"}}

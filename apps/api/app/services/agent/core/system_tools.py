@@ -1,11 +1,11 @@
-"""System tool definitions for Cartesia Voice Agents SDK."""
+"""System tool definitions for Voice Agents."""
 
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
 
 from pydantic import BaseModel, Field
 
 from app.services.agent.core.agent_events import AgentResponse, EndCall
-from app.services.agent.tools.tool_types import ToolDefinition
+from app.types.tool import ToolDefinition
 from app.services.agent.utils.phone_numbers import is_e164_phone_number
 
 try:
@@ -227,7 +227,7 @@ class DTMFToolCall(ToolDefinition):
         }
 
 
-class TransferToolCall(ToolDefinition):  # noqa: F811
+class TransferToolCall:
     """Arguments for the transfer_tool_call tool."""
 
     def __init__(

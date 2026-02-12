@@ -13,7 +13,9 @@ from app.services.integrations.spotify.service import SpotifyService
 
 
 @pytest.mark.asyncio
-async def test_search_and_play_playlist_prefers_user_library_match() -> None:
+async def test_integrations_spotify_service_reliability_search_and_play_playlist_prefers_user_library_match() -> (
+    None
+):
     client = SimpleNamespace(
         get_user_playlists=AsyncMock(
             return_value={
@@ -79,7 +81,7 @@ async def test_search_and_play_playlist_prefers_user_library_match() -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_and_play_playlist_returns_clarification_for_ambiguous_match() -> (
+async def test_integrations_spotify_service_reliability_search_and_play_playlist_returns_clarification_for_ambiguous_match() -> (
     None
 ):
     client = SimpleNamespace(
@@ -122,7 +124,9 @@ async def test_search_and_play_playlist_returns_clarification_for_ambiguous_matc
 
 
 @pytest.mark.asyncio
-async def test_add_to_queue_maps_premium_requirement() -> None:
+async def test_integrations_spotify_service_reliability_add_to_queue_maps_premium_requirement() -> (
+    None
+):
     client = SimpleNamespace(
         get_available_devices=AsyncMock(
             return_value={
@@ -162,7 +166,9 @@ async def test_add_to_queue_maps_premium_requirement() -> None:
 
 
 @pytest.mark.asyncio
-async def test_verify_track_changed_retries_before_success() -> None:
+async def test_integrations_spotify_service_reliability_verify_track_changed_retries_before_success() -> (
+    None
+):
     client = SimpleNamespace(
         get_current_playback=AsyncMock(
             side_effect=[
@@ -187,7 +193,7 @@ async def test_verify_track_changed_retries_before_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resolve_track_candidate_uses_clarification_when_margin_is_tight() -> (
+async def test_integrations_spotify_service_reliability_resolve_track_candidate_uses_clarification_when_margin_is_tight() -> (
     None
 ):
     client = SimpleNamespace(
@@ -228,7 +234,9 @@ async def test_resolve_track_candidate_uses_clarification_when_margin_is_tight()
 
 
 @pytest.mark.asyncio
-async def test_resolve_track_candidate_rejects_low_score_single_candidate() -> None:
+async def test_integrations_spotify_service_reliability_resolve_track_candidate_rejects_low_score_single_candidate() -> (
+    None
+):
     client = SimpleNamespace(
         search=AsyncMock(
             return_value={
@@ -259,7 +267,9 @@ async def test_resolve_track_candidate_rejects_low_score_single_candidate() -> N
 
 
 @pytest.mark.asyncio
-async def test_search_and_play_playlist_rejects_low_score_single_candidate() -> None:
+async def test_integrations_spotify_service_reliability_search_and_play_playlist_rejects_low_score_single_candidate() -> (
+    None
+):
     client = SimpleNamespace(
         get_user_playlists=AsyncMock(
             return_value={

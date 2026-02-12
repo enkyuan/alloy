@@ -2,10 +2,11 @@
 
 from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.types.sqlalchemy import EncryptedText
 
 
 class Integration(Base):
@@ -32,8 +33,8 @@ class Integration(Base):
         String, ForeignKey("users.id"), nullable=False, index=True
     )
     service: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    access_token: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText(), nullable=True)
     token_type: Mapped[str] = mapped_column(String, default="Bearer")
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

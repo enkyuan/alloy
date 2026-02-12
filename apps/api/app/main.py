@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.broker import broker
+from app.services.integrations.token_migration import (
+    migrate_plaintext_integration_tokens,
+)
 from app.routers import (
     integrations,
     routers_auth,
@@ -26,6 +29,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    migrate_plaintext_integration_tokens()
     await broker.startup()
 
     yield

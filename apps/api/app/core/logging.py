@@ -1,20 +1,16 @@
 """Logging configuration for Modal API with Rich formatting."""
 
+import importlib.util
 import logging
 import sys
 from functools import lru_cache
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 from pydantic import BaseModel, ConfigDict
 
-try:
-    from rich.console import Console
-    from rich.logging import RichHandler
-    from rich.traceback import install as install_rich_traceback
+RICH_AVAILABLE = importlib.util.find_spec("rich") is not None
 
-    RICH_AVAILABLE = True
-except ImportError:
-    RICH_AVAILABLE = False
 
 # Configuration
 DATE_FORMAT = "%d %b %Y | %H:%M:%S"
@@ -58,6 +54,9 @@ def get_logger_config(debug: bool = False) -> LoggerConfig:
 
     # Use Rich logging if available
     if RICH_AVAILABLE:
+        from rich.logging import RichHandler
+        from rich.traceback import install as install_rich_traceback
+
         # Install rich traceback handler for better error display
         install_rich_traceback(
             show_locals=debug,

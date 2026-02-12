@@ -1,7 +1,7 @@
 from app.services.parser import CommandParser
 
 
-def test_parse_add_to_queue_command():
+def test_parser_service_parse_add_to_queue_command():
     parser = CommandParser()
     intent = parser.parse_command("add bohemian rhapsody by queen to queue")
 
@@ -11,7 +11,7 @@ def test_parse_add_to_queue_command():
     assert intent.requires_clarification is False
 
 
-def test_parse_play_track_from_playlist_command():
+def test_parser_service_parse_play_track_from_playlist_command():
     parser = CommandParser()
     intent = parser.parse_command("play stargazing from my playlist drive songs")
 
@@ -21,7 +21,7 @@ def test_parse_play_track_from_playlist_command():
     assert intent.requires_clarification is False
 
 
-def test_parse_command_prefers_n_best_alternative_when_primary_is_noisy():
+def test_parser_service_parse_command_prefers_n_best_alternative_when_primary_is_noisy():
     parser = CommandParser()
     intent = parser.parse_command(
         "play star gazing from my play list drive songs",
@@ -34,7 +34,7 @@ def test_parse_command_prefers_n_best_alternative_when_primary_is_noisy():
     assert intent.requires_clarification is False
 
 
-def test_parse_command_keeps_narrative_phrase_out_of_fast_path():
+def test_parser_service_parse_command_keeps_narrative_phrase_out_of_fast_path():
     parser = CommandParser()
     intent = parser.parse_command("i like to play songs when i code")
 

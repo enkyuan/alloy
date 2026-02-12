@@ -1,8 +1,6 @@
 import pytest
 import json
-import uuid
 from unittest.mock import MagicMock, patch, AsyncMock
-from app.core.redis import RedisKeys
 from app.core.events import UserTranscriptionReceived
 
 # We need to import the module to patch it, or use string paths
@@ -50,7 +48,9 @@ def mock_execute_tool():
 
 
 @pytest.mark.asyncio
-async def test_fast_path_command(mock_redis_worker, mock_taskiq, mock_execute_tool):
+async def test_workers_llm_fast_path_command(
+    mock_redis_worker, mock_taskiq, mock_execute_tool
+):
     # Simulate a "user.transcription" event that triggers a fast path (e.g. "pause")
     user_id = "test_user_fast"
     transcription = "pause"
@@ -89,7 +89,7 @@ async def test_fast_path_command(mock_redis_worker, mock_taskiq, mock_execute_to
 
 
 @pytest.mark.asyncio
-async def test_llm_chat_response(mock_redis_worker, mock_gemini):
+async def test_workers_llm_chat_response(mock_redis_worker, mock_gemini):
     user_id = "test_user_llm"
     transcription = "Hello, how are you?"
 
@@ -118,7 +118,7 @@ async def test_llm_chat_response(mock_redis_worker, mock_gemini):
 
 
 @pytest.mark.asyncio
-async def test_conversation_router_blocks_implicit_music_phrase_fast_path(
+async def test_workers_llm_conversation_router_blocks_implicit_music_phrase_fast_path(
     mock_redis_worker, mock_gemini, mock_execute_tool
 ):
     user_id = "test_user_conversation_router"
@@ -139,7 +139,7 @@ async def test_conversation_router_blocks_implicit_music_phrase_fast_path(
 
 
 @pytest.mark.asyncio
-async def test_llm_tool_call(mock_redis_worker, mock_gemini, mock_taskiq):
+async def test_workers_llm_tool_call(mock_redis_worker, mock_gemini, mock_taskiq):
     user_id = "test_user_tool"
     transcription = "Check my calendar"
 
@@ -176,7 +176,7 @@ async def test_llm_tool_call(mock_redis_worker, mock_gemini, mock_taskiq):
 
 
 @pytest.mark.asyncio
-async def test_fast_path_add_to_queue(
+async def test_workers_llm_fast_path_add_to_queue(
     mock_redis_worker, mock_taskiq, mock_execute_tool
 ):
     user_id = "test_user_queue"
@@ -200,7 +200,7 @@ async def test_fast_path_add_to_queue(
 
 
 @pytest.mark.asyncio
-async def test_fast_path_uses_n_best_alternative_when_primary_is_not_command(
+async def test_workers_llm_fast_path_uses_n_best_alternative_when_primary_is_not_command(
     mock_redis_worker, mock_taskiq, mock_execute_tool
 ):
     user_id = "test_user_nbest_override"

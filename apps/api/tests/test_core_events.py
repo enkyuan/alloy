@@ -8,7 +8,7 @@ from app.core.events import (
 )
 
 
-def test_build_and_parse_event_envelope_with_model_payload():
+def test_core_events_build_and_parse_event_envelope_with_model_payload():
     envelope = build_event_envelope(
         event_type="agent.response",
         user_id="user_123",
@@ -27,7 +27,7 @@ def test_build_and_parse_event_envelope_with_model_payload():
     assert parsed.metadata["source"] == "unit-test"
 
 
-def test_parse_event_envelope_accepts_legacy_message_without_version():
+def test_core_events_parse_event_envelope_accepts_legacy_message_without_version():
     legacy = {
         "type": "agent.response",
         "user_id": "legacy_user",
@@ -39,13 +39,13 @@ def test_parse_event_envelope_accepts_legacy_message_without_version():
     assert parsed.type == "agent.response"
 
 
-def test_supported_event_version_uses_major_semver_compatibility():
+def test_core_events_supported_event_version_uses_major_semver_compatibility():
     assert is_supported_event_version("1.0")
     assert is_supported_event_version("1.7")
     assert not is_supported_event_version("2.0")
 
 
-def test_parse_event_envelope_rejects_unsupported_major_version():
+def test_core_events_parse_event_envelope_rejects_unsupported_major_version():
     envelope = {
         "version": "2.0",
         "type": "agent.response",

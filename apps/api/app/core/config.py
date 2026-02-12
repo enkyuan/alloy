@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    TOKEN_ENCRYPTION_KEY: Optional[str] = None
 
     # Google OAuth (optional - used for server-side OAuth)
     GOOGLE_CLIENT_ID: Optional[str] = None

@@ -1,5 +1,5 @@
-from app.services.agent.tools.system_tools import EndCall, EndCallArgs, end_call
-from app.services.agent.tools.tool_types import ToolDefinition
+from app.services.agent.core.system_tools import EndCall, EndCallArgs, end_call
+from app.types.tool import ToolDefinition
 
 __all__ = [
     "EndCall",

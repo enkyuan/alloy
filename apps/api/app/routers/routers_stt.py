@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, cast
 
 import websockets
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
 from app.core.events import UserTranscriptionReceived, build_event_envelope
@@ -17,6 +17,14 @@ from app.services.user.auth import supabase_auth_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/stt", tags=["speech-to-text-streaming"])
+
+
+def _extract_websocket_bearer_token(websocket: WebSocket) -> Optional[str]:
+    """Extract a bearer token from the websocket authorization header."""
+    authorization = websocket.headers.get("authorization")
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    return authorization.replace("Bearer ", "")
 
 
 async def publish_transcription(
@@ -134,7 +142,6 @@ async def stream_hermes_updates(
 @router.websocket("/stream")
 async def stream_transcribe(
     websocket: WebSocket,
-    token: Optional[str] = Query(None),
 ):
     """WebSocket router for real-time speech-to-text streaming with Soniox.
 
@@ -156,21 +163,23 @@ async def stream_transcribe(
     final_tokens = []
 
     try:
-        # Authenticate via token in query param
-        if not token:
-            logger.warning("No authentication token provided")
+        # Authenticate via Authorization header.
+        access_token = _extract_websocket_bearer_token(websocket)
+        if not access_token:
+            logger.warning("Missing or invalid Authorization header for STT websocket")
             await websocket.send_json(
-                {"type": "error", "message": "Missing authentication token"}
+                {
+                    "type": "error",
+                    "message": "Missing or invalid Authorization header",
+                }
             )
             await websocket.close(code=1008)
             return
 
-        logger.info(f"Authenticating user with token: {token[:10]}...")
-        user = await supabase_auth_service.get_user(token)
+        logger.info("Authenticating STT websocket user")
+        user = await supabase_auth_service.get_user(access_token)
         if not user:
-            logger.warning(
-                f"Authentication failed: Invalid token provided. Token: {token[:10]}..."
-            )
+            logger.warning("Authentication failed: invalid or expired STT token")
             await websocket.send_json(
                 {"type": "error", "message": "Invalid or expired token"}
             )
