@@ -15,6 +15,11 @@ from app.core.database import get_db
 from app.routers.dependencies import get_current_supabase_user
 from app.schemas.integration import OAuthURLResponse
 from app.services.calendly import calendly_service
+from app.services.integrations.errors import (
+    IntegrationServiceError,
+    integration_error_to_detail,
+    integration_error_to_http_status,
+)
 
 from .integrations_shared import (
     exchange_oauth_code,
@@ -26,6 +31,18 @@ from .integrations_shared import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+CALENDLY_DEFAULT_EXPIRES_IN_SECONDS = 7200
+
+
+def _raise_integration_http_error(
+    error: IntegrationServiceError,
+    *,
+    fallback_detail: str,
+) -> None:
+    raise HTTPException(
+        status_code=integration_error_to_http_status(error),
+        detail=integration_error_to_detail(error, fallback=fallback_detail),
+    ) from error
 
 
 calendly_token_dependency = require_integration_token(
@@ -106,7 +123,7 @@ async def calendly_exchange_code(
         )
 
         expires_at = datetime.now(timezone.utc) + timedelta(
-            seconds=token_data.get("expires_in", 7200)
+            seconds=token_data.get("expires_in", CALENDLY_DEFAULT_EXPIRES_IN_SECONDS)
         )
         await upsert_integration(
             db=db,
@@ -173,6 +190,9 @@ async def get_calendly_events(
         return {"events": events}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Calendly events fetch failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to get events")
     except Exception as e:
         logger.error("Failed to get Calendly events: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -204,6 +224,12 @@ async def get_calendly_event_types(
         return {"event_types": event_types}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Calendly event types fetch failed: %s", error)
+        _raise_integration_http_error(
+            error,
+            fallback_detail="Failed to get event types",
+        )
     except Exception as e:
         logger.error("Failed to get Calendly event types: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -228,6 +254,9 @@ async def cancel_calendly_event(
         return {"success": True, "message": "Event cancelled"}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Calendly event cancellation failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to cancel event")
     except Exception as e:
         logger.error("Failed to cancel Calendly event: %s", str(e), exc_info=True)
         raise HTTPException(

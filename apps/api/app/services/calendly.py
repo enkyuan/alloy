@@ -1,263 +1,80 @@
 """Calendly API service."""
 
-from contextlib import asynccontextmanager
-import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from __future__ import annotations
 
-import httpx
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from datetime import timedelta
+from typing import Any
 
 from app.core.config import settings
-from app.models.integration import Integration
-
-logger = logging.getLogger(__name__)
+from app.services.integrations.base import ExpiringOAuthIntegrationService
 
 
-class CalendlyService:
+class CalendlyService(ExpiringOAuthIntegrationService):
     """Service for Calendly API operations."""
 
+    SERVICE_NAME = "calendly"
     BASE_URL = settings.CALENDLY_API_BASE_URL
+    TOKEN_URL = "https://auth.calendly.com/oauth/token"
+    DEFAULT_EXPIRES_IN_SECONDS = 7200
+    TOKEN_REFRESH_WINDOW = timedelta(minutes=5)
 
-    def __init__(self) -> None:
-        self._http_client: Optional[httpx.AsyncClient] = None
-        self._timeout = httpx.Timeout(10.0, connect=3.0)
-        self._limits = httpx.Limits(
-            max_connections=60,
-            max_keepalive_connections=20,
-            keepalive_expiry=30.0,
+    def _oauth_client_credentials(self) -> tuple[str | None, str | None]:
+        return settings.CALENDLY_CLIENT_ID, settings.CALENDLY_CLIENT_SECRET
+
+    async def get_current_user(self, access_token: str) -> dict[str, Any]:
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/users/me",
+            action="get current user",
+            headers=self._auth_headers(access_token),
+            response_key="resource",
+            default={},
         )
 
-    def _get_http_client(self) -> httpx.AsyncClient:
-        if self._http_client is None:
-            self._http_client = httpx.AsyncClient(
-                timeout=self._timeout,
-                limits=self._limits,
-                follow_redirects=False,
-            )
-        return self._http_client
-
-    @asynccontextmanager
-    async def _client_session(self) -> AsyncIterator[httpx.AsyncClient]:
-        yield self._get_http_client()
-
-    async def close(self) -> None:
-        if self._http_client is not None:
-            await self._http_client.aclose()
-            self._http_client = None
-
-    @staticmethod
-    async def _commit(db: Session | AsyncSession) -> None:
-        if isinstance(db, AsyncSession):
-            await db.commit()
-        else:
-            db.commit()
-
-    async def refresh_token(
-        self, integration: Integration, db: Session | AsyncSession
-    ) -> str:
-        """Refresh Calendly access token.
-
-        Args:
-            integration: Integration model with refresh token
-            db: Database session
-
-        Returns:
-            New access token
-
-        Raises:
-            Exception: If token refresh fails
-        """
-        try:
-            if not integration.refresh_token:
-                raise Exception("No refresh token available")
-
-            async with self._client_session() as client:
-                response = await client.post(
-                    "https://auth.calendly.com/oauth/token",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": integration.refresh_token,
-                        "client_id": settings.CALENDLY_CLIENT_ID,
-                        "client_secret": settings.CALENDLY_CLIENT_SECRET,
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-
-                if response.status_code != 200:
-                    logger.error(f"Calendly token refresh failed: {response.text}")
-                    raise Exception(f"Failed to refresh token: {response.text}")
-
-                token_data = response.json()
-
-                # Update integration
-                integration.access_token = token_data["access_token"]
-                integration.expires_at = datetime.now(timezone.utc) + timedelta(
-                    seconds=token_data.get("expires_in", 7200)
-                )
-                integration.updated_at = datetime.now(timezone.utc)
-
-                if "refresh_token" in token_data:
-                    integration.refresh_token = token_data["refresh_token"]
-
-                await self._commit(db)
-
-                logger.info(
-                    f"Successfully refreshed Calendly token for user {integration.user_id}"
-                )
-                return str(integration.access_token)
-
-        except Exception as e:
-            logger.error(f"Failed to refresh Calendly token: {str(e)}", exc_info=True)
-            raise
-
-    async def get_valid_token(
-        self, integration: Integration, db: Session | AsyncSession
-    ) -> str:
-        """Get valid access token, refreshing if needed.
-
-        Args:
-            integration: Integration model
-            db: Database session
-
-        Returns:
-            Valid access token
-
-        Raises:
-            Exception: If token refresh fails
-        """
-        # Check if token is expired or expires soon (within 5 minutes)
-        if (
-            integration.expires_at
-            and integration.expires_at < datetime.now(timezone.utc) + timedelta(minutes=5)
-        ):
-            logger.info("Calendly token expired or expiring soon, refreshing...")
-            return await self.refresh_token(integration, db)
-
-        return str(integration.access_token)
-
-    # ============================================================================
-    # User
-    # ============================================================================
-
-    async def get_current_user(self, access_token: str) -> Dict[str, Any]:
-        """Get current user information.
-
-        Args:
-            access_token: Valid Calendly access token
-
-        Returns:
-            User information
-
-        Raises:
-            Exception: If API call fails
-        """
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/users/me",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get user: {response.text}")
-
-            return response.json().get("resource", {})
-
-    # ============================================================================
-    # Event Types
-    # ============================================================================
-
     async def get_event_types(
-        self, access_token: str, user_uri: str, active: Optional[bool] = None
-    ) -> List[Dict[str, Any]]:
-        """Get user's event types.
-
-        Args:
-            access_token: Valid Calendly access token
-            user_uri: User URI
-            active: Filter by active status
-
-        Returns:
-            List of event types
-
-        Raises:
-            Exception: If API call fails
-        """
-        params: Dict[str, str] = {"user": user_uri}
+        self,
+        access_token: str,
+        user_uri: str,
+        active: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str] = {"user": user_uri}
         if active is not None:
             params["active"] = str(active).lower()
-
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/event_types",
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get event types: {response.text}")
-
-            return response.json().get("collection", [])
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/event_types",
+            action="get event types",
+            headers=self._auth_headers(access_token),
+            params=params,
+            response_key="collection",
+            default=[],
+        )
 
     async def get_event_type(
-        self, access_token: str, event_type_uuid: str
-    ) -> Dict[str, Any]:
-        """Get a specific event type.
-
-        Args:
-            access_token: Valid Calendly access token
-            event_type_uuid: Event type UUID
-
-        Returns:
-            Event type details
-
-        Raises:
-            Exception: If API call fails
-        """
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/event_types/{event_type_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get event type: {response.text}")
-
-            return response.json().get("resource", {})
-
-    # ============================================================================
-    # Scheduled Events
-    # ============================================================================
+        self,
+        access_token: str,
+        event_type_uuid: str,
+    ) -> dict[str, Any]:
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/event_types/{event_type_uuid}",
+            action="get event type",
+            headers=self._auth_headers(access_token),
+            response_key="resource",
+            default={},
+        )
 
     async def get_scheduled_events(
         self,
         access_token: str,
-        user_uri: Optional[str] = None,
-        organization_uri: Optional[str] = None,
-        status: Optional[str] = None,
-        min_start_time: Optional[str] = None,
-        max_start_time: Optional[str] = None,
+        user_uri: str | None = None,
+        organization_uri: str | None = None,
+        status: str | None = None,
+        min_start_time: str | None = None,
+        max_start_time: str | None = None,
         count: int = 20,
-    ) -> List[Dict[str, Any]]:
-        """Get scheduled events.
-
-        Args:
-            access_token: Valid Calendly access token
-            user_uri: Filter by user URI
-            organization_uri: Filter by organization URI
-            status: Filter by status (active, canceled)
-            min_start_time: Minimum start time (ISO 8601)
-            max_start_time: Maximum start time (ISO 8601)
-            count: Number of results
-
-        Returns:
-            List of scheduled events
-
-        Raises:
-            Exception: If API call fails
-        """
-        params: Dict[str, str | int] = {"count": count}
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str | int] = {"count": count}
         if user_uri:
             params["user"] = user_uri
         if organization_uri:
@@ -268,269 +85,151 @@ class CalendlyService:
             params["min_start_time"] = min_start_time
         if max_start_time:
             params["max_start_time"] = max_start_time
-
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/scheduled_events",
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get scheduled events: {response.text}")
-
-            return response.json().get("collection", [])
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/scheduled_events",
+            action="get scheduled events",
+            headers=self._auth_headers(access_token),
+            params=params,
+            response_key="collection",
+            default=[],
+        )
 
     async def get_scheduled_event(
-        self, access_token: str, event_uuid: str
-    ) -> Dict[str, Any]:
-        """Get a specific scheduled event.
-
-        Args:
-            access_token: Valid Calendly access token
-            event_uuid: Event UUID
-
-        Returns:
-            Scheduled event details
-
-        Raises:
-            Exception: If API call fails
-        """
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/scheduled_events/{event_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get scheduled event: {response.text}")
-
-            return response.json().get("resource", {})
+        self,
+        access_token: str,
+        event_uuid: str,
+    ) -> dict[str, Any]:
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/scheduled_events/{event_uuid}",
+            action="get scheduled event",
+            headers=self._auth_headers(access_token),
+            response_key="resource",
+            default={},
+        )
 
     async def cancel_scheduled_event(
-        self, access_token: str, event_uuid: str, reason: Optional[str] = None
+        self,
+        access_token: str,
+        event_uuid: str,
+        reason: str | None = None,
     ) -> None:
-        """Cancel a scheduled event.
-
-        Args:
-            access_token: Valid Calendly access token
-            event_uuid: Event UUID
-            reason: Cancellation reason
-
-        Raises:
-            Exception: If API call fails
-        """
-        data = {}
+        data: dict[str, Any] = {}
         if reason:
             data["reason"] = reason
-
-        async with self._client_session() as client:
-            response = await client.post(
-                f"{self.BASE_URL}/scheduled_events/{event_uuid}/cancellation",
-                json=data if data else None,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code not in [200, 201]:
-                raise Exception(f"Failed to cancel event: {response.text}")
-
-    # ============================================================================
-    # Event Invitees
-    # ============================================================================
+        await self._request_no_content(
+            "POST",
+            f"{self.BASE_URL}/scheduled_events/{event_uuid}/cancellation",
+            action="cancel scheduled event",
+            headers=self._auth_headers(access_token),
+            json=data if data else None,
+            expected_status=(200, 201),
+        )
 
     async def get_event_invitees(
         self,
         access_token: str,
         event_uuid: str,
-        status: Optional[str] = None,
+        status: str | None = None,
         count: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """Get invitees for a scheduled event.
-
-        Args:
-            access_token: Valid Calendly access token
-            event_uuid: Event UUID
-            status: Filter by status (active, canceled)
-            count: Number of results
-
-        Returns:
-            List of invitees
-
-        Raises:
-            Exception: If API call fails
-        """
-        params: Dict[str, str | int] = {"count": count}
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str | int] = {"count": count}
         if status:
             params["status"] = status
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/scheduled_events/{event_uuid}/invitees",
+            action="get event invitees",
+            headers=self._auth_headers(access_token),
+            params=params,
+            response_key="collection",
+            default=[],
+        )
 
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/scheduled_events/{event_uuid}/invitees",
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get invitees: {response.text}")
-
-            return response.json().get("collection", [])
-
-    async def get_invitee(self, access_token: str, invitee_uuid: str) -> Dict[str, Any]:
-        """Get a specific invitee.
-
-        Args:
-            access_token: Valid Calendly access token
-            invitee_uuid: Invitee UUID
-
-        Returns:
-            Invitee details
-
-        Raises:
-            Exception: If API call fails
-        """
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/scheduled_events/invitees/{invitee_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get invitee: {response.text}")
-
-            return response.json().get("resource", {})
-
-    # ============================================================================
-    # Webhooks
-    # ============================================================================
+    async def get_invitee(
+        self,
+        access_token: str,
+        invitee_uuid: str,
+    ) -> dict[str, Any]:
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/scheduled_events/invitees/{invitee_uuid}",
+            action="get invitee",
+            headers=self._auth_headers(access_token),
+            response_key="resource",
+            default={},
+        )
 
     async def create_webhook(
         self,
         access_token: str,
         url: str,
-        events: List[str],
+        events: list[str],
         organization_uri: str,
         scope: str = "organization",
-    ) -> Dict[str, Any]:
-        """Create a webhook subscription.
-
-        Args:
-            access_token: Valid Calendly access token
-            url: Webhook callback URL
-            events: List of event types to subscribe to
-            organization_uri: Organization URI
-            scope: Webhook scope (organization or user)
-
-        Returns:
-            Created webhook
-
-        Raises:
-            Exception: If API call fails
-        """
-        data = {
-            "url": url,
-            "events": events,
-            "organization": organization_uri,
-            "scope": scope,
-        }
-
-        async with self._client_session() as client:
-            response = await client.post(
-                f"{self.BASE_URL}/webhook_subscriptions",
-                json=data,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code not in [200, 201]:
-                raise Exception(f"Failed to create webhook: {response.text}")
-
-            return response.json().get("resource", {})
+    ) -> dict[str, Any]:
+        return await self._request_json(
+            "POST",
+            f"{self.BASE_URL}/webhook_subscriptions",
+            action="create webhook",
+            headers=self._auth_headers(access_token),
+            json={
+                "url": url,
+                "events": events,
+                "organization": organization_uri,
+                "scope": scope,
+            },
+            expected_status=(200, 201),
+            response_key="resource",
+            default={},
+        )
 
     async def get_webhooks(
-        self, access_token: str, organization_uri: str, scope: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        """Get webhook subscriptions.
-
-        Args:
-            access_token: Valid Calendly access token
-            organization_uri: Organization URI
-            scope: Filter by scope (organization or user)
-
-        Returns:
-            List of webhooks
-
-        Raises:
-            Exception: If API call fails
-        """
-        params = {"organization": organization_uri}
+        self,
+        access_token: str,
+        organization_uri: str,
+        scope: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str] = {"organization": organization_uri}
         if scope:
             params["scope"] = scope
-
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/webhook_subscriptions",
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to get webhooks: {response.text}")
-
-            return response.json().get("collection", [])
+        return await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/webhook_subscriptions",
+            action="get webhooks",
+            headers=self._auth_headers(access_token),
+            params=params,
+            response_key="collection",
+            default=[],
+        )
 
     async def delete_webhook(self, access_token: str, webhook_uuid: str) -> None:
-        """Delete a webhook subscription.
-
-        Args:
-            access_token: Valid Calendly access token
-            webhook_uuid: Webhook UUID
-
-        Raises:
-            Exception: If API call fails
-        """
-        async with self._client_session() as client:
-            response = await client.delete(
-                f"{self.BASE_URL}/webhook_subscriptions/{webhook_uuid}",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code not in [200, 204]:
-                raise Exception(f"Failed to delete webhook: {response.text}")
-
-    # ============================================================================
-    # Organization
-    # ============================================================================
+        await self._request_no_content(
+            "DELETE",
+            f"{self.BASE_URL}/webhook_subscriptions/{webhook_uuid}",
+            action="delete webhook",
+            headers=self._auth_headers(access_token),
+            expected_status=(200, 204),
+        )
 
     async def get_organization_membership(
-        self, access_token: str, user_uri: str
-    ) -> Dict[str, Any]:
-        """Get user's organization membership.
-
-        Args:
-            access_token: Valid Calendly access token
-            user_uri: User URI
-
-        Returns:
-            Organization membership
-
-        Raises:
-            Exception: If API call fails
-        """
-        params = {"user": user_uri}
-
-        async with self._client_session() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/organization_memberships",
-                params=params,
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-            if response.status_code != 200:
-                raise Exception(
-                    f"Failed to get organization membership: {response.text}"
-                )
-
-            collection = response.json().get("collection", [])
-            return collection[0] if collection else {}
+        self,
+        access_token: str,
+        user_uri: str,
+    ) -> dict[str, Any]:
+        memberships = await self._request_json(
+            "GET",
+            f"{self.BASE_URL}/organization_memberships",
+            action="get organization membership",
+            headers=self._auth_headers(access_token),
+            params={"user": user_uri},
+            response_key="collection",
+            default=[],
+        )
+        if not isinstance(memberships, list):
+            return {}
+        return memberships[0] if memberships else {}
 
 
 calendly_service = CalendlyService()

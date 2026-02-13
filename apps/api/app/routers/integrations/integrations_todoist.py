@@ -14,6 +14,11 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.routers.dependencies import get_current_supabase_user
 from app.schemas.integration import OAuthURLResponse
+from app.services.integrations.errors import (
+    IntegrationServiceError,
+    integration_error_to_detail,
+    integration_error_to_http_status,
+)
 from app.services.todoist import todoist_service
 
 from .integrations_shared import (
@@ -26,6 +31,18 @@ from .integrations_shared import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+TODOIST_NON_EXPIRING_TOKEN_DAYS = 365 * 10
+
+
+def _raise_integration_http_error(
+    error: IntegrationServiceError,
+    *,
+    fallback_detail: str,
+) -> None:
+    raise HTTPException(
+        status_code=integration_error_to_http_status(error),
+        detail=integration_error_to_detail(error, fallback=fallback_detail),
+    ) from error
 
 
 todoist_token_dependency = require_integration_token(
@@ -103,7 +120,9 @@ async def todoist_exchange_code(
             },
         )
 
-        expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 10)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=TODOIST_NON_EXPIRING_TOKEN_DAYS
+        )
         await upsert_integration(
             db=db,
             user_id=user_id,
@@ -149,6 +168,9 @@ async def get_todoist_tasks(
         return {"tasks": tasks}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Todoist tasks fetch failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to get tasks")
     except Exception as e:
         logger.error("Failed to get Todoist tasks: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -179,6 +201,9 @@ async def create_todoist_task(
         return task
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Todoist create task failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to create task")
     except Exception as e:
         logger.error("Failed to create Todoist task: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -198,6 +223,9 @@ async def close_todoist_task(
         return {"success": True, "message": "Task completed"}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Todoist close task failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to close task")
     except Exception as e:
         logger.error("Failed to close Todoist task: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -216,6 +244,9 @@ async def get_todoist_projects(
         return {"projects": projects}
     except HTTPException:
         raise
+    except IntegrationServiceError as error:
+        logger.warning("Todoist projects fetch failed: %s", error)
+        _raise_integration_http_error(error, fallback_detail="Failed to get projects")
     except Exception as e:
         logger.error("Failed to get Todoist projects: %s", str(e), exc_info=True)
         raise HTTPException(

@@ -1,6 +1,6 @@
 """Application configuration and settings management."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -94,10 +94,8 @@ class Settings(BaseSettings):
         env_file=".env", case_sensitive=True, extra="ignore"
     )
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # No extra runtime overrides.
-        # Fallback logic for Supabase URLs and Keys
+    def model_post_init(self, __context: Any) -> None:
+        # Fallback logic for Supabase URLs and keys.
         if not self.SUPABASE_KONG_URL and self.SUPABASE_URL:
             self.SUPABASE_KONG_URL = self.SUPABASE_URL
 

@@ -35,32 +35,32 @@ from app.services.pipeline.routers.router import pipeline_router
 from app.services.pipeline.services.gemini_service import get_gemini_service
 from app.services.pipeline.helpers.tool_tasks import execute_tool_call
 from app.workers.helpers.cache_keys import (
-    cache_hit_key as _cache_hit_key,
-    cache_miss_key as _cache_miss_key,
-    response_cache_key as _response_cache_key,
+    cache_hit_key,
+    cache_miss_key,
+    response_cache_key,
 )
 from app.workers.helpers.clarification_state import (
-    cache_spotify_clarification as _cache_spotify_clarification,
-    clear_spotify_clarification_state as _clear_spotify_clarification_state,
-    resolve_spotify_clarification as _resolve_spotify_clarification,
+    cache_spotify_clarification,
+    clear_spotify_clarification_state,
+    resolve_spotify_clarification,
 )
 from app.workers.helpers.intent_mapping import (
-    map_intent_to_tool_call as _map_intent_to_tool_call,
+    map_intent_to_tool_call,
 )
 from app.workers.helpers.llm_response import (
-    handle_llm_response as _handle_llm_response,
+    handle_llm_response,
 )
 from app.workers.helpers.redis_events import (
-    append_history as _append_history,
-    cache_spotify_result as _cache_spotify_result,
-    get_history as _get_history,
-    publish_user_update as _publish_user_update,
-    try_cached_spotify_play as _try_cached_spotify_play,
+    append_history,
+    cache_spotify_result,
+    get_history,
+    publish_user_update,
+    try_cached_spotify_play,
 )
 from app.workers.helpers.response_text import format_response_text
 from app.workers.helpers.tools_payload import (
-    build_tools_payload as _build_tools_payload,
-    tools_fingerprint as _tools_fingerprint,
+    build_tools_payload,
+    tools_fingerprint,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,8 @@ logger = logging.getLogger(__name__)
 # Normalize optional config to concrete ints for downstream helpers.
 HISTORY_LIMIT: int = settings.AGENT_HISTORY_LIMIT or 0
 CACHE_TTL_SECONDS = settings.AGENT_CACHE_TTL_SECONDS
-SPOTIFY_CACHE_TTL_SECONDS = 60 * 60
+SECONDS_PER_HOUR = 3600
+SPOTIFY_CACHE_TTL_SECONDS = SECONDS_PER_HOUR
 CLIENT_HINT_CONTROL_MIN_CONFIDENCE = 0.82
 CLIENT_HINT_PLAY_MIN_CONFIDENCE = 0.93
 CONSUMER_NAME = f"llm_worker_{socket.gethostname()}_{uuid.uuid4().hex[:8]}"
@@ -149,7 +150,7 @@ async def _execute_tool_fast(
     tc_event = ToolCall(
         tool_name=tool_name, tool_args=tool_args, tool_call_id=tool_call_id
     )
-    await _publish_user_update(
+    await publish_user_update(
         redis,
         event_type="tool.call",
         user_id=user_id,
@@ -176,7 +177,7 @@ async def _execute_tool_fast(
         metadata={"fast_path": True},
     )
 
-    await _publish_user_update(
+    await publish_user_update(
         redis,
         event_type="tool.result",
         user_id=user_id,
@@ -184,12 +185,12 @@ async def _execute_tool_fast(
         metadata={"source": "llm_worker.fast_path"},
     )
 
-    await _cache_spotify_result(
+    await cache_spotify_result(
         redis,
         tool_result,
         spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
     )
-    await _cache_spotify_clarification(
+    await cache_spotify_clarification(
         redis,
         user_id=user_id,
         tool_result=tool_result,
@@ -197,7 +198,7 @@ async def _execute_tool_fast(
 
     response_text = format_response_text(tool_result)
     if response_text:
-        await _append_history(
+        await append_history(
             redis,
             user_id,
             "assistant",
@@ -205,7 +206,7 @@ async def _execute_tool_fast(
             history_limit=HISTORY_LIMIT,
         )
         response_event = AgentResponse(content=response_text)
-        await _publish_user_update(
+        await publish_user_update(
             redis,
             event_type="agent.response",
             user_id=user_id,
@@ -273,7 +274,7 @@ async def _try_clarification_resolution(
     transcription: UserTranscriptionReceived,
     started_at: float,
 ) -> bool:
-    clarification_resolution = await _resolve_spotify_clarification(
+    clarification_resolution = await resolve_spotify_clarification(
         redis,
         user_id=user_id,
         user_text=transcription.content,
@@ -283,7 +284,7 @@ async def _try_clarification_resolution(
 
     if clarification_resolution.action == "play_uri":
         tool_args = clarification_resolution.tool_args or {}
-        await _clear_spotify_clarification_state(redis, user_id)
+        await clear_spotify_clarification_state(redis, user_id)
         await _execute_tool_fast(redis, user_id, "spotify.play", tool_args)
         logger.info(
             "Resolved spotify clarification transaction",
@@ -299,7 +300,7 @@ async def _try_clarification_resolution(
         response_text = clarification_resolution.response_text or (
             "Please choose one of the options."
         )
-        await _append_history(
+        await append_history(
             redis,
             user_id,
             "assistant",
@@ -307,7 +308,7 @@ async def _try_clarification_resolution(
             history_limit=HISTORY_LIMIT,
         )
         response_event = AgentResponse(content=response_text)
-        await _publish_user_update(
+        await publish_user_update(
             redis,
             event_type="agent.response",
             user_id=user_id,
@@ -349,7 +350,7 @@ async def _try_client_hint_fast_path(
         },
     )
     if hinted_tool_name == "spotify.play":
-        used_cache = await _try_cached_spotify_play(
+        used_cache = await try_cached_spotify_play(
             redis,
             user_id,
             hinted_tool_args,
@@ -398,13 +399,13 @@ async def _try_parser_fast_path(
     if not should_fast_path_parse or intent.requires_clarification:
         return False
 
-    tool_call = _map_intent_to_tool_call(intent)
+    tool_call = map_intent_to_tool_call(intent)
     if not tool_call:
         return False
 
     tool_name, tool_args = tool_call
     if tool_name == "spotify.play":
-        used_cache = await _try_cached_spotify_play(
+        used_cache = await try_cached_spotify_play(
             redis,
             user_id,
             tool_args,
@@ -437,7 +438,7 @@ def _build_response_cache_payload(history: list[dict[str, Any]]) -> dict[str, An
     return {
         "messages": history,
         "system": ASSISTANT_SYSTEM_INSTRUCTION,
-        "tools": _tools_fingerprint(),
+        "tools": tools_fingerprint(),
     }
 
 
@@ -448,26 +449,26 @@ async def _try_cached_response(
     history: list[dict[str, Any]],
     cache_payload: dict[str, Any],
 ) -> bool:
-    cached_response = await redis.get(_response_cache_key(cache_payload))
+    cached_response = await redis.get(response_cache_key(cache_payload))
     if not cached_response:
-        await redis.incr(_cache_miss_key())
+        await redis.incr(cache_miss_key())
         logger.debug("Cache miss", extra={"user_id": user_id})
         return False
 
-    await redis.incr(_cache_hit_key())
+    await redis.incr(cache_hit_key())
     logger.debug("Cache hit", extra={"user_id": user_id})
     if isinstance(cached_response, bytes):
         cached_response = cached_response.decode("utf-8")
 
     response_event = AgentResponse(content=str(cached_response))
-    await _publish_user_update(
+    await publish_user_update(
         redis,
         event_type="agent.response",
         user_id=user_id,
         payload=response_event,
         metadata={"source": "llm_worker.cache_hit"},
     )
-    await _append_history(
+    await append_history(
         redis,
         user_id,
         "assistant",
@@ -486,25 +487,25 @@ async def _run_llm_fallback(
     started_at: float,
 ) -> None:
     gemini = get_gemini_service()
-    tools_payload = _build_tools_payload()
+    tools_payload = build_tools_payload()
     response = await gemini.generate_chat_response(
         messages=history,
         system_instruction=ASSISTANT_SYSTEM_INSTRUCTION,
         tools=tools_payload,
     )
-    await _handle_llm_response(
+    await handle_llm_response(
         redis,
         user_id,
         response,
         execute_tool_call_task=execute_tool_call,
-        publish_user_update=_publish_user_update,
-        append_history=_append_history,
+        publish_user_update=publish_user_update,
+        append_history=append_history,
         history_limit=HISTORY_LIMIT,
     )
     try:
         if response.text:
             await redis.setex(
-                _response_cache_key(cache_payload),
+                response_cache_key(cache_payload),
                 CACHE_TTL_SECONDS,
                 response.text,
             )
@@ -555,7 +556,7 @@ async def handle_message(data: dict):
 
     try:
         redis = await get_redis_client()
-        await _append_history(
+        await append_history(
             redis,
             user_id,
             "user",
@@ -600,7 +601,7 @@ async def handle_message(data: dict):
         ):
             return
 
-        history = await _get_history(redis, user_id)
+        history = await get_history(redis, user_id)
         cache_payload = _build_response_cache_payload(history)
         if await _try_cached_response(
             redis,
@@ -627,7 +628,7 @@ async def handle_message(data: dict):
                     error="Gemini quota exhausted.",
                     code="gemini_quota",
                 )
-                await _publish_user_update(
+                await publish_user_update(
                     redis,
                     event_type="agent.error",
                     user_id=str(user_id),
@@ -638,7 +639,7 @@ async def handle_message(data: dict):
                 response_event = AgentResponse(
                     content="Sorry, I ran into an error while generating a response."
                 )
-                await _publish_user_update(
+                await publish_user_update(
                     redis,
                     event_type="agent.response",
                     user_id=str(user_id),
@@ -705,12 +706,12 @@ async def process_tool_results():
             if tool_result.metadata and tool_result.metadata.get("fast_path"):
                 continue
 
-            await _cache_spotify_result(
+            await cache_spotify_result(
                 redis,
                 tool_result,
                 spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
             )
-            await _cache_spotify_clarification(
+            await cache_spotify_clarification(
                 redis,
                 user_id=user_id,
                 tool_result=tool_result,
@@ -720,7 +721,7 @@ async def process_tool_results():
             if not response_text:
                 continue
 
-            await _append_history(
+            await append_history(
                 redis,
                 user_id,
                 "assistant",
@@ -728,7 +729,7 @@ async def process_tool_results():
                 history_limit=HISTORY_LIMIT,
             )
             response_event = AgentResponse(content=response_text)
-            await _publish_user_update(
+            await publish_user_update(
                 redis,
                 event_type="agent.response",
                 user_id=user_id,

@@ -15,6 +15,11 @@ from app.core.database import get_db
 from app.core.redis import get_redis_client
 from app.models.integration import Integration
 from app.routers.dependencies import require_active_integration
+from app.services.integrations.errors import (
+    IntegrationServiceError,
+    integration_error_to_detail,
+    integration_error_to_http_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +105,6 @@ async def exchange_oauth_code(
             extra={
                 "token_url": token_url,
                 "status_code": response.status_code,
-                "response_text": response.text,
             },
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=failure_detail)
@@ -174,6 +178,20 @@ def require_integration_token(
         integration: Integration = Depends(integration_dep),
         db: AsyncSession = Depends(get_db),
     ) -> str:
-        return await resolver(integration, db)
+        try:
+            return await resolver(integration, db)
+        except IntegrationServiceError as error:
+            logger.warning(
+                "Failed to resolve integration token for %s: %s",
+                service,
+                error,
+            )
+            raise HTTPException(
+                status_code=integration_error_to_http_status(error),
+                detail=integration_error_to_detail(
+                    error,
+                    fallback=f"Failed to authorize {service} integration",
+                ),
+            ) from error
 
     return _dependency

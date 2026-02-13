@@ -15,12 +15,9 @@ from app.services.integrations.token_migration import (
     migrate_plaintext_integration_tokens,
 )
 from app.services.integrations.spotify import spotify_client
-from app.services.discord import discord_service
-from app.services.todoist import todoist_service
-from app.services.calendly import calendly_service
+from app.services.lifecycle import close_registered_services
 from app.services.integrations.workspace.auth import close_workspace_http_client
 from app.routers.integrations.integrations_shared import close_oauth_http_client
-from app.services.user.auth import supabase_auth_service
 from app.routers import (
     integrations,
     routers_auth,
@@ -48,11 +45,8 @@ async def lifespan(app: FastAPI):
     await close_async_engine()
     await close_oauth_http_client()
     await spotify_client.close()
-    await discord_service.close()
-    await todoist_service.close()
-    await calendly_service.close()
+    await close_registered_services()
     await close_workspace_http_client()
-    await supabase_auth_service.close()
     await close_redis_client()
 
 
@@ -84,7 +78,7 @@ app.include_router(routers_stt.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routers_gemini.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routers_tools.router, prefix=settings.API_V1_PREFIX)
 
-logger.info(f"Starting {settings.PROJECT_NAME}")
+logger.info("Starting %s", settings.PROJECT_NAME)
 
 
 @app.get("/health")
