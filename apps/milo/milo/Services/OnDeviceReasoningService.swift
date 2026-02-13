@@ -70,11 +70,14 @@ actor OnDeviceReasoningService {
                 return nil
             }
 
-            let result = await withTaskGroup(of: ParseHint?.self) { group in
+            let result: ParseHint? = await withTaskGroup(
+                of: ParseHint?.self,
+                returning: ParseHint?.self
+            ) { group in
                 group.addTask { await parseTask.value }
                 group.addTask { await timeoutTask.value }
                 guard let first = await group.next() else {
-                    return nil
+                    return ParseHint?.none
                 }
                 group.cancelAll()
                 return first

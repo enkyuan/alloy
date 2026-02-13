@@ -9,10 +9,10 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 
-logger = logging.getLogger(__name__)
-
 from app.services.agent.core.call_models import CallRequest, PreCallResult
 from app.services.agent.runtime.agent_system import AgentSystem
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -168,7 +168,7 @@ class AgentApp:
                     "System has encountered an error, please try again later."
                 )
                 await system.harness.end_call()
-            except:  # noqa: E722
+            except Exception:
                 pass
         finally:
             await system.cleanup()

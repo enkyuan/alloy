@@ -1,9 +1,9 @@
 """Conversation model for chat history."""
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,9 +30,8 @@ class Conversation(Base):
     )
     title: Mapped[Optional[str]] = mapped_column(String)
 
-    # Store messages in a separate table usually, but for simplicity they might be just related here
-    # or stored in vector store chunks.
-    # For now let's just keep metadata.
+    # SQLAlchemy reserves `metadata` on mapped classes, so the DB column remains
+    # `meta_data` and we provide a clearer Python alias via `metadata_json`.
     meta_data: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -47,3 +46,11 @@ class Conversation(Base):
 
     # Relationships
     user = relationship("User", backref="conversations")
+
+    @property
+    def metadata_json(self) -> Optional[dict]:
+        return self.meta_data
+
+    @metadata_json.setter
+    def metadata_json(self, value: Optional[dict]) -> None:
+        self.meta_data = value

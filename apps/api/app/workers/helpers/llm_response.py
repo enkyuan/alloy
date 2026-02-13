@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 from app.core.events import AgentResponse, ToolCall
+from app.services.pipeline.helpers.function_calls import extract_response_function_calls
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +60,7 @@ async def handle_llm_response(
     append_history: Any,
     history_limit: int,
 ) -> None:
-    function_calls: list[Any] = []
-    if hasattr(response, "candidates") and response.candidates:
-        candidate = response.candidates[0]
-        if (
-            hasattr(candidate, "content")
-            and candidate.content
-            and hasattr(candidate.content, "parts")
-            and candidate.content.parts
-        ):
-            for part in candidate.content.parts:
-                if part.function_call:
-                    function_calls.append(part.function_call)
+    function_calls = extract_response_function_calls(response)
 
     if function_calls:
         logger.info(

@@ -1,7 +1,7 @@
 """Supabase authentication service."""
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Optional
 
 import httpx
 
@@ -15,6 +15,13 @@ class SupabaseAuthService:
 
     def __init__(self):
         self.base_url = f"{settings.SUPABASE_KONG_URL}/auth/v1"
+        self._client: httpx.AsyncClient | None = None
+        self._timeout = httpx.Timeout(10.0, connect=3.0)
+        self._limits = httpx.Limits(
+            max_connections=80,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
+        )
         self.headers = {
             "apikey": settings.SUPABASE_ANON_KEY,
             "Content-Type": "application/json",
@@ -25,9 +32,23 @@ class SupabaseAuthService:
             "Content-Type": "application/json",
         }
 
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=self._timeout,
+                limits=self._limits,
+                follow_redirects=False,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     async def verify_google_token(
         self, id_token: str, nonce: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Verify Google ID token with Supabase.
 
         Args:
@@ -48,21 +69,21 @@ class SupabaseAuthService:
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/token",
-                    json=payload,
-                    headers=self.headers,
-                    params={"grant_type": "id_token"},
-                )
-                response.raise_for_status()
-                logger.info("Successfully verified Google token")
-                return response.json()
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/token",
+                json=payload,
+                headers=self.headers,
+                params={"grant_type": "id_token"},
+            )
+            response.raise_for_status()
+            logger.info("Successfully verified Google token")
+            return response.json()
         except httpx.HTTPError as e:
             logger.error(f"Failed to verify Google token: {str(e)}")
             raise
 
-    async def verify_apple_token(self, id_token: str) -> Dict[str, Any]:
+    async def verify_apple_token(self, id_token: str) -> dict[str, Any]:
         """Verify Apple ID token with Supabase.
 
         Args:
@@ -75,24 +96,24 @@ class SupabaseAuthService:
             httpx.HTTPError: If verification fails
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/token",
-                    json={
-                        "provider": "apple",
-                        "id_token": id_token,
-                    },
-                    headers=self.headers,
-                    params={"grant_type": "id_token"},
-                )
-                response.raise_for_status()
-                logger.info("Successfully verified Apple token")
-                return response.json()
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/token",
+                json={
+                    "provider": "apple",
+                    "id_token": id_token,
+                },
+                headers=self.headers,
+                params={"grant_type": "id_token"},
+            )
+            response.raise_for_status()
+            logger.info("Successfully verified Apple token")
+            return response.json()
         except httpx.HTTPError as e:
             logger.error(f"Failed to verify Apple token: {str(e)}")
             raise
 
-    async def get_user(self, access_token: str) -> Optional[Dict[str, Any]]:
+    async def get_user(self, access_token: str) -> Optional[dict[str, Any]]:
         """Get user information from Supabase using access token.
 
         Args:
@@ -102,24 +123,24 @@ class SupabaseAuthService:
             User data or None if token is invalid
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/user",
-                    headers={
-                        **self.headers,
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
-                if response.status_code == 200:
-                    logger.info("Successfully retrieved user from Supabase")
-                    return response.json()
-                logger.warning(f"Failed to get user: status {response.status_code}")
-                return None
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.base_url}/user",
+                headers={
+                    **self.headers,
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            if response.status_code == 200:
+                logger.info("Successfully retrieved user from Supabase")
+                return response.json()
+            logger.warning(f"Failed to get user: status {response.status_code}")
+            return None
         except httpx.HTTPError as e:
             logger.error(f"Error getting user from Supabase: {str(e)}")
             return None
 
-    async def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+    async def refresh_token(self, refresh_token: str) -> dict[str, Any]:
         """Refresh access token using refresh token.
 
         Args:
@@ -132,16 +153,16 @@ class SupabaseAuthService:
             httpx.HTTPError: If refresh fails
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/token",
-                    json={"refresh_token": refresh_token},
-                    headers=self.headers,
-                    params={"grant_type": "refresh_token"},
-                )
-                response.raise_for_status()
-                logger.info("Successfully refreshed token")
-                return response.json()
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/token",
+                json={"refresh_token": refresh_token},
+                headers=self.headers,
+                params={"grant_type": "refresh_token"},
+            )
+            response.raise_for_status()
+            logger.info("Successfully refreshed token")
+            return response.json()
         except httpx.HTTPError as e:
             logger.error(f"Failed to refresh token: {str(e)}")
             raise
@@ -156,20 +177,20 @@ class SupabaseAuthService:
             True if successful, False otherwise
         """
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/logout",
-                    headers={
-                        **self.headers,
-                        "Authorization": f"Bearer {access_token}",
-                    },
-                )
-                success = response.status_code == 204
-                if success:
-                    logger.info("Successfully signed out user")
-                else:
-                    logger.warning(f"Sign out returned status {response.status_code}")
-                return success
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/logout",
+                headers={
+                    **self.headers,
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            success = response.status_code == 204
+            if success:
+                logger.info("Successfully signed out user")
+            else:
+                logger.warning(f"Sign out returned status {response.status_code}")
+            return success
         except httpx.HTTPError as e:
             logger.error(f"Error signing out user: {str(e)}")
             return False

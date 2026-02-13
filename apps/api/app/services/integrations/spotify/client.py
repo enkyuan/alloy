@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -46,6 +47,13 @@ class SpotifyClient:
         return {"Authorization": f"Bearer {access_token}"}
 
     @staticmethod
+    async def _commit(db: Session | AsyncSession) -> None:
+        if isinstance(db, AsyncSession):
+            await db.commit()
+        else:
+            db.commit()
+
+    @staticmethod
     def _assert_status(
         response: httpx.Response,
         *,
@@ -58,7 +66,9 @@ class SpotifyClient:
             f"{action} failed (status={response.status_code}): {response.text}"
         )
 
-    async def refresh_token(self, integration: Integration, db: Session) -> str:
+    async def refresh_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Refresh Spotify access token."""
         try:
             if not integration.refresh_token:
@@ -102,7 +112,7 @@ class SpotifyClient:
             if "refresh_token" in token_data:
                 integration.refresh_token = token_data["refresh_token"]
 
-            db.commit()
+            await self._commit(db)
 
             logger.info(
                 "Successfully refreshed Spotify token",
@@ -114,7 +124,9 @@ class SpotifyClient:
             logger.error("Failed to refresh Spotify token: %s", error, exc_info=True)
             raise
 
-    async def get_valid_token(self, integration: Integration, db: Session) -> str:
+    async def get_valid_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Get valid access token, refreshing if needed."""
         if integration.expires_at:
             expires_at = integration.expires_at

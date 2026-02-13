@@ -4,6 +4,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any, Optional
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.models.integration import Integration
@@ -27,7 +28,9 @@ class SpotifyServiceBaseMixin:
         """
         self.client = client or spotify_client
 
-    async def get_valid_token(self: Any, integration: Integration, db: Session) -> str:
+    async def get_valid_token(
+        self: Any, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Get a valid Spotify access token using the client helper."""
         return await self.client.get_valid_token(integration, db)
 
@@ -61,10 +64,14 @@ class SpotifyServiceBaseMixin:
             Status code if found, None otherwise
         """
         # Try different ways to get status code
-        if hasattr(error, "status_code"):
-            return error.status_code
-        if hasattr(error, "response") and hasattr(error.response, "status_code"):
-            return error.response.status_code
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, int):
+            return status_code
+
+        response = getattr(error, "response", None)
+        response_status_code = getattr(response, "status_code", None)
+        if isinstance(response_status_code, int):
+            return response_status_code
 
         # Try to parse from error message
         error_str = str(error)
@@ -119,8 +126,9 @@ class SpotifyServiceBaseMixin:
             logger.error(f"Failed to get active device: {str(e)}")
             # Check if it's an HTTP error with status code
             status_code = getattr(e, "status_code", None)
-            if hasattr(e, "response") and hasattr(e.response, "status_code"):
-                status_code = e.response.status_code
+            if status_code is None:
+                response = getattr(e, "response", None)
+                status_code = getattr(response, "status_code", None)
 
             raise SpotifyAPIError(
                 "Failed to get device information",

@@ -12,11 +12,12 @@ This worker acts as the central process that consumes user transcriptions:
 import asyncio
 import json
 import logging
+import socket
 import uuid
 from typing import Any, Optional
 
 from app.core.config import settings
-from app.core.database import SessionLocal
+from app.core.database import AsyncSessionLocal
 from app.core.events import (
     AgentError,
     AgentResponse,
@@ -26,6 +27,7 @@ from app.core.events import (
     is_supported_event_version,
     parse_event_envelope,
 )
+from app.core.prompts import ASSISTANT_SYSTEM_INSTRUCTION
 from app.core.redis import RedisKeys, get_redis_client
 from app.services.integrations.dispatcher import execute_tool
 from app.services.parser import command_parser
@@ -36,6 +38,11 @@ from app.workers.helpers.cache_keys import (
     cache_hit_key as _cache_hit_key,
     cache_miss_key as _cache_miss_key,
     response_cache_key as _response_cache_key,
+)
+from app.workers.helpers.clarification_state import (
+    cache_spotify_clarification as _cache_spotify_clarification,
+    clear_spotify_clarification_state as _clear_spotify_clarification_state,
+    resolve_spotify_clarification as _resolve_spotify_clarification,
 )
 from app.workers.helpers.intent_mapping import (
     map_intent_to_tool_call as _map_intent_to_tool_call,
@@ -64,12 +71,7 @@ CACHE_TTL_SECONDS = settings.AGENT_CACHE_TTL_SECONDS
 SPOTIFY_CACHE_TTL_SECONDS = 60 * 60
 CLIENT_HINT_CONTROL_MIN_CONFIDENCE = 0.82
 CLIENT_HINT_PLAY_MIN_CONFIDENCE = 0.93
-
-SYSTEM_INSTRUCTION = (
-    "You are a helpful voice assistant. "
-    "Use tools to control integrations when needed. "
-    "If a tool result is provided, respond succinctly to the user."
-)
+CONSUMER_NAME = f"llm_worker_{socket.gethostname()}_{uuid.uuid4().hex[:8]}"
 
 
 def _is_quota_error(error: Exception) -> bool:
@@ -157,19 +159,12 @@ async def _execute_tool_fast(
 
     result_data = None
     error_msg = None
-    db = None
     try:
-        db = SessionLocal()
-        result_data = await execute_tool(user_id, tool_name, tool_args, db)
+        async with AsyncSessionLocal() as db:
+            result_data = await execute_tool(user_id, tool_name, tool_args, db)
     except Exception as e:
         logger.error(f"Fast-path tool failed: {e}", exc_info=True)
         error_msg = str(e)
-    finally:
-        if db is not None:
-            try:
-                db.close()
-            except Exception:
-                pass
 
     tool_result = ToolResult(
         tool_name=tool_name,
@@ -194,6 +189,11 @@ async def _execute_tool_fast(
         tool_result,
         spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
     )
+    await _cache_spotify_clarification(
+        redis,
+        user_id=user_id,
+        tool_result=tool_result,
+    )
 
     response_text = format_response_text(tool_result)
     if response_text:
@@ -212,10 +212,6 @@ async def _execute_tool_fast(
             payload=response_event,
             metadata={"source": "llm_worker.fast_path"},
         )
-
-
-# Define available tools (schema for Gemini)
-TOOLS = _build_tools_payload()
 
 
 async def process_voice_input_stream():
@@ -241,7 +237,7 @@ async def process_voice_input_stream():
             # Read from stream using consumer group
             streams = await redis.xreadgroup(
                 groupname=RedisKeys.GROUP_LLM_WORKER,
-                consumername="llm_worker_1",
+                consumername=CONSUMER_NAME,
                 streams={RedisKeys.STREAM_VOICE_INPUT: ">"},
                 count=1,
                 block=2000,
@@ -268,6 +264,257 @@ async def process_voice_input_stream():
         except Exception as e:
             logger.error(f"Error in LLM worker loop: {e}")
             await asyncio.sleep(1)
+
+
+async def _try_clarification_resolution(
+    redis: Any,
+    *,
+    user_id: str,
+    transcription: UserTranscriptionReceived,
+    started_at: float,
+) -> bool:
+    clarification_resolution = await _resolve_spotify_clarification(
+        redis,
+        user_id=user_id,
+        user_text=transcription.content,
+    )
+    if not clarification_resolution:
+        return False
+
+    if clarification_resolution.action == "play_uri":
+        tool_args = clarification_resolution.tool_args or {}
+        await _clear_spotify_clarification_state(redis, user_id)
+        await _execute_tool_fast(redis, user_id, "spotify.play", tool_args)
+        logger.info(
+            "Resolved spotify clarification transaction",
+            extra={
+                "user_id": user_id,
+                "tool_args": tool_args,
+                "elapsed_ms": _elapsed_ms(started_at),
+            },
+        )
+        return True
+
+    if clarification_resolution.action == "respond":
+        response_text = clarification_resolution.response_text or (
+            "Please choose one of the options."
+        )
+        await _append_history(
+            redis,
+            user_id,
+            "assistant",
+            response_text,
+            history_limit=HISTORY_LIMIT,
+        )
+        response_event = AgentResponse(content=response_text)
+        await _publish_user_update(
+            redis,
+            event_type="agent.response",
+            user_id=user_id,
+            payload=response_event,
+            metadata={"source": "llm_worker.spotify_clarification"},
+        )
+        logger.info(
+            "Replied with spotify clarification reminder",
+            extra={"user_id": user_id, "elapsed_ms": _elapsed_ms(started_at)},
+        )
+        return True
+
+    return False
+
+
+async def _try_client_hint_fast_path(
+    redis: Any,
+    *,
+    user_id: str,
+    transcription: UserTranscriptionReceived,
+    route_decision: Any,
+    started_at: float,
+) -> bool:
+    hint_tool_call = _map_client_parse_hint_to_tool_call(
+        transcription.parse_hint,
+        route_is_command_like=route_decision.should_parse_as_command,
+    )
+    if not hint_tool_call:
+        return False
+
+    hinted_tool_name, hinted_tool_args = hint_tool_call
+    logger.info(
+        "Executing client-hinted fast path",
+        extra={
+            "user_id": user_id,
+            "tool_name": hinted_tool_name,
+            "tool_args": hinted_tool_args,
+            "hint": transcription.parse_hint or {},
+        },
+    )
+    if hinted_tool_name == "spotify.play":
+        used_cache = await _try_cached_spotify_play(
+            redis,
+            user_id,
+            hinted_tool_args,
+            history_limit=HISTORY_LIMIT,
+        )
+        if used_cache:
+            return True
+
+    await _execute_tool_fast(redis, user_id, hinted_tool_name, hinted_tool_args)
+    logger.info(
+        "Completed client-hinted fast path",
+        extra={
+            "user_id": user_id,
+            "tool_name": hinted_tool_name,
+            "elapsed_ms": _elapsed_ms(started_at),
+        },
+    )
+    return True
+
+
+async def _try_parser_fast_path(
+    redis: Any,
+    *,
+    user_id: str,
+    transcription: UserTranscriptionReceived,
+    route_decision: Any,
+    started_at: float,
+) -> bool:
+    intent = command_parser.parse_command(
+        transcription.content,
+        alternatives=transcription.alternatives,
+    )
+    parser_command_like = bool(intent.parser_meta.get("command_like", False))
+    should_fast_path_parse = route_decision.should_parse_as_command or parser_command_like
+    logger.info(
+        "Parser decision",
+        extra={
+            "user_id": user_id,
+            "intent": intent.intent,
+            "confidence": round(intent.confidence, 4),
+            "requires_clarification": intent.requires_clarification,
+            "parser_command_like": parser_command_like,
+            "should_fast_path_parse": should_fast_path_parse,
+        },
+    )
+    if not should_fast_path_parse or intent.requires_clarification:
+        return False
+
+    tool_call = _map_intent_to_tool_call(intent)
+    if not tool_call:
+        return False
+
+    tool_name, tool_args = tool_call
+    if tool_name == "spotify.play":
+        used_cache = await _try_cached_spotify_play(
+            redis,
+            user_id,
+            tool_args,
+            history_limit=HISTORY_LIMIT,
+        )
+        if used_cache:
+            logger.info(
+                "Completed parser fast path using cached spotify result",
+                extra={
+                    "user_id": user_id,
+                    "tool_name": tool_name,
+                    "elapsed_ms": _elapsed_ms(started_at),
+                },
+            )
+            return True
+
+    await _execute_tool_fast(redis, user_id, tool_name, tool_args)
+    logger.info(
+        "Completed parser fast path",
+        extra={
+            "user_id": user_id,
+            "tool_name": tool_name,
+            "elapsed_ms": _elapsed_ms(started_at),
+        },
+    )
+    return True
+
+
+def _build_response_cache_payload(history: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "messages": history,
+        "system": ASSISTANT_SYSTEM_INSTRUCTION,
+        "tools": _tools_fingerprint(),
+    }
+
+
+async def _try_cached_response(
+    redis: Any,
+    *,
+    user_id: str,
+    history: list[dict[str, Any]],
+    cache_payload: dict[str, Any],
+) -> bool:
+    cached_response = await redis.get(_response_cache_key(cache_payload))
+    if not cached_response:
+        await redis.incr(_cache_miss_key())
+        logger.debug("Cache miss", extra={"user_id": user_id})
+        return False
+
+    await redis.incr(_cache_hit_key())
+    logger.debug("Cache hit", extra={"user_id": user_id})
+    if isinstance(cached_response, bytes):
+        cached_response = cached_response.decode("utf-8")
+
+    response_event = AgentResponse(content=str(cached_response))
+    await _publish_user_update(
+        redis,
+        event_type="agent.response",
+        user_id=user_id,
+        payload=response_event,
+        metadata={"source": "llm_worker.cache_hit"},
+    )
+    await _append_history(
+        redis,
+        user_id,
+        "assistant",
+        str(cached_response),
+        history_limit=HISTORY_LIMIT,
+    )
+    return True
+
+
+async def _run_llm_fallback(
+    redis: Any,
+    *,
+    user_id: str,
+    history: list[dict[str, Any]],
+    cache_payload: dict[str, Any],
+    started_at: float,
+) -> None:
+    gemini = get_gemini_service()
+    tools_payload = _build_tools_payload()
+    response = await gemini.generate_chat_response(
+        messages=history,
+        system_instruction=ASSISTANT_SYSTEM_INSTRUCTION,
+        tools=tools_payload,
+    )
+    await _handle_llm_response(
+        redis,
+        user_id,
+        response,
+        execute_tool_call_task=execute_tool_call,
+        publish_user_update=_publish_user_update,
+        append_history=_append_history,
+        history_limit=HISTORY_LIMIT,
+    )
+    try:
+        if response.text:
+            await redis.setex(
+                _response_cache_key(cache_payload),
+                CACHE_TTL_SECONDS,
+                response.text,
+            )
+        logger.info(
+            "Completed LLM response",
+            extra={"user_id": user_id, "elapsed_ms": _elapsed_ms(started_at)},
+        )
+    except ValueError:
+        # response.text raises ValueError if content is purely function calls
+        pass
 
 
 async def handle_message(data: dict):
@@ -306,7 +553,6 @@ async def handle_message(data: dict):
 
     logger.info(f"Processing transcription for user {user_id}: {transcription.content}")
 
-    # Call LLM (Gemini) with Tools
     try:
         redis = await get_redis_client()
         await _append_history(
@@ -317,162 +563,60 @@ async def handle_message(data: dict):
             history_limit=HISTORY_LIMIT,
         )
 
+        user_id_str = str(user_id)
+        if await _try_clarification_resolution(
+            redis,
+            user_id=user_id_str,
+            transcription=transcription,
+            started_at=started_at,
+        ):
+            return
+
         route_decision = pipeline_router.decide(transcription.content)
         logger.info(
             "Pipeline router decision",
             extra={
-                "user_id": str(user_id),
+                "user_id": user_id_str,
                 "should_parse_as_command": route_decision.should_parse_as_command,
                 "reason": route_decision.reason,
             },
         )
 
-        hint_tool_call = _map_client_parse_hint_to_tool_call(
-            transcription.parse_hint,
-            route_is_command_like=route_decision.should_parse_as_command,
-        )
-        if hint_tool_call:
-            hinted_tool_name, hinted_tool_args = hint_tool_call
-            logger.info(
-                "Executing client-hinted fast path",
-                extra={
-                    "user_id": str(user_id),
-                    "tool_name": hinted_tool_name,
-                    "tool_args": hinted_tool_args,
-                    "hint": transcription.parse_hint or {},
-                },
-            )
-            if hinted_tool_name == "spotify.play":
-                used_cache = await _try_cached_spotify_play(
-                    redis,
-                    str(user_id),
-                    hinted_tool_args,
-                    history_limit=HISTORY_LIMIT,
-                )
-                if used_cache:
-                    return
-            await _execute_tool_fast(
-                redis, str(user_id), hinted_tool_name, hinted_tool_args
-            )
-            logger.info(
-                "Completed client-hinted fast path",
-                extra={
-                    "user_id": str(user_id),
-                    "tool_name": hinted_tool_name,
-                    "elapsed_ms": _elapsed_ms(started_at),
-                },
-            )
-            return
-
-        intent = command_parser.parse_command(
-            transcription.content,
-            alternatives=transcription.alternatives,
-        )
-        parser_command_like = bool(intent.parser_meta.get("command_like", False))
-        should_fast_path_parse = (
-            route_decision.should_parse_as_command or parser_command_like
-        )
-        logger.info(
-            "Parser decision",
-            extra={
-                "user_id": str(user_id),
-                "intent": intent.intent,
-                "confidence": round(intent.confidence, 4),
-                "requires_clarification": intent.requires_clarification,
-                "parser_command_like": parser_command_like,
-                "should_fast_path_parse": should_fast_path_parse,
-            },
-        )
-
-        if should_fast_path_parse and not intent.requires_clarification:
-            tool_call = _map_intent_to_tool_call(intent)
-            if tool_call:
-                tool_name, tool_args = tool_call
-                if tool_name == "spotify.play":
-                    used_cache = await _try_cached_spotify_play(
-                        redis,
-                        str(user_id),
-                        tool_args,
-                        history_limit=HISTORY_LIMIT,
-                    )
-                    if used_cache:
-                        logger.info(
-                            "Completed parser fast path using cached spotify result",
-                            extra={
-                                "user_id": str(user_id),
-                                "tool_name": tool_name,
-                                "elapsed_ms": _elapsed_ms(started_at),
-                            },
-                        )
-                        return
-                await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
-                logger.info(
-                    "Completed parser fast path",
-                    extra={
-                        "user_id": str(user_id),
-                        "tool_name": tool_name,
-                        "elapsed_ms": _elapsed_ms(started_at),
-                    },
-                )
-                return
-
-        gemini = get_gemini_service()
-        history = await _get_history(redis, user_id)
-        cache_payload = {
-            "messages": history,
-            "system": SYSTEM_INSTRUCTION,
-            "tools": _tools_fingerprint(),
-        }
-        cached_response = await redis.get(_response_cache_key(cache_payload))
-        if cached_response:
-            await redis.incr(_cache_hit_key())
-            logger.debug("Cache hit", extra={"user_id": user_id})
-            if isinstance(cached_response, bytes):
-                cached_response = cached_response.decode("utf-8")
-            response_event = AgentResponse(content=str(cached_response))
-            await _publish_user_update(
-                redis,
-                event_type="agent.response",
-                user_id=str(user_id),
-                payload=response_event,
-                metadata={"source": "llm_worker.cache_hit"},
-            )
-            await _append_history(
-                redis,
-                user_id,
-                "assistant",
-                str(cached_response),
-                history_limit=HISTORY_LIMIT,
-            )
-            return
-        await redis.incr(_cache_miss_key())
-        logger.debug("Cache miss", extra={"user_id": user_id})
-        response = await gemini.generate_chat_response(
-            messages=history, system_instruction=SYSTEM_INSTRUCTION, tools=TOOLS
-        )
-        await _handle_llm_response(
+        if await _try_client_hint_fast_path(
             redis,
-            user_id,
-            response,
-            execute_tool_call_task=execute_tool_call,
-            publish_user_update=_publish_user_update,
-            append_history=_append_history,
-            history_limit=HISTORY_LIMIT,
+            user_id=user_id_str,
+            transcription=transcription,
+            route_decision=route_decision,
+            started_at=started_at,
+        ):
+            return
+
+        if await _try_parser_fast_path(
+            redis,
+            user_id=user_id_str,
+            transcription=transcription,
+            route_decision=route_decision,
+            started_at=started_at,
+        ):
+            return
+
+        history = await _get_history(redis, user_id)
+        cache_payload = _build_response_cache_payload(history)
+        if await _try_cached_response(
+            redis,
+            user_id=user_id_str,
+            history=history,
+            cache_payload=cache_payload,
+        ):
+            return
+
+        await _run_llm_fallback(
+            redis,
+            user_id=user_id_str,
+            history=history,
+            cache_payload=cache_payload,
+            started_at=started_at,
         )
-        try:
-            if response.text:
-                await redis.setex(
-                    _response_cache_key(cache_payload),
-                    CACHE_TTL_SECONDS,
-                    response.text,
-                )
-            logger.info(
-                "Completed LLM response",
-                extra={"user_id": str(user_id), "elapsed_ms": _elapsed_ms(started_at)},
-            )
-        except ValueError:
-            # response.text raises ValueError if content is purely function calls
-            pass
 
     except Exception as e:
         logger.error(f"LLM Generation failed: {e}", exc_info=True)
@@ -565,6 +709,11 @@ async def process_tool_results():
                 redis,
                 tool_result,
                 spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
+            )
+            await _cache_spotify_clarification(
+                redis,
+                user_id=user_id,
+                tool_result=tool_result,
             )
 
             response_text = format_response_text(tool_result)

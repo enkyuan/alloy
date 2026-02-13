@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional, cast
 
@@ -164,6 +165,383 @@ async def stream_hermes_updates(
         await pubsub.close()
 
 
+@dataclass
+class _TranscriptionSessionState:
+    final_tokens: list[dict[str, Any]]
+    transcription_active: bool = True
+    chunk_count: int = 0
+    pending_complete_transcription: Optional[str] = None
+    pending_publish_task: Optional[asyncio.Task[None]] = None
+
+
+async def _safe_send_json(websocket: WebSocket, payload: dict[str, Any]) -> None:
+    if websocket.client_state == WebSocketState.CONNECTED:
+        await websocket.send_json(payload)
+
+
+async def _send_error_message(websocket: WebSocket, message: str) -> None:
+    await _safe_send_json(websocket, {"type": "error", "message": message})
+
+
+async def _authenticate_ws(websocket: WebSocket) -> tuple[str, str] | None:
+    """Authenticate websocket and return (user_id, session_id)."""
+    access_token = _extract_websocket_bearer_token(websocket)
+    if not access_token:
+        logger.warning("Missing or invalid auth token for STT websocket")
+        await _send_error_message(websocket, "Missing or invalid auth token.")
+        await websocket.close(code=1008)
+        return None
+
+    logger.info("Authenticating STT websocket user")
+    user = await supabase_auth_service.get_user(access_token)
+    if not user:
+        logger.warning("Authentication failed: invalid or expired STT token")
+        await _send_error_message(websocket, "Invalid or expired token.")
+        await websocket.close(code=1008)
+        return None
+
+    raw_user_id = user.get("id")
+    if not raw_user_id:
+        logger.error("User object missing ID")
+        await _send_error_message(websocket, "User ID missing from token.")
+        await websocket.close(code=1008)
+        return None
+
+    user_id = str(raw_user_id)
+    session_id = str(uuid.uuid4())
+    logger.info("User %s authenticated. Starting STT session %s", user_id, session_id)
+    return user_id, session_id
+
+
+async def _connect_soniox(websocket: WebSocket, user_id: str):
+    """Connect and configure Soniox websocket."""
+    try:
+        logger.info("Connecting to Soniox WebSocket for user %s...", user_id)
+        soniox_ws = await websockets.connect(soniox_service.WEBSOCKET_URL)
+        logger.info("Connected to Soniox WebSocket for user %s", user_id)
+    except Exception as e:
+        logger.error("Failed to connect to Soniox for user %s: %s", user_id, e, exc_info=True)
+        await _send_error_message(websocket, "Failed to connect to transcription service.")
+        await websocket.close(code=1011, reason="Soniox connection failed")
+        return None
+
+    config = soniox_service.get_config(
+        audio_format="pcm_s16le",
+        sample_rate=48000,
+        num_channels=1,
+        language_hints=["en"],
+        enable_endpoint_detection=False,
+    )
+    logger.info("Sending Soniox config for user %s", user_id)
+    await soniox_ws.send(json.dumps(config))
+    logger.info("Soniox config sent successfully for user %s", user_id)
+    return soniox_ws
+
+
+def _compose_final_text(final_tokens: list[dict[str, Any]]) -> str:
+    return "".join(str(token.get("text", "")) for token in final_tokens)
+
+
+async def _listen_to_soniox(
+    soniox_ws,
+    websocket: WebSocket,
+    state: _TranscriptionSessionState,
+) -> None:
+    """Listen for Soniox responses and forward to the client."""
+    try:
+        async for message in soniox_ws:
+            response = json.loads(message)
+
+            if response.get("error_code"):
+                logger.error(
+                    "Soniox error code=%s message=%s",
+                    response.get("error_code"),
+                    response.get("error_message"),
+                )
+                await _send_error_message(websocket, "Transcription service error.")
+                continue
+
+            tokens = response.get("tokens", [])
+            if tokens:
+                new_final_tokens: list[dict[str, Any]] = []
+                non_final_tokens: list[dict[str, Any]] = []
+                for token in tokens:
+                    if token.get("text"):
+                        if token.get("is_final"):
+                            new_final_tokens.append(token)
+                            state.final_tokens.append(token)
+                        else:
+                            non_final_tokens.append(token)
+
+                final_text = _compose_final_text(state.final_tokens)
+                non_final_text = "".join(
+                    str(token.get("text", "")) for token in non_final_tokens
+                )
+                full_text = final_text + non_final_text
+
+                if non_final_tokens:
+                    await _safe_send_json(
+                        websocket,
+                        {"type": "partial", "text": full_text, "is_final": False},
+                    )
+                    logger.info("Partial: %s", full_text)
+
+                if new_final_tokens:
+                    await _safe_send_json(
+                        websocket,
+                        {"type": "final", "text": final_text, "is_final": True},
+                    )
+                    logger.info("Final tokens: %s", final_text)
+
+            if response.get("finished"):
+                complete_text = _compose_final_text(state.final_tokens)
+                await _safe_send_json(
+                    websocket, {"type": "complete", "text": complete_text}
+                )
+                logger.info("Session finished. Complete text: %s", complete_text)
+                break
+    except websockets.exceptions.ConnectionClosed:
+        logger.info("Soniox WebSocket closed")
+    except Exception as e:
+        logger.error("Error in Soniox listener: %s", e, exc_info=True)
+        await _send_error_message(websocket, "Transcription error.")
+
+
+def _cancel_pending_publish(state: _TranscriptionSessionState) -> None:
+    if state.pending_publish_task:
+        state.pending_publish_task.cancel()
+        state.pending_publish_task = None
+
+
+def _schedule_pending_transcription_publish(
+    *,
+    state: _TranscriptionSessionState,
+    redis_conn: Any,
+    user_id: str,
+    session_id: str,
+) -> None:
+    expected_text = state.pending_complete_transcription
+    if not expected_text:
+        return
+
+    _cancel_pending_publish(state)
+
+    async def _publish_pending_transcription() -> None:
+        try:
+            await asyncio.sleep(0.7)
+            if state.pending_complete_transcription != expected_text:
+                return
+            await publish_transcription(
+                redis_conn,
+                user_id,
+                expected_text,
+                session_id=session_id,
+            )
+            logger.info(
+                "Published fallback transcription after END because no explicit command message arrived"
+            )
+        except asyncio.CancelledError:
+            return
+        finally:
+            if state.pending_complete_transcription == expected_text:
+                state.pending_complete_transcription = None
+            state.pending_publish_task = None
+
+    state.pending_publish_task = asyncio.create_task(_publish_pending_transcription())
+    logger.info(
+        "Final transcription ready for user %s; waiting briefly for explicit command message from client",
+        user_id,
+    )
+
+
+async def _handle_command_message(
+    text_data: str,
+    *,
+    state: _TranscriptionSessionState,
+    websocket: WebSocket,
+    redis_conn: Any,
+    user_id: str,
+    session_id: str,
+) -> bool:
+    try:
+        json_data = json.loads(text_data)
+    except json.JSONDecodeError:
+        return False
+
+    if json_data.get("type") != "command":
+        return False
+
+    command_text = str(json_data.get("text", ""))
+    mode = str(json_data.get("mode", "auto"))
+    stream = bool(json_data.get("stream", False))
+    parse_hint = (
+        json_data.get("parse_hint") if isinstance(json_data.get("parse_hint"), dict) else None
+    )
+    logger.info(
+        "Received command from user %s (mode=%s, stream=%s, has_parse_hint=%s): %s",
+        user_id,
+        mode,
+        stream,
+        bool(parse_hint),
+        command_text,
+    )
+
+    if state.pending_publish_task and state.pending_complete_transcription:
+        if _normalize_command_text(command_text) == _normalize_command_text(
+            state.pending_complete_transcription
+        ):
+            _cancel_pending_publish(state)
+            state.pending_complete_transcription = None
+            logger.info(
+                "Cancelled fallback transcription publish because explicit command message arrived"
+            )
+
+    await _safe_send_json(websocket, {"type": "command_queued", "text": command_text})
+    await publish_transcription(
+        redis_conn,
+        user_id,
+        command_text,
+        session_id=session_id,
+        parse_hint=cast(Optional[dict[str, Any]], parse_hint),
+    )
+    logger.info("Command queued for Agent")
+    return True
+
+
+async def _handle_end_signal(
+    *,
+    state: _TranscriptionSessionState,
+    soniox_ws: Any,
+    soniox_task: asyncio.Task[None],
+    redis_conn: Any,
+    user_id: str,
+    session_id: str,
+) -> None:
+    logger.info("Received END signal from client")
+    if not state.transcription_active:
+        return
+
+    state.transcription_active = False
+    await soniox_ws.send("")
+    await soniox_task
+
+    complete_text = _compose_final_text(state.final_tokens).strip()
+    if complete_text:
+        state.pending_complete_transcription = complete_text
+        _schedule_pending_transcription_publish(
+            state=state,
+            redis_conn=redis_conn,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+
+async def _forward_audio_chunk(
+    *,
+    state: _TranscriptionSessionState,
+    soniox_ws: Any,
+    websocket: WebSocket,
+    audio_chunk: bytes,
+) -> bool:
+    state.chunk_count += 1
+    if len(audio_chunk) > 0:
+        if state.transcription_active:
+            try:
+                await soniox_ws.send(audio_chunk)
+                logger.debug(
+                    "Chunk #%s: forwarded %s bytes to Soniox",
+                    state.chunk_count,
+                    len(audio_chunk),
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to send chunk #%s to Soniox: %s",
+                    state.chunk_count,
+                    e,
+                    exc_info=True,
+                )
+                await _send_error_message(
+                    websocket, "Failed to send audio to transcription service."
+                )
+                return False
+    else:
+        logger.warning("Chunk #%s: empty chunk, skipping", state.chunk_count)
+
+    await _safe_send_json(
+        websocket,
+        {
+            "type": "ack",
+            "chunk_number": state.chunk_count,
+            "bytes_received": len(audio_chunk),
+        },
+    )
+    return True
+
+
+async def _process_client_messages(
+    *,
+    websocket: WebSocket,
+    redis_conn: Any,
+    user_id: str,
+    session_id: str,
+    soniox_ws: Any,
+    soniox_task: asyncio.Task[None],
+    state: _TranscriptionSessionState,
+) -> None:
+    try:
+        while True:
+            try:
+                message = await websocket.receive()
+            except RuntimeError as e:
+                if 'Cannot call "receive" once a disconnect' in str(e):
+                    logger.info("Client already disconnected")
+                    break
+                raise
+
+            if message.get("type") == "websocket.disconnect":
+                logger.info("Client disconnected")
+                break
+
+            if "text" in message:
+                text_data = str(message["text"])
+                was_command = await _handle_command_message(
+                    text_data,
+                    state=state,
+                    websocket=websocket,
+                    redis_conn=redis_conn,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+                if was_command:
+                    continue
+
+                if text_data == "END":
+                    await _handle_end_signal(
+                        state=state,
+                        soniox_ws=soniox_ws,
+                        soniox_task=soniox_task,
+                        redis_conn=redis_conn,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
+                continue
+
+            if "bytes" in message:
+                audio_chunk = message["bytes"]
+                if not isinstance(audio_chunk, bytes):
+                    continue
+                should_continue = await _forward_audio_chunk(
+                    state=state,
+                    soniox_ws=soniox_ws,
+                    websocket=websocket,
+                    audio_chunk=audio_chunk,
+                )
+                if not should_continue:
+                    break
+    except WebSocketDisconnect:
+        logger.info("Client disconnected")
+
+
 @router.websocket("/stream")
 async def stream_transcribe(
     websocket: WebSocket,
@@ -184,372 +562,79 @@ async def stream_transcribe(
     logger.info("WebSocket connection accepted")
 
     soniox_ws = None
-    hermes_task = None
-    final_tokens = []
-    pending_complete_transcription: Optional[str] = None
-    pending_publish_task: Optional[asyncio.Task[None]] = None
+    hermes_task: Optional[asyncio.Task[None]] = None
+    soniox_task: Optional[asyncio.Task[None]] = None
+    state = _TranscriptionSessionState(final_tokens=[])
 
     try:
-        # Authenticate via Authorization header.
-        access_token = _extract_websocket_bearer_token(websocket)
-        if not access_token:
-            logger.warning("Missing or invalid auth token for STT websocket")
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": "Missing or invalid auth token",
-                }
-            )
-            await websocket.close(code=1008)
+        auth = await _authenticate_ws(websocket)
+        if auth is None:
             return
-
-        logger.info("Authenticating STT websocket user")
-        user = await supabase_auth_service.get_user(access_token)
-        if not user:
-            logger.warning("Authentication failed: invalid or expired STT token")
-            await websocket.send_json(
-                {"type": "error", "message": "Invalid or expired token"}
-            )
-            await websocket.close(code=1008)
-            return
-
-        raw_user_id = user.get("id")
-        if not raw_user_id:
-            logger.error("User object missing ID")
-            await websocket.send_json(
-                {"type": "error", "message": "User ID missing from token"}
-            )
-            await websocket.close(code=1008)
-            return
-        user_id: str = str(raw_user_id)
-        session_id = str(uuid.uuid4())
-        logger.info(f"User {user_id} authenticated. Starting STT session {session_id}")
+        user_id, session_id = auth
 
         logger.info("Connecting to Redis...")
         redis_conn = await get_redis_client()
         logger.info("Redis connected")
 
-        # Connect to Soniox WebSocket
-        try:
-            logger.info(f"Connecting to Soniox WebSocket for user {user_id}...")
-            soniox_ws = await websockets.connect(soniox_service.WEBSOCKET_URL)
-            logger.info(f"Connected to Soniox WebSocket for user {user_id}")
-        except Exception as e:
-            logger.error(
-                f"Failed to connect to Soniox for user {user_id}: {e}", exc_info=True
-            )
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": f"Failed to connect to transcription service: {str(e)}",
-                }
-            )
-            await websocket.close(code=1011, reason="Soniox connection failed")
+        soniox_ws = await _connect_soniox(websocket, user_id)
+        if soniox_ws is None:
             return
 
-        # Send Soniox configuration
-        # Using PCM format: 48kHz, mono, 16-bit signed little-endian
-        config = soniox_service.get_config(
-            audio_format="pcm_s16le",
-            sample_rate=48000,
-            num_channels=1,
-            language_hints=["en"],
-            enable_endpoint_detection=False,  # We'll handle endpoint manually
-        )
-        logger.info(f"Sending Soniox config for user {user_id}: {config}")
-        await soniox_ws.send(json.dumps(config))
-        logger.info(f"Soniox config sent successfully for user {user_id}")
+        soniox_task = asyncio.create_task(_listen_to_soniox(soniox_ws, websocket, state))
 
-        # Start listening to Soniox responses
-        async def listen_to_soniox():
-            """Listen for responses from Soniox and forward to client."""
-            nonlocal final_tokens
-            try:
-                assert soniox_ws is not None
-                async for message in soniox_ws:
-                    response = json.loads(message)
-
-                    # Check for errors from Soniox
-                    if response.get("error_code"):
-                        error_msg = f"Soniox error {response['error_code']}: {response.get('error_message', 'Unknown error')}"
-                        logger.error(error_msg)
-                        await websocket.send_json(
-                            {"type": "error", "message": error_msg}
-                        )
-                        continue
-
-                    # Process tokens
-                    tokens = response.get("tokens", [])
-                    if tokens:
-                        # Separate final and non-final tokens
-                        new_final_tokens = []
-                        non_final_tokens = []
-                        for token in tokens:
-                            if token.get("text"):
-                                if token.get("is_final"):
-                                    new_final_tokens.append(token)
-                                    final_tokens.append(token)
-                                else:
-                                    non_final_tokens.append(token)
-
-                        # Build full transcription text
-                        final_text = "".join([t["text"] for t in final_tokens])
-                        non_final_text = "".join([t["text"] for t in non_final_tokens])
-                        full_text = final_text + non_final_text
-
-                        # Send partial update if we have non-final tokens
-                        if non_final_tokens:
-                            await websocket.send_json(
-                                {
-                                    "type": "partial",
-                                    "text": full_text,
-                                    "is_final": False,
-                                }
-                            )
-                            logger.info(f"Partial: {full_text}")
-
-                        # Send final update if we have new final tokens
-                        if new_final_tokens:
-                            await websocket.send_json(
-                                {"type": "final", "text": final_text, "is_final": True}
-                            )
-                            logger.info(f"Final tokens: {final_text}")
-
-                    # Check if session finished
-                    if response.get("finished"):
-                        # Send complete transcription
-                        complete_text = "".join([t["text"] for t in final_tokens])
-                        await websocket.send_json(
-                            {"type": "complete", "text": complete_text}
-                        )
-                        logger.info(f"Session finished. Complete text: {complete_text}")
-                        break
-
-            except websockets.exceptions.ConnectionClosed:
-                logger.info("Soniox WebSocket closed")
-            except Exception as e:
-                logger.error(f"Error in Soniox listener: {e}", exc_info=True)
-                await websocket.send_json(
-                    {"type": "error", "message": f"Transcription error: {str(e)}"}
-                )
-
-        # Start Soniox listener task
-        soniox_task = asyncio.create_task(listen_to_soniox())
-
-        # Give Soniox a moment to process the config and be ready
-        # This prevents 408 timeout on first chunks
+        # Give Soniox a moment to process config and avoid first-chunk timeout.
         await asyncio.sleep(0.1)
 
-        # Start Agent listener task
         hermes_task = asyncio.create_task(
             stream_hermes_updates(websocket, redis_conn, user_id)
         )
 
-        # Now send ready message to client
-        await websocket.send_json({"type": "ready"})
+        await _safe_send_json(websocket, {"type": "ready"})
         logger.info("Sent ready signal to client")
 
-        # Receive audio chunks and command messages from client
-        chunk_count = 0
-        transcription_active = True
-        try:
-            while True:
-                try:
-                    message = await websocket.receive()
-                except RuntimeError as e:
-                    if 'Cannot call "receive" once a disconnect' in str(e):
-                        logger.info("Client already disconnected")
-                        break
-                    raise
-
-                if message.get("type") == "websocket.disconnect":
-                    logger.info("Client disconnected")
-                    break
-
-                # Handle text messages (control signals and commands)
-                if "text" in message:
-                    text_data = message["text"]
-
-                    # Check if it's a JSON command message
-                    try:
-                        json_data = json.loads(text_data)
-
-                        # Handle command messages
-                        if json_data.get("type") == "command":
-                            command_text = json_data.get("text", "")
-                            mode = json_data.get("mode", "auto")
-                            stream = json_data.get("stream", False)
-                            parse_hint = (
-                                json_data.get("parse_hint")
-                                if isinstance(json_data.get("parse_hint"), dict)
-                                else None
-                            )
-                            logger.info(
-                                "Received command from user %s (mode=%s, stream=%s, has_parse_hint=%s): %s",
-                                user_id,
-                                mode,
-                                stream,
-                                bool(parse_hint),
-                                command_text,
-                            )
-                            if pending_publish_task and pending_complete_transcription:
-                                if _normalize_command_text(command_text) == _normalize_command_text(
-                                    pending_complete_transcription
-                                ):
-                                    pending_publish_task.cancel()
-                                    pending_publish_task = None
-                                    pending_complete_transcription = None
-                                    logger.info(
-                                        "Cancelled fallback transcription publish because explicit command message arrived"
-                                    )
-
-                            await websocket.send_json(
-                                {"type": "command_queued", "text": command_text}
-                            )
-                            await publish_transcription(
-                                redis_conn,
-                                user_id,
-                                command_text,
-                                session_id=session_id,
-                                parse_hint=cast(Optional[dict[str, Any]], parse_hint),
-                            )
-                            logger.info("Command queued for Agent")
-                            continue
-
-                    except json.JSONDecodeError:
-                        # Not JSON, treat as control signal
-                        pass
-
-                    # Handle END signal
-                    if text_data == "END":
-                        logger.info("Received END signal from client")
-                        if transcription_active:
-                            transcription_active = False
-                            # Send empty frame to Soniox to signal end of audio
-                            await soniox_ws.send("")
-                            # Wait for final response from Soniox
-                            await soniox_task
-
-                            complete_text = "".join([t["text"] for t in final_tokens])
-                            if complete_text.strip():
-                                pending_complete_transcription = complete_text.strip()
-                                if pending_publish_task:
-                                    pending_publish_task.cancel()
-                                    pending_publish_task = None
-
-                                async def _publish_pending_transcription(
-                                    expected_text: str,
-                                ) -> None:
-                                    nonlocal pending_complete_transcription
-                                    nonlocal pending_publish_task
-                                    try:
-                                        await asyncio.sleep(0.7)
-                                        if pending_complete_transcription != expected_text:
-                                            return
-                                        await publish_transcription(
-                                            redis_conn,
-                                            user_id,
-                                            expected_text,
-                                            session_id=session_id,
-                                        )
-                                        logger.info(
-                                            "Published fallback transcription after END because no explicit command message arrived"
-                                        )
-                                    except asyncio.CancelledError:
-                                        return
-                                    finally:
-                                        if pending_complete_transcription == expected_text:
-                                            pending_complete_transcription = None
-                                        pending_publish_task = None
-
-                                pending_publish_task = asyncio.create_task(
-                                    _publish_pending_transcription(
-                                        pending_complete_transcription
-                                    )
-                                )
-                                logger.info(
-                                    "Final transcription ready for user %s; waiting briefly for explicit command message from client",
-                                    user_id,
-                                )
-
-                        # Do NOT break here; keep connection open for Agent updates
-                        continue
-
-                # Handle binary messages (audio chunks)
-                elif "bytes" in message:
-                    audio_chunk = message["bytes"]
-                    chunk_count += 1
-
-                    # Client now sends raw PCM data (no WAV header)
-                    # Forward directly to Soniox
-                    if len(audio_chunk) > 0:
-                        if transcription_active:
-                            try:
-                                await soniox_ws.send(audio_chunk)
-                                logger.debug(
-                                    f"Chunk #{chunk_count}: forwarded {len(audio_chunk)} bytes to Soniox"
-                                )
-                            except Exception as e:
-                                logger.error(
-                                    f"Failed to send chunk #{chunk_count} to Soniox: {e}",
-                                    exc_info=True,
-                                )
-                                await websocket.send_json(
-                                    {
-                                        "type": "error",
-                                        "message": f"Failed to send audio to transcription service: {str(e)}",
-                                    }
-                                )
-                                break
-                        else:
-                            # Silently ignore chunks after END
-                            pass
-                    else:
-                        logger.warning(f"Chunk #{chunk_count}: empty chunk, skipping")
-
-                    # Send acknowledgment to client
-                    await websocket.send_json(
-                        {
-                            "type": "ack",
-                            "chunk_number": chunk_count,
-                            "bytes_received": len(audio_chunk),
-                        }
-                    )
-        except WebSocketDisconnect:
-            logger.info("Client disconnected")
-
+        await _process_client_messages(
+            websocket=websocket,
+            redis_conn=redis_conn,
+            user_id=user_id,
+            session_id=session_id,
+            soniox_ws=soniox_ws,
+            soniox_task=cast(asyncio.Task[None], soniox_task),
+            state=state,
+        )
     except Exception as e:
-        logger.error(f"WebSocket error: {e}", exc_info=True)
+        logger.error("WebSocket error: %s", e, exc_info=True)
         if websocket.client_state == WebSocketState.CONNECTED:
             try:
-                await websocket.send_json({"type": "error", "message": str(e)})
+                await _send_error_message(websocket, "Internal server error.")
                 await websocket.close(code=1011, reason="Internal server error")
             except Exception as close_error:
                 logger.debug(
-                    f"Failed to send/close websocket after error: {close_error}",
+                    "Failed to send/close websocket after error: %s",
+                    close_error,
                     exc_info=True,
                 )
-
     finally:
-        # Clean up
+        if soniox_task:
+            soniox_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await soniox_task
         if soniox_ws:
             try:
                 await soniox_ws.close()
             except Exception as close_error:
                 logger.debug(
-                    f"Failed to close Soniox websocket: {close_error}",
+                    "Failed to close Soniox websocket: %s",
+                    close_error,
                     exc_info=True,
                 )
         if hermes_task:
             hermes_task.cancel()
-            try:
-                await hermes_task
-            except asyncio.CancelledError:
-                pass
-        if pending_publish_task:
-            pending_publish_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await pending_publish_task
+                await hermes_task
+        if state.pending_publish_task:
+            state.pending_publish_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await state.pending_publish_task
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
         logger.info("STT stream closed")

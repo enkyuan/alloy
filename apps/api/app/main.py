@@ -9,9 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.broker import broker
+from app.core.database import close_async_engine
+from app.core.redis import close_redis_client
 from app.services.integrations.token_migration import (
     migrate_plaintext_integration_tokens,
 )
+from app.services.integrations.spotify import spotify_client
+from app.services.discord import discord_service
+from app.services.todoist import todoist_service
+from app.services.calendly import calendly_service
+from app.services.integrations.workspace.auth import close_workspace_http_client
+from app.routers.integrations.integrations_shared import close_oauth_http_client
+from app.services.user.auth import supabase_auth_service
 from app.routers import (
     integrations,
     routers_auth,
@@ -29,13 +38,22 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    migrate_plaintext_integration_tokens()
+    await migrate_plaintext_integration_tokens()
     await broker.startup()
 
     yield
 
     # Shutdown
     await broker.shutdown()
+    await close_async_engine()
+    await close_oauth_http_client()
+    await spotify_client.close()
+    await discord_service.close()
+    await todoist_service.close()
+    await calendly_service.close()
+    await close_workspace_http_client()
+    await supabase_auth_service.close()
+    await close_redis_client()
 
 
 # Create FastAPI app

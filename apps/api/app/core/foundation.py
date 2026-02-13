@@ -1,13 +1,14 @@
 import time
 import logging
 from typing import Optional, Any, cast
-from redis.asyncio import Redis
-from app.core.config import settings
+
 from app.core.events import (
     UserTranscriptionReceived,
     build_event_envelope,
     to_redis_stream_fields,
 )
+from app.core.redis import RedisKeys, close_redis_client, get_redis_client
+from redis.asyncio import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +20,18 @@ class EventBackbone:
     async def connect(self):
         if not self.redis:
             logger.info("Connecting to Redis Event Backbone...")
-            self.redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+            self.redis = await get_redis_client()
             try:
                 await self.redis.ping()
                 logger.info("Successfully connected to Redis Event Backbone")
             except Exception as e:
                 logger.error(f"Failed to connect to Redis Event Backbone: {e}")
-                raise e
+                raise
 
     async def close(self):
         if self.redis:
             logger.info("Closing Redis Event Backbone connection...")
-            await self.redis.close()
+            await close_redis_client()
             self.redis = None
 
     async def produce_voice_input(self, user_id: str, text: str) -> str:
@@ -48,7 +49,7 @@ class EventBackbone:
             await self.connect()
         assert self.redis is not None
 
-        stream_key = "stream:voice_input"
+        stream_key = RedisKeys.STREAM_VOICE_INPUT
         event = UserTranscriptionReceived(content=text, user_id=user_id)
         entry = build_event_envelope(
             event_type="user.transcription",
@@ -69,7 +70,7 @@ class EventBackbone:
             return message_id
         except Exception as e:
             logger.error(f"Failed to produce voice input to stream {stream_key}: {e}")
-            raise e
+            raise
 
 
 # Global instance

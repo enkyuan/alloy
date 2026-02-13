@@ -3,6 +3,7 @@
 import logging
 import math
 import re
+import uuid
 from difflib import SequenceMatcher
 from typing import Any, Optional
 
@@ -374,7 +375,34 @@ class SpotifyRankingMixin:
         playlist_name: Optional[str] = None,
     ) -> CommandResult:
         """Create a clarification response when match confidence is low."""
-        options = [self._format_track_option(track) for track, _ in ranked_tracks[:3]]
+        top_tracks = ranked_tracks[:3]
+        options: list[str] = []
+        option_items: list[dict[str, Any]] = []
+        for index, (track, _) in enumerate(top_tracks, start=1):
+            label = self._format_track_option(track)
+            options.append(label)
+
+            artists = track.get("artists", [])
+            artist_name = ""
+            if isinstance(artists, list) and artists:
+                first = artists[0]
+                if isinstance(first, dict):
+                    artist_name = str(first.get("name", "")).strip()
+            album_data = track.get("album", {})
+            album_name = ""
+            if isinstance(album_data, dict):
+                album_name = str(album_data.get("name", "")).strip()
+            option_items.append(
+                {
+                    "id": str(index),
+                    "label": label,
+                    "uri": str(track.get("uri", "")).strip(),
+                    "track_name": str(track.get("name", "")).strip(),
+                    "artist": artist_name,
+                    "album": album_name,
+                }
+            )
+
         base_message = f"I found multiple matches for '{query}'."
         if artist:
             base_message = f"I found multiple matches for '{query}' by '{artist}'."
@@ -383,17 +411,33 @@ class SpotifyRankingMixin:
                 f"I checked playlist '{playlist_name}' first, but I still found "
                 f"multiple close matches for '{query}'."
             )
-        options_text = ", ".join(options) if options else "No close matches available."
-        message = f"{base_message} Did you mean: {options_text}?"
+        numbered_options = []
+        for option_item in option_items:
+            option_id = option_item.get("id")
+            label = option_item.get("label")
+            if option_id and label:
+                numbered_options.append(f"{option_id}) {label}")
+        if numbered_options:
+            options_text = " ".join(numbered_options)
+            message = (
+                f"{base_message} Please choose one option by number: {options_text}."
+            )
+        else:
+            options_text = ", ".join(options) if options else "No close matches available."
+            message = f"{base_message} Did you mean: {options_text}?"
+
+        clarification_id = str(uuid.uuid4())
         return CommandResult(
             success=True,
             message=message,
             data={
                 "requires_clarification": True,
+                "clarification_id": clarification_id,
                 "query": query,
                 "artist": artist,
                 "playlist_name": playlist_name,
                 "options": options,
+                "option_items": option_items,
             },
         )
 

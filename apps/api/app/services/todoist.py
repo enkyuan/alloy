@@ -1,10 +1,12 @@
 """Todoist API service."""
 
+from contextlib import asynccontextmanager
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -18,7 +20,43 @@ class TodoistService:
 
     BASE_URL = settings.TODOIST_API_BASE_URL
 
-    async def refresh_token(self, integration: Integration, db: Session) -> str:
+    def __init__(self) -> None:
+        self._http_client: Optional[httpx.AsyncClient] = None
+        self._timeout = httpx.Timeout(10.0, connect=3.0)
+        self._limits = httpx.Limits(
+            max_connections=60,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
+        )
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=self._timeout,
+                limits=self._limits,
+                follow_redirects=False,
+            )
+        return self._http_client
+
+    @asynccontextmanager
+    async def _client_session(self) -> AsyncIterator[httpx.AsyncClient]:
+        yield self._get_http_client()
+
+    async def close(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    @staticmethod
+    async def _commit(db: Session | AsyncSession) -> None:
+        if isinstance(db, AsyncSession):
+            await db.commit()
+        else:
+            db.commit()
+
+    async def refresh_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Refresh Todoist access token.
 
         Note: Todoist tokens do not expire, so this method just updates
@@ -36,14 +74,16 @@ class TodoistService:
         integration.expires_at = datetime.now(timezone.utc) + timedelta(days=365 * 10)
         integration.updated_at = datetime.now(timezone.utc)
 
-        db.commit()
+        await self._commit(db)
 
         logger.info(
             f"Successfully extended Todoist token validity for user {integration.user_id}"
         )
         return str(integration.access_token)
 
-    async def get_valid_token(self, integration: Integration, db: Session) -> str:
+    async def get_valid_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Get valid access token.
 
         Args:
@@ -79,7 +119,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/projects",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -103,7 +143,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/projects/{project_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -143,7 +183,7 @@ class TodoistService:
         if parent_id:
             data["parent_id"] = parent_id
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/projects",
                 json=data,
@@ -186,7 +226,7 @@ class TodoistService:
         if is_favorite is not None:
             data["is_favorite"] = is_favorite
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/projects/{project_id}",
                 json=data,
@@ -208,7 +248,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/projects/{project_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -250,7 +290,7 @@ class TodoistService:
         if filter_query:
             params["filter"] = filter_query
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/tasks",
                 params=params,
@@ -275,7 +315,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/tasks/{task_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -327,7 +367,7 @@ class TodoistService:
         if labels:
             data["labels"] = labels
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks",
                 json=data,
@@ -382,7 +422,7 @@ class TodoistService:
         if labels is not None:
             data["labels"] = labels
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}",
                 json=data,
@@ -404,7 +444,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}/close",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -423,7 +463,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/tasks/{task_id}/reopen",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -442,7 +482,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/tasks/{task_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -467,7 +507,7 @@ class TodoistService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/labels",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -503,7 +543,7 @@ class TodoistService:
         if color:
             data["color"] = color
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/labels",
                 json=data,
@@ -544,7 +584,7 @@ class TodoistService:
         if project_id:
             params["project_id"] = project_id
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/comments",
                 params=params,
@@ -583,7 +623,7 @@ class TodoistService:
         if project_id:
             data["project_id"] = project_id
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/comments",
                 json=data,

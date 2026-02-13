@@ -173,7 +173,7 @@ class AgentSystem:
                 await bridge.stop()
             except Exception as e:
                 logger.error(f"AgentSystem: Error stopping bridge '{name}': {e}")
-                raise e
+                raise
 
         # Cleanup reasoning nodes.
         logger.debug(f"AgentSystem: Cleaning up {len(self.components)} components")

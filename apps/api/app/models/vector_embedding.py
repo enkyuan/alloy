@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, FLOAT, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -33,6 +33,8 @@ class VectorEmbedding(Base):
     # I'll use Vector(768) as a default for Gemini.
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(768))
 
+    # SQLAlchemy reserves `metadata` on mapped classes, so the DB column remains
+    # `meta_data` and we provide a clearer Python alias via `metadata_json`.
     meta_data: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     user_id: Mapped[str] = mapped_column(
@@ -45,3 +47,11 @@ class VectorEmbedding(Base):
 
     # Relationships
     user = relationship("User", backref="embeddings")
+
+    @property
+    def metadata_json(self) -> Optional[dict]:
+        return self.meta_data
+
+    @metadata_json.setter
+    def metadata_json(self, value: Optional[dict]) -> None:
+        self.meta_data = value

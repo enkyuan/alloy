@@ -2,21 +2,28 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.integration import Integration
+from app.routers.dependencies import get_current_supabase_user
 from app.schemas.integration import IntegrationListResponse, IntegrationStatusResponse
-from app.services.user.auth import supabase_auth_service
+from app.services.integrations.service_names import (
+    to_client_service_name,
+    to_db_service_name,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("", response_model=IntegrationListResponse)
 async def get_user_integrations(
-    authorization: str = Header(None), db: Session = Depends(get_db)
+    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get all integrations for the authenticated user.
 
@@ -31,46 +38,19 @@ async def get_user_integrations(
         HTTPException: If authentication fails
     """
     try:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
-            )
-
-        access_token = authorization.replace("Bearer ", "")
-        supabase_user = await supabase_auth_service.get_user(access_token)
-
-        if not supabase_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-
         # Get user integrations from database
-        integrations = (
-            db.query(Integration)
-            .filter(
+        query = await db.execute(
+            select(Integration).where(
                 Integration.user_id == supabase_user["id"],
-                Integration.is_active == True,
+                Integration.is_active.is_(True),
             )
-            .all()
         )
-
-        # Map backend service names to iOS app expected names
-        service_name_mapping = {
-            "google_calendar": "googleCalendar",
-            "spotify": "spotify",
-            "gmail": "gmail",
-            "uber": "uber",
-            "discord": "discord",
-            "todoist": "todoist",
-            "calendly": "calendly",
-        }
+        integrations = query.scalars().all()
 
         integration_statuses = []
         for integration in integrations:
             service_key = str(integration.service)
-            mapped_service = service_name_mapping.get(service_key, service_key)
+            mapped_service = to_client_service_name(service_key)
             integration_statuses.append(
                 IntegrationStatusResponse(
                     service=mapped_service,
@@ -89,13 +69,15 @@ async def get_user_integrations(
         logger.error(f"Failed to get integrations: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get integrations: {str(e)}",
+            detail="Failed to get integrations",
         )
 
 
 @router.post("/{service}/disconnect")
 async def disconnect_service(
-    service: str, authorization: str = Header(None), db: Session = Depends(get_db)
+    service: str,
+    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Disconnect a service integration.
 
@@ -111,46 +93,19 @@ async def disconnect_service(
         HTTPException: If disconnection fails
     """
     try:
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
-            )
-
-        access_token = authorization.replace("Bearer ", "")
-        supabase_user = await supabase_auth_service.get_user(access_token)
-
-        if not supabase_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-            )
-
-        # Map URL path service names to database service names
-        service_path_to_db_mapping = {
-            "google-calendar": "google_calendar",
-            "gmail": "gmail",
-            "spotify": "spotify",
-            "uber": "uber",
-            "discord": "discord",
-            "todoist": "todoist",
-            "calendly": "calendly",
-        }
-
-        db_service_name = service_path_to_db_mapping.get(service, service)
+        db_service_name = to_db_service_name(service)
         logger.info(
             f"Mapped service '{service}' to database service '{db_service_name}'"
         )
 
         # Find and deactivate integration
-        integration = (
-            db.query(Integration)
-            .filter(
+        query = await db.execute(
+            select(Integration).where(
                 Integration.user_id == supabase_user["id"],
                 Integration.service == db_service_name,
             )
-            .first()
         )
+        integration = query.scalar_one_or_none()
 
         if not integration:
             raise HTTPException(
@@ -161,7 +116,7 @@ async def disconnect_service(
         # Soft delete - set is_active to False
         integration.is_active = False
         integration.updated_at = datetime.now(timezone.utc)
-        db.commit()
+        await db.commit()
 
         logger.info(
             f"Successfully disconnected {db_service_name} for user {supabase_user['id']}"
@@ -175,5 +130,5 @@ async def disconnect_service(
         logger.error(f"Failed to disconnect {service}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to disconnect service: {str(e)}",
+            detail="Failed to disconnect service",
         )

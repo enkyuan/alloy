@@ -251,3 +251,145 @@ async def test_workers_llm_fast_path_uses_n_best_alternative_when_primary_is_not
     assert args[0][1] == "spotify.add_to_queue"
     assert args[0][2]["query"] == "bohemian rhapsody"
     assert args[0][2]["artist"] == "queen"
+
+
+@pytest.mark.asyncio
+async def test_workers_llm_stateful_clarification_resolves_option_and_plays_uri(
+    mock_redis_worker, mock_taskiq, mock_execute_tool
+):
+    user_id = "test_user_clarification_state"
+    clarification_result = {
+        "status": "clarification_needed",
+        "message": (
+            "I found multiple matches for 'thunderstruck'. "
+            "Please choose one option by number: "
+            "1) Thunderstruck by AC/DC 2) Thunderstruck by Steve 'n' Seagulls."
+        ),
+        "query": "thunderstruck",
+        "data": {
+            "requires_clarification": True,
+            "query": "thunderstruck",
+            "option_items": [
+                {
+                    "id": "1",
+                    "label": "Thunderstruck by AC/DC",
+                    "uri": "spotify:track:acdc",
+                    "track_name": "Thunderstruck",
+                    "artist": "AC/DC",
+                },
+                {
+                    "id": "2",
+                    "label": "Thunderstruck by Steve 'n' Seagulls",
+                    "uri": "spotify:track:seagulls",
+                    "track_name": "Thunderstruck",
+                    "artist": "Steve 'n' Seagulls",
+                },
+            ],
+        },
+    }
+    play_result = {
+        "status": "playing",
+        "message": "Now playing 'Thunderstruck' by AC/DC",
+        "data": {
+            "uri": "spotify:track:acdc",
+            "track_name": "Thunderstruck",
+            "artist": "AC/DC",
+        },
+    }
+    mock_execute_tool.side_effect = [clarification_result, play_result]
+
+    first_data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": UserTranscriptionReceived(
+            content="play thunderstruck",
+            parse_hint={
+                "intent": "play",
+                "query": "thunderstruck",
+                "confidence": 0.99,
+                "source": "ios.foundation_models",
+            },
+        ).model_dump_json(),
+    }
+    second_data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": UserTranscriptionReceived(content="first one").model_dump_json(),
+    }
+
+    await llm_worker.handle_message(first_data)
+    await llm_worker.handle_message(second_data)
+
+    assert mock_execute_tool.await_count == 2
+    second_call_args = mock_execute_tool.call_args_list[1][0]
+    assert second_call_args[0] == user_id
+    assert second_call_args[1] == "spotify.play"
+    assert second_call_args[2] == {"uri": "spotify:track:acdc"}
+
+
+@pytest.mark.asyncio
+async def test_workers_llm_stateful_clarification_reprompts_without_research(
+    mock_redis_worker, mock_taskiq, mock_execute_tool
+):
+    user_id = "test_user_clarification_reprompt"
+    clarification_result = {
+        "status": "clarification_needed",
+        "message": (
+            "I found multiple matches for 'thunderstruck'. "
+            "Please choose one option by number: "
+            "1) Thunderstruck by AC/DC 2) Thunderstruck by Steve 'n' Seagulls."
+        ),
+        "query": "thunderstruck",
+        "data": {
+            "requires_clarification": True,
+            "query": "thunderstruck",
+            "option_items": [
+                {
+                    "id": "1",
+                    "label": "Thunderstruck by AC/DC",
+                    "uri": "spotify:track:acdc",
+                    "track_name": "Thunderstruck",
+                    "artist": "AC/DC",
+                },
+                {
+                    "id": "2",
+                    "label": "Thunderstruck by Steve 'n' Seagulls",
+                    "uri": "spotify:track:seagulls",
+                    "track_name": "Thunderstruck",
+                    "artist": "Steve 'n' Seagulls",
+                },
+            ],
+        },
+    }
+    mock_execute_tool.return_value = clarification_result
+
+    first_data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": UserTranscriptionReceived(
+            content="play thunderstruck",
+            parse_hint={
+                "intent": "play",
+                "query": "thunderstruck",
+                "confidence": 0.99,
+                "source": "ios.foundation_models",
+            },
+        ).model_dump_json(),
+    }
+    second_data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": UserTranscriptionReceived(content="not sure").model_dump_json(),
+    }
+
+    await llm_worker.handle_message(first_data)
+    await llm_worker.handle_message(second_data)
+
+    assert mock_execute_tool.await_count == 1
+
+    history_key = f"agent:history:{user_id}"
+    history = await mock_redis_worker.lrange(history_key, 0, -1)
+    assert len(history) >= 4
+    reminder = json.loads(history[-1])
+    assert reminder["role"] == "assistant"
+    assert "Reply with the option number" in reminder["content"]

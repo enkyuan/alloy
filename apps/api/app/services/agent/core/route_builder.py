@@ -17,11 +17,11 @@ from typing import (
     cast,
 )
 
-logger = logging.getLogger(__name__)
-
 from app.services.agent.core.bus import Message
 from app.services.agent.core.agent_events import EventType, EventTypeOrAlias
 from app.services.agent.utils.async_tasks import await_tasks_safe
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.services.agent.core.bridge import Bridge
@@ -618,7 +618,7 @@ class RouteHandler:
                                 f"Error coercing data to {event_cls.__name__} with input {current_data}: {e}",
                                 exc_info=True,
                             )
-                            raise e
+                            raise
                     await self.bridge.bus.broadcast(
                         Message(source=self.bridge.node_id, event=event)
                     )
@@ -662,9 +662,9 @@ class RouteHandler:
                 if asyncio.iscoroutine(result):
                     result = await result
                 await self._process_operations(result, remaining_ops)
-        except asyncio.CancelledError as e:
+        except asyncio.CancelledError:
             logger.debug("Stream operation cancelled")
-            raise e  # Re-raise to propagate cancellation
+            raise  # Re-raise to propagate cancellation
 
     def _is_async_generator_function(self, fn: Callable) -> bool:
         """Check if function returns an async generator."""

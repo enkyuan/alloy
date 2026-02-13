@@ -11,18 +11,18 @@ from collections import defaultdict
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Type, TypeVar, Union
 
-logger = logging.getLogger(__name__)
-
-from app.services.agent.core.bus import Bus, Message
 from app.services.agent.core.agent_events import (
     EventInstance,
     EventsRegistry,
     EventTypeOrAlias,
 )
+from app.services.agent.core.bus import Bus, Message
 from app.services.agent.core.route_builder import RouteBuilder, RouteHandler
 
 if TYPE_CHECKING:
     from app.services.agent.nodes.node_base import NodeBase
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 

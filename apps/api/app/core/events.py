@@ -34,9 +34,9 @@ class ToolResult(BaseModel):
 
     tool_name: str = ""
     tool_args: dict = Field(default_factory=dict)
-    result: Optional[object] = None
+    result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
-    metadata: Optional[Dict] = None
+    metadata: Optional[Dict[str, Any]] = None
     tool_call_id: Optional[str] = None
     user_id: Optional[str] = None
 

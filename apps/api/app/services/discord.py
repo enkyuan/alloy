@@ -1,10 +1,12 @@
 """Discord API service."""
 
+from contextlib import asynccontextmanager
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -18,7 +20,43 @@ class DiscordService:
 
     BASE_URL = settings.DISCORD_API_BASE_URL
 
-    async def refresh_token(self, integration: Integration, db: Session) -> str:
+    def __init__(self) -> None:
+        self._http_client: Optional[httpx.AsyncClient] = None
+        self._timeout = httpx.Timeout(10.0, connect=3.0)
+        self._limits = httpx.Limits(
+            max_connections=60,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
+        )
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=self._timeout,
+                limits=self._limits,
+                follow_redirects=False,
+            )
+        return self._http_client
+
+    @asynccontextmanager
+    async def _client_session(self) -> AsyncIterator[httpx.AsyncClient]:
+        yield self._get_http_client()
+
+    async def close(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    @staticmethod
+    async def _commit(db: Session | AsyncSession) -> None:
+        if isinstance(db, AsyncSession):
+            await db.commit()
+        else:
+            db.commit()
+
+    async def refresh_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Refresh Discord access token.
 
         Args:
@@ -35,7 +73,7 @@ class DiscordService:
             if not integration.refresh_token:
                 raise Exception("No refresh token available")
 
-            async with httpx.AsyncClient() as client:
+            async with self._client_session() as client:
                 response = await client.post(
                     "https://discord.com/api/oauth2/token",
                     data={
@@ -65,7 +103,7 @@ class DiscordService:
                 if "refresh_token" in token_data:
                     integration.refresh_token = token_data["refresh_token"]
 
-                db.commit()
+                await self._commit(db)
 
                 logger.info(
                     f"Successfully refreshed Discord token for user {integration.user_id}"
@@ -76,7 +114,9 @@ class DiscordService:
             logger.error(f"Failed to refresh Discord token: {str(e)}", exc_info=True)
             raise
 
-    async def get_valid_token(self, integration: Integration, db: Session) -> str:
+    async def get_valid_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Get valid access token, refreshing if needed.
 
         Args:
@@ -115,7 +155,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -138,7 +178,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me/guilds",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -161,7 +201,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/@me/connections",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -189,7 +229,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -215,7 +255,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}/channels",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -242,7 +282,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/guilds/{guild_id}/members",
                 params={"limit": min(limit, 1000)},
@@ -271,7 +311,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/channels/{channel_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -298,7 +338,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/channels/{channel_id}/messages",
                 params={"limit": min(limit, 100)},
@@ -327,7 +367,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/channels/{channel_id}/messages",
                 json={"content": content, "tts": tts},
@@ -352,7 +392,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -375,7 +415,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.put(
                 f"{self.BASE_URL}/channels/{channel_id}/messages/{message_id}/reactions/{emoji}/@me",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -400,7 +440,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/voice/regions",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -428,7 +468,7 @@ class DiscordService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/users/@me/channels",
                 json={"recipient_id": recipient_id},

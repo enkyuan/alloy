@@ -29,8 +29,8 @@ def log_afunc(log_result=False, message=None):
                 if log_result:
                     logger.info(f"[RESULT FUNC] {log_message}. {result=}")
                 return result
-            except Exception as e:
-                raise e
+            except Exception:
+                raise
 
         return wrapper
 
@@ -77,7 +77,7 @@ def log_aiter_func(message=None, show_each=False):
                     yield item
             except Exception as e:
                 logger.exception(f"[ERROR] {log_message}. {e}")
-                raise e
+                raise
 
             finally:
                 end_time = datetime.datetime.now()

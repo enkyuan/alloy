@@ -1,10 +1,12 @@
 """Calendly API service."""
 
+from contextlib import asynccontextmanager
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -18,7 +20,43 @@ class CalendlyService:
 
     BASE_URL = settings.CALENDLY_API_BASE_URL
 
-    async def refresh_token(self, integration: Integration, db: Session) -> str:
+    def __init__(self) -> None:
+        self._http_client: Optional[httpx.AsyncClient] = None
+        self._timeout = httpx.Timeout(10.0, connect=3.0)
+        self._limits = httpx.Limits(
+            max_connections=60,
+            max_keepalive_connections=20,
+            keepalive_expiry=30.0,
+        )
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None:
+            self._http_client = httpx.AsyncClient(
+                timeout=self._timeout,
+                limits=self._limits,
+                follow_redirects=False,
+            )
+        return self._http_client
+
+    @asynccontextmanager
+    async def _client_session(self) -> AsyncIterator[httpx.AsyncClient]:
+        yield self._get_http_client()
+
+    async def close(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+
+    @staticmethod
+    async def _commit(db: Session | AsyncSession) -> None:
+        if isinstance(db, AsyncSession):
+            await db.commit()
+        else:
+            db.commit()
+
+    async def refresh_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Refresh Calendly access token.
 
         Args:
@@ -35,7 +73,7 @@ class CalendlyService:
             if not integration.refresh_token:
                 raise Exception("No refresh token available")
 
-            async with httpx.AsyncClient() as client:
+            async with self._client_session() as client:
                 response = await client.post(
                     "https://auth.calendly.com/oauth/token",
                     data={
@@ -63,7 +101,7 @@ class CalendlyService:
                 if "refresh_token" in token_data:
                     integration.refresh_token = token_data["refresh_token"]
 
-                db.commit()
+                await self._commit(db)
 
                 logger.info(
                     f"Successfully refreshed Calendly token for user {integration.user_id}"
@@ -74,7 +112,9 @@ class CalendlyService:
             logger.error(f"Failed to refresh Calendly token: {str(e)}", exc_info=True)
             raise
 
-    async def get_valid_token(self, integration: Integration, db: Session) -> str:
+    async def get_valid_token(
+        self, integration: Integration, db: Session | AsyncSession
+    ) -> str:
         """Get valid access token, refreshing if needed.
 
         Args:
@@ -113,7 +153,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/users/me",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -148,7 +188,7 @@ class CalendlyService:
         if active is not None:
             params["active"] = str(active).lower()
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/event_types",
                 params=params,
@@ -175,7 +215,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/event_types/{event_type_uuid}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -229,7 +269,7 @@ class CalendlyService:
         if max_start_time:
             params["max_start_time"] = max_start_time
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events",
                 params=params,
@@ -256,7 +296,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -284,7 +324,7 @@ class CalendlyService:
         if reason:
             data["reason"] = reason
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}/cancellation",
                 json=data if data else None,
@@ -323,7 +363,7 @@ class CalendlyService:
         if status:
             params["status"] = status
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/{event_uuid}/invitees",
                 params=params,
@@ -348,7 +388,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/scheduled_events/invitees/{invitee_uuid}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -393,7 +433,7 @@ class CalendlyService:
             "scope": scope,
         }
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.post(
                 f"{self.BASE_URL}/webhook_subscriptions",
                 json=data,
@@ -425,7 +465,7 @@ class CalendlyService:
         if scope:
             params["scope"] = scope
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/webhook_subscriptions",
                 params=params,
@@ -447,7 +487,7 @@ class CalendlyService:
         Raises:
             Exception: If API call fails
         """
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.delete(
                 f"{self.BASE_URL}/webhook_subscriptions/{webhook_uuid}",
                 headers={"Authorization": f"Bearer {access_token}"},
@@ -477,7 +517,7 @@ class CalendlyService:
         """
         params = {"user": user_uri}
 
-        async with httpx.AsyncClient() as client:
+        async with self._client_session() as client:
             response = await client.get(
                 f"{self.BASE_URL}/organization_memberships",
                 params=params,

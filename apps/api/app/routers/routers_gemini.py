@@ -1,38 +1,17 @@
 """Gemini AI routes for conversational AI."""
 
 import logging
-from typing import Any, List, Optional
+from typing import List, Optional
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from app.routers.dependencies import get_current_supabase_user
 from app.services.pipeline.services.gemini_service import get_gemini_service
-from app.services.user.auth import supabase_auth_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini", tags=["gemini"])
-
-
-async def _get_supabase_user_from_authorization(
-    authorization: str | None,
-) -> dict[str, Any]:
-    """Validate Bearer auth and return the resolved Supabase user payload."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-
-    access_token = authorization.replace("Bearer ", "")
-    supabase_user = await supabase_auth_service.get_user(access_token)
-    if not supabase_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-
-    return supabase_user
 
 
 class GenerateRequest(BaseModel):
@@ -68,7 +47,7 @@ class GenerateResponse(BaseModel):
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_text(
     request: GenerateRequest,
-    authorization: str = Header(None),
+    supabase_user: dict = Depends(get_current_supabase_user),
 ):
     """Generate text using Gemini AI.
 
@@ -83,8 +62,6 @@ async def generate_text(
         HTTPException: If authentication fails or generation fails
     """
     try:
-        supabase_user = await _get_supabase_user_from_authorization(authorization)
-
         # Generate response
         gemini = get_gemini_service()
         response_text = await gemini.generate_response(
@@ -104,14 +81,14 @@ async def generate_text(
         logger.error(f"Failed to generate text: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate text: {str(e)}",
+            detail="Failed to generate text",
         )
 
 
 @router.post("/chat", response_model=GenerateResponse)
 async def chat_completion(
     request: ChatRequest,
-    authorization: str = Header(None),
+    supabase_user: dict = Depends(get_current_supabase_user),
 ):
     """Generate chat completion using Gemini AI.
 
@@ -126,8 +103,6 @@ async def chat_completion(
         HTTPException: If authentication fails or generation fails
     """
     try:
-        supabase_user = await _get_supabase_user_from_authorization(authorization)
-
         # Convert messages to dict format
         messages = [
             {"role": msg.role, "content": msg.content} for msg in request.messages
@@ -152,14 +127,14 @@ async def chat_completion(
         logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate chat response: {str(e)}",
+            detail="Failed to generate chat response",
         )
 
 
 @router.post("/stream")
 async def stream_generation(
     request: GenerateRequest,
-    authorization: str = Header(None),
+    supabase_user: dict = Depends(get_current_supabase_user),
 ):
     """Stream text generation using Gemini AI.
 
@@ -174,8 +149,6 @@ async def stream_generation(
         HTTPException: If authentication fails or generation fails
     """
     try:
-        supabase_user = await _get_supabase_user_from_authorization(authorization)
-
         # Generate streaming response
         gemini = get_gemini_service()
 
@@ -197,5 +170,5 @@ async def stream_generation(
         logger.error(f"Failed to stream generation: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to stream generation: {str(e)}",
+            detail="Failed to stream generation",
         )

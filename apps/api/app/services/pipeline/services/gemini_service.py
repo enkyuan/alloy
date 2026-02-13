@@ -1,5 +1,6 @@
 """Google Gemini AI service for conversational AI."""
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -63,8 +64,11 @@ class GeminiService:
                 max_tokens=max_tokens,
             )
 
-            response = self.client.models.generate_content(
-                model=self.model, contents=prompt, config=config
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model,
+                contents=prompt,
+                config=config,
             )
 
             logger.info(f"Generated Gemini response for prompt: {prompt[:50]}...")
@@ -111,11 +115,14 @@ class GeminiService:
                 config["tools"] = tools
 
             logger.info(f"Calling Gemini API with model: {self.model}")
-            response = self.client.models.generate_content(
-                model=self.model, contents=contents, config=config
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model,
+                contents=contents,
+                config=config,
             )
 
-            logger.info(f"Successfully generated chat response")
+            logger.info("Successfully generated chat response")
             # Return the full response object to handle function calls
             return response
 
@@ -147,11 +154,17 @@ class GeminiService:
                 system_instruction=system_instruction,
             )
 
-            response = self.client.models.generate_content_stream(
-                model=self.model, contents=prompt, config=config
+            response = await asyncio.to_thread(
+                self.client.models.generate_content_stream,
+                model=self.model,
+                contents=prompt,
+                config=config,
             )
-
-            for chunk in response:
+            iterator = iter(response)
+            while True:
+                chunk = await asyncio.to_thread(next, iterator, None)
+                if chunk is None:
+                    break
                 if chunk.text:
                     yield chunk.text
 

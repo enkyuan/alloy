@@ -15,6 +15,10 @@ from app.services.todoist import todoist_service
 
 class SpotifyPlayArgs(BaseModel):
     query: str = Field(description="Song name to play.")
+    uri: Optional[str] = Field(
+        default=None,
+        description="Optional direct Spotify URI to play.",
+    )
     artist: Optional[str] = Field(default=None, description="Optional artist name.")
     playlist_name: Optional[str] = Field(
         default=None,
@@ -32,6 +36,19 @@ SPOTIFY_PLAY = tool_spec_from_model(
 @register_tool(SPOTIFY_PLAY)
 async def spotify_play(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]:
     access_token = await spotify_service.get_valid_token(ctx.integration, ctx.db)
+    uri = str(args.get("uri", "")).strip()
+    if uri:
+        result = await spotify_service.play_track_uri(
+            uri=uri,
+            access_token=access_token,
+        )
+        return {
+            "status": "playing",
+            "message": result.message,
+            "query": str(args.get("query", "")).strip() or uri,
+            "data": result.data,
+        }
+
     query = str(args.get("query", "")).strip()
     if not query:
         raise ValueError("Missing required arg: query")

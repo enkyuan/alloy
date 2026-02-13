@@ -1,5 +1,7 @@
 import logging
+import time
 import uuid
+from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from app.core.events import (
@@ -13,12 +15,17 @@ from app.core.events import (
 from app.services.agent.core.bus import Message
 from app.services.agent.evals.conversation_context import ConversationContext
 from app.services.agent.nodes.node_reasoning import ReasoningNode
-from app.services.integrations import list_tool_specs
+from app.services.integrations.tool_payload import build_tools_payload
 from app.services.parser import command_parser
+from app.services.parser.intent_to_tool import map_intent_to_tool_call
+from app.services.pipeline.helpers.function_calls import extract_response_function_calls
 from app.services.pipeline.routers.router import pipeline_router
 from app.services.pipeline.services.gemini_service import get_gemini_service
 
 logger = logging.getLogger(__name__)
+
+_MAX_TRACKED_USERS = 1000
+_INACTIVE_USER_TTL_SECONDS = 60 * 60
 
 
 class AgentReasoningNode(ReasoningNode):
@@ -35,7 +42,8 @@ class AgentReasoningNode(ReasoningNode):
             max_context_length=max_context_length,
             node_id=node_id,
         )
-        self._events_by_user: Dict[str, List[Any]] = {}
+        self._events_by_user: OrderedDict[str, List[Any]] = OrderedDict()
+        self._last_seen_by_user: dict[str, float] = {}
         logger.info(
             "AgentReasoningNode initialized",
             extra={"node_id": self.id, "max_context_length": max_context_length},
@@ -99,13 +107,19 @@ class AgentReasoningNode(ReasoningNode):
             )
 
             if should_fast_path_parse and not intent.requires_clarification:
-                tool_call = _build_tool_call_from_intent(intent, user_id)
+                tool_call = map_intent_to_tool_call(intent)
                 if tool_call:
+                    tool_name, tool_args = tool_call
                     logger.info(
                         "Routing via parser intent",
                         extra={"user_id": user_id, "intent": intent.intent},
                     )
-                    yield tool_call
+                    yield ToolCall(
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        tool_call_id=str(uuid.uuid4()),
+                        user_id=user_id,
+                    )
                     return
 
         conversation_messages = _build_conversation_messages(context.events)
@@ -118,23 +132,24 @@ class AgentReasoningNode(ReasoningNode):
             response = await get_gemini_service().generate_chat_response(
                 messages=conversation_messages,
                 system_instruction=self.system_prompt,
-                tools=_build_tool_payload(),
+                tools=build_tools_payload(),
             )
         except Exception:
             logger.error("Gemini failure", exc_info=True, extra={"user_id": user_id})
             yield AgentError(error="Gemini request failed.", user_id=user_id)
             return
 
-        response_function_calls = _extract_response_function_calls(response)
+        response_function_calls = extract_response_function_calls(response)
         if response_function_calls:
             logger.info(
                 "Gemini requested tool calls",
                 extra={"user_id": user_id, "count": len(response_function_calls)},
             )
-            for call in response_function_calls:
+            for function_call in response_function_calls:
+                tool_args = dict(function_call.args or {})
                 yield ToolCall(
-                    tool_name=call["name"],
-                    tool_args=call.get("args", {}),
+                    tool_name=function_call.name,
+                    tool_args=tool_args,
                     tool_call_id=str(uuid.uuid4()),
                     user_id=user_id,
                 )
@@ -153,44 +168,59 @@ class AgentReasoningNode(ReasoningNode):
             return str(getattr(event, "user_id"))
         return None
 
+    def _touch_user(self, user_id: str) -> None:
+        self._last_seen_by_user[user_id] = time.monotonic()
+        if user_id in self._events_by_user:
+            self._events_by_user.move_to_end(user_id)
+
+    def _prune_user_state(self) -> None:
+        now = time.monotonic()
+        expired = [
+            user_id
+            for user_id, seen_at in self._last_seen_by_user.items()
+            if now - seen_at > _INACTIVE_USER_TTL_SECONDS
+        ]
+        for user_id in expired:
+            self._events_by_user.pop(user_id, None)
+            self._last_seen_by_user.pop(user_id, None)
+
+        while len(self._events_by_user) > _MAX_TRACKED_USERS:
+            oldest_user_id, _ = self._events_by_user.popitem(last=False)
+            self._last_seen_by_user.pop(oldest_user_id, None)
+
     def _add_event_for_user(self, user_id: str, event: Any) -> None:
+        self._prune_user_state()
         events = self._events_by_user.setdefault(user_id, [])
-        _append_conversation_event(events, event)
+        self._touch_user(user_id)
+
+        previous_events = self.conversation_events
+        self.conversation_events = events
+        try:
+            # Reuse base class merge logic for transcript/assistant chunks.
+            self.add_event(event)
+            if len(self.conversation_events) > self.max_context_length:
+                self.conversation_events = self.conversation_events[-self.max_context_length :]
+            self._events_by_user[user_id] = self.conversation_events
+        finally:
+            self.conversation_events = previous_events
 
     def _build_conversation_context(
         self, user_id: Optional[str] = None
     ) -> ConversationContext:
+        self._prune_user_state()
         user_id = user_id or ""
+        self._touch_user(user_id)
         events = self._events_by_user.get(user_id, [])
-        if len(events) > self.max_context_length:
-            events = events[-self.max_context_length :]
-            self._events_by_user[user_id] = events
 
-        return ConversationContext(
-            events=events,
-            system_prompt=self.system_prompt,
-            metadata={
-                "user_id": user_id,
-                "max_context_length": self.max_context_length,
-                "total_messages": len(events),
-            },
-        )
+        previous_events = self.conversation_events
+        self.conversation_events = events
+        try:
+            context = super()._build_conversation_context(user_id=user_id)
+        finally:
+            self.conversation_events = previous_events
 
-
-def _append_conversation_event(events: List[Any], event: Any) -> None:
-    if isinstance(event, Message):
-        event = event.event
-
-    if not events:
-        events.append(event)
-        return
-
-    mergeable = (AgentResponse, UserTranscriptionReceived)
-    if isinstance(event, mergeable) and isinstance(events[-1], type(event)):
-        events[-1] = type(event)(content=events[-1].content + event.content)
-        return
-
-    events.append(event)
+        context.metadata["user_id"] = user_id
+        return context
 
 
 def _build_conversation_messages(events: List[Any]) -> List[Dict[str, str]]:
@@ -210,186 +240,3 @@ def _build_conversation_messages(events: List[Any]) -> List[Dict[str, str]]:
                     }
                 )
     return messages
-
-
-def _build_tool_payload() -> List[Dict[str, Any]]:
-    declarations = []
-    for spec in list_tool_specs():
-        declarations.append(
-            {
-                "name": spec.name,
-                "description": spec.description,
-                "parameters": spec.parameters,
-            }
-        )
-    return [{"function_declarations": declarations}] if declarations else []
-
-
-def _extract_response_function_calls(response: Any) -> List[Dict[str, Any]]:
-    function_calls: List[Dict[str, Any]] = []
-    if hasattr(response, "candidates") and response.candidates:
-        candidate = response.candidates[0]
-        if (
-            hasattr(candidate, "content")
-            and candidate.content
-            and hasattr(candidate.content, "parts")
-            and candidate.content.parts
-        ):
-            for part in candidate.content.parts:
-                if part.function_call:
-                    function_calls.append(
-                        {
-                            "name": part.function_call.name,
-                            "args": part.function_call.args or {},
-                        }
-                    )
-    return function_calls
-
-
-def _build_tool_call_from_intent(intent, user_id: str) -> Optional[ToolCall]:
-    params = intent.parameters or {}
-
-    if intent.intent == "play_track_from_playlist":
-        track = params.get("track")
-        playlist = params.get("playlist")
-        if not track or not playlist:
-            return None
-        play_from_playlist_args: Dict[str, Any] = {
-            "query": track,
-            "playlist_name": playlist,
-        }
-        if params.get("artist"):
-            play_from_playlist_args["artist"] = params["artist"]
-        return ToolCall(
-            tool_name="spotify.play",
-            tool_args=play_from_playlist_args,
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "play_track":
-        track = params.get("track")
-        if not track:
-            return None
-        artist = params.get("artist")
-        play_track_args: Dict[str, Any] = {"query": track}
-        if artist:
-            play_track_args["artist"] = artist
-            play_track_args["query"] = f"{track} by {artist}"
-        return ToolCall(
-            tool_name="spotify.play",
-            tool_args=play_track_args,
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "play_album":
-        album = params.get("album")
-        if not album:
-            return None
-        play_album_args: Dict[str, Any] = {"album": album}
-        if params.get("artist"):
-            play_album_args["artist"] = params["artist"]
-        return ToolCall(
-            tool_name="spotify.play_album",
-            tool_args=play_album_args,
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "play_playlist":
-        playlist = params.get("playlist")
-        if not playlist:
-            return None
-        raw_text = (getattr(intent, "raw_text", "") or "").lower()
-        user_only = (
-            "my playlist" in raw_text
-            or "my playlists" in raw_text
-            or str(playlist).lower() in {"liked songs", "favorites"}
-        )
-        return ToolCall(
-            tool_name="spotify.play_playlist",
-            tool_args={"playlist": playlist, "user_playlists_only": user_only},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "add_to_queue":
-        track = params.get("track")
-        if not track:
-            return None
-        queue_args: Dict[str, Any] = {"query": track}
-        if params.get("artist"):
-            queue_args["artist"] = params["artist"]
-        if params.get("playlist"):
-            queue_args["playlist_name"] = params["playlist"]
-        return ToolCall(
-            tool_name="spotify.add_to_queue",
-            tool_args=queue_args,
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "pause":
-        return ToolCall(
-            tool_name="spotify.pause",
-            tool_args={},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "resume":
-        return ToolCall(
-            tool_name="spotify.resume",
-            tool_args={},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "next":
-        return ToolCall(
-            tool_name="spotify.next",
-            tool_args={},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "previous":
-        return ToolCall(
-            tool_name="spotify.previous",
-            tool_args={},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "set_volume":
-        level = params.get("level")
-        if level is None:
-            return None
-        return ToolCall(
-            tool_name="spotify.set_volume",
-            tool_args={"level": level},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "list_devices":
-        return ToolCall(
-            tool_name="spotify.list_devices",
-            tool_args={},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    if intent.intent == "switch_device":
-        device = params.get("device")
-        if not device:
-            return None
-        return ToolCall(
-            tool_name="spotify.switch_device",
-            tool_args={"device_name": device},
-            tool_call_id=str(uuid.uuid4()),
-            user_id=user_id,
-        )
-
-    return None

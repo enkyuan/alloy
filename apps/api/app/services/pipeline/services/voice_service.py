@@ -6,9 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional
 
-import redis.asyncio as redis
-
-from app.core.config import settings
+from app.core.redis import get_redis_client
 from app.services.parser import (
     CommandContext,
     CommandIntent,
@@ -17,11 +15,6 @@ from app.services.parser import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Redis client
-redis_client = redis.from_url(
-    settings.REDIS_URL, encoding="utf-8", decode_responses=True
-)
 
 
 @dataclass
@@ -55,6 +48,7 @@ class VoiceService:
             CommandContext for the user
         """
         key = f"voice_context:{user_id}"
+        redis_client = await get_redis_client()
         data = await redis_client.get(key)
 
         context = CommandContext(user_id=user_id)
@@ -114,6 +108,7 @@ class VoiceService:
         }
 
         # Save with TTL (e.g., 1 hour to keep it around longer than the logic timeout)
+        redis_client = await get_redis_client()
         await redis_client.setex(key, 3600, json.dumps(data))
 
     async def update_context(

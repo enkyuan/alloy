@@ -231,6 +231,9 @@ async def test_integrations_spotify_service_reliability_resolve_track_candidate_
     assert selected_track is None
     assert clarification is not None
     assert clarification.data["requires_clarification"] is True
+    assert "option_items" in clarification.data
+    assert isinstance(clarification.data["option_items"], list)
+    assert clarification.data["option_items"][0]["uri"].startswith("spotify:track:")
 
 
 @pytest.mark.asyncio

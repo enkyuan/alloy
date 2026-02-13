@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Type
 
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.integration import Integration
+from app.services.integrations.service_names import to_db_service_name
 
 ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -26,7 +28,7 @@ class ToolContext:
 
     user_id: str
     integration: Integration
-    db: Session
+    db: AsyncSession
 
 
 _TOOL_SPECS: Dict[str, ToolSpec] = {}
@@ -67,7 +69,7 @@ def tool_spec_from_model(
 
 
 async def execute_tool(
-    user_id: str, tool_name: str, tool_args: Dict[str, Any], db: Session
+    user_id: str, tool_name: str, tool_args: Dict[str, Any], db: AsyncSession
 ) -> Dict[str, Any]:
     """Execute a tool call for a given user."""
 
@@ -75,16 +77,15 @@ async def execute_tool(
     if handler is None:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-    service_name = tool_name.split(".", 1)[0]
-    integration = (
-        db.query(Integration)
-        .filter(
+    service_name = to_db_service_name(tool_name.split(".", 1)[0])
+    query = await db.execute(
+        select(Integration).where(
             Integration.user_id == user_id,
             Integration.service == service_name,
-            Integration.is_active == True,
+            Integration.is_active.is_(True),
         )
-        .first()
     )
+    integration = query.scalar_one_or_none()
     if not integration:
         raise ValueError(f"No active integration for {service_name}")
 

@@ -29,13 +29,14 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel, Field
+
+from app.services.agent.core.agent_events import AgentHandoff, Authorize, ToolCall
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.services.agent.core.bridge import Bridge
-
-from app.services.agent.core.agent_events import AgentHandoff, Authorize, ToolCall
 
 
 class Message(BaseModel):
@@ -101,6 +102,7 @@ class Bus:
         ] = {}  # Allows synchronous-style calls over async message bus.
 
         self.shutdown_event = asyncio.Event()  # Ensures all tasks stop together.
+        self.background_route_tasks: set[asyncio.Task[Any]] = set()
 
     async def start(self) -> None:
         """
@@ -144,6 +146,12 @@ class Bus:
         for future in self.pending_requests.values():
             if not future.done():
                 future.cancel()
+
+        for task in list(self.background_route_tasks):
+            task.cancel()
+        if self.background_route_tasks:
+            await asyncio.gather(*self.background_route_tasks, return_exceptions=True)
+        self.background_route_tasks.clear()
 
         self.pending_requests.clear()
         logger.info("Bus cleanup completed")
@@ -391,10 +399,32 @@ class Bus:
                     # This is to ensure that future messages are not blocked by the task.
                     # NOTE: There is an implicit ordering here determined by the order of the bridges.
                     # TODO: Consider making this explicit.
-                    tasks.append(asyncio.create_task(bridge.handle_event(message)))
+                    task = asyncio.create_task(bridge.handle_event(message))
+                    self._track_background_route_task(task, message)
+                    tasks.append(task)
 
         except Exception as e:
             logger.exception(f"Error routing message {message.id}: {e}")
+
+    def _track_background_route_task(
+        self, task: asyncio.Task[Any], message: Message
+    ) -> None:
+        self.background_route_tasks.add(task)
+
+        def _done_callback(done_task: asyncio.Task[Any]) -> None:
+            self.background_route_tasks.discard(done_task)
+            try:
+                error = done_task.exception()
+            except asyncio.CancelledError:
+                return
+            if error is not None:
+                logger.error(
+                    "Bridge task failed while routing message",
+                    exc_info=(type(error), error, error.__traceback__),
+                    extra={"message_id": message.id, "source": message.source},
+                )
+
+        task.add_done_callback(_done_callback)
 
     async def _handle_handoff(self, message: Message, target_agent: str) -> None:
         """Handle handoff from transfer_to_* tool calls."""

@@ -21,6 +21,61 @@ class SpotifyTrackCommandsMixin:
     """Search/play and queue command handlers for tracks."""
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
+    async def play_track_uri(
+        self: Any,
+        uri: str,
+        access_token: str,
+    ) -> CommandResult:
+        """Play a track directly by Spotify URI."""
+        track_uri = uri.strip()
+        if not track_uri:
+            raise SearchNoResultsError("track uri", "track")
+
+        try:
+            device_id = await self.get_active_device(access_token)
+            if not device_id:
+                logger.info(
+                    "No active device found for URI play; returning client playback action",
+                    extra={"uri": track_uri},
+                )
+                return CommandResult(
+                    success=True,
+                    message="Got it. Trying playback on your active app.",
+                    data={
+                        "uri": track_uri,
+                        "action_required": "client_playback",
+                    },
+                )
+
+            await self.client.play(
+                access_token=access_token,
+                uri=track_uri,
+                device_id=device_id,
+            )
+            return CommandResult(
+                success=True,
+                message="Now playing your selected track.",
+                data={"uri": track_uri},
+            )
+        except Exception as e:
+            logger.error(f"Failed to play URI track: {str(e)}", exc_info=True)
+            if self._check_premium_error(e):
+                raise PremiumRequiredError(
+                    "Playing specific tracks requires Spotify Premium",
+                    feature="Track playback",
+                )
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                "Failed to play selected track",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
+
+    @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_track(
         self: Any,
         query: str,

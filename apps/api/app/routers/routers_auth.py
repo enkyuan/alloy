@@ -4,11 +4,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.user import User
+from app.routers.dependencies import get_current_supabase_user
 from app.schemas.auth import (
     TokenResponse,
     RefreshTokenRequest,
@@ -28,35 +30,10 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # Authentication flow: iOS app -> Supabase SDK -> /auth/sync endpoint
 
 
-async def _get_supabase_user_from_authorization(
-    authorization: str | None,
-    *,
-    context: str,
-) -> dict[str, Any]:
-    """Validate Bearer auth and return Supabase user payload."""
-    if not authorization or not authorization.startswith("Bearer "):
-        logger.warning(
-            "Missing or invalid authorization header", extra={"context": context}
-        )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-
-    access_token = authorization.replace("Bearer ", "")
-    supabase_user = await supabase_auth_service.get_user(access_token)
-    if not supabase_user:
-        logger.warning("Invalid or expired token provided", extra={"context": context})
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-
-    return supabase_user
-
-
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+async def refresh_token(
+    request: RefreshTokenRequest, db: AsyncSession = Depends(get_db)
+):
     """Refresh access token using refresh token.
 
     Args:
@@ -84,7 +61,8 @@ async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_
                 detail="User not found in Supabase",
             )
 
-        user = db.query(User).filter(User.id == supabase_user["id"]).first()
+        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        user = result.scalar_one_or_none()
 
         if not user:
             logger.warning(f"User not found in database: {supabase_user['id']}")
@@ -107,12 +85,15 @@ async def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_
         logger.error(f"Token refresh failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Token refresh failed: {str(e)}",
+            detail="Token refresh failed",
         )
 
 
 @router.post("/sync", response_model=UserResponse)
-async def sync_user(authorization: str = Header(None), db: Session = Depends(get_db)):
+async def sync_user(
+    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    db: AsyncSession = Depends(get_db),
+):
     """Sync user from Supabase to our database.
 
     Called by iOS app after successful Supabase authentication.
@@ -129,13 +110,9 @@ async def sync_user(authorization: str = Header(None), db: Session = Depends(get
         HTTPException: If authentication fails or sync error occurs
     """
     try:
-        supabase_user = await _get_supabase_user_from_authorization(
-            authorization,
-            context="/auth/sync",
-        )
-
         # Get or create user in our database
-        user = db.query(User).filter(User.id == supabase_user["id"]).first()
+        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        user = result.scalar_one_or_none()
 
         if not user:
             # Create new user
@@ -172,8 +149,8 @@ async def sync_user(authorization: str = Header(None), db: Session = Depends(get
                     "full_name"
                 ) or supabase_user.get("user_metadata", {}).get("name")
 
-        db.commit()
-        db.refresh(user)
+        await db.commit()
+        await db.refresh(user)
 
         logger.info(f"Successfully synced user: {user.email}")
         return UserResponse.model_validate(user)
@@ -184,13 +161,14 @@ async def sync_user(authorization: str = Header(None), db: Session = Depends(get
         logger.error(f"Failed to sync user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to sync user: {str(e)}",
+            detail="Failed to sync user",
         )
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
-    authorization: str = Header(None), db: Session = Depends(get_db)
+    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get current authenticated user.
 
@@ -205,13 +183,9 @@ async def get_current_user(
         HTTPException: If user not found or token invalid
     """
     try:
-        supabase_user = await _get_supabase_user_from_authorization(
-            authorization,
-            context="/auth/me",
-        )
-
         # Get user from database
-        user = db.query(User).filter(User.id == supabase_user["id"]).first()
+        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        user = result.scalar_one_or_none()
 
         if not user:
             logger.warning(f"User not found in database: {supabase_user['id']}")
@@ -228,5 +202,5 @@ async def get_current_user(
         logger.error(f"Failed to get user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get user: {str(e)}",
+            detail="Failed to get user",
         )

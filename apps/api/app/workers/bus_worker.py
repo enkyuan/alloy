@@ -9,6 +9,7 @@ from app.core.events import (
     ToolResult,
     UserTranscriptionReceived,
 )
+from app.core.prompts import ASSISTANT_SYSTEM_INSTRUCTION
 from app.services.agent.adapters.redis_io import (
     RedisPublisher,
     RedisPubSubInput,
@@ -18,12 +19,6 @@ from app.services.agent.core.bridge import Bridge
 from app.services.agent.core.bus import Bus, Message
 from app.services.agent.nodes.node_agentic_reasoning import AgentReasoningNode
 from app.services.pipeline.helpers.tool_tasks import execute_tool_call
-
-SYSTEM_INSTRUCTION = (
-    "You are a helpful voice assistant. "
-    "Use tools to control integrations when needed. "
-    "If a tool result is provided, respond succinctly to the user."
-)
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +89,8 @@ async def run() -> None:
     tool_result_input = RedisPubSubInput(allowed_types={"tool.result"})
 
     reasoning_node = AgentReasoningNode(
-        system_prompt=SYSTEM_INSTRUCTION, node_id="agent"
+        system_prompt=ASSISTANT_SYSTEM_INSTRUCTION,
+        node_id="agent",
     )
     logger.info("Initialized reasoning node", extra={"node_id": reasoning_node.id})
 
