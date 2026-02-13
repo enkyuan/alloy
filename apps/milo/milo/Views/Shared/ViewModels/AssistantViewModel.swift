@@ -62,6 +62,10 @@ class AssistantViewModel {
             Task { @MainActor in
                 print("Final transcription received: \"\(text)\"")
 
+                let isNewConversation = self.conversationService.messages.isEmpty
+                self.conversationService.beginSendCycle(
+                    isNewConversation: isNewConversation
+                )
                 self.conversationService.addUserMessage(text)
                 print(
                     "Message count after adding user message: \(self.conversationService.messages.count)"

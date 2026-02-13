@@ -8,10 +8,9 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var lastLoggedScrollTopOffset: CGFloat?
+    @State private var messageListState = ChatMessageListState()
+
     private let miniPlayerId = "mini-player"
-    private let scrollTopProbeId = "scroll-top-probe"
-    private let scrollCoordinateSpace = "assistant-scroll-space"
     private let transcriptionBubbleId = "transcription-bubble"
     private static let debugTimestampFormatter = ISO8601DateFormatter()
 
@@ -83,6 +82,30 @@ struct AssistantView: View {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
 
+    private var latestUserMessageIndex: Int? {
+        messages.lastIndex(where: { $0.isUser })
+    }
+
+    private var latestConversationAnchorId: String? {
+        if isActiveSession {
+            return transcriptionBubbleId
+        }
+        if let latestUserAnchorId = viewModel.conversationService.latestUserAnchorMessageId {
+            return messageItemId(for: latestUserAnchorId)
+        }
+        if currentPlaybackItem != nil {
+            return miniPlayerId
+        }
+        guard let latestMessage = messages.last else {
+            return nil
+        }
+        return messageItemId(for: latestMessage.id)
+    }
+
+    private var messageListBottomInset: CGFloat {
+        messageListState.blankSize + messageListState.composerHeight
+    }
+
     private func messageItemId(for id: UUID) -> String {
         "message-\(id.uuidString)"
     }
@@ -91,21 +114,6 @@ struct AssistantView: View {
         guard Environment.isDebugLoggingEnabled else { return }
         let timestamp = Self.debugTimestampFormatter.string(from: Date())
         print("[AssistantAutoScroll][\(timestamp)] \(message)")
-    }
-
-    private func logScrollTopOffsetIfNeeded(_ offset: CGFloat, reason: String) {
-        let rounded = (offset * 10).rounded() / 10
-        if let lastLoggedScrollTopOffset,
-            abs(lastLoggedScrollTopOffset - rounded) < 6
-        {
-            return
-        }
-        lastLoggedScrollTopOffset = rounded
-        let timestamp = Self.debugTimestampFormatter.string(from: Date())
-        print(
-            "[AssistantAutoScroll][\(timestamp)] scroll-offset reason=\(reason) topOffset=\(rounded) " +
-                "activeSession=\(isActiveSession) anchor=\(latestConversationAnchorId ?? "none")"
-        )
     }
 
     private func shortText(_ text: String, maxLength: Int = 42) -> String {
@@ -128,29 +136,34 @@ struct AssistantView: View {
         return "[" + items.joined(separator: ", ") + "]"
     }
 
-    private var latestRequestMessageItemId: String? {
-        guard let latestUserMessage = messages.last(where: { $0.isUser }) else {
-            return nil
-        }
-        return messageItemId(for: latestUserMessage.id)
+    private func useMessageBlankSize(reason: String) {
+        let includeMiniPlayerInAnchorBlock =
+            currentPlaybackItem != nil && viewModel.conversationService.latestUserAnchorMessageId == nil
+
+        messageListState.updateBlankSize(
+            messages: messages,
+            latestUserAnchorMessageId: viewModel.conversationService.latestUserAnchorMessageId,
+            isActiveSession: isActiveSession,
+            includeMiniPlayerInAnchorBlock: includeMiniPlayerInAnchorBlock
+        )
+
+        autoScrollDebug(
+            "blank-size reason=\(reason) blank=\(String(format: "%.1f", messageListState.blankSize)) "
+                + "container=\(String(format: "%.1f", messageListState.containerHeight)) "
+                + "messages=\(messages.count) activeSession=\(isActiveSession)"
+        )
     }
 
-    private var latestUserMessageIndex: Int? {
-        messages.lastIndex(where: { $0.isUser })
-    }
-
-    private var latestConversationAnchorId: String? {
-        if currentPlaybackItem != nil {
-            return miniPlayerId
-        }
-        if isActiveSession {
-            return transcriptionBubbleId
-        }
-        if let latestRequestMessageItemId {
-            return latestRequestMessageItemId
-        }
-        guard let latestMessage = messages.last else { return nil }
-        return messageItemId(for: latestMessage.id)
+    private func useScrollMessageListFromComposerSizeUpdates(
+        using proxy: ScrollViewProxy,
+        animated: Bool = true,
+        reason: String
+    ) {
+        pinLatestConversationToTop(
+            using: proxy,
+            animated: animated,
+            reason: reason
+        )
     }
 
     private func pinLatestConversationToTop(
@@ -158,25 +171,26 @@ struct AssistantView: View {
         animated: Bool = true,
         reason: String
     ) {
-        guard let latestConversationAnchorId else {
+        guard let anchorId = latestConversationAnchorId else {
             autoScrollDebug(
-                "pin-skip reason=\(reason) no-anchor count=\(messages.count) " +
-                    "activeSession=\(isActiveSession)"
+                "pin-skip reason=\(reason) no-anchor count=\(messages.count) "
+                    + "activeSession=\(isActiveSession)"
             )
             return
         }
+
         autoScrollDebug(
-            "pin-start reason=\(reason) anchor=\(latestConversationAnchorId) " +
-                "animated=\(animated) activeSession=\(isActiveSession) " +
-                "count=\(messages.count) tail=\(debugMessagesSummary())"
+            "pin-start reason=\(reason) anchor=\(anchorId) animated=\(animated) "
+                + "activeSession=\(isActiveSession) count=\(messages.count) "
+                + "tail=\(debugMessagesSummary())"
         )
 
         let scrollAction = {
-            proxy.scrollTo(latestConversationAnchorId, anchor: .top)
+            proxy.scrollTo(anchorId, anchor: .top)
         }
 
         if animated {
-            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                 scrollAction()
             }
         } else {
@@ -184,26 +198,60 @@ struct AssistantView: View {
         }
 
         autoScrollDebug(
-            "pin-complete reason=\(reason) anchor=\(latestConversationAnchorId)"
+            "pin-complete reason=\(reason) anchor=\(anchorId)"
         )
     }
 
     @ViewBuilder
-    private func messageRowView(for message: Message) -> some View {
-        MessageRow(message: message)
+    private func messageRowView(for message: Message, index: Int) -> some View {
+        let shouldRunFirstUserAnimation = viewModel.conversationService
+            .shouldRunFirstUserAnimation(for: message, index: index)
+        let shouldFadeFirstAssistant =
+            viewModel.conversationService.pendingFirstAssistantRevealMessageId == message.id
+
+        ComposableMessageRow(message: message)
+            .modifier(
+                FirstUserSendAnimationModifier(
+                    isEnabled: shouldRunFirstUserAnimation,
+                    shouldStartAnimation: viewModel.conversationService.isMessageSendAnimating,
+                    itemHeight: messageListState.height(for: message.id),
+                    containerHeight: messageListState.containerHeight,
+                    onCompleted: {
+                        viewModel.conversationService.completeFirstUserSendAnimationIfNeeded()
+                    }
+                )
+            )
+            .modifier(
+                FirstAssistantRevealModifier(
+                    isEnabled: shouldFadeFirstAssistant,
+                    didUserMessageAnimate: viewModel.conversationService
+                        .didLatestFirstUserAnimationComplete,
+                    onReveal: {
+                        _ = viewModel.conversationService.consumeFirstAssistantRevealIfNeeded(
+                            for: message.id)
+                    }
+                )
+            )
             .id(messageItemId(for: message.id))
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: AssistantMessageHeightPreferenceKey.self,
+                        value: [message.id: geometry.size.height]
+                    )
+                }
+            )
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .onAppear {
                 autoScrollDebug(
-                    "row-appear id=\(messageItemId(for: message.id)) " +
-                        "role=\(message.isUser ? "user" : "assistant") " +
-                        "text=\"\(shortText(message.text))\""
+                    "row-appear id=\(messageItemId(for: message.id)) "
+                        + "role=\(message.role.rawValue) text=\"\(shortText(message.text))\""
                 )
             }
             .onDisappear {
                 autoScrollDebug(
-                    "row-disappear id=\(messageItemId(for: message.id)) " +
-                        "role=\(message.isUser ? "user" : "assistant")"
+                    "row-disappear id=\(messageItemId(for: message.id)) "
+                        + "role=\(message.role.rawValue)"
                 )
             }
     }
@@ -227,24 +275,20 @@ struct AssistantView: View {
         )
         .padding(.horizontal, 16)
         .id(miniPlayerId)
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: AssistantMiniPlayerHeightPreferenceKey.self,
+                    value: geometry.size.height
+                )
+            }
+        )
     }
 
     @ViewBuilder private var chatView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 16) {
-                    Color.clear
-                        .frame(height: 1)
-                        .id(scrollTopProbeId)
-                        .background(
-                            GeometryReader { geometry in
-                                Color.clear.preference(
-                                    key: AssistantScrollTopOffsetPreferenceKey.self,
-                                    value: geometry.frame(in: .named(scrollCoordinateSpace)).minY
-                                )
-                            }
-                        )
-
+                LazyVStack(spacing: ChatMessageListState.messageSpacing) {
                     if messages.isEmpty && !isActiveSession && currentPlaybackItem == nil {
                         AssistantGreetingView()
                     }
@@ -254,23 +298,25 @@ struct AssistantView: View {
                         let olderMessages = Array(messages[..<splitIndex])
                         let latestRequestAndAfter = Array(messages[splitIndex...])
 
-                        ForEach(olderMessages) { message in
-                            messageRowView(for: message)
+                        ForEach(Array(olderMessages.enumerated()), id: \.element.id) {
+                            offset,
+                            message in
+                            messageRowView(for: message, index: offset)
                         }
 
                         miniPlayerView(item: playbackItem)
 
-                        ForEach(latestRequestAndAfter) { message in
-                            messageRowView(for: message)
+                        ForEach(Array(latestRequestAndAfter.enumerated()), id: \.element.id) {
+                            offset,
+                            message in
+                            messageRowView(for: message, index: splitIndex + offset)
                         }
                     } else {
-                        ForEach(messages) { message in
-                            messageRowView(for: message)
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                            messageRowView(for: message, index: index)
                         }
                     }
 
-                    // Keep timeline order chronological. While recording, the live request
-                    // bubble is the newest item and should sit after prior history.
                     if isActiveSession {
                         TranscriptionBubble(
                             isConnecting: viewModel.isConnecting,
@@ -280,6 +326,14 @@ struct AssistantView: View {
                         )
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .id(transcriptionBubbleId)
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: AssistantTranscriptionHeightPreferenceKey.self,
+                                    value: geometry.size.height
+                                )
+                            }
+                        )
                         .onAppear {
                             autoScrollDebug(
                                 "transcription-appear text=\"\(shortText(viewModel.partialTranscription))\""
@@ -289,14 +343,27 @@ struct AssistantView: View {
                             autoScrollDebug("transcription-disappear")
                         }
                     }
+
+                    // Dynamic blank-size spacer. This mirrors contentInset-based behavior in UIKit:
+                    // keep the latest request/response block floating at the top as heights change.
+                    Color.clear
+                        .frame(height: messageListBottomInset)
                 }
-                .padding(.top, 4)
-                .padding(.bottom, 140)
+                .padding(.top, ChatMessageListState.listTopPadding)
             }
-            .coordinateSpace(name: scrollCoordinateSpace)
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: AssistantContainerHeightPreferenceKey.self,
+                        value: geometry.size.height
+                    )
+                }
+            )
             .onAppear {
+                messageListState.setComposerHeight(140)
+                useMessageBlankSize(reason: "onAppear")
                 DispatchQueue.main.async {
-                    pinLatestConversationToTop(
+                    useScrollMessageListFromComposerSizeUpdates(
                         using: proxy,
                         animated: false,
                         reason: "onAppear"
@@ -304,25 +371,22 @@ struct AssistantView: View {
                 }
             }
             .onChange(of: messageIdList) { _, _ in
-                autoScrollDebug(
-                    "message-change count=\(messages.count) activeSession=\(isActiveSession) " +
-                        "tail=\(debugMessagesSummary())"
-                )
+                _ = messageListState.pruneMessageHeights(keeping: Set(messageIdList))
+                useMessageBlankSize(reason: "messageIdList")
                 DispatchQueue.main.async {
-                    pinLatestConversationToTop(
+                    useScrollMessageListFromComposerSizeUpdates(
                         using: proxy,
                         reason: "messageIdList"
                     )
                 }
             }
-            .onChange(of: isActiveSession) { _, _ in
-                autoScrollDebug(
-                    "session-change activeSession=\(isActiveSession) " +
-                        "partial=\"\(shortText(viewModel.partialTranscription))\" " +
-                        "tail=\(debugMessagesSummary())"
-                )
+            .onChange(of: isActiveSession) { _, isNowActive in
+                if !isNowActive {
+                    _ = messageListState.updateTranscriptionHeight(0)
+                }
+                useMessageBlankSize(reason: "isActiveSession")
                 DispatchQueue.main.async {
-                    pinLatestConversationToTop(
+                    useScrollMessageListFromComposerSizeUpdates(
                         using: proxy,
                         reason: "isActiveSession"
                     )
@@ -332,9 +396,46 @@ struct AssistantView: View {
                 autoScrollDebug(
                     "partial-change text=\"\(shortText(newValue))\" activeSession=\(isActiveSession)"
                 )
+                useMessageBlankSize(reason: "partialTranscription")
+                if isActiveSession {
+                    DispatchQueue.main.async {
+                        useScrollMessageListFromComposerSizeUpdates(
+                            using: proxy,
+                            reason: "partialTranscription"
+                        )
+                    }
+                }
             }
-            .onPreferenceChange(AssistantScrollTopOffsetPreferenceKey.self) { topOffset in
-                logScrollTopOffsetIfNeeded(topOffset, reason: "layout")
+            .onChange(of: viewModel.conversationService.didLatestFirstUserAnimationComplete) {
+                _,
+                _ in
+                useMessageBlankSize(reason: "firstUserAnimationComplete")
+            }
+            .onChange(of: currentPlaybackItem != nil) { _, hasMiniPlayer in
+                if !hasMiniPlayer {
+                    _ = messageListState.updateMiniPlayerHeight(0)
+                }
+                useMessageBlankSize(reason: "miniPlayerVisibility")
+            }
+            .onPreferenceChange(AssistantContainerHeightPreferenceKey.self) { height in
+                if messageListState.updateContainerHeight(height) {
+                    useMessageBlankSize(reason: "containerHeight")
+                }
+            }
+            .onPreferenceChange(AssistantMessageHeightPreferenceKey.self) { heights in
+                if messageListState.updateMessageHeights(heights) {
+                    useMessageBlankSize(reason: "messageHeights")
+                }
+            }
+            .onPreferenceChange(AssistantMiniPlayerHeightPreferenceKey.self) { height in
+                if messageListState.updateMiniPlayerHeight(height) {
+                    useMessageBlankSize(reason: "miniPlayerHeight")
+                }
+            }
+            .onPreferenceChange(AssistantTranscriptionHeightPreferenceKey.self) { height in
+                if messageListState.updateTranscriptionHeight(height) {
+                    useMessageBlankSize(reason: "transcriptionHeight")
+                }
             }
         }
     }
@@ -391,13 +492,343 @@ struct AssistantView: View {
     }
 }
 
-private struct AssistantScrollTopOffsetPreferenceKey: PreferenceKey {
+// MARK: - Message List State
+
+@MainActor
+@Observable
+private final class ChatMessageListState {
+    static let listTopPadding: CGFloat = 4
+    static let messageSpacing: CGFloat = 16
+    private static let minUpdateDelta: CGFloat = 0.5
+
+    var composerHeight: CGFloat = 140
+    var containerHeight: CGFloat = 0
+    var blankSize: CGFloat = 0
+    var miniPlayerHeight: CGFloat = 0
+    var transcriptionHeight: CGFloat = 0
+
+    private(set) var messageHeights: [UUID: CGFloat] = [:]
+
+    func height(for messageId: UUID) -> CGFloat {
+        messageHeights[messageId] ?? 0
+    }
+
+    @discardableResult
+    func setComposerHeight(_ value: CGFloat) -> Bool {
+        let normalized = max(0, value)
+        if abs(composerHeight - normalized) < Self.minUpdateDelta {
+            return false
+        }
+        composerHeight = normalized
+        return true
+    }
+
+    @discardableResult
+    func updateContainerHeight(_ value: CGFloat) -> Bool {
+        let normalized = max(0, value)
+        if abs(containerHeight - normalized) < Self.minUpdateDelta {
+            return false
+        }
+        containerHeight = normalized
+        return true
+    }
+
+    @discardableResult
+    func updateMiniPlayerHeight(_ value: CGFloat) -> Bool {
+        let normalized = max(0, value)
+        if abs(miniPlayerHeight - normalized) < Self.minUpdateDelta {
+            return false
+        }
+        miniPlayerHeight = normalized
+        return true
+    }
+
+    @discardableResult
+    func updateTranscriptionHeight(_ value: CGFloat) -> Bool {
+        let normalized = max(0, value)
+        if abs(transcriptionHeight - normalized) < Self.minUpdateDelta {
+            return false
+        }
+        transcriptionHeight = normalized
+        return true
+    }
+
+    @discardableResult
+    func updateMessageHeights(_ newHeights: [UUID: CGFloat]) -> Bool {
+        var didChange = false
+        for (id, value) in newHeights {
+            let normalized = max(0, value)
+            let oldValue = messageHeights[id] ?? -1
+            if abs(oldValue - normalized) >= Self.minUpdateDelta {
+                messageHeights[id] = normalized
+                didChange = true
+            }
+        }
+        return didChange
+    }
+
+    @discardableResult
+    func pruneMessageHeights(keeping ids: Set<UUID>) -> Bool {
+        let previousCount = messageHeights.count
+        messageHeights = messageHeights.filter { ids.contains($0.key) }
+        return previousCount != messageHeights.count
+    }
+
+    func updateBlankSize(
+        messages: [Message],
+        latestUserAnchorMessageId: UUID?,
+        isActiveSession: Bool,
+        includeMiniPlayerInAnchorBlock: Bool
+    ) {
+        guard containerHeight > 0 else {
+            blankSize = 0
+            return
+        }
+
+        let anchorIndex: Int?
+        if let latestUserAnchorMessageId,
+            let locatedIndex = messages.firstIndex(where: { $0.id == latestUserAnchorMessageId })
+        {
+            anchorIndex = locatedIndex
+        } else if !messages.isEmpty {
+            anchorIndex = messages.count - 1
+        } else {
+            anchorIndex = nil
+        }
+
+        var requestBlockHeight: CGFloat = 0
+
+        if let anchorIndex {
+            let trailingMessages = messages[anchorIndex...]
+            var measuredRows = 0
+
+            for message in trailingMessages {
+                guard let rowHeight = messageHeights[message.id], rowHeight > 0 else {
+                    continue
+                }
+                requestBlockHeight += rowHeight
+                measuredRows += 1
+            }
+
+            if measuredRows > 1 {
+                requestBlockHeight += CGFloat(measuredRows - 1) * Self.messageSpacing
+            }
+        }
+
+        if isActiveSession, transcriptionHeight > 0 {
+            if requestBlockHeight > 0 {
+                requestBlockHeight += Self.messageSpacing
+            }
+            requestBlockHeight += transcriptionHeight
+        }
+
+        if includeMiniPlayerInAnchorBlock, miniPlayerHeight > 0 {
+            if requestBlockHeight > 0 {
+                requestBlockHeight += Self.messageSpacing
+            }
+            requestBlockHeight += miniPlayerHeight
+        }
+
+        // Keep the latest active request/response block anchored at the top.
+        let targetBlank = max(0, containerHeight - requestBlockHeight - Self.listTopPadding - 8)
+        if abs(blankSize - targetBlank) >= Self.minUpdateDelta {
+            blankSize = targetBlank
+        }
+    }
+
+}
+
+// MARK: - Preferences
+
+private struct AssistantContainerHeightPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
+
+private struct AssistantMiniPlayerHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct AssistantTranscriptionHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct AssistantMessageHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGFloat] = [:]
+
+    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+// MARK: - Row Composition
+
+private struct ComposableMessageRow: View {
+    let message: Message
+
+    @State private var opacity: Double = 0
+    @State private var blur: CGFloat = 10
+    @State private var offset: CGFloat = 20
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if message.isUser {
+                Spacer()
+            }
+
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                AnimatedText(
+                    fadeIn: message.text,
+                    opacity: opacity,
+                    blur: blur,
+                    offset: offset
+                )
+            }
+            .onAppear {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    opacity = 1.0
+                    blur = 0
+                    offset = 0
+                }
+            }
+
+            if !message.isUser {
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+}
+
+private struct FirstUserSendAnimationModifier: ViewModifier {
+    let isEnabled: Bool
+    let shouldStartAnimation: Bool
+    let itemHeight: CGFloat
+    let containerHeight: CGFloat
+    let onCompleted: () -> Void
+
+    @State private var translateY: CGFloat = 0
+    @State private var opacity: Double = 1
+    @State private var hasStarted = false
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: isEnabled ? translateY : 0)
+            .opacity(isEnabled ? opacity : 1)
+            .onAppear {
+                if !isEnabled {
+                    reset()
+                }
+                startIfPossible()
+            }
+            .onChange(of: shouldStartAnimation) { _, _ in
+                startIfPossible()
+            }
+            .onChange(of: itemHeight) { _, _ in
+                startIfPossible()
+            }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled {
+                    reset()
+                }
+            }
+    }
+
+    private func startIfPossible() {
+        guard isEnabled, shouldStartAnimation, !hasStarted, itemHeight > 0 else {
+            return
+        }
+
+        hasStarted = true
+
+        let availableHeight = containerHeight > 0 ? containerHeight : 420
+        let startOffset = max(24, (availableHeight * 0.62) - itemHeight)
+
+        translateY = startOffset
+        opacity = 0
+
+        withAnimation(.easeOut(duration: 0.2)) {
+            opacity = 1
+        }
+
+        withAnimation(.spring(response: 0.46, dampingFraction: 0.82, blendDuration: 0.2)) {
+            translateY = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+            onCompleted()
+        }
+    }
+
+    private func reset() {
+        translateY = 0
+        opacity = 1
+        hasStarted = false
+    }
+}
+
+private struct FirstAssistantRevealModifier: ViewModifier {
+    let isEnabled: Bool
+    let didUserMessageAnimate: Bool
+    let onReveal: () -> Void
+
+    @State private var revealOpacity: Double = 1
+    @State private var hasRevealed = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isEnabled ? revealOpacity : 1)
+            .onAppear {
+                if isEnabled {
+                    revealOpacity = 0
+                } else {
+                    revealOpacity = 1
+                    hasRevealed = true
+                }
+                revealIfNeeded()
+            }
+            .onChange(of: didUserMessageAnimate) { _, _ in
+                revealIfNeeded()
+            }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled {
+                    revealOpacity = 1
+                    hasRevealed = true
+                } else {
+                    revealOpacity = didUserMessageAnimate ? 1 : 0
+                    hasRevealed = didUserMessageAnimate
+                    revealIfNeeded()
+                }
+            }
+    }
+
+    private func revealIfNeeded() {
+        guard isEnabled, didUserMessageAnimate, !hasRevealed else {
+            return
+        }
+
+        hasRevealed = true
+        onReveal()
+
+        withAnimation(.easeOut(duration: 0.35)) {
+            revealOpacity = 1
+        }
+    }
+}
+
+// MARK: - Empty State
 
 private struct AssistantGreetingView: View {
     @State private var titleOpacity: Double = 0
@@ -448,7 +879,6 @@ private struct AssistantGreetingView: View {
                 subtitleOpacity = 1.0
             }
 
-            // Show first example after subtitle finishes fading in
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 startExampleCycle()
             }
@@ -500,41 +930,5 @@ private struct AnimatedExampleRow: View {
                 offset = 0
             }
         }
-    }
-}
-
-private struct MessageRow: View {
-    let message: Message
-    @State private var opacity: Double = 0
-    @State private var blur: CGFloat = 10
-    @State private var offset: CGFloat = 20
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if message.isUser {
-                Spacer()
-            }
-            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                AnimatedText(
-                    fadeIn: message.text,
-                    opacity: opacity,
-                    blur: blur,
-                    offset: offset
-                )
-            }
-            .onAppear {
-                withAnimation(.easeOut(duration: 0.5)) {
-                    opacity = 1.0
-                    blur = 0
-                    offset = 0
-                }
-            }
-
-            if !message.isUser {
-                Spacer()
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
     }
 }
