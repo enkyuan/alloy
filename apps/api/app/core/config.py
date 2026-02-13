@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Spotify OAuth
     SPOTIFY_CLIENT_ID: Optional[str] = None
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
-    SPOTIFY_REDIRECT_URI: str = "havenos://spotify/callback"
+    SPOTIFY_REDIRECT_URI: str = "milo://spotify/callback"
 
     # Discord OAuth
     DISCORD_CLIENT_ID: Optional[str] = None

@@ -30,7 +30,6 @@ def map_intent_to_tool_call(intent: CommandIntent) -> tuple[str, dict[str, Any]]
         play_track_args: dict[str, Any] = {"query": str(track)}
         if artist:
             play_track_args["artist"] = str(artist)
-            play_track_args["query"] = f"{track} by {artist}"
         return "spotify.play", play_track_args
 
     if intent.intent == "play_album":

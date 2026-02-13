@@ -56,16 +56,27 @@ struct MiniPlayer: View {
     var onRoute: (() -> Void)?
 
     @State private var appear = false
+    @State private var cardScale: CGFloat = 1.0
+    @State private var cardOpacity: Double = 1.0
+    @State private var burstProgress: CGFloat = 0
+    @State private var isBurstAnimating = false
 
     var body: some View {
         if let item {
+            let trackKey = trackIdentity(for: item)
             playerCard(item: item)
-                .opacity(appear ? 1 : 0)
+                .opacity(appear ? cardOpacity : 0)
+                .scaleEffect(cardScale)
                 .offset(y: appear ? 0 : 20)
+                .overlay(burstOverlay(progress: burstProgress))
                 .onAppear {
                     withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) {
                         appear = true
                     }
+                }
+                .onChange(of: trackKey) { oldValue, newValue in
+                    guard !oldValue.isEmpty, oldValue != newValue else { return }
+                    triggerTrackChangeBurst(oldTrack: oldValue, newTrack: newValue)
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
@@ -156,46 +167,105 @@ struct MiniPlayer: View {
     }
 
     private func controlsRow(item: MusicPlaybackItem) -> some View {
-        HStack {
-            Spacer(minLength: 0)
+        ZStack {
+            HStack(spacing: 20) {
+                Button(action: { onPrevious?() }) {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.plain)
 
-            Button(action: { onPrevious?() }) {
-                Image(systemName: "backward.fill")
-                    .font(.system(size: 21, weight: .semibold))
-                    .frame(width: 38, height: 38)
+                Button(action: { onPlayPause?() }) {
+                    Image(systemName: item.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .frame(width: 46, height: 46)
+                        .background(Color.white.opacity(0.22), in: Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { onNext?() }) {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 21, weight: .semibold))
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
 
-            Button(action: { onPlayPause?() }) {
-                Image(systemName: item.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 22, weight: .bold))
-                    .frame(width: 46, height: 46)
-                    .background(Color.white.opacity(0.22), in: Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                    )
+            HStack {
+                Spacer()
+                Button(action: { onRoute?() }) {
+                    Image(systemName: "airplayaudio")
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: 32, height: 32)
+                        .background(Color.white.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-
-            Button(action: { onNext?() }) {
-                Image(systemName: "forward.fill")
-                    .font(.system(size: 21, weight: .semibold))
-                    .frame(width: 38, height: 38)
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 20)
-
-            Button(action: { onRoute?() }) {
-                Image(systemName: "airplayaudio")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(.plain)
         }
         .foregroundStyle(.white)
+    }
+
+    private func trackIdentity(for item: MusicPlaybackItem) -> String {
+        let normalizedTitle = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedArtist = item.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return "\(normalizedTitle)|\(normalizedArtist)"
+    }
+
+    private func triggerTrackChangeBurst(oldTrack: String, newTrack: String) {
+        guard !isBurstAnimating else { return }
+        isBurstAnimating = true
+        print("MiniPlayer: track changed from \(oldTrack) to \(newTrack), running burst animation")
+
+        burstProgress = 0
+        withAnimation(.easeIn(duration: 0.16)) {
+            burstProgress = 1
+            cardScale = 0.84
+            cardOpacity = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            burstProgress = 0
+            cardScale = 0.84
+            cardOpacity = 0
+            withAnimation(.spring(response: 0.44, dampingFraction: 0.78)) {
+                cardScale = 1
+                cardOpacity = 1
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+                isBurstAnimating = false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func burstOverlay(progress: CGFloat) -> some View {
+        let normalized = max(0, min(progress, 1))
+        let ringSize = CGFloat(12) + normalized * 24
+        let travel = CGFloat(14) + normalized * 32
+        let strokeOpacity = Double(max(0, 1 - normalized)) * 0.95
+
+        ZStack {
+            ForEach(0..<8, id: \.self) { index in
+                let angle = (Double(index) / 8.0) * .pi * 2.0
+                let x = CGFloat(cos(angle)) * travel
+                let y = CGFloat(sin(angle)) * travel
+
+                Circle()
+                    .stroke(Color.white.opacity(strokeOpacity), lineWidth: 1.8)
+                    .frame(width: ringSize, height: ringSize)
+                    .offset(x: x, y: y)
+            }
+        }
+        .opacity(normalized > 0 ? 1 : 0)
+        .allowsHitTesting(false)
     }
 
     private func backgroundArtwork(item: MusicPlaybackItem) -> some View {

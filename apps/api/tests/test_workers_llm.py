@@ -89,6 +89,34 @@ async def test_workers_llm_fast_path_command(
 
 
 @pytest.mark.asyncio
+async def test_workers_llm_fast_path_uses_client_parse_hint(
+    mock_redis_worker, mock_taskiq, mock_execute_tool
+):
+    user_id = "test_user_hint_fast_path"
+    transcription = UserTranscriptionReceived(
+        content="pause it",
+        parse_hint={
+            "intent": "pause",
+            "confidence": 0.96,
+            "source": "ios.foundation_models",
+        },
+    )
+
+    data = {
+        "type": "user.transcription",
+        "user_id": user_id,
+        "payload": transcription.model_dump_json(),
+    }
+
+    await llm_worker.handle_message(data)
+
+    mock_execute_tool.assert_called_once()
+    args = mock_execute_tool.call_args
+    assert args[0][0] == user_id
+    assert args[0][1] == "spotify.pause"
+
+
+@pytest.mark.asyncio
 async def test_workers_llm_chat_response(mock_redis_worker, mock_gemini):
     user_id = "test_user_llm"
     transcription = "Hello, how are you?"

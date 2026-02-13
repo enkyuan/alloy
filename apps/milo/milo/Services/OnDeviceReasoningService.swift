@@ -6,7 +6,25 @@ import Foundation
 
 actor OnDeviceReasoningService {
     static let shared = OnDeviceReasoningService()
-    private let fallbackParser = OnDeviceCommandParser.shared
+
+    struct ParseHint: Sendable {
+        let intent: String
+        let query: String?
+        let confidence: Double
+        let source: String
+
+        var asDictionary: [String: Any] {
+            var payload: [String: Any] = [
+                "intent": intent,
+                "confidence": confidence,
+                "source": source,
+            ]
+            if let query, !query.isEmpty {
+                payload["query"] = query
+            }
+            return payload
+        }
+    }
 
     #if canImport(FoundationModels)
         @available(iOS 26.0, *)
@@ -15,35 +33,70 @@ actor OnDeviceReasoningService {
 
     private init() {}
 
-    func parseCommand(_ text: String) async -> OnDeviceCommandParser.CommandType {
+    func parseCommandHint(
+        _ text: String,
+        timeoutMilliseconds: UInt64 = 160
+    ) async -> ParseHint? {
         #if canImport(FoundationModels)
             if #available(iOS 26.0, *) {
-                if let parsed = await parseWithFoundationModels(text) {
-                    return parsed
+                let model = SystemLanguageModel.default
+                guard case .available = model.availability else {
+                    return nil
                 }
+                return await parseWithTimeout(
+                    text: text,
+                    timeoutMilliseconds: timeoutMilliseconds
+                )
             }
         #endif
 
-        return fallbackParser.parseCommand(text)
+        return nil
     }
 
     #if canImport(FoundationModels)
         @available(iOS 26.0, *)
-        private func parseWithFoundationModels(
-            _ text: String
-        ) async -> OnDeviceCommandParser.CommandType? {
-            let model = SystemLanguageModel.default
-            guard case .available = model.availability else {
+        private func parseWithTimeout(
+            text: String,
+            timeoutMilliseconds: UInt64
+        ) async -> ParseHint? {
+            let parseTask = Task { [weak self] () -> ParseHint? in
+                guard let self else { return nil }
+                return await self.parseWithFoundationModels(text)
+            }
+            let timeoutTask = Task { () -> ParseHint? in
+                try? await Task.sleep(
+                    nanoseconds: timeoutMilliseconds * 1_000_000
+                )
                 return nil
             }
 
+            let result = await withTaskGroup(of: ParseHint?.self) { group in
+                group.addTask { await parseTask.value }
+                group.addTask { await timeoutTask.value }
+                guard let first = await group.next() else {
+                    return nil
+                }
+                group.cancelAll()
+                return first
+            }
+
+            parseTask.cancel()
+            timeoutTask.cancel()
+            return result
+        }
+
+        @available(iOS 26.0, *)
+        private func parseWithFoundationModels(_ text: String) async -> ParseHint? {
             let session = getSession()
             let prompt = """
                 Parse the user's command and respond with JSON only.
                 Valid intents: play, pause, resume, next, previous, unknown.
                 JSON schema:
-                {"intent":"play|pause|resume|next|previous|unknown","query":"optional"}
-                If the command is play with no specific song, set query to "".
+                {"intent":"play|pause|resume|next|previous|unknown","query":"optional","confidence":0.0}
+                Rules:
+                - confidence must be 0.0 to 1.0
+                - confidence should be high only for explicit intent language
+                - if the command is play with no specific song, set query to ""
                 User command: "\(text)"
                 """
 
@@ -51,7 +104,7 @@ actor OnDeviceReasoningService {
                 let response = try await session.respond(to: prompt)
                 let content = response.content
                 if let result = decodeCommandJSON(from: content) {
-                    return mapToCommandType(result)
+                    return mapToParseHint(result)
                 }
             } catch {
                 return nil
@@ -79,6 +132,7 @@ actor OnDeviceReasoningService {
         private struct CommandJSON: Decodable {
             let intent: String
             let query: String?
+            let confidence: Double?
         }
 
         private func decodeCommandJSON(from content: String) -> CommandJSON? {
@@ -100,23 +154,40 @@ actor OnDeviceReasoningService {
             return String(text[start...end])
         }
 
-        private func mapToCommandType(_ result: CommandJSON) -> OnDeviceCommandParser.CommandType {
-            switch result.intent.lowercased() {
-            case "play":
-                let rawQuery = result.query ?? ""
-                let normalized = OnDeviceCommandParser.shared.normalizeQuery(rawQuery)
-                return .play(query: normalized)
-            case "pause":
-                return .pause
-            case "resume":
-                return .resume
-            case "next":
-                return .skipNext
-            case "previous":
-                return .skipPrevious
-            default:
-                return .unknown
+        private func mapToParseHint(_ result: CommandJSON) -> ParseHint {
+            let normalizedIntent = result.intent.lowercased()
+            let boundedConfidence = max(0.0, min(result.confidence ?? 0.0, 1.0))
+            let normalizedQuery = normalizeQuery(result.query ?? "")
+
+            if !["play", "pause", "resume", "next", "previous"].contains(
+                normalizedIntent
+            ) {
+                return ParseHint(
+                    intent: "unknown",
+                    query: nil,
+                    confidence: boundedConfidence,
+                    source: "ios.foundation_models"
+                )
             }
+
+            return ParseHint(
+                intent: normalizedIntent,
+                query: normalizedQuery.isEmpty ? nil : normalizedQuery,
+                confidence: boundedConfidence,
+                source: "ios.foundation_models"
+            )
+        }
+
+        private func normalizeQuery(_ rawQuery: String) -> String {
+            var query = rawQuery
+            query = query.replacingOccurrences(
+                of: #"\s+"#,
+                with: " ",
+                options: .regularExpression
+            )
+            query = query.replacingOccurrences(of: "\"", with: "")
+            query = query.replacingOccurrences(of: "?", with: "")
+            return query.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     #endif
 }

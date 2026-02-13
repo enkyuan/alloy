@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import uuid
@@ -9,7 +10,11 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
-from app.core.events import UserTranscriptionReceived, build_event_envelope
+from app.core.events import (
+    UserTranscriptionReceived,
+    build_event_envelope,
+    to_redis_stream_fields,
+)
 from app.core.redis import RedisKeys, get_redis_client
 from app.services.pipeline.services.soniox_service import soniox_service
 from app.services.user.auth import supabase_auth_service
@@ -19,10 +24,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/stt", tags=["speech-to-text-streaming"])
 
 
+def _normalize_command_text(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
 def _extract_websocket_bearer_token(websocket: WebSocket) -> Optional[str]:
-    """Extract a bearer token from the websocket authorization header."""
+    """Extract auth token from websocket headers or legacy query param."""
     authorization = websocket.headers.get("authorization")
     if not authorization or not authorization.startswith("Bearer "):
+        # Backward-compatible fallback for older clients using query token.
+        query_token = websocket.query_params.get("token")
+        if query_token:
+            return str(query_token)
         return None
     return authorization.replace("Bearer ", "")
 
@@ -33,12 +46,21 @@ async def publish_transcription(
     text: str,
     session_id: Optional[str] = None,
     alternatives: Optional[list[str]] = None,
+    parse_hint: Optional[dict[str, Any]] = None,
 ) -> None:
     """Publish a typed Agent transcription event to the Redis stream."""
     normalized_alternatives = [str(item) for item in (alternatives or [])]
+    normalized_parse_hint: Optional[dict[str, Any]] = None
+    if isinstance(parse_hint, dict):
+        normalized_parse_hint = {
+            str(key): value
+            for key, value in parse_hint.items()
+            if isinstance(value, (str, int, float, bool))
+        }
     event = UserTranscriptionReceived(
         content=text,
         alternatives=cast(Any, normalized_alternatives),
+        parse_hint=normalized_parse_hint,
     )
     metadata: dict[str, Any] = {
         "timestamp": str(datetime.now(timezone.utc).timestamp()),
@@ -53,7 +75,10 @@ async def publish_transcription(
         payload=event,
         metadata=metadata,
     )
-    await redis_conn.xadd(RedisKeys.STREAM_VOICE_INPUT, cast(dict[Any, Any], entry))
+    stream_fields = to_redis_stream_fields(entry)
+    await redis_conn.xadd(
+        RedisKeys.STREAM_VOICE_INPUT, cast(dict[Any, Any], stream_fields)
+    )
 
 
 async def forward_hermes_updates(
@@ -161,16 +186,18 @@ async def stream_transcribe(
     soniox_ws = None
     hermes_task = None
     final_tokens = []
+    pending_complete_transcription: Optional[str] = None
+    pending_publish_task: Optional[asyncio.Task[None]] = None
 
     try:
         # Authenticate via Authorization header.
         access_token = _extract_websocket_bearer_token(websocket)
         if not access_token:
-            logger.warning("Missing or invalid Authorization header for STT websocket")
+            logger.warning("Missing or invalid auth token for STT websocket")
             await websocket.send_json(
                 {
                     "type": "error",
-                    "message": "Missing or invalid Authorization header",
+                    "message": "Missing or invalid auth token",
                 }
             )
             await websocket.close(code=1008)
@@ -186,15 +213,15 @@ async def stream_transcribe(
             await websocket.close(code=1008)
             return
 
-        user_id = user.get("id")
-        if not user_id:
+        raw_user_id = user.get("id")
+        if not raw_user_id:
             logger.error("User object missing ID")
             await websocket.send_json(
                 {"type": "error", "message": "User ID missing from token"}
             )
             await websocket.close(code=1008)
             return
-        user_id = str(user_id)
+        user_id: str = str(raw_user_id)
         session_id = str(uuid.uuid4())
         logger.info(f"User {user_id} authenticated. Starting STT session {session_id}")
 
@@ -352,15 +379,39 @@ async def stream_transcribe(
                             command_text = json_data.get("text", "")
                             mode = json_data.get("mode", "auto")
                             stream = json_data.get("stream", False)
-                            logger.info(
-                                f"Received command from user {user_id} (mode={mode}, stream={stream}): {command_text}"
+                            parse_hint = (
+                                json_data.get("parse_hint")
+                                if isinstance(json_data.get("parse_hint"), dict)
+                                else None
                             )
+                            logger.info(
+                                "Received command from user %s (mode=%s, stream=%s, has_parse_hint=%s): %s",
+                                user_id,
+                                mode,
+                                stream,
+                                bool(parse_hint),
+                                command_text,
+                            )
+                            if pending_publish_task and pending_complete_transcription:
+                                if _normalize_command_text(command_text) == _normalize_command_text(
+                                    pending_complete_transcription
+                                ):
+                                    pending_publish_task.cancel()
+                                    pending_publish_task = None
+                                    pending_complete_transcription = None
+                                    logger.info(
+                                        "Cancelled fallback transcription publish because explicit command message arrived"
+                                    )
 
                             await websocket.send_json(
                                 {"type": "command_queued", "text": command_text}
                             )
                             await publish_transcription(
-                                redis_conn, user_id, command_text, session_id=session_id
+                                redis_conn,
+                                user_id,
+                                command_text,
+                                session_id=session_id,
+                                parse_hint=cast(Optional[dict[str, Any]], parse_hint),
                             )
                             logger.info("Command queued for Agent")
                             continue
@@ -379,27 +430,47 @@ async def stream_transcribe(
                             # Wait for final response from Soniox
                             await soniox_task
 
-                            # Publish the complete transcription to Agent/Redis now
                             complete_text = "".join([t["text"] for t in final_tokens])
                             if complete_text.strip():
-                                try:
-                                    logger.info(
-                                        f"Publishing complete transcription to Redis for user {user_id}"
+                                pending_complete_transcription = complete_text.strip()
+                                if pending_publish_task:
+                                    pending_publish_task.cancel()
+                                    pending_publish_task = None
+
+                                async def _publish_pending_transcription(
+                                    expected_text: str,
+                                ) -> None:
+                                    nonlocal pending_complete_transcription
+                                    nonlocal pending_publish_task
+                                    try:
+                                        await asyncio.sleep(0.7)
+                                        if pending_complete_transcription != expected_text:
+                                            return
+                                        await publish_transcription(
+                                            redis_conn,
+                                            user_id,
+                                            expected_text,
+                                            session_id=session_id,
+                                        )
+                                        logger.info(
+                                            "Published fallback transcription after END because no explicit command message arrived"
+                                        )
+                                    except asyncio.CancelledError:
+                                        return
+                                    finally:
+                                        if pending_complete_transcription == expected_text:
+                                            pending_complete_transcription = None
+                                        pending_publish_task = None
+
+                                pending_publish_task = asyncio.create_task(
+                                    _publish_pending_transcription(
+                                        pending_complete_transcription
                                     )
-                                    await publish_transcription(
-                                        redis_conn,
-                                        user_id,
-                                        complete_text,
-                                        session_id=session_id,
-                                    )
-                                    logger.info(
-                                        f"Successfully published complete utterance: {complete_text[:50]}..."
-                                    )
-                                except Exception as e:
-                                    logger.error(
-                                        f"Failed to publish to Redis: {e}",
-                                        exc_info=True,
-                                    )
+                                )
+                                logger.info(
+                                    "Final transcription ready for user %s; waiting briefly for explicit command message from client",
+                                    user_id,
+                                )
 
                         # Do NOT break here; keep connection open for Agent updates
                         continue
@@ -475,6 +546,10 @@ async def stream_transcribe(
                 await hermes_task
             except asyncio.CancelledError:
                 pass
+        if pending_publish_task:
+            pending_publish_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pending_publish_task
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.close()
         logger.info("STT stream closed")

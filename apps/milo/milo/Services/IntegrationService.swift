@@ -127,11 +127,13 @@ class IntegrationService {
         }
 
         print("Initiating OAuth for \(service.displayName)")
-        
-        guard let session = authService.session else {
+
+        guard authService.session != nil else {
             print("Not authenticated")
             throw IntegrationError.notAuthenticated
         }
+
+        let supabaseAccessToken = try await resolveAccessToken(authService: authService)
 
         if service == .gmail || service == .googleCalendar {
             try await connectGoogleService(service, authService: authService)
@@ -140,7 +142,7 @@ class IntegrationService {
 
         do {
             print("Step 1: Getting OAuth URL from backend...")
-            let authURL = try await getOAuthURL(for: service, accessToken: session.accessToken)
+            let authURL = try await getOAuthURL(for: service, accessToken: supabaseAccessToken)
             print("Received auth URL: \(authURL.absoluteString)")
 
             print("Step 2: Presenting OAuth web flow...")
@@ -149,7 +151,7 @@ class IntegrationService {
 
             print("Step 3: Exchanging authorization code...")
             try await exchangeCode(
-                code: code, state: state, accessToken: session.accessToken, service: service)
+                code: code, state: state, accessToken: supabaseAccessToken, service: service)
 
             DispatchQueue.main.async {
                 self.connectedServices.insert(service)
@@ -168,7 +170,7 @@ class IntegrationService {
 
     private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws
     {
-        guard let session = authService.session else {
+        guard authService.session != nil else {
             throw IntegrationError.notAuthenticated
         }
 
@@ -242,11 +244,14 @@ class IntegrationService {
 
                 Task {
                     do {
+                        let supabaseAccessToken = try await self.resolveAccessToken(
+                            authService: authService
+                        )
                         try await self.sendGoogleTokensToBackend(
                             idToken: idToken,
                             accessToken: accessToken,
                             service: service,
-                            supabaseAccessToken: session.accessToken
+                            supabaseAccessToken: supabaseAccessToken
                         )
 
                         _ = await MainActor.run {
@@ -381,6 +386,9 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Failed to get OAuth URL (status \(httpResponse.statusCode)): \(errorMessage)")
+            if httpResponse.statusCode == 401 {
+                throw IntegrationError.notAuthenticated
+            }
             throw IntegrationError.oauthURLFailed
         }
 
@@ -420,6 +428,17 @@ class IntegrationService {
 
         print("Invalid OAuth URL in response: \(rawURL)")
         throw IntegrationError.invalidURL
+    }
+
+    private func resolveAccessToken(authService: AuthService) async throws -> String {
+        do {
+            let session = try await supabase.auth.session
+            authService.session = session
+            return session.accessToken
+        } catch {
+            print("Unable to resolve active Supabase session: \(error.localizedDescription)")
+            throw IntegrationError.notAuthenticated
+        }
     }
 
     private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (

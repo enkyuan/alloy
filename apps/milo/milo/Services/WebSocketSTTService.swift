@@ -50,19 +50,28 @@ class WebSocketSTTService: NSObject {
             disconnect()
         }
 
+        let trimmedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else {
+            print("Cannot connect WebSocket without auth token")
+            onError?("Missing authentication token")
+            return
+        }
+
         let connectionId = UUID()
         currentConnectionId = connectionId
         print("New connection ID: \(connectionId)")
 
-        guard let url = URL(string: "\(backendURL)/stt/stream?token=\(token)") else {
+        guard let url = URL(string: "\(backendURL)/stt/stream") else {
             print("Invalid WebSocket URL")
             onError?("Invalid WebSocket URL")
             return
         }
 
-        print("Connecting to WebSocket: \(url)")
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(trimmedToken)", forHTTPHeaderField: "Authorization")
+        print("Connecting to WebSocket: \(url) with Authorization header")
 
-        webSocketTask = session.webSocketTask(with: url)
+        webSocketTask = session.webSocketTask(with: request)
         webSocketTask?.resume()
 
         // Start keepalive timer to prevent idle timeout
@@ -175,13 +184,18 @@ class WebSocketSTTService: NSObject {
     }
 
     private func parsePayload(from json: [String: Any]) -> [String: Any]? {
-        guard let payloadStr = json["payload"] as? String,
+        if let payload = json["payload"] as? [String: Any] {
+            return payload
+        }
+
+        if let payloadStr = json["payload"] as? String,
             let payloadData = payloadStr.data(using: .utf8),
             let payload = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any]
-        else {
-            return nil
+        {
+            return payload
         }
-        return payload
+
+        return nil
     }
 
     private func spotifyTrack(from data: [String: Any]) -> SpotifyTrack? {
@@ -421,10 +435,6 @@ class WebSocketSTTService: NSObject {
                     }
                 }
 
-                // Pass to AI response handler so UI can update if needed (or just log)
-                // We forward it as an ai_response-like event so the UI can perhaps show "Executing tool..."
-                onAIResponse?(json)
-
             case "tool.result":
                 // This message contains the result of a tool execution (from backend)
                 print("Tool result received")
@@ -438,6 +448,29 @@ class WebSocketSTTService: NSObject {
                     let result = payload["result"] as? [String: Any]
                     let data = result?["data"] as? [String: Any] ?? [:]
                     publishSpotifyPlaybackUpdate(toolName: toolName, data: data)
+
+                    if let resultMessage = result?["message"] as? String,
+                        !resultMessage.isEmpty
+                    {
+                        print("Forwarding assistant text from tool.result")
+                        onAIResponse?(
+                            [
+                                "type": "agent.response",
+                                "payload": ["content": resultMessage],
+                                "source": "tool.result",
+                            ]
+                        )
+                    }
+
+                    if let toolError = payload["error"] as? String, !toolError.isEmpty {
+                        print("Forwarding tool error from tool.result: \(toolError)")
+                        onAIResponse?(
+                            [
+                                "type": "agent.error",
+                                "payload": ["message": toolError, "error": toolError],
+                            ]
+                        )
+                    }
 
                     // Extract the result data
                     if let actionRequired = data["action_required"] as? String,
@@ -507,9 +540,6 @@ class WebSocketSTTService: NSObject {
                         print("Backend handled playback via Web API")
                     }
                 }
-
-                // Forward to UI to show the result/error
-                onAIResponse?(json)
 
             default:
                 print("Unknown message type: \(type)")

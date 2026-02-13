@@ -1,6 +1,7 @@
 import AVFoundation
 import Auth
 import Foundation
+import Supabase
 
 @MainActor
 @Observable
@@ -25,6 +26,9 @@ class AssistantViewModel {
 
     private var geminiTimeoutTask: Task<Void, Never>?
     private var isAwaitingGeminiResponse = false
+    private var lastAssistantMessageText: String?
+    private var lastAssistantMessageAt: Date?
+    private var commandQueuedAt: Date?
 
     var availableDevices: [SpotifyDevice] = []
     var currentDevice: SpotifyDevice?
@@ -40,6 +44,7 @@ class AssistantViewModel {
 
     init() {
         setupWebSocketCallbacks()
+        setupSpotifyCallbacks()
     }
 
     private func setupWebSocketCallbacks() {
@@ -56,14 +61,15 @@ class AssistantViewModel {
             guard let self = self else { return }
             Task { @MainActor in
                 print("Final transcription received: \"\(text)\"")
-                self.partialTranscription = ""
-                self.isProcessingTranscription = false
-                self.isStartingRecording = false
 
                 self.conversationService.addUserMessage(text)
                 print(
                     "Message count after adding user message: \(self.conversationService.messages.count)"
                 )
+
+                self.partialTranscription = ""
+                self.isProcessingTranscription = false
+                self.isStartingRecording = false
 
                 Task {
                     await self.sendToGemini(text)
@@ -99,6 +105,8 @@ class AssistantViewModel {
                 self.isConnecting = false
                 self.isStartingRecording = false
                 self.isRecording = false
+                self.isExecutingCommand = false
+                self.commandFeedback = nil
                 self.conversationService.addAssistantMessage(userMessage)
             }
         }
@@ -122,6 +130,8 @@ class AssistantViewModel {
                 self.isRecording = false
                 self.isProcessingTranscription = false
                 self.partialTranscription = ""
+                self.isExecutingCommand = false
+                self.commandFeedback = nil
             }
         }
 
@@ -129,6 +139,25 @@ class AssistantViewModel {
             guard let self = self else { return }
             Task { @MainActor in
                 self.applySpotifyPlaybackUpdate(update)
+            }
+        }
+
+        webSocketSTTService.onCommandQueued = { [weak self] queuedText in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.commandQueuedAt = Date()
+                self.isExecutingCommand = true
+                self.commandFeedback = "Working on it..."
+                print(
+                    "AssistantViewModel: Command queued for execution: \"\(queuedText)\""
+                )
+            }
+        }
+
+        webSocketSTTService.onAIResponse = { [weak self] response in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.handleIncomingAIResponse(response)
             }
         }
 
@@ -154,8 +183,19 @@ class AssistantViewModel {
                 self.errorMessage = error
                 self.showError = true
                 self.isRecording = false
+                self.isExecutingCommand = false
+                self.commandFeedback = nil
 
                 self.webSocketSTTService.disconnect()
+            }
+        }
+    }
+
+    private func setupSpotifyCallbacks() {
+        SpotifyAppService.shared.onPlaybackStateUpdate = { [weak self] update in
+            guard let self = self else { return }
+            Task { @MainActor in
+                self.applySpotifySDKPlaybackUpdate(update)
             }
         }
     }
@@ -175,29 +215,187 @@ class AssistantViewModel {
         }
     }
 
+    private func applySpotifySDKPlaybackUpdate(_ update: SpotifyAppService.PlaybackStateUpdate) {
+        isSpotifyPlaying = update.isPlaying
+
+        if let trackName = update.trackName, !trackName.isEmpty {
+            if let currentTrack = currentSpotifyTrack {
+                if currentTrack.name != trackName {
+                    currentSpotifyTrack = SpotifyTrack(
+                        id: currentTrack.id,
+                        name: trackName,
+                        artist: currentTrack.artist,
+                        album: currentTrack.album,
+                        uri: currentTrack.uri,
+                        albumArtUrl: currentTrack.albumArtUrl,
+                        durationMs: currentTrack.durationMs
+                    )
+                }
+            } else {
+                currentSpotifyTrack = SpotifyTrack(
+                    id: "spotify-sdk-\(trackName.lowercased())",
+                    name: trackName,
+                    artist: "Spotify",
+                    album: "",
+                    uri: "",
+                    albumArtUrl: nil,
+                    durationMs: 0
+                )
+            }
+        }
+
+        print(
+            "AssistantViewModel: Applied Spotify SDK playback update (track=\(update.trackName ?? "unknown"), isPlaying=\(update.isPlaying))"
+        )
+    }
+
+    private func decodePayloadDictionary(from response: [String: Any]) -> [String: Any]? {
+        if let payloadDict = response["payload"] as? [String: Any] {
+            return payloadDict
+        }
+        if let payloadString = response["payload"] as? String,
+            let payloadData = payloadString.data(using: .utf8),
+            let payloadDict = try? JSONSerialization.jsonObject(with: payloadData)
+                as? [String: Any]
+        {
+            return payloadDict
+        }
+        return nil
+    }
+
+    private func extractAssistantText(from response: [String: Any]) -> String? {
+        if let payload = decodePayloadDictionary(from: response) {
+            if let content = payload["content"] as? String, !content.isEmpty {
+                return content
+            }
+            if let contentDict = payload["content"] as? [String: Any] {
+                if let text = contentDict["text"] as? String, !text.isEmpty {
+                    return text
+                }
+                if let parts = contentDict["parts"] as? [[String: Any]] {
+                    for part in parts {
+                        if let text = part["text"] as? String, !text.isEmpty {
+                            return text
+                        }
+                    }
+                }
+            }
+            if let parts = payload["content"] as? [[String: Any]] {
+                for part in parts {
+                    if let text = part["text"] as? String, !text.isEmpty {
+                        return text
+                    }
+                }
+            }
+            if let message = payload["message"] as? String, !message.isEmpty {
+                return message
+            }
+            if let error = payload["error"] as? String, !error.isEmpty {
+                return "Sorry, I encountered an error: \(error)"
+            }
+        }
+
+        if let text = response["text"] as? String, !text.isEmpty {
+            return text
+        }
+        if let message = response["message"] as? String, !message.isEmpty {
+            return "Sorry, I encountered an error: \(message)"
+        }
+        return nil
+    }
+
+    private func normalizeAssistantMessage(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func shouldSuppressDuplicateAssistantMessage(_ text: String) -> Bool {
+        let normalized = normalizeAssistantMessage(text)
+        guard !normalized.isEmpty else { return false }
+        guard let lastText = lastAssistantMessageText,
+            let lastAt = lastAssistantMessageAt
+        else {
+            return false
+        }
+        if normalized != lastText {
+            return false
+        }
+        return Date().timeIntervalSince(lastAt) < 1.5
+    }
+
+    private func handleIncomingAIResponse(_ response: [String: Any]) {
+        let responseType = (response["type"] as? String) ?? ""
+        let validResponseTypes: Set<String> = [
+            "ai_response", "agent.response", "agent.error", "ai_error",
+        ]
+        guard validResponseTypes.contains(responseType) else {
+            print("Ignoring non-response event in AI callback: \(responseType)")
+            return
+        }
+
+        if let assistantText = extractAssistantText(from: response) {
+            let normalized = normalizeAssistantMessage(assistantText)
+            if shouldSuppressDuplicateAssistantMessage(assistantText) {
+                print(
+                    "AssistantViewModel: Suppressing duplicate assistant response: \"\(assistantText)\""
+                )
+                return
+            }
+
+            lastAssistantMessageText = normalized
+            lastAssistantMessageAt = Date()
+
+            if let queuedAt = commandQueuedAt {
+                let latencyMs = Int(Date().timeIntervalSince(queuedAt) * 1000)
+                print(
+                    "AssistantViewModel: Assistant response latency from command_queued = \(latencyMs)ms"
+                )
+            }
+
+            isAwaitingGeminiResponse = false
+            geminiTimeoutTask?.cancel()
+            geminiTimeoutTask = nil
+            isExecutingCommand = false
+            commandFeedback = nil
+
+            print("Received assistant response: \"\(assistantText)\"")
+            conversationService.addAssistantMessage(assistantText)
+            print(
+                "Message count after adding assistant message: \(conversationService.messages.count)"
+            )
+            return
+        }
+
+        print("Ignoring response event without user-facing text: \(response)")
+    }
+
     private func sendToGemini(_ text: String) async {
         print("Sending to Gemini: \"\(text)\"")
         print("WebSocket connected: \(webSocketSTTService.isConnected)")
-
-        guard webSocketSTTService.isConnected else {
-            print("WebSocket not connected, cannot send to Gemini")
-            await MainActor.run {
-                self.conversationService.addAssistantMessage(
-                    "Sorry, connection was lost. Please try again.")
-            }
-            return
-        }
 
         _ = conversationService.messages.map { message in
             ["role": message.isUser ? "user" : "assistant", "content": message.text]
         }
 
-        let command: [String: Any] = [
+        var command: [String: Any] = [
             "type": "command",
             "text": text,
             "mode": "conversation",
             "stream": false,
         ]
+
+        let parseHintStartedAt = Date()
+        if let parseHint = await OnDeviceReasoningService.shared.parseCommandHint(text) {
+            command["parse_hint"] = parseHint.asDictionary
+            let hintLatencyMs = Int(Date().timeIntervalSince(parseHintStartedAt) * 1000)
+            print(
+                "On-device parse hint attached (intent=\(parseHint.intent), confidence=\(parseHint.confidence), latency=\(hintLatencyMs)ms)"
+            )
+        } else {
+            let hintLatencyMs = Int(Date().timeIntervalSince(parseHintStartedAt) * 1000)
+            print("On-device parse hint unavailable (latency=\(hintLatencyMs)ms)")
+        }
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: command),
             let jsonString = String(data: jsonData, encoding: .utf8)
@@ -212,126 +410,40 @@ class AssistantViewModel {
 
         print("Sending command JSON: \(jsonString)")
 
-        var responseReceived = false
         geminiTimeoutTask?.cancel()
         isAwaitingGeminiResponse = true
-        webSocketSTTService.onAIResponse = { [weak self] response in
-            guard let self = self, !responseReceived else { return }
-            responseReceived = true
-            self.isAwaitingGeminiResponse = false
-            self.geminiTimeoutTask?.cancel()
-            self.geminiTimeoutTask = nil
+        isExecutingCommand = true
+        commandFeedback = "Sending request..."
 
-            Task { @MainActor in
-                print("AI Response callback triggered")
-
-                if let payloadString = response["payload"] as? String,
-                    let payloadData = payloadString.data(using: .utf8),
-                    let payloadJson = try? JSONSerialization.jsonObject(with: payloadData)
-                        as? [String: Any],
-                    let content = payloadJson["content"] as? String
-                {
-
-                    print("Received Gemini response: \"\(content)\"")
-                    self.conversationService.addAssistantMessage(content)
-                    print(
-                        "Message count after adding assistant message: \(self.conversationService.messages.count)"
-                    )
-
-                } else if let text = response["text"] as? String {
-                    print("Received Gemini response: \"\(text)\"")
-                    self.conversationService.addAssistantMessage(text)
-                    print(
-                        "Message count after adding assistant message: \(self.conversationService.messages.count)"
-                    )
-                } else if let error = response["message"] as? String {
-                    print("Gemini error: \(error)")
-                    self.conversationService.addAssistantMessage(
-                        "Sorry, I encountered an error: \(error)")
-                } else {
-                    print("Unknown response format: \(response)")
-                    self.conversationService.addAssistantMessage(
-                        "Sorry, received an unexpected response.")
-                }
-            }
+        guard webSocketSTTService.isConnected else {
+            print("WebSocket not connected - command will not execute without backend")
+            isAwaitingGeminiResponse = false
+            isExecutingCommand = false
+            commandFeedback = nil
+            conversationService.addAssistantMessage(
+                "I can understand that request, but I need a live server connection to run it."
+            )
+            return
         }
 
         print("Calling webSocketSTTService.sendMessage...")
-        
-        // Check if websocket is connected before sending
-        guard webSocketSTTService.isConnected else {
-            print("WebSocket not connected - using on-device fallback immediately")
-            await handleOnDeviceFallback(text)
-            return
-        }
-        
+
         webSocketSTTService.sendMessage(jsonString)
         print("Message sent, waiting for response...")
 
-
         geminiTimeoutTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-            guard !responseReceived, self.isAwaitingGeminiResponse else { return }
+            guard self.isAwaitingGeminiResponse else { return }
             guard self.webSocketSTTService.isConnected else {
                 print("Skipping Gemini timeout message - WebSocket disconnected")
                 return
             }
-            print("Gemini response timeout - trying on-device fallback")
+            print("Gemini response timeout - backend did not respond in time")
             self.isAwaitingGeminiResponse = false
-            
-            // Try on-device command parsing as fallback
-            await self.handleOnDeviceFallback(text)
-        }
-    }
-    
-    /// Handle commands on-device when backend is completely unavailable
-    /// This is a pure fallback - backend handles all parsing/reasoning normally
-    private func handleOnDeviceFallback(_ text: String) async {
-        print("Backend unavailable - using on-device fallback for: \(text)")
-        
-        let command = OnDeviceCommandParser.shared.parseCommand(text)
-        
-        switch command {
-        case .play(let query):
-            print("On-device: Play command")
-            if query.isEmpty {
-                conversationService.addAssistantMessage("Resuming playback.")
-                isSpotifyPlaying = true
-                SpotifyAppService.shared.resume()
-            } else {
-                conversationService.addAssistantMessage(
-                    "I'm offline. I found '\(query)' but need a connection to search and play. I can help with basic controls: pause, skip, and resume."
-                )
-            }
-            
-        case .pause:
-            print("On-device: Pause")
-            conversationService.addAssistantMessage("Pausing playback.")
-            isSpotifyPlaying = false
-            SpotifyAppService.shared.pause()
-
-        case .resume:
-            print("On-device: Resume")
-            conversationService.addAssistantMessage("Resuming playback.")
-            isSpotifyPlaying = true
-            SpotifyAppService.shared.resume()
-
-        case .skipNext:
-            print("On-device: Skip next")
-            conversationService.addAssistantMessage("Skipping to next track.")
-            isSpotifyPlaying = true
-            SpotifyAppService.shared.skipNext()
-
-        case .skipPrevious:
-            print("On-device: Skip previous")
-            conversationService.addAssistantMessage("Going back to previous track.")
-            isSpotifyPlaying = true
-            SpotifyAppService.shared.skipPrevious()
-            
-        case .unknown:
-            print("On-device: Unknown command")
-            conversationService.addAssistantMessage(
-                "I'm offline. I can help with basic playback: pause, resume, skip next, and previous."
+            self.isExecutingCommand = false
+            self.commandFeedback = nil
+            self.conversationService.addAssistantMessage(
+                "That is taking longer than expected. Please try again."
             )
         }
     }
@@ -342,8 +454,26 @@ class AssistantViewModel {
             return
         }
 
-        guard let token = authService.session?.accessToken else {
-            print("No auth token available")
+        let token: String
+        do {
+            let session = try await supabase.auth.session
+            authService.session = session
+            token = session.accessToken
+        } catch {
+            guard let fallbackToken = authService.session?.accessToken else {
+                print("No auth token available")
+                await MainActor.run {
+                    errorMessage = "Not authenticated"
+                    showError = true
+                }
+                return
+            }
+            print("Using fallback auth token from cached session")
+            token = fallbackToken
+        }
+
+        guard !token.isEmpty else {
+            print("Auth token is empty")
             await MainActor.run {
                 errorMessage = "Not authenticated"
                 showError = true
@@ -504,6 +634,31 @@ class AssistantViewModel {
         } else {
             print("Cannot start recording - already connecting or starting")
         }
+    }
+
+    func handleMiniPlayerPlayPause() {
+        let shouldPause = isSpotifyPlaying
+        print("AssistantViewModel: MiniPlayer play/pause tapped (shouldPause=\(shouldPause))")
+        if shouldPause {
+            SpotifyAppService.shared.performMiniPlayerTransportAction(.pause)
+        } else {
+            SpotifyAppService.shared.performMiniPlayerTransportAction(.resume)
+        }
+    }
+
+    func handleMiniPlayerNext() {
+        print("AssistantViewModel: MiniPlayer next tapped")
+        SpotifyAppService.shared.performMiniPlayerTransportAction(.next)
+    }
+
+    func handleMiniPlayerPrevious() {
+        print("AssistantViewModel: MiniPlayer previous tapped")
+        SpotifyAppService.shared.performMiniPlayerTransportAction(.previous)
+    }
+
+    func openSpotifyApp() {
+        print("AssistantViewModel: MiniPlayer route tapped")
+        SpotifyAppService.shared.openSpotify()
     }
 
     func fetchAvailableDevices() async {

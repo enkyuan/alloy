@@ -14,6 +14,18 @@ import SwiftUI
 @Observable
 class SpotifyAppService: NSObject {
 
+    struct PlaybackStateUpdate {
+        let trackName: String?
+        let isPlaying: Bool
+    }
+
+    enum MiniPlayerTransportAction: String {
+        case pause
+        case resume
+        case next
+        case previous
+    }
+
     static let shared = SpotifyAppService()
 
     private let spotifyClientId: String = {
@@ -36,6 +48,7 @@ class SpotifyAppService: NSObject {
     var isConnected = false
     var accessToken: String?
     var trackName: String?
+    var onPlaybackStateUpdate: ((PlaybackStateUpdate) -> Void)?
 
     private var isAuthorizing = false
     private var isConnecting = false
@@ -346,13 +359,14 @@ class SpotifyAppService: NSObject {
                 enqueueCommand { remote in
                     remote.playerAPI?.play(
                         uri,
-                        callback: { _, error in
+                        callback: { [weak self] _, error in
                             if let error = error {
                                 print(
                                     "SpotifyAppService: Failed to play URI (\(uri)) - \(error.localizedDescription)"
                                 )
                             } else {
                                 print("SpotifyAppService: Playing URI \(uri)")
+                                self?.refreshPlayerStateIfConnected(delay: 0.35)
                             }
                         })
                 }
@@ -370,10 +384,13 @@ class SpotifyAppService: NSObject {
 
             if appRemote.isConnected {
                 enqueueCommand { remote in
-                    remote.playerAPI?.resume({ _, error in
+                    remote.playerAPI?.resume({ [weak self] _, error in
                         if let error = error {
                             print(
                                 "SpotifyAppService: Resume failed - \(error.localizedDescription)")
+                        } else {
+                            print("SpotifyAppService: Resume command sent.")
+                            self?.refreshPlayerStateIfConnected(delay: 0.25)
                         }
                     })
                 }
@@ -388,9 +405,12 @@ class SpotifyAppService: NSObject {
     func pause() {
         #if canImport(SpotifyiOS)
             enqueueCommand { remote in
-                remote.playerAPI?.pause({ _, error in
+                remote.playerAPI?.pause({ [weak self] _, error in
                     if let error = error {
                         print("SpotifyAppService: Pause failed - \(error.localizedDescription)")
+                    } else {
+                        print("SpotifyAppService: Pause command sent.")
+                        self?.refreshPlayerStateIfConnected(delay: 0.25)
                     }
                 })
             }
@@ -400,11 +420,12 @@ class SpotifyAppService: NSObject {
     func skipNext() {
         #if canImport(SpotifyiOS)
             enqueueCommand { remote in
-                remote.playerAPI?.skip(toNext: { _, error in
+                remote.playerAPI?.skip(toNext: { [weak self] _, error in
                     if let error = error {
                         print("SpotifyAppService: Skip next failed - \(error.localizedDescription)")
                     } else {
                         print("SpotifyAppService: Skipped to next track.")
+                        self?.refreshPlayerStateIfConnected(delay: 0.45)
                     }
                 })
             }
@@ -414,16 +435,74 @@ class SpotifyAppService: NSObject {
     func skipPrevious() {
         #if canImport(SpotifyiOS)
             enqueueCommand { remote in
-                remote.playerAPI?.skip(toPrevious: { _, error in
+                remote.playerAPI?.skip(toPrevious: { [weak self] _, error in
                     if let error = error {
                         print(
                             "SpotifyAppService: Skip previous failed - \(error.localizedDescription)"
                         )
                     } else {
                         print("SpotifyAppService: Returned to previous track.")
+                        self?.refreshPlayerStateIfConnected(delay: 0.45)
                     }
                 })
             }
+        #endif
+    }
+
+    @MainActor
+    func performMiniPlayerTransportAction(_ action: MiniPlayerTransportAction) {
+        #if canImport(SpotifyiOS)
+            guard isSpotifyInstalled else {
+                print("SpotifyAppService: Spotify is not installed, cannot execute mini player action.")
+                return
+            }
+
+            let executeConnected: () -> Void = { [weak self] in
+                guard let self = self else { return }
+                switch action {
+                case .pause:
+                    self.pause()
+                case .resume:
+                    self.resume()
+                case .next:
+                    self.skipNext()
+                case .previous:
+                    self.skipPrevious()
+                }
+            }
+
+            if isConnected {
+                print(
+                    "SpotifyAppService: MiniPlayer action \(action.rawValue) using existing in-app App Remote connection."
+                )
+                executeConnected()
+                return
+            }
+
+            beginConnectionAttemptWindow(duration: 1.8)
+            print(
+                "SpotifyAppService: MiniPlayer action \(action.rawValue) attempting in-app App Remote connection."
+            )
+            connect(triggerAuthorization: false)
+            executeConnected()
+
+            // If we still cannot connect in-app quickly, fallback to the app-switch path.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { [weak self] in
+                guard let self = self else { return }
+                if self.isConnected {
+                    return
+                }
+                print(
+                    "SpotifyAppService: MiniPlayer action \(action.rawValue) fallback to Spotify app switch."
+                )
+                self.openSpotifyAndReturnToMilo {
+                    executeConnected()
+                }
+            }
+        #else
+            print(
+                "SpotifyAppService: SpotifyiOS SDK unavailable, cannot execute mini player action \(action.rawValue)."
+            )
         #endif
     }
 
@@ -454,6 +533,47 @@ class SpotifyAppService: NSObject {
                 let action = pendingPlayerActions.removeFirst()
                 action(appRemote)
             }
+        }
+
+        private func refreshPlayerStateIfConnected(delay: TimeInterval = 0.0) {
+            let refresh = { [weak self] in
+                guard let self = self else { return }
+                guard let appRemote = self.appRemote, appRemote.isConnected else { return }
+                appRemote.playerAPI?.getPlayerState({ [weak self] result, error in
+                    guard let self = self else { return }
+                    if let error = error {
+                        print(
+                            "SpotifyAppService: getPlayerState failed - \(error.localizedDescription)"
+                        )
+                        return
+                    }
+                    guard let playerState = result as? SPTAppRemotePlayerState else {
+                        return
+                    }
+                    self.applyPlayerState(playerState, source: "refresh")
+                })
+            }
+
+            if delay <= 0 {
+                refresh()
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: refresh)
+        }
+
+        private func applyPlayerState(
+            _ playerState: SPTAppRemotePlayerState,
+            source: String
+        ) {
+            let nowPlaying = playerState.track.name
+            let isPlaying = !playerState.isPaused
+            trackName = nowPlaying
+            print(
+                "SpotifyAppService: Player state update (\(source)) - \(nowPlaying) (\(isPlaying ? "Playing" : "Paused"))"
+            )
+            onPlaybackStateUpdate?(
+                PlaybackStateUpdate(trackName: nowPlaying, isPlaying: isPlaying)
+            )
         }
 
         private func clearTokenIfAuthError(_ error: Error?) {
@@ -553,6 +673,7 @@ class SpotifyAppService: NSObject {
                     )
                 }
             })
+            refreshPlayerStateIfConnected(delay: 0.1)
             processPendingActionsIfConnected()
         }
 
@@ -587,11 +708,7 @@ class SpotifyAppService: NSObject {
 
     extension SpotifyAppService: SPTAppRemotePlayerStateDelegate {
         func playerStateDidChange(_ playerState: SPTAppRemotePlayerState) {
-            trackName = playerState.track.name
-            print(
-                "SpotifyAppService: Player state changed - \(playerState.track.name) (\(playerState.isPaused ? "Paused" : "Playing"))"
-            )
+            applyPlayerState(playerState, source: "delegate")
         }
     }
 #endif
-

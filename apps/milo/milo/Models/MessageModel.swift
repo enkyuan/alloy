@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 struct Message: Identifiable, Codable {
     let id: UUID
@@ -18,23 +19,46 @@ struct Message: Identifiable, Codable {
 @Observable
 class ConversationService {
     var messages: [Message] = []
+    private let insertionAnimation = Animation.spring(
+        response: 0.4,
+        dampingFraction: 0.78,
+        blendDuration: 0.2
+    )
 
     func addMessage(_ message: Message) {
-        messages.insert(message, at: 0)
+        withAnimation(insertionAnimation) {
+            messages.append(message)
+        }
+        if Environment.isDebugLoggingEnabled {
+            print(
+                "[ConversationService] addMessage id=\(message.id.uuidString) " +
+                    "role=\(message.isUser ? "user" : "assistant") count=\(messages.count)"
+            )
+        }
     }
 
     func addUserMessage(_ text: String) {
         print("ConversationService: Adding user message: \"\(text)\"")
         let message = Message(text: text, isUser: true)
-        messages.insert(message, at: 0)
-        print("ConversationService: Messages array now has \(messages.count) messages")
+        withAnimation(insertionAnimation) {
+            messages.append(message)
+        }
+        print(
+            "ConversationService: Added user message id=\(message.id.uuidString), " +
+                "count=\(messages.count)"
+        )
     }
 
     func addAssistantMessage(_ text: String) {
         print("ConversationService: Adding assistant message: \"\(text)\"")
         let message = Message(text: text, isUser: false)
-        messages.insert(message, at: 0)
-        print("ConversationService: Messages array now has \(messages.count) messages")
+        withAnimation(insertionAnimation) {
+            messages.append(message)
+        }
+        print(
+            "ConversationService: Added assistant message id=\(message.id.uuidString), " +
+                "count=\(messages.count)"
+        )
     }
 
     func clearMessages() {

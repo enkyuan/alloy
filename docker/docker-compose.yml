@@ -178,6 +178,9 @@ services:
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI}
 
+      # Soniox
+      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
+
       # Application
       DEBUG: ${DEBUG:-false}
       PROJECT_NAME: Modal Worker
@@ -189,7 +192,7 @@ services:
         "taskiq",
         "worker",
         "app.core.broker:broker",
-        "app.services.pipeline.tasks",
+        "app.services.pipeline.helpers.tool_tasks",
         "app.services.integrations.workspace.tasks",
       ]
     volumes:
@@ -235,6 +238,9 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI}
+
+      # Soniox
+      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
 
       # Gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

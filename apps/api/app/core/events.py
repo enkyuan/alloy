@@ -109,11 +109,32 @@ def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
     Accepts legacy envelopes without a version by defaulting to EVENT_SCHEMA_VERSION.
     """
     candidate = dict(raw)
+    metadata = candidate.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            decoded_metadata = json.loads(metadata)
+            if isinstance(decoded_metadata, dict):
+                candidate["metadata"] = decoded_metadata
+        except json.JSONDecodeError:
+            candidate["metadata"] = {}
     candidate.setdefault("version", EVENT_SCHEMA_VERSION)
     envelope = EventEnvelope.model_validate(candidate)
     if not is_supported_event_version(envelope.version):
         raise ValueError(f"Unsupported event envelope version: {envelope.version}")
     return envelope
+
+
+def to_redis_stream_fields(envelope: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert an event envelope into Redis stream-safe primitive fields."""
+    fields: Dict[str, Any] = {}
+    for key, value in envelope.items():
+        if isinstance(value, (str, bytes, int, float)):
+            fields[key] = value
+        elif value is None:
+            fields[key] = ""
+        else:
+            fields[key] = json.dumps(value)
+    return fields
 
 
 def is_supported_event_version(version: str) -> bool:
@@ -182,6 +203,7 @@ class UserTranscriptionReceived(BaseModel):
 
     content: str
     alternatives: list[str] = Field(default_factory=list)
+    parse_hint: Optional[Dict[str, Any]] = None
     user_id: Optional[str] = None
 
 

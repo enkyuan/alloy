@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -62,6 +62,8 @@ logger = logging.getLogger(__name__)
 HISTORY_LIMIT: int = settings.AGENT_HISTORY_LIMIT or 0
 CACHE_TTL_SECONDS = settings.AGENT_CACHE_TTL_SECONDS
 SPOTIFY_CACHE_TTL_SECONDS = 60 * 60
+CLIENT_HINT_CONTROL_MIN_CONFIDENCE = 0.82
+CLIENT_HINT_PLAY_MIN_CONFIDENCE = 0.93
 
 SYSTEM_INSTRUCTION = (
     "You are a helpful voice assistant. "
@@ -80,6 +82,53 @@ def _is_quota_error(error: Exception) -> bool:
         "429",
     ]
     return any(marker in message for marker in quota_markers)
+
+
+def _elapsed_ms(started_at: float) -> int:
+    return int((asyncio.get_running_loop().time() - started_at) * 1000)
+
+
+def _coerce_hint_confidence(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, (int, float)):
+        return max(0.0, min(float(value), 1.0))
+    if isinstance(value, str):
+        try:
+            return max(0.0, min(float(value), 1.0))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _map_client_parse_hint_to_tool_call(
+    parse_hint: Optional[dict[str, Any]],
+    *,
+    route_is_command_like: bool,
+) -> tuple[str, dict[str, Any]] | None:
+    if not parse_hint or not route_is_command_like:
+        return None
+
+    raw_intent = str(parse_hint.get("intent", "")).strip().lower()
+    confidence = _coerce_hint_confidence(parse_hint.get("confidence"))
+    query_value = str(parse_hint.get("query", "")).strip()
+
+    if raw_intent == "pause" and confidence >= CLIENT_HINT_CONTROL_MIN_CONFIDENCE:
+        return "spotify.pause", {}
+    if raw_intent == "resume" and confidence >= CLIENT_HINT_CONTROL_MIN_CONFIDENCE:
+        return "spotify.resume", {}
+    if raw_intent == "next" and confidence >= CLIENT_HINT_CONTROL_MIN_CONFIDENCE:
+        return "spotify.next", {}
+    if raw_intent == "previous" and confidence >= CLIENT_HINT_CONTROL_MIN_CONFIDENCE:
+        return "spotify.previous", {}
+    if (
+        raw_intent == "play"
+        and query_value
+        and confidence >= CLIENT_HINT_PLAY_MIN_CONFIDENCE
+    ):
+        return "spotify.play", {"query": query_value}
+
+    return None
 
 
 async def _execute_tool_fast(
@@ -223,6 +272,7 @@ async def process_voice_input_stream():
 
 async def handle_message(data: dict):
     """Business logic for handling a single voice event."""
+    started_at = asyncio.get_running_loop().time()
     try:
         envelope = parse_event_envelope(data)
     except Exception as exc:
@@ -277,6 +327,43 @@ async def handle_message(data: dict):
             },
         )
 
+        hint_tool_call = _map_client_parse_hint_to_tool_call(
+            transcription.parse_hint,
+            route_is_command_like=route_decision.should_parse_as_command,
+        )
+        if hint_tool_call:
+            hinted_tool_name, hinted_tool_args = hint_tool_call
+            logger.info(
+                "Executing client-hinted fast path",
+                extra={
+                    "user_id": str(user_id),
+                    "tool_name": hinted_tool_name,
+                    "tool_args": hinted_tool_args,
+                    "hint": transcription.parse_hint or {},
+                },
+            )
+            if hinted_tool_name == "spotify.play":
+                used_cache = await _try_cached_spotify_play(
+                    redis,
+                    str(user_id),
+                    hinted_tool_args,
+                    history_limit=HISTORY_LIMIT,
+                )
+                if used_cache:
+                    return
+            await _execute_tool_fast(
+                redis, str(user_id), hinted_tool_name, hinted_tool_args
+            )
+            logger.info(
+                "Completed client-hinted fast path",
+                extra={
+                    "user_id": str(user_id),
+                    "tool_name": hinted_tool_name,
+                    "elapsed_ms": _elapsed_ms(started_at),
+                },
+            )
+            return
+
         intent = command_parser.parse_command(
             transcription.content,
             alternatives=transcription.alternatives,
@@ -309,8 +396,24 @@ async def handle_message(data: dict):
                         history_limit=HISTORY_LIMIT,
                     )
                     if used_cache:
+                        logger.info(
+                            "Completed parser fast path using cached spotify result",
+                            extra={
+                                "user_id": str(user_id),
+                                "tool_name": tool_name,
+                                "elapsed_ms": _elapsed_ms(started_at),
+                            },
+                        )
                         return
                 await _execute_tool_fast(redis, str(user_id), tool_name, tool_args)
+                logger.info(
+                    "Completed parser fast path",
+                    extra={
+                        "user_id": str(user_id),
+                        "tool_name": tool_name,
+                        "elapsed_ms": _elapsed_ms(started_at),
+                    },
+                )
                 return
 
         gemini = get_gemini_service()
@@ -363,6 +466,10 @@ async def handle_message(data: dict):
                     CACHE_TTL_SECONDS,
                     response.text,
                 )
+            logger.info(
+                "Completed LLM response",
+                extra={"user_id": str(user_id), "elapsed_ms": _elapsed_ms(started_at)},
+            )
         except ValueError:
             # response.text raises ValueError if content is purely function calls
             pass

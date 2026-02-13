@@ -43,8 +43,11 @@ async def spotify_play(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]
         artist=str(artist) if artist else None,
         playlist_name=str(playlist_name) if playlist_name else None,
     )
+    requires_clarification = bool(
+        isinstance(result.data, dict) and result.data.get("requires_clarification")
+    )
     return {
-        "status": "playing",
+        "status": "clarification_needed" if requires_clarification else "playing",
         "message": result.message,
         "query": query,
         "data": result.data,
@@ -83,8 +86,11 @@ async def spotify_add_to_queue(
         artist=str(artist) if artist else None,
         playlist_name=str(playlist_name) if playlist_name else None,
     )
+    requires_clarification = bool(
+        isinstance(result.data, dict) and result.data.get("requires_clarification")
+    )
     return {
-        "status": "queued",
+        "status": "clarification_needed" if requires_clarification else "queued",
         "message": result.message,
         "query": query,
         "data": result.data,

@@ -3,7 +3,11 @@ import logging
 from typing import Optional, Any, cast
 from redis.asyncio import Redis
 from app.core.config import settings
-from app.core.events import UserTranscriptionReceived, build_event_envelope
+from app.core.events import (
+    UserTranscriptionReceived,
+    build_event_envelope,
+    to_redis_stream_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +59,10 @@ class EventBackbone:
 
         try:
             # XADD returns the ID of the added entry
-            message_id = await self.redis.xadd(stream_key, cast(dict[Any, Any], entry))
+            stream_fields = to_redis_stream_fields(entry)
+            message_id = await self.redis.xadd(
+                stream_key, cast(dict[Any, Any], stream_fields)
+            )
             logger.info(
                 f"Produced voice input to stream {stream_key}: ID={message_id} User={user_id}"
             )

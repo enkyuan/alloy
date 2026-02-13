@@ -208,33 +208,64 @@ class SpotifyResolutionMixin:
             extra={"query_variants": search_queries, "artist": artist},
         )
         catalog_candidates: list[dict[str, Any]] = []
-        for idx, search_query in enumerate(search_queries):
+        search_started = asyncio.get_running_loop().time()
+
+        async def _search_variant(
+            query_variant: str,
+            variant_limit: int,
+        ) -> list[dict[str, Any]]:
             try:
                 search_results = await self.client.search(
                     access_token=access_token,
-                    query=search_query,
+                    query=query_variant,
                     types="track",
-                    limit=30 if idx == 0 else 20,
+                    limit=variant_limit,
                 )
             except Exception as exc:
                 logger.warning(
                     "Track search variant failed",
-                    extra={"query": search_query, "error": str(exc)},
+                    extra={"query": query_variant, "error": str(exc)},
                 )
-                continue
+                return []
 
             tracks = search_results.get("tracks", {}).get("items", [])
             if not isinstance(tracks, list):
-                continue
+                return []
+
+            hydrated: list[dict[str, Any]] = []
             for track in tracks:
                 if isinstance(track, dict):
-                    catalog_candidates.append(
+                    hydrated.append(
                         {
                             **track,
                             "_candidate_source": "catalog",
-                            "_query_variant": search_query,
+                            "_query_variant": query_variant,
                         }
                     )
+            return hydrated
+
+        search_tasks = [
+            _search_variant(search_query, 30 if idx == 0 else 20)
+            for idx, search_query in enumerate(search_queries)
+        ]
+        if search_tasks:
+            variant_results = await asyncio.gather(*search_tasks)
+            for candidates in variant_results:
+                catalog_candidates.extend(candidates)
+
+        search_elapsed_ms = int(
+            (asyncio.get_running_loop().time() - search_started) * 1000
+        )
+        logger.info(
+            "Completed Spotify variant search fanout",
+            extra={
+                "query": effective_query,
+                "artist": artist,
+                "variant_count": len(search_queries),
+                "candidate_count": len(catalog_candidates),
+                "elapsed_ms": search_elapsed_ms,
+            },
+        )
 
         if catalog_candidates:
             ranked_candidates.extend(
@@ -295,7 +326,10 @@ class SpotifyResolutionMixin:
         second_probability = (
             ranked_with_probs[1][2] if len(ranked_with_probs) > 1 else 0.0
         )
+        second_track = ranked_with_probs[1][0] if len(ranked_with_probs) > 1 else None
         probability_margin = top_probability - second_probability
+        second_score = final_ranked[1][1] if len(final_ranked) > 1 else 0.0
+        score_margin = top_score - second_score
         constrained_request = bool(artist or playlist_name)
         auto_prob_min = (
             self.TRACK_CONSTRAINED_PROB_MIN
@@ -313,6 +347,120 @@ class SpotifyResolutionMixin:
             else self.TRACK_CONFIDENCE_MIN
         )
 
+        def _canonical_track_title(normalized_track_name: str) -> str:
+            return re.sub(
+                r"\s*(?:\([^)]*\)|\[[^\]]*\]|[-–]\s*.*)$",
+                "",
+                normalized_track_name,
+            ).strip()
+
+        normalized_effective_query = self._normalize_match_text(effective_query)
+        top_track_name = str(top_track.get("name", ""))
+        top_track_name_norm = self._normalize_match_text(top_track_name)
+        canonical_top_title = _canonical_track_title(top_track_name_norm)
+        canonical_title_match = bool(
+            normalized_effective_query
+            and canonical_top_title == normalized_effective_query
+        )
+        canonical_title_match_count = 0
+        for candidate_track, _, _ in ranked_with_probs[:5]:
+            candidate_name_norm = self._normalize_match_text(
+                str(candidate_track.get("name", ""))
+            )
+            candidate_canonical = _canonical_track_title(candidate_name_norm)
+            if candidate_canonical == normalized_effective_query:
+                canonical_title_match_count += 1
+        title_similarity = self._similarity_score(
+            normalized_effective_query, top_track_name_norm
+        )
+        title_overlap = self._token_overlap(
+            normalized_effective_query, top_track_name_norm
+        )
+        normalized_requested_artist = self._normalize_match_text(artist or "")
+
+        def _track_matches_requested_artist(candidate_track: dict[str, Any]) -> bool:
+            if not normalized_requested_artist:
+                return False
+            candidate_artists = candidate_track.get("artists", [])
+            candidate_artist_names = [
+                str(item.get("name", ""))
+                for item in candidate_artists
+                if isinstance(item, dict) and item.get("name")
+            ]
+            candidate_artist_text = self._normalize_match_text(
+                " ".join(candidate_artist_names)
+            )
+            if not candidate_artist_text:
+                return False
+            artist_similarity = self._similarity_score(
+                normalized_requested_artist, candidate_artist_text
+            )
+            artist_overlap = self._token_overlap(
+                normalized_requested_artist, candidate_artist_text
+            )
+            artist_phonetic = self._phonetic_similarity(
+                normalized_requested_artist, candidate_artist_text
+            )
+            return (
+                normalized_requested_artist == candidate_artist_text
+                or normalized_requested_artist in candidate_artist_text
+                or artist_overlap >= 0.65
+                or artist_similarity >= 0.86
+                or artist_phonetic >= 0.90
+            )
+
+        top_artist_match = _track_matches_requested_artist(top_track)
+        matching_artist_count = sum(
+            1
+            for candidate_track, _, _ in ranked_with_probs[:5]
+            if _track_matches_requested_artist(candidate_track)
+        )
+        top_popularity = max(0.0, float(top_track.get("popularity", 0.0)))
+        second_popularity = (
+            max(0.0, float(second_track.get("popularity", 0.0)))
+            if isinstance(second_track, dict)
+            else 0.0
+        )
+        popularity_margin = top_popularity - second_popularity
+        top_variant_penalty = self._variant_penalty(effective_query, top_track)
+
+        # Deterministic constrained pass:
+        # when artist is specified, prefer exact canonical title + requested artist
+        # matches across top candidates instead of clarifying.
+        exact_constrained_candidates: list[tuple[dict[str, Any], float]] = []
+        if normalized_requested_artist and normalized_effective_query:
+            for candidate_track, candidate_score, _ in ranked_with_probs[:12]:
+                candidate_name_norm = self._normalize_match_text(
+                    str(candidate_track.get("name", ""))
+                )
+                candidate_canonical = _canonical_track_title(candidate_name_norm)
+                if candidate_canonical != normalized_effective_query:
+                    continue
+                if not _track_matches_requested_artist(candidate_track):
+                    continue
+                exact_constrained_candidates.append((candidate_track, candidate_score))
+
+        if exact_constrained_candidates:
+            selected_track, selected_score = max(
+                exact_constrained_candidates,
+                key=lambda item: (
+                    item[1],
+                    float(item[0].get("popularity", 0.0)),
+                ),
+            )
+            if selected_score >= (self.TRACK_CLARIFY_MIN - 0.12):
+                logger.info(
+                    "Track candidate selected by exact constrained title+artist pass",
+                    extra={
+                        "query": effective_query,
+                        "artist": artist,
+                        "selected_track_name": str(selected_track.get("name", "")),
+                        "selected_score": round(selected_score, 4),
+                        "candidate_count": len(exact_constrained_candidates),
+                    },
+                )
+                return selected_track, None
+
         if (
             top_probability >= auto_prob_min
             and probability_margin >= auto_margin_min
@@ -327,6 +475,146 @@ class SpotifyResolutionMixin:
                     "probability_margin": round(probability_margin, 4),
                     "constrained_request": constrained_request,
                     "auto_score_min": round(auto_score_min, 4),
+                },
+            )
+            return top_track, None
+
+        # Precision fallback for direct title requests:
+        # if the top title canonically matches the query, do not fail just because
+        # probability is diluted across many near-duplicate variants.
+        if (
+            not constrained_request
+            and canonical_title_match
+            and canonical_title_match_count == 1
+            and top_score >= (self.TRACK_CONFIDENCE_MIN - 0.03)
+            and score_margin >= (self.TRACK_CONFIDENCE_GAP / 2.0)
+            and title_similarity >= 0.90
+            and title_overlap >= 0.80
+        ):
+            logger.info(
+                "Track candidate accepted by canonical exact-title fallback",
+                extra={
+                    "query": effective_query,
+                    "track_name": top_track_name,
+                    "top_score": round(top_score, 4),
+                    "score_margin": round(score_margin, 4),
+                    "top_probability": round(top_probability, 4),
+                    "probability_margin": round(probability_margin, 4),
+                    "canonical_title_match_count": canonical_title_match_count,
+                },
+            )
+            return top_track, None
+
+        # Constrained exact fallback: if user provided artist and the top candidate
+        # matches both title and artist strongly, prefer playing over clarification.
+        if (
+            normalized_requested_artist
+            and canonical_title_match
+            and top_artist_match
+            and matching_artist_count >= 1
+            and top_score >= (auto_score_min - 0.03)
+            and (
+                score_margin >= (self.TRACK_CONFIDENCE_GAP / 3.0)
+                or probability_margin >= 0.03
+            )
+            and title_similarity >= 0.86
+            and title_overlap >= 0.70
+        ):
+            logger.info(
+                "Track candidate accepted by exact title+artist constrained fallback",
+                extra={
+                    "query": effective_query,
+                    "artist": artist,
+                    "track_name": top_track_name,
+                    "top_score": round(top_score, 4),
+                    "score_margin": round(score_margin, 4),
+                    "top_probability": round(top_probability, 4),
+                    "probability_margin": round(probability_margin, 4),
+                    "matching_artist_count": matching_artist_count,
+                },
+            )
+            return top_track, None
+
+        # Popularity tie-break fallback for constrained requests:
+        # when exact title+artist still produces low probability due many close variants,
+        # prefer the strongest non-variant canonical cut instead of clarifying.
+        if (
+            normalized_requested_artist
+            and canonical_title_match
+            and top_artist_match
+            and top_variant_penalty >= -0.01
+            and top_popularity >= 55.0
+            and popularity_margin >= 5.0
+            and top_score >= (auto_score_min - 0.08)
+            and title_similarity >= 0.85
+            and title_overlap >= 0.70
+        ):
+            logger.info(
+                "Track candidate accepted by constrained popularity tie-break fallback",
+                extra={
+                    "query": effective_query,
+                    "artist": artist,
+                    "track_name": top_track_name,
+                    "top_score": round(top_score, 4),
+                    "top_probability": round(top_probability, 4),
+                    "probability_margin": round(probability_margin, 4),
+                    "top_popularity": round(top_popularity, 2),
+                    "second_popularity": round(second_popularity, 2),
+                    "popularity_margin": round(popularity_margin, 2),
+                },
+            )
+            return top_track, None
+
+        # Low-churn constrained fallback:
+        # prioritize execution for exact title+artist requests even when
+        # probability mass is split across many nearby variants.
+        if (
+            normalized_requested_artist
+            and canonical_title_match
+            and top_artist_match
+            and top_score >= (self.TRACK_CLARIFY_MIN - 0.02)
+            and title_similarity >= 0.84
+            and title_overlap >= 0.65
+        ):
+            logger.info(
+                "Track candidate accepted by constrained low-churn fallback",
+                extra={
+                    "query": effective_query,
+                    "artist": artist,
+                    "track_name": top_track_name,
+                    "top_score": round(top_score, 4),
+                    "top_probability": round(top_probability, 4),
+                    "probability_margin": round(probability_margin, 4),
+                    "top_popularity": round(top_popularity, 2),
+                    "second_popularity": round(second_popularity, 2),
+                },
+            )
+            return top_track, None
+
+        # Direct-title dominant-hit fallback:
+        # avoid repetitive clarification turns when one canonical title candidate
+        # is clearly dominant by popularity and lexical fit.
+        if (
+            not constrained_request
+            and canonical_title_match
+            and top_score >= (self.TRACK_CLARIFY_MIN - 0.02)
+            and title_similarity >= 0.85
+            and title_overlap >= 0.70
+            and top_variant_penalty >= -0.02
+            and top_popularity >= 65.0
+            and popularity_margin >= 8.0
+        ):
+            logger.info(
+                "Track candidate accepted by direct-title dominant-hit fallback",
+                extra={
+                    "query": effective_query,
+                    "track_name": top_track_name,
+                    "top_score": round(top_score, 4),
+                    "top_probability": round(top_probability, 4),
+                    "probability_margin": round(probability_margin, 4),
+                    "top_popularity": round(top_popularity, 2),
+                    "second_popularity": round(second_popularity, 2),
+                    "popularity_margin": round(popularity_margin, 2),
                 },
             )
             return top_track, None
@@ -348,7 +636,11 @@ class SpotifyResolutionMixin:
                     "Low-confidence track result has multiple strong alternatives; clarifying",
                     extra={
                         "query": effective_query,
+                        "artist": artist,
+                        "top_track": top_track_name,
+                        "top_score": round(top_score, 4),
                         "top_probability": round(top_probability, 4),
+                        "probability_margin": round(probability_margin, 4),
                         "strong_candidates": len(strong_candidates),
                     },
                 )
@@ -360,12 +652,37 @@ class SpotifyResolutionMixin:
                     artist=artist,
                     playlist_name=playlist_name,
                 )
-            suggestions = [
-                "Try including the artist name",
-                "Try using the exact track title",
-                "Try adding album or playlist context",
-            ]
-            raise SearchNoResultsError(effective_query, "track", suggestions)
+            if (
+                top_score >= self.TRACK_CONFIDENCE_MIN
+                and score_margin >= self.TRACK_CONFIDENCE_GAP
+            ):
+                logger.info(
+                    "Low-probability distribution but strong top score margin; selecting top track",
+                    extra={
+                        "query": effective_query,
+                        "track_name": top_track_name,
+                        "top_score": round(top_score, 4),
+                        "score_margin": round(score_margin, 4),
+                        "top_probability": round(top_probability, 4),
+                    },
+                )
+                return top_track, None
+
+            logger.info(
+                "Low-confidence single-candidate distribution; returning clarification",
+                extra={
+                    "query": effective_query,
+                    "top_score": round(top_score, 4),
+                    "top_probability": round(top_probability, 4),
+                    "score_margin": round(score_margin, 4),
+                },
+            )
+            return None, self._build_clarification_result(
+                query=effective_query,
+                ranked_tracks=[(track, score) for track, score, _ in ranked_with_probs],
+                artist=artist,
+                playlist_name=playlist_name,
+            )
 
         logger.info(
             "Track candidate requires clarification by threshold policy",

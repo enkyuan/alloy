@@ -1,4 +1,5 @@
 import AVFoundation
+import Foundation
 import SwiftUI
 
 struct AssistantView: View {
@@ -7,10 +8,12 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
-    @State private var topVisibleItemId: String?
-    @State private var isFollowingLatest = true
-
-    private let latestAnchorId = "latest-anchor"
+    @State private var lastLoggedScrollTopOffset: CGFloat?
+    private let miniPlayerId = "mini-player"
+    private let scrollTopProbeId = "scroll-top-probe"
+    private let scrollCoordinateSpace = "assistant-scroll-space"
+    private let transcriptionBubbleId = "transcription-bubble"
+    private static let debugTimestampFormatter = ISO8601DateFormatter()
 
     private var messages: [Message] {
         viewModel.conversationService.messages
@@ -46,40 +49,6 @@ struct AssistantView: View {
                 CommandModeIndicator(isActive: viewModel.isInCommandMode)
                     .padding(.top, 60)
                 Spacer()
-            }
-
-            VStack {
-                Spacer()
-                MiniPlayer(
-                    item: currentPlaybackItem,
-                    onPlayPause: {
-                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
-                            if viewModel.isSpotifyPlaying {
-                                SpotifyAppService.shared.pause()
-                            } else {
-                                SpotifyAppService.shared.resume()
-                            }
-                        }
-                        viewModel.isSpotifyPlaying.toggle()
-                    },
-                    onNext: {
-                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
-                            SpotifyAppService.shared.skipNext()
-                        }
-                        viewModel.isSpotifyPlaying = true
-                    },
-                    onPrevious: {
-                        SpotifyAppService.shared.openSpotifyAndReturnToMilo {
-                            SpotifyAppService.shared.skipPrevious()
-                        }
-                        viewModel.isSpotifyPlaying = true
-                    },
-                    onRoute: {
-                        SpotifyAppService.shared.openSpotify()
-                    }
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 120)
             }
 
             CommandFeedbackOverlay(
@@ -118,65 +87,255 @@ struct AssistantView: View {
         "message-\(id.uuidString)"
     }
 
-    private func followLatestIfNeeded() {
-        guard isFollowingLatest else { return }
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.9, blendDuration: 0.2)) {
-            topVisibleItemId = latestAnchorId
-        }
+    private func autoScrollDebug(_ message: String) {
+        guard Environment.isDebugLoggingEnabled else { return }
+        let timestamp = Self.debugTimestampFormatter.string(from: Date())
+        print("[AssistantAutoScroll][\(timestamp)] \(message)")
     }
 
-    private func updateFollowState(from newTopVisibleItemId: String?) {
-        // Ignore transient nil updates produced during layout recalculation.
-        guard let newTopVisibleItemId else { return }
-        isFollowingLatest = (newTopVisibleItemId == latestAnchorId)
+    private func logScrollTopOffsetIfNeeded(_ offset: CGFloat, reason: String) {
+        let rounded = (offset * 10).rounded() / 10
+        if let lastLoggedScrollTopOffset,
+            abs(lastLoggedScrollTopOffset - rounded) < 6
+        {
+            return
+        }
+        lastLoggedScrollTopOffset = rounded
+        let timestamp = Self.debugTimestampFormatter.string(from: Date())
+        print(
+            "[AssistantAutoScroll][\(timestamp)] scroll-offset reason=\(reason) topOffset=\(rounded) " +
+                "activeSession=\(isActiveSession) anchor=\(latestConversationAnchorId ?? "none")"
+        )
+    }
+
+    private func shortText(_ text: String, maxLength: Int = 42) -> String {
+        let compact = text.replacingOccurrences(of: "\n", with: " ")
+        if compact.count <= maxLength {
+            return compact
+        }
+        return String(compact.prefix(maxLength)) + "..."
+    }
+
+    private func debugMessagesSummary(limit: Int = 5) -> String {
+        if messages.isEmpty {
+            return "[]"
+        }
+        let items = messages.suffix(limit).map { message in
+            let role = message.isUser ? "U" : "A"
+            let shortId = String(message.id.uuidString.prefix(8))
+            return "\(role):\(shortId)"
+        }
+        return "[" + items.joined(separator: ", ") + "]"
+    }
+
+    private var latestRequestMessageItemId: String? {
+        guard let latestUserMessage = messages.last(where: { $0.isUser }) else {
+            return nil
+        }
+        return messageItemId(for: latestUserMessage.id)
+    }
+
+    private var latestUserMessageIndex: Int? {
+        messages.lastIndex(where: { $0.isUser })
+    }
+
+    private var latestConversationAnchorId: String? {
+        if currentPlaybackItem != nil {
+            return miniPlayerId
+        }
+        if isActiveSession {
+            return transcriptionBubbleId
+        }
+        if let latestRequestMessageItemId {
+            return latestRequestMessageItemId
+        }
+        guard let latestMessage = messages.last else { return nil }
+        return messageItemId(for: latestMessage.id)
+    }
+
+    private func pinLatestConversationToTop(
+        using proxy: ScrollViewProxy,
+        animated: Bool = true,
+        reason: String
+    ) {
+        guard let latestConversationAnchorId else {
+            autoScrollDebug(
+                "pin-skip reason=\(reason) no-anchor count=\(messages.count) " +
+                    "activeSession=\(isActiveSession)"
+            )
+            return
+        }
+        autoScrollDebug(
+            "pin-start reason=\(reason) anchor=\(latestConversationAnchorId) " +
+                "animated=\(animated) activeSession=\(isActiveSession) " +
+                "count=\(messages.count) tail=\(debugMessagesSummary())"
+        )
+
+        let scrollAction = {
+            proxy.scrollTo(latestConversationAnchorId, anchor: .top)
+        }
+
+        if animated {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                scrollAction()
+            }
+        } else {
+            scrollAction()
+        }
+
+        autoScrollDebug(
+            "pin-complete reason=\(reason) anchor=\(latestConversationAnchorId)"
+        )
+    }
+
+    @ViewBuilder
+    private func messageRowView(for message: Message) -> some View {
+        MessageRow(message: message)
+            .id(messageItemId(for: message.id))
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .onAppear {
+                autoScrollDebug(
+                    "row-appear id=\(messageItemId(for: message.id)) " +
+                        "role=\(message.isUser ? "user" : "assistant") " +
+                        "text=\"\(shortText(message.text))\""
+                )
+            }
+            .onDisappear {
+                autoScrollDebug(
+                    "row-disappear id=\(messageItemId(for: message.id)) " +
+                        "role=\(message.isUser ? "user" : "assistant")"
+                )
+            }
+    }
+
+    @ViewBuilder
+    private func miniPlayerView(item: MusicPlaybackItem) -> some View {
+        MiniPlayer(
+            item: item,
+            onPlayPause: {
+                viewModel.handleMiniPlayerPlayPause()
+            },
+            onNext: {
+                viewModel.handleMiniPlayerNext()
+            },
+            onPrevious: {
+                viewModel.handleMiniPlayerPrevious()
+            },
+            onRoute: {
+                viewModel.openSpotifyApp()
+            }
+        )
+        .padding(.horizontal, 16)
+        .id(miniPlayerId)
     }
 
     @ViewBuilder private var chatView: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                Color.clear
-                    .frame(height: 1)
-                    .id(latestAnchorId)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    Color.clear
+                        .frame(height: 1)
+                        .id(scrollTopProbeId)
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: AssistantScrollTopOffsetPreferenceKey.self,
+                                    value: geometry.frame(in: .named(scrollCoordinateSpace)).minY
+                                )
+                            }
+                        )
 
-                if isActiveSession {
-                    TranscriptionBubble(
-                        isConnecting: viewModel.isConnecting,
-                        isRecording: viewModel.isRecording,
-                        isProcessing: viewModel.isProcessingTranscription,
-                        partialText: viewModel.partialTranscription
+                    if messages.isEmpty && !isActiveSession && currentPlaybackItem == nil {
+                        AssistantGreetingView()
+                    }
+
+                    if let playbackItem = currentPlaybackItem {
+                        let splitIndex = latestUserMessageIndex ?? messages.endIndex
+                        let olderMessages = Array(messages[..<splitIndex])
+                        let latestRequestAndAfter = Array(messages[splitIndex...])
+
+                        ForEach(olderMessages) { message in
+                            messageRowView(for: message)
+                        }
+
+                        miniPlayerView(item: playbackItem)
+
+                        ForEach(latestRequestAndAfter) { message in
+                            messageRowView(for: message)
+                        }
+                    } else {
+                        ForEach(messages) { message in
+                            messageRowView(for: message)
+                        }
+                    }
+
+                    // Keep timeline order chronological. While recording, the live request
+                    // bubble is the newest item and should sit after prior history.
+                    if isActiveSession {
+                        TranscriptionBubble(
+                            isConnecting: viewModel.isConnecting,
+                            isRecording: viewModel.isRecording,
+                            isProcessing: viewModel.isProcessingTranscription,
+                            partialText: viewModel.partialTranscription
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .id(transcriptionBubbleId)
+                        .onAppear {
+                            autoScrollDebug(
+                                "transcription-appear text=\"\(shortText(viewModel.partialTranscription))\""
+                            )
+                        }
+                        .onDisappear {
+                            autoScrollDebug("transcription-disappear")
+                        }
+                    }
+                }
+                .padding(.top, 4)
+                .padding(.bottom, 140)
+            }
+            .coordinateSpace(name: scrollCoordinateSpace)
+            .onAppear {
+                DispatchQueue.main.async {
+                    pinLatestConversationToTop(
+                        using: proxy,
+                        animated: false,
+                        reason: "onAppear"
                     )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                    .id("transcription-bubble")
-                }
-
-                if messages.isEmpty && !isActiveSession {
-                    AssistantGreetingView()
-                }
-
-                ForEach(messages) { message in
-                    MessageRow(message: message)
-                        .id(messageItemId(for: message.id))
                 }
             }
-            .padding(.top, 4)
-            .padding(.bottom, 140)
-            .scrollTargetLayout()
-        }
-        .scrollPosition(id: $topVisibleItemId, anchor: .top)
-        .defaultScrollAnchor(.top, for: .initialOffset)
-        .defaultScrollAnchor(.top, for: .sizeChanges)
-        .onAppear {
-            topVisibleItemId = latestAnchorId
-            isFollowingLatest = true
-        }
-        .onChange(of: messageIdList) { _, _ in
-            followLatestIfNeeded()
-        }
-        .onChange(of: isActiveSession) { _, _ in
-            followLatestIfNeeded()
-        }
-        .onChange(of: topVisibleItemId) { _, newValue in
-            updateFollowState(from: newValue)
+            .onChange(of: messageIdList) { _, _ in
+                autoScrollDebug(
+                    "message-change count=\(messages.count) activeSession=\(isActiveSession) " +
+                        "tail=\(debugMessagesSummary())"
+                )
+                DispatchQueue.main.async {
+                    pinLatestConversationToTop(
+                        using: proxy,
+                        reason: "messageIdList"
+                    )
+                }
+            }
+            .onChange(of: isActiveSession) { _, _ in
+                autoScrollDebug(
+                    "session-change activeSession=\(isActiveSession) " +
+                        "partial=\"\(shortText(viewModel.partialTranscription))\" " +
+                        "tail=\(debugMessagesSummary())"
+                )
+                DispatchQueue.main.async {
+                    pinLatestConversationToTop(
+                        using: proxy,
+                        reason: "isActiveSession"
+                    )
+                }
+            }
+            .onChange(of: viewModel.partialTranscription) { _, newValue in
+                autoScrollDebug(
+                    "partial-change text=\"\(shortText(newValue))\" activeSession=\(isActiveSession)"
+                )
+            }
+            .onPreferenceChange(AssistantScrollTopOffsetPreferenceKey.self) { topOffset in
+                logScrollTopOffsetIfNeeded(topOffset, reason: "layout")
+            }
         }
     }
 
@@ -229,6 +388,14 @@ struct AssistantView: View {
                 }
             }
         }
+    }
+}
+
+private struct AssistantScrollTopOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
