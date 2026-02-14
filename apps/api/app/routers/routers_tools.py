@@ -3,15 +3,11 @@
 from fastapi import APIRouter, Depends
 
 import app.services.integrations.tools  # noqa: F401 ensure tool registration
-from app.core.redis import get_redis_client
+from app.core.redis import RedisKeys, get_redis_client
 from app.routers.dependencies import get_current_supabase_user
 from app.services.integrations import list_tool_specs
 
 router = APIRouter(prefix="/tools", tags=["tools"])
-
-CACHE_KEY_PREFIX = "agent:cache:"
-HIT_KEY = "agent:cache:hit"
-MISS_KEY = "agent:cache:miss"
 
 
 @router.get("")
@@ -33,8 +29,8 @@ async def list_tools():
 async def cache_metrics(_: dict = Depends(get_current_supabase_user)):
     """Return Agent cache metrics."""
     redis = await get_redis_client()
-    hit = await redis.get(HIT_KEY)
-    miss = await redis.get(MISS_KEY)
+    hit = await redis.get(RedisKeys.AGENT_CACHE_HIT)
+    miss = await redis.get(RedisKeys.AGENT_CACHE_MISS)
     return {
         "hit": int(hit or 0),
         "miss": int(miss or 0),
@@ -46,7 +42,8 @@ async def clear_cache(_: dict = Depends(get_current_supabase_user)):
     """Clear Agent cache entries."""
     redis = await get_redis_client()
     deleted = 0
-    async for key in redis.scan_iter(f"{CACHE_KEY_PREFIX}*"):
+    async for key in redis.scan_iter(f"{RedisKeys.AGENT_CACHE_PREFIX}*"):
         deleted += await redis.delete(key)
-    await redis.delete(HIT_KEY, MISS_KEY)
+    await redis.delete(RedisKeys.AGENT_CACHE_HIT, RedisKeys.AGENT_CACHE_MISS)
     return {"deleted": deleted}
+

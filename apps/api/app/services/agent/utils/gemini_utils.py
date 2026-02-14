@@ -125,7 +125,7 @@ def log_gemini_messages(message: str, gemini_messages, statistics=None):
         to_log += f"\n[Statistics: {statistics}]\n"
     to_log += f"======== END {message} =========\n"
 
-    logger.info(f"Logging Gemini messages: {to_log}")
+    logger.info("Logging Gemini messages: %s", to_log)
 
 
 def message_to_str(gemini_messages) -> str:

@@ -25,7 +25,7 @@ class EventBackbone:
                 await self.redis.ping()
                 logger.info("Successfully connected to Redis Event Backbone")
             except Exception as e:
-                logger.error(f"Failed to connect to Redis Event Backbone: {e}")
+                logger.error("Failed to connect to Redis Event Backbone: %s", e)
                 raise
 
     async def close(self):
@@ -65,11 +65,12 @@ class EventBackbone:
                 stream_key, cast(dict[Any, Any], stream_fields)
             )
             logger.info(
-                f"Produced voice input to stream {stream_key}: ID={message_id} User={user_id}"
+                "Produced voice input to stream %s: ID=%s User=%s",
+                stream_key, message_id, user_id,
             )
             return message_id
         except Exception as e:
-            logger.error(f"Failed to produce voice input to stream {stream_key}: {e}")
+            logger.error("Failed to produce voice input to stream %s: %s", stream_key, e)
             raise
 
 

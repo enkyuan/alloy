@@ -50,7 +50,7 @@ class AgentSystem:
         bridge = Bridge("logging")
 
         def log_message(msg):
-            logger.debug(f"Logger Bridge:\n\n{msg}")
+            logger.debug("Logger Bridge:\n\n%s", msg)
 
         bridge.on("*").map(log_message)
         self.bridges["logging"] = bridge
@@ -97,7 +97,7 @@ class AgentSystem:
         if self.authorized_node is None:
             self.authorized_node = bridge.node_id
             self._setup_authorized_infrastructure(authorized_node=bridge.node_id)
-            logger.info(f"AgentSystem: Set authorized agent to '{bridge.node_id}'")
+            logger.info("AgentSystem: Set authorized agent to '%s'", bridge.node_id)
         elif self.authorized_node != bridge.node_id:
             logger.warning(
                 f"AgentSystem: Authorized agent already set to '{self.authorized_node}', "
@@ -142,13 +142,13 @@ class AgentSystem:
 
         # Register all bridges quietly first
         for name, bridge in self.bridges.items():
-            logger.debug(f"AgentSystem: Registering bridge '{name}'")
+            logger.debug("AgentSystem: Registering bridge '%s'", name)
             self.bus.register_bridge(name, bridge)
 
         # Initialize all reasoning nodes quietly
         for name, component in self.components.items():
             if hasattr(component, "start"):
-                logger.debug(f"AgentSystem: Starting component '{name}'")
+                logger.debug("AgentSystem: Starting component '%s'", name)
                 await component.start()
 
         # Start bus (which will show the summary) then other components
@@ -166,20 +166,20 @@ class AgentSystem:
         logger.info("AgentSystem: Starting system cleanup")
 
         # Stop bridges first.
-        logger.debug(f"AgentSystem: Stopping {len(self.bridges)} bridges")
+        logger.debug("AgentSystem: Stopping %s bridges", len(self.bridges))
         for name, bridge in self.bridges.items():
-            logger.debug(f"AgentSystem: Stopping bridge '{name}'")
+            logger.debug("AgentSystem: Stopping bridge '%s'", name)
             try:
                 await bridge.stop()
             except Exception as e:
-                logger.error(f"AgentSystem: Error stopping bridge '{name}': {e}")
+                logger.error("AgentSystem: Error stopping bridge '%s': %s", name, e)
                 raise
 
         # Cleanup reasoning nodes.
-        logger.debug(f"AgentSystem: Cleaning up {len(self.components)} components")
+        logger.debug("AgentSystem: Cleaning up %s components", len(self.components))
         for name, component in self.components.items():
             if hasattr(component, "cleanup"):
-                logger.debug(f"AgentSystem: Cleaning up component '{name}'")
+                logger.debug("AgentSystem: Cleaning up component '%s'", name)
                 await component.cleanup()
 
         # Then stop infrastructure.
@@ -202,7 +202,7 @@ class AgentSystem:
         Args:
             message (str): Initial greeting message.
         """
-        logger.info(f"AgentSystem: Sending initial message: '{message[:50]}...'")
+        logger.info("AgentSystem: Sending initial message: '%s...'", message[:50])
         source = self.authorized_node or "system"
         await self.bus.broadcast(
             Message(source=source, event=AgentResponse(content=message))

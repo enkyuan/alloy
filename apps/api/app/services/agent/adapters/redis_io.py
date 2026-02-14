@@ -21,11 +21,11 @@ def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
     try:
         parsed = parse_event_envelope(envelope)
     except Exception as exc:
-        logger.warning(f"Invalid event envelope: {exc}")
+        logger.warning("Invalid event envelope: %s", exc)
         return []
 
     if not is_supported_event_version(parsed.version):
-        logger.warning(f"Unsupported event version: {parsed.version}")
+        logger.warning("Unsupported event version: %s", parsed.version)
         return []
 
     event_cls = EventsRegistry.get_type(parsed.type)
@@ -39,14 +39,14 @@ def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
         else:
             event = event_cls.model_validate(payload)
     except Exception as exc:
-        logger.warning(f"Failed to parse event payload for {parsed.type}: {exc}")
+        logger.warning("Failed to parse event payload for %s: %s", parsed.type, exc)
         return []
 
     if hasattr(event, "user_id") and getattr(event, "user_id") is None and parsed.user_id:
         try:
             setattr(event, "user_id", str(parsed.user_id))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not set user_id on event: %s", exc)
 
     return [event]
 
@@ -75,7 +75,7 @@ class RedisStreamInput:
             await redis.xgroup_create(self.stream, self.group, id="0", mkstream=True)
         except Exception as exc:
             if "BUSYGROUP" not in str(exc):
-                logger.warning(f"Redis stream group error: {exc}")
+                logger.warning("Redis stream group error: %s", exc)
         else:
             logger.info(
                 "Redis stream group ready",
@@ -103,7 +103,7 @@ class RedisStreamInput:
                     try:
                         await redis.xack(self.stream, self.group, message_id)
                     except Exception as exc:
-                        logger.debug(f"Redis xack failed: {exc}")
+                        logger.debug("Redis xack failed: %s", exc)
                     logger.debug(
                         "Received stream event",
                         extra={"stream": self.stream, "message_id": message_id},
@@ -183,13 +183,13 @@ class RedisPublisher:
         redis = await get_redis_client()
         event_alias = event_type or EventsRegistry.get_alias(type(event))
         if not event_alias:
-            logger.warning(f"No alias registered for event {type(event).__name__}")
+            logger.warning("No alias registered for event %s", type(event).__name__)
             return
         if hasattr(event, "user_id") and getattr(event, "user_id") is None:
             try:
                 setattr(event, "user_id", user_id)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Could not set user_id on event: %s", exc)
 
         payload = event.model_dump_json()
         envelope = build_event_envelope(

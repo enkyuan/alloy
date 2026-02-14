@@ -5,7 +5,6 @@ import re
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from app.models.integration import Integration
 from app.services.integrations.spotify.client import spotify_client
@@ -29,7 +28,7 @@ class SpotifyServiceBaseMixin:
         self.client = client or spotify_client
 
     async def get_valid_token(
-        self: Any, integration: Integration, db: Session | AsyncSession
+        self: Any, integration: Integration, db: AsyncSession
     ) -> str:
         """Get a valid Spotify access token using the client helper."""
         return await self.client.get_valid_token(integration, db)
@@ -114,25 +113,25 @@ class SpotifyServiceBaseMixin:
             # Prefer active device
             for device in valid_devices:
                 if device.get("is_active"):
-                    logger.info(f"Found active device: {device['name']}")
+                    logger.info("Found active device: %s", device["name"])
                     return device["id"]
 
             # Use first available valid device
             first_device = valid_devices[0]
-            logger.info(f"Using first available device: {first_device['name']}")
+            logger.info("Using first available device: %s", first_device["name"])
             return first_device["id"]
 
-        except Exception as e:
-            logger.error(f"Failed to get active device: {str(e)}")
+        except Exception as error:
+            logger.error("Failed to get active device: %s", error)
             # Check if it's an HTTP error with status code
-            status_code = getattr(e, "status_code", None)
+            status_code = getattr(error, "status_code", None)
             if status_code is None:
-                response = getattr(e, "response", None)
+                response = getattr(error, "response", None)
                 status_code = getattr(response, "status_code", None)
 
             raise SpotifyAPIError(
                 "Failed to get device information",
-                original_error=e,
+                original_error=error,
                 is_retryable=status_code in [429, 500, 502, 503, 504]
                 if status_code
                 else False,

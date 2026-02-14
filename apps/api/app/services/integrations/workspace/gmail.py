@@ -65,11 +65,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Email sent successfully: {send_result['id']}")
+            logger.info("Email sent successfully: %s", send_result["id"])
             return send_result
 
         except HttpError as error:
-            logger.error(f"Failed to send email: {error}")
+            logger.error("Failed to send email: %s", error)
             raise
 
     def get_messages(
@@ -102,11 +102,11 @@ class GmailService:
             results = self.service.users().messages().list(**request_params).execute()
             messages = results.get("messages", [])
 
-            logger.info(f"Retrieved {len(messages)} messages")
+            logger.info("Retrieved %s messages", len(messages))
             return messages
 
         except HttpError as error:
-            logger.error(f"Failed to get messages: {error}")
+            logger.error("Failed to get messages: %s", error)
             raise
 
     def get_message_detail(self, message_id: str) -> Dict[str, Any]:
@@ -129,11 +129,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Retrieved message detail: {message_id}")
+            logger.info("Retrieved message detail: %s", message_id)
             return message
 
         except HttpError as error:
-            logger.error(f"Failed to get message detail: {error}")
+            logger.error("Failed to get message detail: %s", error)
             raise
 
     def get_unread_count(self) -> int:
@@ -154,11 +154,11 @@ class GmailService:
             )
 
             count = results.get("resultSizeEstimate", 0)
-            logger.info(f"Unread message count: {count}")
+            logger.info("Unread message count: %s", count)
             return count
 
         except HttpError as error:
-            logger.error(f"Failed to get unread count: {error}")
+            logger.error("Failed to get unread count: %s", error)
             raise
 
     def mark_as_read(self, message_id: str) -> Dict[str, Any]:
@@ -181,11 +181,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Marked message as read: {message_id}")
+            logger.info("Marked message as read: %s", message_id)
             return message
 
         except HttpError as error:
-            logger.error(f"Failed to mark message as read: {error}")
+            logger.error("Failed to mark message as read: %s", error)
             raise
 
     def get_profile(self) -> Dict[str, Any]:
@@ -199,11 +199,11 @@ class GmailService:
         """
         try:
             profile = self.service.users().getProfile(userId="me").execute()
-            logger.info(f"Retrieved Gmail profile: {profile.get('emailAddress')}")
+            logger.info("Retrieved Gmail profile: %s", profile.get("emailAddress"))
             return profile
 
         except HttpError as error:
-            logger.error(f"Failed to get Gmail profile: {error}")
+            logger.error("Failed to get Gmail profile: %s", error)
             raise
 
     def create_draft(
@@ -237,11 +237,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Created draft: {draft['id']}")
+            logger.info("Created draft: %s", draft["id"])
             return draft
 
         except HttpError as error:
-            logger.error(f"Failed to create draft: {error}")
+            logger.error("Failed to create draft: %s", error)
             raise
 
     def update_draft(
@@ -281,11 +281,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Updated draft: {draft_id}")
+            logger.info("Updated draft: %s", draft_id)
             return draft
 
         except HttpError as error:
-            logger.error(f"Failed to update draft: {error}")
+            logger.error("Failed to update draft: %s", error)
             raise
 
     def send_draft(self, draft_id: str) -> Dict[str, Any]:
@@ -305,11 +305,11 @@ class GmailService:
                 .execute()
             )
 
-            logger.info(f"Sent draft: {draft_id}")
+            logger.info("Sent draft: %s", draft_id)
             return result
 
         except HttpError as error:
-            logger.error(f"Failed to send draft: {error}")
+            logger.error("Failed to send draft: %s", error)
             raise
 
     def list_labels(self) -> List[Dict[str, Any]]:
@@ -321,10 +321,10 @@ class GmailService:
         try:
             results = self.service.users().labels().list(userId="me").execute()
             labels = results.get("labels", [])
-            logger.info(f"Retrieved {len(labels)} labels")
+            logger.info("Retrieved %s labels", len(labels))
             return labels
         except HttpError as error:
-            logger.error(f"Failed to list labels: {error}")
+            logger.error("Failed to list labels: %s", error)
             raise
 
     def get_label(self, label_id: str) -> Dict[str, Any]:
@@ -342,7 +342,7 @@ class GmailService:
             )
             return label
         except HttpError as error:
-            logger.error(f"Failed to get label: {error}")
+            logger.error("Failed to get label: %s", error)
             raise
 
     def create_label(
@@ -373,10 +373,10 @@ class GmailService:
                 .create(userId="me", body=label_object)
                 .execute()
             )
-            logger.info(f"Created label: {name}")
+            logger.info("Created label: %s", name)
             return label
         except HttpError as error:
-            logger.error(f"Failed to create label: {error}")
+            logger.error("Failed to create label: %s", error)
             raise
 
     def get_thread(self, thread_id: str) -> Dict[str, Any]:
@@ -392,10 +392,10 @@ class GmailService:
             thread = (
                 self.service.users().threads().get(userId="me", id=thread_id).execute()
             )
-            logger.info(f"Retrieved thread: {thread_id}")
+            logger.info("Retrieved thread: %s", thread_id)
             return thread
         except HttpError as error:
-            logger.error(f"Failed to get thread: {error}")
+            logger.error("Failed to get thread: %s", error)
             raise
 
 

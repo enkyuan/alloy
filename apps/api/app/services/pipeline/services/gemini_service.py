@@ -34,7 +34,7 @@ class GeminiService:
         logger.info("Initializing Gemini client...")
         self.client = genai.Client(api_key=self.api_key)
         self.model = settings.GEMINI_MODEL
-        logger.info(f"Gemini client initialized with model: {self.model}")
+        logger.info("Gemini client initialized with model: %s", self.model)
 
     async def generate_response(
         self,
@@ -71,11 +71,11 @@ class GeminiService:
                 config=config,
             )
 
-            logger.info(f"Generated Gemini response for prompt: {prompt[:50]}...")
+            logger.info("Generated Gemini response for prompt: %s...", prompt[:50])
             return response.text or ""
 
         except Exception as e:
-            logger.error(f"Failed to generate Gemini response: {str(e)}", exc_info=True)
+            logger.error("Failed to generate Gemini response: %s", e, exc_info=True)
             raise
 
     async def generate_chat_response(
@@ -97,8 +97,8 @@ class GeminiService:
             Generated response object (containing text or function calls)
         """
         try:
-            logger.info(f"Generating chat response with {len(messages)} messages")
-            logger.debug(f"Messages: {messages}")
+            logger.info("Generating chat response with %s messages", len(messages))
+            logger.debug("Messages: %s", messages)
 
             # Convert messages to Gemini format
             contents = []
@@ -109,12 +109,12 @@ class GeminiService:
             config: Any = {"temperature": temperature}
             if system_instruction:
                 config["system_instruction"] = system_instruction
-                logger.debug(f"Using system instruction: {system_instruction[:100]}...")
+                logger.debug("Using system instruction: %s...", system_instruction[:100])
 
             if tools:
                 config["tools"] = tools
 
-            logger.info(f"Calling Gemini API with model: {self.model}")
+            logger.info("Calling Gemini API with model: %s", self.model)
             response = await asyncio.to_thread(
                 self.client.models.generate_content,
                 model=self.model,
@@ -127,9 +127,9 @@ class GeminiService:
             return response
 
         except Exception as e:
-            logger.error(f"Failed to generate chat response: {str(e)}", exc_info=True)
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Messages that failed: {messages}")
+            logger.error("Failed to generate chat response: %s", e, exc_info=True)
+            logger.error("Error type: %s", type(e).__name__)
+            logger.error("Messages that failed: %s", messages)
             raise
 
     async def generate_streaming_response(

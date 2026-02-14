@@ -249,7 +249,7 @@ class SpotifyCollectionCommandsMixin:
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
-            logger.error(f"Failed to search and play playlist: {str(e)}", exc_info=True)
+            logger.error("Failed to search and play playlist: %s", e, exc_info=True)
 
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
@@ -295,7 +295,7 @@ class SpotifyCollectionCommandsMixin:
             if artist:
                 search_query = f"album:{query} artist:{artist}"
 
-            logger.info(f"Searching for album: {search_query}")
+            logger.info("Searching for album: %s", search_query)
 
             # Search for album
             search_results = await self.client.search(
@@ -318,7 +318,7 @@ class SpotifyCollectionCommandsMixin:
             album_uri = selected_album["uri"]
             album_id = selected_album["id"]
 
-            logger.info(f"Selected album: {album_name} by {album_artist}")
+            logger.info("Selected album: %s by %s", album_name, album_artist)
 
             # Get active device
             device_id = await self.get_active_device(access_token)
@@ -357,7 +357,7 @@ class SpotifyCollectionCommandsMixin:
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
-            logger.error(f"Failed to search and play album: {str(e)}", exc_info=True)
+            logger.error("Failed to search and play album: %s", e, exc_info=True)
 
             if self._check_premium_error(e):
                 raise PremiumRequiredError(

@@ -116,17 +116,17 @@ class ConversationHarness:
                     self.shutdown_event.set()
                     break
                 except json.JSONDecodeError as e:
-                    logger.exception(f"Failed to parse JSON message: {e}")
+                    logger.exception("Failed to parse JSON message: %s", e)
                     continue
                 except Exception as e:
-                    logger.exception(f"Error in input processor: {e}")
+                    logger.exception("Error in input processor: %s", e)
                     if not self.shutdown_event.is_set():
                         await asyncio.sleep(0.1)  # Brief pause before retry
 
         except asyncio.CancelledError:
             logger.info("Input processor cancelled")
         except Exception as e:
-            logger.exception(f"Unexpected error in input processor: {e}")
+            logger.exception("Unexpected error in input processor: %s", e)
 
     async def get(self) -> InputMessage:
         """Get a message from the input queue"""
@@ -137,7 +137,7 @@ class ConversationHarness:
             if not self.shutdown_event.is_set():
                 await self.websocket.send_json(output.model_dump())
         except Exception as e:
-            logger.warning(f"Failed to send message via WebSocket: {e}")
+            logger.warning("Failed to send message via WebSocket: %s", e)
             self.shutdown_event.set()
 
     async def end_call(self):
@@ -165,7 +165,7 @@ class ConversationHarness:
 
     async def send_message(self, message: str):
         """Send a message via WebSocket with connection state checking"""
-        logger.info(f'🤖 Agent said: "{message}"')
+        logger.info('🤖 Agent said: "%s"', message)
         await self._send(MessageOutput(content=message))
 
     async def send_error(self, error: str):
@@ -197,7 +197,7 @@ class ConversationHarness:
             event: The event name/type being logged
             metadata: Optional metadata dictionary for the event
         """
-        logger.debug(f"Logging event: {event}" + (f" - {metadata}" if metadata else ""))
+        logger.debug("Logging event: %s%s", event, (" - %s" % metadata) if metadata else "")
         await self._send(LogEventOutput(event=event, metadata=metadata))
 
     async def log_metric(self, name: str, value: Any):
@@ -208,7 +208,7 @@ class ConversationHarness:
             name: The metric name
             value: The metric value (can be any JSON-serializable type)
         """
-        logger.debug(f"📈 Logging metric: {name}={value}")
+        logger.debug("📈 Logging metric: %s=%s", name, value)
         await self._send(LogMetricOutput(name=name, value=value))
 
     async def send_dtmf(self, button: str):
@@ -258,7 +258,7 @@ class ConversationHarness:
                 logger.info("User stopped speaking")
                 return [UserStoppedSpeaking()]
         elif isinstance(message, TranscriptionInput):
-            logger.info(f'User said: "{message.content}"')
+            logger.info('User said: "%s"', message.content)
             return [UserTranscriptionReceived(content=message.content)]
         elif isinstance(message, AgentStateInput):
             if message.value == State.SPEAKING:
@@ -268,13 +268,13 @@ class ConversationHarness:
                 logger.info("Agent stopped speaking")
                 return [AgentStoppedSpeaking()]
         elif isinstance(message, AgentSpeechInput):
-            logger.info(f'Agent speech sent: "{message.content}"')
+            logger.info('Agent speech sent: "%s"', message.content)
             return [AgentSpeechSent(content=message.content)]
         elif isinstance(message, DTMFInput):
-            logger.info(f"DTMF received: {message.button}")
+            logger.info("DTMF received: %s", message.button)
             return [DTMFInputEvent(button=message.button)]
         elif isinstance(message, CustomInput):
-            logger.info(f"Custom event received: {message.metadata}")
+            logger.info("Custom event received: %s", message.metadata)
             return [CustomReceived(metadata=cast(dict, message.metadata))]
         else:
             # Fallback for unknown types.

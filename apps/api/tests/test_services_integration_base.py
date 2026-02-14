@@ -4,7 +4,11 @@ import httpx
 import pytest
 
 from app.services.integrations.base import IntegrationHTTPService
-from app.services.integrations.errors import IntegrationAuthError
+from app.services.integrations.errors import (
+    IntegrationAPIError,
+    IntegrationAuthError,
+    IntegrationNetworkError,
+)
 
 
 class DummyIntegrationService(IntegrationHTTPService):
@@ -78,3 +82,32 @@ async def test_integration_base_retries_retryable_statuses() -> None:
 
     assert request_count == 2
     assert payload == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_integration_base_opens_circuit_after_repeated_failures() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="temporarily unavailable")
+
+    service = DummyIntegrationService()
+    service._http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    try:
+        for _ in range(service.CIRCUIT_BREAKER_FAILURE_THRESHOLD):
+            with pytest.raises(IntegrationAPIError):
+                await service._request_json(
+                    "GET",
+                    "https://dummy.example/health",
+                    action="check health",
+                    retry_attempts=1,
+                )
+
+        with pytest.raises(IntegrationNetworkError):
+            await service._request_json(
+                "GET",
+                "https://dummy.example/health",
+                action="check health",
+                retry_attempts=1,
+            )
+    finally:
+        await service.close()

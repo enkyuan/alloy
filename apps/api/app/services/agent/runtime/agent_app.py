@@ -80,7 +80,7 @@ class AgentApp:
             except HTTPException:
                 raise
             except Exception as e:
-                logger.error(f"Error in pre_call_handler: {str(e)}")
+                logger.error("Error in pre_call_handler: %s", e)
                 raise HTTPException(
                     status_code=500, detail="Server error in call processing"
                 ) from e
@@ -127,7 +127,7 @@ class AgentApp:
             try:
                 metadata = json.loads(query_params["metadata"])
             except (json.JSONDecodeError, TypeError):
-                logger.warning(f"Invalid metadata JSON: {query_params['metadata']}")
+                logger.warning("Invalid metadata JSON: %s", query_params['metadata'])
                 metadata = {}
 
         # Parse agent JSON
@@ -136,7 +136,7 @@ class AgentApp:
             try:
                 agent_data = json.loads(query_params["agent"])
             except (json.JSONDecodeError, TypeError):
-                logger.error(f"Invalid agent JSON: {query_params['agent']}")
+                logger.error("Invalid agent JSON: %s", query_params['agent'])
                 agent_data = {}
 
         # Create CallRequest from URL parameters
@@ -162,14 +162,14 @@ class AgentApp:
         except WebSocketDisconnect:
             logger.info("Client disconnected")
         except Exception as e:
-            logger.exception(f"Error: {str(e)}")
+            logger.exception("Error: %s", e)
             try:
                 await system.harness.send_error(
                     "System has encountered an error, please try again later."
                 )
                 await system.harness.end_call()
-            except Exception:
-                pass
+            except Exception as cleanup_err:
+                logger.warning("Failed to send error to client: %s", cleanup_err)
         finally:
             await system.cleanup()
 

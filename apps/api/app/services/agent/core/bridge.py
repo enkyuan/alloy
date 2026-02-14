@@ -152,7 +152,7 @@ class Bridge:
                 f"Event pattern must be a string or a class type: {event_pattern}"
             )
 
-        logger.debug(f"Bridge {self.node_id}: Adding route for {event_pattern}")
+        logger.debug("Bridge %s: Adding route for %s", self.node_id, event_pattern)
 
         # RouteBuilder and RouteHandler have a 1:1 relationship.
         route_builder = RouteBuilder(self)
@@ -228,16 +228,16 @@ class Bridge:
         messages to bus events. Essential for bridging external input streams.
         """
         if not self.input_source:
-            logger.warning(f"Bridge {self.node_id}: No input source configured")
+            logger.warning("Bridge %s: No input source configured", self.node_id)
             return
 
         if not hasattr(self.input_source, "get"):
-            logger.warning(f"Bridge {self.node_id}: Input source missing get() method")
+            logger.warning("Bridge %s: Input source missing get() method", self.node_id)
             return
 
         self.input_shutdown = asyncio.Event()
         self.input_task = asyncio.create_task(self._input_router())
-        logger.debug(f"Bridge {self.node_id}: Input routing started")
+        logger.debug("Bridge %s: Input routing started", self.node_id)
 
     async def _input_router(self) -> None:
         """
@@ -273,7 +273,7 @@ class Bridge:
                 # No input available - continue polling.
                 continue
             except Exception as e:
-                logger.exception(f"Bridge {self.node_id}: Input routing error: {e}")
+                logger.exception("Bridge %s: Input routing error: %s", self.node_id, e)
 
     async def stop_input_routing(self) -> None:
         """Stop input routing task and cleanup resources."""
@@ -287,7 +287,7 @@ class Bridge:
             except asyncio.CancelledError:
                 pass
 
-        logger.debug(f"Bridge {self.node_id}: Input routing stopped")
+        logger.debug("Bridge %s: Input routing stopped", self.node_id)
 
     async def start(self) -> None:
         """Start scheduled tasks and input routing if configured."""
@@ -334,7 +334,7 @@ class Bridge:
                 await asyncio.gather(*self.active_route_tasks, return_exceptions=True)
 
             self.active_route_tasks.clear()
-            logger.info(f"Bridge {self.node_id}: All route tasks cancelled")
+            logger.info("Bridge %s: All route tasks cancelled", self.node_id)
 
     # TODO: Do we need this if we are doing the filtering anyway on each event?
     def can_handle(self, event: Any) -> bool:

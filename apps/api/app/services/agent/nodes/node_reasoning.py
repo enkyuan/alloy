@@ -71,7 +71,7 @@ class ReasoningNode(NodeBase):
         # This is a list of the events.
         self.conversation_events: List[Any] = []
 
-        logger.info(f"{self} initialized")
+        logger.info("%s initialized", self)
 
     def on_interrupt_generate(self, message: Message) -> None:
         """Handle interrupt event."""
@@ -113,7 +113,7 @@ class ReasoningNode(NodeBase):
         ctx = self._build_conversation_context()
 
         # 2. Let subclass do specialized processing
-        logger.info(f"Processing context: {ctx.events}")
+        logger.info("Processing context: %s", ctx.events)
         async for chunk in self.process_context(ctx):
             # Save the event to the conversation history.
             self.add_event(chunk)
@@ -124,7 +124,7 @@ class ReasoningNode(NodeBase):
         yield AgentGenerationComplete()
 
     @abstractmethod
-    def process_context(
+    async def process_context(
         self, context: ConversationContext
     ) -> AsyncGenerator[EventInstance, None]:
         """
@@ -144,10 +144,9 @@ class ReasoningNode(NodeBase):
             ToolCall: Tool execution requests
             Custom types: Subclass-specific results (will be yielded directly)
         """
-        # This is an abstract async generator - subclasses must implement
+        # This is an abstract async generator - subclasses must implement.
         raise NotImplementedError("Subclasses must implement process_context")
-        if False:
-            yield cast(EventInstance, None)
+        yield cast(EventInstance, None)  # pragma: no cover
 
     def _build_conversation_context(
         self, user_id: Optional[str] = None
@@ -222,5 +221,5 @@ class ReasoningNode(NodeBase):
         """
         cleared_events = self.conversation_events.copy()
         self.conversation_events = []
-        logger.debug(f"{self} cleared {len(cleared_events)} conversation events")
+        logger.debug("%s cleared %s conversation events", self, len(cleared_events))
         return cleared_events

@@ -68,11 +68,11 @@ class GoogleCalendarService:
             events_result = self.service.events().list(**params).execute()
             events = events_result.get("items", [])
 
-            logger.info(f"Retrieved {len(events)} events from calendar")
+            logger.info("Retrieved %s events from calendar", len(events))
             return events
 
         except HttpError as error:
-            logger.error(f"Failed to list events: {error}")
+            logger.error("Failed to list events: %s", error)
             raise
 
     def get_event(self, event_id: str, calendar_id: str = "primary") -> Dict[str, Any]:
@@ -95,11 +95,11 @@ class GoogleCalendarService:
                 .execute()
             )
 
-            logger.info(f"Retrieved event: {event.get('summary', 'Untitled')}")
+            logger.info("Retrieved event: %s", event.get("summary", "Untitled"))
             return event
 
         except HttpError as error:
-            logger.error(f"Failed to get event: {error}")
+            logger.error("Failed to get event: %s", error)
             raise
 
     def create_event(
@@ -156,26 +156,17 @@ class GoogleCalendarService:
             if recurrence:
                 event["recurrence"] = recurrence
 
-            if description:
-                event["description"] = description
-
-            if location:
-                event["location"] = location
-
-            if attendees:
-                event["attendees"] = [{"email": email} for email in attendees]
-
             created_event = (
                 self.service.events()
                 .insert(calendarId=calendar_id, body=event)
                 .execute()
             )
 
-            logger.info(f"Created event: {created_event.get('summary', 'Untitled')}")
+            logger.info("Created event: %s", created_event.get("summary", "Untitled"))
             return created_event
 
         except HttpError as error:
-            logger.error(f"Failed to create event: {error}")
+            logger.error("Failed to create event: %s", error)
             raise
 
     def update_event(
@@ -241,11 +232,11 @@ class GoogleCalendarService:
                 .execute()
             )
 
-            logger.info(f"Updated event: {updated_event.get('summary', 'Untitled')}")
+            logger.info("Updated event: %s", updated_event.get("summary", "Untitled"))
             return updated_event
 
         except HttpError as error:
-            logger.error(f"Failed to update event: {error}")
+            logger.error("Failed to update event: %s", error)
             raise
 
     def delete_event(self, event_id: str, calendar_id: str = "primary") -> None:
@@ -263,10 +254,10 @@ class GoogleCalendarService:
                 calendarId=calendar_id, eventId=event_id
             ).execute()
 
-            logger.info(f"Deleted event: {event_id}")
+            logger.info("Deleted event: %s", event_id)
 
         except HttpError as error:
-            logger.error(f"Failed to delete event: {error}")
+            logger.error("Failed to delete event: %s", error)
             raise
 
     def list_calendars(self) -> List[Dict[str, Any]]:
@@ -282,11 +273,11 @@ class GoogleCalendarService:
             calendar_list = self.service.calendarList().list().execute()
             calendars = calendar_list.get("items", [])
 
-            logger.info(f"Retrieved {len(calendars)} calendars")
+            logger.info("Retrieved %s calendars", len(calendars))
             return calendars
 
         except HttpError as error:
-            logger.error(f"Failed to list calendars: {error}")
+            logger.error("Failed to list calendars: %s", error)
             raise
 
     def get_upcoming_events(
@@ -364,7 +355,7 @@ class GoogleCalendarService:
             logger.info("Checked free/busy status")
             return result
         except HttpError as error:
-            logger.error(f"Failed to check free/busy: {error}")
+            logger.error("Failed to check free/busy: %s", error)
             raise
 
     def patch_event(
@@ -389,10 +380,10 @@ class GoogleCalendarService:
                 .patch(calendarId=calendar_id, eventId=event_id, body=body)
                 .execute()
             )
-            logger.info(f"Patched event: {event_id}")
+            logger.info("Patched event: %s", event_id)
             return updated_event
         except HttpError as error:
-            logger.error(f"Failed to patch event: {error}")
+            logger.error("Failed to patch event: %s", error)
             raise
 
 

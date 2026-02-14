@@ -20,6 +20,7 @@ from app.services.integrations.service_names import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.get("", response_model=IntegrationListResponse)
 async def get_user_integrations(
     supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
@@ -28,7 +29,7 @@ async def get_user_integrations(
     """Get all integrations for the authenticated user.
 
     Args:
-        authorization: Bearer token from Authorization header
+        supabase_user: Authenticated user from Supabase dependency
         db: Database session
 
     Returns:
@@ -65,12 +66,12 @@ async def get_user_integrations(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to get integrations: {str(e)}", exc_info=True)
+    except Exception as error:
+        logger.error("Failed to get integrations: %s", error, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get integrations",
-        )
+        ) from error
 
 
 @router.post("/{service}/disconnect")
@@ -83,7 +84,7 @@ async def disconnect_service(
 
     Args:
         service: Service name to disconnect
-        authorization: Bearer token from Authorization header
+        supabase_user: Authenticated user from Supabase dependency
         db: Database session
 
     Returns:
@@ -95,7 +96,9 @@ async def disconnect_service(
     try:
         db_service_name = to_db_service_name(service)
         logger.info(
-            f"Mapped service '{service}' to database service '{db_service_name}'"
+            "Mapped service '%s' to database service '%s'",
+            service,
+            db_service_name,
         )
 
         # Find and deactivate integration
@@ -119,16 +122,18 @@ async def disconnect_service(
         await db.commit()
 
         logger.info(
-            f"Successfully disconnected {db_service_name} for user {supabase_user['id']}"
+            "Successfully disconnected %s for user %s",
+            db_service_name,
+            supabase_user["id"],
         )
 
         return {"success": True, "message": f"Successfully disconnected {service}"}
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to disconnect {service}: {str(e)}", exc_info=True)
+    except Exception as error:
+        logger.error("Failed to disconnect %s: %s", service, error, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect service",
-        )
+        ) from error

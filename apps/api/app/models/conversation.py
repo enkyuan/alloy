@@ -8,9 +8,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.mixins import MetadataJsonMixin
 
 
-class Conversation(Base):
+class Conversation(MetadataJsonMixin, Base):
     """Conversation model representing a chat session.
 
     Attributes:
@@ -47,10 +48,3 @@ class Conversation(Base):
     # Relationships
     user = relationship("User", backref="conversations")
 
-    @property
-    def metadata_json(self) -> Optional[dict]:
-        return self.meta_data
-
-    @metadata_json.setter
-    def metadata_json(self, value: Optional[dict]) -> None:
-        self.meta_data = value

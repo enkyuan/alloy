@@ -19,15 +19,15 @@ def log_afunc(log_result=False, message=None):
             # Use custom message if provided, otherwise use function name
             log_message = message or func.__name__
 
-            logger.info(f"[START FUNC] {log_message}")
+            logger.info("[START FUNC] %s", log_message)
             start_time = datetime.datetime.now()
             try:
                 result = await func(*args, **kwargs)
                 end_time = datetime.datetime.now()
                 duration = (end_time - start_time).total_seconds()
-                logger.info(f"[END FUNC] {log_message}. elapsed_time={duration:.2f}s")
+                logger.info("[END FUNC] %s. elapsed_time=%.2fs", log_message, duration)
                 if log_result:
-                    logger.info(f"[RESULT FUNC] {log_message}. {result=}")
+                    logger.info("[RESULT FUNC] %s. result=%s", log_message, result)
                 return result
             except Exception:
                 raise
@@ -55,7 +55,7 @@ def log_aiter_func(message=None, show_each=False):
             # Use custom message if provided, otherwise use function name
             log_message = message or func.__name__
 
-            logger.info(f"[START ITER] {log_message}")
+            logger.info("[START ITER] %s", log_message)
             start_time = datetime.datetime.now()
             item_count = 0
             last_time = start_time
@@ -76,7 +76,7 @@ def log_aiter_func(message=None, show_each=False):
                     last_time = current_time
                     yield item
             except Exception as e:
-                logger.exception(f"[ERROR] {log_message}. {e}")
+                logger.exception("[ERROR] %s. %s", log_message, e)
                 raise
 
             finally:
@@ -111,15 +111,15 @@ def context_log(message: str):
         with context_logger("Starting service"):
             # do something
     """
-    logger.info(f"[START] {message}")
+    logger.info("[START] %s", message)
     start_time = datetime.datetime.now()
 
     try:
         yield
     except Exception as e:
         duration = (datetime.datetime.now() - start_time).total_seconds()
-        logger.exception(f"[ERROR] {message}. duration={duration:.2f}s. {e}")
+        logger.exception("[ERROR] %s. duration=%.2fs. %s", message, duration, e)
         raise
     finally:
         duration = (datetime.datetime.now() - start_time).total_seconds()
-        logger.info(f"[EXIT] {message}. duration={duration:.2f}s")
+        logger.info("[EXIT] %s. duration=%.2fs", message, duration)

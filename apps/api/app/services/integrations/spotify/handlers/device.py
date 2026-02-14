@@ -47,7 +47,7 @@ class SpotifyTransportCommandsMixin:
             return CommandResult(success=True, message="Paused playback.", data={})
 
         except Exception as e:
-            logger.error(f"Failed to pause playback: {str(e)}", exc_info=True)
+            logger.error("Failed to pause playback: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to pause: {str(e)}", e)
 
     async def resume_playback(self: Any, access_token: str) -> CommandResult:
@@ -82,7 +82,7 @@ class SpotifyTransportCommandsMixin:
             return CommandResult(success=True, message="Resumed playback.", data={})
 
         except Exception as e:
-            logger.error(f"Failed to resume playback: {str(e)}", exc_info=True)
+            logger.error("Failed to resume playback: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to resume: {str(e)}", e)
 
     async def next_track(self: Any, access_token: str) -> CommandResult:
@@ -148,7 +148,7 @@ class SpotifyTransportCommandsMixin:
             )
 
         except Exception as e:
-            logger.error(f"Failed to skip track: {str(e)}", exc_info=True)
+            logger.error("Failed to skip track: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to skip: {str(e)}", e)
 
     async def previous_track(self: Any, access_token: str) -> CommandResult:
@@ -216,7 +216,7 @@ class SpotifyTransportCommandsMixin:
             )
 
         except Exception as e:
-            logger.error(f"Failed to skip back: {str(e)}", exc_info=True)
+            logger.error("Failed to skip back: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to skip back: {str(e)}", e)
 
     async def set_volume(
@@ -238,7 +238,7 @@ class SpotifyTransportCommandsMixin:
             # Clamp volume to valid range
             volume_percent = max(0, min(100, volume_percent))
 
-            logger.info(f"Setting volume to {volume_percent}%")
+            logger.info("Setting volume to %s%", volume_percent)
 
             device_id = await self.get_active_device(access_token)
 
@@ -255,7 +255,7 @@ class SpotifyTransportCommandsMixin:
             )
 
         except Exception as e:
-            logger.error(f"Failed to set volume: {str(e)}", exc_info=True)
+            logger.error("Failed to set volume: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to set volume: {str(e)}", e)
 
     async def get_available_devices(self: Any, access_token: str) -> CommandResult:
@@ -298,7 +298,7 @@ class SpotifyTransportCommandsMixin:
             )
 
         except Exception as e:
-            logger.error(f"Failed to get devices: {str(e)}", exc_info=True)
+            logger.error("Failed to get devices: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to get devices: {str(e)}", e)
 
     async def switch_device(
@@ -324,7 +324,7 @@ class SpotifyTransportCommandsMixin:
             SpotifyAPIError: If API call fails
         """
         try:
-            logger.info(f"Switching device: name={device_name}, id={device_id}")
+            logger.info("Switching device: name=%s, id=%s", device_name, device_id)
 
             # Get available devices
             devices_response = await self.client.get_available_devices(access_token)
@@ -369,7 +369,7 @@ class SpotifyTransportCommandsMixin:
                 play=start_playback,
             )
 
-            logger.info(f"Successfully switched to device: {target_device['name']}")
+            logger.info("Successfully switched to device: %s", target_device['name'])
 
             return CommandResult(
                 success=True,
@@ -384,5 +384,5 @@ class SpotifyTransportCommandsMixin:
         except NoActiveDeviceError:
             raise
         except Exception as e:
-            logger.error(f"Failed to switch device: {str(e)}", exc_info=True)
+            logger.error("Failed to switch device: %s", e, exc_info=True)
             raise SpotifyAPIError(f"Failed to switch device: {str(e)}", e)

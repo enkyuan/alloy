@@ -65,12 +65,12 @@ async def refresh_token(
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning(f"User not found in database: {supabase_user['id']}")
+            logger.warning("User not found in database: %s", supabase_user["id"])
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        logger.info(f"Successfully refreshed token for user: {user.email}")
+        logger.info("Successfully refreshed token for user: %s", user.email)
         return TokenResponse(
             access_token=supabase_response["access_token"],
             token_type="bearer",
@@ -82,7 +82,7 @@ async def refresh_token(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Token refresh failed: {str(e)}", exc_info=True)
+        logger.error("Token refresh failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Token refresh failed",
@@ -100,7 +100,7 @@ async def sync_user(
     This endpoint creates or updates the user in our local database.
 
     Args:
-        authorization: Bearer token from Authorization header
+        supabase_user: Authenticated user from Supabase dependency
         db: Database session
 
     Returns:
@@ -116,7 +116,7 @@ async def sync_user(
 
         if not user:
             # Create new user
-            logger.info(f"Creating new user: {supabase_user['email']}")
+            logger.info("Creating new user: %s", supabase_user["email"])
             user = User(
                 id=supabase_user["id"],
                 email=supabase_user["email"],
@@ -137,7 +137,7 @@ async def sync_user(
             db.add(user)
         else:
             # Update existing user
-            logger.info(f"Updating existing user: {user.email}")
+            logger.info("Updating existing user: %s", user.email)
             user.last_login = datetime.now(timezone.utc)
             user.is_verified = True
             if not user.avatar_url:
@@ -152,13 +152,13 @@ async def sync_user(
         await db.commit()
         await db.refresh(user)
 
-        logger.info(f"Successfully synced user: {user.email}")
+        logger.info("Successfully synced user: %s", user.email)
         return UserResponse.model_validate(user)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to sync user: {str(e)}", exc_info=True)
+        logger.error("Failed to sync user: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sync user",
@@ -173,7 +173,7 @@ async def get_current_user(
     """Get current authenticated user.
 
     Args:
-        authorization: Bearer token from Authorization header
+        supabase_user: Authenticated user from Supabase dependency
         db: Database session
 
     Returns:
@@ -188,18 +188,18 @@ async def get_current_user(
         user = result.scalar_one_or_none()
 
         if not user:
-            logger.warning(f"User not found in database: {supabase_user['id']}")
+            logger.warning("User not found in database: %s", supabase_user["id"])
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        logger.info(f"Successfully retrieved user: {user.email}")
+        logger.info("Successfully retrieved user: %s", user.email)
         return UserResponse.model_validate(user)
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get user: {str(e)}", exc_info=True)
+        logger.error("Failed to get user: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get user",

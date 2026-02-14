@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Spotify OAuth
     SPOTIFY_CLIENT_ID: Optional[str] = None
     SPOTIFY_CLIENT_SECRET: Optional[str] = None
-    SPOTIFY_REDIRECT_URI: str = "milo://spotify/callback"
+    SPOTIFY_REDIRECT_URI: Optional[str] = None
 
     # Discord OAuth
     DISCORD_CLIENT_ID: Optional[str] = None
@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     # Agent pipeline
     AGENT_HISTORY_LIMIT: Optional[int] = 200
     AGENT_CACHE_TTL_SECONDS: int = 300
+    AGENT_SPOTIFY_CACHE_TTL_SECONDS: int = 3600
+    AGENT_CLIENT_HINT_CONTROL_MIN_CONFIDENCE: float = 0.82
+    AGENT_CLIENT_HINT_PLAY_MIN_CONFIDENCE: float = 0.93
 
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=True, extra="ignore"

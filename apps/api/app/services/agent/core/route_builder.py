@@ -445,7 +445,7 @@ class RouteHandler:
         except asyncio.CancelledError:
             # TODO (AD): Improve the debug log here to include information
             # about which route is being cancelled.
-            logger.debug(f"Route execution (handler {self}) cancelled")
+            logger.debug("Route execution (handler %s) cancelled", self)
             return None
 
     def _interrupt(
@@ -476,7 +476,7 @@ class RouteHandler:
             logger.debug("No active tasks to interrupt.")
             return
 
-        logger.debug(f"Interrupting route due to event {type(event)}")
+        logger.debug("Interrupting route due to event %s", type(event))
 
         # Cancel all active tasks.
         async def await_cancel_active_tasks(
@@ -524,9 +524,16 @@ class RouteHandler:
         self.route_config.state = RouteState.SUSPENDED
 
         self._interrupt(message, handler)
-        assert len(self._active_tasks) == 0, (
-            "All tasks should have been cancelled and no remaining tasks should be active."
-        )
+        # NOTE: _interrupt() schedules cancellation asynchronously, so active tasks
+        # may not be empty yet. The route state is already SUSPENDED, which prevents
+        # new tasks from being created. The cancel task will clean up in the background.
+        if self._active_tasks:
+            active_count = len([t for t in self._active_tasks if t and not t.done()])
+            if active_count > 0:
+                logger.warning(
+                    "Suspend: %s tasks still pending cancellation after interrupt",
+                    active_count,
+                )
 
     def _resume(
         self,

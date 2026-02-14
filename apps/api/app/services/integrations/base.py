@@ -36,6 +36,8 @@ class IntegrationHTTPService:
     DEFAULT_RETRY_ATTEMPTS = 2
     DEFAULT_RETRY_BACKOFF_SECONDS = 0.2
     RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD = 5
+    CIRCUIT_BREAKER_OPEN_SECONDS = 30.0
 
     def __init__(
         self,
@@ -58,6 +60,8 @@ class IntegrationHTTPService:
             or self.DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
         )
         self._follow_redirects = follow_redirects
+        self._consecutive_failures = 0
+        self._circuit_open_until: datetime | None = None
         register_close_handler(self._registry_key, self.close)
 
     @property
@@ -90,6 +94,35 @@ class IntegrationHTTPService:
     def _auth_headers(access_token: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {access_token}"}
 
+    def _is_circuit_open(self) -> bool:
+        if self._circuit_open_until is None:
+            return False
+        now = datetime.now(timezone.utc)
+        if now >= self._circuit_open_until:
+            self._circuit_open_until = None
+            self._consecutive_failures = 0
+            return False
+        return True
+
+    def _record_success(self) -> None:
+        self._consecutive_failures = 0
+
+    def _record_failure(self, *, action: str) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures < self.CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+            return
+
+        self._circuit_open_until = datetime.now(timezone.utc) + timedelta(
+            seconds=self.CIRCUIT_BREAKER_OPEN_SECONDS
+        )
+        self._consecutive_failures = 0
+        logger.warning(
+            "%s circuit opened for %.1fs after repeated failures during %s",
+            self.SERVICE_NAME,
+            self.CIRCUIT_BREAKER_OPEN_SECONDS,
+            action,
+        )
+
     async def _request(
         self,
         method: str,
@@ -103,6 +136,13 @@ class IntegrationHTTPService:
         data: Mapping[str, Any] | None = None,
         retry_attempts: int | None = None,
     ) -> httpx.Response:
+        if self._is_circuit_open():
+            raise IntegrationNetworkError(
+                service=self.SERVICE_NAME,
+                action=action,
+                message=f"{self.SERVICE_NAME} circuit breaker is open",
+            )
+
         expected_codes = tuple(expected_status)
         attempts = max(retry_attempts or self.DEFAULT_RETRY_ATTEMPTS, 1)
 
@@ -133,9 +173,11 @@ class IntegrationHTTPService:
                     )
                     await asyncio.sleep(self.DEFAULT_RETRY_BACKOFF_SECONDS * attempt)
                     continue
+                self._record_failure(action=action)
                 raise typed_error from error
 
             if response.status_code in expected_codes:
+                self._record_success()
                 return response
 
             typed_error = classify_http_error(
@@ -166,6 +208,8 @@ class IntegrationHTTPService:
                 action,
                 response.status_code,
             )
+            if response.status_code in self.RETRYABLE_STATUS_CODES or response.status_code >= 500:
+                self._record_failure(action=action)
             raise typed_error
 
         raise IntegrationAPIError(

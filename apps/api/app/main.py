@@ -14,10 +14,7 @@ from app.core.redis import close_redis_client
 from app.services.integrations.token_migration import (
     migrate_plaintext_integration_tokens,
 )
-from app.services.integrations.spotify import spotify_client
 from app.services.lifecycle import close_registered_services
-from app.services.integrations.workspace.auth import close_workspace_http_client
-from app.routers.integrations.integrations_shared import close_oauth_http_client
 from app.routers import (
     integrations,
     routers_auth,
@@ -43,10 +40,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     await broker.shutdown()
     await close_async_engine()
-    await close_oauth_http_client()
-    await spotify_client.close()
     await close_registered_services()
-    await close_workspace_http_client()
     await close_redis_client()
 
 

@@ -33,7 +33,7 @@ async def get_integration(
 @broker.task(task_name="workspace.summarize_emails")
 async def summarize_emails(user_id: str, count: int = 5) -> str:
     """Summarize recent emails for the user."""
-    logger.info(f"Summarizing last {count} emails for {user_id}")
+    logger.info("Summarizing last %s emails for %s", count, user_id)
 
     try:
         async with AsyncSessionLocal() as db:
@@ -62,17 +62,17 @@ async def summarize_emails(user_id: str, count: int = 5) -> str:
             summary_lines.append(f"- {subject} (from {sender})")
 
         summary = f"Here are your last {len(messages)} emails:\n" + "\n".join(summary_lines)
-        logger.info(f"Emails summarized for {user_id}")
+        logger.info("Emails summarized for %s", user_id)
         return summary
-    except Exception as e:
-        logger.error(f"Failed to summarize emails for {user_id}: {e}", exc_info=True)
-        return f"Failed to summarize emails: {str(e)}"
+    except Exception as error:
+        logger.error("Failed to summarize emails for %s: %s", user_id, error, exc_info=True)
+        return "Failed to summarize emails."
 
 
 @broker.task(task_name="workspace.check_schedule")
 async def check_schedule(user_id: str) -> str:
     """Check today's schedule."""
-    logger.info(f"Checking schedule for {user_id}")
+    logger.info("Checking schedule for %s", user_id)
 
     try:
         async with AsyncSessionLocal() as db:
@@ -99,11 +99,11 @@ async def check_schedule(user_id: str) -> str:
             event_lines.append(f"- {time_str}: {summary}")
 
         result = f"You have {len(events)} meetings today:\n" + "\n".join(event_lines)
-        logger.info(f"Schedule checked for {user_id}")
+        logger.info("Schedule checked for %s", user_id)
         return result
-    except Exception as e:
-        logger.error(f"Failed to check schedule for {user_id}: {e}", exc_info=True)
-        return f"Failed to check schedule: {str(e)}"
+    except Exception as error:
+        logger.error("Failed to check schedule for %s: %s", user_id, error, exc_info=True)
+        return "Failed to check schedule."
 
 
 @broker.task(task_name="workspace.create_meeting")
@@ -111,7 +111,7 @@ async def create_meeting(
     user_id: str, summary: str, start_time: str, duration_minutes: int = 60
 ) -> str:
     """Create a meeting on the user's calendar."""
-    logger.info(f"Creating meeting '{summary}' for {user_id}")
+    logger.info("Creating meeting '%s' for %s", summary, user_id)
 
     try:
         async with AsyncSessionLocal() as db:
@@ -131,8 +131,8 @@ async def create_meeting(
         await asyncio.to_thread(service.create_event, summary, start, end)
 
         result = f"Created meeting '{summary}' at {start.strftime('%I:%M %p')}"
-        logger.info(f"Meeting created for {user_id}")
+        logger.info("Meeting created for %s", user_id)
         return result
-    except Exception as e:
-        logger.error(f"Failed to create meeting for {user_id}: {e}", exc_info=True)
-        return f"Failed to create meeting: {str(e)}"
+    except Exception as error:
+        logger.error("Failed to create meeting for %s: %s", user_id, error, exc_info=True)
+        return "Failed to create meeting."

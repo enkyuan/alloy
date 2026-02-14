@@ -31,15 +31,18 @@ async def execute_tool_call(
     error_msg = None
 
     logger.info(
-        f"Executing tool call {tool_name} for user {user_id} (call_id: {tool_call_id})"
+        "Executing tool call %s for user %s (call_id: %s)",
+        tool_name,
+        user_id,
+        tool_call_id,
     )
 
     try:
         async with AsyncSessionLocal() as db:
             result_data = await execute_tool(user_id, tool_name, tool_args, db)
-        logger.info(f"Tool execution successful: {tool_name}")
+        logger.info("Tool execution successful: %s", tool_name)
     except Exception as e:
-        logger.error(f"Tool execution failed: {e}", exc_info=True)
+        logger.error("Tool execution failed: %s", e, exc_info=True)
         error_msg = str(e)
 
     # Publish result back to Redis
@@ -54,7 +57,7 @@ async def execute_tool_call(
         tool_call_id=tool_call_id,
     )
 
-    logger.info(f"Publishing tool result to {RedisKeys.CHANNEL_USER_UPDATES}")
+    logger.info("Publishing tool result to %s", RedisKeys.CHANNEL_USER_UPDATES)
 
     # We publish to a specific channel for the LLM worker or general updates
     # For simplicity in this prototype, we just publish to user updates channel

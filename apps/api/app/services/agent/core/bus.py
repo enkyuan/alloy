@@ -55,9 +55,9 @@ class Message(BaseModel):
 
     def __str__(self) -> str:
         return (
-            f"f{type(self)}(id={self.id}, "
+            f"{type(self).__name__}(id={self.id}, "
             f"source={self.source}, "
-            f"event={type(self.event)}({self.event}), "
+            f"event={type(self.event).__name__}({self.event}), "
             f"timestamp={self.timestamp})"
         )
 
@@ -103,6 +103,8 @@ class Bus:
 
         self.shutdown_event = asyncio.Event()  # Ensures all tasks stop together.
         self.background_route_tasks: set[asyncio.Task[Any]] = set()
+        # Cap concurrent bridge tasks to prevent unbounded fan-out per broadcast.
+        self._route_semaphore = asyncio.Semaphore(50)
 
     async def start(self) -> None:
         """
@@ -271,7 +273,7 @@ class Bus:
             :meth:`call` - For responses
             :meth:`request` - For specific agents
         """
-        logger.debug(f"Bus: Broadcasting message: {message}")
+        logger.debug("Bus: Broadcasting message: %s", message)
         await self._queue_message(message)
 
     # ================================================================
@@ -286,10 +288,10 @@ class Bus:
             message: Message to queue.
         """
         try:
-            await self.message_queue.put(message)
-            logger.debug(f"Bus (_queue_message): Message queued: {message}")
+            self.message_queue.put_nowait(message)
+            logger.debug("Bus (_queue_message): Message queued: %s", message)
         except asyncio.QueueFull:
-            logger.error("Bus message queue is full, dropping message")
+            logger.error("Bus message queue is full, dropping message: %s", message.id)
 
     def _get_queue_info_synchronous(self) -> Dict[str, Any]:
         """Get information about what is on the queue.
@@ -353,7 +355,7 @@ class Bus:
                     message = await asyncio.wait_for(
                         self.message_queue.get(), timeout=1.0
                     )
-                    logger.debug(f"Bus: Message received: {message}")
+                    logger.debug("Bus: Message received: %s", message)
 
                     # Delegate to specific routing logic based on pattern.
                     await self._route_message(message)
@@ -362,16 +364,16 @@ class Bus:
                     # Prevents infinite blocking during shutdown.
                     continue
                 except Exception as e:
-                    logger.exception(f"Error in message router: {e}")
+                    logger.exception("Error in message router: %s", e)
 
         except asyncio.CancelledError:
             logger.info("Message router cancelled")
         except Exception as e:
-            logger.exception(f"Unexpected error in message router: {e}")
+            logger.exception("Unexpected error in message router: %s", e)
 
     async def _route_message(self, message: Message) -> None:
         """Route message to bridges based on direct or broadcast pattern."""
-        logger.debug(f"Bus: Routing message: {message}")
+        logger.debug("Bus: Routing message: %s", message)
         try:
             # Handle agent handoff events or transfer_to_* tool calls directly.
             # TODO: Consider adding certain types of events as being high priority to handle.
@@ -380,31 +382,31 @@ class Bus:
             # - Interruption events should be processed by the interruption routes first.
             event = message.event
             if isinstance(event, AgentHandoff):
-                logger.info(f"Bus: Handling handoff to {event.target_agent}")
+                logger.info("Bus: Handling handoff to %s", event.target_agent)
                 await self._handle_handoff(message, event.target_agent)
                 return
             elif isinstance(event, ToolCall) and event.tool_name.startswith(
                 "transfer_to_"
             ):
                 target_agent = event.tool_name.replace("transfer_to_", "")
-                logger.info(f"Bus: Handling handoff to {target_agent}")
+                logger.info("Bus: Handling handoff to %s", target_agent)
                 await self._handle_handoff(message, target_agent)
                 return
             else:
                 # Broadcast to all bridges
-                tasks = []
                 for _, bridge in self.bridges.items():
                     # NOTE: Do not await this. We want to fire and forget.
                     # We want the bridges to process the tasks in the background.
                     # This is to ensure that future messages are not blocked by the task.
                     # NOTE: There is an implicit ordering here determined by the order of the bridges.
                     # TODO: Consider making this explicit.
-                    task = asyncio.create_task(bridge.handle_event(message))
+                    task = asyncio.create_task(
+                        self._run_bridge_with_semaphore(bridge, message)
+                    )
                     self._track_background_route_task(task, message)
-                    tasks.append(task)
 
         except Exception as e:
-            logger.exception(f"Error routing message {message.id}: {e}")
+            logger.exception("Error routing message %s: %s", message.id, e)
 
     def _track_background_route_task(
         self, task: asyncio.Task[Any], message: Message
@@ -426,6 +428,13 @@ class Bus:
 
         task.add_done_callback(_done_callback)
 
+    async def _run_bridge_with_semaphore(
+        self, bridge: "Bridge", message: Message
+    ) -> None:
+        """Run bridge event handler with concurrency limiting."""
+        async with self._route_semaphore:
+            await bridge.handle_event(message)
+
     async def _handle_handoff(self, message: Message, target_agent: str) -> None:
         """Handle handoff from transfer_to_* tool calls."""
         from_agent = message.source
@@ -437,10 +446,10 @@ class Bus:
         elif isinstance(message.event, ToolCall):
             reason = message.event.tool_args.get("reason", "")
 
-        logger.info(f"Processing handoff: {from_agent} -> {target_agent} ({reason})")
+        logger.info("Processing handoff: %s -> %s (%s)", from_agent, target_agent, reason)
 
         # Tell user bridge to change authorization
         user_auth_event = Authorize(agent=target_agent)
         await self.broadcast(Message(source="system", event=user_auth_event))
 
-        logger.info(f"Handoff completed: {from_agent} -> {target_agent}")
+        logger.info("Handoff completed: %s -> %s", from_agent, target_agent)

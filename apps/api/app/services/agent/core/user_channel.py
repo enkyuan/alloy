@@ -82,7 +82,7 @@ def create_user_bridge(harness: "ConversationHarness", authorized_node: str) -> 
     async def send_message(message: Message):
         """Send text message to user."""
         event: AgentResponse = message.event
-        logger.debug(f"Sending user message: {event.content}")
+        logger.debug("Sending user message: %s", event.content)
         return await harness.send_message(event.content)
 
     async def send_tool_call(message: Message):
@@ -208,7 +208,9 @@ def register_observability_event(
             event_data = message.event.to_log_event()
             if not isinstance(event_data, dict) or "event" not in event_data:
                 logger.error(
-                    f"Invalid log event data from {type(message.event).__name__}: {event_data}"
+                    "Invalid log event data from %s: %s",
+                    type(message.event).__name__,
+                    event_data,
                 )
 
             event_name = event_data.get("event")

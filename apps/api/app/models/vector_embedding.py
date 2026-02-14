@@ -9,8 +9,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.models.mixins import MetadataJsonMixin
 
-class VectorEmbedding(Base):
+class VectorEmbedding(MetadataJsonMixin, Base):
     """Vector Embedding model for semantic search.
 
     Attributes:
@@ -48,10 +49,3 @@ class VectorEmbedding(Base):
     # Relationships
     user = relationship("User", backref="embeddings")
 
-    @property
-    def metadata_json(self) -> Optional[dict]:
-        return self.meta_data
-
-    @metadata_json.setter
-    def metadata_json(self, value: Optional[dict]) -> None:
-        self.meta_data = value

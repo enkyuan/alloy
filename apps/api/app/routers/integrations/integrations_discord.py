@@ -15,15 +15,12 @@ from app.core.database import get_db
 from app.routers.dependencies import get_current_supabase_user
 from app.schemas.integration import OAuthURLResponse
 from app.services.discord import discord_service
-from app.services.integrations.errors import (
-    IntegrationServiceError,
-    integration_error_to_detail,
-    integration_error_to_http_status,
-)
+from app.services.integrations.errors import IntegrationServiceError
 
 from .integrations_shared import (
     exchange_oauth_code,
     persist_oauth_state,
+    raise_integration_http_error,
     require_integration_token,
     upsert_integration,
     validate_and_consume_oauth_state,
@@ -32,17 +29,6 @@ from .integrations_shared import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 DISCORD_DEFAULT_EXPIRES_IN_SECONDS = 604800
-
-
-def _raise_integration_http_error(
-    error: IntegrationServiceError,
-    *,
-    fallback_detail: str,
-) -> None:
-    raise HTTPException(
-        status_code=integration_error_to_http_status(error),
-        detail=integration_error_to_detail(error, fallback=fallback_detail),
-    ) from error
 
 
 discord_token_dependency = require_integration_token(
@@ -172,7 +158,7 @@ async def get_discord_profile(
         raise
     except IntegrationServiceError as error:
         logger.warning("Discord profile fetch failed: %s", error)
-        _raise_integration_http_error(error, fallback_detail="Failed to get profile")
+        raise_integration_http_error(error, fallback_detail="Failed to get profile")
     except Exception as e:
         logger.error("Failed to get Discord profile: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -193,7 +179,7 @@ async def get_discord_guilds(
         raise
     except IntegrationServiceError as error:
         logger.warning("Discord guilds fetch failed: %s", error)
-        _raise_integration_http_error(error, fallback_detail="Failed to get guilds")
+        raise_integration_http_error(error, fallback_detail="Failed to get guilds")
     except Exception as e:
         logger.error("Failed to get Discord guilds: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -217,7 +203,7 @@ async def send_discord_message(
         raise
     except IntegrationServiceError as error:
         logger.warning("Discord send message failed: %s", error)
-        _raise_integration_http_error(error, fallback_detail="Failed to send message")
+        raise_integration_http_error(error, fallback_detail="Failed to send message")
     except Exception as e:
         logger.error("Failed to send Discord message: %s", str(e), exc_info=True)
         raise HTTPException(
@@ -239,7 +225,7 @@ async def get_discord_channels(
         raise
     except IntegrationServiceError as error:
         logger.warning("Discord channels fetch failed: %s", error)
-        _raise_integration_http_error(error, fallback_detail="Failed to get channels")
+        raise_integration_http_error(error, fallback_detail="Failed to get channels")
     except Exception as e:
         logger.error("Failed to get Discord channels: %s", str(e), exc_info=True)
         raise HTTPException(

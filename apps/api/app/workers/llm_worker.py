@@ -68,10 +68,11 @@ logger = logging.getLogger(__name__)
 # Normalize optional config to concrete ints for downstream helpers.
 HISTORY_LIMIT: int = settings.AGENT_HISTORY_LIMIT or 0
 CACHE_TTL_SECONDS = settings.AGENT_CACHE_TTL_SECONDS
-SECONDS_PER_HOUR = 3600
-SPOTIFY_CACHE_TTL_SECONDS = SECONDS_PER_HOUR
-CLIENT_HINT_CONTROL_MIN_CONFIDENCE = 0.82
-CLIENT_HINT_PLAY_MIN_CONFIDENCE = 0.93
+SPOTIFY_CACHE_TTL_SECONDS = settings.AGENT_SPOTIFY_CACHE_TTL_SECONDS
+CLIENT_HINT_CONTROL_MIN_CONFIDENCE = (
+    settings.AGENT_CLIENT_HINT_CONTROL_MIN_CONFIDENCE
+)
+CLIENT_HINT_PLAY_MIN_CONFIDENCE = settings.AGENT_CLIENT_HINT_PLAY_MIN_CONFIDENCE
 CONSUMER_NAME = f"llm_worker_{socket.gethostname()}_{uuid.uuid4().hex[:8]}"
 
 
@@ -160,12 +161,25 @@ async def _execute_tool_fast(
 
     result_data = None
     error_msg = None
+    db = None
     try:
-        async with AsyncSessionLocal() as db:
-            result_data = await execute_tool(user_id, tool_name, tool_args, db)
-    except Exception as e:
-        logger.error(f"Fast-path tool failed: {e}", exc_info=True)
-        error_msg = str(e)
+        db = AsyncSessionLocal()
+        result_data = await execute_tool(user_id, tool_name, tool_args, db)
+    except Exception as error:
+        logger.error("Fast-path tool failed: %s", error, exc_info=True)
+        error_msg = str(error)
+    finally:
+        if db is not None:
+            try:
+                await db.close()
+            except Exception as close_error:
+                logger.warning(
+                    "Fast-path DB session cleanup failed: %s",
+                    close_error,
+                    exc_info=True,
+                )
+                if error_msg is None and result_data is None:
+                    error_msg = str(close_error)
 
     tool_result = ToolResult(
         tool_name=tool_name,
@@ -227,11 +241,11 @@ async def process_voice_input_stream():
             id="0",
             mkstream=True,
         )
-    except Exception as e:
-        if "BUSYGROUP" not in str(e):
-            logger.error(f"Error creating consumer group: {e}")
+    except Exception as error:
+        if "BUSYGROUP" not in str(error):
+            logger.error("Error creating consumer group: %s", error)
 
-    logger.info(f"LLM Worker started listening on {RedisKeys.STREAM_VOICE_INPUT}")
+    logger.info("LLM Worker started listening on %s", RedisKeys.STREAM_VOICE_INPUT)
 
     while True:
         try:
@@ -257,13 +271,16 @@ async def process_voice_input_stream():
                             RedisKeys.GROUP_LLM_WORKER,
                             message_id,
                         )
-                    except Exception as e:
+                    except Exception as error:
                         logger.error(
-                            f"Error processing message {message_id}: {e}", exc_info=True
+                            "Error processing message %s: %s",
+                            message_id,
+                            error,
+                            exc_info=True,
                         )
 
-        except Exception as e:
-            logger.error(f"Error in LLM worker loop: {e}")
+        except Exception as error:
+            logger.error("Error in LLM worker loop: %s", error)
             await asyncio.sleep(1)
 
 
@@ -502,20 +519,26 @@ async def _run_llm_fallback(
         append_history=append_history,
         history_limit=HISTORY_LIMIT,
     )
+    response_text: str | None = None
     try:
-        if response.text:
-            await redis.setex(
-                response_cache_key(cache_payload),
-                CACHE_TTL_SECONDS,
-                response.text,
-            )
-        logger.info(
-            "Completed LLM response",
-            extra={"user_id": user_id, "elapsed_ms": _elapsed_ms(started_at)},
-        )
+        response_text = response.text
     except ValueError:
-        # response.text raises ValueError if content is purely function calls
-        pass
+        # response.text raises ValueError when the response is function calls only.
+        logger.debug(
+            "Skipping response cache because Gemini response has no text content",
+            extra={"user_id": user_id},
+        )
+
+    if response_text:
+        await redis.setex(
+            response_cache_key(cache_payload),
+            CACHE_TTL_SECONDS,
+            response_text,
+        )
+    logger.info(
+        "Completed LLM response",
+        extra={"user_id": user_id, "elapsed_ms": _elapsed_ms(started_at)},
+    )
 
 
 async def handle_message(data: dict):
@@ -552,7 +575,11 @@ async def handle_message(data: dict):
     # Deserialize event
     transcription = UserTranscriptionReceived.model_validate_json(payload_json)
 
-    logger.info(f"Processing transcription for user {user_id}: {transcription.content}")
+    logger.info(
+        "Processing transcription for user %s",
+        user_id,
+        extra={"transcription_length": len(transcription.content)},
+    )
 
     try:
         redis = await get_redis_client()
@@ -619,11 +646,11 @@ async def handle_message(data: dict):
             started_at=started_at,
         )
 
-    except Exception as e:
-        logger.error(f"LLM Generation failed: {e}", exc_info=True)
+    except Exception as error:
+        logger.error("LLM generation failed: %s", error, exc_info=True)
         if user_id:
             redis = await get_redis_client()
-            if _is_quota_error(e):
+            if _is_quota_error(error):
                 error_event = AgentError(
                     error="Gemini quota exhausted.",
                     code="gemini_quota",

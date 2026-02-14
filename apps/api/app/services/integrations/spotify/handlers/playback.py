@@ -58,7 +58,7 @@ class SpotifyTrackCommandsMixin:
                 data={"uri": track_uri},
             )
         except Exception as e:
-            logger.error(f"Failed to play URI track: {str(e)}", exc_info=True)
+            logger.error("Failed to play URI track: %s", e, exc_info=True)
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
                     "Playing specific tracks requires Spotify Premium",
@@ -174,7 +174,7 @@ class SpotifyTrackCommandsMixin:
         except (SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
-            logger.error(f"Failed to search and play track: {str(e)}", exc_info=True)
+            logger.error("Failed to search and play track: %s", e, exc_info=True)
             if self._check_premium_error(e):
                 raise PremiumRequiredError(
                     "Playing specific tracks requires Spotify Premium",
@@ -248,7 +248,7 @@ class SpotifyTrackCommandsMixin:
         except (NoActiveDeviceError, SearchNoResultsError, PremiumRequiredError):
             raise
         except Exception as e:
-            logger.error(f"Failed to add track to queue: {str(e)}", exc_info=True)
+            logger.error("Failed to add track to queue: %s", e, exc_info=True)
             status_code = self._extract_status_code(e)
             is_retryable = (
                 status_code in [429, 500, 502, 503, 504] if status_code else False

@@ -19,7 +19,7 @@ async def get_redis_client() -> redis.Redis:
     """Get or create the global Redis client."""
     global redis_client
     if redis_client is None:
-        logger.info(f"Connecting to Redis at {settings.REDIS_URL}")
+        logger.info("Connecting to Redis at %s", settings.REDIS_URL)
         redis_client = redis.from_url(
             settings.REDIS_URL,
             encoding="utf-8",
@@ -49,6 +49,12 @@ class RedisKeys:
     # Channels (Pub/Sub)
     CHANNEL_USER_UPDATES = "channel:user_updates"
 
+    # Agent Cache
+    AGENT_CACHE_PREFIX = "agent:cache:"
+    AGENT_CACHE_HIT = "agent:cache:hit"
+    AGENT_CACHE_MISS = "agent:cache:miss"
+
     @staticmethod
     def conversation_history(conversation_id: str) -> str:
         return f"conversation:{conversation_id}:history"
+

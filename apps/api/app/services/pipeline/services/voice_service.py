@@ -76,11 +76,11 @@ class VoiceService:
 
                 # Check expiry
                 if context.is_expired():
-                    logger.info(f"Context expired for user {user_id}, resetting")
+                    logger.info("Context expired for user %s, resetting", user_id)
                     context.reset()
 
             except Exception as e:
-                logger.error(f"Failed to load context for {user_id}: {e}")
+                logger.error("Failed to load context for %s: %s", user_id, e)
                 # Return fresh context on error
 
         return context
@@ -182,9 +182,12 @@ class VoiceService:
                 context.active_device_id = result.data["device_id"]
 
         logger.info(
-            f"Updated context for user {user_id}: "
-            f"track={context.last_track}, artist={context.last_artist}, "
-            f"album={context.last_album}, playlist={context.last_playlist}"
+            "Updated context for user %s: track=%s, artist=%s, album=%s, playlist=%s",
+            user_id,
+            context.last_track,
+            context.last_artist,
+            context.last_album,
+            context.last_playlist,
         )
 
         await self.save_context(context)
@@ -203,9 +206,11 @@ class VoiceService:
         intent = self.parser.parse_command(text, context)
 
         logger.info(
-            f"Parsed command for user {user_id}: "
-            f"intent={intent.intent}, confidence={intent.confidence:.2f}, "
-            f"parameters={intent.parameters}"
+            "Parsed command for user %s: intent=%s, confidence=%.2f, parameters=%s",
+            user_id,
+            intent.intent,
+            intent.confidence,
+            list(intent.parameters.keys()) if intent.parameters else None,
         )
 
         return intent

@@ -1,5 +1,6 @@
 """Shared helpers and dependencies for integration router modules."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -15,6 +16,7 @@ from app.core.database import get_db
 from app.core.redis import get_redis_client
 from app.models.integration import Integration
 from app.routers.dependencies import require_active_integration
+from app.services.lifecycle import register_close_handler
 from app.services.integrations.errors import (
     IntegrationServiceError,
     integration_error_to_detail,
@@ -23,8 +25,24 @@ from app.services.integrations.errors import (
 
 logger = logging.getLogger(__name__)
 
+
+def raise_integration_http_error(
+    error: IntegrationServiceError,
+    *,
+    fallback_detail: str,
+) -> None:
+    """Raise an HTTPException from an IntegrationServiceError."""
+    raise HTTPException(
+        status_code=integration_error_to_http_status(error),
+        detail=integration_error_to_detail(error, fallback=fallback_detail),
+    ) from error
+
+
 # OAuth state TTL in seconds (15 minutes)
 OAUTH_STATE_TTL = 900
+OAUTH_EXCHANGE_RETRY_ATTEMPTS = 2
+OAUTH_EXCHANGE_RETRY_BACKOFF_SECONDS = 0.2
+OAUTH_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 
 _oauth_http_client: httpx.AsyncClient | None = None
 
@@ -51,6 +69,9 @@ async def close_oauth_http_client() -> None:
     if _oauth_http_client is not None:
         await _oauth_http_client.aclose()
         _oauth_http_client = None
+
+
+register_close_handler(f"{__name__}.oauth_http_client", close_oauth_http_client)
 
 
 async def persist_oauth_state(*, state: str, user_id: str, service: str) -> None:
@@ -94,12 +115,50 @@ async def exchange_oauth_code(
 ) -> dict[str, Any]:
     """Exchange OAuth auth code for access token data using shared HTTP client."""
     client = await get_oauth_http_client()
-    response = await client.post(
-        token_url,
-        data=form_data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    if response.status_code != 200:
+    for attempt in range(1, OAUTH_EXCHANGE_RETRY_ATTEMPTS + 1):
+        try:
+            response = await client.post(
+                token_url,
+                data=form_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+        except httpx.HTTPError as error:
+            if attempt < OAUTH_EXCHANGE_RETRY_ATTEMPTS:
+                logger.warning(
+                    "Retrying OAuth token exchange after network error (%s/%s)",
+                    attempt,
+                    OAUTH_EXCHANGE_RETRY_ATTEMPTS,
+                    extra={"token_url": token_url},
+                )
+                await asyncio.sleep(OAUTH_EXCHANGE_RETRY_BACKOFF_SECONDS * attempt)
+                continue
+            logger.error(
+                "OAuth token exchange network failure",
+                extra={"token_url": token_url},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=failure_detail,
+            ) from error
+
+        if response.status_code == 200:
+            return response.json()
+
+        should_retry = (
+            attempt < OAUTH_EXCHANGE_RETRY_ATTEMPTS
+            and response.status_code in OAUTH_RETRYABLE_STATUS_CODES
+        )
+        if should_retry:
+            logger.warning(
+                "Retrying OAuth token exchange after status %s (%s/%s)",
+                response.status_code,
+                attempt,
+                OAUTH_EXCHANGE_RETRY_ATTEMPTS,
+                extra={"token_url": token_url},
+            )
+            await asyncio.sleep(OAUTH_EXCHANGE_RETRY_BACKOFF_SECONDS * attempt)
+            continue
+
         logger.error(
             "OAuth token exchange failed",
             extra={
@@ -107,8 +166,15 @@ async def exchange_oauth_code(
                 "status_code": response.status_code,
             },
         )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=failure_detail)
-    return response.json()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=failure_detail,
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=failure_detail,
+    )
 
 
 async def upsert_integration(

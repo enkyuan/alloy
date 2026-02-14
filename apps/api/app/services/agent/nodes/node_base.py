@@ -45,7 +45,7 @@ class NodeBase:
 
     async def cleanup(self):
         """Clean up the node."""
-        logger.debug(f"{self} cleanup completed")
+        logger.debug("%s cleanup completed", self)
 
     def on_interrupt_generate(self, message: Message) -> None:
         """Handle interrupt event.
@@ -53,7 +53,7 @@ class NodeBase:
         Args:
             message: The interrupt message.
         """
-        logger.debug(f"{self} interrupt received.")
+        logger.debug("%s interrupt received.", self)
 
     async def generate(self, message: Message) -> AsyncGenerator[Any, None]:
         """Generate a response to the message."""
