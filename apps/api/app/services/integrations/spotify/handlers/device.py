@@ -48,7 +48,16 @@ class SpotifyTransportCommandsMixin:
 
         except Exception as e:
             logger.error("Failed to pause playback: %s", e, exc_info=True)
-            raise SpotifyAPIError(f"Failed to pause: {str(e)}", e)
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                f"Failed to pause: {str(e)}",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
 
     async def resume_playback(self: Any, access_token: str) -> CommandResult:
         """Resume paused playback.
@@ -83,7 +92,16 @@ class SpotifyTransportCommandsMixin:
 
         except Exception as e:
             logger.error("Failed to resume playback: %s", e, exc_info=True)
-            raise SpotifyAPIError(f"Failed to resume: {str(e)}", e)
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                f"Failed to resume: {str(e)}",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
 
     async def next_track(self: Any, access_token: str) -> CommandResult:
         """Skip to next track.
@@ -149,7 +167,16 @@ class SpotifyTransportCommandsMixin:
 
         except Exception as e:
             logger.error("Failed to skip track: %s", e, exc_info=True)
-            raise SpotifyAPIError(f"Failed to skip: {str(e)}", e)
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                f"Failed to skip: {str(e)}",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
 
     async def previous_track(self: Any, access_token: str) -> CommandResult:
         """Skip to previous track.
@@ -217,7 +244,16 @@ class SpotifyTransportCommandsMixin:
 
         except Exception as e:
             logger.error("Failed to skip back: %s", e, exc_info=True)
-            raise SpotifyAPIError(f"Failed to skip back: {str(e)}", e)
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                f"Failed to skip back: {str(e)}",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
 
     async def set_volume(
         self: Any, access_token: str, volume_percent: int
@@ -256,7 +292,16 @@ class SpotifyTransportCommandsMixin:
 
         except Exception as e:
             logger.error("Failed to set volume: %s", e, exc_info=True)
-            raise SpotifyAPIError(f"Failed to set volume: {str(e)}", e)
+            status_code = self._extract_status_code(e)
+            is_retryable = (
+                status_code in [429, 500, 502, 503, 504] if status_code else False
+            )
+            raise SpotifyAPIError(
+                f"Failed to set volume: {str(e)}",
+                original_error=e,
+                is_retryable=is_retryable,
+                status_code=status_code,
+            )
 
     async def get_available_devices(self: Any, access_token: str) -> CommandResult:
         """Get list of available devices.

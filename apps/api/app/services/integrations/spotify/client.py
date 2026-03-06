@@ -176,6 +176,7 @@ class SpotifyClient(ExpiringOAuthIntegrationService):
         )
         page_limit = min(100, max_items)
 
+        is_first_page = True
         while next_url and len(items) < max_items:
             params = {
                 "limit": page_limit,
@@ -187,13 +188,9 @@ class SpotifyClient(ExpiringOAuthIntegrationService):
                 next_url,
                 action="Get playlist tracks",
                 headers=self._auth_headers(access_token),
-                params=params if "api.spotify.com" not in next_url else None, # params are already in next_url usually? check docs.
-                # Actually Spotify pagination URLs often contain params. 
-                # If next_url is full URL, we shouldn't append params again if they are duped.
-                # But here we are building params for the *first* call (constructed next_url). 
-                # For subsequent calls, next_url comes from API.
-                # Let's trust _request handles full URLs if passed.
+                params=params if is_first_page else None,
             )
+            is_first_page = False
             # Wait, _request uses self._get_http_client().request(..., url=url)
             # If url is absolute, httpx uses it.
             

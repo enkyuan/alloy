@@ -12,6 +12,7 @@ This worker acts as the central process that consumes user transcriptions:
 import asyncio
 import json
 import logging
+import hashlib
 import socket
 import uuid
 from typing import Any, Optional
@@ -30,10 +31,12 @@ from app.core.events import (
 from app.core.prompts import ASSISTANT_SYSTEM_INSTRUCTION
 from app.core.redis import RedisKeys, get_redis_client
 from app.services.integrations.dispatcher import execute_tool
+from app.services.integrations.errors import IntegrationNetworkError
 from app.services.parser import command_parser
 from app.services.pipeline.routers.router import pipeline_router
 from app.services.pipeline.services.gemini_service import get_gemini_service
 from app.services.pipeline.helpers.tool_tasks import execute_tool_call
+from app.services.integrations.spotify.exceptions import SpotifyAPIError
 from app.workers.helpers.cache_keys import (
     cache_hit_key,
     cache_miss_key,
@@ -54,8 +57,25 @@ from app.workers.helpers.redis_events import (
     append_history,
     cache_spotify_result,
     get_history,
-    publish_user_update,
+    publish_user_update_safely as _publish_user_update_safely,
+    mark_tool_result_seen,
+    parse_tool_result_dlq_entry,
+    enqueue_tool_result_dlq,
+    enqueue_tool_result_dlq_dead,
+    drain_user_update_outbox,
+    TOOL_RESULT_DLQ_KEY,
+    TOOL_RESULT_DLQ_MAX_DRAIN,
+    TOOL_RESULT_DLQ_MAX_RETRIES,
+    TOOL_RESULT_DLQ_DEAD_KEY,
+    VOICE_INPUT_DLQ_KEY,
+    VOICE_INPUT_DLQ_DEAD_KEY,
+    VOICE_INPUT_DLQ_MAX_DRAIN,
+    VOICE_INPUT_DLQ_MAX_RETRIES,
+    enqueue_voice_input_dlq,
+    enqueue_voice_input_dlq_dead,
+    parse_voice_input_dlq_entry,
     try_cached_spotify_play,
+    is_tool_call_retry_safe,
 )
 from app.workers.helpers.response_text import format_response_text
 from app.workers.helpers.tools_payload import (
@@ -73,7 +93,70 @@ CLIENT_HINT_CONTROL_MIN_CONFIDENCE = (
     settings.AGENT_CLIENT_HINT_CONTROL_MIN_CONFIDENCE
 )
 CLIENT_HINT_PLAY_MIN_CONFIDENCE = settings.AGENT_CLIENT_HINT_PLAY_MIN_CONFIDENCE
-CONSUMER_NAME = f"llm_worker_{socket.gethostname()}_{uuid.uuid4().hex[:8]}"
+VOICE_CONSUMER_NAME = f"llm_voice_worker_{socket.gethostname()}"
+TOOL_RESULTS_CONSUMER_NAME = f"llm_tool_results_worker_{socket.gethostname()}"
+TOOL_CALL_DEFAULT_TIMEOUT_SECONDS = 12.0
+TOOL_CALL_FAST_PATH_MAX_ATTEMPTS = 2
+TOOL_CALL_FAST_PATH_BASE_RETRY_DELAY_SECONDS = 0.8
+TOOL_RESULT_STREAM_POLL_BATCH = 20
+TOOL_RESULT_STREAM_POLL_PENDING_BATCH = 20
+VOICE_STREAM_POLL_PENDING_BATCH = 20
+
+
+def _build_tool_result_dedup_key(
+    tool_result: ToolResult, envelope_payload: Any
+) -> str:
+    if tool_result.tool_call_id:
+        return tool_result.tool_call_id
+    normalized = json.dumps(envelope_payload, sort_keys=True, default=str)
+    digest = hashlib.sha256(normalized.encode()).hexdigest()
+    return f"tool_result:legacy:{digest}"
+
+
+def _coerce_voice_dlq_payload(fields: dict[str, Any] | None) -> dict[str, str]:
+    if not fields:
+        return {}
+
+    def _coerce(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        return str(value)
+
+    return {
+        _coerce(key): _coerce(value)
+        for key, value in fields.items()
+    }
+
+
+def _extract_status_code(error: Exception) -> int | None:
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    response = getattr(error, "response", None)
+    response_status_code = getattr(response, "status_code", None)
+    if isinstance(response_status_code, int):
+        return response_status_code
+
+    return None
+
+
+def _is_retryable_tool_error(error: Exception) -> bool:
+    if isinstance(error, SpotifyAPIError):
+        return bool(getattr(error, "is_retryable", False))
+    if isinstance(error, IntegrationNetworkError):
+        return True
+    if isinstance(error, TimeoutError):
+        return True
+
+    status_code = _extract_status_code(error)
+    if status_code is None:
+        return False
+    return status_code in {429, 500, 502, 503, 504}
+
+
+def _tool_supports_fast_path_retry(tool_name: str) -> bool:
+    return is_tool_call_retry_safe(tool_name)
 
 
 def _is_quota_error(error: Exception) -> bool:
@@ -151,35 +234,100 @@ async def _execute_tool_fast(
     tc_event = ToolCall(
         tool_name=tool_name, tool_args=tool_args, tool_call_id=tool_call_id
     )
-    await publish_user_update(
+    await _publish_user_update_safely(
         redis,
         event_type="tool.call",
         user_id=user_id,
         payload=tc_event,
         metadata={"source": "llm_worker.fast_path"},
+        context={"tool_name": tool_name, "tool_call_id": tool_call_id},
     )
 
     result_data = None
     error_msg = None
-    db = None
-    try:
-        db = AsyncSessionLocal()
-        result_data = await execute_tool(user_id, tool_name, tool_args, db)
-    except Exception as error:
-        logger.error("Fast-path tool failed: %s", error, exc_info=True)
-        error_msg = str(error)
-    finally:
-        if db is not None:
-            try:
-                await db.close()
-            except Exception as close_error:
+    retryable = False
+    last_error: Exception | None = None
+    attempts = 0
+
+    for attempts in range(1, TOOL_CALL_FAST_PATH_MAX_ATTEMPTS + 1):
+        try:
+            async with asyncio.timeout(TOOL_CALL_DEFAULT_TIMEOUT_SECONDS):
+                async with AsyncSessionLocal() as db:
+                    result_data = await execute_tool(
+                        user_id, tool_name, tool_args, db
+                    )
+            retryable = False
+            error_msg = None
+            last_error = None
+            break
+        except TimeoutError as error:
+            is_retryable = _tool_supports_fast_path_retry(tool_name)
+            logger.warning(
+                "Fast-path tool timed out (%s/%s)",
+                attempts,
+                TOOL_CALL_FAST_PATH_MAX_ATTEMPTS,
+            )
+            if not is_retryable:
                 logger.warning(
-                    "Fast-path DB session cleanup failed: %s",
-                    close_error,
-                    exc_info=True,
+                    "Skipping fast-path retry for non-idempotent tool on timeout",
+                    extra={
+                        "tool_name": tool_name,
+                        "tool_call_id": tool_call_id,
+                    },
                 )
-                if error_msg is None and result_data is None:
-                    error_msg = str(close_error)
+            last_error = error
+            retryable = is_retryable
+            error_msg = "Tool execution timed out"
+        except Exception as error:
+            last_error = error
+            retryable = (
+                _is_retryable_tool_error(error)
+                and _tool_supports_fast_path_retry(tool_name)
+            )
+            if _is_retryable_tool_error(error) and not _tool_supports_fast_path_retry(
+                tool_name
+            ):
+                logger.warning(
+                    "Skipping fast-path retry for non-idempotent tool",
+                    extra={"tool_name": tool_name, "tool_call_id": tool_call_id},
+                )
+            error_msg = str(error)
+            logger.error(
+                "Fast-path tool failed: %s",
+                error,
+                extra={
+                    "user_id": user_id,
+                    "tool_name": tool_name,
+                    "attempt": attempts,
+                    "retryable": retryable,
+                },
+                exc_info=True,
+            )
+
+        if not retryable or attempts >= TOOL_CALL_FAST_PATH_MAX_ATTEMPTS:
+            break
+
+        delay = TOOL_CALL_FAST_PATH_BASE_RETRY_DELAY_SECONDS * (2 ** (attempts - 1))
+        logger.warning(
+            "Retrying fast-path tool execution (%s/%s)",
+            attempts,
+            TOOL_CALL_FAST_PATH_MAX_ATTEMPTS,
+        )
+        await asyncio.sleep(delay)
+
+    if error_msg and last_error is not None:
+        logger.error(
+            "Fast-path tool final failure",
+            extra={
+                "user_id": user_id,
+                "tool_name": tool_name,
+                "tool_call_id": tool_call_id,
+                "attempts": attempts,
+                "error_type": type(last_error).__name__,
+                "retryable": retryable,
+            },
+            exc_info=True,
+        )
 
     tool_result = ToolResult(
         tool_name=tool_name,
@@ -188,15 +336,21 @@ async def _execute_tool_fast(
         error=error_msg,
         tool_call_id=tool_call_id,
         user_id=user_id,
-        metadata={"fast_path": True},
+        metadata={
+            "fast_path": True,
+            "attempts": attempts,
+            "retryable_error": retryable,
+            "error_type": type(last_error).__name__ if last_error else None,
+        },
     )
 
-    await publish_user_update(
+    await _publish_user_update_safely(
         redis,
         event_type="tool.result",
         user_id=user_id,
         payload=tool_result,
         metadata={"source": "llm_worker.fast_path"},
+        context={"tool_name": tool_name, "tool_call_id": tool_call_id},
     )
 
     await cache_spotify_result(
@@ -212,20 +366,28 @@ async def _execute_tool_fast(
 
     response_text = format_response_text(tool_result)
     if response_text:
-        await append_history(
-            redis,
-            user_id,
-            "assistant",
-            response_text,
-            history_limit=HISTORY_LIMIT,
-        )
+        try:
+            await append_history(
+                redis,
+                user_id,
+                "assistant",
+                response_text,
+                history_limit=HISTORY_LIMIT,
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to append fast-path tool response to history",
+                extra={"user_id": user_id, "error": str(error)},
+                exc_info=True,
+            )
         response_event = AgentResponse(content=response_text)
-        await publish_user_update(
+        await _publish_user_update_safely(
             redis,
             event_type="agent.response",
             user_id=user_id,
             payload=response_event,
             metadata={"source": "llm_worker.fast_path"},
+            context={"tool_name": tool_name, "tool_call_id": tool_call_id},
         )
 
 
@@ -249,31 +411,92 @@ async def process_voice_input_stream():
 
     while True:
         try:
+            try:
+                await drain_user_update_outbox(redis)
+            except Exception as error:
+                logger.warning("Failed to drain user update outbox: %s", error)
+            try:
+                await _drain_voice_input_dlq(redis)
+            except Exception as error:
+                logger.warning("Failed to drain voice input DLQ: %s", error)
+
             # Read from stream using consumer group
             streams = await redis.xreadgroup(
                 groupname=RedisKeys.GROUP_LLM_WORKER,
-                consumername=CONSUMER_NAME,
+                consumername=VOICE_CONSUMER_NAME,
                 streams={RedisKeys.STREAM_VOICE_INPUT: ">"},
                 count=1,
                 block=2000,
             )
+            if not streams:
+                streams = await redis.xreadgroup(
+                    groupname=RedisKeys.GROUP_LLM_WORKER,
+                    consumername=VOICE_CONSUMER_NAME,
+                    streams={RedisKeys.STREAM_VOICE_INPUT: "0"},
+                    count=VOICE_STREAM_POLL_PENDING_BATCH,
+                )
 
             if not streams:
                 continue
 
-            for stream_name, messages in streams:
+            for _, messages in streams:
                 for message_id, data in messages:
+                    handled = False
                     try:
                         await handle_message(data)
-                        # Acknowledge message
+                        handled = True
+                    except Exception as error:
+                        handled = False
+                        logger.error(
+                            "Error processing message %s: %s",
+                            message_id,
+                            error,
+                            exc_info=True,
+                        )
+                    if handled:
+                        try:
+                            await redis.xack(
+                                RedisKeys.STREAM_VOICE_INPUT,
+                                RedisKeys.GROUP_LLM_WORKER,
+                                message_id,
+                            )
+                        except Exception as error:
+                            logger.warning(
+                                "Failed to ack message %s: %s",
+                                message_id,
+                                error,
+                            )
+                        continue
+
+                    try:
+                        await enqueue_voice_input_dlq(
+                            redis,
+                            _coerce_voice_dlq_payload(data),
+                            reason="voice_input_stream_failed",
+                            attempts=1,
+                            message_id=str(message_id),
+                        )
+                    except Exception as dlq_error:
+                        logger.warning(
+                            "Failed to enqueue failed voice stream message to DLQ",
+                            extra={
+                                "message_id": message_id,
+                                "dlq_error": str(dlq_error),
+                            },
+                            exc_info=True,
+                        )
+                        await asyncio.sleep(0.05)
+                        continue
+
+                    try:
                         await redis.xack(
                             RedisKeys.STREAM_VOICE_INPUT,
                             RedisKeys.GROUP_LLM_WORKER,
                             message_id,
                         )
                     except Exception as error:
-                        logger.error(
-                            "Error processing message %s: %s",
+                        logger.warning(
+                            "Failed to ack failed voice stream message %s: %s",
                             message_id,
                             error,
                             exc_info=True,
@@ -317,20 +540,28 @@ async def _try_clarification_resolution(
         response_text = clarification_resolution.response_text or (
             "Please choose one of the options."
         )
-        await append_history(
-            redis,
-            user_id,
-            "assistant",
-            response_text,
-            history_limit=HISTORY_LIMIT,
-        )
+        try:
+            await append_history(
+                redis,
+                user_id,
+                "assistant",
+                response_text,
+                history_limit=HISTORY_LIMIT,
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to append clarification response to history",
+                extra={"user_id": user_id, "error": str(error)},
+                exc_info=True,
+            )
         response_event = AgentResponse(content=response_text)
-        await publish_user_update(
+        await _publish_user_update_safely(
             redis,
             event_type="agent.response",
             user_id=user_id,
             payload=response_event,
             metadata={"source": "llm_worker.spotify_clarification"},
+            context={"action": clarification_resolution.action},
         )
         logger.info(
             "Replied with spotify clarification reminder",
@@ -478,20 +709,28 @@ async def _try_cached_response(
         cached_response = cached_response.decode("utf-8")
 
     response_event = AgentResponse(content=str(cached_response))
-    await publish_user_update(
+    await _publish_user_update_safely(
         redis,
         event_type="agent.response",
         user_id=user_id,
         payload=response_event,
         metadata={"source": "llm_worker.cache_hit"},
+        context={"source": "cache"},
     )
-    await append_history(
-        redis,
-        user_id,
-        "assistant",
-        str(cached_response),
-        history_limit=HISTORY_LIMIT,
-    )
+    try:
+        await append_history(
+            redis,
+            user_id,
+            "assistant",
+            str(cached_response),
+            history_limit=HISTORY_LIMIT,
+        )
+    except Exception as error:
+        logger.warning(
+            "Failed to append cached response to history",
+            extra={"user_id": user_id, "error": str(error)},
+            exc_info=True,
+        )
     return True
 
 
@@ -515,7 +754,6 @@ async def _run_llm_fallback(
         user_id,
         response,
         execute_tool_call_task=execute_tool_call,
-        publish_user_update=publish_user_update,
         append_history=append_history,
         history_limit=HISTORY_LIMIT,
     )
@@ -655,24 +893,298 @@ async def handle_message(data: dict):
                     error="Gemini quota exhausted.",
                     code="gemini_quota",
                 )
-                await publish_user_update(
+                await _publish_user_update_safely(
                     redis,
                     event_type="agent.error",
                     user_id=str(user_id),
                     payload=error_event,
                     metadata={"source": "llm_worker.quota_error"},
+                    context={"error_type": "quota"},
                 )
             else:
                 response_event = AgentResponse(
                     content="Sorry, I ran into an error while generating a response."
                 )
-                await publish_user_update(
+                await _publish_user_update_safely(
                     redis,
                     event_type="agent.response",
                     user_id=str(user_id),
                     payload=response_event,
                     metadata={"source": "llm_worker.exception_fallback"},
+                    context={"error_type": "fallback"},
                 )
+
+
+async def _handle_tool_result_envelope(redis: Any, raw: Any) -> bool:
+    if not raw:
+        return True
+
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8")
+
+    if isinstance(raw, dict):
+        event = raw
+    else:
+        try:
+            event = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            logger.warning(
+                "Failed to decode tool.result envelope JSON",
+                extra={"raw": str(raw)[:200]},
+            )
+            return False
+
+    try:
+        envelope = parse_event_envelope(event)
+    except Exception as error:
+        logger.warning(
+            "Invalid tool.result envelope",
+            extra={"error": str(error)},
+            exc_info=True,
+        )
+        return False
+
+    if not is_supported_event_version(envelope.version):
+        logger.warning(
+            "Skipping unsupported tool.result envelope version",
+            extra={"version": envelope.version},
+        )
+        return True
+
+    if envelope.type != "tool.result":
+        return True
+
+    payload = envelope.payload
+    user_id = envelope.user_id
+    if not payload or not user_id:
+        logger.warning("Skipping tool.result with missing payload or user_id")
+        return True
+
+    try:
+        if isinstance(payload, str):
+            tool_result = ToolResult.model_validate_json(payload)
+        else:
+            tool_result = ToolResult.model_validate(payload)
+    except Exception as error:
+        logger.warning(
+            "Failed to validate tool.result payload",
+            extra={"user_id": str(user_id), "error": str(error)},
+            exc_info=True,
+        )
+        return False
+
+    user_id_str = str(user_id)
+    dedupe_key = _build_tool_result_dedup_key(tool_result, payload)
+    if not await mark_tool_result_seen(redis, tool_call_id=dedupe_key):
+        logger.warning(
+            "Skipping duplicate tool.result message",
+            extra={
+                "tool_call_id": tool_result.tool_call_id,
+                "tool_name": tool_result.tool_name,
+                "user_id": user_id_str,
+                "dedupe_key": dedupe_key,
+            },
+        )
+        return True
+
+    await cache_spotify_result(
+        redis,
+        tool_result,
+        spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
+    )
+    await cache_spotify_clarification(
+        redis,
+        user_id=user_id_str,
+        tool_result=tool_result,
+    )
+
+    response_text = format_response_text(tool_result)
+    if not response_text:
+        return True
+
+    try:
+        await append_history(
+            redis,
+            user_id_str,
+            "assistant",
+            response_text,
+            history_limit=HISTORY_LIMIT,
+        )
+    except Exception as error:
+        logger.warning(
+            "Failed to append tool result response to history",
+            extra={"user_id": user_id_str, "error": str(error)},
+            exc_info=True,
+        )
+
+    response_event = AgentResponse(content=response_text)
+    await _publish_user_update_safely(
+        redis,
+        event_type="agent.response",
+        user_id=user_id_str,
+        payload=response_event,
+        metadata={"source": "llm_worker.tool_result_loop"},
+        context={"tool_call_id": tool_result.tool_call_id or dedupe_key},
+    )
+    return True
+
+
+async def _drain_tool_result_dlq(redis: Any) -> None:
+    drained = 0
+    for _ in range(TOOL_RESULT_DLQ_MAX_DRAIN):
+        raw = await redis.rpop(TOOL_RESULT_DLQ_KEY)
+        if not raw:
+            break
+
+        payload, attempts, reason = parse_tool_result_dlq_entry(raw)
+        handled = False
+        try:
+            handled = await _handle_tool_result_envelope(redis, payload)
+        except Exception as error:
+            logger.warning(
+                "Error handling tool.result from dead-letter queue",
+                extra={"error": str(error), "attempts": attempts},
+                exc_info=True,
+            )
+
+        if handled:
+            drained += 1
+            continue
+
+        next_attempt = attempts + 1
+        next_reason = reason or "tool_result_dlq_retry"
+        if next_attempt > TOOL_RESULT_DLQ_MAX_RETRIES:
+            try:
+                await enqueue_tool_result_dlq_dead(
+                    redis,
+                    payload,
+                    reason=next_reason,
+                    attempts=next_attempt,
+                )
+                logger.error(
+                    "Tool result dead-letter entry exhausted retries",
+                    extra={
+                        "tool_result_dlq_dead_key": TOOL_RESULT_DLQ_DEAD_KEY,
+                        "attempts": next_attempt,
+                        "reason": next_reason,
+                    },
+                )
+            except Exception as error:
+                logger.warning(
+                    "Failed to move exhausted tool result DLQ entry to dead queue",
+                    extra={"attempts": next_attempt, "error": str(error)},
+                    exc_info=True,
+                )
+            continue
+
+        try:
+            await enqueue_tool_result_dlq(
+                redis,
+                payload,
+                reason=next_reason,
+                attempts=next_attempt,
+            )
+            logger.warning(
+                "Requeued failed tool result dead-letter payload for retry",
+                extra={
+                    "attempts": next_attempt,
+                    "reason": next_reason,
+                    "dlq_key": TOOL_RESULT_DLQ_KEY,
+                },
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to requeue tool result DLQ payload for retry",
+                extra={"attempts": next_attempt, "error": str(error)},
+                exc_info=True,
+            )
+    if drained:
+        logger.info("Processed tool result dead-letter messages", extra={"drained": drained})
+
+
+async def _drain_voice_input_dlq(redis: Any) -> None:
+    drained = 0
+    for _ in range(VOICE_INPUT_DLQ_MAX_DRAIN):
+        raw = await redis.rpop(VOICE_INPUT_DLQ_KEY)
+        if not raw:
+            break
+
+        payload, attempts, reason, message_id = parse_voice_input_dlq_entry(raw)
+        handled = False
+        try:
+            await handle_message(payload)
+            handled = True
+        except Exception as error:
+            logger.warning(
+                "Error handling voice input from dead-letter queue",
+                extra={
+                    "message_id": message_id,
+                    "attempts": attempts,
+                    "reason": reason,
+                    "error": str(error),
+                },
+                exc_info=True,
+            )
+
+        if handled:
+            drained += 1
+            continue
+
+        next_attempt = attempts + 1
+        next_reason = reason or "voice_input_dlq_retry"
+        if next_attempt > VOICE_INPUT_DLQ_MAX_RETRIES:
+            try:
+                await enqueue_voice_input_dlq_dead(
+                    redis,
+                    payload,
+                    reason=next_reason,
+                    attempts=next_attempt,
+                    message_id=message_id,
+                )
+                logger.error(
+                    "Voice input dead-letter entry exhausted retries",
+                    extra={
+                        "voice_input_dlq_dead_key": VOICE_INPUT_DLQ_DEAD_KEY,
+                        "attempts": next_attempt,
+                        "reason": next_reason,
+                        "message_id": message_id,
+                    },
+                )
+            except Exception as error:
+                logger.warning(
+                    "Failed to move exhausted voice input DLQ entry to dead queue",
+                    extra={"attempts": next_attempt, "error": str(error)},
+                    exc_info=True,
+                )
+            continue
+
+        try:
+            await enqueue_voice_input_dlq(
+                redis,
+                payload,
+                reason=next_reason,
+                attempts=next_attempt,
+                message_id=message_id,
+            )
+            logger.warning(
+                "Requeued failed voice input message for retry",
+                extra={
+                    "attempts": next_attempt,
+                    "reason": next_reason,
+                    "message_id": message_id,
+                },
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to requeue failed voice input payload for retry",
+                extra={"attempts": next_attempt, "error": str(error)},
+                exc_info=True,
+            )
+    if drained:
+        logger.info(
+            "Processed voice input dead-letter messages",
+            extra={"drained": drained},
+        )
 
 
 async def process_tool_results():
@@ -680,89 +1192,138 @@ async def process_tool_results():
     redis = await get_redis_client()
     pubsub = redis.pubsub()
     await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
+
+    try:
+        await redis.xgroup_create(
+            RedisKeys.STREAM_TOOL_RESULTS,
+            RedisKeys.GROUP_LLM_WORKER_TOOL_RESULTS,
+            id="0",
+            mkstream=True,
+        )
+    except Exception as error:
+        if "BUSYGROUP" not in str(error):
+            logger.warning(
+                "Error creating tool result consumer group: %s",
+                error,
+                exc_info=True,
+            )
+
     logger.info("LLM Worker listening for tool results")
     try:
         while True:
+            try:
+                await drain_user_update_outbox(redis)
+            except Exception as error:
+                logger.warning("Failed to drain user update outbox: %s", error)
+
+            try:
+                await _drain_tool_result_dlq(redis)
+            except Exception as error:
+                logger.warning("Failed to drain tool result DLQ: %s", error)
+
             message = await pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=1.0
+                ignore_subscribe_messages=True, timeout=0.25
             )
-            if message is None:
+            if message is not None:
+                pubsub_handled = False
+                try:
+                    pubsub_handled = await _handle_tool_result_envelope(
+                        redis, message.get("data")
+                    )
+                except Exception as error:
+                    logger.warning(
+                        "Error handling tool.result from pubsub",
+                        extra={"message": message},
+                        exc_info=True,
+                    )
+                if not pubsub_handled:
+                    try:
+                        await enqueue_tool_result_dlq(
+                            redis,
+                            message.get("data"),
+                            reason="tool_result_pubsub_failed",
+                        )
+                    except Exception as dlq_error:
+                        logger.warning(
+                            "Failed to enqueue failed pubsub tool.result payload to DLQ",
+                            extra={"dlq_error": str(dlq_error)},
+                            exc_info=True,
+                        )
+
+            try:
+                stream_messages = await redis.xreadgroup(
+                    groupname=RedisKeys.GROUP_LLM_WORKER_TOOL_RESULTS,
+                    consumername=TOOL_RESULTS_CONSUMER_NAME,
+                    streams={RedisKeys.STREAM_TOOL_RESULTS: ">"},
+                    count=TOOL_RESULT_STREAM_POLL_BATCH,
+                    block=200,
+                )
+                if not stream_messages:
+                    stream_messages = await redis.xreadgroup(
+                        groupname=RedisKeys.GROUP_LLM_WORKER_TOOL_RESULTS,
+                        consumername=TOOL_RESULTS_CONSUMER_NAME,
+                        streams={RedisKeys.STREAM_TOOL_RESULTS: "0"},
+                        count=TOOL_RESULT_STREAM_POLL_PENDING_BATCH,
+                    )
+            except Exception as error:
+                logger.warning("Error reading tool result stream: %s", error)
+                continue
+
+            if not stream_messages:
                 await asyncio.sleep(0)
                 continue
 
-            raw = message.get("data")
-            if not raw:
-                continue
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8")
-
-            try:
-                event = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-
-            try:
-                envelope = parse_event_envelope(event)
-            except Exception:
-                continue
-
-            if not is_supported_event_version(envelope.version):
-                logger.warning(
-                    "Skipping unsupported pubsub envelope version",
-                    extra={"version": envelope.version},
-                )
-                continue
-
-            if envelope.type != "tool.result":
-                continue
-
-            payload = envelope.payload
-            user_id = envelope.user_id
-            if not payload or not user_id:
-                continue
-
-            try:
-                if isinstance(payload, str):
-                    tool_result = ToolResult.model_validate_json(payload)
-                else:
-                    tool_result = ToolResult.model_validate(payload)
-            except Exception:
-                continue
-
-            user_id = str(user_id)
-            if tool_result.metadata and tool_result.metadata.get("fast_path"):
-                continue
-
-            await cache_spotify_result(
-                redis,
-                tool_result,
-                spotify_cache_ttl_seconds=SPOTIFY_CACHE_TTL_SECONDS,
-            )
-            await cache_spotify_clarification(
-                redis,
-                user_id=user_id,
-                tool_result=tool_result,
-            )
-
-            response_text = format_response_text(tool_result)
-            if not response_text:
-                continue
-
-            await append_history(
-                redis,
-                user_id,
-                "assistant",
-                response_text,
-                history_limit=HISTORY_LIMIT,
-            )
-            response_event = AgentResponse(content=response_text)
-            await publish_user_update(
-                redis,
-                event_type="agent.response",
-                user_id=user_id,
-                payload=response_event,
-                metadata={"source": "llm_worker.tool_result_loop"},
-            )
+            for _, messages in stream_messages:
+                for message_id, fields in messages:
+                    raw_payload = fields.get("payload") if fields else None
+                    handled = False
+                    try:
+                        handled = await _handle_tool_result_envelope(
+                            redis, raw_payload
+                        )
+                    except Exception as error:
+                        logger.warning(
+                            "Error handling tool.result from stream",
+                            extra={"message_id": message_id},
+                            exc_info=True,
+                        )
+                    enqueued = False
+                    if not handled:
+                        logger.warning(
+                            "Requeuing failed tool.result stream message to DLQ",
+                            extra={"message_id": message_id},
+                        )
+                        try:
+                            await enqueue_tool_result_dlq(
+                                redis,
+                                raw_payload,
+                                reason="tool_result_stream_failed",
+                            )
+                            enqueued = True
+                        except Exception as dlq_error:
+                            logger.warning(
+                                "Failed to enqueue failed tool.result payload to DLQ",
+                                extra={
+                                    "message_id": message_id,
+                                    "dlq_error": str(dlq_error),
+                                },
+                                exc_info=True,
+                            )
+                            await asyncio.sleep(0.05)
+                    if handled or enqueued:
+                        try:
+                            await redis.xack(
+                                RedisKeys.STREAM_TOOL_RESULTS,
+                                RedisKeys.GROUP_LLM_WORKER_TOOL_RESULTS,
+                                message_id,
+                            )
+                        except Exception as error:
+                            logger.warning(
+                                "Failed to ack tool result stream message",
+                                extra={"message_id": message_id},
+                                exc_info=True,
+                            )
+                            logger.debug("Tool result stream ack failed: %s", error)
     finally:
         await pubsub.unsubscribe(RedisKeys.CHANNEL_USER_UPDATES)
         await pubsub.close()

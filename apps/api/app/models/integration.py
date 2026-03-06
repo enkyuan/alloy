@@ -2,7 +2,7 @@
 
 from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy import String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import String, Text, DateTime, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -27,6 +27,7 @@ class Integration(Base):
     """
 
     __tablename__ = "integrations"
+    __table_args__ = (UniqueConstraint("user_id", "service", name="uq_integration_user_service"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
     user_id: Mapped[str] = mapped_column(
@@ -36,14 +37,16 @@ class Integration(Base):
     access_token: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
     refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText(), nullable=True)
     token_type: Mapped[str] = mapped_column(String, default="Bearer")
-    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )

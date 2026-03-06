@@ -7,7 +7,10 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.integrations.base import IntegrationHTTPService
-from app.services.integrations.errors import IntegrationServiceError
+from app.services.integrations.errors import (
+    IntegrationAuthError,
+    IntegrationServiceError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,17 +78,20 @@ class SupabaseAuthService(IntegrationHTTPService):
                 f"{self.base_url}/user",
                 action="get user",
                 headers={**self.headers, "Authorization": f"Bearer {access_token}"},
-                expected_status=(200, 401, 403),
+                expected_status=(200,),
                 retry_attempts=1,
             )
-            if response.status_code == 200:
-                logger.info("Successfully retrieved user from Supabase")
-                return response.json()
-            logger.warning("Failed to get user: status %s", response.status_code)
+            logger.info("Successfully retrieved user from Supabase")
+            return response.json()
+        except IntegrationAuthError as error:
+            logger.warning(
+                "Supabase rejected access token while fetching user (status=%s)",
+                error.status_code,
+            )
             return None
         except IntegrationServiceError as error:
             logger.error("Error getting user from Supabase: %s", error)
-            return None
+            raise
 
     async def refresh_token(self, refresh_token: str) -> dict[str, Any]:
         response = await self._request_json(

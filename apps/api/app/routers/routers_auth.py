@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.db_session import db_commit, db_execute, db_refresh
 from app.models.user import User
 from app.routers.dependencies import get_current_supabase_user
 from app.schemas.auth import (
@@ -61,7 +62,7 @@ async def refresh_token(
                 detail="User not found in Supabase",
             )
 
-        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        result = await db_execute(db, select(User).where(User.id == supabase_user["id"]))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -111,7 +112,7 @@ async def sync_user(
     """
     try:
         # Get or create user in our database
-        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        result = await db_execute(db, select(User).where(User.id == supabase_user["id"]))
         user = result.scalar_one_or_none()
 
         if not user:
@@ -149,8 +150,8 @@ async def sync_user(
                     "full_name"
                 ) or supabase_user.get("user_metadata", {}).get("name")
 
-        await db.commit()
-        await db.refresh(user)
+        await db_commit(db)
+        await db_refresh(db, user)
 
         logger.info("Successfully synced user: %s", user.email)
         return UserResponse.model_validate(user)
@@ -184,7 +185,7 @@ async def get_current_user(
     """
     try:
         # Get user from database
-        result = await db.execute(select(User).where(User.id == supabase_user["id"]))
+        result = await db_execute(db, select(User).where(User.id == supabase_user["id"]))
         user = result.scalar_one_or_none()
 
         if not user:

@@ -29,7 +29,7 @@ struct IntegrationsView: View {
         NavigationStack {
             mainContent
                 .toolbar {
-                    if !isOnboarding {
+                    if !isOnboarding || !authService.isAuthenticated {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button(action: { dismiss() }) {
                                 Image(systemName: "xmark")
@@ -39,9 +39,14 @@ struct IntegrationsView: View {
                         }
                     }
                 }
-                .interactiveDismissDisabled(isOnboarding)
+                .interactiveDismissDisabled(isOnboarding && authService.isAuthenticated)
                 .task {
                     await refreshIntegrations()
+                }
+                .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+                    if !isAuthenticated {
+                        dismiss()
+                    }
                 }
                 .alert("Error", isPresented: $showError) {
                     Button("OK") {}
@@ -253,6 +258,10 @@ struct IntegrationsView: View {
             do {
                 try await integrationService.connectService(service, authService: authService)
             } catch let error as IntegrationError {
+                if case .notAuthenticated = error {
+                    dismiss()
+                    return
+                }
                 guard case .userCancelled = error else {
                     errorMessage =
                         "Failed to connect \(service.displayName): \(error.localizedDescription)"
@@ -279,6 +288,14 @@ struct IntegrationsView: View {
         Task {
             do {
                 try await integrationService.disconnectService(service, authService: authService)
+            } catch let error as IntegrationError {
+                if case .notAuthenticated = error {
+                    dismiss()
+                    return
+                }
+                errorMessage =
+                    "Failed to disconnect \(service.displayName): \(error.localizedDescription)"
+                showError = true
             } catch {
                 errorMessage =
                     "Failed to disconnect \(service.displayName): \(error.localizedDescription)"
@@ -294,6 +311,12 @@ struct IntegrationsView: View {
         do {
             try await integrationService.fetchConnectedIntegrations(authService: authService)
             print("Refreshed integrations")
+        } catch let error as IntegrationError {
+            if case .notAuthenticated = error {
+                dismiss()
+                return
+            }
+            print("Failed to refresh integrations: \(error.localizedDescription)")
         } catch {
             print("Failed to refresh integrations: \(error.localizedDescription)")
         }

@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.db_session import db_commit, db_execute
 from app.core.redis import get_redis_client
 from app.models.integration import Integration
 from app.routers.dependencies import require_active_integration
@@ -190,7 +191,8 @@ async def upsert_integration(
     overwrite_refresh_token: bool = True,
 ) -> Integration:
     """Create or update an integration row and commit."""
-    query = await db.execute(
+    query = await db_execute(
+        db,
         select(Integration).where(
             Integration.user_id == user_id,
             Integration.service == service,
@@ -221,7 +223,7 @@ async def upsert_integration(
             integration.token_type = token_type
         integration.scope = scope
 
-    await db.commit()
+    await db_commit(db)
     return integration
 
 

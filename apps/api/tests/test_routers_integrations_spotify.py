@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 import uuid
+import fakeredis.aioredis
 
 from app.models.integration import Integration
 from app.models.user import User
@@ -20,11 +21,12 @@ def mock_settings():
 
 @pytest.fixture
 def mock_redis_global():
-    with patch("app.routers.integrations.integrations_spotify.redis_client") as mock:
-        mock.setex = AsyncMock()
-        mock.get = AsyncMock(return_value=None)
-        mock.delete = AsyncMock()
-        yield mock
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    with patch(
+        "app.routers.integrations.integrations_shared.get_oauth_redis_client",
+        new=AsyncMock(return_value=fake),
+    ):
+        yield fake
 
 
 @pytest.mark.asyncio

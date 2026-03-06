@@ -71,4 +71,12 @@ async def get_db():
 
 async def close_async_engine() -> None:
     """Dispose async SQLAlchemy engine."""
-    await async_engine.dispose()
+    try:
+        await async_engine.dispose()
+    except ValueError as error:
+        if "greenlet library is required" in str(error).lower():
+            logger.warning(
+                "Skipping async engine dispose because greenlet is unavailable"
+            )
+            return
+        raise

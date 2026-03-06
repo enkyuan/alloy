@@ -42,9 +42,11 @@ class RedisKeys:
 
     # Streams
     STREAM_VOICE_INPUT = "stream:voice_input"
+    STREAM_TOOL_RESULTS = "stream:tool_results"
 
     # Consumer Groups
     GROUP_LLM_WORKER = "group:llm_worker"
+    GROUP_LLM_WORKER_TOOL_RESULTS = "group:llm_worker_tool_results"
 
     # Channels (Pub/Sub)
     CHANNEL_USER_UPDATES = "channel:user_updates"
@@ -57,4 +59,3 @@ class RedisKeys:
     @staticmethod
     def conversation_history(conversation_id: str) -> str:
         return f"conversation:{conversation_id}:history"
-

@@ -73,19 +73,24 @@ class IntegrationService {
     }
 
     func fetchConnectedIntegrations(authService: AuthService) async throws {
-        guard let session = authService.session else {
-            throw IntegrationError.notAuthenticated
-        }
+        let accessToken = try await resolveAccessToken(authService: authService)
 
         let url = URL(string: "\(backendURL)/integrations")!
         var request = URLRequest(url: url)
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-            httpResponse.statusCode == 200
-        else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw IntegrationError.fetchFailed
+        }
+
+        if httpResponse.statusCode == 401 {
+            await authService.handleBackendUnauthorized()
+            throw IntegrationError.notAuthenticated
+        }
+
+        guard httpResponse.statusCode == 200 else {
             throw IntegrationError.fetchFailed
         }
 
@@ -128,7 +133,7 @@ class IntegrationService {
 
         print("Initiating OAuth for \(service.displayName)")
 
-        guard authService.session != nil else {
+        guard authService.isAuthenticated else {
             print("Not authenticated")
             throw IntegrationError.notAuthenticated
         }
@@ -142,7 +147,11 @@ class IntegrationService {
 
         do {
             print("Step 1: Getting OAuth URL from backend...")
-            let authURL = try await getOAuthURL(for: service, accessToken: supabaseAccessToken)
+            let authURL = try await getOAuthURL(
+                for: service,
+                accessToken: supabaseAccessToken,
+                authService: authService
+            )
             print("Received auth URL: \(authURL.absoluteString)")
 
             print("Step 2: Presenting OAuth web flow...")
@@ -151,7 +160,12 @@ class IntegrationService {
 
             print("Step 3: Exchanging authorization code...")
             try await exchangeCode(
-                code: code, state: state, accessToken: supabaseAccessToken, service: service)
+                code: code,
+                state: state,
+                accessToken: supabaseAccessToken,
+                service: service,
+                authService: authService
+            )
 
             DispatchQueue.main.async {
                 self.connectedServices.insert(service)
@@ -170,7 +184,7 @@ class IntegrationService {
 
     private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws
     {
-        guard authService.session != nil else {
+        guard authService.isAuthenticated else {
             throw IntegrationError.notAuthenticated
         }
 
@@ -251,7 +265,8 @@ class IntegrationService {
                             idToken: idToken,
                             accessToken: accessToken,
                             service: service,
-                            supabaseAccessToken: supabaseAccessToken
+                            supabaseAccessToken: supabaseAccessToken,
+                            authService: authService
                         )
 
                         _ = await MainActor.run {
@@ -260,6 +275,9 @@ class IntegrationService {
 
                         print("Successfully connected \(serviceName)")
                         continuation.resume()
+                    } catch let error as IntegrationError {
+                        print("Failed to send tokens to backend: \(error.localizedDescription)")
+                        continuation.resume(throwing: error)
                     } catch {
                         print("Failed to send tokens to backend: \(error.localizedDescription)")
                         continuation.resume(throwing: IntegrationError.oauthFailed)
@@ -273,7 +291,8 @@ class IntegrationService {
         idToken: String,
         accessToken: String,
         service: ServiceType,
-        supabaseAccessToken: String
+        supabaseAccessToken: String,
+        authService: AuthService
     ) async throws {
         let endpointPath: String
         switch service {
@@ -307,6 +326,10 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Backend returned error \(httpResponse.statusCode): \(errorMessage)")
+            if httpResponse.statusCode == 401 {
+                await authService.handleBackendUnauthorized()
+                throw IntegrationError.notAuthenticated
+            }
             throw IntegrationError.oauthFailed
         }
 
@@ -314,21 +337,26 @@ class IntegrationService {
     }
 
     func disconnectService(_ service: ServiceType, authService: AuthService) async throws {
-        guard let session = authService.session else {
-            throw IntegrationError.notAuthenticated
-        }
+        let accessToken = try await resolveAccessToken(authService: authService)
 
         let url = URL(
             string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
 
         let (_, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-            httpResponse.statusCode == 200
-        else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw IntegrationError.disconnectFailed
+        }
+
+        if httpResponse.statusCode == 401 {
+            await authService.handleBackendUnauthorized()
+            throw IntegrationError.notAuthenticated
+        }
+
+        guard httpResponse.statusCode == 200 else {
             throw IntegrationError.disconnectFailed
         }
 
@@ -338,7 +366,11 @@ class IntegrationService {
     }
 
     private func exchangeCode(
-        code: String, state: String, accessToken: String, service: ServiceType
+        code: String,
+        state: String,
+        accessToken: String,
+        service: ServiceType,
+        authService: AuthService
     ) async throws {
         guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
             let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -365,13 +397,21 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Exchange failed with status \(httpResponse.statusCode): \(errorMessage)")
+            if httpResponse.statusCode == 401 {
+                await authService.handleBackendUnauthorized()
+                throw IntegrationError.notAuthenticated
+            }
             throw IntegrationError.oauthFailed
         }
 
         print("Successfully exchanged code for \(service.displayName)")
     }
 
-    private func getOAuthURL(for service: ServiceType, accessToken: String) async throws -> URL {
+    private func getOAuthURL(
+        for service: ServiceType,
+        accessToken: String,
+        authService: AuthService
+    ) async throws -> URL {
         let url = URL(string: "\(backendURL)\(service.oauthEndpoint)")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -387,6 +427,7 @@ class IntegrationService {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Failed to get OAuth URL (status \(httpResponse.statusCode)): \(errorMessage)")
             if httpResponse.statusCode == 401 {
+                await authService.handleBackendUnauthorized()
                 throw IntegrationError.notAuthenticated
             }
             throw IntegrationError.oauthURLFailed
@@ -506,6 +547,12 @@ class IntegrationService {
                 print("ASWebAuthenticationSession started successfully")
             }
         }
+    }
+
+    func clearCachedConnectedServices() {
+        connectedServices.removeAll()
+        UserDefaults.standard.removeObject(forKey: connectedServicesKey)
+        print("Cleared connected services cache")
     }
 
     private func saveConnectedServices() {

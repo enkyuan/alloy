@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.events import AgentResponse, ToolCall
 from app.services.pipeline.helpers.function_calls import extract_response_function_calls
+from app.workers.helpers.redis_events import publish_user_update_safely
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,6 @@ async def dispatch_tool_calls(
     function_calls: list[Any],
     *,
     execute_tool_call_task: Any,
-    publish_user_update: Any,
 ) -> None:
     for function_call in function_calls:
         logger.info("LLM requested tool: %s", function_call.name)
@@ -41,7 +41,7 @@ async def dispatch_tool_calls(
             tool_args=tool_args,
             tool_call_id=tool_call_id,
         )
-        await publish_user_update(
+        await publish_user_update_safely(
             redis,
             event_type="tool.call",
             user_id=user_id,
@@ -56,7 +56,6 @@ async def handle_llm_response(
     response: Any,
     *,
     execute_tool_call_task: Any,
-    publish_user_update: Any,
     append_history: Any,
     history_limit: int,
 ) -> None:
@@ -72,7 +71,6 @@ async def handle_llm_response(
             user_id,
             function_calls,
             execute_tool_call_task=execute_tool_call_task,
-            publish_user_update=publish_user_update,
         )
         return
 
@@ -81,16 +79,23 @@ async def handle_llm_response(
         logger.warning("Gemini returned an empty response")
         response_text = "Sorry, I couldn't generate a response right now."
 
-    await append_history(
-        redis,
-        user_id,
-        "assistant",
-        response_text,
-        history_limit=history_limit,
-    )
+    try:
+        await append_history(
+            redis,
+            user_id,
+            "assistant",
+            response_text,
+            history_limit=history_limit,
+        )
+    except Exception as error:
+        logger.warning(
+            "Failed to append LLM text response to history",
+            extra={"user_id": user_id, "error": str(error)},
+            exc_info=True,
+        )
     logger.debug("Publishing agent response", extra={"user_id": user_id})
     response_event = AgentResponse(content=response_text)
-    await publish_user_update(
+    await publish_user_update_safely(
         redis,
         event_type="agent.response",
         user_id=user_id,

@@ -8,11 +8,11 @@ from pydantic import BaseModel
 from app.core.events import (
     EventInstance,
     EventsRegistry,
-    build_event_envelope,
     is_supported_event_version,
     parse_event_envelope,
 )
 from app.core.redis import RedisKeys, get_redis_client
+from app.workers.helpers.redis_events import publish_user_update_safely
 
 logger = logging.getLogger(__name__)
 
@@ -191,14 +191,29 @@ class RedisPublisher:
             except Exception as exc:
                 logger.debug("Could not set user_id on event: %s", exc)
 
-        payload = event.model_dump_json()
-        envelope = build_event_envelope(
+        published = await publish_user_update_safely(
+            redis,
+            channel=self.channel,
             event_type=event_alias,
             user_id=user_id,
-            payload=payload,
+            payload=event,
+            metadata={"source": "RedisPublisher.publish"},
         )
-        await redis.publish(self.channel, json.dumps(envelope))
-        logger.debug(
-            "Published event",
-            extra={"channel": self.channel, "type": event_alias, "user_id": user_id},
-        )
+        if published:
+            logger.debug(
+                "Published event",
+                extra={
+                    "channel": self.channel,
+                    "type": event_alias,
+                    "user_id": user_id,
+                },
+            )
+        else:
+            logger.warning(
+                "Failed to publish event; outbox fallback may apply",
+                extra={
+                    "channel": self.channel,
+                    "type": event_alias,
+                    "user_id": user_id,
+                },
+            )

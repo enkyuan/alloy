@@ -405,7 +405,7 @@ class AssistantViewModel {
             let jsonString = String(data: jsonData, encoding: .utf8)
         else {
             print("Failed to create Gemini command")
-            await MainActor.run {
+            _ = await MainActor.run {
                 self.conversationService.addAssistantMessage(
                     "Sorry, I couldn't process that request.")
             }

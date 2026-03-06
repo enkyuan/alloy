@@ -2,28 +2,41 @@
 
 from typing import Any, Awaitable, Callable
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.db_session import db_execute
 from app.core.database import get_db
 from app.models.integration import Integration
+from app.services.integrations.errors import IntegrationServiceError
 from app.services.user.auth import supabase_auth_service
+
+security = HTTPBearer()
 
 
 async def get_current_supabase_user(
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict[str, Any]:
     """Validate Bearer auth and return Supabase user payload."""
-    if not authorization or not authorization.startswith("Bearer "):
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        supabase_user = {**payload, "id": payload.get("sub")}
+    except JWTError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
+            detail="Invalid or expired token",
+        ) from error
 
-    access_token = authorization.replace("Bearer ", "", 1)
-    supabase_user = await supabase_auth_service.get_user(access_token)
-    if not supabase_user:
+    if not supabase_user.get("id"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
@@ -39,7 +52,8 @@ async def get_active_integration(
     not_connected_detail: str,
 ) -> Integration:
     """Resolve an active integration for a user and service."""
-    result = await db.execute(
+    result = await db_execute(
+        db,
         select(Integration).where(
             Integration.user_id == user_id,
             Integration.service == service,

@@ -3,7 +3,8 @@
 import logging
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -13,6 +14,11 @@ from app.core.database import close_async_engine
 from app.core.redis import close_redis_client
 from app.services.integrations.token_migration import (
     migrate_plaintext_integration_tokens,
+)
+from app.services.integrations.errors import (
+    IntegrationServiceError,
+    integration_error_to_http_status,
+    integration_error_to_detail,
 )
 from app.services.lifecycle import close_registered_services
 from app.routers import (
@@ -54,6 +60,14 @@ app = FastAPI(
     description="Modal API",
     lifespan=lifespan,
 )
+
+@app.exception_handler(IntegrationServiceError)
+async def integration_service_error_handler(request: Request, exc: IntegrationServiceError):
+    logger.warning("Integration service error on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=integration_error_to_http_status(exc),
+        content={"detail": integration_error_to_detail(exc, fallback="Integration service error")}
+    )
 
 # Configure CORS
 app.add_middleware(

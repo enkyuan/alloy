@@ -30,10 +30,14 @@ router = APIRouter()
 SPOTIFY_DEFAULT_EXPIRES_IN_SECONDS = 3600
 
 
+async def _resolve_spotify_token(integration, db) -> str:
+    return await spotify_client.get_valid_token(integration, db)
+
+
 spotify_token_dependency = require_integration_token(
     "spotify",
     not_connected_detail="Spotify not connected",
-    resolver=spotify_client.get_valid_token,
+    resolver=_resolve_spotify_token,
 )
 
 

@@ -1,6 +1,7 @@
 import pytest
 from httpx import AsyncClient
 from app.models.user import User
+from app.services.integrations.errors import IntegrationNetworkError
 
 
 @pytest.mark.asyncio
@@ -83,3 +84,20 @@ async def test_routers_auth_refresh_token(
     data = response.json()
     assert data["access_token"] == "new_access_token"
     mock_supabase_auth.refresh_token.assert_called_once_with("old_refresh_token")
+
+
+@pytest.mark.asyncio
+async def test_routers_auth_sync_returns_503_when_supabase_unavailable(
+    async_client: AsyncClient, mock_supabase_auth
+):
+    mock_supabase_auth.get_user.side_effect = IntegrationNetworkError(
+        service="supabase",
+        action="get user",
+        message="supabase get user request failed",
+    )
+
+    headers = {"Authorization": "Bearer valid_token"}
+    response = await async_client.post("/api/v1/auth/sync", headers=headers)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Authentication service temporarily unavailable"
