@@ -239,6 +239,7 @@ def schedule_pending_transcription_publish(
             await asyncio.sleep(0.7)
             if state.pending_complete_transcription != expected_text:
                 return
+            assert expected_text is not None
             await publish_transcription(
                 redis_conn,
                 user_id,

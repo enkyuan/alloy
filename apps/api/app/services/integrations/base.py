@@ -151,10 +151,10 @@ class IntegrationHTTPService:
                 response = await self._get_http_client().request(
                     method=method,
                     url=url,
-                    headers=dict(headers) if headers else None,
-                    params=dict(params) if params else None,
+                    headers=dict(headers) if headers else None,  # type: ignore
+                    params=dict(params) if params else None,  # type: ignore
                     json=json,
-                    data=dict(data) if data else None,
+                    data=dict(data) if data else None,  # type: ignore
                 )
             except httpx.HTTPError as error:
                 typed_error = IntegrationNetworkError(

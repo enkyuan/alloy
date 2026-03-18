@@ -77,7 +77,7 @@ async def stream_transcribe(
             user_id=user_id,
             session_id=session_id,
             soniox_ws=soniox_ws,
-            soniox_task=cast(asyncio.Task[None], soniox_task),
+            soniox_task=soniox_task,
             state=state,
         )
     except Exception as error:

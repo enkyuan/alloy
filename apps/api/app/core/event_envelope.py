@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import msgpack
 from typing import Any, Dict, Optional, Union, cast
 
 from pydantic import BaseModel, Field
@@ -59,15 +60,32 @@ def build_event_envelope(
 
 def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
     """Validate and parse an incoming event envelope."""
-    candidate = dict(raw)
-    metadata = candidate.get("metadata")
-    if isinstance(metadata, str):
-        try:
-            decoded_metadata = json.loads(metadata)
-            if isinstance(decoded_metadata, dict):
-                candidate["metadata"] = decoded_metadata
-        except json.JSONDecodeError:
-            candidate["metadata"] = {}
+    # Fast path: MsgPack binary decoding
+    msgpack_payload = None
+    for k, v in raw.items():
+        if k == "_msgpack" or k == b"_msgpack":
+            msgpack_payload = v
+            break
+    if msgpack_payload and isinstance(msgpack_payload, bytes):
+        candidate = msgpack.unpackb(msgpack_payload, strict_map_key=False)
+        if isinstance(candidate, dict):
+            # Decode string keys defensively 
+            candidate = {k.decode("utf-8") if isinstance(k, bytes) else k: v for k, v in candidate.items()}
+    else:
+        # Legacy fast-path JSON decoding
+        candidate = dict(raw)
+        metadata = candidate.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                decoded_metadata = json.loads(metadata)
+                if isinstance(decoded_metadata, dict):
+                    candidate["metadata"] = decoded_metadata
+            except json.JSONDecodeError:
+                candidate["metadata"] = {}
+
+        # Safely decode byte-keys passed down locally
+        candidate = {k.decode("utf-8") if isinstance(k, bytes) else k: v for k, v in candidate.items()}
+
     candidate.setdefault("version", EVENT_SCHEMA_VERSION)
     envelope = EventEnvelope.model_validate(candidate)
     if not is_supported_event_version(envelope.version):
@@ -76,13 +94,5 @@ def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
 
 
 def to_redis_stream_fields(envelope: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert an event envelope into Redis stream-safe primitive fields."""
-    fields: Dict[str, Any] = {}
-    for key, value in envelope.items():
-        if isinstance(value, (str, bytes, int, float)):
-            fields[key] = value
-        elif value is None:
-            fields[key] = ""
-        else:
-            fields[key] = json.dumps(value)
-    return fields
+    """Convert an event envelope into Redis stream-safe binary fields."""
+    return {"_msgpack": msgpack.packb(envelope)}
