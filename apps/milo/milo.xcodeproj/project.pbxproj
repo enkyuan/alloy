@@ -685,8 +685,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 9.0.0;
+				branch = main;
+				kind = branch;
 			};
 		};
 		83601AE02E9C42C800C9B0A6 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {

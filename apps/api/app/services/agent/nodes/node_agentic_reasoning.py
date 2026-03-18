@@ -1,7 +1,5 @@
 import logging
-import time
 import uuid
-from collections import OrderedDict
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from app.core.events import (
@@ -12,20 +10,20 @@ from app.core.events import (
     ToolResult,
     UserTranscriptionReceived,
 )
-from app.services.agent.core.bus import Message
 from app.services.agent.evals.conversation_context import ConversationContext
+from app.services.agent.core.bus import Message
 from app.services.agent.nodes.node_reasoning import ReasoningNode
 from app.services.integrations.tool_payload import build_tools_payload
 from app.services.parser import command_parser
 from app.services.parser.intent_to_tool import map_intent_to_tool_call
+from app.workers.helpers.redis_events import try_cached_spotify_play
 from app.services.pipeline.helpers.function_calls import extract_response_function_calls
 from app.services.pipeline.routers.router import pipeline_router
 from app.services.pipeline.services.gemini_service import get_gemini_service
+from app.core.redis import get_redis_client
+from app.workers.helpers.redis_events import append_history, get_history
 
 logger = logging.getLogger(__name__)
-
-_MAX_TRACKED_USERS = 1000
-_INACTIVE_USER_TTL_SECONDS = 60 * 60
 
 
 class AgentReasoningNode(ReasoningNode):
@@ -42,12 +40,21 @@ class AgentReasoningNode(ReasoningNode):
             max_context_length=max_context_length,
             node_id=node_id,
         )
-        self._events_by_user: OrderedDict[str, List[Any]] = OrderedDict()
-        self._last_seen_by_user: dict[str, float] = {}
         logger.info(
-            "AgentReasoningNode initialized",
+            "AgentReasoningNode initialized with Redis History tracking",
             extra={"node_id": self.id, "max_context_length": max_context_length},
         )
+
+    async def _append_to_redis(self, redis: Any, user_id: str, event: Any) -> None:
+        if isinstance(event, UserTranscriptionReceived):
+            await append_history(redis, user_id, "user", event.content, history_limit=self.max_context_length)
+        elif isinstance(event, AgentResponse):
+            await append_history(redis, user_id, "assistant", event.content, history_limit=self.max_context_length)
+        elif isinstance(event, ToolResult):
+            summary = event.result_str or event.error or ""
+            if summary:
+                resp = f"Tool result for {event.tool_name}: {summary}"
+                await append_history(redis, user_id, "assistant", resp, history_limit=self.max_context_length)
 
     async def generate(
         self, message: Message
@@ -58,21 +65,28 @@ class AgentReasoningNode(ReasoningNode):
             return
 
         logger.debug("Processing message", extra={"user_id": user_id})
-        self._add_event_for_user(user_id, message.event)
+        redis = await get_redis_client()
+        await self._append_to_redis(redis, user_id, message.event)
 
-        conversation_context = self._build_conversation_context(user_id)
-        async for chunk in self.process_context(conversation_context):
-            self._add_event_for_user(user_id, chunk)
+        conversation_messages = await get_history(redis, user_id)
+        
+        context = ConversationContext(
+            events=[message.event],
+            system_prompt=self.system_prompt,
+            metadata={"user_id": user_id, "conversation_messages": conversation_messages}
+        )
+
+        async for chunk in self.process_context(context):
+            await self._append_to_redis(redis, user_id, chunk)
             yield chunk
 
     async def process_context(
         self, context: ConversationContext
     ) -> AsyncGenerator[EventInstance, None]:
         user_id = str(context.metadata.get("user_id", ""))
-        if not user_id:
-            return
-
+        conversation_messages = context.metadata.get("conversation_messages", [])
         last_event = context.events[-1] if context.events else None
+        
         if isinstance(last_event, UserTranscriptionReceived):
             route_decision = pipeline_router.decide(last_event.content)
             logger.debug(
@@ -95,21 +109,22 @@ class AgentReasoningNode(ReasoningNode):
             should_fast_path_parse = (
                 route_decision.should_parse_as_command or parser_command_like
             )
-            logger.debug(
-                "Parser decision",
-                extra={
-                    "user_id": user_id,
-                    "intent": intent.intent,
-                    "confidence": round(intent.confidence, 4),
-                    "parser_command_like": parser_command_like,
-                    "should_fast_path_parse": should_fast_path_parse,
-                },
-            )
 
             if should_fast_path_parse and not intent.requires_clarification:
                 tool_call = map_intent_to_tool_call(intent)
                 if tool_call:
                     tool_name, tool_args = tool_call
+                    
+                    if tool_name == "spotify.play":
+                        redis = await get_redis_client()
+                        cached_result = await try_cached_spotify_play(
+                            redis, user_id, tool_args, history_limit=self.max_context_length
+                        )
+                        if cached_result:
+                            logger.info("Used cached Spotify fast-path result", extra={"user_id": user_id})
+                            yield cached_result
+                            return
+
                     logger.info(
                         "Routing via parser intent",
                         extra={"user_id": user_id, "intent": intent.intent},
@@ -122,7 +137,6 @@ class AgentReasoningNode(ReasoningNode):
                     )
                     return
 
-        conversation_messages = _build_conversation_messages(context.events)
         if not conversation_messages:
             logger.debug("No messages to process", extra={"user_id": user_id})
             return
@@ -167,76 +181,3 @@ class AgentReasoningNode(ReasoningNode):
         if hasattr(event, "user_id") and getattr(event, "user_id"):
             return str(getattr(event, "user_id"))
         return None
-
-    def _touch_user(self, user_id: str) -> None:
-        self._last_seen_by_user[user_id] = time.monotonic()
-        if user_id in self._events_by_user:
-            self._events_by_user.move_to_end(user_id)
-
-    def _prune_user_state(self) -> None:
-        now = time.monotonic()
-        expired = [
-            user_id
-            for user_id, seen_at in self._last_seen_by_user.items()
-            if now - seen_at > _INACTIVE_USER_TTL_SECONDS
-        ]
-        for user_id in expired:
-            self._events_by_user.pop(user_id, None)
-            self._last_seen_by_user.pop(user_id, None)
-
-        while len(self._events_by_user) > _MAX_TRACKED_USERS:
-            oldest_user_id, _ = self._events_by_user.popitem(last=False)
-            self._last_seen_by_user.pop(oldest_user_id, None)
-
-    def _add_event_for_user(self, user_id: str, event: Any) -> None:
-        self._prune_user_state()
-        events = self._events_by_user.setdefault(user_id, [])
-        self._touch_user(user_id)
-
-        previous_events = self.conversation_events
-        self.conversation_events = events
-        try:
-            # Reuse base class merge logic for transcript/assistant chunks.
-            self.add_event(event)
-            if len(self.conversation_events) > self.max_context_length:
-                self.conversation_events = self.conversation_events[-self.max_context_length :]
-            self._events_by_user[user_id] = self.conversation_events
-        finally:
-            self.conversation_events = previous_events
-
-    def _build_conversation_context(
-        self, user_id: Optional[str] = None
-    ) -> ConversationContext:
-        self._prune_user_state()
-        user_id = user_id or ""
-        self._touch_user(user_id)
-        events = self._events_by_user.get(user_id, [])
-
-        previous_events = self.conversation_events
-        self.conversation_events = events
-        try:
-            context = super()._build_conversation_context(user_id=user_id)
-        finally:
-            self.conversation_events = previous_events
-
-        context.metadata["user_id"] = user_id
-        return context
-
-
-def _build_conversation_messages(events: List[Any]) -> List[Dict[str, str]]:
-    messages: List[Dict[str, str]] = []
-    for event in events:
-        if isinstance(event, UserTranscriptionReceived):
-            messages.append({"role": "user", "content": event.content})
-        elif isinstance(event, AgentResponse):
-            messages.append({"role": "assistant", "content": event.content})
-        elif isinstance(event, ToolResult):
-            summary = event.result_str or event.error or ""
-            if summary:
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": f"Tool result for {event.tool_name}: {summary}",
-                    }
-                )
-    return messages

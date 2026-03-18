@@ -12,8 +12,17 @@ from app.core.events import (
 from app.core.prompts import ASSISTANT_SYSTEM_INSTRUCTION
 from app.services.agent.adapters.redis_io import (
     RedisPublisher,
-    RedisPubSubInput,
     RedisStreamInput,
+)
+from app.workers.helpers.redis_constants import (
+    TOOL_RESULT_DLQ_KEY,
+    TOOL_RESULT_DLQ_DEAD_KEY,
+    TOOL_RESULT_DLQ_MAX_DRAIN,
+    TOOL_RESULT_DLQ_MAX_RETRIES,
+    VOICE_INPUT_DLQ_KEY,
+    VOICE_INPUT_DLQ_DEAD_KEY,
+    VOICE_INPUT_DLQ_MAX_DRAIN,
+    VOICE_INPUT_DLQ_MAX_RETRIES,
 )
 from app.services.agent.core.bridge import Bridge
 from app.services.agent.core.bus import Bus, Message
@@ -85,19 +94,14 @@ async def run() -> None:
     bus = Bus()
     publisher = RedisPublisher()
 
-    stream_input = RedisStreamInput()
-    tool_result_input = RedisPubSubInput(allowed_types={"tool.result"})
-
     reasoning_node = AgentReasoningNode(
         system_prompt=ASSISTANT_SYSTEM_INSTRUCTION,
         node_id="agent",
     )
     logger.info("Initialized reasoning node", extra={"node_id": reasoning_node.id})
 
-    stream_bridge = Bridge("redis_stream").with_input_routing(stream_input)
-    tool_result_bridge = Bridge("redis_tool_results").with_input_routing(
-        tool_result_input
-    )
+    stream_bridge = Bridge("redis_stream")
+    tool_result_bridge = Bridge("redis_tool_results")
 
     reasoning_bridge = Bridge(reasoning_node)
     reasoning_bridge.on(UserTranscriptionReceived).stream(
@@ -136,7 +140,40 @@ async def run() -> None:
     await output_bridge.start()
 
     logger.info("Agent bus worker running")
+    
+    # Run the DLQ-enabled stream consumers in the background
+    import socket
+    from app.core.redis import RedisKeys
+    host_id = socket.gethostname()
+    
+    voice_input_stream = RedisStreamInput(
+        stream=RedisKeys.STREAM_VOICE_INPUT,
+        group=RedisKeys.GROUP_LLM_WORKER,
+        consumer=f"llm_voice_worker_{host_id}",
+    )
+    
+    tool_result_stream = RedisStreamInput(
+        stream=RedisKeys.STREAM_TOOL_RESULTS,
+        group=RedisKeys.GROUP_LLM_WORKER_TOOL_RESULTS,
+        consumer=f"llm_tool_results_worker_{host_id}",
+    )
+    
+    _background_tasks = [
+        asyncio.create_task(voice_input_stream.consume_to_bus(
+            "redis_stream", bus, VOICE_INPUT_DLQ_KEY, VOICE_INPUT_DLQ_DEAD_KEY,
+            VOICE_INPUT_DLQ_MAX_DRAIN, VOICE_INPUT_DLQ_MAX_RETRIES, 2000, 24*3600, 7*24*3600,
+            dlq_coerce_fields=True
+        )),
+        asyncio.create_task(tool_result_stream.consume_to_bus(
+            "redis_tool_results", bus, TOOL_RESULT_DLQ_KEY, TOOL_RESULT_DLQ_DEAD_KEY,
+            TOOL_RESULT_DLQ_MAX_DRAIN, TOOL_RESULT_DLQ_MAX_RETRIES, 2000, 24*3600, 7*24*3600,
+            dlq_coerce_fields=False
+        ))
+    ]
+
     await bus.shutdown_event.wait()
+    for task in _background_tasks:
+        task.cancel()
 
 
 if __name__ == "__main__":

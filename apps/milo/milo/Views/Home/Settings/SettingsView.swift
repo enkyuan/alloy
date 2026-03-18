@@ -9,8 +9,6 @@ struct SettingsView: View {
     @State private var errorMessage = ""
     @State private var showIntegrations = false
     @State private var showSignOutConfirmation = false
-    @State private var scrollOffset: CGFloat = 0
-    @State private var showStickyHeader = false
 
     var body: some View {
         NavigationStack {
@@ -32,7 +30,6 @@ struct SettingsView: View {
                 } message: {
                     Text(errorMessage)
                 }
-                .coordinateSpace(name: "scroll")
                 .navigationTitle(Text("Settings"))
                 .navigationBarTitleDisplayMode(.inline)
         }
@@ -99,9 +96,7 @@ struct SettingsView: View {
 
             Section {
                 Button(action: {
-                    Task {
-                        try? await authService.signOut()
-                    }
+                    showSignOutConfirmation = true
                 }) {
                     HStack {
                         Spacer()
@@ -219,13 +214,5 @@ struct SettingsView: View {
                 showError = true
             }
         }
-    }
-}
-
-
-struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }

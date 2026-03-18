@@ -12,7 +12,8 @@ from app.core.events import (
     parse_event_envelope,
 )
 from app.core.redis import RedisKeys, get_redis_client
-from app.workers.helpers.redis_events import publish_user_update_safely
+from app.services.agent.core.bus import Bus, Message
+from app.workers.helpers.redis_events import publish_user_update_safely, run_stream_with_dlq
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,54 @@ class RedisStreamInput:
                         extra={"stream": self.stream, "message_id": message_id},
                     )
                     return dict(data)
+
+    async def consume_to_bus(
+        self,
+        node_id: str,
+        bus: Bus,
+        dlq_key: str,
+        dlq_dead_key: str,
+        dlq_max_drain: int,
+        dlq_max_retries: int,
+        dlq_maxlen: int,
+        dlq_ttl: int,
+        dlq_dead_ttl: int,
+        stream_poll_batch: int = 20,
+        stream_pending_batch: int = 20,
+        dlq_coerce_fields: bool = False,
+    ) -> None:
+        """Run a fully robust, consumer-group streaming loop with DLQ fallbacks directly dumping into a Bus."""
+        redis = await get_redis_client()
+
+        async def _bus_handler(redis_client, payload, message_id):
+            if isinstance(payload, bytes):
+                payload = payload.decode()
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+            events = self.map_to_events(payload)
+            success = False
+            for event in events:
+                await bus.broadcast(Message(source=node_id, event=event))
+                success = True
+            return success
+
+        await run_stream_with_dlq(
+            redis,
+            self.stream,
+            self.group,
+            self.consumer,
+            dlq_key,
+            dlq_dead_key,
+            dlq_max_drain,
+            dlq_max_retries,
+            dlq_maxlen,
+            dlq_ttl,
+            dlq_dead_ttl,
+            stream_poll_batch,
+            stream_pending_batch,
+            _bus_handler,
+            dlq_coerce_fields,
+        )
 
     def map_to_events(self, message: Dict[str, Any]) -> Iterable[EventInstance]:
         return _parse_event_envelope(message)

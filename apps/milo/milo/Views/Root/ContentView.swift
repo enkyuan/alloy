@@ -3,7 +3,6 @@ import SwiftUI
 struct ContentView: View {
     @State private var authService = AuthService()
     private var integrationService = IntegrationService.shared
-    @State private var showIntegrations = false
     @State private var hasCompletedOnboarding = false
     private let onboardingCompletionPrefix = "milo.onboarding.completed."
 
@@ -16,25 +15,15 @@ struct ContentView: View {
                 HomeView(authService: authService, integrationService: integrationService)
             } else {
                 OnboardingView(authService: authService)
-                    .sheet(isPresented: onboardingSheetBinding, onDismiss: {
-                        handleIntegrationsDismissed()
-                    }) {
-                        IntegrationsView(authService: authService, integrationService: integrationService, isOnboarding: true)
+                    .sheet(isPresented: onboardingSheetBinding) {
+                        IntegrationsView(
+                            authService: authService,
+                            integrationService: integrationService,
+                            isOnboarding: true
+                        )
                     }
-                    .onAppear {
+                    .task(id: authService.currentUser?.id) {
                         refreshOnboardingState()
-                        updateIntegrationSheetPresentation()
-                    }
-                    .onChange(of: authService.currentUser?.id) { _, _ in
-                        refreshOnboardingState()
-                        updateIntegrationSheetPresentation()
-                    }
-                    .onChange(of: authService.isAuthenticated) { _, _ in
-                        refreshOnboardingState()
-                        updateIntegrationSheetPresentation()
-                    }
-                    .onChange(of: hasCompletedOnboarding) { _, _ in
-                        updateIntegrationSheetPresentation()
                     }
             }
         }
@@ -42,21 +31,17 @@ struct ContentView: View {
 
     private var onboardingSheetBinding: Binding<Bool> {
         Binding(
-            get: { showIntegrations && authService.isAuthenticated && !hasCompletedOnboarding },
-            set: { showIntegrations = $0 }
+            get: { authService.isAuthenticated && !hasCompletedOnboarding },
+            set: { isPresented in
+                if !isPresented {
+                    handleIntegrationsDismissed()
+                }
+            }
         )
-    }
-
-    private func updateIntegrationSheetPresentation() {
-        let shouldPresent = authService.isAuthenticated && !hasCompletedOnboarding
-        if showIntegrations != shouldPresent {
-            showIntegrations = shouldPresent
-        }
     }
 
     private func handleIntegrationsDismissed() {
         guard authService.isAuthenticated else {
-            showIntegrations = false
             return
         }
         persistOnboardingCompletion()

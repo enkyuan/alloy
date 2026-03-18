@@ -60,6 +60,7 @@ struct MiniPlayer: View {
     @State private var cardOpacity: Double = 1.0
     @State private var burstProgress: CGFloat = 0
     @State private var isBurstAnimating = false
+    @State private var burstTask: Task<Void, Never>?
 
     var body: some View {
         if let item {
@@ -76,7 +77,10 @@ struct MiniPlayer: View {
                 }
                 .onChange(of: trackKey) { oldValue, newValue in
                     guard !oldValue.isEmpty, oldValue != newValue else { return }
-                    triggerTrackChangeBurst(oldTrack: oldValue, newTrack: newValue)
+                    triggerTrackChangeBurst()
+                }
+                .onDisappear {
+                    burstTask?.cancel()
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
@@ -219,10 +223,9 @@ struct MiniPlayer: View {
         return "\(normalizedTitle)|\(normalizedArtist)"
     }
 
-    private func triggerTrackChangeBurst(oldTrack: String, newTrack: String) {
+    private func triggerTrackChangeBurst() {
         guard !isBurstAnimating else { return }
         isBurstAnimating = true
-        print("MiniPlayer: track changed from \(oldTrack) to \(newTrack), running burst animation")
 
         burstProgress = 0
         withAnimation(.easeIn(duration: 0.16)) {
@@ -231,7 +234,10 @@ struct MiniPlayer: View {
             cardOpacity = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+        burstTask?.cancel()
+        burstTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled else { return }
             burstProgress = 0
             cardScale = 0.84
             cardOpacity = 0
@@ -239,9 +245,9 @@ struct MiniPlayer: View {
                 cardScale = 1
                 cardOpacity = 1
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
-                isBurstAnimating = false
-            }
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            guard !Task.isCancelled else { return }
+            isBurstAnimating = false
         }
     }
 

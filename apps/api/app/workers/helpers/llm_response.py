@@ -46,7 +46,7 @@ async def dispatch_tool_calls(
             event_type="tool.call",
             user_id=user_id,
             payload=tool_call_event,
-            metadata={"source": "llm_worker.llm_function_call"},
+            metadata={"source": "agent.llm_function_call"},
         )
 
 
@@ -58,7 +58,7 @@ async def handle_llm_response(
     execute_tool_call_task: Any,
     append_history: Any,
     history_limit: int,
-) -> None:
+) -> str | None:
     function_calls = extract_response_function_calls(response)
 
     if function_calls:
@@ -72,9 +72,13 @@ async def handle_llm_response(
             function_calls,
             execute_tool_call_task=execute_tool_call_task,
         )
-        return
+        return None
 
-    response_text = response.text or ""
+    try:
+        response_text = str(response.text) if response.text else ""
+    except ValueError:
+        response_text = ""
+
     if not response_text:
         logger.warning("Gemini returned an empty response")
         response_text = "Sorry, I couldn't generate a response right now."
@@ -100,6 +104,7 @@ async def handle_llm_response(
         event_type="agent.response",
         user_id=user_id,
         payload=response_event,
-        metadata={"source": "llm_worker.llm_text_response"},
+        metadata={"source": "agent.llm_text_response"},
     )
     logger.info("Published agent response: %s...", response_text[:30])
+    return response_text

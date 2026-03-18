@@ -24,6 +24,7 @@ struct AnimatedText: View {
 
     @State private var animatedText = ""
     @State private var shimmerOffset: CGFloat = -1.0
+    @State private var typingTask: Task<Void, Never>?
 
 
     var body: some View {
@@ -40,8 +41,25 @@ struct AnimatedText: View {
 
     private var typingTextView: some View {
         Text(animatedText)
+            .onAppear {
+                if show?.wrappedValue == true {
+                    startTypingAnimation()
+                }
+            }
             .onChange(of: show?.wrappedValue ?? false) { _, newValue in
-                if newValue { animateTyping() }
+                if newValue {
+                    startTypingAnimation()
+                } else {
+                    cancelTypingAnimation(resetText: true)
+                }
+            }
+            .onChange(of: text) { _, _ in
+                if show?.wrappedValue == true {
+                    startTypingAnimation()
+                }
+            }
+            .onDisappear {
+                cancelTypingAnimation(resetText: false)
             }
     }
 
@@ -77,13 +95,25 @@ struct AnimatedText: View {
     }
 
 
-    private func animateTyping() {
-        animatedText = ""
+    private func startTypingAnimation() {
+        cancelTypingAnimation(resetText: true)
+
         let characters = Array(text)
-        for (index, character) in characters.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.05) {
+        typingTask = Task { @MainActor in
+            for character in characters {
+                guard !Task.isCancelled else { return }
                 animatedText.append(character)
+                try? await Task.sleep(nanoseconds: 50_000_000)
             }
+        }
+    }
+
+    private func cancelTypingAnimation(resetText: Bool) {
+        typingTask?.cancel()
+        typingTask = nil
+
+        if resetText {
+            animatedText = ""
         }
     }
 

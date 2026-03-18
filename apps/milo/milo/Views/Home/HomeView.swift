@@ -6,7 +6,6 @@ struct HomeView: View {
     @Bindable var integrationService: IntegrationService
     @State private var assistantViewModel = AssistantViewModel()
     @State private var isLoadingIntegrations = true
-    @State private var hasLoadedOnce = false
 
 
     var body: some View {
@@ -15,22 +14,23 @@ struct HomeView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                BottomNavigation.pages(
-                    (icon: "waveform", view: mainView),
-                    (icon: "gear", view: SettingsView(authService: authService, integrationService: integrationService)),
+                BottomNavigation(
+                    firstPage: (icon: "waveform", view: mainView),
+                    secondPage: (
+                        icon: "gear",
+                        view: SettingsView(
+                            authService: authService,
+                            integrationService: integrationService
+                        )
+                    ),
                     authService: authService,
                     assistantViewModel: assistantViewModel,
                     integrationService: integrationService
                 )
             }
         }
-        .task {
-            if !hasLoadedOnce {
-                await loadIntegrations()
-                hasLoadedOnce = true
-            } else {
-                isLoadingIntegrations = false
-            }
+        .task(id: authService.currentUser?.id) {
+            await loadIntegrations()
         }
     }
 
@@ -50,10 +50,13 @@ struct HomeView: View {
 
 
     private func loadIntegrations() async {
+        isLoadingIntegrations = true
         do {
             try await integrationService.fetchConnectedIntegrations(authService: authService)
         } catch {
-            print("Failed to fetch integrations: \(error)")
+            if Environment.isDebugLoggingEnabled {
+                print("Failed to fetch integrations: \(error)")
+            }
         }
         isLoadingIntegrations = false
     }

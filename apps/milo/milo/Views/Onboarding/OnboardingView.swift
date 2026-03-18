@@ -20,6 +20,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.background)
         .onAppear { viewModel.startAnimations() }
+        .onDisappear { viewModel.stopAnimations() }
         .alert("Authentication Error", isPresented: $showError) {
             Button("OK") { }
         } message: {
@@ -145,7 +146,6 @@ struct OnboardingView: View {
                 Task { @MainActor in
                     isAuthenticating = false
                     if nsError.code == -5 {
-                        print("User cancelled Google Sign-In")
                         return
                     }
                     showError(message: "Google Sign-In failed: \(message)")
@@ -163,16 +163,13 @@ struct OnboardingView: View {
             }
 
             let accessToken = result.user.accessToken.tokenString
-            let email = result.user.profile?.email ?? "unknown"
 
             Task { @MainActor in
-                print("Got Google tokens for: \(email)")
                 do {
                     try await authService.authenticateWithGoogle(
                         idToken: idToken,
                         accessToken: accessToken
                     )
-                    print("Successfully authenticated!")
                     isAuthenticating = false
                 } catch {
                     isAuthenticating = false
@@ -183,11 +180,11 @@ struct OnboardingView: View {
     }
 
     private func handleAppleSignIn() {
-        print("Apple Sign In tapped")
+        showError(message: "Apple Sign-In is not available yet.")
     }
 
     private func handleEmailSignIn() {
-        print("Email Sign In tapped")
+        showError(message: "Email sign-in is not available yet.")
     }
 
     private func showError(message: String) {

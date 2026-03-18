@@ -17,17 +17,42 @@ class OnboardingViewModel {
         "Play Midnight City on Apple Music",
         "Get me some paper towels on Instacart",
     ]
+    private var animationTask: Task<Void, Never>?
 
 
     func startAnimations() {
+        stopAnimations()
+        resetAnimationState()
+
         withAnimation(.easeIn(duration: 0.8)) {
             showGreeting = true
         }
-        schedule(delay: 1.0) {
-            self.showFirstPhrase()
+
+        animationTask = Task { @MainActor in
+            guard await sleep(seconds: 1.0) else { return }
+            showFirstPhrase()
+
+            while !Task.isCancelled {
+                guard await sleep(seconds: 3.0) else { return }
+                await cycleToNextPhrase()
+            }
         }
     }
 
+    func stopAnimations() {
+        animationTask?.cancel()
+        animationTask = nil
+    }
+
+    private func resetAnimationState() {
+        currentPhraseIndex = 0
+        currentPhrase = ""
+        phraseOpacity = 0
+        phraseOffset = 20
+        phraseBlur = 10
+        previewOpacity = 0
+        showGreeting = false
+    }
 
     private func showFirstPhrase() {
         currentPhrase = phrases[0]
@@ -39,13 +64,9 @@ class OnboardingViewModel {
         withAnimation(.easeIn(duration: 0.8).delay(0.3)) {
             previewOpacity = 1.0
         }
-
-        schedule(delay: 3.0) {
-            self.cyclePhrases()
-        }
     }
 
-    private func cyclePhrases() {
+    private func cycleToNextPhrase() async {
         withAnimation(.easeInOut(duration: 0.6)) {
             phraseOpacity = 0
             phraseOffset = -20
@@ -53,31 +74,28 @@ class OnboardingViewModel {
             previewOpacity = 0
         }
 
-        schedule(delay: 0.6) {
-            self.currentPhraseIndex = (self.currentPhraseIndex + 1) % self.phrases.count
-            self.currentPhrase = self.phrases[self.currentPhraseIndex]
-            self.phraseOffset = 20
+        guard await sleep(seconds: 0.6) else { return }
 
-            withAnimation(.easeInOut(duration: 0.8)) {
-                self.phraseOpacity = 1.0
-                self.phraseOffset = 0
-                self.phraseBlur = 0
-            }
-            withAnimation(.easeIn(duration: 0.8).delay(0.3)) {
-                self.previewOpacity = 1.0
-            }
+        currentPhraseIndex = (currentPhraseIndex + 1) % phrases.count
+        currentPhrase = phrases[currentPhraseIndex]
+        phraseOffset = 20
 
-            self.schedule(delay: 3.0) {
-                self.cyclePhrases()
-            }
+        withAnimation(.easeInOut(duration: 0.8)) {
+            phraseOpacity = 1.0
+            phraseOffset = 0
+            phraseBlur = 0
+        }
+        withAnimation(.easeIn(duration: 0.8).delay(0.3)) {
+            previewOpacity = 1.0
         }
     }
 
-    private func schedule(delay: TimeInterval, _ action: @escaping () -> Void) {
-        Task { @MainActor in
-            let nanos = UInt64(delay * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanos)
-            action()
+    private func sleep(seconds: TimeInterval) async -> Bool {
+        do {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            return !Task.isCancelled
+        } catch {
+            return false
         }
     }
 }

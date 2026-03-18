@@ -1,50 +1,61 @@
-import AVFoundation
 import SwiftUI
 
 // MARK: - Bottom Navigation
 
 /// Navigation component with bottom nav bar inspired by iOS Weather app design
-struct BottomNavigation: View {
+struct BottomNavigation<Page0: View, Page1: View>: View {
 
     @State private var currentPage = 0
     @State private var showPermissionAlert = false
     @Bindable var authService: AuthService
     @Bindable var assistantViewModel: AssistantViewModel
     @Bindable var integrationService: IntegrationService
-    private let content: [(icon: String, view: AnyView)]
+    private let firstPage: (icon: String, view: Page0)
+    private let secondPage: (icon: String, view: Page1)
     private let hapticGenerator = UIImpactFeedbackGenerator(style: .light)
 
-    private static let navigationFillGradient = LinearGradient(
-        gradient: Gradient(colors: [
-            Color.white.opacity(0.1),
-            Color.white.opacity(0.02),
-        ]),
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-
-    private static let navigationBorderGradient = LinearGradient(
-        gradient: Gradient(colors: [
-            Color.white.opacity(0.3),
-            Color.white.opacity(0.1),
-        ]),
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    private static let defaultSpringAnimation = Animation.spring(
-        response: 0.4, dampingFraction: 0.8)
-    private static let indicatorSpringAnimation = Animation.spring(
-        response: 0.3, dampingFraction: 0.7)
-
-    private init(
-        pages: [(icon: String, view: AnyView)], authService: AuthService,
+    init(
+        firstPage: (icon: String, view: Page0),
+        secondPage: (icon: String, view: Page1),
+        authService: AuthService,
         assistantViewModel: AssistantViewModel, integrationService: IntegrationService
     ) {
-        self.content = pages
+        self.firstPage = firstPage
+        self.secondPage = secondPage
         self.authService = authService
         self.assistantViewModel = assistantViewModel
         self.integrationService = integrationService
         self.hapticGenerator.prepare()
+    }
+
+    private var navigationFillGradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.white.opacity(0.1),
+                Color.white.opacity(0.02),
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var navigationBorderGradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color.white.opacity(0.3),
+                Color.white.opacity(0.1),
+            ]),
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var defaultSpringAnimation: Animation {
+        .spring(response: 0.4, dampingFraction: 0.8)
+    }
+
+    private var indicatorSpringAnimation: Animation {
+        .spring(response: 0.3, dampingFraction: 0.7)
     }
 
     var body: some View {
@@ -52,10 +63,10 @@ struct BottomNavigation: View {
             // MARK: - Page Content
 
             TabView(selection: $currentPage) {
-                ForEach(content.indices, id: \.self) { index in
-                    content[index].view
-                        .tag(index)
-                }
+                firstPage.view
+                    .tag(0)
+                secondPage.view
+                    .tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .onChange(of: currentPage) { _, _ in
@@ -70,16 +81,7 @@ struct BottomNavigation: View {
                 .safeAreaPadding(.bottom, 24)
         }
         .ignoresSafeArea(.all, edges: .bottom)
-        .alert("Microphone Access Required", isPresented: $showPermissionAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Milo needs microphone access to enable voice commands.")
-        }
+        .microphonePermissionAlert(isPresented: $showPermissionAlert)
     }
 
     // MARK: - Bottom Navigation Bar
@@ -103,7 +105,7 @@ struct BottomNavigation: View {
 
                 // Center - Page indicators (truly centered)
                 HStack(spacing: 12) {
-                    ForEach(content.indices, id: \.self) { index in
+                    ForEach(pageMetadata.indices, id: \.self) { index in
                         pageIndicator(for: index)
                             .onTapGesture {
                                 hapticFeedback()
@@ -133,9 +135,9 @@ struct BottomNavigation: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(height: 60)
-        .animation(Self.defaultSpringAnimation, value: assistantViewModel.isRecording)
-        .animation(Self.defaultSpringAnimation, value: assistantViewModel.isProcessingTranscription)
-        .animation(Self.defaultSpringAnimation, value: currentPage)
+        .animation(defaultSpringAnimation, value: assistantViewModel.isRecording)
+        .animation(defaultSpringAnimation, value: assistantViewModel.isProcessingTranscription)
+        .animation(defaultSpringAnimation, value: currentPage)
     }
 
     private var navigationBackground: some View {
@@ -144,10 +146,10 @@ struct BottomNavigation: View {
                 .fill(.ultraThinMaterial)
 
             RoundedRectangle(cornerRadius: 24)
-                .fill(Self.navigationFillGradient)
+                .fill(navigationFillGradient)
 
             RoundedRectangle(cornerRadius: 24)
-                .strokeBorder(Self.navigationBorderGradient, lineWidth: 1)
+                .strokeBorder(navigationBorderGradient, lineWidth: 1)
         }
         .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
     }
@@ -223,7 +225,7 @@ struct BottomNavigation: View {
     @ViewBuilder
     private func pageIndicator(for index: Int) -> some View {
         let isActive = index == currentPage
-        let iconName = content[index].icon
+        let iconName = pageMetadata[index].icon
 
         Group {
             if iconName == "waveform" {
@@ -246,7 +248,7 @@ struct BottomNavigation: View {
         }
         .frame(width: 24, height: 24)
         .scaleEffect(isActive ? 1.0 : 0.9)
-        .animation(Self.indicatorSpringAnimation, value: isActive)
+        .animation(indicatorSpringAnimation, value: isActive)
     }
 
     // MARK: - Animation Views
@@ -254,18 +256,18 @@ struct BottomNavigation: View {
         var isActive: Bool
         var activeColor: Color = .primary
         var inactiveColor: Color = .primary.opacity(0.35)
-        private static let inactiveHeights: [CGFloat] = [0.28, 0.85, 1.0, 0.59]
-        private static let activeHeights: [CGFloat] = [0.5, 1.0, 0.6, 0.9]
+        private let inactiveHeights: [CGFloat] = [0.28, 0.85, 1.0, 0.59]
+        private let activeHeights: [CGFloat] = [0.5, 1.0, 0.6, 0.9]
 
         var body: some View {
             HStack(spacing: 2) {
-                ForEach(Self.inactiveHeights.indices, id: \.self) { index in
+                ForEach(inactiveHeights.indices, id: \.self) { index in
                     Bar(
                         isActive: isActive,
                         activeColor: activeColor,
                         inactiveColor: inactiveColor,
-                        inactive: Self.inactiveHeights[index],
-                        active: Self.activeHeights[index],
+                        inactive: inactiveHeights[index],
+                        active: activeHeights[index],
                         delay: Double(index) * 0.05
                     )
                 }
@@ -281,6 +283,7 @@ struct BottomNavigation: View {
             var delay: Double
 
             @State private var currentHeight: CGFloat
+            @State private var resetTask: Task<Void, Never>?
 
             init(
                 isActive: Bool,
@@ -314,17 +317,28 @@ struct BottomNavigation: View {
                             currentHeight = active
                         }
 
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + delay) {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
-                                currentHeight = inactive
-                            }
-                        }
+                        scheduleReset()
                     } else {
-                        // Immediately set to inactive without animation when deactivating
+                        resetTask?.cancel()
                         currentHeight = inactive
                     }
                 }
+                .onDisappear {
+                    resetTask?.cancel()
+                }
 
+            }
+
+            private func scheduleReset() {
+                resetTask?.cancel()
+                resetTask = Task { @MainActor in
+                    let delaySeconds = 0.5 + delay
+                    try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
+                        currentHeight = inactive
+                    }
+                }
             }
 
         }
@@ -336,32 +350,26 @@ struct BottomNavigation: View {
         currentPage == 0
     }
 
+    private var pageMetadata: [PageMetadata] {
+        [
+            PageMetadata(icon: firstPage.icon),
+            PageMetadata(icon: secondPage.icon),
+        ]
+    }
+
     // MARK: - Actions
     private func handleStartRecording() {
-        let permission = AVAudioApplication.shared.recordPermission
-
-        if permission == .granted {
-            Task {
-                await assistantViewModel.startStreamingRecording(authService: authService)
-            }
-        } else if permission == .undetermined {
-            AVAudioApplication.requestRecordPermission { granted in
-                DispatchQueue.main.async {
-                    if granted {
-                        Task {
-                            await assistantViewModel.startStreamingRecording(
-                                authService: authService)
-                        }
-                    } else {
-                        showPermissionAlert = true
-                    }
-                }
-            }
-        } else {
-            showPermissionAlert = true
-        }
-
         hapticFeedback()
+
+        Task {
+            let granted = await MicrophonePermission.requestIfNeeded()
+            await MainActor.run {
+                showPermissionAlert = !granted
+            }
+
+            guard granted else { return }
+            await assistantViewModel.startStreamingRecording(authService: authService)
+        }
     }
 
     private func handleStopRecording() {
@@ -377,21 +385,6 @@ struct BottomNavigation: View {
     }
 }
 
-// MARK: - Extension
-extension BottomNavigation {
-    static func pages<V0: View, V1: View>(
-        _ page0: (icon: String, view: V0),
-        _ page1: (icon: String, view: V1),
-        authService: AuthService,
-        assistantViewModel: AssistantViewModel,
-        integrationService: IntegrationService
-    ) -> BottomNavigation {
-        let pages = [
-            (icon: page0.icon, view: AnyView(page0.view)),
-            (icon: page1.icon, view: AnyView(page1.view)),
-        ]
-        return BottomNavigation(
-            pages: pages, authService: authService, assistantViewModel: assistantViewModel,
-            integrationService: integrationService)
-    }
+private struct PageMetadata {
+    let icon: String
 }

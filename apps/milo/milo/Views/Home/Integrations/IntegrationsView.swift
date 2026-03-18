@@ -1,6 +1,17 @@
 import SwiftUI
 
 struct IntegrationsView: View {
+    private struct IntegrationCardItem: Identifiable {
+        let id: String
+        let iconName: String
+        let serviceName: String
+        let description: String
+        let service: IntegrationService.ServiceType?
+
+        var isAvailable: Bool {
+            service != nil
+        }
+    }
 
     @Bindable var authService: AuthService
     @Bindable var integrationService: IntegrationService
@@ -23,6 +34,81 @@ struct IntegrationsView: View {
     private var hasConnectedIntegrations: Bool {
         integrationService.isConnected(.spotify) || integrationService.isConnected(.gmail)
             || integrationService.isConnected(.googleCalendar)
+    }
+
+    private var integrationItems: [IntegrationCardItem] {
+        [
+            IntegrationCardItem(
+                id: "spotify",
+                iconName: "SpotifyIcon",
+                serviceName: "Spotify",
+                description: "Play music and manage playlists",
+                service: .spotify
+            ),
+            IntegrationCardItem(
+                id: "gmail",
+                iconName: "GmailIcon",
+                serviceName: "Gmail",
+                description: isCheckingIntegrations ? "Checking status..." : "Read and send emails",
+                service: .gmail
+            ),
+            IntegrationCardItem(
+                id: "google-calendar",
+                iconName: "GoogleCalendarIcon",
+                serviceName: "Google Calendar",
+                description: "Manage events and schedules",
+                service: .googleCalendar
+            ),
+            IntegrationCardItem(
+                id: "discord",
+                iconName: "DiscordIcon",
+                serviceName: "Discord",
+                description: "Send messages and manage servers",
+                service: .discord
+            ),
+            IntegrationCardItem(
+                id: "todoist",
+                iconName: "TodoistIcon",
+                serviceName: "Todoist",
+                description: "Manage tasks and to-do lists",
+                service: .todoist
+            ),
+            IntegrationCardItem(
+                id: "calendly",
+                iconName: "CalendlyIcon",
+                serviceName: "Calendly",
+                description: "Schedule and manage meetings",
+                service: .calendly
+            ),
+            IntegrationCardItem(
+                id: "uber",
+                iconName: "UberLogo",
+                serviceName: "Uber",
+                description: "Book rides and check trip status",
+                service: nil
+            ),
+            IntegrationCardItem(
+                id: "doordash",
+                iconName: "DoorDashIcon",
+                serviceName: "DoorDash",
+                description: "Get food delivered to your door",
+                service: nil
+            ),
+            IntegrationCardItem(
+                id: "instacart",
+                iconName: "InstacartIcon",
+                serviceName: "Instacart",
+                description: "Groceries delivered in minutes",
+                service: nil
+            ),
+            IntegrationCardItem(
+                id: "apple-music",
+                iconName: "AppleMusicIcon",
+                serviceName: "Apple Music",
+                description: "Listen to your favorite artists",
+                service: nil
+            ),
+        ]
     }
 
     var body: some View {
@@ -95,102 +181,32 @@ struct IntegrationsView: View {
 
     private var integrationsGrid: some View {
         VStack(spacing: 16) {
-            Card.integration(
-                iconName: "SpotifyIcon",
-                serviceName: "Spotify",
-                description: "Play music and manage playlists",
-                isConnected: integrationService.isConnected(.spotify),
-                action: { handleIntegration(.spotify) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "GmailIcon",
-                serviceName: "Gmail",
-                description: isCheckingIntegrations ? "Checking status..." : "Read and send emails",
-                isConnected: integrationService.isConnected(.gmail),
-                action: { handleIntegration(.gmail) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "GoogleCalendarIcon",
-                serviceName: "Google Calendar",
-                description: "Manage events and schedules",
-                isConnected: integrationService.isConnected(.googleCalendar),
-                action: { handleIntegration(.googleCalendar) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "DiscordIcon",
-                serviceName: "Discord",
-                description: "Send messages and manage servers",
-                isConnected: integrationService.isConnected(.discord),
-                action: { handleIntegration(.discord) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "TodoistIcon",
-                serviceName: "Todoist",
-                description: "Manage tasks and to-do lists",
-                isConnected: integrationService.isConnected(.todoist),
-                action: { handleIntegration(.todoist) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "CalendlyIcon",
-                serviceName: "Calendly",
-                description: "Schedule and manage meetings",
-                isConnected: integrationService.isConnected(.calendly),
-                action: { handleIntegration(.calendly) }
-            )
-            .opacity(isCheckingIntegrations ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
-
-            Card.integration(
-                iconName: "UberLogo",
-                serviceName: "Uber",
-                description: "Book rides and check trip status",
-                isConnected: false,
-                action: {}
-            )
-            .disabled(true)
-
-            Card.integration(
-                iconName: "DoorDashIcon",
-                serviceName: "DoorDash",
-                description: "Get food delivered to your door",
-                isConnected: false,
-                action: {}
-            )
-            .disabled(true)
-
-            Card.integration(
-                iconName: "InstacartIcon",
-                serviceName: "Instacart",
-                description: "Groceries delivered in minutes",
-                isConnected: false,
-                action: {}
-            )
-            .disabled(true)
-
-            Card.integration(
-                iconName: "AppleMusicIcon",
-                serviceName: "Apple Music",
-                description: "Listen to your favorite artists",
-                isConnected: false,
-                action: {}
-            )
-            .disabled(true)
+            ForEach(integrationItems) { item in
+                integrationCard(for: item)
+            }
         }
+    }
+
+    private func integrationCard(for item: IntegrationCardItem) -> some View {
+        Card.integration(
+            iconName: item.iconName,
+            serviceName: item.serviceName,
+            description: item.description,
+            isConnected: isConnected(item),
+            action: {
+                if let service = item.service {
+                    handleIntegration(service)
+                }
+            }
+        )
+        .opacity(item.isAvailable && isCheckingIntegrations ? 0.6 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isCheckingIntegrations)
+        .disabled(!item.isAvailable)
+    }
+
+    private func isConnected(_ item: IntegrationCardItem) -> Bool {
+        guard let service = item.service else { return false }
+        return integrationService.isConnected(service)
     }
 
     private var footerSection: some View {
@@ -268,13 +284,11 @@ struct IntegrationsView: View {
                     showError = true
                     return
                 }
-                print("User cancelled \(service.displayName) connection")
             } catch {
                 let nsError = error as NSError
                 if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession"
                     && nsError.code == 1
                 {
-                    print("User cancelled OAuth flow")
                     return
                 }
                 errorMessage =
@@ -310,15 +324,18 @@ struct IntegrationsView: View {
 
         do {
             try await integrationService.fetchConnectedIntegrations(authService: authService)
-            print("Refreshed integrations")
         } catch let error as IntegrationError {
             if case .notAuthenticated = error {
                 dismiss()
                 return
             }
-            print("Failed to refresh integrations: \(error.localizedDescription)")
+            if Environment.isDebugLoggingEnabled {
+                print("Failed to refresh integrations: \(error.localizedDescription)")
+            }
         } catch {
-            print("Failed to refresh integrations: \(error.localizedDescription)")
+            if Environment.isDebugLoggingEnabled {
+                print("Failed to refresh integrations: \(error.localizedDescription)")
+            }
         }
     }
 

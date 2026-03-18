@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import SwiftUI
 
@@ -8,6 +7,90 @@ struct AssistantView: View {
     @Bindable var viewModel: AssistantViewModel
     @State private var hasPermission = false
     @State private var showPermissionAlert = false
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if !hasPermission {
+                permissionEmptyStateView
+            } else {
+                AssistantConversationView(viewModel: viewModel)
+            }
+
+            VStack {
+                CommandModeIndicator(isActive: viewModel.isInCommandMode)
+                    .padding(.top, 60)
+                Spacer()
+            }
+
+            CommandFeedbackOverlay(
+                message: viewModel.commandFeedback,
+                isExecuting: viewModel.isExecutingCommand
+            )
+        }
+        .ignoresSafeArea(edges: .top)
+        .task {
+            await refreshMicrophonePermissionState()
+        }
+        .microphonePermissionAlert(isPresented: $showPermissionAlert)
+        .alert("Connection Issue", isPresented: $viewModel.showError) {
+            Button("OK") {}
+        } message: {
+            Text(viewModel.errorMessage ?? "Something went wrong. Please try again.")
+        }
+    }
+
+    private var permissionEmptyStateView: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            VStack(spacing: 24) {
+                VStack(spacing: 12) {
+                    Text("Milo needs access to your microphone to assist you.")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+
+                    Button {
+                        Task {
+                            await requestMicrophonePermission()
+                        }
+                    } label: {
+                        Text("Enable Microphone")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: 280)
+                            .frame(height: 56)
+                            .background(Color.blue)
+                            .cornerRadius(28)
+                    }
+                }
+            }
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func refreshMicrophonePermissionState() async {
+        hasPermission = MicrophonePermission.isGranted
+
+        if !hasPermission {
+            await requestMicrophonePermission()
+        }
+    }
+
+    private func requestMicrophonePermission() async {
+        let granted = await MicrophonePermission.requestIfNeeded()
+        await MainActor.run {
+            hasPermission = granted
+            showPermissionAlert = !granted
+        }
+    }
+}
+
+private struct AssistantConversationView: View {
+    @Bindable var viewModel: AssistantViewModel
     @State private var messageListState = ChatMessageListState()
 
     private let miniPlayerId = "mini-player"
@@ -36,48 +119,6 @@ struct AssistantView: View {
         )
     }
 
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            if !hasPermission {
-                permissionEmptyStateView
-            } else {
-                chatView
-            }
-
-            VStack {
-                CommandModeIndicator(isActive: viewModel.isInCommandMode)
-                    .padding(.top, 60)
-                Spacer()
-            }
-
-            CommandFeedbackOverlay(
-                message: viewModel.commandFeedback,
-                isExecuting: viewModel.isExecutingCommand
-            )
-        }
-        .ignoresSafeArea(edges: .top)
-        .task {
-            await checkSetup()
-        }
-        .alert("Microphone Access Required", isPresented: $showPermissionAlert) {
-            Button("Open Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "Milo needs microphone access to listen to your voice commands. Please enable it in Settings."
-            )
-        }
-        .alert("Connection Issue", isPresented: $viewModel.showError) {
-            Button("OK") {}
-        } message: {
-            Text(viewModel.errorMessage ?? "Something went wrong. Please try again.")
-        }
-    }
-
     private var isActiveSession: Bool {
         viewModel.isConnecting || viewModel.isRecording || viewModel.isProcessingTranscription
     }
@@ -104,6 +145,144 @@ struct AssistantView: View {
 
     private var messageListBottomInset: CGFloat {
         messageListState.blankSize + messageListState.composerHeight
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: ChatMessageListState.messageSpacing) {
+                    if messages.isEmpty && !isActiveSession && currentPlaybackItem == nil {
+                        AssistantGreetingView()
+                    }
+
+                    if let playbackItem = currentPlaybackItem {
+                        let splitIndex = latestUserMessageIndex ?? messages.endIndex
+                        let olderMessages = Array(messages[..<splitIndex])
+                        let latestRequestAndAfter = Array(messages[splitIndex...])
+
+                        ForEach(Array(olderMessages.enumerated()), id: \.element.id) { offset, message in
+                            messageRowView(for: message, index: offset)
+                        }
+
+                        miniPlayerView(item: playbackItem)
+
+                        ForEach(Array(latestRequestAndAfter.enumerated()), id: \.element.id) {
+                            offset,
+                            message in
+                            messageRowView(for: message, index: splitIndex + offset)
+                        }
+                    } else {
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                            messageRowView(for: message, index: index)
+                        }
+                    }
+
+                    if isActiveSession {
+                        TranscriptionBubble(
+                            isConnecting: viewModel.isConnecting,
+                            isRecording: viewModel.isRecording,
+                            isProcessing: viewModel.isProcessingTranscription,
+                            partialText: viewModel.partialTranscription
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .id(transcriptionBubbleId)
+                        .background(
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: AssistantTranscriptionHeightPreferenceKey.self,
+                                    value: geometry.size.height
+                                )
+                            }
+                        )
+                        .onAppear {
+                            autoScrollDebug(
+                                "transcription-appear text=\"\(shortText(viewModel.partialTranscription))\""
+                            )
+                        }
+                        .onDisappear {
+                            autoScrollDebug("transcription-disappear")
+                        }
+                    }
+
+                    // Keep the latest request/response block floating at the top as heights change.
+                    Color.clear
+                        .frame(height: messageListBottomInset)
+                }
+                .padding(.top, ChatMessageListState.listTopPadding)
+            }
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: AssistantContainerHeightPreferenceKey.self,
+                        value: geometry.size.height
+                    )
+                }
+            )
+            .onAppear {
+                messageListState.setComposerHeight(140)
+                useMessageBlankSize(reason: "onAppear")
+                DispatchQueue.main.async {
+                    scrollLatestConversation(using: proxy, animated: false, reason: "onAppear")
+                }
+            }
+            .onChange(of: messageIdList) { _, _ in
+                _ = messageListState.pruneMessageHeights(keeping: Set(messageIdList))
+                useMessageBlankSize(reason: "messageIdList")
+                DispatchQueue.main.async {
+                    scrollLatestConversation(using: proxy, reason: "messageIdList")
+                }
+            }
+            .onChange(of: isActiveSession) { _, isNowActive in
+                if !isNowActive {
+                    _ = messageListState.updateTranscriptionHeight(0)
+                }
+                useMessageBlankSize(reason: "isActiveSession")
+                DispatchQueue.main.async {
+                    scrollLatestConversation(using: proxy, reason: "isActiveSession")
+                }
+            }
+            .onChange(of: viewModel.partialTranscription) { _, newValue in
+                autoScrollDebug(
+                    "partial-change text=\"\(shortText(newValue))\" activeSession=\(isActiveSession)"
+                )
+                useMessageBlankSize(reason: "partialTranscription")
+                if isActiveSession {
+                    DispatchQueue.main.async {
+                        scrollLatestConversation(using: proxy, reason: "partialTranscription")
+                    }
+                }
+            }
+            .onChange(of: viewModel.conversationService.didLatestFirstUserAnimationComplete) {
+                _, _ in
+                useMessageBlankSize(reason: "firstUserAnimationComplete")
+            }
+            .onChange(of: currentPlaybackItem != nil) { _, hasMiniPlayer in
+                if !hasMiniPlayer {
+                    _ = messageListState.updateMiniPlayerHeight(0)
+                }
+                useMessageBlankSize(reason: "miniPlayerVisibility")
+            }
+            .onPreferenceChange(AssistantContainerHeightPreferenceKey.self) { height in
+                if messageListState.updateContainerHeight(height) {
+                    useMessageBlankSize(reason: "containerHeight")
+                }
+            }
+            .onPreferenceChange(AssistantMessageHeightPreferenceKey.self) { heights in
+                if messageListState.updateMessageHeights(heights) {
+                    useMessageBlankSize(reason: "messageHeights")
+                }
+            }
+            .onPreferenceChange(AssistantMiniPlayerHeightPreferenceKey.self) { height in
+                if messageListState.updateMiniPlayerHeight(height) {
+                    useMessageBlankSize(reason: "miniPlayerHeight")
+                }
+            }
+            .onPreferenceChange(AssistantTranscriptionHeightPreferenceKey.self) { height in
+                if messageListState.updateTranscriptionHeight(height) {
+                    useMessageBlankSize(reason: "transcriptionHeight")
+                }
+            }
+        }
     }
 
     private func messageItemId(for id: UUID) -> String {
@@ -154,19 +333,7 @@ struct AssistantView: View {
         )
     }
 
-    private func useScrollMessageListFromComposerSizeUpdates(
-        using proxy: ScrollViewProxy,
-        animated: Bool = true,
-        reason: String
-    ) {
-        pinLatestConversationToTop(
-            using: proxy,
-            animated: animated,
-            reason: reason
-        )
-    }
-
-    private func pinLatestConversationToTop(
+    private func scrollLatestConversation(
         using proxy: ScrollViewProxy,
         animated: Bool = true,
         reason: String
@@ -197,9 +364,7 @@ struct AssistantView: View {
             scrollAction()
         }
 
-        autoScrollDebug(
-            "pin-complete reason=\(reason) anchor=\(anchorId)"
-        )
+        autoScrollDebug("pin-complete reason=\(reason) anchor=\(anchorId)")
     }
 
     @ViewBuilder
@@ -283,212 +448,6 @@ struct AssistantView: View {
                 )
             }
         )
-    }
-
-    @ViewBuilder private var chatView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: ChatMessageListState.messageSpacing) {
-                    if messages.isEmpty && !isActiveSession && currentPlaybackItem == nil {
-                        AssistantGreetingView()
-                    }
-
-                    if let playbackItem = currentPlaybackItem {
-                        let splitIndex = latestUserMessageIndex ?? messages.endIndex
-                        let olderMessages = Array(messages[..<splitIndex])
-                        let latestRequestAndAfter = Array(messages[splitIndex...])
-
-                        ForEach(Array(olderMessages.enumerated()), id: \.element.id) {
-                            offset,
-                            message in
-                            messageRowView(for: message, index: offset)
-                        }
-
-                        miniPlayerView(item: playbackItem)
-
-                        ForEach(Array(latestRequestAndAfter.enumerated()), id: \.element.id) {
-                            offset,
-                            message in
-                            messageRowView(for: message, index: splitIndex + offset)
-                        }
-                    } else {
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            messageRowView(for: message, index: index)
-                        }
-                    }
-
-                    if isActiveSession {
-                        TranscriptionBubble(
-                            isConnecting: viewModel.isConnecting,
-                            isRecording: viewModel.isRecording,
-                            isProcessing: viewModel.isProcessingTranscription,
-                            partialText: viewModel.partialTranscription
-                        )
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .id(transcriptionBubbleId)
-                        .background(
-                            GeometryReader { geometry in
-                                Color.clear.preference(
-                                    key: AssistantTranscriptionHeightPreferenceKey.self,
-                                    value: geometry.size.height
-                                )
-                            }
-                        )
-                        .onAppear {
-                            autoScrollDebug(
-                                "transcription-appear text=\"\(shortText(viewModel.partialTranscription))\""
-                            )
-                        }
-                        .onDisappear {
-                            autoScrollDebug("transcription-disappear")
-                        }
-                    }
-
-                    // Dynamic blank-size spacer. This mirrors contentInset-based behavior in UIKit:
-                    // keep the latest request/response block floating at the top as heights change.
-                    Color.clear
-                        .frame(height: messageListBottomInset)
-                }
-                .padding(.top, ChatMessageListState.listTopPadding)
-            }
-            .background(
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: AssistantContainerHeightPreferenceKey.self,
-                        value: geometry.size.height
-                    )
-                }
-            )
-            .onAppear {
-                messageListState.setComposerHeight(140)
-                useMessageBlankSize(reason: "onAppear")
-                DispatchQueue.main.async {
-                    useScrollMessageListFromComposerSizeUpdates(
-                        using: proxy,
-                        animated: false,
-                        reason: "onAppear"
-                    )
-                }
-            }
-            .onChange(of: messageIdList) { _, _ in
-                _ = messageListState.pruneMessageHeights(keeping: Set(messageIdList))
-                useMessageBlankSize(reason: "messageIdList")
-                DispatchQueue.main.async {
-                    useScrollMessageListFromComposerSizeUpdates(
-                        using: proxy,
-                        reason: "messageIdList"
-                    )
-                }
-            }
-            .onChange(of: isActiveSession) { _, isNowActive in
-                if !isNowActive {
-                    _ = messageListState.updateTranscriptionHeight(0)
-                }
-                useMessageBlankSize(reason: "isActiveSession")
-                DispatchQueue.main.async {
-                    useScrollMessageListFromComposerSizeUpdates(
-                        using: proxy,
-                        reason: "isActiveSession"
-                    )
-                }
-            }
-            .onChange(of: viewModel.partialTranscription) { _, newValue in
-                autoScrollDebug(
-                    "partial-change text=\"\(shortText(newValue))\" activeSession=\(isActiveSession)"
-                )
-                useMessageBlankSize(reason: "partialTranscription")
-                if isActiveSession {
-                    DispatchQueue.main.async {
-                        useScrollMessageListFromComposerSizeUpdates(
-                            using: proxy,
-                            reason: "partialTranscription"
-                        )
-                    }
-                }
-            }
-            .onChange(of: viewModel.conversationService.didLatestFirstUserAnimationComplete) {
-                _,
-                _ in
-                useMessageBlankSize(reason: "firstUserAnimationComplete")
-            }
-            .onChange(of: currentPlaybackItem != nil) { _, hasMiniPlayer in
-                if !hasMiniPlayer {
-                    _ = messageListState.updateMiniPlayerHeight(0)
-                }
-                useMessageBlankSize(reason: "miniPlayerVisibility")
-            }
-            .onPreferenceChange(AssistantContainerHeightPreferenceKey.self) { height in
-                if messageListState.updateContainerHeight(height) {
-                    useMessageBlankSize(reason: "containerHeight")
-                }
-            }
-            .onPreferenceChange(AssistantMessageHeightPreferenceKey.self) { heights in
-                if messageListState.updateMessageHeights(heights) {
-                    useMessageBlankSize(reason: "messageHeights")
-                }
-            }
-            .onPreferenceChange(AssistantMiniPlayerHeightPreferenceKey.self) { height in
-                if messageListState.updateMiniPlayerHeight(height) {
-                    useMessageBlankSize(reason: "miniPlayerHeight")
-                }
-            }
-            .onPreferenceChange(AssistantTranscriptionHeightPreferenceKey.self) { height in
-                if messageListState.updateTranscriptionHeight(height) {
-                    useMessageBlankSize(reason: "transcriptionHeight")
-                }
-            }
-        }
-    }
-
-    private var permissionEmptyStateView: some View {
-        VStack(spacing: 32) {
-            Spacer()
-
-            VStack(spacing: 24) {
-                VStack(spacing: 12) {
-                    Text("Milo needs access to your microphone to assist you.")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-
-                    Button {
-                        requestMicrophonePermission()
-                    } label: {
-                        Text("Enable Microphone")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: 280)
-                            .frame(height: 56)
-                            .background(Color.blue)
-                            .cornerRadius(28)
-                    }
-                }
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func checkSetup() async {
-        hasPermission = AVAudioApplication.shared.recordPermission == .granted
-
-        if !hasPermission && AVAudioApplication.shared.recordPermission == .undetermined {
-            requestMicrophonePermission()
-        }
-    }
-
-    private func requestMicrophonePermission() {
-        AVAudioApplication.requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                hasPermission = granted
-
-                if !granted {
-                    showPermissionAlert = true
-                }
-            }
-        }
     }
 }
 
@@ -722,6 +681,7 @@ private struct FirstUserSendAnimationModifier: ViewModifier {
     @State private var translateY: CGFloat = 0
     @State private var opacity: Double = 1
     @State private var hasStarted = false
+    @State private var completionTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
@@ -743,6 +703,9 @@ private struct FirstUserSendAnimationModifier: ViewModifier {
                 if !enabled {
                     reset()
                 }
+            }
+            .onDisappear {
+                completionTask?.cancel()
             }
     }
 
@@ -767,12 +730,16 @@ private struct FirstUserSendAnimationModifier: ViewModifier {
             translateY = 0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+        completionTask?.cancel()
+        completionTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 420_000_000)
+            guard !Task.isCancelled else { return }
             onCompleted()
         }
     }
 
     private func reset() {
+        completionTask?.cancel()
         translateY = 0
         opacity = 1
         hasStarted = false
@@ -879,9 +846,7 @@ private struct AssistantGreetingView: View {
                 subtitleOpacity = 1.0
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                startExampleCycle()
-            }
+            startExampleCycle()
         }
         .onDisappear {
             exampleTask?.cancel()
@@ -893,6 +858,7 @@ private struct AssistantGreetingView: View {
         exampleTask?.cancel()
         exampleTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(exampleInitialDelay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             withAnimation {
                 currentExampleIndex = 0
             }

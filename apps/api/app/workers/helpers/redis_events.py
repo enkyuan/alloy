@@ -13,38 +13,7 @@ from app.core.redis import RedisKeys
 from app.workers.helpers.cache_keys import spotify_cache_key
 
 logger = logging.getLogger(__name__)
-TOOL_RESULT_PUBLISH_MAX_ATTEMPTS = 3
-TOOL_RESULT_PUBLISH_BASE_RETRY_DELAY_SECONDS = 0.25
-TOOL_RESULT_STREAM_MAXLEN = 10_000
-USER_UPDATE_OUTBOX_KEY = "outbox:user_updates:v1"
-USER_UPDATE_OUTBOX_MAXLEN = 2_000
-USER_UPDATE_OUTBOX_MAX_DRAIN = 100
-USER_UPDATE_OUTBOX_TTL_SECONDS = 24 * 60 * 60
-USER_UPDATE_OUTBOX_DLQ_KEY = "dlq:user_updates:v1"
-USER_UPDATE_OUTBOX_DLQ_MAXLEN = 2_000
-USER_UPDATE_OUTBOX_DLQ_TTL_SECONDS = 7 * 24 * 60 * 60
-TOOL_RESULT_DLQ_KEY = "dlq:tool_results:v1"
-TOOL_RESULT_DLQ_DEAD_KEY = "dlq:tool_results:dead:v1"
-TOOL_RESULT_DLQ_MAXLEN = 2_000
-TOOL_RESULT_DLQ_MAX_DRAIN = 25
-TOOL_RESULT_DLQ_MAX_RETRIES = 3
-TOOL_RESULT_DLQ_TTL_SECONDS = 24 * 60 * 60
-TOOL_RESULT_DLQ_DEAD_TTL_SECONDS = 7 * 24 * 60 * 60
-VOICE_INPUT_DLQ_KEY = "dlq:voice_input:v1"
-VOICE_INPUT_DLQ_DEAD_KEY = "dlq:voice_input:dead:v1"
-VOICE_INPUT_DLQ_MAXLEN = 2_000
-VOICE_INPUT_DLQ_MAX_DRAIN = 25
-VOICE_INPUT_DLQ_MAX_RETRIES = 3
-VOICE_INPUT_DLQ_TTL_SECONDS = 24 * 60 * 60
-VOICE_INPUT_DLQ_DEAD_TTL_SECONDS = 7 * 24 * 60 * 60
-TOOL_RESULT_SEEN_KEY_PREFIX = "tool_result:seen:v1:"
-TOOL_RESULT_SEEN_TTL_SECONDS = 24 * 60 * 60
-TOOL_CALL_RETRYABLE_TOOL_NAMES: frozenset[str] = frozenset({"spotify.list_devices"})
-TOOL_CALL_DEDUP_IN_PROGRESS_PREFIX = "tool_call:inflight:v1:"
-TOOL_CALL_DEDUP_DONE_PREFIX = "tool_call:done:v1:"
-TOOL_CALL_DEDUP_TTL_SECONDS = 24 * 60 * 60
-TOOL_CALL_DEDUP_IN_PROGRESS_TTL_SECONDS = 5 * 60
-
+from app.workers.helpers.redis_constants import *
 
 def history_key(user_id: str) -> str:
     return f"agent:history:{user_id}"
@@ -140,130 +109,41 @@ async def publish_user_update_safely(
         return False
 
 
-def build_tool_result_dlq_entry(
+def build_generic_dlq_entry(
     payload: Any,
     *,
     reason: str | None = None,
     attempts: int = 0,
+    coerce_fields: bool = False,
+    **kwargs: Any,
 ) -> str:
-    return json.dumps(
-        {
-            "payload": _coerce_str_payload(payload),
-            "reason": reason,
-            "attempts": attempts,
-        },
-        ensure_ascii=False,
-    )
+    if coerce_fields and isinstance(payload, dict):
+        payload_data = {_coerce_str_payload(k): _coerce_str_payload(v) for k, v in payload.items()}
+    else:
+        payload_data = _coerce_str_payload(payload)
 
-
-def parse_tool_result_dlq_entry(raw: Any) -> tuple[str, int, str | None]:
-    payload = _coerce_str_payload(raw)
-    try:
-        data = json.loads(payload)
-    except json.JSONDecodeError:
-        return payload, 0, None
-
-    if not isinstance(data, dict):
-        return payload, 0, None
-
-    payload_value = data.get("payload")
-    if payload_value is None:
-        return payload, 0, None
-
-    attempts = data.get("attempts", 0)
-    try:
-        attempts_value = int(attempts)
-    except (TypeError, ValueError):
-        attempts_value = 0
-
-    reason = data.get("reason")
-    return (
-        _coerce_str_payload(payload_value),
-        attempts_value,
-        str(reason) if isinstance(reason, str) else None,
-    )
-
-
-async def enqueue_tool_result_dlq(
-    redis: Any,
-    payload: Any,
-    *,
-    reason: str | None = None,
-    attempts: int = 0,
-) -> None:
-    await _append_to_list_with_ttl(
-        redis,
-        key=TOOL_RESULT_DLQ_KEY,
-        payload=build_tool_result_dlq_entry(payload, reason=reason, attempts=attempts),
-        maxlen=TOOL_RESULT_DLQ_MAXLEN,
-        ttl_seconds=TOOL_RESULT_DLQ_TTL_SECONDS,
-    )
-
-
-async def enqueue_tool_result_dlq_dead(
-    redis: Any,
-    payload: Any,
-    *,
-    reason: str | None = None,
-    attempts: int = TOOL_RESULT_DLQ_MAX_RETRIES,
-) -> None:
-    await _append_to_list_with_ttl(
-        redis,
-        key=TOOL_RESULT_DLQ_DEAD_KEY,
-        payload=json.dumps(
-            {
-                "payload": _coerce_str_payload(payload),
-                "reason": reason,
-                "attempts": attempts,
-            },
-            ensure_ascii=False,
-        ),
-        maxlen=TOOL_RESULT_DLQ_MAXLEN,
-        ttl_seconds=TOOL_RESULT_DLQ_DEAD_TTL_SECONDS,
-    )
-
-
-def _coerce_str_fields(payload: Any) -> dict[str, str]:
-    if not isinstance(payload, dict):
-        return {"payload": _coerce_str_payload(payload)}
-
-    return {
-        _coerce_str_payload(key): _coerce_str_payload(value)
-        for key, value in payload.items()
+    data = {
+        "payload": payload_data,
+        "reason": reason,
+        "attempts": attempts,
     }
+    data.update({k: v for k, v in kwargs.items() if v is not None})
+    return json.dumps(data, ensure_ascii=False, default=str)
 
 
-def build_voice_input_dlq_entry(
-    payload: Any,
-    *,
-    reason: str | None = None,
-    attempts: int = 0,
-    message_id: str | None = None,
-) -> str:
-    return json.dumps(
-        {
-            "payload": _coerce_str_fields(payload),
-            "reason": reason,
-            "attempts": attempts,
-            "message_id": message_id,
-        },
-        ensure_ascii=False,
-    )
-
-
-def parse_voice_input_dlq_entry(
+def parse_generic_dlq_entry(
     raw: Any,
-) -> tuple[dict[str, Any], int, str | None, str | None]:
+) -> tuple[Any, int, str | None, dict[str, Any]]:
     payload = _coerce_str_payload(raw)
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
-        return {"payload": payload}, 0, None, None
+        return payload, 0, None, {}
 
     if not isinstance(data, dict):
-        return {"payload": payload}, 0, None, None
+        return payload, 0, None, {}
 
-    payload_value = data.get("payload")
+    payload_value = data.pop("payload", None)
     if isinstance(payload_value, str):
         try:
             nested_payload = json.loads(payload_value)
@@ -272,66 +152,110 @@ def parse_voice_input_dlq_entry(
         except json.JSONDecodeError:
             pass
 
-    if not isinstance(payload_value, dict):
-        if payload_value is None:
-            return {}, 0, None, None
-        return {"payload": payload_value}, 0, None, None
-
-    attempts_value = data.get("attempts", 0)
+    attempts = data.pop("attempts", 0)
     try:
-        attempts = int(attempts_value)
+        attempts = int(attempts)
     except (TypeError, ValueError):
         attempts = 0
 
-    message_id_value = data.get("message_id")
-    message_id = str(message_id_value) if message_id_value is not None else None
-    reason_value = data.get("reason")
-    reason = reason_value if isinstance(reason_value, str) else None
-    return payload_value, attempts, reason, message_id
+    reason = data.pop("reason", None)
+    return payload_value, attempts, str(reason) if reason else None, data
 
 
-async def enqueue_voice_input_dlq(
+async def enqueue_generic_dlq(
     redis: Any,
+    queue_key: str,
     payload: Any,
+    maxlen: int,
+    ttl_seconds: int,
     *,
     reason: str | None = None,
     attempts: int = 0,
-    message_id: str | None = None,
+    coerce_fields: bool = False,
+    **kwargs: Any,
 ) -> None:
+    entry = build_generic_dlq_entry(
+        payload, reason=reason, attempts=attempts, coerce_fields=coerce_fields, **kwargs
+    )
     await _append_to_list_with_ttl(
         redis,
-        key=VOICE_INPUT_DLQ_KEY,
-        payload=build_voice_input_dlq_entry(
-            payload,
-            reason=reason,
-            attempts=attempts,
-            message_id=message_id,
-        ),
-        maxlen=VOICE_INPUT_DLQ_MAXLEN,
-        ttl_seconds=VOICE_INPUT_DLQ_TTL_SECONDS,
+        key=queue_key,
+        payload=entry,
+        maxlen=maxlen,
+        ttl_seconds=ttl_seconds,
     )
 
 
-async def enqueue_voice_input_dlq_dead(
+async def drain_generic_dlq(
     redis: Any,
-    payload: Any,
-    *,
-    reason: str | None = None,
-    attempts: int = VOICE_INPUT_DLQ_MAX_RETRIES,
-    message_id: str | None = None,
-) -> None:
-    await _append_to_list_with_ttl(
-        redis,
-        key=VOICE_INPUT_DLQ_DEAD_KEY,
-        payload=build_voice_input_dlq_entry(
-            payload,
-            reason=reason,
-            attempts=attempts,
-            message_id=message_id,
-        ),
-        maxlen=VOICE_INPUT_DLQ_MAXLEN,
-        ttl_seconds=VOICE_INPUT_DLQ_DEAD_TTL_SECONDS,
-    )
+    dlq_key: str,
+    dead_key: str,
+    max_drain: int,
+    max_retries: int,
+    maxlen: int,
+    ttl_seconds: int,
+    dead_ttl_seconds: int,
+    handler_callback: Any,
+) -> int:
+    drained = 0
+    for _ in range(max_drain):
+        raw = await redis.rpop(dlq_key)
+        if not raw:
+            break
+
+        payload, attempts, reason, extras = parse_generic_dlq_entry(raw)
+        handled = False
+        try:
+            handled = await handler_callback(redis, payload, **extras)
+        except Exception as error:
+            logger.warning(
+                "Error handling DLQ entry",
+                extra={"error": str(error), "attempts": attempts, "dlq_key": dlq_key},
+                exc_info=True,
+            )
+
+        if handled:
+            drained += 1
+            continue
+
+        next_attempt = attempts + 1
+        next_reason = reason or "dlq_retry"
+        if next_attempt > max_retries:
+            try:
+                await enqueue_generic_dlq(
+                    redis, dead_key, payload, maxlen, dead_ttl_seconds,
+                    reason=next_reason, attempts=next_attempt, **extras
+                )
+                logger.error(
+                    "DLQ dead-letter entry exhausted retries",
+                    extra={"dead_key": dead_key, "attempts": next_attempt, "reason": next_reason, **extras},
+                )
+            except Exception as error:
+                logger.warning(
+                    "Failed to move exhausted DLQ entry to dead queue",
+                    extra={"attempts": next_attempt, "error": str(error)},
+                    exc_info=True,
+                )
+            continue
+
+        try:
+            await enqueue_generic_dlq(
+                redis, dlq_key, payload, maxlen, ttl_seconds,
+                reason=next_reason, attempts=next_attempt, **extras
+            )
+            logger.warning(
+                "Requeued failed dead-letter payload for retry",
+                extra={"attempts": next_attempt, "reason": next_reason, "dlq_key": dlq_key, **extras},
+            )
+        except Exception as error:
+            logger.warning(
+                "Failed to requeue DLQ payload for retry",
+                extra={"attempts": next_attempt, "error": str(error)},
+                exc_info=True,
+            )
+    if drained:
+        logger.info("Processed dead-letter messages", extra={"drained": drained, "dlq_key": dlq_key})
+    return drained
 
 
 async def append_history(
@@ -674,7 +598,7 @@ async def try_cached_spotify_play(
         event_type="tool.call",
         user_id=user_id,
         payload=tool_call_event,
-        metadata={"source": "llm_worker.cached_spotify_play"},
+        metadata={"source": "agent.cached_spotify_play"},
         context={"source": "cached_spotify_play", "tool_call_id": tool_call_id},
     )
     if not published:
@@ -705,7 +629,7 @@ async def try_cached_spotify_play(
         event_type="agent.response",
         user_id=user_id,
         payload=response_event,
-        metadata={"source": "llm_worker.cached_spotify_play"},
+        metadata={"source": "agent.cached_spotify_play"},
         context={"source": "cached_spotify_play", "tool_call_id": tool_call_id},
     )
     if not published:
@@ -718,3 +642,88 @@ async def try_cached_spotify_play(
         extra={"user_id": user_id, "query": query, "cache_key": cache_key},
     )
     return True
+
+async def run_stream_with_dlq(
+    redis: Any,
+    stream_key: str,
+    group_name: str,
+    consumer_name: str,
+    dlq_key: str,
+    dlq_dead_key: str,
+    dlq_max_drain: int,
+    dlq_max_retries: int,
+    dlq_maxlen: int,
+    dlq_ttl: int,
+    dlq_dead_ttl: int,
+    stream_poll_batch: int,
+    stream_pending_batch: int,
+    handler_callback: Any,
+    dlq_coerce_fields: bool = False,
+):
+    try:
+        await redis.xgroup_create(stream_key, group_name, id="0", mkstream=True)
+    except Exception as error:
+        if "BUSYGROUP" not in str(error):
+            logger.warning("Error creating consumer group %s: %s", group_name, error)
+            
+    while True:
+        try:
+            await drain_user_update_outbox(redis)
+        except Exception as error:
+            logger.warning("Failed to drain outbox: %s", error)
+
+        try:
+            async def dlq_handler(redis_client, payload, **kwargs):
+                return await handler_callback(redis_client, payload, kwargs.get("message_id"))
+            
+            await drain_generic_dlq(
+                redis, dlq_key, dlq_dead_key, dlq_max_drain, dlq_max_retries,
+                dlq_maxlen, dlq_ttl, dlq_dead_ttl, dlq_handler
+            )
+        except Exception as error:
+            logger.warning("Failed to drain DLQ: %s", error)
+
+        try:
+            messages = await redis.xreadgroup(
+                groupname=group_name, consumername=consumer_name,
+                streams={stream_key: ">"}, count=stream_poll_batch, block=200,
+            )
+            if not messages:
+                messages = await redis.xreadgroup(
+                    groupname=group_name, consumername=consumer_name,
+                    streams={stream_key: "0"}, count=stream_pending_batch,
+                )
+        except Exception as error:
+            logger.warning("Error reading stream %s: %s", stream_key, error)
+            continue
+
+        if not messages:
+            await asyncio.sleep(0)
+            continue
+
+        for _, stream_msgs in messages:
+            for message_id, fields in stream_msgs:
+                raw_payload = fields.get("payload") if fields else None
+                handled = False
+                try:
+                    handled = await handler_callback(redis, raw_payload, message_id)
+                except Exception as error:
+                    logger.warning("Error handling message %s: %s", message_id, error, exc_info=True)
+
+                enqueued = False
+                if not handled:
+                    try:
+                        await enqueue_generic_dlq(
+                            redis, dlq_key, raw_payload, dlq_maxlen, dlq_ttl,
+                            reason="stream_failed", attempts=1, coerce_fields=dlq_coerce_fields, message_id=message_id
+                        )
+                        enqueued = True
+                    except Exception as error:
+                        logger.warning("Failed to queue DLQ: %s", error)
+                        await asyncio.sleep(0.05)
+                
+                if handled or enqueued:
+                    try:
+                        await redis.xack(stream_key, group_name, message_id)
+                    except Exception as error:
+                        logger.warning("Failed to xack %s: %s", message_id, error)
