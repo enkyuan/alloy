@@ -449,17 +449,13 @@ class WebSocketSTTService: NSObject {
                     let data = result?["data"] as? [String: Any] ?? [:]
                     publishSpotifyPlaybackUpdate(toolName: toolName, data: data)
 
+                    // Do not forward spotify tool.result message text as a chat bubble.
+                    // The reasoning response should provide user-facing copy, while
+                    // tool.result here is used for client playback synchronization.
                     if let resultMessage = result?["message"] as? String,
                         !resultMessage.isEmpty
                     {
-                        print("Forwarding assistant text from tool.result")
-                        onAIResponse?(
-                            [
-                                "type": "agent.response",
-                                "payload": ["content": resultMessage],
-                                "source": "tool.result",
-                            ]
-                        )
+                        print("Ignoring spotify tool.result message text: \(resultMessage)")
                     }
 
                     if let toolError = payload["error"] as? String, !toolError.isEmpty {

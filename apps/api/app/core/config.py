@@ -92,6 +92,9 @@ class Settings(BaseSettings):
     AGENT_SPOTIFY_CACHE_TTL_SECONDS: int = 3600
     AGENT_CLIENT_HINT_CONTROL_MIN_CONFIDENCE: float = 0.82
     AGENT_CLIENT_HINT_PLAY_MIN_CONFIDENCE: float = 0.93
+    SPOTIFY_DISABLE_CLARIFICATION_MESSAGES: bool = True
+    SPOTIFY_RESOLVER_MEMORY_TTL_SECONDS: int = 30 * 24 * 60 * 60
+    SPOTIFY_RESOLVER_MEMORY_MAX_URIS: int = 8
 
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=True, extra="ignore"

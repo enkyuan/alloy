@@ -89,6 +89,20 @@ async def _publish_agent_error(message: Message, publisher: RedisPublisher) -> N
     await publisher.publish(event.user_id, event, event_type="agent.error")
 
 
+async def _publish_tool_result(message: Message, publisher: RedisPublisher) -> None:
+    event = message.event
+    if not isinstance(event, ToolResult):
+        return
+    if not event.user_id:
+        logger.warning("ToolResult missing user_id; skipping publish")
+        return
+    logger.debug(
+        "Publishing tool result",
+        extra={"user_id": event.user_id, "tool_name": event.tool_name},
+    )
+    await publisher.publish(event.user_id, event, event_type="tool.result")
+
+
 async def run() -> None:
     logger.info("Starting bus worker")
     bus = Bus()
@@ -107,7 +121,14 @@ async def run() -> None:
     reasoning_bridge.on(UserTranscriptionReceived).stream(
         reasoning_node.generate
     ).broadcast()
-    reasoning_bridge.on(ToolResult).stream(reasoning_node.generate).broadcast()
+    # Only route externally produced tool results back into reasoning.
+    # ToolResults emitted by this reasoning node already complete in-process.
+    reasoning_bridge.on(
+        ToolResult,
+        source=tool_result_bridge.node_id,
+        metadata=lambda value: isinstance(value, dict)
+        and value.get("source") == "taskiq.execute_tool_call",
+    ).stream(reasoning_node.generate).broadcast()
 
     output_bridge = Bridge("redis_output")
 
@@ -117,11 +138,17 @@ async def run() -> None:
     async def publish_error(message: Message) -> None:
         await _publish_agent_error(message, publisher)
 
+    async def publish_tool_result(message: Message) -> None:
+        await _publish_tool_result(message, publisher)
+
     async def dispatch_tool(message: Message) -> None:
         await _dispatch_tool_call(message, publisher)
 
     output_bridge.on(AgentResponse).map(publish_response)
     output_bridge.on(AgentError).map(publish_error)
+    # Publish ToolResults only when they originate from this reasoning node.
+    # This prevents redis_tool_results -> publish -> stream feedback loops.
+    output_bridge.on(ToolResult, source=reasoning_node.id).map(publish_tool_result)
     output_bridge.on(ToolCall).map(dispatch_tool)
 
     bus.register_bridge("redis_stream", stream_bridge)
@@ -162,7 +189,7 @@ async def run() -> None:
         asyncio.create_task(voice_input_stream.consume_to_bus(
             "redis_stream", bus, VOICE_INPUT_DLQ_KEY, VOICE_INPUT_DLQ_DEAD_KEY,
             VOICE_INPUT_DLQ_MAX_DRAIN, VOICE_INPUT_DLQ_MAX_RETRIES, 2000, 24*3600, 7*24*3600,
-            dlq_coerce_fields=True
+            dlq_coerce_fields=False
         )),
         asyncio.create_task(tool_result_stream.consume_to_bus(
             "redis_tool_results", bus, TOOL_RESULT_DLQ_KEY, TOOL_RESULT_DLQ_DEAD_KEY,

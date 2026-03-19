@@ -37,13 +37,32 @@ MAX_TOOL_ITERATIONS = 5
 
 
 def _tool_result_summary(result: ToolResult) -> str:
-    """Build a human-readable one-liner from a ToolResult.
+    """Build a concise, machine-oriented summary for conversation history."""
+    tool_label = f"[tool:{result.tool_name}]"
+    if result.error:
+        return f"{tool_label} error={result.error.strip()}"
 
-    This is the single source of truth for how tool results are
-    serialized into conversation history strings.
-    """
-    detail = result.result_str or result.error or ""
-    return f"Tool result for {result.tool_name}: {detail}"
+    payload = result.result if isinstance(result.result, dict) else {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    assert isinstance(data, dict)
+
+    status = payload.get("status")
+    if isinstance(status, str) and status.strip():
+        return f"{tool_label} status={status.strip()}"
+
+    if data.get("requires_clarification"):
+        option_items = data.get("option_items")
+        option_count = len(option_items) if isinstance(option_items, list) else 0
+        return f"{tool_label} clarification options={option_count}"
+
+    action_required = data.get("action_required")
+    if action_required == "client_playback":
+        uri = data.get("uri")
+        if isinstance(uri, str) and uri.strip():
+            return f"{tool_label} client_playback uri={uri.strip()}"
+        return f"{tool_label} client_playback"
+
+    return f"{tool_label} done"
 
 
 class AgentReasoningNode(ReasoningNode):
@@ -235,6 +254,9 @@ class AgentReasoningNode(ReasoningNode):
 
             # Splice results into conversation and Redis history.
             for result in results:
+                # Surface raw tool results to downstream clients so they can
+                # execute client-side actions (e.g. Spotify app playback).
+                yield result
                 await self._append_to_redis(redis, user_id, result)
                 conversation_messages.append({
                     "role": "assistant",

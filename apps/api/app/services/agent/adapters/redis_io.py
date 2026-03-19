@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -11,7 +10,7 @@ from app.core.events import (
     is_supported_event_version,
     parse_event_envelope,
 )
-from app.core.redis import RedisKeys, get_redis_client
+from app.core.redis import RedisKeys, get_redis_client, get_redis_stream_client
 from app.services.agent.core.bus import Bus, Message
 from app.workers.helpers.redis_events import publish_user_update_safely, run_stream_with_dlq
 
@@ -34,11 +33,7 @@ def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
         return []
 
     try:
-        payload = parsed.payload
-        if isinstance(payload, str):
-            event = event_cls.model_validate_json(payload)
-        else:
-            event = event_cls.model_validate(payload)
+        event = event_cls.model_validate(parsed.payload)
     except Exception as exc:
         logger.warning("Failed to parse event payload for %s: %s", parsed.type, exc)
         return []
@@ -50,6 +45,20 @@ def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
             logger.debug("Could not set user_id on event: %s", exc)
 
     return [event]
+
+
+def _parse_stream_payload(payload: Any) -> Dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    msgpack_payload = payload.get("_msgpack")
+    if msgpack_payload is None:
+        msgpack_payload = payload.get(b"_msgpack")
+
+    if not isinstance(msgpack_payload, (bytes, bytearray, memoryview)):
+        return None
+
+    return {"_msgpack": bytes(msgpack_payload)}
 
 
 class RedisStreamInput:
@@ -71,7 +80,7 @@ class RedisStreamInput:
     async def _ensure_group(self):
         if self._initialized:
             return
-        redis = await get_redis_client()
+        redis = await get_redis_stream_client()
         try:
             await redis.xgroup_create(self.stream, self.group, id="0", mkstream=True)
         except Exception as exc:
@@ -86,7 +95,7 @@ class RedisStreamInput:
 
     async def get(self) -> Dict[str, Any]:
         await self._ensure_group()
-        redis = await get_redis_client()
+        redis = await get_redis_stream_client()
 
         while True:
             streams = await redis.xreadgroup(
@@ -127,14 +136,18 @@ class RedisStreamInput:
         dlq_coerce_fields: bool = False,
     ) -> None:
         """Run a fully robust, consumer-group streaming loop with DLQ fallbacks directly dumping into a Bus."""
-        redis = await get_redis_client()
+        redis = await get_redis_stream_client()
 
         async def _bus_handler(redis_client, payload, message_id):
-            if isinstance(payload, bytes):
-                payload = payload.decode()
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            events = self.map_to_events(payload)
+            parsed_payload = _parse_stream_payload(payload)
+            if parsed_payload is None:
+                logger.warning(
+                    "Dropping non-msgpack stream payload",
+                    extra={"stream": self.stream, "message_id": message_id},
+                )
+                return True
+
+            events = self.map_to_events(parsed_payload)
             success = False
             for event in events:
                 await bus.broadcast(Message(source=node_id, event=event))
@@ -178,7 +191,7 @@ class RedisPubSubInput:
     async def _ensure_subscription(self):
         if self._pubsub is not None:
             return
-        redis = await get_redis_client()
+        redis = await get_redis_stream_client()
         self._pubsub = redis.pubsub()
         await self._pubsub.subscribe(self.channel)
         logger.info("Subscribed to Redis channel", extra={"channel": self.channel})
@@ -200,10 +213,8 @@ class RedisPubSubInput:
                 continue
 
             try:
-                if isinstance(data, bytes):
-                    data = data.decode("utf-8")
-                envelope = json.loads(data)
-            except json.JSONDecodeError:
+                envelope = parse_event_envelope(data).model_dump()
+            except Exception:
                 continue
 
             event_type = envelope.get("type")

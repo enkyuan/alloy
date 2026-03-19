@@ -16,7 +16,10 @@ class SpotifyAppService: NSObject {
 
     struct PlaybackStateUpdate {
         let trackName: String?
+        let artistName: String?
         let isPlaying: Bool
+        let playbackPositionMs: Int
+        let durationMs: Int
     }
 
     enum MiniPlayerTransportAction: String {
@@ -566,13 +569,22 @@ class SpotifyAppService: NSObject {
             source: String
         ) {
             let nowPlaying = playerState.track.name
+            let artistName = playerState.track.artist.name
             let isPlaying = !playerState.isPaused
+            let playbackPositionMs = Int(playerState.playbackPosition)
+            let durationMs = Int(playerState.track.duration)
             trackName = nowPlaying
             print(
                 "SpotifyAppService: Player state update (\(source)) - \(nowPlaying) (\(isPlaying ? "Playing" : "Paused"))"
             )
             onPlaybackStateUpdate?(
-                PlaybackStateUpdate(trackName: nowPlaying, isPlaying: isPlaying)
+                PlaybackStateUpdate(
+                    trackName: nowPlaying,
+                    artistName: artistName,
+                    isPlaying: isPlaying,
+                    playbackPositionMs: playbackPositionMs,
+                    durationMs: durationMs
+                )
             )
         }
 

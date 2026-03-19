@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.services.integrations.spotify.exceptions import SearchNoResultsError
 from app.services.integrations.spotify.models import CommandResult
 
@@ -97,6 +98,8 @@ class SpotifyResolutionMixin:
         access_token: str,
         artist: Optional[str] = None,
         playlist_name: Optional[str] = None,
+        preferred_uris: Optional[list[str]] = None,
+        disable_clarifications: Optional[bool] = None,
     ) -> tuple[Optional[dict[str, Any]], Optional[CommandResult]]:
         """Resolve the best track candidate or return a clarification result."""
         raw_query = query.strip()
@@ -303,6 +306,12 @@ class SpotifyResolutionMixin:
             artist=artist,
             top_k=20,
         )
+        final_ranked = self._boost_ranked_tracks_with_uri_priors(
+            final_ranked,
+            preferred_uris,
+            base_boost=self.TRACK_PRIOR_URI_BOOST_BASE,
+            decay=self.TRACK_PRIOR_URI_BOOST_DECAY,
+        )
         ranked_with_probs = self._ranked_with_probabilities(final_ranked)
 
         logger.info(
@@ -323,6 +332,11 @@ class SpotifyResolutionMixin:
             raise SearchNoResultsError(effective_query, "track")
 
         top_track, top_score, top_probability = ranked_with_probs[0]
+        no_clarify_mode = (
+            settings.SPOTIFY_DISABLE_CLARIFICATION_MESSAGES
+            if disable_clarifications is None
+            else bool(disable_clarifications)
+        )
         second_probability = (
             ranked_with_probs[1][2] if len(ranked_with_probs) > 1 else 0.0
         )
@@ -423,6 +437,62 @@ class SpotifyResolutionMixin:
         )
         popularity_margin = top_popularity - second_popularity
         top_variant_penalty = self._variant_penalty(effective_query, top_track)
+
+        def _resolve_without_clarification() -> tuple[dict[str, Any], None]:
+            constrained_min_score = self.TRACK_NO_CLARIFY_CONSTRAINED_MIN_SCORE
+            constrained_min_margin = self.TRACK_NO_CLARIFY_CONSTRAINED_MARGIN_MIN
+            default_min_score = self.TRACK_NO_CLARIFY_MIN_SCORE
+            default_min_margin = self.TRACK_NO_CLARIFY_MARGIN_MIN
+
+            min_score = constrained_min_score if constrained_request else default_min_score
+            min_margin = (
+                constrained_min_margin
+                if constrained_request
+                else default_min_margin
+            )
+            if top_score >= min_score and (
+                score_margin >= min_margin or probability_margin >= min_margin
+            ):
+                logger.info(
+                    "No-clarification mode selected top track by score+margin policy",
+                    extra={
+                        "query": effective_query,
+                        "artist": artist,
+                        "track_name": top_track_name,
+                        "top_score": round(top_score, 4),
+                        "score_margin": round(score_margin, 4),
+                        "top_probability": round(top_probability, 4),
+                        "probability_margin": round(probability_margin, 4),
+                        "constrained_request": constrained_request,
+                    },
+                )
+                return top_track, None
+
+            if (
+                top_score >= (min_score - 0.04)
+                and top_popularity >= self.TRACK_NO_CLARIFY_POPULARITY_MIN
+                and popularity_margin >= self.TRACK_NO_CLARIFY_POPULARITY_MARGIN_MIN
+                and top_variant_penalty >= -0.05
+            ):
+                logger.info(
+                    "No-clarification mode selected top track by popularity fallback",
+                    extra={
+                        "query": effective_query,
+                        "artist": artist,
+                        "track_name": top_track_name,
+                        "top_score": round(top_score, 4),
+                        "top_popularity": round(top_popularity, 2),
+                        "second_popularity": round(second_popularity, 2),
+                        "popularity_margin": round(popularity_margin, 2),
+                    },
+                )
+                return top_track, None
+
+            suggestions = [
+                "Try including the artist name",
+                "Try using the exact track title",
+            ]
+            raise SearchNoResultsError(effective_query, "track", suggestions)
 
         # Deterministic constrained pass:
         # when artist is specified, prefer exact canonical title + requested artist
@@ -644,6 +714,8 @@ class SpotifyResolutionMixin:
                         "strong_candidates": len(strong_candidates),
                     },
                 )
+                if no_clarify_mode:
+                    return _resolve_without_clarification()
                 return None, self._build_clarification_result(
                     query=effective_query,
                     ranked_tracks=[
@@ -677,6 +749,8 @@ class SpotifyResolutionMixin:
                     "score_margin": round(score_margin, 4),
                 },
             )
+            if no_clarify_mode:
+                return _resolve_without_clarification()
             return None, self._build_clarification_result(
                 query=effective_query,
                 ranked_tracks=[(track, score) for track, score, _ in ranked_with_probs],
@@ -695,6 +769,8 @@ class SpotifyResolutionMixin:
                 "auto_margin_min": auto_margin_min,
             },
         )
+        if no_clarify_mode:
+            return _resolve_without_clarification()
         return None, self._build_clarification_result(
             query=effective_query,
             ranked_tracks=[(track, score) for track, score, _ in ranked_with_probs],

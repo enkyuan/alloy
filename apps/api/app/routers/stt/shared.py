@@ -16,9 +16,10 @@ from fastapi.websockets import WebSocketState
 from app.core.events import (
     UserTranscriptionReceived,
     build_event_envelope,
+    parse_event_envelope,
     to_redis_stream_fields,
 )
-from app.core.redis import RedisKeys
+from app.core.redis import RedisKeys, get_redis_stream_client
 from app.services.user.auth import supabase_auth_service
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ async def forward_hermes_updates(
     timeout: float = 15.0,
 ) -> bool:
     """Forward Agent updates for a user from Redis pubsub to the websocket."""
-    pubsub = redis_conn.pubsub()
+    stream_redis = await get_redis_stream_client()
+    pubsub = stream_redis.pubsub()
     await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
     try:
         while True:
@@ -102,8 +104,8 @@ async def forward_hermes_updates(
                 continue
 
             try:
-                event = json.loads(data)
-            except json.JSONDecodeError:
+                event = parse_event_envelope(data).model_dump()
+            except Exception:
                 continue
 
             if event.get("user_id") != user_id:
@@ -123,7 +125,8 @@ async def stream_hermes_updates(
     user_id: str,
 ) -> None:
     """Continuously forward Agent updates for a user from Redis pubsub to websocket."""
-    pubsub = redis_conn.pubsub()
+    stream_redis = await get_redis_stream_client()
+    pubsub = stream_redis.pubsub()
     await pubsub.subscribe(RedisKeys.CHANNEL_USER_UPDATES)
     try:
         while True:
@@ -140,10 +143,8 @@ async def stream_hermes_updates(
                     continue
 
                 try:
-                    if isinstance(data, bytes):
-                        data = data.decode("utf-8")
-                    event = json.loads(data)
-                except json.JSONDecodeError:
+                    event = parse_event_envelope(data).model_dump()
+                except Exception:
                     continue
 
                 if event.get("user_id") != user_id:

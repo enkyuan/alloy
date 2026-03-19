@@ -1,80 +1,107 @@
-import Foundation
+import AVFoundation
 import Auth
+import Foundation
 
 @MainActor
 @Observable
 class SpeechToTextService {
 
     private let backendURL: String
+    private let streamChunkFrameCount: AVAudioFrameCount = 4096
+    private let transcriptionTimeoutNanoseconds: UInt64 = 45_000_000_000
 
-
-    nonisolated init(backendURL: String = Environment.apiBaseURL) {
+    nonisolated init(backendURL: String = Environment.websocketURL) {
         self.backendURL = backendURL
     }
 
-
     func transcribe(audioURL: URL, authService: AuthService) async throws -> TranscriptionResponse {
-        guard let session = authService.session else {
+        guard let accessToken = authService.session?.accessToken, !accessToken.isEmpty else {
             throw SpeechToTextError.notAuthenticated
         }
 
-        let url = URL(string: "\(backendURL)/stt/transcribe")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        let sttService = WebSocketSTTService(backendURL: backendURL)
 
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        return try await withCheckedThrowingContinuation { continuation in
+            var hasResumed = false
+            var timeoutTask: Task<Void, Never>?
 
-        let httpBody = try createMultipartBody(audioURL: audioURL, boundary: boundary)
-        request.httpBody = httpBody
+            func finish(_ result: Result<TranscriptionResponse, Error>) {
+                guard !hasResumed else { return }
+                hasResumed = true
+                timeoutTask?.cancel()
+                Task { @MainActor in
+                    sttService.disconnect()
+                }
 
-        print("Sending transcription request...")
+                switch result {
+                case .success(let response):
+                    continuation.resume(returning: response)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+            sttService.onReady = {
+                Task {
+                    do {
+                        try await self.streamAudioFile(at: audioURL, via: sttService)
+                        sttService.endRecording()
+                    } catch {
+                        finish(.failure(error))
+                    }
+                }
+            }
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw SpeechToTextError.invalidResponse
-        }
+            sttService.onFinalTranscription = { text in
+                let response = TranscriptionResponse(
+                    languageCode: "unknown",
+                    languageProbability: 0,
+                    text: text,
+                    words: nil,
+                    transcriptionId: nil
+                )
+                finish(.success(response))
+            }
 
-        if httpResponse.statusCode != 200 {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("Transcription failed (status \(httpResponse.statusCode)): \(errorMessage)")
-            throw SpeechToTextError.transcriptionFailed(errorMessage)
-        }
+            sttService.onError = { message in
+                finish(.failure(SpeechToTextError.transcriptionFailed(message)))
+            }
 
-        do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let transcriptionResponse = try decoder.decode(TranscriptionResponse.self, from: data)
-            print("Transcription successful: \(transcriptionResponse.text)")
-            return transcriptionResponse
-        } catch {
-            print("Failed to decode transcription response: \(error)")
-            throw SpeechToTextError.decodingFailed(error.localizedDescription)
+            timeoutTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: self.transcriptionTimeoutNanoseconds)
+                guard !Task.isCancelled else { return }
+                finish(.failure(SpeechToTextError.transcriptionFailed("Transcription timed out.")))
+            }
+
+            sttService.connect(token: accessToken)
         }
     }
 
+    private func streamAudioFile(at audioURL: URL, via sttService: WebSocketSTTService) async throws {
+        let audioFile = try AVAudioFile(forReading: audioURL)
+        let processingFormat = audioFile.processingFormat
 
-    private func createMultipartBody(audioURL: URL, boundary: String) throws -> Data {
-        var body = Data()
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: processingFormat,
+            frameCapacity: streamChunkFrameCount
+        ) else {
+            throw SpeechToTextError.conversionFailed("Failed to create PCM buffer.")
+        }
 
-        let audioData = try Data(contentsOf: audioURL)
-        let filename = audioURL.lastPathComponent
-        let mimetype = "audio/m4a"
+        while true {
+            try audioFile.read(into: buffer, frameCount: streamChunkFrameCount)
+            guard buffer.frameLength > 0 else { break }
 
-        body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: \(mimetype)\r\n\r\n".data(using: .utf8)!)
-        body.append(audioData)
-        body.append("\r\n".data(using: .utf8)!)
+            let pcmData = AudioFormatConverter.pcmBufferToRawPCM(buffer: buffer)
+            guard !pcmData.isEmpty else {
+                throw SpeechToTextError.conversionFailed("Failed to convert audio chunk to PCM.")
+            }
 
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-
-        return body
+            sttService.sendAudioChunk(pcmData)
+            await Task.yield()
+        }
     }
 }
-
 
 struct TranscriptionResponse: Codable {
     let languageCode: String
@@ -93,23 +120,19 @@ struct TranscriptionWord: Codable {
     let logprob: Double
 }
 
-
 enum SpeechToTextError: LocalizedError {
     case notAuthenticated
-    case invalidResponse
+    case conversionFailed(String)
     case transcriptionFailed(String)
-    case decodingFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .notAuthenticated:
             return "Not authenticated. Please sign in first."
-        case .invalidResponse:
-            return "Invalid response from server"
+        case .conversionFailed(let message):
+            return "Audio conversion failed: \(message)"
         case .transcriptionFailed(let message):
             return "Transcription failed: \(message)"
-        case .decodingFailed(let message):
-            return "Failed to decode response: \(message)"
         }
     }
 }

@@ -7,25 +7,53 @@ enum MessageRole: String, Codable {
     case optimisticPlaceholder
 }
 
+enum MessageIntegrationBrand: String, Codable {
+    case spotify
+    case gmail
+    case googleCalendar
+    case discord
+    case todoist
+    case calendly
+    case uber
+    case doordash
+    case instacart
+    case appleMusic
+}
+
 struct Message: Identifiable, Codable, Equatable {
     let id: UUID
     let text: String
     let role: MessageRole
     let timestamp: Date
+    let integrationBrand: MessageIntegrationBrand?
 
-    init(id: UUID = UUID(), text: String, role: MessageRole, timestamp: Date = Date()) {
+    init(
+        id: UUID = UUID(),
+        text: String,
+        role: MessageRole,
+        timestamp: Date = Date(),
+        integrationBrand: MessageIntegrationBrand? = nil
+    ) {
         self.id = id
         self.text = text
         self.role = role
         self.timestamp = timestamp
+        self.integrationBrand = integrationBrand
     }
 
-    init(id: UUID = UUID(), text: String, isUser: Bool, timestamp: Date = Date()) {
+    init(
+        id: UUID = UUID(),
+        text: String,
+        isUser: Bool,
+        timestamp: Date = Date(),
+        integrationBrand: MessageIntegrationBrand? = nil
+    ) {
         self.init(
             id: id,
             text: text,
             role: isUser ? .user : .assistant,
-            timestamp: timestamp
+            timestamp: timestamp,
+            integrationBrand: integrationBrand
         )
     }
 
@@ -35,6 +63,24 @@ struct Message: Identifiable, Codable, Equatable {
 
     var isAssistant: Bool {
         role == .assistant
+    }
+
+    var normalizedDisplayText: String {
+        text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isDisplayable: Bool {
+        !normalizedDisplayText.isEmpty
+    }
+}
+
+extension Message {
+    func canStack(with other: Message) -> Bool {
+        guard role == other.role else { return false }
+        guard role != .optimisticPlaceholder else { return false }
+        return integrationBrand == other.integrationBrand
     }
 }
 
@@ -46,6 +92,7 @@ class ConversationService {
     var didLatestFirstUserAnimationComplete = false
     var latestUserAnchorMessageId: UUID?
     var pendingFirstAssistantRevealMessageId: UUID?
+    private var animatedUserMessageId: UUID?
 
     private var latestSendWasNewConversation = false
     private let insertionAnimation = Animation.spring(
@@ -56,9 +103,10 @@ class ConversationService {
 
     func beginSendCycle(isNewConversation: Bool) {
         latestSendWasNewConversation = isNewConversation
-        isMessageSendAnimating = isNewConversation
-        didLatestFirstUserAnimationComplete = !isNewConversation
+        isMessageSendAnimating = true
+        didLatestFirstUserAnimationComplete = false
         pendingFirstAssistantRevealMessageId = nil
+        animatedUserMessageId = nil
 
         if Environment.isDebugLoggingEnabled {
             print(
@@ -82,9 +130,8 @@ class ConversationService {
     }
 
     func shouldRunFirstUserAnimation(for message: Message, index: Int) -> Bool {
-        latestSendWasNewConversation
-            && isMessageSendAnimating
-            && index == 0
+        isMessageSendAnimating
+            && animatedUserMessageId == message.id
             && message.role == .user
     }
 
@@ -98,17 +145,21 @@ class ConversationService {
     }
 
     @discardableResult
-    func addMessage(_ message: Message) -> Message {
+    func addMessage(_ message: Message) -> Message? {
+        guard message.isDisplayable else {
+            if Environment.isDebugLoggingEnabled {
+                print("[ConversationService] skipping empty message role=\(message.role.rawValue)")
+            }
+            return nil
+        }
+
         withAnimation(insertionAnimation) {
             messages.append(message)
         }
 
         if message.role == .user {
             latestUserAnchorMessageId = message.id
-            if !latestSendWasNewConversation {
-                didLatestFirstUserAnimationComplete = true
-                isMessageSendAnimating = false
-            }
+            animatedUserMessageId = message.id
         } else if
             message.role == .assistant
                 && latestSendWasNewConversation
@@ -127,27 +178,37 @@ class ConversationService {
     }
 
     @discardableResult
-    func addUserMessage(_ text: String) -> Message {
-        print("ConversationService: Adding user message: \"\(text)\"")
-        let message = Message(text: text, role: .user)
-        addMessage(message)
+    func addUserMessage(_ text: String, integrationBrand: MessageIntegrationBrand? = nil) -> Message? {
+        let normalizedText = text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        print("ConversationService: Adding user message: \"\(normalizedText)\"")
+        let message = Message(text: normalizedText, role: .user, integrationBrand: integrationBrand)
+        guard let addedMessage = addMessage(message) else {
+            return nil
+        }
         print(
-            "ConversationService: Added user message id=\(message.id.uuidString), " +
+            "ConversationService: Added user message id=\(addedMessage.id.uuidString), " +
                 "count=\(messages.count)"
         )
-        return message
+        return addedMessage
     }
 
     @discardableResult
-    func addAssistantMessage(_ text: String) -> Message {
-        print("ConversationService: Adding assistant message: \"\(text)\"")
-        let message = Message(text: text, role: .assistant)
-        addMessage(message)
+    func addAssistantMessage(_ text: String) -> Message? {
+        let normalizedText = text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        print("ConversationService: Adding assistant message: \"\(normalizedText)\"")
+        let message = Message(text: normalizedText, role: .assistant)
+        guard let addedMessage = addMessage(message) else {
+            return nil
+        }
         print(
-            "ConversationService: Added assistant message id=\(message.id.uuidString), " +
+            "ConversationService: Added assistant message id=\(addedMessage.id.uuidString), " +
                 "count=\(messages.count)"
         )
-        return message
+        return addedMessage
     }
 
     func clearMessages() {
@@ -157,5 +218,6 @@ class ConversationService {
         latestSendWasNewConversation = false
         isMessageSendAnimating = false
         didLatestFirstUserAnimationComplete = false
+        animatedUserMessageId = nil
     }
 }

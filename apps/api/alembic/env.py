@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.core.database import Base
 from app.models.conversation import Conversation
 from app.models.user import User  # Import all models here
-from app.models.vector_embedding import VectorEmbedding
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

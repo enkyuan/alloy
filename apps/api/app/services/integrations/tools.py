@@ -4,12 +4,18 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
+from app.core.redis import get_redis_client
 from app.services.integrations.dispatcher import (
     ToolContext,
     register_tool,
     tool_spec_from_model,
 )
 from app.services.integrations.spotify import spotify_service
+from app.services.integrations.spotify.helpers.resolver_memory import (
+    load_preferred_uris,
+    remember_selected_uri,
+)
 from app.services.todoist import todoist_service
 
 
@@ -54,12 +60,32 @@ async def spotify_play(ctx: ToolContext, args: Dict[str, Any]) -> Dict[str, Any]
         raise ValueError("Missing required arg: query")
     artist = args.get("artist")
     playlist_name = args.get("playlist_name")
+    artist_text = str(artist) if artist else None
+    redis = await get_redis_client()
+    preferred_uris = await load_preferred_uris(
+        redis,
+        user_id=ctx.user_id,
+        query=query,
+        artist=artist_text,
+    )
     result = await spotify_service.search_and_play_track(
         query=query,
         access_token=access_token,
-        artist=str(artist) if artist else None,
+        artist=artist_text,
         playlist_name=str(playlist_name) if playlist_name else None,
+        preferred_uris=preferred_uris,
+        disable_clarifications=settings.SPOTIFY_DISABLE_CLARIFICATION_MESSAGES,
     )
+    data = result.data if isinstance(result.data, dict) else {}
+    resolved_uri = str(data.get("uri", "")).strip()
+    if resolved_uri:
+        await remember_selected_uri(
+            redis,
+            user_id=ctx.user_id,
+            query=query,
+            artist=artist_text,
+            uri=resolved_uri,
+        )
     requires_clarification = bool(
         isinstance(result.data, dict) and result.data.get("requires_clarification")
     )
@@ -97,12 +123,32 @@ async def spotify_add_to_queue(
         raise ValueError("Missing required arg: query")
     artist = args.get("artist")
     playlist_name = args.get("playlist_name")
+    artist_text = str(artist) if artist else None
+    redis = await get_redis_client()
+    preferred_uris = await load_preferred_uris(
+        redis,
+        user_id=ctx.user_id,
+        query=query,
+        artist=artist_text,
+    )
     result = await spotify_service.add_to_queue(
         query=query,
         access_token=access_token,
-        artist=str(artist) if artist else None,
+        artist=artist_text,
         playlist_name=str(playlist_name) if playlist_name else None,
+        preferred_uris=preferred_uris,
+        disable_clarifications=settings.SPOTIFY_DISABLE_CLARIFICATION_MESSAGES,
     )
+    data = result.data if isinstance(result.data, dict) else {}
+    resolved_uri = str(data.get("uri", "")).strip()
+    if resolved_uri:
+        await remember_selected_uri(
+            redis,
+            user_id=ctx.user_id,
+            query=query,
+            artist=artist_text,
+            uri=resolved_uri,
+        )
     requires_clarification = bool(
         isinstance(result.data, dict) and result.data.get("requires_clarification")
     )
@@ -168,7 +214,10 @@ async def spotify_play_playlist(
         raise ValueError("Missing required arg: playlist")
     user_only = bool(args.get("user_playlists_only", False))
     result = await spotify_service.search_and_play_playlist(
-        query=playlist, access_token=access_token, user_playlists_only=user_only
+        query=playlist,
+        access_token=access_token,
+        user_playlists_only=user_only,
+        disable_clarifications=settings.SPOTIFY_DISABLE_CLARIFICATION_MESSAGES,
     )
     return {
         "status": "playing",

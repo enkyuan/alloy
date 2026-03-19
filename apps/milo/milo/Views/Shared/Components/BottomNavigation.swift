@@ -10,6 +10,7 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
     @Bindable var authService: AuthService
     @Bindable var assistantViewModel: AssistantViewModel
     @Bindable var integrationService: IntegrationService
+    @SwiftUI.Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let firstPage: (icon: String, view: Page0)
     private let secondPage: (icon: String, view: Page1)
     private let hapticGenerator = UIImpactFeedbackGenerator(style: .light)
@@ -79,9 +80,21 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
             bottomNavigationBar
                 .padding(.horizontal, 20)
                 .safeAreaPadding(.bottom, 24)
+
+            if let expandedMessageText = assistantViewModel.expandedMessageText {
+                ExpandedAssistantMessageOverlay(
+                    text: expandedMessageText,
+                    onDismiss: {
+                        assistantViewModel.expandedMessageText = nil
+                    }
+                )
+                .zIndex(10)
+                .transition(.overlayPreviewEntrance)
+            }
         }
         .ignoresSafeArea(.all, edges: .bottom)
         .microphonePermissionAlert(isPresented: $showPermissionAlert)
+        .animation(defaultSpringAnimation, value: assistantViewModel.expandedMessageText != nil)
     }
 
     // MARK: - Bottom Navigation Bar
@@ -172,30 +185,43 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
     // MARK: - Navigation Buttons
     private var startRecordingButton: some View {
         Button(action: {
-            handleStartRecording()
+            handleRecordButtonTap()
         }) {
             ZStack {
                 Circle()
                     .fill(assistantViewModel.isConnecting ? Color.gray : Color.blue)
                     .frame(width: 48, height: 48)
 
-                if assistantViewModel.isConnecting {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                } else {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(.white)
-                }
+                recordButtonIcon
             }
         }
         .disabled(
             assistantViewModel.isRecording || assistantViewModel.isProcessingTranscription
-                || assistantViewModel.isConnecting
         )
         .opacity(
             (assistantViewModel.isRecording || assistantViewModel.isProcessingTranscription)
                 ? 0.3 : 1.0)
+    }
+
+    @ViewBuilder
+    private var recordButtonIcon: some View {
+        ZStack {
+            if assistantViewModel.isConnecting {
+                contextualRecordIcon(systemName: "xmark")
+                    .id("cancel")
+            } else {
+                contextualRecordIcon(systemName: "mic.fill")
+                    .id("mic")
+            }
+        }
+        .animation(iconTransitionAnimation, value: assistantViewModel.isConnecting)
+    }
+
+    private func contextualRecordIcon(systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundColor(.white)
+            .transition(reduceMotion ? .opacity : .contextualIcon)
     }
 
     private var stopRecordingButton: some View {
@@ -359,8 +385,6 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
 
     // MARK: - Actions
     private func handleStartRecording() {
-        hapticFeedback()
-
         Task {
             let granted = await MicrophonePermission.requestIfNeeded()
             await MainActor.run {
@@ -370,6 +394,17 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
             guard granted else { return }
             await assistantViewModel.startStreamingRecording(authService: authService)
         }
+    }
+
+    private func handleRecordButtonTap() {
+        hapticFeedback()
+
+        if assistantViewModel.isConnecting {
+            assistantViewModel.cancelStreamingConnection()
+            return
+        }
+
+        handleStartRecording()
     }
 
     private func handleStopRecording() {
@@ -383,8 +418,36 @@ struct BottomNavigation<Page0: View, Page1: View>: View {
         hapticGenerator.impactOccurred()
         hapticGenerator.prepare()
     }
+
+    private var iconTransitionAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.15)
+            : .easeOut(duration: 0.24)
+    }
 }
 
 private struct PageMetadata {
     let icon: String
+}
+
+private struct ContextualIconTransitionModifier: ViewModifier {
+    let opacity: Double
+    let scale: CGFloat
+    let blurRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .scaleEffect(scale)
+            .blur(radius: blurRadius)
+    }
+}
+
+private extension AnyTransition {
+    static var contextualIcon: AnyTransition {
+        .modifier(
+            active: ContextualIconTransitionModifier(opacity: 0, scale: 0.72, blurRadius: 8),
+            identity: ContextualIconTransitionModifier(opacity: 1, scale: 1, blurRadius: 0)
+        )
+    }
 }

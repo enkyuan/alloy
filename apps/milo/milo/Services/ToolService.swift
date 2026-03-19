@@ -1,3 +1,4 @@
+import Auth
 import Foundation
 
 @MainActor
@@ -24,9 +25,12 @@ class ToolService {
         return try decoder.decode(ToolListResponse.self, from: data).tools
     }
 
-    func fetchCacheMetrics() async throws -> CacheMetricsModel {
-        let url = URL(string: "\(backendURL)/tools/cache/metrics")!
-        let (data, response) = try await URLSession.shared.data(from: url)
+    func fetchCacheMetrics(authService: AuthService) async throws -> CacheMetricsModel {
+        let request = try authorizedRequest(
+            path: "/tools/cache/metrics",
+            authService: authService
+        )
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200
         else {
@@ -37,11 +41,12 @@ class ToolService {
         return try decoder.decode(CacheMetricsModel.self, from: data)
     }
 
-    func clearCache() async throws -> Int {
-        let url = URL(string: "\(backendURL)/tools/cache/clear")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-
+    func clearCache(authService: AuthService) async throws -> Int {
+        let request = try authorizedRequest(
+            path: "/tools/cache/clear",
+            method: "POST",
+            authService: authService
+        )
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200
@@ -56,11 +61,28 @@ class ToolService {
         let decoder = JSONDecoder()
         return try decoder.decode(ClearResponse.self, from: data).deleted
     }
+
+    private func authorizedRequest(
+        path: String,
+        method: String = "GET",
+        authService: AuthService
+    ) throws -> URLRequest {
+        guard let accessToken = authService.session?.accessToken, !accessToken.isEmpty else {
+            throw ToolServiceError.notAuthenticated
+        }
+
+        let url = URL(string: "\(backendURL)\(path)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        return request
+    }
 }
 
 enum ToolServiceError: LocalizedError {
     case fetchFailed
     case clearFailed
+    case notAuthenticated
 
     var errorDescription: String? {
         switch self {
@@ -68,6 +90,8 @@ enum ToolServiceError: LocalizedError {
             return "Failed to fetch tools or cache metrics."
         case .clearFailed:
             return "Failed to clear cache."
+        case .notAuthenticated:
+            return "Not authenticated."
         }
     }
 }

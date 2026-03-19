@@ -20,6 +20,19 @@ logger = logging.getLogger(__name__)
 class SpotifyTrackCommandsMixin:
     """Search/play and queue command handlers for tracks."""
 
+    def _client_playback_result(
+        self: Any,
+        *,
+        uri: str,
+        message: str,
+        payload: Optional[dict[str, Any]] = None,
+    ) -> CommandResult:
+        """Build a consistent client-side playback response payload."""
+        data = dict(payload or {})
+        data["uri"] = uri
+        data["action_required"] = "client_playback"
+        return CommandResult(success=True, message=message, data=data)
+
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def play_track_uri(
         self: Any,
@@ -38,13 +51,9 @@ class SpotifyTrackCommandsMixin:
                     "No active device found for URI play; returning client playback action",
                     extra={"uri": track_uri},
                 )
-                return CommandResult(
-                    success=True,
+                return self._client_playback_result(
+                    uri=track_uri,
                     message="Got it. Trying playback on your active app.",
-                    data={
-                        "uri": track_uri,
-                        "action_required": "client_playback",
-                    },
                 )
 
             await self.client.play(
@@ -64,15 +73,13 @@ class SpotifyTrackCommandsMixin:
                     "Playing specific tracks requires Spotify Premium",
                     feature="Track playback",
                 )
-            status_code = self._extract_status_code(e)
-            is_retryable = (
-                status_code in [429, 500, 502, 503, 504] if status_code else False
+            logger.info(
+                "Falling back to client playback after URI play failure",
+                extra={"uri": track_uri, "error": str(e)},
             )
-            raise SpotifyAPIError(
-                "Failed to play selected track",
-                original_error=e,
-                is_retryable=is_retryable,
-                status_code=status_code,
+            return self._client_playback_result(
+                uri=track_uri,
+                message="Got it. Trying playback on your active app.",
             )
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
@@ -82,6 +89,8 @@ class SpotifyTrackCommandsMixin:
         access_token: str,
         artist: Optional[str] = None,
         playlist_name: Optional[str] = None,
+        preferred_uris: Optional[list[str]] = None,
+        disable_clarifications: Optional[bool] = None,
     ) -> CommandResult:
         """Search for a track and play the best candidate."""
         selected_track: Optional[dict[str, Any]] = None
@@ -92,6 +101,8 @@ class SpotifyTrackCommandsMixin:
                 access_token=access_token,
                 artist=artist,
                 playlist_name=playlist_name,
+                preferred_uris=preferred_uris,
+                disable_clarifications=disable_clarifications,
             )
             if clarification_result:
                 logger.info(
@@ -162,13 +173,13 @@ class SpotifyTrackCommandsMixin:
                     "track_name": payload.get("track_name"),
                 },
             )
-            return CommandResult(
-                success=True,
+            return self._client_playback_result(
+                uri=str(payload.get("uri", "")),
                 message=(
                     f"Found '{payload.get('track_name')}' by "
                     f"{payload.get('artist')}. Trying playback on your active app."
                 ),
-                data={**payload, "action_required": "client_playback"},
+                payload=payload,
             )
 
         except (SearchNoResultsError, PremiumRequiredError):
@@ -198,6 +209,8 @@ class SpotifyTrackCommandsMixin:
         access_token: str,
         artist: Optional[str] = None,
         playlist_name: Optional[str] = None,
+        preferred_uris: Optional[list[str]] = None,
+        disable_clarifications: Optional[bool] = None,
     ) -> CommandResult:
         """Search for a track and add it to queue."""
         try:
@@ -206,6 +219,8 @@ class SpotifyTrackCommandsMixin:
                 access_token=access_token,
                 artist=artist,
                 playlist_name=playlist_name,
+                preferred_uris=preferred_uris,
+                disable_clarifications=disable_clarifications,
             )
             if clarification_result:
                 logger.info(

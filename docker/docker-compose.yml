@@ -104,10 +104,14 @@ services:
       CALENDLY_CLIENT_SECRET: ${CALENDLY_CLIENT_SECRET}
       CALENDLY_REDIRECT_URI: ${CALENDLY_REDIRECT_URI}
 
+      # Token encryption (falls back to JWT_SECRET if not set)
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+
       # Application
       DEBUG: ${DEBUG:-false}
       API_V1_PREFIX: /api/v1
       PROJECT_NAME: Modal API
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:5173}
 
       # Python logging
       PYTHONUNBUFFERED: 1
@@ -124,6 +128,12 @@ services:
 
       # Gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+
+      # Agent pipeline
+      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
+      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
+      AGENT_SPOTIFY_CACHE_TTL_SECONDS: ${AGENT_SPOTIFY_CACHE_TTL_SECONDS:-3600}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -168,18 +178,41 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
 
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+
+      # Gmail OAuth (uses Google credentials)
+      GMAIL_REDIRECT_URI: ${GMAIL_REDIRECT_URI}
 
       # Spotify OAuth
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI}
 
+      # Discord OAuth
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI}
+
+      # Todoist OAuth
+      TODOIST_CLIENT_ID: ${TODOIST_CLIENT_ID}
+      TODOIST_CLIENT_SECRET: ${TODOIST_CLIENT_SECRET}
+      TODOIST_REDIRECT_URI: ${TODOIST_REDIRECT_URI}
+
+      # Calendly OAuth
+      CALENDLY_CLIENT_ID: ${CALENDLY_CLIENT_ID}
+      CALENDLY_CLIENT_SECRET: ${CALENDLY_CLIENT_SECRET}
+      CALENDLY_REDIRECT_URI: ${CALENDLY_REDIRECT_URI}
+
       # Soniox
       SONIOX_API_KEY: ${SONIOX_API_KEY:-}
+
+      # Gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
 
       # Application
       DEBUG: ${DEBUG:-false}
@@ -198,8 +231,8 @@ services:
     volumes:
       - ../apps/api/app:/app/app:ro
 
-  llm-worker:
-    container_name: modal-llm-worker
+  bus-worker:
+    container_name: modal-bus-worker
     build:
       context: ../apps/api
       dockerfile: Dockerfile
@@ -233,25 +266,51 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
 
       # Spotify OAuth
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET}
       SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI}
 
+      # Discord OAuth
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI}
+
+      # Todoist OAuth
+      TODOIST_CLIENT_ID: ${TODOIST_CLIENT_ID}
+      TODOIST_CLIENT_SECRET: ${TODOIST_CLIENT_SECRET}
+      TODOIST_REDIRECT_URI: ${TODOIST_REDIRECT_URI}
+
+      # Calendly OAuth
+      CALENDLY_CLIENT_ID: ${CALENDLY_CLIENT_ID}
+      CALENDLY_CLIENT_SECRET: ${CALENDLY_CLIENT_SECRET}
+      CALENDLY_REDIRECT_URI: ${CALENDLY_REDIRECT_URI}
+
       # Soniox
       SONIOX_API_KEY: ${SONIOX_API_KEY:-}
 
       # Gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+
+      # Agent pipeline
+      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
+      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
+      AGENT_SPOTIFY_CACHE_TTL_SECONDS: ${AGENT_SPOTIFY_CACHE_TTL_SECONDS:-3600}
 
       # Application
       DEBUG: ${DEBUG:-false}
-      PROJECT_NAME: Modal LLM Worker
+      PROJECT_NAME: Modal Bus Worker
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
-    command: ["python", "-m", "app.workers.llm_worker"]
+    command: ["python", "-m", "app.workers.bus_worker"]
     volumes:
       - ../apps/api/app:/app/app:ro
 

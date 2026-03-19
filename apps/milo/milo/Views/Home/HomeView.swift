@@ -38,7 +38,11 @@ struct HomeView: View {
     @ViewBuilder
     private var mainView: some View {
         if integrationService.hasConnectedIntegrations {
-            AssistantView(authService: authService, viewModel: assistantViewModel)
+            NavigationStack {
+                AssistantView(authService: authService, viewModel: assistantViewModel)
+                    .navigationTitle("Assistant")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
         } else {
             ContentUnavailableView {
                 Label("No Integrations Yet", systemImage: "app.connected.to.app.below.fill")

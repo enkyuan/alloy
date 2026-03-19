@@ -3,14 +3,35 @@ import AVFoundation
 
 struct AudioFormatConverter {
     static func pcmBufferToRawPCM(buffer: AVAudioPCMBuffer) -> Data {
-        guard let channelData = buffer.floatChannelData else {
+        switch buffer.format.commonFormat {
+        case .pcmFormatFloat32:
+            guard let channelData = buffer.floatChannelData else {
+                return Data()
+            }
+            return convertFloat32ToInt16(buffer: buffer, channelData: channelData)
+        case .pcmFormatInt16:
+            guard let channelData = buffer.int16ChannelData else {
+                return Data()
+            }
+            return convertInt16ToMono(buffer: buffer, channelData: channelData)
+        case .pcmFormatInt32:
+            guard let channelData = buffer.int32ChannelData else {
+                return Data()
+            }
+            return convertInt32ToInt16(buffer: buffer, channelData: channelData)
+        default:
             return Data()
         }
+    }
 
+    private static func convertFloat32ToInt16(
+        buffer: AVAudioPCMBuffer,
+        channelData: UnsafePointer<UnsafeMutablePointer<Float>>
+    ) -> Data {
         let frameCount = Int(buffer.frameLength)
         let channelCount = Int(buffer.format.channelCount)
-
         var int16Samples: [Int16] = []
+        int16Samples.reserveCapacity(frameCount)
 
         if channelCount == 1 {
             for frame in 0..<frameCount {
@@ -30,6 +51,55 @@ struct AudioFormatConverter {
                 let int16Sample = Int16(clampedSample * 32767.0)
                 int16Samples.append(int16Sample)
             }
+        }
+
+        return Data(bytes: int16Samples, count: int16Samples.count * MemoryLayout<Int16>.size)
+    }
+
+    private static func convertInt16ToMono(
+        buffer: AVAudioPCMBuffer,
+        channelData: UnsafePointer<UnsafeMutablePointer<Int16>>
+    ) -> Data {
+        let frameCount = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        var monoSamples: [Int16] = []
+        monoSamples.reserveCapacity(frameCount)
+
+        if channelCount == 1 {
+            monoSamples.append(contentsOf: UnsafeBufferPointer(start: channelData[0], count: frameCount))
+            return Data(bytes: monoSamples, count: monoSamples.count * MemoryLayout<Int16>.size)
+        }
+
+        for frame in 0..<frameCount {
+            var sum: Int32 = 0
+            for channel in 0..<channelCount {
+                sum += Int32(channelData[channel][frame])
+            }
+            let average = Int16(sum / Int32(channelCount))
+            monoSamples.append(average)
+        }
+
+        return Data(bytes: monoSamples, count: monoSamples.count * MemoryLayout<Int16>.size)
+    }
+
+    private static func convertInt32ToInt16(
+        buffer: AVAudioPCMBuffer,
+        channelData: UnsafePointer<UnsafeMutablePointer<Int32>>
+    ) -> Data {
+        let frameCount = Int(buffer.frameLength)
+        let channelCount = Int(buffer.format.channelCount)
+        var int16Samples: [Int16] = []
+        int16Samples.reserveCapacity(frameCount)
+
+        for frame in 0..<frameCount {
+            var sum: Double = 0
+            for channel in 0..<channelCount {
+                sum += Double(channelData[channel][frame]) / Double(Int32.max)
+            }
+            let averagedSample = sum / Double(channelCount)
+            let clampedSample = max(-1.0, min(1.0, averagedSample))
+            let int16Sample = Int16(clampedSample * 32767.0)
+            int16Samples.append(int16Sample)
         }
 
         return Data(bytes: int16Samples, count: int16Samples.count * MemoryLayout<Int16>.size)

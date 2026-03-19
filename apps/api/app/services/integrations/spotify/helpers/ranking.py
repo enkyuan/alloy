@@ -350,6 +350,36 @@ class SpotifyRankingMixin:
                 artist_name = str(first.get("name", artist_name))
         return f"{name} by {artist_name}"
 
+    def _boost_ranked_tracks_with_uri_priors(
+        self: Any,
+        ranked_tracks: list[tuple[dict[str, Any], float]],
+        preferred_uris: list[str] | None,
+        *,
+        base_boost: float = 0.09,
+        decay: float = 0.02,
+    ) -> list[tuple[dict[str, Any], float]]:
+        """Apply deterministic score boosts for user-preferred URIs."""
+        if not ranked_tracks or not preferred_uris:
+            return ranked_tracks
+
+        uri_rank = {uri: idx for idx, uri in enumerate(preferred_uris) if uri}
+        if not uri_rank:
+            return ranked_tracks
+
+        boosted: list[tuple[dict[str, Any], float]] = []
+        for track, score in ranked_tracks:
+            uri = str(track.get("uri", "")).strip()
+            rank_index = uri_rank.get(uri)
+            if rank_index is None:
+                boosted.append((track, score))
+                continue
+
+            bonus = max(0.0, base_boost - (rank_index * decay))
+            boosted.append((track, max(0.0, min(score + bonus, 1.5))))
+
+        boosted.sort(key=lambda item: item[1], reverse=True)
+        return boosted
+
     def _is_ambiguous_track_match(
         self: Any, ranked_tracks: list[tuple[dict[str, Any], float]]
     ) -> bool:

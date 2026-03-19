@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.services.integrations.spotify.exceptions import (
     NoActiveDeviceError,
     PremiumRequiredError,
@@ -22,7 +23,11 @@ class SpotifyCollectionCommandsMixin:
 
     @retry_on_transient_error(max_retries=2, delay=1.0)
     async def search_and_play_playlist(
-        self: Any, query: str, access_token: str, user_playlists_only: bool = False
+        self: Any,
+        query: str,
+        access_token: str,
+        user_playlists_only: bool = False,
+        disable_clarifications: Optional[bool] = None,
     ) -> CommandResult:
         """Search for a playlist and play it.
 
@@ -124,10 +129,21 @@ class SpotifyCollectionCommandsMixin:
                 raise SearchNoResultsError(query_text, "playlist", suggestions)
 
             top_playlist, top_score, top_probability = ranked_with_probs[0]
+            no_clarify_mode = (
+                settings.SPOTIFY_DISABLE_CLARIFICATION_MESSAGES
+                if disable_clarifications is None
+                else bool(disable_clarifications)
+            )
             second_probability = (
                 ranked_with_probs[1][2] if len(ranked_with_probs) > 1 else 0.0
             )
             probability_margin = top_probability - second_probability
+
+            def _can_auto_select_without_clarification() -> bool:
+                return top_score >= self.PLAYLIST_NO_CLARIFY_MIN_SCORE and (
+                    probability_margin >= self.PLAYLIST_NO_CLARIFY_MARGIN_MIN
+                    or top_probability >= (self.PLAYLIST_CLARIFY_MIN - 0.05)
+                )
 
             if (
                 top_probability < self.PLAYLIST_AUTO_PROB_MIN
@@ -157,28 +173,64 @@ class SpotifyCollectionCommandsMixin:
                     strong_candidates = [
                         prob for _, _, prob in ranked_with_probs[:3] if prob >= 0.20
                     ]
-                    if len(strong_candidates) >= 2:
+                    if len(strong_candidates) < 2:
+                        suggestions = [
+                            "Try using the exact playlist title",
+                            "Say 'play my playlist ...' to prefer your library",
+                            "Try including the playlist owner name",
+                        ]
+                        raise SearchNoResultsError(query_text, "playlist", suggestions)
+
+                    logger.info(
+                        "Low-confidence playlist result has multiple strong alternatives; clarifying",
+                        extra={
+                            "query": query_text,
+                            "top_probability": round(top_probability, 4),
+                            "strong_candidates": len(strong_candidates),
+                        },
+                    )
+                    if no_clarify_mode and _can_auto_select_without_clarification():
                         logger.info(
-                            "Low-confidence playlist result has multiple strong alternatives; clarifying",
+                            "No-clarification mode selected top playlist despite ambiguity",
                             extra={
                                 "query": query_text,
+                                "top_score": round(top_score, 4),
                                 "top_probability": round(top_probability, 4),
-                                "strong_candidates": len(strong_candidates),
+                                "probability_margin": round(probability_margin, 4),
                             },
                         )
+                    elif no_clarify_mode:
+                        suggestions = [
+                            "Try using the exact playlist title",
+                            "Say 'play my playlist ...' to prefer your library",
+                            "Try including the playlist owner name",
+                        ]
+                        raise SearchNoResultsError(query_text, "playlist", suggestions)
+                    else:
                         return self._build_playlist_clarification_result(
                             query=query_text, ranked_playlists=final_ranked
                         )
+                if no_clarify_mode and _can_auto_select_without_clarification():
+                    logger.info(
+                        "No-clarification mode selected top playlist by fallback policy",
+                        extra={
+                            "query": query_text,
+                            "top_score": round(top_score, 4),
+                            "top_probability": round(top_probability, 4),
+                            "probability_margin": round(probability_margin, 4),
+                        },
+                    )
+                elif no_clarify_mode:
                     suggestions = [
                         "Try using the exact playlist title",
                         "Say 'play my playlist ...' to prefer your library",
                         "Try including the playlist owner name",
                     ]
                     raise SearchNoResultsError(query_text, "playlist", suggestions)
-
-                return self._build_playlist_clarification_result(
-                    query=query_text, ranked_playlists=final_ranked
-                )
+                else:
+                    return self._build_playlist_clarification_result(
+                        query=query_text, ranked_playlists=final_ranked
+                    )
 
             selected_playlist = top_playlist
             selected_score = top_score

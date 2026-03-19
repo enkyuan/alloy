@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import msgpack
 from typing import Any, Dict, Optional, Union, cast
 
@@ -22,13 +21,13 @@ class EventEnvelope(BaseModel):
 
 
 def _coerce_payload(
-    payload: Union[BaseModel, Dict[str, Any], str],
-) -> Union[str, Dict[str, Any]]:
+    payload: Union[BaseModel, Dict[str, Any]],
+) -> Any:
     if isinstance(payload, BaseModel):
-        return payload.model_dump_json()
+        return payload.model_dump(mode="json")
     if isinstance(payload, dict):
         return payload
-    return str(payload)
+    return payload
 
 
 def is_supported_event_version(version: str) -> bool:
@@ -43,7 +42,7 @@ def build_event_envelope(
     *,
     event_type: str,
     user_id: Optional[str],
-    payload: Union[BaseModel, Dict[str, Any], str],
+    payload: Union[BaseModel, Dict[str, Any]],
     metadata: Optional[Dict[str, Any]] = None,
     version: str = EVENT_SCHEMA_VERSION,
 ) -> Dict[str, Any]:
@@ -58,36 +57,38 @@ def build_event_envelope(
     return envelope.model_dump()
 
 
-def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
+def parse_event_envelope(raw: Union[Dict[str, Any], bytes, bytearray]) -> EventEnvelope:
     """Validate and parse an incoming event envelope."""
-    # Fast path: MsgPack binary decoding
-    msgpack_payload = None
-    for k, v in raw.items():
-        if k == "_msgpack" or k == b"_msgpack":
-            msgpack_payload = v
-            break
-    if msgpack_payload and isinstance(msgpack_payload, bytes):
-        candidate = msgpack.unpackb(msgpack_payload, strict_map_key=False)
-        if isinstance(candidate, dict):
-            # Decode string keys defensively 
-            candidate = {k.decode("utf-8") if isinstance(k, bytes) else k: v for k, v in candidate.items()}
-    else:
-        # Legacy fast-path JSON decoding
-        candidate = dict(raw)
-        metadata = candidate.get("metadata")
-        if isinstance(metadata, str):
-            try:
-                decoded_metadata = json.loads(metadata)
-                if isinstance(decoded_metadata, dict):
-                    candidate["metadata"] = decoded_metadata
-            except json.JSONDecodeError:
-                candidate["metadata"] = {}
+    def _unpack(raw_bytes: bytes) -> Dict[str, Any]:
+        unpacked = msgpack.unpackb(raw_bytes, raw=False, strict_map_key=False)
+        if not isinstance(unpacked, dict):
+            raise ValueError("Invalid msgpack event payload")
+        return unpacked
 
-        # Safely decode byte-keys passed down locally
-        candidate = {k.decode("utf-8") if isinstance(k, bytes) else k: v for k, v in candidate.items()}
+    if isinstance(raw, (bytes, bytearray)):
+        candidate = _unpack(bytes(raw))
+    else:
+        msgpack_payload = None
+        for key, value in raw.items():
+            if key == "_msgpack" or key == b"_msgpack":
+                msgpack_payload = value
+                break
+
+        if isinstance(msgpack_payload, (bytes, bytearray, memoryview)):
+            candidate = _unpack(bytes(msgpack_payload))
+        else:
+            candidate = dict(raw)
+
+    # Decode byte keys defensively for pydantic validation.
+    candidate = {
+        key.decode("utf-8") if isinstance(key, bytes) else key: value
+        for key, value in candidate.items()
+    }
 
     candidate.setdefault("version", EVENT_SCHEMA_VERSION)
     envelope = EventEnvelope.model_validate(candidate)
+    if isinstance(envelope.payload, str):
+        raise ValueError("String event payloads are no longer supported")
     if not is_supported_event_version(envelope.version):
         raise ValueError(f"Unsupported event envelope version: {envelope.version}")
     return envelope
@@ -95,4 +96,4 @@ def parse_event_envelope(raw: Dict[str, Any]) -> EventEnvelope:
 
 def to_redis_stream_fields(envelope: Dict[str, Any]) -> Dict[str, Any]:
     """Convert an event envelope into Redis stream-safe binary fields."""
-    return {"_msgpack": msgpack.packb(envelope)}
+    return {"_msgpack": msgpack.packb(envelope, use_bin_type=True)}
