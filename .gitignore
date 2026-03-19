@@ -9,7 +9,7 @@ docker/supabase/.env
 apps/api/.env
 
 # Xcode Configuration (contains secrets)
-apps/modal/Config.xcconfig
+apps/havenos/Config.xcconfig
 **/Config.xcconfig
 !**/Config.xcconfig.example
 

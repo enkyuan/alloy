@@ -1,30 +1,46 @@
 <p align="center">
-  <img src="./docs/assets/banner.svg" alt="Banner" style="border-radius: 32px;" />
+  <img src="docs/assets/banner.svg" alt="Modal Banner" width="100%" style="border-radius: 16px;" />
 </p>
+
+## Overview
+
+Modal decouples conversational speed from heavy-duty task execution to deliver a voice-first experience that feels instantaneous. It leverages a split-pipeline architecture using Redis streams for real-time voice processing and distributed queues for agentic tools.
+
+**Core Capabilities:**
+- **Ultra-low latency** voice interactions (<500ms).
+- **Agentic workflow execution** (Calendar, Spotify, Email).
+- **Event-driven architecture** for scalable microservices.
+
+## Tech Stack
+
+- **Client:** Swift 5 (SwiftUI, MVVM, Soniox STT).
+- **Backend:** Python 3.11 (FastAPI, TaskIQ).
+- **Infrastructure:** Redis (Streams/PubSub), Supabase (Auth/PostgreSQL), Docker.
 
 ## Quick Start
 
-### Prerequisites
+> **Prerequisites:** Docker Desktop, Python 3.11+, Xcode 15+, [Bun](https://bun.sh)
 
-- **Backend**: Python 3.11+, Poetry
-- **iOS**: macOS with Xcode 15.0+, iOS 17.0+ SDK
-- **Database**: Docker (for local Supabase) or Supabase Cloud account
+### CLI Setup & Usage
 
-### Clone and Setup Environment
+The project is managed via a CLI tool.
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd modal
+1. Navigate to the CLI directory:
+   ```bash
+   cd apps/cli
+   ```
 
-# Copy environment files
-cp .env.example .env
-cp apps/api/.env.example apps/api/.env
-cp supabase/.env.example supabase/.env
+2. Install dependencies:
+   ```bash
+   bun i
+   ```
 
-# Edit .env files with your credentials
-```
+3. Run the CLI (opens interactive menu for setup, startup, etc.):
+   ```bash
+   bun dev
+   ```
 
+<<<<<<< HEAD
 ### Start the Stack (Unified Docker Compose)
 
 The project uses a unified Docker Compose configuration to run all services (API, Worker, Supabase, Kafka, RabbitMQ, Redis).
@@ -220,3 +236,6 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/
 - Verify `REVERSED_CLIENT_ID` in `Info.plist`
 - Check URL schemes are configured
 - Ensure Google Cloud Console OAuth credentials are correct
+=======
+For detailed manual configuration, please refer to the **[Setup Guide](docs/SETUP.md)**.
+>>>>>>> codex/refactor

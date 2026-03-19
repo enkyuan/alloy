@@ -1,10 +1,12 @@
 """Integration model for third-party service OAuth tokens."""
 
-from datetime import datetime
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
-from sqlalchemy.orm import relationship
+from typing import Optional
+from datetime import datetime, timezone
+from sqlalchemy import String, Text, DateTime, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.types.sqlalchemy import EncryptedText
 
 
 class Integration(Base):
@@ -25,18 +27,29 @@ class Integration(Base):
     """
 
     __tablename__ = "integrations"
+    __table_args__ = (UniqueConstraint("user_id", "service", name="uq_integration_user_service"),)
 
-    id = Column(String, primary_key=True, index=True)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
-    service = Column(String, nullable=False, index=True)
-    access_token = Column(Text, nullable=False)
-    refresh_token = Column(Text, nullable=True)
-    token_type = Column(String, default="Bearer")
-    expires_at = Column(DateTime, nullable=True)
-    scope = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id"), nullable=False, index=True
+    )
+    service: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    access_token: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedText(), nullable=True)
+    token_type: Mapped[str] = mapped_column(String, default="Bearer")
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    scope: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
     # Relationship
     user = relationship("User", back_populates="integrations")

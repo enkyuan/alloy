@@ -1,18 +1,20 @@
 """Alembic environment configuration."""
 
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-import sys
 import os
+import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Add the app directory to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import settings and models
-from app.config import settings
-from app.database import Base
+from app.core.config import settings
+from app.core.database import Base
+from app.models.conversation import Conversation
 from app.models.user import User  # Import all models here
 
 # this is the Alembic Config object, which provides
