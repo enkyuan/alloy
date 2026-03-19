@@ -22,13 +22,6 @@ struct AudioFormatConverter {
         default:
             return Data()
         }
-<<<<<<<< HEAD:apps/modal/modal/Helpers/AudioFormatConverter.swift
-
-        let frameCount = Int(buffer.frameLength)
-        let channelCount = Int(buffer.format.channelCount)
-
-        var int16Samples: [Int16] = []
-========
     }
 
     private static func convertFloat32ToInt16(
@@ -39,7 +32,6 @@ struct AudioFormatConverter {
         let channelCount = Int(buffer.format.channelCount)
         var int16Samples: [Int16] = []
         int16Samples.reserveCapacity(frameCount)
->>>>>>>> codex/refactor:apps/milo/milo/Helpers/AudioFormatConverter.swift
 
         if channelCount == 1 {
             for frame in 0..<frameCount {
@@ -64,8 +56,6 @@ struct AudioFormatConverter {
         return Data(bytes: int16Samples, count: int16Samples.count * MemoryLayout<Int16>.size)
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Helpers/AudioFormatConverter.swift
-========
     private static func convertInt16ToMono(
         buffer: AVAudioPCMBuffer,
         channelData: UnsafePointer<UnsafeMutablePointer<Int16>>
@@ -115,7 +105,6 @@ struct AudioFormatConverter {
         return Data(bytes: int16Samples, count: int16Samples.count * MemoryLayout<Int16>.size)
     }
 
->>>>>>>> codex/refactor:apps/milo/milo/Helpers/AudioFormatConverter.swift
     static func pcmBufferToWAV(buffer: AVAudioPCMBuffer, sampleRate: Double = 48000) -> Data {
         guard let channelData = buffer.floatChannelData else {
             return Data()

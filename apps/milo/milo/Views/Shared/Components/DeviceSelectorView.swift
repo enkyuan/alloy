@@ -174,23 +174,3 @@ struct DeviceRow: View {
     }
 }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/DeviceSelectorView.swift
-#Preview {
-    @Previewable @State var devices: [SpotifyDevice] = [
-        SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75),
-        SpotifyDevice(id: "2", name: "MacBook Pro", type: "computer", isActive: false, volumePercent: 50),
-        SpotifyDevice(id: "3", name: "Living Room Speaker", type: "speaker", isActive: false, volumePercent: 30)
-    ]
-    @Previewable @State var currentDevice: SpotifyDevice? = SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75)
-    @Previewable @State var isLoading = false
-
-    return DeviceSelectorView(
-        devices: $devices,
-        currentDevice: $currentDevice,
-        isLoading: $isLoading,
-        onDeviceSelected: { _ in },
-        onRefresh: {}
-    )
-}
-========
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/DeviceSelectorView.swift

@@ -80,10 +80,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Modal API"
-<<<<<<< HEAD
-=======
     CORS_ALLOW_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
->>>>>>> codex/refactor
 
     # TaskIQ
     TASKIQ_BROKER: str = "redis"  # Options: redis

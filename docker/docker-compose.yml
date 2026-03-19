@@ -156,8 +156,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-<<<<<<< HEAD
-=======
       db:
         condition: service_healthy
     environment:
@@ -246,7 +244,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
->>>>>>> codex/refactor
       db:
         condition: service_healthy
     environment:
@@ -259,8 +256,6 @@ services:
       # TaskIQ
       TASKIQ_BROKER: redis
       TASKIQ_RESULT_BACKEND: redis
-<<<<<<< HEAD
-=======
 
       # Supabase
       SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
@@ -272,7 +267,6 @@ services:
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
->>>>>>> codex/refactor
 
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}

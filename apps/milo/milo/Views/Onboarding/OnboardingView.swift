@@ -142,11 +142,6 @@ struct OnboardingView: View {
         GIDSignIn.sharedInstance.signIn(withPresenting: rootViewController) { result, error in
             if let error = error {
                 let nsError = error as NSError
-<<<<<<< HEAD:apps/modal/modal/Views/Onboarding/OnboardingView.swift
-                if nsError.code == -5 {
-                    print("User cancelled Google Sign-In")
-                    return
-=======
                 let message = error.localizedDescription
                 Task { @MainActor in
                     isAuthenticating = false
@@ -154,7 +149,6 @@ struct OnboardingView: View {
                         return
                     }
                     showError(message: "Google Sign-In failed: \(message)")
->>>>>>> codex/refactor:apps/milo/milo/Views/Onboarding/OnboardingView.swift
                 }
                 return
             }
@@ -170,21 +164,12 @@ struct OnboardingView: View {
 
             let accessToken = result.user.accessToken.tokenString
 
-<<<<<<< HEAD:apps/modal/modal/Views/Onboarding/OnboardingView.swift
-            print("Got Google tokens for: \(result.user.profile?.email ?? "unknown")")
-
-            Task { @MainActor in
-                do {
-                    try await authService.authenticateWithGoogle(idToken: idToken, accessToken: accessToken)
-                    print("Successfully authenticated!")
-=======
             Task { @MainActor in
                 do {
                     try await authService.authenticateWithGoogle(
                         idToken: idToken,
                         accessToken: accessToken
                     )
->>>>>>> codex/refactor:apps/milo/milo/Views/Onboarding/OnboardingView.swift
                     isAuthenticating = false
                 } catch {
                     isAuthenticating = false
@@ -195,19 +180,11 @@ struct OnboardingView: View {
     }
 
     private func handleAppleSignIn() {
-<<<<<<< HEAD:apps/modal/modal/Views/Onboarding/OnboardingView.swift
-        print("Apple Sign In tapped")
-    }
-
-    private func handleEmailSignIn() {
-        print("Email Sign In tapped")
-=======
         showError(message: "Apple Sign-In is not available yet.")
     }
 
     private func handleEmailSignIn() {
         showError(message: "Email sign-in is not available yet.")
->>>>>>> codex/refactor:apps/milo/milo/Views/Onboarding/OnboardingView.swift
     }
 
     private func showError(message: String) {

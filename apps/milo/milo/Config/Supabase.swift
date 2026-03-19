@@ -1,12 +1,3 @@
-<<<<<<< HEAD:apps/modal/modal/Config/Supabase.swift
-import Foundation
-import Supabase
-
-let supabase = SupabaseClient(
-    supabaseURL: URL(string: Environment.supabaseURL)!,
-    supabaseKey: Environment.supabaseAnonKey
-)
-=======
 import Auth
 import Foundation
 import Supabase
@@ -40,4 +31,3 @@ let supabase: SupabaseClient = {
     print("Supabase client initialized successfully")
     return client
 }()
->>>>>>> codex/refactor:apps/milo/milo/Config/Supabase.swift

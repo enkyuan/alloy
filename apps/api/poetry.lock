@@ -228,11 +228,7 @@ version = "5.0.1"
 description = "Timeout context manager for asyncio programs"
 optional = false
 python-versions = ">=3.8"
-<<<<<<< HEAD
-groups = ["main"]
-=======
 groups = ["main", "dev"]
->>>>>>> codex/refactor
 markers = "python_full_version < \"3.11.3\""
 files = [
     {file = "async_timeout-5.0.1-py3-none-any.whl", hash = "sha256:39e3809566ff85354557ec2398b55e096c8364bacac9405a7a1fa429e77fe76c"},
@@ -2275,8 +2271,6 @@ files = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
 name = "pytest"
 version = "9.0.2"
 description = "pytest: simple powerful testing with Python"
@@ -2339,7 +2333,6 @@ pytest = ">=7"
 testing = ["process-tests", "pytest-xdist", "virtualenv"]
 
 [[package]]
->>>>>>> codex/refactor
 name = "python-dotenv"
 version = "1.1.1"
 description = "Read key-value pairs from a .env file and set them as environment variables"
@@ -3048,8 +3041,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-<<<<<<< HEAD
-content-hash = "f7c70e2ce74b1c770bb7d5dce201fa7c1dcab2a3414d0917d9f06699f26d0f6f"
-=======
 content-hash = "4a8293befdae57ea48855bbd91addf7b2751d42ea397c9c0a9437e93d61739a6"
->>>>>>> codex/refactor

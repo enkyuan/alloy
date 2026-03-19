@@ -6,11 +6,7 @@ import SwiftUI
 
 struct HavenOSLiveActivity: Widget {
     var body: some WidgetConfiguration {
-<<<<<<< HEAD:apps/modal/ModalWidgets/ModalLiveActivity.swift
-        ActivityConfiguration(for: ModalActivityAttributes.self) { context in
-=======
         ActivityConfiguration(for: HavenOSActivityAttributes.self) { context in
->>>>>>> codex/refactor:apps/milo/MiloWidgets/MiloLiveActivity.swift
             LiveActivityView(context: context)
         } dynamicIsland: { context in
             DynamicIsland {

@@ -8,11 +8,6 @@ class AudioStreamingService: NSObject {
     private var audioFile: AVAudioFile?
     private var recordingURL: URL?
     private var currentSampleRate: Double = 48000
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-
-    var isRecording: Bool = false
-    var onAudioChunk: ((Data) -> Void)?
-=======
     private var lastChunkLogTime: CFAbsoluteTime = 0
     private var smoothedAudioLevel: Float = 0
 
@@ -20,7 +15,6 @@ class AudioStreamingService: NSObject {
     var onAudioChunk: ((Data) -> Void)?
     var onAudioLevel: ((Float) -> Void)?
     var onAudioEnvelope: (([Float]) -> Void)?
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
     var onError: ((String) -> Void)?
 
 
@@ -35,8 +29,6 @@ class AudioStreamingService: NSObject {
             throw NSError(domain: "AudioStreamingService", code: 1, userInfo: [NSLocalizedDescriptionKey: error])
         }
 
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-=======
         let audioSession = AVAudioSession.sharedInstance()
         do {
             try audioSession.setCategory(
@@ -54,7 +46,6 @@ class AudioStreamingService: NSObject {
             throw error
         }
 
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
         let tempDir = FileManager.default.temporaryDirectory
         let fileName = "stream_\(UUID().uuidString).m4a"
         let fileURL = tempDir.appendingPathComponent(fileName)
@@ -128,11 +119,6 @@ class AudioStreamingService: NSObject {
                     }
 
                     let pcmData = AudioFormatConverter.pcmBufferToRawPCM(buffer: buffer)
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-                    let durationSeconds = Double(buffer.frameLength) / self.currentSampleRate
-                    let channels = buffer.format.channelCount
-                    print("Sending PCM chunk: \(pcmData.count) bytes (\(buffer.frameLength) frames, \(channels) ch1 ch, ~\(String(format: "%.3f", durationSeconds))s)")
-=======
                     if pcmData.isEmpty {
                         print(
                             "PCM conversion produced empty chunk (format: \(buffer.format), frames: \(buffer.frameLength))."
@@ -150,7 +136,6 @@ class AudioStreamingService: NSObject {
                     }
                     self.publishAudioLevel(from: buffer)
                     self.publishAudioEnvelope(from: buffer)
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
                     self.onAudioChunk?(pcmData)
                 }
             } catch {
@@ -164,12 +149,9 @@ class AudioStreamingService: NSObject {
         do {
             try engine.start()
             isRecording = true
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-=======
             smoothedAudioLevel = 0
             onAudioLevel?(0)
             onAudioEnvelope?([])
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
             print("Audio engine started")
         } catch {
             print("Failed to start audio engine: \(error)")
@@ -188,24 +170,13 @@ class AudioStreamingService: NSObject {
         }
 
         isRecording = false
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-=======
         smoothedAudioLevel = 0
         onAudioLevel?(0)
         onAudioEnvelope?([])
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
 
         let inputNode = engine.inputNode
         inputNode.removeTap(onBus: 0)
         engine.stop()
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-
-        audioEngine = nil
-        audioFile = nil
-
-        print("Audio streaming stopped (tap removed, engine stopped)")
-        return recordingURL
-=======
         
         // Clean up audio session
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -217,7 +188,6 @@ class AudioStreamingService: NSObject {
 
         print("Audio streaming stopped (tap removed, engine stopped)")
         return url
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
     }
 
     func deleteRecording(at url: URL) {
@@ -228,8 +198,6 @@ class AudioStreamingService: NSObject {
             print("Failed to delete recording: \(error)")
         }
     }
-<<<<<<< HEAD:apps/modal/modal/Services/AudioStreamingService.swift
-=======
 
     private func publishAudioLevel(from buffer: AVAudioPCMBuffer) {
         let normalizedLevel = normalizedAudioLevel(from: buffer)
@@ -331,5 +299,4 @@ class AudioStreamingService: NSObject {
 
         return nil
     }
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioStreamingService.swift
 }

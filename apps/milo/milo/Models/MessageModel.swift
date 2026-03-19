@@ -1,18 +1,4 @@
 import Foundation
-<<<<<<< HEAD:apps/modal/modal/Models/MessageModel.swift
-
-struct Message: Identifiable, Codable {
-    let id: UUID
-    let text: String
-    let isUser: Bool
-    let timestamp: Date
-
-    init(id: UUID = UUID(), text: String, isUser: Bool, timestamp: Date = Date()) {
-        self.id = id
-        self.text = text
-        self.isUser = isUser
-        self.timestamp = timestamp
-=======
 import SwiftUI
 
 enum MessageRole: String, Codable {
@@ -95,7 +81,6 @@ extension Message {
         guard role == other.role else { return false }
         guard role != .optimisticPlaceholder else { return false }
         return integrationBrand == other.integrationBrand
->>>>>>> codex/refactor:apps/milo/milo/Models/MessageModel.swift
     }
 }
 
@@ -103,25 +88,6 @@ extension Message {
 @Observable
 class ConversationService {
     var messages: [Message] = []
-<<<<<<< HEAD:apps/modal/modal/Models/MessageModel.swift
-
-    func addMessage(_ message: Message) {
-        messages.append(message)
-    }
-
-    func addUserMessage(_ text: String) {
-        print("ConversationService: Adding user message: \"\(text)\"")
-        let message = Message(text: text, isUser: true)
-        messages.append(message)
-        print("ConversationService: Messages array now has \(messages.count) messages")
-    }
-
-    func addAssistantMessage(_ text: String) {
-        print("ConversationService: Adding assistant message: \"\(text)\"")
-        let message = Message(text: text, isUser: false)
-        messages.append(message)
-        print("ConversationService: Messages array now has \(messages.count) messages")
-=======
     var isMessageSendAnimating = false
     var didLatestFirstUserAnimationComplete = false
     var latestUserAnchorMessageId: UUID?
@@ -243,19 +209,15 @@ class ConversationService {
                 "count=\(messages.count)"
         )
         return addedMessage
->>>>>>> codex/refactor:apps/milo/milo/Models/MessageModel.swift
     }
 
     func clearMessages() {
         messages.removeAll()
-<<<<<<< HEAD:apps/modal/modal/Models/MessageModel.swift
-=======
         latestUserAnchorMessageId = nil
         pendingFirstAssistantRevealMessageId = nil
         latestSendWasNewConversation = false
         isMessageSendAnimating = false
         didLatestFirstUserAnimationComplete = false
         animatedUserMessageId = nil
->>>>>>> codex/refactor:apps/milo/milo/Models/MessageModel.swift
     }
 }

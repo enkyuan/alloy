@@ -68,17 +68,12 @@ class AudioRecordingService {
         recordingTimer?.invalidate()
         recordingTimer = nil
         isRecording = false
-<<<<<<< HEAD:apps/modal/modal/Services/AudioRecordingService.swift
-
-        try? recordingSession.setActive(false)
-=======
         recordingDuration = 0
 
         try? recordingSession.setActive(false)
         
         // Clean up recorder reference
         audioRecorder = nil
->>>>>>> codex/refactor:apps/milo/milo/Services/AudioRecordingService.swift
 
         print("Stopped recording. Duration: \(recordingDuration)s")
 

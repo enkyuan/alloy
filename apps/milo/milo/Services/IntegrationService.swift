@@ -10,10 +10,6 @@ class IntegrationService {
 
     static let shared = IntegrationService()
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-=======
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
     enum ServiceType: String {
         case spotify
         case gmail
@@ -56,10 +52,6 @@ class IntegrationService {
         }
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-=======
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
     private var connectedServices: Set<ServiceType> = [] {
         didSet {
             saveConnectedServices()
@@ -75,26 +67,13 @@ class IntegrationService {
         !connectedServices.isEmpty
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-    nonisolated private init(backendURL: String = Environment.apiBaseURL) {
-=======
     private init(backendURL: String = Environment.apiBaseURL) {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
         self.backendURL = backendURL
         loadConnectedServices()
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-    func fetchConnectedIntegrations(authService: AuthService) async throws {
-        guard let session = authService.session else {
-            throw IntegrationError.notAuthenticated
-        }
-=======
     func fetchConnectedIntegrations(authService: AuthService) async throws {
         let accessToken = try await resolveAccessToken(authService: authService)
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
 
         let url = URL(string: "\(backendURL)/integrations")!
         var request = URLRequest(url: url)
@@ -133,13 +112,9 @@ class IntegrationService {
             }
         }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-        print("Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))")
-=======
         print(
             "Fetched connected integrations: \(connectedServices.map { $0.displayName }.joined(separator: ", "))"
         )
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
     }
 
     func isConnected(_ service: ServiceType) -> Bool {
@@ -147,11 +122,6 @@ class IntegrationService {
     }
 
     func connectService(_ service: ServiceType, authService: AuthService) async throws {
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-        print("Initiating OAuth for \(service.displayName)")
-
-        guard let session = authService.session else {
-=======
         if ProcessInfo.processInfo.arguments.contains("--mock-auth") {
             print("[Mock] simulating connection to \(service.displayName)")
             try? await Task.sleep(nanoseconds: 500_000_000) // 0.5s delay
@@ -164,16 +134,12 @@ class IntegrationService {
         print("Initiating OAuth for \(service.displayName)")
 
         guard authService.isAuthenticated else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             print("Not authenticated")
             throw IntegrationError.notAuthenticated
         }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-=======
         let supabaseAccessToken = try await resolveAccessToken(authService: authService)
 
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
         if service == .gmail || service == .googleCalendar {
             try await connectGoogleService(service, authService: authService)
             return
@@ -181,15 +147,11 @@ class IntegrationService {
 
         do {
             print("Step 1: Getting OAuth URL from backend...")
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-            let authURL = try await getOAuthURL(for: service, accessToken: session.accessToken)
-=======
             let authURL = try await getOAuthURL(
                 for: service,
                 accessToken: supabaseAccessToken,
                 authService: authService
             )
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             print("Received auth URL: \(authURL.absoluteString)")
 
             print("Step 2: Presenting OAuth web flow...")
@@ -197,9 +159,6 @@ class IntegrationService {
             print("Received callback - Code: \(code.prefix(20))..., State: \(state.prefix(20))...")
 
             print("Step 3: Exchanging authorization code...")
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-            try await exchangeCode(code: code, state: state, accessToken: session.accessToken, service: service)
-=======
             try await exchangeCode(
                 code: code,
                 state: state,
@@ -207,7 +166,6 @@ class IntegrationService {
                 service: service,
                 authService: authService
             )
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
 
             DispatchQueue.main.async {
                 self.connectedServices.insert(service)
@@ -224,14 +182,9 @@ class IntegrationService {
         }
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-    private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws {
-        guard let session = authService.session else {
-=======
     private func connectGoogleService(_ service: ServiceType, authService: AuthService) async throws
     {
         guard authService.isAuthenticated else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             throw IntegrationError.notAuthenticated
         }
 
@@ -291,12 +244,8 @@ class IntegrationService {
                 }
 
                 guard let result = result,
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                      let idToken = result.user.idToken?.tokenString else {
-=======
                     let idToken = result.user.idToken?.tokenString
                 else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
                     print("Failed to get Google tokens after scope request")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
                     return
@@ -304,12 +253,8 @@ class IntegrationService {
 
                 let accessToken = result.user.accessToken.tokenString
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                print("Got Google tokens with new scopes for \(service.displayName)")
-=======
                 let serviceName = service.displayName
                 print("Got Google tokens with new scopes for \(serviceName)")
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
 
                 Task {
                     do {
@@ -328,11 +273,7 @@ class IntegrationService {
                             self.connectedServices.insert(service)
                         }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                        print("Successfully connected \(await service.displayName)")
-=======
                         print("Successfully connected \(serviceName)")
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
                         continuation.resume()
                     } catch let error as IntegrationError {
                         print("Failed to send tokens to backend: \(error.localizedDescription)")
@@ -385,13 +326,10 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Backend returned error \(httpResponse.statusCode): \(errorMessage)")
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-=======
             if httpResponse.statusCode == 401 {
                 await authService.handleBackendUnauthorized()
                 throw IntegrationError.notAuthenticated
             }
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             throw IntegrationError.oauthFailed
         }
 
@@ -399,18 +337,10 @@ class IntegrationService {
     }
 
     func disconnectService(_ service: ServiceType, authService: AuthService) async throws {
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-        guard let session = authService.session else {
-            throw IntegrationError.notAuthenticated
-        }
-
-        let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
-=======
         let accessToken = try await resolveAccessToken(authService: authService)
 
         let url = URL(
             string: "\(backendURL)/integrations/\(service.backendServiceName)/disconnect")!
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
@@ -435,13 +365,6 @@ class IntegrationService {
         print("Successfully disconnected \(service.displayName)")
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-    private func exchangeCode(code: String, state: String, accessToken: String, service: ServiceType) async throws {
-        guard let encodedCode = code.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "\(backendURL)/integrations/\(service.backendServiceName)/exchange?code=\(encodedCode)&state=\(encodedState)") else {
-=======
     private func exchangeCode(
         code: String,
         state: String,
@@ -456,7 +379,6 @@ class IntegrationService {
                     "\(backendURL)/integrations/\(service.backendServiceName)/exchange?code=\(encodedCode)&state=\(encodedState)"
             )
         else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             print("Failed to encode OAuth parameters for \(service.displayName)")
             throw IntegrationError.oauthFailed
         }
@@ -475,13 +397,10 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Exchange failed with status \(httpResponse.statusCode): \(errorMessage)")
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-=======
             if httpResponse.statusCode == 401 {
                 await authService.handleBackendUnauthorized()
                 throw IntegrationError.notAuthenticated
             }
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             throw IntegrationError.oauthFailed
         }
 
@@ -507,13 +426,10 @@ class IntegrationService {
         if httpResponse.statusCode != 200 {
             let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
             print("Failed to get OAuth URL (status \(httpResponse.statusCode)): \(errorMessage)")
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-=======
             if httpResponse.statusCode == 401 {
                 await authService.handleBackendUnauthorized()
                 throw IntegrationError.notAuthenticated
             }
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             throw IntegrationError.oauthURLFailed
         }
 
@@ -527,14 +443,7 @@ class IntegrationService {
 
         do {
             let oauthResponse = try decoder.decode(OAuthURLResponse.self, from: data)
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-            guard let authURL = URL(string: oauthResponse.authUrl) else {
-                print("Invalid OAuth URL in response: \(oauthResponse.authUrl)")
-                throw IntegrationError.invalidURL
-            }
-=======
             let authURL = try sanitizeOAuthURL(oauthResponse.authUrl)
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             return authURL
         } catch {
             print("Failed to decode OAuth URL response: \(error)")
@@ -542,9 +451,6 @@ class IntegrationService {
         }
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-    private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (code: String, state: String) {
-=======
     private func sanitizeOAuthURL(_ rawURL: String) throws -> URL {
         if let url = URL(string: rawURL), url.scheme != nil {
             return url
@@ -579,7 +485,6 @@ class IntegrationService {
     private func presentOAuthFlow(url: URL, service: ServiceType) async throws -> (
         code: String, state: String
     ) {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
         return try await withCheckedThrowingContinuation { continuation in
             self.authSession = ASWebAuthenticationSession(
                 url: url,
@@ -590,12 +495,8 @@ class IntegrationService {
                 if let error = error {
                     let nsError = error as NSError
                     if nsError.domain == "com.apple.AuthenticationServices.WebAuthenticationSession"
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                        && nsError.code == 1 {
-=======
                         && nsError.code == 1
                     {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
                         print("User cancelled OAuth for \(service.displayName)")
                         continuation.resume(throwing: IntegrationError.userCancelled)
                         return
@@ -613,28 +514,19 @@ class IntegrationService {
 
                 print("Received callback URL: \(callbackURL.absoluteString)")
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                guard let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
-                      let queryItems = components.queryItems else {
-=======
                 guard
                     let components = URLComponents(
                         url: callbackURL, resolvingAgainstBaseURL: false),
                     let queryItems = components.queryItems
                 else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
                     print("Could not parse callback URL components")
                     continuation.resume(throwing: IntegrationError.noCallbackURL)
                     return
                 }
 
                 guard let code = queryItems.first(where: { $0.name == "code" })?.value,
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-                      let state = queryItems.first(where: { $0.name == "state" })?.value else {
-=======
                     let state = queryItems.first(where: { $0.name == "state" })?.value
                 else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
                     print("Missing code or state in callback for \(service.displayName)")
                     continuation.resume(throwing: IntegrationError.oauthFailed)
                     return
@@ -657,14 +549,11 @@ class IntegrationService {
         }
     }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-=======
     func clearCachedConnectedServices() {
         connectedServices.removeAll()
         UserDefaults.standard.removeObject(forKey: connectedServicesKey)
         print("Cleared connected services cache")
     }
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
 
     private func saveConnectedServices() {
         let serviceNames = connectedServices.map { $0.rawValue }
@@ -673,14 +562,10 @@ class IntegrationService {
     }
 
     private func loadConnectedServices() {
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-        guard let serviceNames = UserDefaults.standard.array(forKey: connectedServicesKey) as? [String] else {
-=======
         guard
             let serviceNames = UserDefaults.standard.array(forKey: connectedServicesKey)
                 as? [String]
         else {
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
             print("No saved connected services found")
             return
         }
@@ -691,23 +576,6 @@ class IntegrationService {
 
 }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-class WebAuthenticationPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }),
-              let window = windowScene.windows.first(where: { $0.isKeyWindow }) ?? windowScene.windows.first else {
-            if let fallbackScene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene })
-                .first,
-               let fallbackWindow = fallbackScene.windows.first(where: { $0.isKeyWindow }) ?? fallbackScene.windows.first {
-                return fallbackWindow
-            }
-            print("Warning: Could not find key window for OAuth presentation")
-            return UIWindow()
-=======
 class WebAuthenticationPresentationContextProvider: NSObject,
     ASWebAuthenticationPresentationContextProviding
 {
@@ -722,7 +590,6 @@ class WebAuthenticationPresentationContextProvider: NSObject,
             return windowScene.windows.first { $0.isKeyWindow }
                 ?? windowScene.windows.first
                 ?? UIWindow(windowScene: windowScene)
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
         }
 
         print("Warning: Could not find any UIWindowScene for OAuth presentation")
@@ -735,10 +602,6 @@ class WebAuthenticationPresentationContextProvider: NSObject,
     }
 }
 
-<<<<<<< HEAD:apps/modal/modal/Services/IntegrationService.swift
-
-=======
->>>>>>> codex/refactor:apps/milo/milo/Services/IntegrationService.swift
 enum IntegrationError: LocalizedError {
     case notAuthenticated
     case oauthURLFailed

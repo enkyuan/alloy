@@ -26,10 +26,7 @@ struct User: Codable, Identifiable {
 }
 
 
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-=======
 @MainActor
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
 @Observable
 class AuthService {
 
@@ -37,42 +34,21 @@ class AuthService {
 
     var session: Session?
 
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-    var isAuthenticated: Bool { session != nil }
-=======
     var isRestoringSession: Bool = true
 
     var isAuthenticated: Bool { currentUser != nil }
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
 
     private let backendURL: String
 
 
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-    nonisolated init(backendURL: String = Environment.apiBaseURL) {
-        self.backendURL = backendURL
-
-        Task {
-=======
     init(backendURL: String = Environment.apiBaseURL) {
         self.backendURL = backendURL
 
         Task { @MainActor in
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
             await loadSession()
         }
 
         Task { @MainActor in
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-            for await state in supabase.auth.authStateChanges {
-                if state.event == .signedIn {
-                    print("Auth state changed: Signed in")
-                    await handleAuthStateChange(session: state.session)
-                } else if state.event == .signedOut {
-                    print("Auth state changed: Signed out")
-                    self.session = nil
-                    self.currentUser = nil
-=======
             if ProcessInfo.processInfo.arguments.contains("--mock-auth") {
                 print("Mock Auth Detected")
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -88,31 +64,10 @@ class AuthService {
                         print("Auth state changed: Signed out")
                         clearAuthState()
                     }
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
                 }
             }
         }
     }
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-
-
-    private func handleAuthStateChange(session: Session?) async {
-        guard let session = session else { return }
-        self.session = session
-        print("Session updated for: \(session.user.email ?? "unknown")")
-        await syncUserWithBackend()
-    }
-
-    private func loadSession() async {
-        do {
-            session = try await supabase.auth.session
-            if let session = session {
-                print("Loaded existing session for: \(session.user.email ?? "unknown")")
-                await syncUserWithBackend()
-            }
-        } catch {
-            print("No existing session")
-=======
     
     private func setupMockSession() {
         // Create a dummy user
@@ -153,24 +108,17 @@ class AuthService {
         } catch {
             print("No existing session")
             clearAuthState()
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
         }
     }
 
 
     func authenticateWithGoogle(idToken: String, accessToken: String) async throws {
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-        print("Authenticating with Supabase using Google tokens")
-
-        do {
-=======
         print("[AuthDebug] Authenticating with Supabase using Google tokens")
         print("[AuthDebug] ID Token length: \(idToken.count)")
         print("[AuthDebug] Access Token length: \(accessToken.count)")
 
         do {
             print("[AuthDebug] Calling supabase.auth.signInWithIdToken...")
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
             let session = try await supabase.auth.signInWithIdToken(
                 credentials: .init(
                     provider: .google,
@@ -178,15 +126,6 @@ class AuthService {
                     accessToken: accessToken
                 )
             )
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-
-            self.session = session
-            print("Supabase session created for: \(session.user.email ?? "unknown")")
-
-            await syncUserWithBackend()
-        } catch {
-            print("Google authentication failed: \(error)")
-=======
             print("[AuthDebug] supabase.auth.signInWithIdToken returned successfully")
 
             self.session = session
@@ -204,7 +143,6 @@ class AuthService {
             throw authError
         } catch {
             print("[AuthDebug] Google authentication failed: \(error)")
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
             throw AuthError.serverError(error.localizedDescription)
         }
     }
@@ -226,11 +164,6 @@ class AuthService {
         )
 
         self.session = session
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-        print("Supabase session created for: \(session.user.email ?? "unknown")")
-
-        await syncUserWithBackend()
-=======
         self.currentUser = nil
         print("Supabase session created for: \(session.user.email ?? "unknown")")
 
@@ -238,52 +171,16 @@ class AuthService {
         if !didSync {
             throw AuthError.serverError("Could not verify session with backend")
         }
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
     }
 
     func signOut() async throws {
         try await supabase.auth.signOut()
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-        session = nil
-        currentUser = nil
-=======
         GIDSignIn.sharedInstance.signOut()
         clearAuthState()
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
         print("Signed out successfully")
     }
 
 
-<<<<<<< HEAD:apps/modal/modal/Services/AuthService.swift
-    private func syncUserWithBackend() async {
-        guard let session = session else { return }
-
-        do {
-            let accessToken = session.accessToken
-
-            let url = URL(string: "\(backendURL)/auth/sync")!
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                print("Failed to sync user with backend (status: \((response as? HTTPURLResponse)?.statusCode ?? -1))")
-                return
-            }
-
-            currentUser = try JSONDecoder().decode(User.self, from: data)
-            print("User synced with backend: \(currentUser?.email ?? "unknown")")
-
-        } catch {
-            print("Error syncing with backend: \(error.localizedDescription)")
-        }
-    }
-
-=======
     @discardableResult
     private func syncUserWithBackend() async -> Bool {
         print("[AuthDebug] syncUserWithBackend started")
@@ -402,7 +299,6 @@ class AuthService {
         IntegrationService.shared.clearCachedConnectedServices()
     }
 
->>>>>>> codex/refactor:apps/milo/milo/Services/AuthService.swift
     private func syncGoogleIntegrations(accessToken: String) async {
         guard let session = session else {
             print("No session available for Google integrations sync")

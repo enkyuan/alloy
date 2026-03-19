@@ -8,10 +8,6 @@ struct Card: View {
         case commandPreview(CommandPreviewData)
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-
-========
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
     struct ServicePreviewData {
         let iconName: String
         let serviceName: String
@@ -27,12 +23,6 @@ struct Card: View {
         let action: () -> Void
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-
-    let type: CardType
-
-
-========
     struct CommandPreviewData {
         let iconName: String
         let serviceName: String
@@ -44,7 +34,6 @@ struct Card: View {
 
     let type: CardType
 
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
     var body: some View {
         switch type {
         case .servicePreview(let data):
@@ -56,10 +45,6 @@ struct Card: View {
         }
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-
-========
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
     private func servicePreviewCard(_ data: ServicePreviewData) -> some View {
         Group {
             if let albumCover = data.albumCover {
@@ -119,20 +104,10 @@ struct Card: View {
         .cornerRadius(12)
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-
-    private func integrationCard(_ data: IntegrationData) -> some View {
-        Button(action: data.action) {
-            HStack(spacing: 16) {
-                Image(data.iconName)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-========
     private func integrationCard(_ data: IntegrationData) -> some View {
         Button(action: data.action) {
             HStack(spacing: 16) {
                 AdaptiveIcon(name: data.iconName)
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
                     .frame(width: 40, height: 40)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -158,8 +133,6 @@ struct Card: View {
         .buttonStyle(.plain)
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-========
     private func commandPreviewCard(_ data: CommandPreviewData) -> some View {
         HStack(spacing: 14) {
             AdaptiveIcon(name: data.iconName)
@@ -205,7 +178,6 @@ struct Card: View {
         return Text("\(Text(prefix))\(Text(match).bold())\(Text(suffix))")
     }
 
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
     private func connectionIndicator(isConnected: Bool) -> some View {
         Group {
             if isConnected {
@@ -221,8 +193,6 @@ struct Card: View {
     }
 }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/Card.swift
-========
 // MARK: - AdaptiveIcon
 
 private struct AdaptiveIcon: View {
@@ -250,7 +220,6 @@ struct UberLogoAdaptive: View {
 }
 
 // MARK: - Convenience Initializers
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/Card.swift
 
 extension Card {
     static func servicePreview(

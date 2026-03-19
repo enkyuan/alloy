@@ -45,25 +45,3 @@ struct DeviceStatusIndicator: View {
     }
 }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/DeviceStatusIndicator.swift
-#Preview {
-    VStack(spacing: 20) {
-        DeviceStatusIndicator(
-            device: SpotifyDevice(id: "1", name: "iPhone", type: "smartphone", isActive: true, volumePercent: 75),
-            onTap: {}
-        )
-
-        DeviceStatusIndicator(
-            device: SpotifyDevice(id: "2", name: "MacBook Pro with a very long name", type: "computer", isActive: false, volumePercent: 50),
-            onTap: {}
-        )
-
-        DeviceStatusIndicator(
-            device: nil,
-            onTap: {}
-        )
-    }
-    .padding()
-}
-========
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/DeviceStatusIndicator.swift

@@ -42,25 +42,3 @@ struct CommandFeedbackOverlay: View {
     }
 }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/CommandFeedbackOverlay.swift
-#Preview {
-    VStack(spacing: 40) {
-        CommandFeedbackOverlay(
-            message: "Processing command...",
-            isExecuting: true
-        )
-
-        CommandFeedbackOverlay(
-            message: "Now playing 'Bohemian Rhapsody' by Queen",
-            isExecuting: false
-        )
-
-        CommandFeedbackOverlay(
-            message: nil,
-            isExecuting: false
-        )
-    }
-    .padding()
-}
-========
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/CommandFeedbackOverlay.swift

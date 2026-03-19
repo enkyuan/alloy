@@ -2,11 +2,7 @@
 import ActivityKit
 import Foundation
 
-<<<<<<< HEAD:apps/modal/modal/LiveActivity/ModalActivityAttributes.swift
-struct ModalActivityAttributes: ActivityAttributes {
-=======
 struct HavenOSActivityAttributes: ActivityAttributes {
->>>>>>> codex/refactor:apps/milo/milo/LiveActivity/MiloActivityAttributes.swift
 
     public struct ContentState: Codable, Hashable {
         var status: ActivityStatus
@@ -39,19 +35,11 @@ struct HavenOSActivityAttributes: ActivityAttributes {
     }
 
 
-<<<<<<< HEAD:apps/modal/modal/LiveActivity/ModalActivityAttributes.swift
-    var activityName: String = "Modal Assistant"
-}
-
-
-extension ModalActivityAttributes.ContentState {
-=======
     var activityName: String = "Milo Assistant"
 }
 
 
 extension HavenOSActivityAttributes.ContentState {
->>>>>>> codex/refactor:apps/milo/milo/LiveActivity/MiloActivityAttributes.swift
     static func idle() -> Self {
         HavenOSActivityAttributes.ContentState(
             status: .idle,

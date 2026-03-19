@@ -24,10 +24,7 @@ struct AnimatedText: View {
 
     @State private var animatedText = ""
     @State private var shimmerOffset: CGFloat = -1.0
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/AnimatedText.swift
-========
     @State private var typingTask: Task<Void, Never>?
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/AnimatedText.swift
 
 
     var body: some View {
@@ -98,14 +95,9 @@ struct AnimatedText: View {
     }
 
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/AnimatedText.swift
-    private func animateTyping() {
-        animatedText = ""
-========
     private func startTypingAnimation() {
         cancelTypingAnimation(resetText: true)
 
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/AnimatedText.swift
         let characters = Array(text)
         typingTask = Task { @MainActor in
             for character in characters {
@@ -116,8 +108,6 @@ struct AnimatedText: View {
         }
     }
 
-<<<<<<<< HEAD:apps/modal/modal/Views/Shared/Components/AnimatedText.swift
-========
     private func cancelTypingAnimation(resetText: Bool) {
         typingTask?.cancel()
         typingTask = nil
@@ -127,7 +117,6 @@ struct AnimatedText: View {
         }
     }
 
->>>>>>>> codex/refactor:apps/milo/milo/Views/Shared/Components/AnimatedText.swift
     private func shimmerGradient(width: CGFloat) -> some View {
         LinearGradient(
             colors: [.clear, shimmerColor.opacity(0.6), .clear],
