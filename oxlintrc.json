@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "import"],
+  "rules": {
+    "no-unused-vars": "warn",
+    "no-console": "warn",
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "warn",
+    "max-lines": [
+      "error",
+      { "max": 400, "skipBlankLines": true, "skipComments": true }
+    ],
+    "max-lines-per-function": [
+      "warn",
+      { "max": 80, "skipBlankLines": true, "skipComments": true }
+    ],
+    "complexity": ["warn", { "max": 12 }],
+    "no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
+    "import/no-duplicates": "error",
+    "react/no-direct-mutation-state": "error",
+    "react/jsx-no-duplicate-props": "error",
+    "typescript/no-explicit-any": "warn"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "target",
+    "*.config.ts",
+    "*.config.js"
+  ]
+}
