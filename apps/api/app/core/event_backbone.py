@@ -1,3 +1,9 @@
+"""Legacy Redis event backbone helper.
+
+This module is intentionally kept for historical reference and is not used by
+the active worker/transport pipeline.
+"""
+
 import time
 import logging
 from typing import Optional

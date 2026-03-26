@@ -1,3 +1,10 @@
+"""Legacy stream consumer worker.
+
+This module is intentionally kept for historical reference and is not part of
+the active worker startup. Active stream processing lives in
+`app.workers.bus_worker`.
+"""
+
 import logging
 import asyncio
 import time

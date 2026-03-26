@@ -19,7 +19,8 @@ def test_core_events_build_and_parse_event_envelope_with_model_payload():
     assert envelope["version"] == "1.0"
     assert envelope["type"] == "agent.response"
     assert envelope["user_id"] == "user_123"
-    assert isinstance(envelope["payload"], str)
+    assert isinstance(envelope["payload"], dict)
+    assert envelope["payload"]["content"] == "hello"
 
     parsed = parse_event_envelope(envelope)
     assert parsed.type == "agent.response"
@@ -31,7 +32,7 @@ def test_core_events_parse_event_envelope_accepts_legacy_message_without_version
     legacy = {
         "type": "agent.response",
         "user_id": "legacy_user",
-        "payload": AgentResponse(content="legacy").model_dump_json(),
+        "payload": AgentResponse(content="legacy").model_dump(mode="json"),
     }
 
     parsed = parse_event_envelope(legacy)
@@ -50,8 +51,20 @@ def test_core_events_parse_event_envelope_rejects_unsupported_major_version():
         "version": "2.0",
         "type": "agent.response",
         "user_id": "user_123",
-        "payload": AgentResponse(content="hello").model_dump_json(),
+        "payload": AgentResponse(content="hello").model_dump(mode="json"),
     }
 
     with pytest.raises(ValueError, match="Unsupported event envelope version"):
+        parse_event_envelope(envelope)
+
+
+def test_core_events_parse_event_envelope_rejects_string_payload_contract_drift():
+    envelope = {
+        "version": "1.0",
+        "type": "agent.response",
+        "user_id": "user_123",
+        "payload": AgentResponse(content="hello").model_dump_json(),
+    }
+
+    with pytest.raises(ValueError, match="String event payloads are no longer supported"):
         parse_event_envelope(envelope)

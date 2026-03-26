@@ -1,4 +1,9 @@
-"""Integration routes for third-party service OAuth connections."""
+"""Legacy monolithic integration routes.
+
+This module is intentionally kept for historical reference and is not part of
+the active API wiring. Active integration routing lives under
+`app.routers.integrations` (package).
+"""
 
 import json
 import logging

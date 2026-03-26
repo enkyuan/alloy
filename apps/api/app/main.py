@@ -21,13 +21,8 @@ from app.services.integrations.errors import (
     integration_error_to_detail,
 )
 from app.services.lifecycle import close_registered_services
-from app.routers import (
-    integrations,
-    routers_auth,
-    routers_gemini,
-    routers_stt,
-    routers_tools,
-)
+from app.routers import routers_auth, routers_gemini, routers_stt, routers_tools
+from app.routers.integrations import router as integrations_router
 
 # Configure Rich logging
 setup_logging(debug=settings.DEBUG)
@@ -81,7 +76,7 @@ logger.info("Configured CORS origins", extra={"origins": settings.cors_allow_ori
 
 # Include routers
 app.include_router(routers_auth.router, prefix=settings.API_V1_PREFIX)
-app.include_router(integrations.router, prefix=settings.API_V1_PREFIX)
+app.include_router(integrations_router, prefix=settings.API_V1_PREFIX)
 app.include_router(routers_stt.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routers_gemini.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routers_tools.router, prefix=settings.API_V1_PREFIX)

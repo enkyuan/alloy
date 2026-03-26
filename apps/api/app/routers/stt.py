@@ -1,3 +1,10 @@
+"""Legacy STT router.
+
+This module is intentionally kept for historical reference and is not part of
+the active API wiring. Active STT routing lives in `app.routers.routers_stt`
+plus helpers under `app.routers.stt`.
+"""
+
 import asyncio
 import json
 import logging
