@@ -118,16 +118,5 @@ Package.resolved
 # CocoaPods
 Pods/
 
-# Node / Bun
-node_modules/
-bun.lock
-
-# Turborepo
-.turbo/
-
-# Tauri / Rust
-target/
-*.rs.bk
-
 # Misc
 imgs/

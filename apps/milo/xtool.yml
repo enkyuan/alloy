@@ -1,0 +1,4 @@
+version: 1
+bundleID: com.tangram.labs.milo  # Check your actual Bundle ID in 'milo/Info.plist'
+target: milo
+teamID: LV2H5878PX

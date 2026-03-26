@@ -1,0 +1,44 @@
+<svg width="160" height="160" viewBox="0 0 160 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_12_43)">
+<foreignObject x="-24.0995" y="-25.6011" width="198" height="198"><div xmlns="http://www.w3.org/1999/xhtml" style="backdrop-filter:blur(9.74px);clip-path:url(#bgblur_1_12_43_clip_path);height:100%;width:100%"></div></foreignObject><g filter="url(#filter0_ddii_12_43)" data-figma-bg-blur-radius="19.48">
+<mask id="path-1-outside-1_12_43" maskUnits="userSpaceOnUse" x="29" y="29" width="102" height="102" fill="black">
+<rect fill="white" x="29" y="29" width="102" height="102"/>
+<path d="M80 130C52.3858 130 30 107.614 30 80C57.6142 80 80 57.6142 80 30C107.614 30 130 52.3858 130 80C130 107.614 107.614 130 80 130Z"/>
+</mask>
+<path d="M80 130C52.3858 130 30 107.614 30 80C57.6142 80 80 57.6142 80 30C107.614 30 130 52.3858 130 80C130 107.614 107.614 130 80 130Z" fill="#0061FE" style="mix-blend-mode:plus-lighter"/>
+<g clip-path="url(#paint0_angular_12_43_clip_path)" data-figma-skip-parse="true" mask="url(#path-1-outside-1_12_43)"><g transform="matrix(-0.05 0 0 -0.05 130 130)"><foreignObject x="-2020" y="-2020" width="4040" height="4040"><div xmlns="http://www.w3.org/1999/xhtml" style="background:conic-gradient(from 90deg,rgba(0, 97, 254, 0.7675) 0deg,rgba(0, 97, 254, 1) 52.3129deg,rgba(0, 97, 254, 1) 142.313deg,rgba(0, 97, 254, 0.4) 232.313deg,rgba(0, 97, 254, 0.6) 322.313deg,rgba(0, 97, 254, 0.7675) 360deg);height:100%;width:100%;opacity:1"></div></foreignObject></g></g><path d="M30 80V79H29V80H30ZM80 30V29H79V30H80ZM80 130V129C52.938 129 31 107.062 31 80H30H29C29 108.167 51.8335 131 80 131V130ZM30 80V81C58.1665 81 81 58.1665 81 30H80H79C79 57.062 57.062 79 30 79V80ZM80 30V31C107.062 31 129 52.938 129 80H130H131C131 51.8335 108.167 29 80 29V30ZM130 80H129C129 107.062 107.062 129 80 129V130V131C108.167 131 131 108.167 131 80H130Z" data-figma-gradient-fill="{&#34;type&#34;:&#34;GRADIENT_ANGULAR&#34;,&#34;stops&#34;:[{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:1.0},&#34;position&#34;:0.14531366527080536},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:1.0},&#34;position&#34;:0.39531365036964417},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:0.40000000596046448},&#34;position&#34;:0.64531368017196655},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:0.60000002384185791},&#34;position&#34;:0.89531368017196655}],&#34;stopsVar&#34;:[{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:1.0},&#34;position&#34;:0.14531366527080536},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:1.0},&#34;position&#34;:0.39531365036964417},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:0.40000000596046448},&#34;position&#34;:0.64531368017196655},{&#34;color&#34;:{&#34;r&#34;:0.0,&#34;g&#34;:0.38039216399192810,&#34;b&#34;:0.99607843160629272,&#34;a&#34;:0.60000002384185791},&#34;position&#34;:0.89531368017196655}],&#34;transform&#34;:{&#34;m00&#34;:-100.0,&#34;m01&#34;:-1.2246468419972560e-14,&#34;m02&#34;:180.0,&#34;m10&#34;:1.2246468419972560e-14,&#34;m11&#34;:-100.0,&#34;m12&#34;:180.0},&#34;opacity&#34;:1.0,&#34;blendMode&#34;:&#34;LINEAR_DODGE&#34;,&#34;visible&#34;:true}" style="mix-blend-mode:plus-lighter" mask="url(#path-1-outside-1_12_43)"/>
+</g>
+</g>
+<defs>
+<filter id="filter0_ddii_12_43" x="-24.0995" y="-25.6011" width="198" height="198" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="-0.849925" dy="-1.10019"/>
+<feGaussianBlur stdDeviation="6"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.15 0"/>
+<feBlend mode="plus-darker" in2="BackgroundImageFix" result="effect1_dropShadow_12_43"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="-5.09955" dy="-6.60112"/>
+<feGaussianBlur stdDeviation="24"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.15 0"/>
+<feBlend mode="plus-darker" in2="effect1_dropShadow_12_43" result="effect2_dropShadow_12_43"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect2_dropShadow_12_43" result="shape"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="0.607696" dy="0.786633"/>
+<feGaussianBlur stdDeviation="2.43"/>
+<feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.1275 0"/>
+<feBlend mode="plus-lighter" in2="shape" result="effect3_innerShadow_12_43"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset dx="1.03266" dy="1.33673"/>
+<feGaussianBlur stdDeviation="4.86"/>
+<feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.1275 0"/>
+<feBlend mode="plus-lighter" in2="effect3_innerShadow_12_43" result="effect4_innerShadow_12_43"/>
+</filter>
+<clipPath id="bgblur_1_12_43_clip_path" transform="translate(24.0995 25.6011)"><path d="M80 130C52.3858 130 30 107.614 30 80C57.6142 80 80 57.6142 80 30C107.614 30 130 52.3858 130 80C130 107.614 107.614 130 80 130Z"/>
+</clipPath><clipPath id="paint0_angular_12_43_clip_path"><path d="M30 80V79H29V80H30ZM80 30V29H79V30H80ZM80 130V129C52.938 129 31 107.062 31 80H30H29C29 108.167 51.8335 131 80 131V130ZM30 80V81C58.1665 81 81 58.1665 81 30H80H79C79 57.062 57.062 79 30 79V80ZM80 30V31C107.062 31 129 52.938 129 80H130H131C131 51.8335 108.167 29 80 29V30ZM130 80H129C129 107.062 107.062 129 80 129V130V131C108.167 131 131 108.167 131 80H130Z" style="mix-blend-mode:plus-lighter" mask="url(#path-1-outside-1_12_43)"/></clipPath><clipPath id="clip0_12_43">
+<rect width="160" height="160" fill="white"/>
+</clipPath>
+</defs>
+</svg>
