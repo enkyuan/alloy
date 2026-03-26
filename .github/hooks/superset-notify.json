@@ -4,28 +4,28 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "/Users/enkyuan/.superset/hooks/copilot-hook.sh sessionStart",
+        "bash": "${SUPERSET_HOOK} sessionStart",
         "timeoutSec": 5
       }
     ],
     "sessionEnd": [
       {
         "type": "command",
-        "bash": "/Users/enkyuan/.superset/hooks/copilot-hook.sh sessionEnd",
+        "bash": "${SUPERSET_HOOK} sessionEnd",
         "timeoutSec": 5
       }
     ],
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "/Users/enkyuan/.superset/hooks/copilot-hook.sh userPromptSubmitted",
+        "bash": "${SUPERSET_HOOK} userPromptSubmitted",
         "timeoutSec": 5
       }
     ],
     "postToolUse": [
       {
         "type": "command",
-        "bash": "/Users/enkyuan/.superset/hooks/copilot-hook.sh postToolUse",
+        "bash": "${SUPERSET_HOOK} postToolUse",
         "timeoutSec": 5
       }
     ]
