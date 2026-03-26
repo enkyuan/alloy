@@ -21,21 +21,23 @@ Modal decouples conversational speed from heavy-duty task execution to deliver a
 
 > **Prerequisites:** Docker Desktop, Python 3.11+, Xcode 15+, [Bun](https://bun.sh)
 
-### Desktop App Setup
+### CLI Setup & Usage
 
-1. Install workspace dependencies from the repository root:
+The project is managed via a CLI tool.
+
+1. Navigate to the CLI directory:
+   ```bash
+   cd apps/cli
+   ```
+
+2. Install dependencies:
    ```bash
    bun i
    ```
 
-2. Start the desktop app:
+3. Run the CLI (opens interactive menu for setup, startup, etc.):
    ```bash
-   bun --filter @milo/desktop dev
-   ```
-
-3. Build the desktop app:
-   ```bash
-   bun --filter @milo/desktop build
+   bun dev
    ```
 
 For detailed manual configuration, please refer to the **[Setup Guide](docs/SETUP.md)**.
