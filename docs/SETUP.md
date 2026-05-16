@@ -41,7 +41,7 @@ poetry run alembic upgrade head
 ### 5. Start development server
 
 ```bash
-poetry run uvicorn sdk.main:app --reload --host 0.0.0.0 --port 8080
+poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`

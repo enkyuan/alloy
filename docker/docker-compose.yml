@@ -143,13 +143,20 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../apps/sdk/sdk:/app/sdk:ro
+      - ../apps/sdk/src:/app/src:ro
 
   worker:
     container_name: agentkit-worker
     build:
       context: ../apps/sdk
       dockerfile: Dockerfile
+    healthcheck:
+      test:
+        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     networks:
       - agentkit_network
@@ -224,11 +231,11 @@ services:
       [
         "taskiq",
         "worker",
-        "app.core.broker:broker",
-        "app.workflows.tool_tasks",
+        "src.core.broker:broker",
+        "src.workers.tasks.tools",
       ]
     volumes:
-      - ../apps/sdk/sdk:/app/sdk:ro
+      - ../apps/sdk/src:/app/src:ro
 
   bus-worker:
     container_name: agentkit-bus-worker
@@ -236,7 +243,12 @@ services:
       context: ../apps/sdk
       dockerfile: Dockerfile
     healthcheck:
-      disable: true
+      test:
+        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     networks:
       - agentkit_network
@@ -309,9 +321,9 @@ services:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
-    command: ["python", "-m", "sdk.workers.main"]
+    command: ["python", "-m", "src.workers.main"]
     volumes:
-      - ../apps/sdk/sdk:/app/sdk:ro
+      - ../apps/sdk/src:/app/src:ro
 
   # ============================================================================
   # Supabase Services
@@ -321,6 +333,16 @@ services:
     container_name: supabase-studio
     image: supabase/studio:20240205-b145c86
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)}).catch(() => process.exit(1))\"",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - agentkit_network
     depends_on:
@@ -348,6 +370,12 @@ services:
     container_name: supabase-kong
     image: kong:2.8.1
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - agentkit_network
     ports:
@@ -436,9 +464,12 @@ services:
       GOTRUE_EXTERNAL_GOOGLE_SKIP_NONCE_CHECK: ${GOOGLE_SKIP_NONCE_CHECK}
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
 
+  # PostgREST image has no shell; use service_started, not service_healthy.
   rest:
     container_name: supabase-rest
     image: postgrest/postgrest:v12.0.1
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy
@@ -556,6 +587,20 @@ services:
   meta:
     container_name: supabase-meta
     image: supabase/postgres-meta:v0.77.2
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:8080/health",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - agentkit_network
     depends_on:
