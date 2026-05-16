@@ -1,4 +1,4 @@
-from sdk.modalities.text import TextModalityAdapter
+from src.modalities.text import TextModalityAdapter
 
 
 def test_text_modality_adapter_create_session():

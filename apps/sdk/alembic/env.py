@@ -12,10 +12,10 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import settings and models
-from sdk.core.config import settings
-from sdk.core.database import Base
-from sdk.models.conversation import Conversation
-from sdk.models.user import User  # Import all models here
+from src.core.config import settings
+from src.core.database import Base
+from src.models.conversation import Conversation
+from src.models.user import User  # Import all models here
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

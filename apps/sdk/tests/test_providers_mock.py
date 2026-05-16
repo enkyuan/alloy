@@ -1,6 +1,6 @@
 import pytest
 
-from sdk.providers.mock import MockProvider
+from src.providers.mock import MockProvider
 
 
 @pytest.mark.asyncio

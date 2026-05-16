@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture
 def mock_soniox_service():
-    with patch("sdk.api.v1.voice.soniox_service") as mock:
+    with patch("src.api.v1.voice.soniox_service") as mock:
         mock.WEBSOCKET_URL = "ws://mock-soniox/ws"
         mock.get_config.return_value = {"mock": "config"}
         yield mock
@@ -14,7 +14,7 @@ def mock_soniox_service():
 
 @pytest.fixture
 def mock_websockets_connect():
-    with patch("sdk.api.v1.voice.websockets.connect") as mock_connect:
+    with patch("src.api.v1.voice.websockets.connect") as mock_connect:
         yield mock_connect
 
 

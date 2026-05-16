@@ -2,9 +2,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from sdk.api.deps import get_current_supabase_user
-from sdk.main import app
-from sdk.models.user import User
+from src.api.deps import get_current_supabase_user
+from src.main import app
+from src.models.user import User
 
 
 @pytest.fixture

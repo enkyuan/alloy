@@ -6,7 +6,7 @@ import fakeredis.aioredis
 
 @pytest.fixture
 def mock_tool_specs():
-    with patch("sdk.api.v1.tools.list_tool_specs") as mock:
+    with patch("src.api.v1.tools.list_tool_specs") as mock:
         # Mock ToolSpec object
         spec = MagicMock()
         spec.name = "test_tool"
@@ -24,7 +24,7 @@ def mock_redis():
     async def get_redis():
         return fake_redis
 
-    with patch("sdk.api.v1.tools.get_redis_client", side_effect=get_redis):
+    with patch("src.api.v1.tools.get_redis_client", side_effect=get_redis):
         yield fake_redis
 
 

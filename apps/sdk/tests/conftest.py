@@ -14,10 +14,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from unittest.mock import AsyncMock
 
-from sdk.main import app
-from sdk.core.database import Base, get_db
-from sdk.core.redis import get_redis_client
-from sdk.api.deps import get_current_supabase_user
+from src.main import app
+from src.core.database import Base, get_db
+from src.core.redis import get_redis_client
+from src.api.deps import get_current_supabase_user
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -154,7 +154,7 @@ def mock_current_user():
 @pytest.fixture
 def mock_supabase_auth():
     """Mock the supabase_auth_service singleton methods."""
-    from sdk.core.auth import supabase_auth_service
+    from src.core.auth import supabase_auth_service
 
     original_get_user = supabase_auth_service.get_user
     original_refresh_token = supabase_auth_service.refresh_token

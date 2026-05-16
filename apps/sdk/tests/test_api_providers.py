@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 @pytest.fixture
 def mock_gemini_service():
-    with patch("sdk.api.v1.providers.get_gemini_service") as mock_get:
+    with patch("src.api.v1.providers.get_gemini_service") as mock_get:
         service_mock = MagicMock()
 
         chat_resp = MagicMock()

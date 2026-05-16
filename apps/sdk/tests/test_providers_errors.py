@@ -1,6 +1,6 @@
 import pytest
 
-from sdk.providers.errors import (
+from src.providers.errors import (
     ProviderAPIError,
     ProviderConfigError,
     ServiceAPIError,

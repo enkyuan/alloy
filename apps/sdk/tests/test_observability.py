@@ -1,8 +1,8 @@
 import pytest
 
-from sdk.events.schemas import SessionCreated, UserMessage
-from sdk.observability import EventTimeline, InMemoryMetrics, trace_span
-from sdk.observability.tracing import Span
+from src.events.schemas import SessionCreated, UserMessage
+from src.observability import EventTimeline, InMemoryMetrics, trace_span
+from src.observability.tracing import Span
 
 
 def test_in_memory_metrics_increment_and_reset():

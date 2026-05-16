@@ -1,8 +1,8 @@
 import pytest
 
-from sdk.events.schemas import SessionCreated, UserMessage
-from sdk.events.store import InMemoryEventStore
-from sdk.sessions.manager import SessionManager
+from src.events.schemas import SessionCreated, UserMessage
+from src.events.store import InMemoryEventStore
+from src.sessions.manager import SessionManager
 
 
 @pytest.mark.asyncio

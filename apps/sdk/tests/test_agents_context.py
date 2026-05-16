@@ -1,6 +1,6 @@
-from sdk.agents.context import ContextBuilder
-from sdk.agents.prompts import SystemPrompt
-from sdk.events.replay import SessionState
+from src.agents.context import ContextBuilder
+from src.agents.prompts import SystemPrompt
+from src.events.replay import SessionState
 
 
 def test_context_builder_includes_system_prompt_and_history():

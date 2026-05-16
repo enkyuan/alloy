@@ -1,13 +1,13 @@
 import pytest
 
-from sdk.agents.planner import ToolPlanner
-from sdk.events.schemas import (
+from src.agents.planner import ToolPlanner
+from src.events.schemas import (
     ToolCallCompleted,
     ToolCallFailed,
     ToolCallRequested,
     ToolCallStarted,
 )
-from sdk.events.types import EventType
+from src.events.types import EventType
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import pytest
 
-from sdk.memory import (
+from src.memory import (
     InMemoryMemoryRetriever,
     MemoryQuery,
     MemoryRecord,
