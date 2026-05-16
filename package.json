@@ -1,5 +1,5 @@
 {
-  "name": "milo",
+  "name": "agentkit",
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {

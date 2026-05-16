@@ -6,7 +6,7 @@
 .env.backup.*
 docker/.env
 docker/supabase/.env
-apps/api/.env
+apps/sdk/.env
 
 # Xcode Configuration (contains secrets)
 apps/havenos/Config.xcconfig

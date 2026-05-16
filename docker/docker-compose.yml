@@ -1,4 +1,4 @@
-# Modal Application - Unified Docker Compose Configuration
+# AgentKit Application - Unified Docker Compose Configuration
 #
 # Usage:
 #   Start all services:    docker compose up -d
@@ -7,20 +7,20 @@
 #   View logs:             docker compose logs -f [service_name]
 #
 # Services:
-#   - Modal API (FastAPI)
+#   - AgentKit SDK (FastAPI)
 #   - Redis (Caching, Sessions, Streams, TaskIQ)
 #   - Supabase Stack (Auth, Database, Storage, etc.)
 
-name: modal
+name: agentkit
 
 networks:
-  modal_network:
-    name: modal-network
+  agentkit_network:
+    name: agentkit-network
     driver: bridge
 
 services:
   # ============================================================================
-  # Modal Application Services
+  # AgentKit Application Services
   # ============================================================================
 
   redis:
@@ -30,7 +30,7 @@ services:
     ports:
       - "6379:6379"
     networks:
-      - modal_network
+      - agentkit_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -41,15 +41,15 @@ services:
     command: redis-server --appendonly yes
 
   api:
-    container_name: modal-api
+    container_name: agentkit-sdk
     build:
-      context: ../apps/api
+      context: ../apps/sdk
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "${API_PORT:-8080}:8080"
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       redis:
         condition: service_healthy
@@ -110,7 +110,7 @@ services:
       # Application
       DEBUG: ${DEBUG:-false}
       API_V1_PREFIX: /api/v1
-      PROJECT_NAME: Modal API
+      PROJECT_NAME: AgentKit SDK
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:5173}
 
       # Python logging
@@ -143,16 +143,16 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../apps/api/app:/app/app:ro
+      - ../apps/sdk/sdk:/app/sdk:ro
 
   worker:
-    container_name: modal-worker
+    container_name: agentkit-worker
     build:
-      context: ../apps/api
+      context: ../apps/sdk
       dockerfile: Dockerfile
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       redis:
         condition: service_healthy
@@ -216,7 +216,7 @@ services:
 
       # Application
       DEBUG: ${DEBUG:-false}
-      PROJECT_NAME: Modal Worker
+      PROJECT_NAME: AgentKit Worker
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
@@ -225,22 +225,21 @@ services:
         "taskiq",
         "worker",
         "app.core.broker:broker",
-        "app.services.pipeline.helpers.tool_tasks",
-        "app.services.integrations.workspace.tasks",
+        "app.workflows.tool_tasks",
       ]
     volumes:
-      - ../apps/api/app:/app/app:ro
+      - ../apps/sdk/sdk:/app/sdk:ro
 
   bus-worker:
-    container_name: modal-bus-worker
+    container_name: agentkit-bus-worker
     build:
-      context: ../apps/api
+      context: ../apps/sdk
       dockerfile: Dockerfile
     healthcheck:
       disable: true
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       redis:
         condition: service_healthy
@@ -306,13 +305,13 @@ services:
 
       # Application
       DEBUG: ${DEBUG:-false}
-      PROJECT_NAME: Modal Bus Worker
+      PROJECT_NAME: AgentKit Bus Worker
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
-    command: ["python", "-m", "app.workers.bus_worker"]
+    command: ["python", "-m", "sdk.workers.main"]
     volumes:
-      - ../apps/api/app:/app/app:ro
+      - ../apps/sdk/sdk:/app/sdk:ro
 
   # ============================================================================
   # Supabase Services
@@ -323,7 +322,7 @@ services:
     image: supabase/studio:20240205-b145c86
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       analytics:
         condition: service_healthy
@@ -350,7 +349,7 @@ services:
     image: kong:2.8.1
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     ports:
       - ${KONG_HTTP_PORT}:8000/tcp
       - ${KONG_HTTPS_PORT}:8443/tcp
@@ -376,7 +375,7 @@ services:
     container_name: supabase-auth
     image: supabase/gotrue:v2.172.1
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       db:
         condition: service_healthy
@@ -447,7 +446,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     environment:
       PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
       PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
@@ -462,7 +461,7 @@ services:
     container_name: realtime-dev.supabase-realtime
     image: supabase/realtime:v2.25.50
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       db:
         condition: service_healthy
@@ -497,7 +496,7 @@ services:
     container_name: supabase-storage
     image: supabase/storage-api:v0.46.4
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       db:
         condition: service_healthy
@@ -540,7 +539,7 @@ services:
     container_name: supabase-imgproxy
     image: darthsim/imgproxy:v3.8.0
     networks:
-      - modal_network
+      - agentkit_network
     healthcheck:
       test: ["CMD", "imgproxy", "health"]
       timeout: 5s
@@ -558,7 +557,7 @@ services:
     container_name: supabase-meta
     image: supabase/postgres-meta:v0.77.2
     networks:
-      - modal_network
+      - agentkit_network
     depends_on:
       db:
         condition: service_healthy
@@ -577,7 +576,7 @@ services:
     container_name: supabase-analytics
     image: supabase/logflare:1.10.0
     networks:
-      - modal_network
+      - agentkit_network
     restart: unless-stopped
     ports:
       - 4000:4000
@@ -614,7 +613,7 @@ services:
     image: supabase/postgres:15.8.1.060
     restart: unless-stopped
     networks:
-      - modal_network
+      - agentkit_network
     volumes:
       - ./supabase/volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
       - ./supabase/volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
@@ -659,7 +658,7 @@ services:
     container_name: supabase-vector
     image: timberio/vector:0.28.1-alpine
     networks:
-      - modal_network
+      - agentkit_network
     restart: unless-stopped
     volumes:
       - ./supabase/volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
