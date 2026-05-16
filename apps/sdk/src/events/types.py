@@ -1,0 +1,39 @@
+from enum import Enum
+
+
+class EventType(str, Enum):
+    SESSION_CREATED = "session.created"
+    SESSION_CLOSED = "session.closed"
+
+    USER_MESSAGE = "user.message"
+    USER_AUDIO_CHUNK = "user.audio.chunk"
+
+    TRANSCRIPT_PARTIAL = "transcript.partial"
+    TRANSCRIPT_FINAL = "transcript.final"
+
+    MEMORY_RETRIEVAL_STARTED = "memory.retrieval.started"
+    MEMORY_RETRIEVAL_COMPLETED = "memory.retrieval.completed"
+
+    AGENT_REASONING_STARTED = "agent.reasoning.started"
+    AGENT_MESSAGE_DELTA = "agent.message.delta"
+    AGENT_MESSAGE_COMPLETED = "agent.message.completed"
+
+    TOOL_CALL_REQUESTED = "tool.call.requested"
+    TOOL_CALL_STARTED = "tool.call.started"
+    TOOL_CALL_COMPLETED = "tool.call.completed"
+    TOOL_CALL_FAILED = "tool.call.failed"
+
+    WORKFLOW_STARTED = "workflow.started"
+    WORKFLOW_COMPLETED = "workflow.completed"
+    WORKFLOW_FAILED = "workflow.failed"
+
+    SWARM_RUN_STARTED = "swarm.run.started"
+    SWARM_AGENT_SPAWNED = "swarm.agent.spawned"
+    SWARM_AGENT_COMPLETED = "swarm.agent.completed"
+    SWARM_AGENT_FAILED = "swarm.agent.failed"
+
+    SWARM_MERGE_STARTED = "swarm.merge.started"
+    SWARM_MERGE_COMPLETED = "swarm.merge.completed"
+
+    CANCELLATION_REQUESTED = "cancellation.requested"
+    CANCELLATION_COMPLETED = "cancellation.completed"

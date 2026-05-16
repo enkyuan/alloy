@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="Modal Banner" width="100%" style="border-radius: 16px;" />
+  <img src="docs/assets/banner.svg" alt="AgentKit Banner" width="100%" style="border-radius: 16px;" />
 </p>
 
 ## Overview
 
-Modal decouples conversational speed from heavy-duty task execution to deliver a voice-first experience that feels instantaneous. It leverages a split-pipeline architecture using Redis streams for real-time voice processing and distributed queues for agentic tools.
+AgentKit decouples conversational speed from heavy-duty task execution to deliver a voice-first experience that feels instantaneous. It leverages a split-pipeline architecture using Redis streams for real-time voice processing and distributed queues for agentic tools.
 
 **Core Capabilities:**
 - **Ultra-low latency** voice interactions (<500ms).
@@ -30,12 +30,12 @@ Modal decouples conversational speed from heavy-duty task execution to deliver a
 
 2. Start the desktop app:
    ```bash
-   bun --filter @milo/desktop dev
+   bun --filter @agentkit/desktop dev
    ```
 
 3. Build the desktop app:
    ```bash
-   bun --filter @milo/desktop build
+   bun --filter @agentkit/desktop build
    ```
 
 For detailed manual configuration, please refer to the **[Setup Guide](docs/SETUP.md)**.

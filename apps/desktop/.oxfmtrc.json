@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": [
+    "dist/**",
+    "src-tauri/**",
+    "node_modules/**",
+    "vite.config.ts",
+    "tsconfig*.json"
+  ]
+}

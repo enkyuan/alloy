@@ -1,5 +1,5 @@
 {
-  "name": "@milo/desktop",
+  "name": "@agentkit/desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -11,8 +11,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "lint": "oxlint src/",
-    "format": "oxfmt --write src/",
-    "format:check": "oxfmt --check src/",
+    "format": "oxfmt -c .oxfmtrc.json --write src/",
+    "format:check": "oxfmt -c .oxfmtrc.json --check src/",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist src-tauri/target"
   },
