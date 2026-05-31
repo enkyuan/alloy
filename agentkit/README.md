@@ -125,37 +125,44 @@ layers do not import upper layers.
 
 ```
 agentkit/
-├── core/          # foundation: config, redis, db, http, auth, errors
-├── types/         # shared type definitions
-├── events/        # event envelopes, store, replay
-├── observability/ # tracing, metrics, timeline
-├── providers/     # LLM providers (gemini, kimi, mock) + errors
-├── tools/         # tool registry, execution, policies, idempotency
-├── sessions/      # session state + websocket lifecycle
-├── voice/         # STT (soniox), TTS (gemini/openai), audio — a modality
-│   ├── stt/
-│   └── tts/
-├── text/          # text modality
-├── agents/        # the agent runtime (NOT voice-specific)
-│   ├── messaging/ #   typed event bus: Bus, Bridge, RouteBuilder
-│   └── nodes/     #   reasoning nodes: ReasoningNode, AgentReasoningNode
-├── workflows/     # idempotency + queue helpers
-├── workers/       # process entrypoints + TaskIQ tasks
-└── server/        # FastAPI app + versioned routes (v1)
+├── core/             # foundation: config, redis, db, http, auth, errors
+├── types/            # shared type definitions
+├── infra/            # backbone above core
+│   ├── events/       #   event envelopes, store, replay
+│   └── observability/#   tracing, metrics, timeline
+├── modalities/       # input/output channels that plug into the runtime
+│   ├── voice/        #   STT (soniox), TTS (gemini/openai), audio
+│   │   ├── stt/
+│   │   └── tts/
+│   └── text/         #   text modality
+├── runtime/          # the agent reasoning/orchestration engine
+│   ├── agents/       #   reasoning loop (NOT voice-specific)
+│   │   ├── messaging/#     typed event bus: Bus, Bridge, RouteBuilder
+│   │   └── nodes/    #     reasoning nodes: ReasoningNode, AgentReasoningNode
+│   ├── providers/    #   LLM providers (gemini, kimi) + errors
+│   ├── tools/        #   tool registry, execution, retrieval, policies
+│   ├── sessions/     #   session state + websocket lifecycle
+│   └── workflows/    #   idempotency + queue helpers
+├── workers/          # process entrypoints + TaskIQ tasks
+└── server/           # FastAPI app + versioned routes (v1) — the `server` extra
 ```
 
-A note on naming: `agents/messaging` and `agents/nodes` are the **generic**
-agent runtime — the event bus and reasoning loop are not tied to voice. Voice
-is one modality (`voice/`) that plugs into them.
+Top-level folders are organizational groupings (`infra`, `modalities`,
+`runtime`); `core` and `types` stay at the root because nearly everything
+depends on them.
+
+A note on naming: `runtime/agents/messaging` and `runtime/agents/nodes` are the
+**generic** agent runtime — the event bus and reasoning loop are not tied to
+voice. Voice is one modality (`modalities/voice/`) that plugs into them.
 
 ### Providers and modalities are pluggable
 
-- **LLM providers** implement a common interface in `providers/` (Gemini,
-  Kimi/OpenRouter, and a mock for tests). Selected via `AGENTKIT_MODEL_PROVIDER`.
-- **TTS providers** implement the `TTSProvider` protocol in `voice/tts/` and
-  are selected via `TTS_PROVIDER` (`none` by default; `gemini` available). A
-  factory returns a no-op adapter when TTS is unconfigured, so text-only
-  operation always works.
+- **LLM providers** implement a common interface in `runtime/providers/`
+  (Gemini, Kimi/OpenRouter). Selected via `AGENTKIT_MODEL_PROVIDER`.
+- **TTS providers** implement the `TTSProvider` protocol in
+  `modalities/voice/tts/` and are selected via `TTS_PROVIDER` (`none` by
+  default; `gemini` and `openai` available). A factory returns a no-op adapter
+  when TTS is unconfigured, so text-only operation always works.
 
 ## Configuration
 

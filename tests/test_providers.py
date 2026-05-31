@@ -4,11 +4,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agentkit.core.config import settings
-from agentkit.providers.errors import ProviderAPIError, ProviderConfigError
-from agentkit.providers.gemini import GeminiProvider
-from agentkit.providers.kimi import KimiProvider
-from agentkit.providers.registry import get_provider, register_provider
-from agentkit.providers.types import ModelResponseChunk
+from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
+from agentkit.runtime.providers.gemini import GeminiProvider
+from agentkit.runtime.providers.kimi import KimiProvider
+from agentkit.runtime.providers.registry import get_provider, register_provider
+from agentkit.runtime.providers.types import ModelResponseChunk
 
 
 @pytest.mark.asyncio
@@ -89,7 +89,7 @@ async def test_kimi_provider_normalizes_mocked_streaming_response():
 
 def test_gemini_provider_remains_loadable():
     # Should not throw ImportError
-    from agentkit.providers.gemini import GeminiProvider
+    from agentkit.runtime.providers.gemini import GeminiProvider
 
     assert GeminiProvider is not None
 
@@ -97,7 +97,7 @@ def test_gemini_provider_remains_loadable():
 def test_runtime_does_not_import_provider_specific_implementation():
     import ast
 
-    from agentkit.agents import runtime
+    from agentkit.runtime.agents import runtime
 
     with open(runtime.__file__, "r") as f:
         tree = ast.parse(f.read())

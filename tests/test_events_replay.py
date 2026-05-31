@@ -1,7 +1,7 @@
 import pytest
 
-from agentkit.events.replay import ReplaySession
-from agentkit.events.schemas import (
+from agentkit.infra.events.replay import ReplaySession
+from agentkit.infra.events.schemas import (
     AgentMessageCompleted,
     SessionClosed,
     SessionCreated,
@@ -9,7 +9,7 @@ from agentkit.events.schemas import (
     TranscriptFinal,
     UserMessage,
 )
-from agentkit.events.types import EventType
+from agentkit.infra.events.types import EventType
 
 
 def test_replay_session_builds_message_history():

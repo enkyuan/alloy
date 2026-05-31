@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentkit.voice.event_models import ToolResult
+from agentkit.modalities.voice.event_models import ToolResult
 
 
 def format_response_text(tool_result: ToolResult) -> str:

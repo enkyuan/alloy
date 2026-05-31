@@ -1,4 +1,4 @@
-from agentkit.text import TextModalityAdapter
+from agentkit.modalities.text import TextModalityAdapter
 
 
 def test_text_modality_adapter_create_session():

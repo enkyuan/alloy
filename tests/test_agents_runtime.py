@@ -3,16 +3,16 @@ from typing import Any, AsyncGenerator, Dict, List
 
 import pytest
 
-from agentkit.agents.cancellation import CancellationToken
-from agentkit.agents.planner import ToolPlanner
-from agentkit.agents.runtime import AgentRuntime
-from agentkit.agents.strategy import AgentStrategy
-from agentkit.events.bus import EventBus
-from agentkit.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
-from agentkit.events.store import InMemoryEventStore
-from agentkit.events.types import EventType
-from agentkit.providers.base import ModelProvider
-from agentkit.providers.types import GenerateResponse, ModelResponseChunk
+from agentkit.runtime.agents.cancellation import CancellationToken
+from agentkit.runtime.agents.planner import ToolPlanner
+from agentkit.runtime.agents.runtime import AgentRuntime
+from agentkit.runtime.agents.strategy import AgentStrategy
+from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
+from agentkit.infra.events.store import InMemoryEventStore
+from agentkit.infra.events.types import EventType
+from agentkit.runtime.providers.base import ModelProvider
+from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
 
 
 class MockEventBus(EventBus):

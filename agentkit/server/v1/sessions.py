@@ -3,8 +3,8 @@
 from fastapi import APIRouter, Depends
 
 from agentkit.server.deps import get_current_supabase_user
-from agentkit.events.store import InMemoryEventStore
-from agentkit.sessions.manager import SessionManager
+from agentkit.infra.events.store import InMemoryEventStore
+from agentkit.runtime.sessions.manager import SessionManager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 _session_manager = SessionManager(InMemoryEventStore())

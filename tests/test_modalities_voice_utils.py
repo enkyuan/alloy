@@ -1,13 +1,13 @@
 import pytest
 
-from agentkit.voice.event_models import AgentResponse, DTMFOutputEvent
-from agentkit.voice.tts import TTSNotConfiguredError, VoiceTTSAdapter
-from agentkit.voice.turn_detection import TurnEndPolicy, resolve_turn_policy
-from agentkit.voice.utils.dtmf_lookahead_buffer import (
+from agentkit.modalities.voice.event_models import AgentResponse, DTMFOutputEvent
+from agentkit.modalities.voice.tts import TTSNotConfiguredError, VoiceTTSAdapter
+from agentkit.modalities.voice.turn_detection import TurnEndPolicy, resolve_turn_policy
+from agentkit.modalities.voice.utils.dtmf_lookahead_buffer import (
     DTMFLookAheadCharacterBuffer,
     DTMFLookAheadStringBuffer,
 )
-from agentkit.voice.utils.phone_numbers import is_e164_phone_number
+from agentkit.modalities.voice.utils.phone_numbers import is_e164_phone_number
 
 
 @pytest.mark.parametrize(

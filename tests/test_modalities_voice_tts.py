@@ -2,12 +2,12 @@
 
 import pytest
 
-from agentkit.voice.tts import (
+from agentkit.modalities.voice.tts import (
     TTSNotConfiguredError,
     VoiceTTSAdapter,
     get_tts_provider,
 )
-from agentkit.voice.event_models import AgentAudioChunk
+from agentkit.modalities.voice.event_models import AgentAudioChunk
 
 
 def test_factory_defaults_to_placeholder_adapter():
@@ -38,7 +38,7 @@ def test_factory_selects_openai():
 
 
 def test_factory_is_case_insensitive():
-    from agentkit.voice.tts.openai_provider import OpenAITTSProvider
+    from agentkit.modalities.voice.tts.openai_provider import OpenAITTSProvider
 
     assert isinstance(get_tts_provider("OpenAI"), OpenAITTSProvider)
 
@@ -46,8 +46,8 @@ def test_factory_is_case_insensitive():
 def test_providers_use_their_own_voice_model_defaults():
     """With TTS_VOICE/TTS_MODEL unset, each provider falls back to its own
     default rather than another provider's value."""
-    from agentkit.voice.tts.gemini_service import GeminiTTSService
-    from agentkit.voice.tts.openai_service import OpenAITTSService
+    from agentkit.modalities.voice.tts.gemini_service import GeminiTTSService
+    from agentkit.modalities.voice.tts.openai_service import OpenAITTSService
 
     gemini = GeminiTTSService(api_key="x")
     openai = OpenAITTSService(api_key="x")
@@ -62,7 +62,7 @@ def test_providers_use_their_own_voice_model_defaults():
 
 
 async def test_openai_provider_rejects_empty_text():
-    from agentkit.voice.tts.openai_provider import OpenAITTSProvider
+    from agentkit.modalities.voice.tts.openai_provider import OpenAITTSProvider
 
     provider = OpenAITTSProvider()
     with pytest.raises(ValueError):
@@ -125,8 +125,8 @@ class _RecordingPublisher:
 async def test_synthesize_and_publish_emits_seqed_audio_chunks():
     """The output-bridge TTS handler turns an AgentResponse into ordered
     AgentAudioChunk events on the publisher."""
-    from agentkit.agents.messaging import Message
-    from agentkit.voice.event_models import AgentResponse
+    from agentkit.runtime.agents.messaging import Message
+    from agentkit.modalities.voice.event_models import AgentResponse
     from agentkit.workers.main import _synthesize_and_publish
 
     publisher = _RecordingPublisher()
@@ -146,8 +146,8 @@ async def test_synthesize_and_publish_emits_seqed_audio_chunks():
 
 
 async def test_synthesize_and_publish_skips_empty_response():
-    from agentkit.agents.messaging import Message
-    from agentkit.voice.event_models import AgentResponse
+    from agentkit.runtime.agents.messaging import Message
+    from agentkit.modalities.voice.event_models import AgentResponse
     from agentkit.workers.main import _synthesize_and_publish
 
     publisher = _RecordingPublisher()

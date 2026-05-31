@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import msgpack
 
-from agentkit.events.envelope import build_event_envelope, to_redis_stream_fields
-from agentkit.voice.event_models import AgentResponse, ToolCall, ToolResult
+from agentkit.infra.events.envelope import build_event_envelope, to_redis_stream_fields
+from agentkit.modalities.voice.event_models import AgentResponse, ToolCall, ToolResult
 from agentkit.core.redis import RedisConfig, RedisKeys
 
 logger = logging.getLogger(__name__)

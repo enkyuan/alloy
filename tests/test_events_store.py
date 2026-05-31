@@ -1,7 +1,7 @@
 import pytest
 
-from agentkit.events.schemas import UserMessage
-from agentkit.events.store import InMemoryEventStore
+from agentkit.infra.events.schemas import UserMessage
+from agentkit.infra.events.store import InMemoryEventStore
 
 
 @pytest.mark.asyncio

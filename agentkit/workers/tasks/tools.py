@@ -13,10 +13,10 @@ from typing import Any, Dict, Optional
 
 from agentkit.core.broker import QUEUE_HIGH_PRIORITY, broker
 from agentkit.core.database import AsyncSessionLocal
-from agentkit.voice.event_models import ToolResult
+from agentkit.modalities.voice.event_models import ToolResult
 from agentkit.core.redis import get_redis_client
-from agentkit.providers.errors import ServiceNetworkError
-from agentkit.tools.registry import execute_tool
+from agentkit.runtime.providers.errors import ServiceNetworkError
+from agentkit.runtime.tools.registry import execute_tool
 from agentkit.workers.helpers.redis_events import (
     is_tool_call_retry_safe,
     clear_tool_call_execution_in_progress,

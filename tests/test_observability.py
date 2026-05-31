@@ -1,8 +1,8 @@
 import pytest
 
-from agentkit.events.schemas import SessionCreated, UserMessage
-from agentkit.observability import EventTimeline, InMemoryMetrics, trace_span
-from agentkit.observability.tracing import Span
+from agentkit.infra.events.schemas import SessionCreated, UserMessage
+from agentkit.infra.observability import EventTimeline, InMemoryMetrics, trace_span
+from agentkit.infra.observability.tracing import Span
 
 
 def test_in_memory_metrics_increment_and_reset():

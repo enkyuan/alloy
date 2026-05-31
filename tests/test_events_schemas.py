@@ -1,14 +1,14 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from agentkit.events.replay import ReplaySession
-from agentkit.events.schemas import (
+from agentkit.infra.events.replay import ReplaySession
+from agentkit.infra.events.schemas import (
     AgentKitEvent,
     AgentMessageCompleted,
     SessionCreated,
     UserMessage,
 )
-from agentkit.events.types import EventType
+from agentkit.infra.events.types import EventType
 
 
 def test_event_validation():

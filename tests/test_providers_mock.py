@@ -1,6 +1,6 @@
 import pytest
 
-from agentkit.providers.mock import MockProvider
+from agentkit.runtime.providers.mock import MockProvider
 
 
 @pytest.mark.asyncio

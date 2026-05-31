@@ -14,7 +14,7 @@ from agentkit.core.broker import broker
 from agentkit.core.database import close_async_engine
 from agentkit.core.redis import close_redis_client
 from agentkit.core.lifecycle import close_registered_services
-from agentkit.providers.errors import (
+from agentkit.runtime.providers.errors import (
     ServiceError,
     service_error_to_detail,
     service_error_to_http_status,

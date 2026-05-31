@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Any
 
-from agentkit.voice.event_models import AgentResponse, ToolCall
+from agentkit.modalities.voice.event_models import AgentResponse, ToolCall
 from agentkit.workers.helpers.redis_events import publish_user_update_safely
 
 logger = logging.getLogger(__name__)

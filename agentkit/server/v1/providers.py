@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agentkit.server.deps import get_current_supabase_user
-from agentkit.providers.gemini import get_gemini_service
+from agentkit.runtime.providers.gemini import get_gemini_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini", tags=["gemini"])

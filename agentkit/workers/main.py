@@ -2,9 +2,9 @@ import asyncio
 import logging
 import uuid
 
-from agentkit.agents.nodes.agentic import AgentReasoningNode
-from agentkit.agents.prompts import ASSISTANT_SYSTEM_INSTRUCTION
-from agentkit.voice.event_models import (
+from agentkit.runtime.agents.nodes.agentic import AgentReasoningNode
+from agentkit.runtime.agents.prompts import ASSISTANT_SYSTEM_INSTRUCTION
+from agentkit.modalities.voice.event_models import (
     AgentAudioChunk,
     AgentError,
     AgentResponse,
@@ -12,12 +12,12 @@ from agentkit.voice.event_models import (
     ToolResult,
     UserTranscriptionReceived,
 )
-from agentkit.agents.messaging import Bridge, Bus, Message
-from agentkit.workflows.queue import RedisPublisher, RedisStreamInput
+from agentkit.runtime.agents.messaging import Bridge, Bus, Message
+from agentkit.runtime.workflows.queue import RedisPublisher, RedisStreamInput
 from agentkit.core.config import get_settings
 from agentkit.core.database import get_sessionmaker
 from agentkit.core.redis import RedisConfig, RedisKeys
-from agentkit.voice.tts import (
+from agentkit.modalities.voice.tts import (
     TTSNotConfiguredError,
     TTSProvider,
     VoiceTTSAdapter,
