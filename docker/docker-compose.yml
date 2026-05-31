@@ -169,8 +169,8 @@ services:
       [
         "taskiq",
         "worker",
-        "src.core.broker:broker",
-        "src.workers.tasks.tools",
+        "agentkit.core.broker:broker",
+        "agentkit.workers.tasks.tools",
       ]
     volumes:
       - ../agentkit:/app/agentkit:ro
@@ -234,7 +234,7 @@ services:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
-    command: ["python", "-m", "src.workers.main"]
+    command: ["python", "-m", "agentkit.workers.main"]
     volumes:
       - ../agentkit:/app/agentkit:ro
 

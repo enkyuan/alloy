@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class OpenAITTSService:
         voice: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
+        settings = get_settings()
         self.api_key = api_key or settings.OPENAI_API_KEY
         self.voice = voice or settings.TTS_VOICE or self.DEFAULT_VOICE
         self.model = model or settings.TTS_MODEL or self.DEFAULT_MODEL

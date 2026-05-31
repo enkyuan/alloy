@@ -1,13 +1,22 @@
 """Agentic reasoning node with scatter-gather tool execution."""
 
 import asyncio
+import contextlib
 import logging
 import uuid
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import (
+    Any,
+    AsyncContextManager,
+    AsyncGenerator,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Union,
+)
 
 from agentkit.agents.nodes.reasoning import ReasoningNode
-from agentkit.core.config import settings
-from agentkit.core.database import AsyncSessionLocal
+from agentkit.core.config import get_settings
 from agentkit.voice.event_models import (
     AgentError,
     AgentResponse,
@@ -30,6 +39,17 @@ logger = logging.getLogger(__name__)
 # Maximum number of LLM↔tool round-trips before we force a text response.
 # Prevents runaway loops if the model keeps requesting tools indefinitely.
 MAX_TOOL_ITERATIONS = 5
+
+# A session factory yields a (possibly ``None``) DB session for tool execution.
+# Server/worker callers inject one backed by ``AsyncSessionLocal``; the default
+# yields ``None`` so embedded use needs no database.
+SessionFactory = Callable[[], AsyncContextManager[Any]]
+
+
+@contextlib.asynccontextmanager
+async def _null_session_factory() -> AsyncGenerator[None, None]:
+    """Default session factory: yields ``None`` (no database)."""
+    yield None
 
 
 def _tool_result_summary(result: ToolResult) -> str:
@@ -80,11 +100,17 @@ class AgentReasoningNode(ReasoningNode):
         system_prompt: str,
         max_context_length: int = 100,
         node_id: Optional[str] = None,
+        session_factory: Optional[SessionFactory] = None,
     ):
         super().__init__(
             system_prompt=system_prompt,
             max_context_length=max_context_length,
             node_id=node_id,
+        )
+        # Injected so tool execution stays database-free by default. Callers that
+        # need persistence (server/workers) pass a factory yielding a real session.
+        self._session_factory: SessionFactory = (
+            session_factory or _null_session_factory
         )
         logger.info(
             "AgentReasoningNode initialized",
@@ -152,7 +178,7 @@ class AgentReasoningNode(ReasoningNode):
         )
 
         try:
-            async with AsyncSessionLocal() as db:
+            async with self._session_factory() as db:
                 result_data = await execute_tool(user_id, tool_name, tool_args, db)
             return ToolResult(
                 tool_name=tool_name,
@@ -246,7 +272,7 @@ class AgentReasoningNode(ReasoningNode):
                 if dynamic_tools and "function_declarations" in dynamic_tools[0]:
                     tools_list = dynamic_tools[0]["function_declarations"]
 
-                provider = get_provider(settings.AGENTKIT_MODEL_PROVIDER)
+                provider = get_provider(get_settings().AGENTKIT_MODEL_PROVIDER)
                 response = await provider.generate(
                     messages=conversation_messages,
                     system_instruction=self.system_prompt,

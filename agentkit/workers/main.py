@@ -14,7 +14,8 @@ from agentkit.voice.event_models import (
 )
 from agentkit.agents.messaging import Bridge, Bus, Message
 from agentkit.workflows.queue import RedisPublisher, RedisStreamInput
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
+from agentkit.core.database import get_sessionmaker
 from agentkit.core.redis import RedisConfig, RedisKeys
 from agentkit.voice.tts import (
     TTSNotConfiguredError,
@@ -142,6 +143,8 @@ async def run() -> None:
     reasoning_node = AgentReasoningNode(
         system_prompt=ASSISTANT_SYSTEM_INSTRUCTION,
         node_id="agent",
+        # Worker runs with full infra: back tool execution with real DB sessions.
+        session_factory=lambda: get_sessionmaker()(),
     )
     logger.info("Initialized reasoning node", extra={"node_id": reasoning_node.id})
 
@@ -190,7 +193,7 @@ async def run() -> None:
         output_bridge.on(AgentResponse).map(synthesize_audio)
         logger.info(
             "TTS enabled for agent responses",
-            extra={"provider": settings.TTS_PROVIDER},
+            extra={"provider": get_settings().TTS_PROVIDER},
         )
 
     output_bridge.on(AgentError).map(publish_error)

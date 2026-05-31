@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from google import genai
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class GeminiService:
                 "Install it with: pip install google-genai"
             )
 
-        self.api_key = settings.GEMINI_API_KEY
+        self.api_key = get_settings().GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
             raise ValueError("GEMINI_API_KEY is required")

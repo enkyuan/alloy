@@ -2,10 +2,13 @@
 
 Build real-time, agentic voice agents in Python.
 
-`agentkit` is the backend SDK and runtime for the AgentKit project: streaming
-speech-to-text, an LLM reasoning loop with tool calling, an event-sourced
-message bus, sessions, and streaming text-to-speech. It is designed so that
-conversational latency is decoupled from heavy tool execution.
+`agentkit` is an **embeddable Python SDK** for building voice agents into your
+own platform: streaming speech-to-text, an LLM reasoning loop with tool calling
+(toolgen), an event-sourced message bus, sessions, and streaming
+text-to-speech. The core is dependency-injected and infra-free — you import the
+pieces you need. A complete reference service (FastAPI + Redis + Postgres) ships
+behind the optional `server` extra, designed so conversational latency is
+decoupled from heavy tool execution.
 
 > **Status:** pre-release / active development. The full STT → LLM → TTS path
 > is wired (Soniox STT, Gemini default LLM, Gemini/OpenAI TTS). Barge-in and
@@ -14,16 +17,44 @@ conversational latency is decoupled from heavy tool execution.
 ## Install
 
 ```bash
-pip install agentkit
+pip install agentkit            # core SDK — embed in your own app
+pip install "agentkit[server]"  # + FastAPI server, Postgres, auth (reference service)
 ```
+
+The core install is lightweight and has **no database, Supabase, or web-server
+dependency**. The heavy service stack lives behind the optional `server` extra.
 
 ## Quick start
 
+`import agentkit` works with no environment configured — you compose the
+building blocks yourself:
+
 ```python
-# coming soon — the public composition API is being finalized.
-# For now, run the server + workers locally (see "Development" below) and
-# stream audio to the STT WebSocket at /api/v1/stt.
+import agentkit
+
+# Event-sourced building blocks, all in-memory by default (no infra required):
+store = agentkit.InMemoryEventStore()
+bus = agentkit.EventBus()
+sessions = agentkit.SessionManager(store)
+
+# Toolgen: register your own tools. Schemas can be generated from Pydantic models.
+from pydantic import BaseModel
+
+class GetWeather(BaseModel):
+    city: str
+
+@agentkit.register_tool(
+    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+)
+async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
+    return {"city": args["city"], "tempF": 68}
+
+# Tools execute without a database by default; ctx.db is None unless you inject one.
+result = await agentkit.execute_tool("user-1", "get_weather", {"city": "Seattle"})
 ```
+
+To run the full real-time voice service (STT → LLM → TTS over Redis), install
+the `server` extra and use the process layout described below.
 
 ## Architecture
 
@@ -128,15 +159,18 @@ is one modality (`voice/`) that plugs into them.
 
 ## Configuration
 
-Settings load from environment variables (or a `.env` file) via
-`agentkit.core.config.Settings`. The essentials:
+Settings load lazily from environment variables (or a `.env` file) via
+`agentkit.core.config.get_settings()`. **No configuration is needed to `import
+agentkit`** — settings are only constructed when a component that needs them is
+actually used. The variables below are required only for the **server stack**
+(the `server` extra); the core SDK building blocks need none of them.
 
 | Variable | Required | Purpose |
-| -------------------------- | -------- | ----------------------------------- |
-| `DATABASE_URL` | yes | Postgres connection (asyncpg) |
-| `SUPABASE_ANON_KEY` | yes | Supabase auth |
-| `JWT_SECRET` | yes | Token signing / encryption fallback |
-| `REDIS_URL` | no | Defaults to `redis://redis:6379/0` |
+| -------------------------- | --------------- | ----------------------------------- |
+| `DATABASE_URL` | server only | Postgres connection (asyncpg) |
+| `SUPABASE_ANON_KEY` | server only | Supabase auth |
+| `JWT_SECRET` | server only | Token signing / encryption fallback |
+| `REDIS_URL` | for the bus/workers | Defaults to `redis://redis:6379/0` |
 | `SONIOX_API_KEY` | no | Enables real-time STT |
 | `AGENTKIT_MODEL_PROVIDER` | no | LLM provider (default `kimi`) |
 | `GEMINI_API_KEY` | no | Gemini LLM + TTS |
@@ -150,8 +184,9 @@ See [`.env.example`](.env.example) for the full list.
 **Prerequisites:** Python 3.11+, [Poetry](https://python-poetry.org/), Docker.
 
 ```bash
-# 1. Install dependencies (creates the venv and installs agentkit editable)
-poetry install
+# 1. Install dependencies (creates the venv and installs agentkit editable).
+#    Include the `server` extra so the database-backed tests have their deps.
+poetry install --extras server
 
 # 2. Start test dependencies (Postgres with pgvector; Redis is faked in tests)
 docker compose -f ../docker/docker-compose.yml up -d db

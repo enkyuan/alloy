@@ -7,7 +7,7 @@ from typing import Optional
 
 import redis.asyncio as redis
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ async def get_redis_client() -> redis.Redis:
     """Get or create the global Redis client."""
     global redis_client
     if redis_client is None:
+        settings = get_settings()
         logger.info("Connecting to Redis at %s", settings.REDIS_URL)
         redis_client = redis.from_url(
             settings.REDIS_URL,
@@ -34,6 +35,7 @@ async def get_redis_stream_client() -> redis.Redis:
     """Get or create a Redis client for stream consumers with raw byte payloads."""
     global redis_stream_client
     if redis_stream_client is None:
+        settings = get_settings()
         logger.info("Connecting stream Redis client at %s", settings.REDIS_URL)
         redis_stream_client = redis.from_url(
             settings.REDIS_URL,

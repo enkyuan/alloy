@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 from agentkit.providers.base import ModelProvider
 from agentkit.providers.errors import ProviderAPIError, ProviderConfigError
 from agentkit.providers.registry import register_provider
@@ -22,6 +22,7 @@ class KimiProvider(ModelProvider):
     """Kimi provider implementation, supporting OpenAI-compatible and Cloudflare endpoints."""
 
     def __init__(self, **kwargs):
+        settings = get_settings()
         self.is_cloudflare = bool(
             settings.CLOUDFLARE_ACCOUNT_ID and settings.CLOUDFLARE_API_TOKEN
         )

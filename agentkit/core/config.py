@@ -1,5 +1,6 @@
 """Application configuration and settings management."""
 
+from functools import lru_cache
 from typing import Any, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -107,5 +108,22 @@ class Settings(BaseSettings):
         return ["http://localhost:3000"]
 
 
-# Global settings instance
-settings = Settings()
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return the process-wide :class:`Settings`, constructed on first use.
+
+    Construction is deferred (rather than instantiated at import time) so that
+    ``import agentkit`` works without any environment configured. The result is
+    cached, so every caller shares one mutable instance. Tests that need a fresh
+    instance for different env can call ``get_settings.cache_clear()``.
+    """
+    return Settings()
+
+
+def __getattr__(name: str) -> Any:
+    # PEP 562: resolve ``settings`` lazily so importing this module (and the
+    # subpackages that do ``from agentkit.core.config import settings``) does
+    # not construct Settings() until an attribute is actually read.
+    if name == "settings":
+        return get_settings()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -2,10 +2,11 @@
 
 import logging
 import json
+from functools import lru_cache
 from typing import Optional, Callable, Dict, Any
 import asyncio
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ class SonioxService:
     WEBSOCKET_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
 
     def __init__(self):
+        settings = get_settings()
         if not settings.SONIOX_API_KEY:
             logger.warning(
                 "SONIOX_API_KEY is not set. Real-time transcription will not be available."
@@ -69,4 +71,19 @@ class SonioxService:
         return config
 
 
-soniox_service = SonioxService()
+@lru_cache(maxsize=1)
+def get_soniox_service() -> "SonioxService":
+    """Return the process-wide :class:`SonioxService`, built on first use.
+
+    Deferred (rather than instantiated at import time) so that importing the
+    voice package does not construct settings before the environment is ready.
+    """
+    return SonioxService()
+
+
+def __getattr__(name: str):
+    # PEP 562: resolve the ``soniox_service`` singleton lazily so importing this
+    # module does not build SonioxService() (and read settings) at import time.
+    if name == "soniox_service":
+        return get_soniox_service()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

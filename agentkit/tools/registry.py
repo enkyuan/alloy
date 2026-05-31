@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Type
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    # Imported for typing only — keeps the core tool registry usable without
+    # SQLAlchemy installed (it lives behind the optional ``server`` extra).
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -22,10 +26,15 @@ class ToolSpec:
 
 @dataclass(frozen=True)
 class ToolContext:
-    """Execution context for registered tools."""
+    """Execution context for registered tools.
+
+    ``db`` is optional: tools that don't touch the database (the default for an
+    embedded SDK) receive ``None``. Server/worker call paths inject a real
+    session when persistence is needed.
+    """
 
     user_id: str
-    db: AsyncSession
+    db: Optional["AsyncSession"] = None
 
 
 _TOOL_SPECS: Dict[str, ToolSpec] = {}
@@ -64,7 +73,10 @@ def tool_spec_from_model(
 
 
 async def execute_tool(
-    user_id: str, tool_name: str, tool_args: Dict[str, Any], db: AsyncSession
+    user_id: str,
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    db: Optional["AsyncSession"] = None,
 ) -> Dict[str, Any]:
     """Execute a registered tool call for a given user."""
     handler = _TOOL_HANDLERS.get(tool_name)
