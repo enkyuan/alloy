@@ -3,10 +3,12 @@ from httpx import AsyncClient
 from unittest.mock import patch, MagicMock
 import fakeredis.aioredis
 
+from agentkit.core.redis import RedisKeys
+
 
 @pytest.fixture
 def mock_tool_specs():
-    with patch("src.api.v1.tools.list_tool_specs") as mock:
+    with patch("agentkit.server.v1.tools.list_tool_specs") as mock:
         # Mock ToolSpec object
         spec = MagicMock()
         spec.name = "test_tool"
@@ -24,7 +26,7 @@ def mock_redis():
     async def get_redis():
         return fake_redis
 
-    with patch("src.api.v1.tools.get_redis_client", side_effect=get_redis):
+    with patch("agentkit.server.v1.tools.get_redis_client", side_effect=get_redis):
         yield fake_redis
 
 
@@ -43,8 +45,8 @@ async def test_api_tools_cache_metrics(
     async_client: AsyncClient, mock_redis, mock_current_user
 ):
     # Pre-populate fake redis
-    await mock_redis.set("agent:cache:hit", 10)
-    await mock_redis.set("agent:cache:miss", 5)
+    await mock_redis.set(RedisKeys.AGENT_CACHE_HIT, 10)
+    await mock_redis.set(RedisKeys.AGENT_CACHE_MISS, 5)
     response = await async_client.get(
         "/api/v1/tools/cache/metrics",
         headers={"Authorization": "Bearer valid_token"},
@@ -60,8 +62,8 @@ async def test_api_tools_clear_cache(
     async_client: AsyncClient, mock_redis, mock_current_user
 ):
     # Pre-populate fake redis
-    await mock_redis.set("agent:cache:hit", 10)
-    await mock_redis.set("agent:cache:temp", "val")
+    await mock_redis.set(RedisKeys.AGENT_CACHE_HIT, 10)
+    await mock_redis.set(f"{RedisKeys.AGENT_CACHE_PREFIX}temp", "val")
     response = await async_client.post(
         "/api/v1/tools/cache/clear",
         headers={"Authorization": "Bearer valid_token"},
@@ -70,4 +72,4 @@ async def test_api_tools_clear_cache(
     # It should delete keys starting with prefix AND the hit/miss keys
 
     # Verify keys are gone
-    assert await mock_redis.get("agent:cache:hit") is None
+    assert await mock_redis.get(RedisKeys.AGENT_CACHE_HIT) is None

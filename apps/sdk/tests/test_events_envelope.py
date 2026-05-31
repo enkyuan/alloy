@@ -1,11 +1,11 @@
 import pytest
 
-from src.events.envelope import (
+from agentkit.events.envelope import (
     build_event_envelope,
     is_supported_event_version,
     parse_event_envelope,
 )
-from src.events.voice_models import AgentResponse
+from agentkit.voice.event_models import AgentResponse
 
 
 def test_core_events_build_and_parse_event_envelope_with_model_payload():

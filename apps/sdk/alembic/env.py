@@ -12,10 +12,10 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import settings and models
-from src.core.config import settings
-from src.core.database import Base
-from src.models.conversation import Conversation
-from src.models.user import User  # Import all models here
+from agentkit.core.config import settings
+from agentkit.core.database import Base
+from agentkit.server.models.conversation import Conversation
+from agentkit.server.models.user import User  # Import all models here
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

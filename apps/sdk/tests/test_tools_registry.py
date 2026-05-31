@@ -2,7 +2,7 @@ import pytest
 from pydantic import BaseModel
 from unittest.mock import AsyncMock
 
-from src.tools.registry import (
+from agentkit.tools.registry import (
     ToolContext,
     ToolSpec,
     execute_tool,

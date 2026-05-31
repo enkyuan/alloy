@@ -1,6 +1,6 @@
 import pytest
 
-from src.providers.errors import (
+from agentkit.providers.errors import (
     ProviderAPIError,
     ProviderConfigError,
     ServiceAPIError,

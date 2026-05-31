@@ -1,4 +1,4 @@
-from src.workflows.idempotency import IdempotencyStore, build_idempotency_key
+from agentkit.workflows.idempotency import IdempotencyStore, build_idempotency_key
 
 
 def test_build_idempotency_key_is_stable_for_same_payload():

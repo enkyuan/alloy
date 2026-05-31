@@ -3,12 +3,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.core.config import settings
-from src.providers.errors import ProviderAPIError, ProviderConfigError
-from src.providers.gemini import GeminiProvider
-from src.providers.kimi import KimiProvider
-from src.providers.registry import get_provider, register_provider
-from src.providers.types import ModelResponseChunk
+from agentkit.core.config import settings
+from agentkit.providers.errors import ProviderAPIError, ProviderConfigError
+from agentkit.providers.gemini import GeminiProvider
+from agentkit.providers.kimi import KimiProvider
+from agentkit.providers.registry import get_provider, register_provider
+from agentkit.providers.types import ModelResponseChunk
 
 
 @pytest.mark.asyncio
@@ -16,8 +16,8 @@ async def test_provider_registry_selects_kimi_by_default():
     # Assuming settings.AGENTKIT_MODEL_PROVIDER defaults to "kimi" in test config or we mock it
     # We can just test the registry logic
     with (
-        patch("src.core.config.settings.AGENTKIT_MODEL_PROVIDER", "kimi"),
-        patch("src.core.config.settings.KIMI_API_KEY", "test_key"),
+        patch("agentkit.core.config.settings.AGENTKIT_MODEL_PROVIDER", "kimi"),
+        patch("agentkit.core.config.settings.KIMI_API_KEY", "test_key"),
     ):
         provider = get_provider("kimi")
         assert isinstance(provider, KimiProvider)
@@ -31,8 +31,8 @@ def test_missing_provider_config_fails_clearly():
 @pytest.mark.asyncio
 async def test_kimi_provider_normalizes_request_payload():
     with (
-        patch("src.core.config.settings.KIMI_API_KEY", "test_key"),
-        patch("src.core.config.settings.CLOUDFLARE_ACCOUNT_ID", None),
+        patch("agentkit.core.config.settings.KIMI_API_KEY", "test_key"),
+        patch("agentkit.core.config.settings.CLOUDFLARE_ACCOUNT_ID", None),
     ):
         provider = KimiProvider()
 
@@ -50,7 +50,7 @@ async def test_kimi_provider_normalizes_request_payload():
 
 @pytest.mark.asyncio
 async def test_kimi_provider_normalizes_mocked_streaming_response():
-    with patch("src.core.config.settings.KIMI_API_KEY", "test_key"):
+    with patch("agentkit.core.config.settings.KIMI_API_KEY", "test_key"):
         provider = KimiProvider()
 
         # Mock httpx.AsyncClient.stream
@@ -89,7 +89,7 @@ async def test_kimi_provider_normalizes_mocked_streaming_response():
 
 def test_gemini_provider_remains_loadable():
     # Should not throw ImportError
-    from src.providers.gemini import GeminiProvider
+    from agentkit.providers.gemini import GeminiProvider
 
     assert GeminiProvider is not None
 
@@ -97,7 +97,7 @@ def test_gemini_provider_remains_loadable():
 def test_runtime_does_not_import_provider_specific_implementation():
     import ast
 
-    with open("src/agents/runtime.py", "r") as f:
+    with open("src/agentkit/agents/runtime.py", "r") as f:
         tree = ast.parse(f.read())
 
     for node in ast.walk(tree):

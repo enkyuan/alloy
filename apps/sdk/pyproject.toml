@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "agentkit-sdk"
+name = "agentkit"
 version = "0.1.0"
-description = ""
+description = "Build agentic voice platforms in Python."
 authors = ["enkyuan <yuan_enkang@outlook.com>"]
 readme = "README.md"
-package-mode = false
+packages = [{ include = "agentkit", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -50,3 +50,18 @@ fakeredis = "^2.33.0"
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.coverage.run]
+source = ["agentkit"]
+branch = true
+omit = ["*/__init__.py", "*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+    "if __name__ == .__main__.:",
+]

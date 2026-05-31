@@ -1,6 +1,6 @@
 import pytest
 
-from src.memory import (
+from agentkit.memory import (
     InMemoryMemoryRetriever,
     MemoryQuery,
     MemoryRecord,

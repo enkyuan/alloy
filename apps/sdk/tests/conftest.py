@@ -1,5 +1,16 @@
 import os
 import sys
+
+# Provide safe defaults for required settings BEFORE importing the app, so that
+# `agentkit.core.config.Settings()` (instantiated at import time) does not fail
+# when these env vars are absent. Real values in the environment take precedence.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/agentkit_test_db",
+)
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+
 import pytest
 from typing import AsyncGenerator
 
@@ -14,10 +25,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from unittest.mock import AsyncMock
 
-from src.main import app
-from src.core.database import Base, get_db
-from src.core.redis import get_redis_client
-from src.api.deps import get_current_supabase_user
+from agentkit.server.app import app
+from agentkit.core.database import Base, get_db
+from agentkit.core.redis import get_redis_client
+from agentkit.server.deps import get_current_supabase_user
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
@@ -154,7 +165,7 @@ def mock_current_user():
 @pytest.fixture
 def mock_supabase_auth():
     """Mock the supabase_auth_service singleton methods."""
-    from src.core.auth import supabase_auth_service
+    from agentkit.core.auth import supabase_auth_service
 
     original_get_user = supabase_auth_service.get_user
     original_refresh_token = supabase_auth_service.refresh_token

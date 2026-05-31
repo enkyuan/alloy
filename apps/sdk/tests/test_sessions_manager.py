@@ -1,8 +1,8 @@
 import pytest
 
-from src.events.schemas import SessionCreated, UserMessage
-from src.events.store import InMemoryEventStore
-from src.sessions.manager import SessionManager
+from agentkit.events.schemas import SessionCreated, UserMessage
+from agentkit.events.store import InMemoryEventStore
+from agentkit.sessions.manager import SessionManager
 
 
 @pytest.mark.asyncio

@@ -1,1 +1,0 @@
-"""AgentKit SDK application package."""

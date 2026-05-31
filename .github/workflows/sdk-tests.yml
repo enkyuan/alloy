@@ -1,0 +1,72 @@
+name: SDK Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/sdk/**"
+      - ".github/workflows/sdk-tests.yml"
+  pull_request:
+    paths:
+      - "apps/sdk/**"
+      - ".github/workflows/sdk-tests.yml"
+
+defaults:
+  run:
+    working-directory: apps/sdk
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # pgvector image ships the `vector` extension the test DB needs.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # conftest.py builds the test DB URL from these; it also sets safe
+      # defaults for DATABASE_URL / SUPABASE_ANON_KEY / JWT_SECRET itself.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Test against the minimum supported version (pyproject: python ^3.11).
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-${{ runner.os }}-py3.11-${{ hashFiles('apps/sdk/poetry.lock') }}
+
+      - name: Install dependencies
+        # Install the project itself (not --no-root) so the `agentkit` package
+        # under src/ is importable; tests import it directly.
+        run: poetry install --no-interaction
+
+      - name: Run tests
+        # Enforce the coverage floor in CI only. Locally, `pytest` still reports
+        # coverage (via pytest.ini) but won't fail a partial/single-file run.
+        run: poetry run pytest --cov-fail-under=35

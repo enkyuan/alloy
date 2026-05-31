@@ -1,7 +1,7 @@
 import pytest
 
-from src.tools.idempotency import ToolIdempotencyGuard, build_tool_idempotency_key
-from src.tools.policies import ToolPolicy, ToolPolicyViolation
+from agentkit.tools.idempotency import ToolIdempotencyGuard, build_tool_idempotency_key
+from agentkit.tools.policies import ToolPolicy, ToolPolicyViolation
 
 
 def test_tool_policy_allowlist():
