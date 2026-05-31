@@ -6,7 +6,7 @@
 .env.backup.*
 docker/.env
 docker/supabase/.env
-apps/sdk/.env
+!.env.example
 
 # Xcode Configuration (contains secrets)
 apps/havenos/Config.xcconfig
@@ -31,6 +31,7 @@ Thumbs.db
 .vim/
 .gemini/
 .kiro/
+.cursor/
 
 # Python
 __pycache__/
@@ -70,6 +71,18 @@ venv/
 ENV/
 env/
 .venv
+
+# Python linters / type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyrefly/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Docker
 docker/supabase/volumes/db/data/

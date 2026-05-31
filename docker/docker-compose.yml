@@ -43,7 +43,7 @@ services:
   api:
     container_name: agentkit-sdk
     build:
-      context: ../apps/sdk
+      context: ..
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -108,12 +108,12 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../apps/sdk/src:/app/src:ro
+      - ../agentkit:/app/agentkit:ro
 
   worker:
     container_name: agentkit-worker
     build:
-      context: ../apps/sdk
+      context: ..
       dockerfile: Dockerfile
     healthcheck:
       test:
@@ -173,12 +173,12 @@ services:
         "src.workers.tasks.tools",
       ]
     volumes:
-      - ../apps/sdk/src:/app/src:ro
+      - ../agentkit:/app/agentkit:ro
 
   bus-worker:
     container_name: agentkit-bus-worker
     build:
-      context: ../apps/sdk
+      context: ..
       dockerfile: Dockerfile
     healthcheck:
       test:
@@ -236,7 +236,7 @@ services:
 
     command: ["python", "-m", "src.workers.main"]
     volumes:
-      - ../apps/sdk/src:/app/src:ro
+      - ../agentkit:/app/agentkit:ro
 
   # ============================================================================
   # Supabase Services

@@ -1,41 +1,93 @@
-<p align="center">
-  <img src="docs/assets/banner.svg" alt="AgentKit Banner" width="100%" style="border-radius: 16px;" />
-</p>
+# AgentKit
 
-## Overview
+AgentKit decouples conversational latency from heavy task execution. Audio
+streams in over a WebSocket, speech-to-text drives an LLM reasoning loop, and
+responses stream back as text (and, soon, synthesized speech) — while tool
+calls run asynchronously on a separate worker so the conversation never blocks.
 
-AgentKit decouples conversational speed from heavy-duty task execution to deliver a voice-first experience that feels instantaneous. It leverages a split-pipeline architecture using Redis streams for real-time voice processing and distributed queues for agentic tools.
+> **Status:** pre-release / active development. The full STT → LLM → TTS path
+> is wired; barge-in and durable persistence are in progress.
 
-**Core Capabilities:**
-- **Ultra-low latency** voice interactions (<500ms).
-- **Agentic workflow execution** (Calendar, Spotify, Email).
-- **Event-driven architecture** for scalable microservices.
+## Repository layout
 
-## Tech Stack
+The `agentkit` SDK is the root project; the client apps live under `apps/` and
+are managed as a [Bun](https://bun.sh) + [Turborepo](https://turborepo.com)
+workspace. Each unit owns its own README.
 
-- **Client:** Swift 5 (SwiftUI, MVVM, Soniox STT).
-- **Backend:** Python 3.11 (FastAPI, TaskIQ).
-- **Infrastructure:** Redis (Streams/PubSub), Supabase (Auth/PostgreSQL), Docker.
+| Path | What it is | Stack |
+| ------------------------------ | ------------------------------------------------------------------------- | ----------------------------------- |
+| [`agentkit/`](agentkit) | The `agentkit` backend SDK — voice-agent runtime, FastAPI server, workers (this is the root Python project) | Python 3.11, FastAPI, TaskIQ, Redis |
+| [`apps/web`](apps/web) | Web client | React 19, Vite |
+| [`apps/desktop`](apps/desktop) | Native desktop client | Tauri 2, React 19, Vite |
 
-## Quick Start
+The Python SDK is the heart of the project; the apps are clients that talk to
+its API. See [`agentkit/README.md`](agentkit/README.md) for the SDK
+architecture in depth.
 
-> **Prerequisites:** Docker Desktop, Python 3.11+, Xcode 15+, [Bun](https://bun.sh)
+## How the pieces fit together
 
-### Desktop App Setup
+A client streams microphone audio to the SDK's API over a WebSocket. The API
+relays it to a speech-to-text provider, publishes transcripts onto a Redis
+stream, and a worker runs the LLM reasoning loop — streaming responses back to
+the client and dispatching tool calls to a separate task queue.
 
-1. Install workspace dependencies from the repository root:
-   ```bash
-   bun i
-   ```
+```
+        ┌───────────────────────────────┐
+        │    Clients (web / desktop)    │
+        └───────────────┬───────────────┘
+                        │ WebSocket (audio ⇄ text)
+                        ▼
+        ┌───────────────────────────────┐
+        │       SDK API (FastAPI)       │
+        │    REST routes + STT socket   │
+        └───────────────┬───────────────┘
+                        │ Redis Streams / Pub-Sub
+            ┌───────────┴────────────┐
+            ▼                        ▼
+   ┌──────────────────┐    ┌──────────────────┐
+   │    bus-worker    │    │      worker      │
+   │  LLM reasoning   │◀──▶│  async tool exec │
+   │ loop + event bus │    │     (TaskIQ)     │
+   └────────┬─────────┘    └──────────────────┘
+            │
+            ▼
+   ┌──────────────────┐
+   │ Postgres + Redis │
+   └──────────────────┘
+```
 
-2. Start the desktop app:
-   ```bash
-   bun --filter @agentkit/desktop dev
-   ```
+Three processes — `api`, `bus-worker`, and `worker` — communicate over Redis
+so that slow tool execution never stalls the real-time conversation. The
+[SDK README](agentkit/README.md) breaks down each process and the event flow.
 
-3. Build the desktop app:
-   ```bash
-   bun --filter @agentkit/desktop build
-   ```
+## Getting started (development)
 
-For detailed manual configuration, please refer to the **[Setup Guide](docs/SETUP.md)**.
+**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3 and Node ≥ 22 (for the clients);
+Python 3.11+ and [Poetry](https://python-poetry.org/) (for the SDK); Docker
+(for Postgres + Redis).
+
+```bash
+# Install all JS/TS workspace dependencies from the repo root
+bun install
+
+# Run a client (Turborepo filters by workspace)
+bun --filter @agentkit/desktop dev
+bun --filter web dev
+
+# The Python SDK has its own toolchain (run from the repo root) — see its README
+poetry install && poetry run pytest
+```
+
+Per-app setup lives in each app's README; the SDK's lives in
+[`agentkit/README.md`](agentkit/README.md). For full backend configuration, see
+the [Setup Guide](docs/SETUP.md).
+
+## Repository conventions
+
+- **JS/TS** is managed by Bun workspaces + Turborepo; lint and format via
+  [oxlint](https://oxc.rs) / oxfmt (`bun run lint`, `bun run format`).
+- **Python** (the SDK) is managed independently by Poetry from the repo root;
+  it is not part of the Bun workspace.
+- Generated artifacts (`__pycache__/`, `*.pyc`, `logs/`, build output) stay out
+  of the repo.
+- Client apps go under `apps/*`. The SDK is the root project.

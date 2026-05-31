@@ -1,7 +1,7 @@
 {
   "name": "agentkit",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": ["apps/*"],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",

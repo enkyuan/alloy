@@ -8,10 +8,9 @@
 
 ## Learned Workspace Facts
 
-- The Python FastAPI agent SDK lives at `apps/sdk` (import package `src`); it was renamed from `apps/api` and is meant as a developer toolkit, not a product-specific app shell.
-- Target layout under `apps/sdk/src/`: `api/`, `core/`, `agents/`, `events/`, `providers/`, `sessions/`, `tools/`, `memory/`, `modalities/` (text + voice), `workflows/`, `observability/`, `models/`, `schemas/`, `workers/`.
-- Voice is a modality (STT, TTS, turn detection, interruption); generic agent runtime must not live under `modalities/voice`.
+- The Python FastAPI agent SDK is the ROOT project: the `agentkit` package lives at the repo root (`./agentkit/`), with `pyproject.toml`, `tests/`, `Dockerfile`, and `alembic/` at the root too. It is a developer toolkit, not a product-specific app shell. Client apps live under `apps/`.
+- Layout under `./agentkit/`: `server/` (FastAPI app + routes), `core/` (infra: redis, db, config, auth, errors), `agents/` (`messaging/` event bus, `nodes/` reasoning), `events/`, `providers/` (LLM), `sessions/`, `tools/`, `text/` + `voice/` (modalities; `voice/tts/` has Gemini + OpenAI), `workflows/`, `observability/`, `workers/`.
+- Voice is a modality (STT, TTS, turn detection, interruption); the generic agent runtime (`agents/messaging`, `agents/nodes`) is NOT voice-specific despite past naming.
 - Third-party integrations were stripped from the SDK; avoid reintroducing integration routers or services unless explicitly requested.
-- Remove legacy product branding (`milo`, `hermes`, old `modal` references) from code and Docker config when encountered.
-- Provider errors belong in `src/providers/errors.py`; avoid parallel `service_errors`-style modules.
-- Keep generated artifacts out of the repo: ignore and delete `__pycache__/`, `*.pyc`, `logs/`, and common Python tool caches per `apps/sdk/.gitignore`.
+- Provider errors belong in `agentkit/providers/errors.py`; avoid parallel `service_errors`-style modules.
+- Keep generated artifacts out of the repo: ignore and delete `__pycache__/`, `*.pyc`, `logs/`, and common Python tool caches per the root `.gitignore`.

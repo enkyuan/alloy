@@ -16,7 +16,7 @@ agentkit/
 ### 1. Navigate to API directory
 
 ```bash
-cd apps/sdk
+cd packages/sdk
 ```
 
 ### 2. Install Poetry dependencies
@@ -88,7 +88,7 @@ Point the desktop client at your local API (`http://localhost:8080` by default).
 ## Running Tests
 
 ```bash
-cd apps/sdk
+cd packages/sdk
 poetry run pytest
 ```
 

@@ -4,16 +4,18 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/sdk/**"
+      - "agentkit/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "poetry.lock"
       - ".github/workflows/sdk-tests.yml"
   pull_request:
     paths:
-      - "apps/sdk/**"
+      - "agentkit/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "poetry.lock"
       - ".github/workflows/sdk-tests.yml"
-
-defaults:
-  run:
-    working-directory: apps/sdk
 
 jobs:
   test:
@@ -59,11 +61,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-${{ runner.os }}-py3.11-${{ hashFiles('apps/sdk/poetry.lock') }}
+          key: poetry-${{ runner.os }}-py3.11-${{ hashFiles('poetry.lock') }}
 
       - name: Install dependencies
         # Install the project itself (not --no-root) so the `agentkit` package
-        # under src/ is importable; tests import it directly.
+        # is importable; tests import it directly.
         run: poetry install --no-interaction
 
       - name: Run tests
