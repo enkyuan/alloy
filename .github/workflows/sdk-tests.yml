@@ -65,8 +65,10 @@ jobs:
 
       - name: Install dependencies
         # Install the project itself (not --no-root) so the `agentkit` package
-        # is importable; tests import it directly.
-        run: poetry install --no-interaction
+        # is importable; tests import it directly. The `server` extra brings in
+        # SQLAlchemy/FastAPI, which the DB- and API-backed tests (and the shared
+        # tests/conftest.py) require.
+        run: poetry install --no-interaction --extras server
 
       - name: Run tests
         # Enforce the coverage floor in CI only. Locally, `pytest` still reports
