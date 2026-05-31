@@ -3,45 +3,47 @@
 ## Structure
 
 ```
-agentkit/
-├── apps/
-│   ├── api/          # FastAPI backend (AgentKit SDK)
-│   └── desktop/      # Tauri desktop client
-├── docker/           # Docker Compose (API, workers, Redis, Supabase)
-└── packages/         # Shared workspace packages
+.
+├── packages/
+│   ├── sdk/          # the `agentkit` SDK (Python)
+│   ├── serve/        # `agentkit-serve` — FastAPI + workers (path-depends on ../sdk)
+│   └── ts/           # `@agentkit/sdk` — TypeScript SDK
+├── demos/
+│   ├── web/          # web usage demo (React + Vite)
+│   └── desktop/      # desktop usage demo (Tauri)
+└── docker/           # Docker Compose (Postgres, Redis, Supabase)
 ```
 
 ## FastAPI Backend Setup
 
-### 1. Navigate to API directory
+The reference service is the `agentkit-serve` distribution. Run these from
+`packages/serve/`; it pulls in the `agentkit` SDK via a path dependency
+(`../sdk`).
+
+### 1. Install Poetry dependencies
 
 ```bash
-cd packages/sdk
-```
-
-### 2. Install Poetry dependencies
-
-```bash
+cd packages/serve
 poetry install
 ```
 
-### 3. Set up environment
+### 2. Set up environment
 
 ```bash
-cp .env.example .env
+cp ../docker/.env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
-### 4. Run migrations
+### 3. Run migrations
 
 ```bash
 poetry run alembic upgrade head
 ```
 
-### 5. Start development server
+### 4. Start development server
 
 ```bash
-poetry run uvicorn src.main:app --reload --host 0.0.0.0 --port 8080
+poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`
@@ -88,8 +90,11 @@ Point the desktop client at your local API (`http://localhost:8080` by default).
 ## Running Tests
 
 ```bash
-cd packages/sdk
-poetry run pytest
+# Core SDK tests (from packages/sdk/ — no database needed)
+cd packages/sdk && poetry run pytest tests/
+
+# Reference service tests (from packages/serve/ — DB tests need Postgres)
+cd packages/serve && poetry run pytest tests/
 ```
 
 ## Quick Start

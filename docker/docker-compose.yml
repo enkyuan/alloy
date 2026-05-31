@@ -108,7 +108,8 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../agentkit:/app/agentkit:ro
+      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
+      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
 
   worker:
     container_name: agentkit-worker
@@ -170,10 +171,11 @@ services:
         "taskiq",
         "worker",
         "agentkit.core.broker:broker",
-        "agentkit.workers.tasks.tools",
+        "agentkit_serve.workers.tasks.tools",
       ]
     volumes:
-      - ../agentkit:/app/agentkit:ro
+      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
+      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
 
   bus-worker:
     container_name: agentkit-bus-worker
@@ -234,50 +236,14 @@ services:
       PYTHONUNBUFFERED: 1
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
-    command: ["python", "-m", "agentkit.workers.main"]
+    command: ["python", "-m", "agentkit_serve.workers.main"]
     volumes:
-      - ../agentkit:/app/agentkit:ro
+      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
+      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
 
   # ============================================================================
   # Supabase Services
   # ============================================================================
-
-  studio:
-    container_name: supabase-studio
-    image: supabase/studio:20240205-b145c86
-    restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "node -e \"fetch('http://localhost:3000/api/platform/profile').then((r) => {if (r.status !== 200) throw new Error(r.status)}).catch(() => process.exit(1))\"",
-        ]
-      interval: 5s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    networks:
-      - agentkit_network
-    depends_on:
-      analytics:
-        condition: service_healthy
-    environment:
-      STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION}
-      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT}
-
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      AUTH_JWT_SECRET: ${JWT_SECRET}
-
-      LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
-      LOGFLARE_URL: http://analytics:4000
-      NEXT_PUBLIC_ENABLE_LOGS: true
-      NEXT_ANALYTICS_BACKEND_PROVIDER: postgres
 
   kong:
     container_name: supabase-kong
@@ -295,19 +261,17 @@ services:
       - ${KONG_HTTP_PORT}:8000/tcp
       - ${KONG_HTTPS_PORT}:8443/tcp
     depends_on:
-      analytics:
-        condition: service_healthy
+      auth:
+        condition: service_started
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
       KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
       KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
-      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
     volumes:
       - ./supabase/volumes/api/kong.yml:/home/kong/temp.yml:ro,z
     entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
@@ -319,8 +283,6 @@ services:
       - agentkit_network
     depends_on:
       db:
-        condition: service_healthy
-      analytics:
         condition: service_healthy
     healthcheck:
       test:
@@ -378,194 +340,6 @@ services:
       GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
 
   # PostgREST image has no shell; use service_started, not service_healthy.
-  rest:
-    container_name: supabase-rest
-    image: postgrest/postgrest:v12.0.1
-    healthcheck:
-      disable: true
-    depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - agentkit_network
-    environment:
-      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      PGRST_DB_SCHEMAS: ${PGRST_DB_SCHEMAS}
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_DB_USE_LEGACY_GUCS: "false"
-      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
-      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY}
-    command: "postgrest"
-
-  realtime:
-    container_name: realtime-dev.supabase-realtime
-    image: supabase/realtime:v2.25.50
-    networks:
-      - agentkit_network
-    depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "bash", "-c", "printf \\0 > /dev/tcp/127.0.0.1/4000"]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    restart: unless-stopped
-    environment:
-      PORT: 4000
-      DB_HOST: ${POSTGRES_HOST}
-      DB_PORT: ${POSTGRES_PORT}
-      DB_USER: supabase_admin
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_NAME: ${POSTGRES_DB}
-      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
-      DB_ENC_KEY: supabaserealtime
-      API_JWT_SECRET: ${JWT_SECRET}
-      FLY_ALLOC_ID: fly123
-      FLY_APP_NAME: realtime
-      SECRET_KEY_BASE: UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq
-      ERL_AFLAGS: -proto_dist inet_tcp
-      ENABLE_TAILSCALE: "false"
-      DNS_NODES: " ''"
-    command: >
-      sh -c "/app/bin/migrate && /app/bin/realtime eval 'Realtime.Release.seeds(Realtime.Repo)' && /app/bin/server"
-
-  storage:
-    container_name: supabase-storage
-    image: supabase/storage-api:v0.46.4
-    networks:
-      - agentkit_network
-    depends_on:
-      db:
-        condition: service_healthy
-      rest:
-        condition: service_started
-      imgproxy:
-        condition: service_started
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://127.0.0.1:5000/status",
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    restart: unless-stopped
-    environment:
-      ANON_KEY: ${SUPABASE_ANON_KEY}
-      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-      POSTGREST_URL: http://rest:3000
-      PGRST_JWT_SECRET: ${JWT_SECRET}
-      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
-      FILE_SIZE_LIMIT: 52428800
-      STORAGE_BACKEND: file
-      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
-      TENANT_ID: stub
-      REGION: stub
-      GLOBAL_S3_BUCKET: stub
-      ENABLE_IMAGE_TRANSFORMATION: "true"
-      IMGPROXY_URL: http://imgproxy:5001
-    volumes:
-      - ./supabase/volumes/storage:/var/lib/storage:z
-
-  imgproxy:
-    container_name: supabase-imgproxy
-    image: darthsim/imgproxy:v3.8.0
-    networks:
-      - agentkit_network
-    healthcheck:
-      test: ["CMD", "imgproxy", "health"]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    environment:
-      IMGPROXY_BIND: ":5001"
-      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
-      IMGPROXY_USE_ETAG: "true"
-      IMGPROXY_ENABLE_WEBP_DETECTION: ${IMGPROXY_ENABLE_WEBP_DETECTION}
-    volumes:
-      - ./supabase/volumes/storage:/var/lib/storage:z
-
-  meta:
-    container_name: supabase-meta
-    image: supabase/postgres-meta:v0.77.2
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://127.0.0.1:8080/health",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - agentkit_network
-    depends_on:
-      db:
-        condition: service_healthy
-      analytics:
-        condition: service_healthy
-    restart: unless-stopped
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: ${POSTGRES_HOST}
-      PG_META_DB_PORT: ${POSTGRES_PORT}
-      PG_META_DB_NAME: ${POSTGRES_DB}
-      PG_META_DB_USER: supabase_admin
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
-
-  analytics:
-    container_name: supabase-analytics
-    image: supabase/logflare:1.10.0
-    networks:
-      - agentkit_network
-    restart: unless-stopped
-    ports:
-      - 4000:4000
-    healthcheck:
-      test: ["CMD", "curl", "http://localhost:4000/health"]
-      timeout: 5s
-      interval: 5s
-      retries: 10
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      LOGFLARE_NODE_HOST: 127.0.0.1
-      DB_USERNAME: supabase_admin
-      DB_DATABASE: _supabase
-      DB_HOSTNAME: ${POSTGRES_HOST}
-      DB_PORT: ${POSTGRES_PORT}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_SCHEMA: _analytics
-      DB_POOL_SIZE: 10
-      DB_QUEUE_TARGET: 5000
-      DB_QUEUE_INTERVAL: 1000
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
-      LOGFLARE_PRIVATE_ACCESS_TOKEN: ${LOGFLARE_PRIVATE_ACCESS_TOKEN}
-      LOGFLARE_SINGLE_TENANT: "true"
-      LOGFLARE_SUPABASE_MODE: "true"
-      LOGFLARE_MIN_CLUSTER_SIZE: 1
-      POSTGRES_BACKEND_URL: postgresql://supabase_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/_supabase
-      POSTGRES_BACKEND_SCHEMA: _analytics
-      LOGFLARE_FEATURE_FLAG_OVERRIDE: multibackend=true
-
   db:
     container_name: supabase-db
     image: supabase/postgres:15.8.1.060
@@ -573,16 +347,13 @@ services:
     networks:
       - agentkit_network
     volumes:
-      - ./supabase/volumes/db/realtime.sql:/docker-entrypoint-initdb.d/migrations/99-realtime.sql:Z
-      - ./supabase/volumes/db/webhooks.sql:/docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql:Z
+      # Only the init scripts GoTrue (auth) needs to boot against Postgres.
+      # The realtime/analytics/storage/pooler/functions scripts were dropped
+      # with their services.
       - ./supabase/volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
       - ./supabase/volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
-      - ./supabase/volumes/db/_supabase.sql:/docker-entrypoint-initdb.d/init-scripts/96-_supabase.sql:Z
-      - ./supabase/volumes/db/logs.sql:/docker-entrypoint-initdb.d/init-scripts/97-logs.sql:Z
       - ./supabase/volumes/db/init/data.sql:/docker-entrypoint-initdb.d/init-scripts/01-data.sql:Z
       - ./supabase/volumes/db/data:/var/lib/postgresql/data:Z
-      - ./supabase/volumes/db/pooler.sql:/docker-entrypoint-initdb.d/migrations/99-pooler.sql:Z
-      - ./supabase/volumes/db/storage_buckets.sql:/docker-entrypoint-initdb.d/migrations/98-storage-buckets.sql:Z
       - db-config:/etc/postgresql-custom
     ports:
       - 5432:5432
@@ -591,9 +362,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    depends_on:
-      vector:
-        condition: service_healthy
     environment:
       POSTGRES_HOST: /var/run/postgresql
       PGPORT: ${POSTGRES_PORT}
@@ -611,35 +379,6 @@ services:
         "-c",
         "log_min_messages=fatal", # prevents Realtime polling queries from appearing in logs
       ]
-
-  vector:
-    container_name: supabase-vector
-    image: timberio/vector:0.28.1-alpine
-    networks:
-      - agentkit_network
-    restart: unless-stopped
-    volumes:
-      - ./supabase/volumes/logs/vector.yml:/etc/vector/vector.yml:ro,z
-      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://vector:9001/health",
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    environment:
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
-      LOGFLARE_API_KEY: ${LOGFLARE_API_KEY}
-    command: ["--config", "/etc/vector/vector.yml"]
-    security_opt:
-      - "label=disable"
 
 volumes:
   db-config:

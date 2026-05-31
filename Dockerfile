@@ -24,13 +24,14 @@ RUN pip install poetry==1.8.3
 # Configure poetry to not create a virtual environment
 RUN poetry config virtualenvs.create false
 
-# Copy the project (the `agentkit` package sits at the repo root), then
-# install it so the package is importable on the path.
+# Copy the monorepo. The Python distributions live under packages/:
+#   packages/sdk   -> the agentkit SDK
+#   packages/serve -> the FastAPI + workers service (path-depends on ../sdk)
 COPY . .
 
-# Install dependencies + the project itself (not --no-root) so `import agentkit`
-# resolves.
-RUN poetry install --no-interaction --no-ansi
+# Installing the serve distribution pulls in the SDK via its path dependency
+# (packages/serve -> ../sdk), so a single install gives both.
+RUN pip install ./packages/serve
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -43,5 +44,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application
-CMD ["uvicorn", "agentkit.server.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# Run the application (the reference service lives in agentkit-serve)
+CMD ["uvicorn", "agentkit_serve.server.app:app", "--host", "0.0.0.0", "--port", "8080"]

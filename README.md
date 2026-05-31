@@ -1,68 +1,67 @@
 # AgentKit
 
-AgentKit decouples conversational latency from heavy task execution. Audio
-streams in over a WebSocket, speech-to-text drives an LLM reasoning loop, and
-responses stream back as text (and, soon, synthesized speech) — while tool
-calls run asynchronously on a separate worker so the conversation never blocks.
+AgentKit is an embeddable SDK for building agentic platforms in Python: an agent
+runtime, tool generation, retrieval, and pluggable LLM providers, for both text
+and voice. The core is dependency-injected and infra-free. `pip install
+agentkit`, import the building blocks you need, and compose them into your own
+product.
 
-> **Status:** pre-release / active development. The full STT → LLM → TTS path
-> is wired; barge-in and durable persistence are in progress.
+The repo also ships a reference application built on the SDK: a real-time voice
+service (FastAPI, Redis, Postgres, behind the optional `server` extra) plus web
+and desktop clients.
+
+> **Status:** pre-release. The core SDK is usable today; the reference voice
+> service wires the STT → LLM → TTS path (barge-in and durable persistence are in
+> progress).
 
 ## Repository layout
 
-The `agentkit` SDK is the root project; the client apps live under `apps/` and
-are managed as a [Bun](https://bun.sh) + [Turborepo](https://turborepo.com)
+All distributions live under `packages/`; the platform demos under `demos/` are
+managed as a [Bun](https://bun.sh) + [Turborepo](https://turborepo.com)
 workspace. Each unit owns its own README.
 
 | Path | What it is | Stack |
-| ------------------------------ | ------------------------------------------------------------------------- | ----------------------------------- |
-| [`agentkit/`](agentkit) | The `agentkit` backend SDK — voice-agent runtime, FastAPI server, workers (this is the root Python project) | Python 3.11, FastAPI, TaskIQ, Redis |
-| [`apps/web`](apps/web) | Web client | React 19, Vite |
-| [`apps/desktop`](apps/desktop) | Native desktop client | Tauri 2, React 19, Vite |
+| ---------------------------------- | ------------------------------------------------------------------------- | ----------------------------------- |
+| [`packages/sdk`](packages/sdk) | The `agentkit` SDK: agent runtime, toolgen, providers, text/voice modalities | Python 3.11 |
+| [`packages/serve`](packages/serve) | `agentkit-serve` — reference FastAPI server + workers (path-depends on the SDK) | Python 3.11, FastAPI, TaskIQ, Redis |
+| [`packages/ts`](packages/ts) | `@agentkit/sdk` — the TypeScript SDK | TypeScript |
+| [`demos/web`](demos/web) | Web usage demo | React 19, Vite |
+| [`demos/desktop`](demos/desktop) | Desktop usage demo | Tauri 2, React 19, Vite |
 
-The Python SDK is the heart of the project; the apps are clients that talk to
-its API. See [`agentkit/README.md`](agentkit/README.md) for the SDK
-architecture in depth.
+The Python SDK is the heart of the project; `serve` deploys it as a service and
+the demos show how to consume it on each platform. See
+[`packages/sdk/agentkit/README.md`](packages/sdk/agentkit/README.md) for the SDK
+and its architecture in depth.
 
 ## How the pieces fit together
 
-A client streams microphone audio to the SDK's API over a WebSocket. The API
-relays it to a speech-to-text provider, publishes transcripts onto a Redis
-stream, and a worker runs the LLM reasoning loop — streaming responses back to
-the client and dispatching tool calls to a separate task queue.
+You embed the SDK in your own app, where an agent runtime drives an LLM over a
+typed event bus, generates and executes tools (concurrently, scatter-gather),
+and exchanges messages through whichever modality you wire up. The web and
+desktop demos here show how to connect to it on each platform.
 
 ```
-        ┌───────────────────────────────┐
-        │    Clients (web / desktop)    │
-        └───────────────┬───────────────┘
-                        │ WebSocket (audio ⇄ text)
-                        ▼
-        ┌───────────────────────────────┐
-        │       SDK API (FastAPI)       │
-        │    REST routes + STT socket   │
-        └───────────────┬───────────────┘
-                        │ Redis Streams / Pub-Sub
-            ┌───────────┴────────────┐
-            ▼                        ▼
-   ┌──────────────────┐    ┌──────────────────┐
-   │    bus-worker    │    │      worker      │
-   │  LLM reasoning   │◀──▶│  async tool exec │
-   │ loop + event bus │    │     (TaskIQ)     │
-   └────────┬─────────┘    └──────────────────┘
-            │
-            ▼
-   ┌──────────────────┐
-   │ Postgres + Redis │
-   └──────────────────┘
+                                                    ┌────────────────────────────┐
+   ┌─────────────────────────┐                      │ your app  (embeds the SDK) │
+   │ demo clients            │                      │                            │
+   │ web · desktop · your UI │  ◀── text/audio ──▶  │ agent runtime + event bus  │
+   └─────────────────────────┘                      │ toolgen · providers · RAG  │
+                                                    └────────────────────────────┘
+                                                                  │ ToolCall / ToolResult
+                                                                  ▼
+                                                    ┌────────────────────────────┐
+                                                    │ tools  (async, concurrent) │
+                                                    └────────────────────────────┘
 ```
 
-Three processes — `api`, `bus-worker`, and `worker` — communicate over Redis
-so that slow tool execution never stalls the real-time conversation. The
-[SDK README](agentkit/README.md) breaks down each process and the event flow.
+The reference `server` extra runs that runtime as FastAPI, Redis, and Postgres
+processes (`api`, `bus-worker`, `worker`) so heavy tool execution never stalls a
+real-time exchange; a voice client adds STT/TTS at the edge. The
+[SDK README](packages/sdk/agentkit/README.md) breaks down each process and the event flow.
 
-## Getting started (development)
+## Getting started
 
-**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3 and Node ≥ 22 (for the clients);
+**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3 and Node ≥ 22 (for the demos);
 Python 3.11+ and [Poetry](https://python-poetry.org/) (for the SDK); Docker
 (for Postgres + Redis).
 
@@ -70,24 +69,24 @@ Python 3.11+ and [Poetry](https://python-poetry.org/) (for the SDK); Docker
 # Install all JS/TS workspace dependencies from the repo root
 bun install
 
-# Run a client (Turborepo filters by workspace)
+# Run a demo (Turborepo filters by workspace)
 bun --filter @agentkit/desktop dev
 bun --filter web dev
 
-# The Python SDK has its own toolchain (run from the repo root) — see its README
-poetry install && poetry run pytest
+# The Python SDK has its own Poetry toolchain; see its README
+cd packages/sdk && poetry install && poetry run pytest
 ```
 
-Per-app setup lives in each app's README; the SDK's lives in
-[`agentkit/README.md`](agentkit/README.md). For full backend configuration, see
-the [Setup Guide](docs/SETUP.md).
+Per-demo setup lives in each demo's README; the SDK's lives in
+[`packages/sdk/agentkit/README.md`](packages/sdk/agentkit/README.md). For full
+backend configuration, see the [Setup Guide](docs/SETUP.md).
 
-## Repository conventions
+## Conventions
 
 - **JS/TS** is managed by Bun workspaces + Turborepo; lint and format via
   [oxlint](https://oxc.rs) / oxfmt (`bun run lint`, `bun run format`).
-- **Python** (the SDK) is managed independently by Poetry from the repo root;
-  it is not part of the Bun workspace.
+- **Python** (`packages/sdk`, `packages/serve`) is managed independently by
+  Poetry; it is not part of the Bun workspace.
 - Generated artifacts (`__pycache__/`, `*.pyc`, `logs/`, build output) stay out
   of the repo.
-- Client apps go under `apps/*`. The SDK is the root project.
+- Platform demos go under `demos/*`. The SDK is the root project.
