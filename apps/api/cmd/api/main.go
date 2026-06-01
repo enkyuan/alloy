@@ -39,7 +39,7 @@ func main() {
 	defer s.Close()
 
 	authSecret := mustEnv("BETTER_AUTH_SECRET")
-	port := envOr("PORT", "8090")
+	port := envOr("PORT", "8080")
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RequestID)

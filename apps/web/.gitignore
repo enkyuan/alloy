@@ -25,3 +25,6 @@ dist-ssr
 
 # TanStack Router generated tree
 src/routeTree.gen.ts
+
+# TypeScript incremental build cache
+*.tsbuildinfo

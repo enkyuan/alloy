@@ -37,6 +37,18 @@
     },
     "@agentpay/api#lint": {
       "cache": true
+    },
+    "@agentpay/auth#build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"],
+      "cache": true
+    },
+    "@agentpay/auth#dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "@agentpay/auth#lint": {
+      "cache": true
     }
   }
 }
