@@ -1,10 +1,10 @@
-import { Login } from "@/components/auth/login";
+import { LoginForm } from "@components/auth/login-form";
 
 export function LoginPage() {
   return (
     <main className="flex min-h-svh items-center justify-center p-6 md:p-10">
       <div className="w-full max-w-sm">
-        <Login />
+        <LoginForm />
       </div>
     </main>
   );

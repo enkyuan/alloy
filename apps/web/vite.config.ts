@@ -9,10 +9,10 @@ export default defineConfig({
   plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
   resolve: {
     alias: {
-      "@/components/ui": path.resolve(import.meta.dirname, "./src/components/ui"),
-      "@/components": path.resolve(import.meta.dirname, "./src/components"),
-      "@/lib": path.resolve(import.meta.dirname, "./src/lib"),
-      "@/hooks": path.resolve(import.meta.dirname, "./src/hooks"),
+      "@components/ui": path.resolve(import.meta.dirname, "./src/components/ui"),
+      "@components": path.resolve(import.meta.dirname, "./src/components"),
+      "@lib": path.resolve(import.meta.dirname, "./src/lib"),
+      "@hooks": path.resolve(import.meta.dirname, "./src/hooks"),
       "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
