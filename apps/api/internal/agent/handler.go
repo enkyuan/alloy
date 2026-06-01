@@ -1,35 +1,33 @@
-// Package agent handles agent creation and configuration.
-//
-// An Agent is a configured instance of the agentkit runtime:
-// it has a business type, a personality/system prompt, a set of
-// enabled tools (e.g. take_order, request_payment), and a linked
-// payment wallet.  The Studio uses these endpoints to build the
-// no-code agent-creation wizard.
 package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/enkyuan/alloy/apps/api/internal/middleware"
 )
 
 // Agent represents a configured agent instance.
 type Agent struct {
 	ID           string       `json:"id"`
+	OrgID        string       `json:"org_id"`
 	Name         string       `json:"name"`
 	BusinessType BusinessType `json:"business_type"`
 	SystemPrompt string       `json:"system_prompt"`
-	Tools        []string     `json:"tools"`        // e.g. ["take_order","request_payment"]
+	Tools        []string     `json:"tools"`
 	VoiceEnabled bool         `json:"voice_enabled"`
 	WalletID     string       `json:"wallet_id,omitempty"`
-	EmbedToken   string       `json:"embed_token"`  // token used by the JS widget
+	EmbedToken   string       `json:"embed_token"`
 	CreatedAt    time.Time    `json:"created_at"`
 }
 
-// BusinessType shapes the agent's defaults (system prompt, default tools).
+// BusinessType shapes the agent's defaults.
 type BusinessType string
 
 const (
@@ -42,92 +40,144 @@ const (
 
 // CreateAgentRequest is the Studio wizard payload.
 type CreateAgentRequest struct {
-	Name         string       `json:"name"`
-	BusinessType BusinessType `json:"business_type"`
-	SystemPrompt string       `json:"system_prompt,omitempty"` // auto-generated if empty
-	Tools        []string     `json:"tools,omitempty"`          // defaults applied per business_type
+	Name         string       `json:"name"          validate:"required"`
+	BusinessType BusinessType `json:"business_type"  validate:"required"`
+	SystemPrompt string       `json:"system_prompt"`
+	Tools        []string     `json:"tools"`
 	VoiceEnabled bool         `json:"voice_enabled"`
 }
 
-// Router returns the chi.Router for /v1/agents.
-func Router() http.Handler {
+// UpdateAgentRequest is the PATCH payload.
+type UpdateAgentRequest struct {
+	Name         string `json:"name"`
+	SystemPrompt string `json:"system_prompt"`
+	VoiceEnabled bool   `json:"voice_enabled"`
+}
+
+type handler struct {
+	store *agentStore
+}
+
+func Router(db *pgxpool.Pool) http.Handler {
+	h := &handler{store: newStore(db)}
 	r := chi.NewRouter()
-	r.Post("/", createAgent)
-	r.Get("/", listAgents)
-	r.Get("/{id}", getAgent)
-	r.Patch("/{id}", updateAgent)
-	r.Delete("/{id}", deleteAgent)
-	r.Get("/{id}/embed", getEmbedSnippet) // returns JS snippet
+	r.Post("/", h.createAgent)
+	r.Get("/", h.listAgents)
+	r.Get("/{id}", h.getAgent)
+	r.Patch("/{id}", h.updateAgent)
+	r.Delete("/{id}", h.deleteAgent)
+	r.Get("/{id}/embed", h.getEmbedSnippet)
 	return r
 }
 
-func createAgent(w http.ResponseWriter, r *http.Request) {
+func (h *handler) createAgent(w http.ResponseWriter, r *http.Request) {
+	orgID := middleware.OrgID(r.Context())
 	var req CreateAgentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+	if !middleware.Decode(w, r, &req) {
 		return
 	}
-
 	if req.SystemPrompt == "" {
 		req.SystemPrompt = defaultPrompt(req.BusinessType)
 	}
 	if len(req.Tools) == 0 {
 		req.Tools = defaultTools(req.BusinessType)
 	}
-
-	agent := Agent{
+	a := Agent{
 		ID:           uuid.New().String(),
+		OrgID:        orgID,
 		Name:         req.Name,
 		BusinessType: req.BusinessType,
 		SystemPrompt: req.SystemPrompt,
 		Tools:        req.Tools,
 		VoiceEnabled: req.VoiceEnabled,
 		EmbedToken:   uuid.New().String(),
-		CreatedAt:    time.Now().UTC(),
 	}
-
-	// TODO: persist to store
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(agent)
+	created, err := h.store.insert(r.Context(), a)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
 }
 
-func listAgents(w http.ResponseWriter, r *http.Request) {
-	// TODO: load from store, scoped to authenticated user/org
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode([]Agent{})
+func (h *handler) listAgents(w http.ResponseWriter, r *http.Request) {
+	orgID := middleware.OrgID(r.Context())
+	agents, err := h.store.list(r.Context(), orgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if agents == nil {
+		agents = []Agent{}
+	}
+	writeJSON(w, http.StatusOK, agents)
 }
 
-func getAgent(w http.ResponseWriter, r *http.Request) {
+func (h *handler) getAgent(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	// TODO: load from store
-	_ = id
-	http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	orgID := middleware.OrgID(r.Context())
+	a, err := h.store.get(r.Context(), id, orgID)
+	if err != nil {
+		if errors.Is(err, errNotFound) || err.Error() == "not found" {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, a)
 }
 
-func updateAgent(w http.ResponseWriter, r *http.Request) {
-	// TODO: partial update
+func (h *handler) updateAgent(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	orgID := middleware.OrgID(r.Context())
+	var req UpdateAgentRequest
+	if !middleware.Decode(w, r, &req) {
+		return
+	}
+	updated, err := h.store.update(r.Context(), id, orgID, req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+func (h *handler) deleteAgent(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	orgID := middleware.OrgID(r.Context())
+	if err := h.store.delete(r.Context(), id, orgID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func deleteAgent(w http.ResponseWriter, r *http.Request) {
-	// TODO: soft-delete
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// getEmbedSnippet returns the JS embed snippet for this agent.
-func getEmbedSnippet(w http.ResponseWriter, r *http.Request) {
+func (h *handler) getEmbedSnippet(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	// TODO: look up embed_token from store
-	snippet := map[string]string{
-		"snippet": `<script src="https://cdn.agentkit.dev/embed.js" data-agent="` + id + `" async></script>`,
+	orgID := middleware.OrgID(r.Context())
+	a, err := h.store.get(r.Context(), id, orgID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(snippet)
+	writeJSON(w, http.StatusOK, map[string]string{
+		"snippet": `<script src="https://cdn.agentpay.dev/embed.js" data-agent="` + a.EmbedToken + `" async></script>`,
+	})
 }
 
-// defaultPrompt returns a business-type-specific system prompt.
+var errNotFound = errors.New("not found")
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
 func defaultPrompt(bt BusinessType) string {
 	switch bt {
 	case BusinessTypeCafe, BusinessTypeRestaurant:
@@ -141,7 +191,6 @@ func defaultPrompt(bt BusinessType) string {
 	}
 }
 
-// defaultTools returns the default tool set for a business type.
 func defaultTools(bt BusinessType) []string {
 	switch bt {
 	case BusinessTypeCafe, BusinessTypeRestaurant:

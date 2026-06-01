@@ -8,6 +8,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@components/ui": path.resolve(import.meta.dirname, "./src/components/ui"),
       "@components": path.resolve(import.meta.dirname, "./src/components"),
