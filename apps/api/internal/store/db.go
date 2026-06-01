@@ -17,6 +17,7 @@ func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("open db pool: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	return pool, nil
