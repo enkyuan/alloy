@@ -31,4 +31,12 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // TanStack Router file routes always export a `Route` constant alongside
+    // the component — this is required by the framework, not a lint target.
+    files: ["src/routes/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+    },
+  },
 ]);
