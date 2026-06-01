@@ -2,9 +2,13 @@
 
 import asyncio
 import logging
+import hashlib
+import json
+
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from google import genai
+from google.genai import types
 
 from agentkit.core.config import get_settings
 
@@ -47,11 +51,6 @@ class GeminiService:
         """Creates or retrieves a GCP Context Cache if tokens > 32K limit."""
         if len(contents) <= 2:
             return None
-
-        import hashlib
-        import json
-
-        from google.genai import types
 
         # We cache everything except the very last interaction turn.
         cache_slice = contents[:-2]
@@ -245,6 +244,51 @@ class GeminiService:
             )
             raise
 
+    async def generate_chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.7,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ):
+        """Stream a chat response over full message history, with tools.
+
+        Mirrors :meth:`generate_chat_response` (full history + system
+        instruction + tools) but yields raw Gemini stream chunks so the caller
+        can extract both text deltas and function-call parts. Context caching is
+        intentionally not applied on the streaming path.
+        """
+        try:
+            contents = []
+            for msg in messages:
+                role = "user" if msg["role"] == "user" else "model"
+                contents.append(
+                    {"role": role, "parts": [{"text": msg.get("content", "")}]}
+                )
+
+            config: Any = {"temperature": temperature}
+            if system_instruction:
+                config["system_instruction"] = system_instruction
+            if tools:
+                config["tools"] = tools
+
+            response = await asyncio.to_thread(
+                self.client.models.generate_content_stream,
+                model=self.model,
+                contents=contents,
+                config=config,
+            )
+            iterator = iter(response)
+            while True:
+                chunk = await asyncio.to_thread(lambda: next(iterator, None))
+                if chunk is None:
+                    break
+                yield chunk
+
+        except Exception as e:
+            logger.error("Failed to generate chat stream: %s", e, exc_info=True)
+            raise
+
     def _build_generation_config(
         self,
         temperature: float,
@@ -299,11 +343,10 @@ class GeminiProvider(ModelProvider):
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
 
-        # Convert internal tools format to Gemini tools format
-        gemini_tools = None
-        if tools:
-            # We assume tools are already in the appropriate format or we construct it.
-            gemini_tools = [{"function_declarations": tools}]
+        # Translate the neutral tool payload to Gemini's function-declaration form.
+        from agentkit.runtime.tools.payload import to_gemini
+
+        gemini_tools = to_gemini(tools) or None if tools else None
 
         response = await self.service.generate_chat_response(
             messages=messages,
@@ -351,26 +394,46 @@ class GeminiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
+        import uuid
 
-        prompt = ""
-        if messages:
-            prompt = messages[-1].get("content", "")
+        from agentkit.runtime.tools.function_calls import (
+            extract_response_function_calls,
+        )
+        from agentkit.runtime.tools.payload import to_gemini
 
-        # The generic implementation currently uses generate_streaming_response which only takes a prompt.
-        # A fully robust implementation would use generate_content_stream with full messages.
-        async for chunk_text in self.service.generate_streaming_response(
-            prompt=prompt,
+        # Stream over the full message history with tools, so streaming has
+        # parity with the non-streaming generate(): both keep context and can
+        # surface tool calls.
+        gemini_tools = to_gemini(tools) if tools else None
+
+        async for chunk in self.service.generate_chat_stream(
+            messages=messages,
             system_instruction=system_instruction,
             temperature=temperature,
+            tools=gemini_tools,
         ):
             if (
                 cancellation_token
-                and hasattr(cancellation_token, "is_cancelled")
-                and cancellation_token.is_cancelled
+                and getattr(cancellation_token, "is_cancelled", False)
             ):
                 break
 
-            yield ModelResponseChunk(delta=chunk_text, tool_calls=[])
+            # `chunk.text` is a property that can raise when the chunk's parts
+            # are function calls rather than text, so access it defensively.
+            try:
+                delta = chunk.text or ""
+            except Exception:
+                delta = ""
+
+            tool_calls = []
+            for fc in extract_response_function_calls(chunk):
+                args = dict(fc.args) if fc.args else {}
+                tool_calls.append(
+                    {"id": str(uuid.uuid4()), "name": fc.name, "arguments": args}
+                )
+
+            if delta or tool_calls:
+                yield ModelResponseChunk(delta=delta, tool_calls=tool_calls)
 
 
 register_provider("gemini", GeminiProvider)

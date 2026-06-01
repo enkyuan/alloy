@@ -21,12 +21,20 @@ _LAZY: dict[str, str] = {
     "EventBus": "agentkit.infra.events",
     "EventStore": "agentkit.infra.events",
     "EventType": "agentkit.infra.events",
+    "InMemoryEventBus": "agentkit.infra.events",
     "InMemoryEventStore": "agentkit.infra.events",
+    "UserMessage": "agentkit.infra.events",
+    # Agent runtime
+    "AgentRuntime": "agentkit.runtime.agents",
+    "AgentStrategy": "agentkit.runtime.agents",
+    "CancellationToken": "agentkit.runtime.agents",
+    "ToolPlanner": "agentkit.runtime.agents",
     # Sessions
     "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",
     "SessionState": "agentkit.runtime.sessions",
     # Providers
+    "ModelProvider": "agentkit.runtime.providers",
     "get_provider": "agentkit.runtime.providers",
     "register_provider": "agentkit.runtime.providers",
     # Voice / TTS

@@ -6,6 +6,7 @@ from agentkit.infra.events.schemas import (
     SessionClosed,
     SessionCreated,
     ToolCallCompleted,
+    ToolCallFailed,
     TranscriptFinal,
     UserMessage,
 )
@@ -35,6 +36,26 @@ def test_replay_session_builds_message_history():
     assert state.messages[1]["role"] == "assistant"
     assert state.messages[2]["content"] == "voice turn"
     assert state.messages[3]["role"] == "tool"
+
+
+def test_replay_session_projects_failed_tool_call():
+    events = [
+        UserMessage(session_id="s1", content="do it", timestamp=1.0),
+        ToolCallFailed(
+            session_id="s1",
+            tool_name="search",
+            tool_call_id="c1",
+            error="boom",
+            timestamp=2.0,
+        ),
+    ]
+    state = ReplaySession(events)
+    # The failure is recorded as a tool message carrying the error, so the loop
+    # sees it instead of re-requesting the same tool.
+    tool_messages = [m for m in state.messages if m["role"] == "tool"]
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["name"] == "search"
+    assert "boom" in tool_messages[0]["content"]
 
 
 def test_replay_session_empty_log_raises():

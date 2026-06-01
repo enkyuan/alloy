@@ -20,6 +20,8 @@ def _ensure_builtin_providers_loaded() -> None:
     # Provider modules self-register through register_provider(...)
     importlib.import_module("agentkit.runtime.providers.gemini")
     importlib.import_module("agentkit.runtime.providers.kimi")
+    importlib.import_module("agentkit.runtime.providers.openai")
+    importlib.import_module("agentkit.runtime.providers.mock")
     _BUILTINS_LOADED = True
 
 

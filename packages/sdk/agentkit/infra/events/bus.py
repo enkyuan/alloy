@@ -1,11 +1,51 @@
 import asyncio
 import logging
-from typing import AsyncGenerator
+from collections import defaultdict
+from typing import AsyncGenerator, Dict, List
 
 from agentkit.core.redis import get_redis_client
 from agentkit.infra.events.schemas import AgentKitEvent
 
 logger = logging.getLogger(__name__)
+
+
+class InMemoryEventBus:
+    """In-process event bus for AgentKit events — no infra required.
+
+    The default bus for embedding the SDK: ``publish`` appends to a per-session
+    log and fans out to live subscribers, all in-process. Mirrors the Redis
+    bus's ``publish``/``subscribe`` surface so the two are interchangeable, but
+    holds nothing across processes or restarts. Use :class:`EventBus` (Redis)
+    when you need durable, cross-process hand-off.
+    """
+
+    def __init__(self) -> None:
+        self._log: Dict[str, List[AgentKitEvent]] = defaultdict(list)
+        self._subscribers: Dict[str, List["asyncio.Queue[AgentKitEvent]"]] = (
+            defaultdict(list)
+        )
+
+    async def publish(self, event: AgentKitEvent) -> str:
+        """Record an event and fan it out to live subscribers."""
+        self._log[event.session_id].append(event)
+        for queue in self._subscribers[event.session_id]:
+            queue.put_nowait(event)
+        logger.debug("Published event %s for %s", event.type, event.session_id)
+        return str(len(self._log[event.session_id]) - 1)
+
+    async def subscribe(
+        self, session_id: str
+    ) -> AsyncGenerator[AgentKitEvent, None]:
+        """Yield events for a session: the backlog first, then new ones live."""
+        queue: "asyncio.Queue[AgentKitEvent]" = asyncio.Queue()
+        for event in self._log[session_id]:
+            queue.put_nowait(event)
+        self._subscribers[session_id].append(queue)
+        try:
+            while True:
+                yield await queue.get()
+        finally:
+            self._subscribers[session_id].remove(queue)
 
 
 class EventBus:

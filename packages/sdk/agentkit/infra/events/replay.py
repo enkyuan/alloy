@@ -44,5 +44,16 @@ def ReplaySession(events: Sequence[AgentKitEvent]) -> SessionState:
             state.messages.append(
                 {"role": "tool", "name": event.tool_name, "content": str(event.result)}
             )
+        elif event.type == EventType.TOOL_CALL_FAILED:
+            # Record the failure as a tool message too, so the agent loop sees
+            # the error in history and can react, instead of re-requesting the
+            # same tool every iteration until it hits max_iterations.
+            state.messages.append(
+                {
+                    "role": "tool",
+                    "name": event.tool_name,
+                    "content": f"Error: {event.error}",
+                }
+            )
 
     return state

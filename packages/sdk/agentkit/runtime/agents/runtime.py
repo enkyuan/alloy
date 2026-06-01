@@ -8,6 +8,7 @@ from agentkit.runtime.agents.prompts import SystemPrompt
 from agentkit.runtime.agents.router import SwarmRouter
 from agentkit.runtime.agents.state import SessionStateManager
 from agentkit.runtime.agents.strategy import AgentStrategy
+from agentkit.runtime.tools.registry import ToolSpec
 from agentkit.infra.events.bus import EventBus
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
@@ -39,6 +40,7 @@ class AgentRuntime:
         planner: ToolPlanner,
         system_prompt: str = "You are a helpful assistant.",
         strategy: Optional[AgentStrategy] = None,
+        tools: Optional[List[ToolSpec]] = None,
     ):
         self.bus = bus
         self.store = store
@@ -48,6 +50,10 @@ class AgentRuntime:
         self.strategy = strategy or AgentStrategy()
         self.state_manager = SessionStateManager(store)
         self.router = SwarmRouter()
+        # Tools surfaced to the provider each turn. Empty by default, so a
+        # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
+        # registry, or a curated subset (e.g. from a ToolRetriever).
+        self.tools = tools or []
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -71,8 +77,17 @@ class AgentRuntime:
             state = await self.state_manager.load_state(session_id)
             messages = ContextBuilder.build_messages(state, self.prompt)
 
-            # 2. Fetch available tools (in a real setup, connect to ToolRetriever here)
-            tools: List[Dict[str, Any]] = []
+            # 2. Surface available tools to the provider. The payload is
+            # provider-neutral (name/description/parameters); each provider
+            # translates it to its own function-calling format at its boundary.
+            tools: List[Dict[str, Any]] = [
+                {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": spec.parameters,
+                }
+                for spec in self.tools
+            ]
 
             full_response = ""
             tool_calls = []

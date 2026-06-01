@@ -70,8 +70,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-3-flash-preview"
 
-    # OpenAI (currently used for TTS)
+    # OpenAI (LLM provider + TTS)
     OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_BASE_URL: Optional[str] = None
 
     # Application
     DEBUG: bool = False

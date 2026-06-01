@@ -28,7 +28,7 @@ import agentkit
 
 # Event-sourced building blocks, all in-memory by default (no infra required):
 store = agentkit.InMemoryEventStore()
-bus = agentkit.EventBus()
+bus = agentkit.InMemoryEventBus()
 sessions = agentkit.SessionManager(store)
 
 # Toolgen: register your own tools. Schemas can be generated from Pydantic models.
@@ -46,6 +46,60 @@ async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
 # Tools execute without a database by default; ctx.db is None unless you inject one.
 result = await agentkit.execute_tool("user-1", "get_weather", {"city": "Seattle"})
 ```
+
+### Run an agent
+
+`AgentRuntime` is the provider-agnostic ReAct loop: it projects session state
+from the event log, calls a `ModelProvider`, and executes tool calls
+scatter-gather, looping until the model is done. It needs no infra — the built-in
+`mock` provider runs the whole loop with no API key, which is the zero-setup way
+to see it work (swap in `get_provider("kimi")` or another provider for real
+generations).
+
+```python
+import agentkit
+
+store = agentkit.InMemoryEventStore()
+bus = agentkit.InMemoryEventBus()
+
+# A tool the agent can call. (The built-in mock provider calls tools with empty
+# arguments, so give it one that needs none to see the loop run cleanly.)
+@agentkit.register_tool(
+    agentkit.ToolSpec(
+        name="server_time",
+        description="Return the current server time.",
+        parameters={"type": "object", "properties": {}, "required": []},
+    )
+)
+async def server_time(ctx: agentkit.ToolContext, args: dict) -> dict:
+    import time
+    return {"epoch": time.time()}
+
+# The planner runs tool calls the model requests; wire it to execute_tool so the
+# tools you registered are reachable.
+planner = agentkit.ToolPlanner(
+    executor=lambda name, args: agentkit.execute_tool("user-1", name, args)
+)
+
+runtime = agentkit.AgentRuntime(
+    bus=bus,
+    store=store,
+    provider=agentkit.get_provider("mock"),
+    planner=planner,
+    tools=agentkit.list_tool_specs(),  # surface registered tools to the model
+)
+
+# Seed a user turn, then run the loop. Emitted events land in the store: the
+# mock requests the tool, the planner runs it, and the loop finishes.
+await store.append(agentkit.UserMessage(session_id="s1", content="What time is it?"))
+await runtime.run_turn("s1")
+
+state = await store.get_events("s1")  # AgentMessageDelta/Completed, ToolCall* events
+```
+
+> The `mock` provider runs the whole loop with no API key — ideal for a first
+> run and for tests. Swap in `get_provider("kimi")` (or another provider, with
+> its key set) for real generations.
 
 For the full real-time voice service (STT → LLM → TTS over Redis), install the
 `server` extra and use the process layout below.
@@ -124,7 +178,7 @@ agentkit/
     ├── agents/       #   reasoning loop (NOT voice-specific)
     │   ├── messaging/#     typed event bus: Bus, Bridge, RouteBuilder
     │   └── nodes/    #     reasoning nodes: ReasoningNode, AgentReasoningNode
-    ├── providers/    #   LLM providers (gemini, kimi) + errors
+    ├── providers/    #   LLM providers (gemini, kimi, openai, mock) + errors
     ├── tools/        #   tool registry, execution, retrieval, policies
     ├── sessions/     #   session state + websocket lifecycle
     └── workflows/    #   idempotency + queue helpers
@@ -141,7 +195,10 @@ voice. Voice is one modality under `modalities/voice/` that plugs into it.
 ### Providers and modalities are pluggable
 
 - **LLM providers** implement a common interface in `runtime/providers/`
-  (Gemini, Kimi/OpenRouter). Selected via `AGENTKIT_MODEL_PROVIDER`.
+  (Gemini, Kimi/OpenRouter, OpenAI, plus a keyless `mock`). Selected via
+  `AGENTKIT_MODEL_PROVIDER` (default `kimi`). Tools are passed to providers in a
+  neutral `[{name, description, parameters}]` format; each provider translates it
+  to its own function-calling shape, so a tool works across providers unchanged.
 - **TTS providers** implement the `TTSProvider` protocol in
   `modalities/voice/tts/` and are selected via `TTS_PROVIDER` (`none` by
   default; `gemini` and `openai` available). A factory returns a no-op adapter
@@ -162,9 +219,10 @@ none of them.
 | `JWT_SECRET` | server only | Token signing / encryption fallback |
 | `REDIS_URL` | for the bus/workers | Defaults to `redis://redis:6379/0` |
 | `SONIOX_API_KEY` | no | Enables real-time STT |
-| `AGENTKIT_MODEL_PROVIDER` | no | LLM provider (default `kimi`) |
+| `AGENTKIT_MODEL_PROVIDER` | no | LLM provider: `kimi` (default), `gemini`, `openai`, `mock` |
 | `GEMINI_API_KEY` | no | Gemini LLM + TTS |
-| `OPENAI_API_KEY` | no | OpenAI TTS |
+| `OPENAI_API_KEY` | no | OpenAI LLM + TTS |
+| `OPENAI_MODEL` | no | OpenAI model (default `gpt-4o`) |
 | `TTS_PROVIDER` | no | `none` (default), `gemini`, or `openai` |
 
 See [`.env.example`](.env.example) for the full list.

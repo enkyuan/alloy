@@ -4,6 +4,7 @@ import uuid
 
 from agentkit.runtime.agents.nodes.agentic import AgentReasoningNode
 from agentkit.runtime.agents.prompts import ASSISTANT_SYSTEM_INSTRUCTION
+from agentkit.infra.realtime.redis_history import RedisHistoryStore
 from agentkit.modalities.voice.event_models import (
     AgentAudioChunk,
     AgentError,
@@ -143,8 +144,10 @@ async def run() -> None:
     reasoning_node = AgentReasoningNode(
         system_prompt=ASSISTANT_SYSTEM_INSTRUCTION,
         node_id="agent",
-        # Worker runs with full infra: back tool execution with real DB sessions.
+        # Worker runs with full infra: back tool execution with real DB sessions
+        # and conversation history with Redis (durable, cross-process).
         session_factory=lambda: get_sessionmaker()(),
+        history_store=RedisHistoryStore(),
     )
     logger.info("Initialized reasoning node", extra={"node_id": reasoning_node.id})
 

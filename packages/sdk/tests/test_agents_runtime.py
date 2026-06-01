@@ -11,8 +11,10 @@ from agentkit.infra.events.bus import EventBus
 from agentkit.infra.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
 from agentkit.infra.events.store import InMemoryEventStore
 from agentkit.infra.events.types import EventType
+from agentkit.runtime.providers import get_provider
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from agentkit.runtime.tools.registry import ToolSpec
 
 
 class MockEventBus(EventBus):
@@ -83,6 +85,84 @@ async def test_agent_runtime_basic_turn():
     ]
     assert len(completed_events) == 1
     assert completed_events[0].content == "Hello World!"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_tool_loop_end_to_end():
+    """A full request -> execute -> continue loop using the registered mock.
+
+    Proves the infra-free, public path: ``get_provider("mock")`` plus a tool
+    spec drives the model to request a tool, the planner executes it, and the
+    loop re-reads state (now containing the tool result) and finishes.
+    """
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+
+    executed: List[str] = []
+
+    async def executor(name: str, args: Dict[str, Any]) -> Any:
+        executed.append(name)
+        return {"ok": True}
+
+    planner = ToolPlanner(executor=executor)
+    provider = get_provider("mock")
+
+    tools = [
+        ToolSpec(
+            name="lookup",
+            description="Look something up.",
+            parameters={"type": "object", "properties": {}, "required": []},
+        )
+    ]
+
+    runtime = AgentRuntime(
+        bus=bus, store=store, provider=provider, planner=planner, tools=tools
+    )
+
+    await store.append(UserMessage(session_id="tool-1", content="Use a tool"))
+    await runtime.run_turn("tool-1")
+
+    events = await store.get_events("tool-1")
+    types = [e.type for e in events]
+
+    # The tool was actually executed exactly once...
+    assert executed == ["lookup"]
+    # ...with the full lifecycle emitted by the planner...
+    assert EventType.TOOL_CALL_REQUESTED in types
+    assert EventType.TOOL_CALL_STARTED in types
+    assert EventType.TOOL_CALL_COMPLETED in types
+    # ...and the loop continued past the tool to a final text message.
+    completed = [e for e in events if e.type == EventType.AGENT_MESSAGE_COMPLETED]
+    assert len(completed) == 1
+    assert completed[0].content == "mock"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_no_tools_runs_clean():
+    """With no tools configured the loop still runs a plain text turn."""
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+    planner = ToolPlanner(executor=mock_executor)
+    provider = get_provider("mock")
+
+    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+
+    await store.append(UserMessage(session_id="notools-1", content="Hi"))
+    await runtime.run_turn("notools-1")
+
+    events = await store.get_events("notools-1")
+    types = [e.type for e in events]
+
+    assert EventType.TOOL_CALL_REQUESTED not in types
+    completed = [e for e in events if e.type == EventType.AGENT_MESSAGE_COMPLETED]
+    assert len(completed) == 1
+    assert completed[0].content == "mock"
+
+
+@pytest.mark.asyncio
+async def test_get_provider_mock_is_registered():
+    """The mock provider is reachable through the public registry."""
+    assert get_provider("mock") is not None
 
 
 @pytest.mark.asyncio

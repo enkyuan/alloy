@@ -90,7 +90,11 @@ class KimiProvider(ModelProvider):
             payload["max_tokens"] = max_tokens
 
         if tools:
-            payload["tools"] = tools
+            # Translate the neutral tool payload to OpenAI's function-tool form
+            # (the OpenRouter/Cloudflare endpoints are OpenAI-compatible).
+            from agentkit.runtime.tools.payload import to_openai
+
+            payload["tools"] = to_openai(tools)
 
         if response_format:
             payload["response_format"] = response_format

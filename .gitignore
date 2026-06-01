@@ -122,8 +122,11 @@ DerivedData/
 *.xcscmblueprint
 
 # Swift Package Manager
+# NOTE: the SwiftPM `Packages/` pattern is intentionally omitted — on a
+# case-insensitive filesystem (macOS default) it matches this monorepo's
+# lowercase `packages/` and silently ignores every newly added package file.
+# This repo has no Swift code; re-add an anchored pattern if that changes.
 .build/
-Packages/
 Package.pins
 Package.resolved
 *.swiftpm

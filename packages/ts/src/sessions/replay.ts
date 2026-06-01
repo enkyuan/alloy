@@ -1,0 +1,88 @@
+/**
+ * Session-state projection from the event log, mirroring
+ * `agentkit.infra.events.replay`. The append-only log is the source of truth;
+ * `SessionState` is a read model derived by replaying events in time order.
+ */
+import { EventType } from "../events/types";
+import type { AgentKitEvent } from "../events/schemas";
+
+/** A single conversation turn in the projected state. */
+export interface Message {
+  role: "user" | "assistant" | "tool";
+  content: string;
+  /** Set only for tool messages. */
+  name?: string;
+}
+
+/** A projection of the event log into current session state. */
+export interface SessionState {
+  sessionId: string;
+  isActive: boolean;
+  messages: Message[];
+}
+
+/**
+ * Reconstruct session state by replaying a sequence of events. Events are
+ * sorted by timestamp before projection. Throws on an empty log, matching the
+ * Python implementation.
+ */
+export function replaySession(events: readonly AgentKitEvent[]): SessionState {
+  const first = events[0];
+  if (first === undefined) {
+    throw new Error("Cannot replay empty event log");
+  }
+
+  const state: SessionState = {
+    sessionId: first.session_id,
+    isActive: false,
+    messages: [],
+  };
+
+  const ordered = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  for (const event of ordered) {
+    switch (event.type) {
+      case EventType.SESSION_CREATED:
+        state.isActive = true;
+        break;
+      case EventType.SESSION_CLOSED:
+        state.isActive = false;
+        break;
+      case EventType.USER_MESSAGE:
+        state.messages.push({ role: "user", content: event.content });
+        break;
+      case EventType.AGENT_MESSAGE_COMPLETED:
+        state.messages.push({ role: "assistant", content: event.content });
+        break;
+      case EventType.TRANSCRIPT_FINAL:
+        // For voice sessions, the final transcript acts as a user message.
+        state.messages.push({ role: "user", content: event.text });
+        break;
+      case EventType.TOOL_CALL_COMPLETED:
+        state.messages.push({
+          role: "tool",
+          name: event.tool_name,
+          content: stringifyResult(event.result),
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  return state;
+}
+
+/**
+ * Render a tool result as message content. Objects are JSON-encoded (the Python
+ * SDK uses `str()`, which yields an unparseable repr; JSON is the useful TS
+ * equivalent); primitives fall back to `String`.
+ */
+function stringifyResult(result: unknown): string {
+  if (result !== null && typeof result === "object") {
+    return JSON.stringify(result);
+  }
+  return String(result);
+}
+
+/** Alias matching the Python public name `ReplaySession`. */
+export const ReplaySession = replaySession;

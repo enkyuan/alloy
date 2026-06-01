@@ -25,14 +25,13 @@ from agentkit.modalities.voice.event_models import (
     UserTranscriptionReceived,
 )
 from agentkit.modalities.voice.event_registry import EventInstance
-from agentkit.core.redis import get_redis_client
+from agentkit.runtime.agents.history import HistoryStore, InMemoryHistoryStore
 from agentkit.runtime.providers.registry import get_provider
 from agentkit.runtime.agents.nodes.conversation_context import ConversationContext
 from agentkit.runtime.agents.messaging.bus import Message
 from agentkit.runtime.tools.payload import build_tools_payload
 from agentkit.runtime.tools.registry import execute_tool
 from agentkit.runtime.tools.retriever import get_tool_retriever
-from agentkit.infra.realtime.redis_events import append_history, get_history
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +100,7 @@ class AgentReasoningNode(ReasoningNode):
         max_context_length: int = 100,
         node_id: Optional[str] = None,
         session_factory: Optional[SessionFactory] = None,
+        history_store: Optional[HistoryStore] = None,
     ):
         super().__init__(
             system_prompt=system_prompt,
@@ -112,28 +112,29 @@ class AgentReasoningNode(ReasoningNode):
         self._session_factory: SessionFactory = (
             session_factory or _null_session_factory
         )
+        # Conversation history backend. In-memory by default (no infra); the
+        # reference service injects a Redis-backed store for durable history.
+        self._history: HistoryStore = history_store or InMemoryHistoryStore()
         logger.info(
             "AgentReasoningNode initialized",
             extra={"node_id": self.id, "max_context_length": max_context_length},
         )
 
     # ------------------------------------------------------------------
-    # Redis history helpers
+    # Conversation history helpers
     # ------------------------------------------------------------------
 
-    async def _append_to_redis(self, redis: Any, user_id: str, event: Any) -> None:
-        """Persist an event into the Redis conversation history."""
+    async def _append_to_history(self, user_id: str, event: Any) -> None:
+        """Persist an event into the conversation history store."""
         if isinstance(event, UserTranscriptionReceived):
-            await append_history(
-                redis,
+            await self._history.append(
                 user_id,
                 "user",
                 event.content,
                 history_limit=self.max_context_length,
             )
         elif isinstance(event, AgentResponse):
-            await append_history(
-                redis,
+            await self._history.append(
                 user_id,
                 "assistant",
                 event.content,
@@ -142,8 +143,7 @@ class AgentReasoningNode(ReasoningNode):
         elif isinstance(event, ToolResult):
             summary = _tool_result_summary(event)
             if summary:
-                await append_history(
-                    redis,
+                await self._history.append(
                     user_id,
                     "assistant",
                     summary,
@@ -157,7 +157,6 @@ class AgentReasoningNode(ReasoningNode):
     async def _execute_single_tool(
         self,
         call: Any,
-        redis: Any,
         user_id: str,
     ) -> ToolResult:
         """Execute one tool call, returning a ``ToolResult`` regardless of outcome."""
@@ -208,10 +207,9 @@ class AgentReasoningNode(ReasoningNode):
             logger.warning("Missing user_id on incoming message")
             return
 
-        redis = await get_redis_client()
-        await self._append_to_redis(redis, user_id, message.event)
+        await self._append_to_history(user_id, message.event)
 
-        conversation_messages = await get_history(redis, user_id)
+        conversation_messages = await self._history.get(user_id)
 
         context = ConversationContext(
             events=[message.event],
@@ -219,12 +217,11 @@ class AgentReasoningNode(ReasoningNode):
             metadata={
                 "user_id": user_id,
                 "conversation_messages": conversation_messages,
-                "redis": redis,
             },
         )
 
         async for chunk in self.process_context(context):
-            await self._append_to_redis(redis, user_id, chunk)
+            await self._append_to_history(user_id, chunk)
             yield chunk
 
     # ------------------------------------------------------------------
@@ -238,7 +235,6 @@ class AgentReasoningNode(ReasoningNode):
         conversation_messages: List[Dict[str, str]] = context.metadata.get(
             "conversation_messages", []
         )
-        redis: Any = context.metadata.get("redis") or await get_redis_client()
         last_event = context.events[-1] if context.events else None
 
         # RAG-based tool retrieval: only on fresh user input.
@@ -258,19 +254,9 @@ class AgentReasoningNode(ReasoningNode):
 
             # ---- LLM call ------------------------------------------------
             try:
-                dynamic_tools = (
-                    build_tools_payload(allowed_names=top_tools)
-                    if top_tools is not None
-                    else build_tools_payload()
-                )
-
-                # In build_tools_payload, the return structure is [{"function_declarations": [...]}] for Gemini.
-                # However, the generic provider expects a flat list of tool schemas for standard abstraction,
-                # but we'll let the provider handle it or we adjust dynamic_tools here.
-                # Since dynamic_tools is currently returning [{"function_declarations": ...}], we'll extract it.
-                tools_list = []
-                if dynamic_tools and "function_declarations" in dynamic_tools[0]:
-                    tools_list = dynamic_tools[0]["function_declarations"]
+                # Neutral tool payload (flat list); the provider translates it
+                # to its own function-calling format at its boundary.
+                tools_list = build_tools_payload(allowed_names=top_tools)
 
                 provider = get_provider(get_settings().AGENTKIT_MODEL_PROVIDER)
                 response = await provider.generate(
@@ -305,18 +291,15 @@ class AgentReasoningNode(ReasoningNode):
             )
 
             results: list[ToolResult] = await asyncio.gather(
-                *(
-                    self._execute_single_tool(fc, redis, user_id)
-                    for fc in function_calls
-                )
+                *(self._execute_single_tool(fc, user_id) for fc in function_calls)
             )
 
-            # Splice results into conversation and Redis history.
+            # Splice results into conversation and history.
             for result in results:
                 # Surface raw tool results to downstream clients so they can
                 # execute client-side actions (e.g. Spotify app playback).
                 yield result
-                await self._append_to_redis(redis, user_id, result)
+                await self._append_to_history(user_id, result)
                 conversation_messages.append(
                     {
                         "role": "assistant",
