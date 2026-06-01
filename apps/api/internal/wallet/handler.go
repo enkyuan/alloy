@@ -1,121 +1,132 @@
-// Package wallet handles wallet creation and auto-configuration.
-//
-// A Wallet is a Natural (or compatible) account where the business
-// receives agent-collected payments.  The Studio can either walk the
-// user through KYB manually or trigger an auto-configure flow that
-// creates a wallet and initiates KYB verification in the background.
 package wallet
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/enkyuan/alloy/apps/api/internal/middleware"
 )
 
-// WalletStatus tracks where the wallet is in its lifecycle.
 type WalletStatus string
 
 const (
-	WalletStatusPending    WalletStatus = "pending"     // created, KYB not started
-	WalletStatusVerifying  WalletStatus = "verifying"   // KYB in progress
-	WalletStatusActive     WalletStatus = "active"      // ready to receive payments
-	WalletStatusRestricted WalletStatus = "restricted"  // action required
+	WalletStatusPending    WalletStatus = "pending"
+	WalletStatusVerifying  WalletStatus = "verifying"
+	WalletStatusActive     WalletStatus = "active"
+	WalletStatusRestricted WalletStatus = "restricted"
 )
 
-// Wallet is the business's payment receiving account.
 type Wallet struct {
-	ID          string       `json:"id"`
-	AgentID     string       `json:"agent_id"`
-	Provider    string       `json:"provider"` // "natural", "stripe_connect", etc.
-	ExternalID  string       `json:"external_id,omitempty"` // provider's account ID
-	Status      WalletStatus `json:"status"`
-	BalanceCents int64       `json:"balance_cents"` // in smallest currency unit
-	Currency    string       `json:"currency"`
-	// KYB
-	KYBRequired  bool   `json:"kyb_required"`
-	KYBPortalURL string `json:"kyb_portal_url,omitempty"` // link for user to complete KYB
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string       `json:"id"`
+	OrgID        string       `json:"org_id"`
+	Provider     string       `json:"provider"`
+	ExternalID   string       `json:"external_id,omitempty"`
+	Status       WalletStatus `json:"status"`
+	BalanceCents int64        `json:"balance_cents"`
+	Currency     string       `json:"currency"`
+	KYBRequired  bool         `json:"kyb_required"`
+	KYBPortalURL string       `json:"kyb_portal_url,omitempty"`
+	CreatedAt    time.Time    `json:"created_at"`
 }
 
 type CreateWalletRequest struct {
-	AgentID  string `json:"agent_id"`
-	Provider string `json:"provider"` // defaults to "natural"
-	Currency string `json:"currency"` // defaults to "usd"
-	// AutoConfigure: if true, the API creates the wallet with the provider
-	// and returns a KYB portal URL.  If false, user provides ExternalID.
+	Provider      string `json:"provider"`
+	Currency      string `json:"currency"`
 	AutoConfigure bool   `json:"auto_configure"`
-	ExternalID    string `json:"external_id,omitempty"`
+	ExternalID    string `json:"external_id"`
 }
 
-func Router() http.Handler {
+type handler struct {
+	store *walletStore
+}
+
+func Router(db *pgxpool.Pool) http.Handler {
+	h := &handler{store: newStore(db)}
 	r := chi.NewRouter()
-	r.Post("/", createWallet)
-	r.Get("/{agent_id}", getWallet)
-	r.Get("/{agent_id}/balance", getBalance)
-	r.Get("/{agent_id}/transactions", listTransactions)
+	r.Post("/", h.createWallet)
+	r.Get("/", h.getWallet)
+	r.Get("/balance", h.getBalance)
+	r.Get("/transactions", h.listTransactions)
 	return r
 }
 
-func createWallet(w http.ResponseWriter, r *http.Request) {
+func (h *handler) createWallet(w http.ResponseWriter, r *http.Request) {
+	orgID := middleware.OrgID(r.Context())
 	var req CreateWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+	if !middleware.Decode(w, r, &req) {
 		return
 	}
-
 	if req.Provider == "" {
 		req.Provider = "natural"
 	}
 	if req.Currency == "" {
 		req.Currency = "usd"
 	}
-
-	wallet := Wallet{
+	wl := Wallet{
 		ID:       uuid.New().String(),
-		AgentID:  req.AgentID,
+		OrgID:    orgID,
 		Provider: req.Provider,
 		Status:   WalletStatusPending,
 		Currency: req.Currency,
-		CreatedAt: time.Now().UTC(),
 	}
-
 	if req.AutoConfigure {
-		// TODO: call Natural (or Stripe Connect) API to create the account,
-		// retrieve KYB portal URL, and set wallet.ExternalID + wallet.KYBPortalURL
-		wallet.Status = WalletStatusVerifying
-		wallet.KYBRequired = true
-		wallet.KYBPortalURL = "https://verify.natural.co/placeholder" // replaced by real URL
+		wl.Status = WalletStatusVerifying
+		wl.KYBRequired = true
+		wl.KYBPortalURL = "https://verify.natural.co/placeholder"
 	} else if req.ExternalID != "" {
-		wallet.ExternalID = req.ExternalID
-		wallet.Status = WalletStatusActive
+		wl.ExternalID = req.ExternalID
+		wl.Status = WalletStatusActive
 	}
-
-	// TODO: persist wallet
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(wallet)
+	created, err := h.store.insert(r.Context(), wl)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, created)
 }
 
-func getWallet(w http.ResponseWriter, r *http.Request) {
-	agentID := chi.URLParam(r, "agent_id")
-	_ = agentID
-	// TODO: load from store
-	http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+func (h *handler) getWallet(w http.ResponseWriter, r *http.Request) {
+	orgID := middleware.OrgID(r.Context())
+	wl, err := h.store.getByOrg(r.Context(), orgID)
+	if err != nil {
+		if errors.Is(err, errNotFound) || err.Error() == "not found" {
+			writeError(w, http.StatusNotFound, "no wallet found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, wl)
 }
 
-func getBalance(w http.ResponseWriter, r *http.Request) {
-	// TODO: fetch live balance from provider
-	resp := map[string]any{"balance_cents": 0, "currency": "usd"}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+func (h *handler) getBalance(w http.ResponseWriter, r *http.Request) {
+	orgID := middleware.OrgID(r.Context())
+	wl, err := h.store.getByOrg(r.Context(), orgID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"balance_cents": 0, "currency": "usd"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"balance_cents": wl.BalanceCents, "currency": wl.Currency})
 }
 
-func listTransactions(w http.ResponseWriter, r *http.Request) {
-	// TODO: fetch from provider + local ledger
+func (h *handler) listTransactions(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, []any{})
+}
+
+var errNotFound = errors.New("not found")
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode([]any{})
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
 }

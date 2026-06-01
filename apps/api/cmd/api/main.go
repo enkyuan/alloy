@@ -16,9 +16,10 @@ import (
 	"github.com/joho/godotenv"
 
 	agenthandler "github.com/enkyuan/alloy/apps/api/internal/agent"
-	paymenthandler "github.com/enkyuan/alloy/apps/api/internal/payment"
-	wallethandler "github.com/enkyuan/alloy/apps/api/internal/wallet"
 	obshandler "github.com/enkyuan/alloy/apps/api/internal/observability"
+	paymenthandler "github.com/enkyuan/alloy/apps/api/internal/payment"
+	"github.com/enkyuan/alloy/apps/api/internal/store"
+	wallethandler "github.com/enkyuan/alloy/apps/api/internal/wallet"
 )
 
 func main() {
@@ -28,6 +29,14 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
+
+	ctx := context.Background()
+	s, err := store.New(ctx, os.Getenv("DATABASE_URL"), os.Getenv("REDIS_URL"))
+	if err != nil {
+		slog.Error("failed to connect to store", "err", err)
+		os.Exit(1)
+	}
+	defer s.Close()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -54,13 +63,13 @@ func main() {
 	})
 
 	// /v1/agents — create, configure, list agents
-	r.Mount("/v1/agents", agenthandler.Router())
+	r.Mount("/v1/agents", agenthandler.Router(s.DB))
 
 	// /v1/payments — payment provider config, workflow setup
-	r.Mount("/v1/payments", paymenthandler.Router())
+	r.Mount("/v1/payments", paymenthandler.Router(s.DB))
 
 	// /v1/wallet — wallet create / auto-configure
-	r.Mount("/v1/wallet", wallethandler.Router())
+	r.Mount("/v1/wallet", wallethandler.Router(s.DB))
 
 	// /v1/observability — session logs, event stream
 	r.Mount("/v1/observability", obshandler.Router())
@@ -85,9 +94,9 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("shutdown error", "err", err)
 	}
 	slog.Info("api stopped")
