@@ -19,4 +19,16 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // shadcn primitives co-locate their `*Variants` cva helper with the
+    // component (the convention `shadcn add` writes). Allow those named
+    // exports so the rule does not fight the generator.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true, allowExportNames: ["buttonVariants", "badgeVariants"] },
+      ],
+    },
+  },
 ]);

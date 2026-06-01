@@ -1,0 +1,15 @@
+# Temporal dynamic config — dev overrides
+# Full reference: https://github.com/temporaltech/temporal/blob/main/config/dynamicconfig/development-sql.yaml
+
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
+
+# Lower poll intervals for snappier local dev
+matching.longPollExpirationInterval:
+  - value: "10s"
+    constraints: {}

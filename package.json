@@ -1,7 +1,11 @@
 {
   "name": "agentkit",
   "private": true,
-  "workspaces": ["packages/*", "demos/*"],
+  "workspaces": [
+    "packages/*",
+    "demos/*",
+    "apps/*"
+  ],
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -10,7 +14,11 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "prepare": "husky"
+    "prepare": "husky",
+    "docker:up": "docker compose -f apps/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f apps/docker/docker-compose.yml down",
+    "docker:destroy": "docker compose -f apps/docker/docker-compose.yml down -v --remove-orphans",
+    "docker:logs": "docker compose -f apps/docker/docker-compose.yml logs -f"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

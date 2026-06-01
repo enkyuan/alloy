@@ -3,7 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "src-tauri/target/**"]
+      "outputs": ["dist/**", "bin/**", "src-tauri/target/**"]
     },
     "dev": {
       "cache": false,
@@ -19,8 +19,24 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
+    "preview": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
     "clean": {
       "cache": false
+    },
+    "@agentpay/api#build": {
+      "dependsOn": [],
+      "outputs": ["bin/**"],
+      "cache": true
+    },
+    "@agentpay/api#dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "@agentpay/api#lint": {
+      "cache": true
     }
   }
 }
