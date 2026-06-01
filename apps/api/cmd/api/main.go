@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 
 	agenthandler "github.com/enkyuan/alloy/apps/api/internal/agent"
+	"github.com/enkyuan/alloy/apps/api/internal/middleware"
 	obshandler "github.com/enkyuan/alloy/apps/api/internal/observability"
 	paymenthandler "github.com/enkyuan/alloy/apps/api/internal/payment"
 	"github.com/enkyuan/alloy/apps/api/internal/store"
@@ -25,33 +26,29 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
 	ctx := context.Background()
-	s, err := store.New(ctx, os.Getenv("DATABASE_URL"), os.Getenv("REDIS_URL"))
+
+	s, err := store.New(ctx, mustEnv("DATABASE_URL"), mustEnv("REDIS_URL"))
 	if err != nil {
-		slog.Error("failed to connect to store", "err", err)
+		slog.Error("init store", "err", err)
 		os.Exit(1)
 	}
 	defer s.Close()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8090"
-	}
+	authSecret := mustEnv("BETTER_AUTH_SECRET")
+	port := envOr("PORT", "8090")
 
 	r := chi.NewRouter()
-
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(chimiddleware.RequestID)
+	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.Logger)
+	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{os.Getenv("STUDIO_ORIGIN")},
+		AllowedOrigins:   []string{envOr("STUDIO_ORIGIN", "http://localhost:5173")},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -62,17 +59,13 @@ func main() {
 		fmt.Fprint(w, `{"status":"ok"}`)
 	})
 
-	// /v1/agents — create, configure, list agents
-	r.Mount("/v1/agents", agenthandler.Router(s.DB))
-
-	// /v1/payments — payment provider config, workflow setup
-	r.Mount("/v1/payments", paymenthandler.Router(s.DB))
-
-	// /v1/wallet — wallet create / auto-configure
-	r.Mount("/v1/wallet", wallethandler.Router(s.DB))
-
-	// /v1/observability — session logs, event stream
-	r.Mount("/v1/observability", obshandler.Router())
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.Auth(authSecret))
+		r.Mount("/v1/agents", agenthandler.Router(s.DB))
+		r.Mount("/v1/payments", paymenthandler.Router(s.DB))
+		r.Mount("/v1/wallet", wallethandler.Router(s.DB))
+		r.Mount("/v1/observability", obshandler.Router())
+	})
 
 	srv := &http.Server{
 		Addr:         ":" + port,
@@ -100,4 +93,20 @@ func main() {
 		slog.Error("shutdown error", "err", err)
 	}
 	slog.Info("api stopped")
+}
+
+func mustEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("required env var not set", "key", key)
+		os.Exit(1)
+	}
+	return v
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
