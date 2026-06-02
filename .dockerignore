@@ -60,9 +60,8 @@ docs/
 # Logs
 *.log
 
-# JS monorepo / client demos (not part of the Python image)
+# JS monorepo (not part of the Python image)
 node_modules/
-demos/
 bun.lock
 package.json
 turbo.json

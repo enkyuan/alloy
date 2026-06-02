@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "go run ./cmd/api/main.go",
+    "dev": "echo 'API runs in Docker — use: docker compose -f docker/agentpay/docker-compose.yml up -d api'",
     "build": "go build -o bin/api ./cmd/api/main.go",
     "lint": "echo 'go lint runs in CI'",
     "clean": "rm -rf bin"

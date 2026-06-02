@@ -1,0 +1,213 @@
+# agentpay — local development stack
+#
+# Usage:
+#   Start:    docker compose -f docker/agentpay/docker-compose.yml up -d
+#   Stop:     docker compose -f docker/agentpay/docker-compose.yml down
+#   Destroy:  docker compose -f docker/agentpay/docker-compose.yml down -v --remove-orphans
+#   Logs:     docker compose -f docker/agentpay/docker-compose.yml logs -f [service]
+#
+# Ports (chosen to avoid collision with the agentkit SDK stack):
+#   Postgres      5432    (agentkit uses 5432 via Supabase)
+#   Redis         6380    (agentkit uses 6379)
+#   Temporal      7233    gRPC frontend
+#   Temporal UI   8233    browser dashboard
+#   Garage S3     3900    S3-compatible API
+#   Garage admin  3902    admin HTTP API
+#   Caddy HTTP    80 / 443  reverse proxy + local TLS
+#   Mailpit SMTP  1025    local SMTP (dev only)
+#   Mailpit UI    8025    browser inbox
+
+name: agentpay
+
+networks:
+  agentpay_network:
+    name: agentpay-network
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  temporal_data:
+  garage_data:
+  garage_meta:
+  caddy_data:
+  caddy_config:
+
+services:
+  # --------------------------------------------------------------------------
+  # Postgres 18 — primary relational store
+  # --------------------------------------------------------------------------
+  postgres:
+    image: postgres:18
+    container_name: agentpay-postgres
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: agentpay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agentpay-dev}
+      POSTGRES_DB: agentpay
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "agentpay", "-d", "agentpay"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # --------------------------------------------------------------------------
+  # API — Go application server
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    container_name: agentpay-api
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../../apps/api/.env
+    environment:
+      DATABASE_URL: postgres://agentpay:agentpay-dev@postgres:5432/agentpay?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
+  # Redis 7 — session cache, webhook queue, rate limiting, idempotency keys
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: agentpay-redis
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --------------------------------------------------------------------------
+  # Temporal — durable workflow orchestration (payment flows, onboarding)
+  # auto-setup image bundles the server + a local Cassandra-less SQLite store
+  # for development; swap to a production Temporal cluster for prod.
+  # --------------------------------------------------------------------------
+  temporal:
+    image: temporalio/auto-setup:1.29.6.1
+    container_name: agentpay-temporal
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "7233:7233"
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PWD=${POSTGRES_PASSWORD:-agentpay_dev}
+      - POSTGRES_SEEDS=postgres
+      - DYNAMIC_CONFIG_FILE_PATH=/etc/temporal/config/dynamicconfig.yaml
+    volumes:
+      - ./temporal/dynamicconfig.yaml:/etc/temporal/config/dynamicconfig.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "tctl", "--address", "temporal:7233", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  temporal-ui:
+    image: temporalio/ui:2.50.0
+    container_name: agentpay-temporal-ui
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "8233:8080"
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:8233
+    depends_on:
+      - temporal
+
+  # --------------------------------------------------------------------------
+  # Garage v2.3.0 — S3-compatible object storage (KYB docs, receipts, assets)
+  # Runs in single-node mode for local dev; scales to multi-node for prod.
+  # --------------------------------------------------------------------------
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: agentpay-garage
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "3900:3900"   # S3 API
+      - "3902:3902"   # admin API
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-dev_rpc_secret_change_in_prod}
+    volumes:
+      - garage_data:/var/lib/garage/data
+      - garage_meta:/var/lib/garage/meta
+      - ./garage/garage.toml:/etc/garage.toml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3902/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # Caddy 2.11.3 — reverse proxy + automatic local TLS
+  # Sits in front of @agentpay/api and @agentpay/web in dev.
+  # Webhook endpoints are reachable at https://localhost/webhooks/...
+  # --------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.11.3
+    container_name: agentpay-caddy
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # --------------------------------------------------------------------------
+  # Mailpit v1.30.1 — local SMTP + browser inbox (better-auth email flows)
+  # --------------------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:v1.30.1
+    container_name: agentpay-mailpit
+    restart: unless-stopped
+    networks:
+      - agentpay_network
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # web UI  →  http://localhost:8025
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"

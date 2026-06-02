@@ -8,9 +8,6 @@
 │   ├── sdk/          # the `agentkit` SDK (Python)
 │   ├── serve/        # `agentkit-serve` — FastAPI + workers (path-depends on ../sdk)
 │   └── ts/           # `@agentkit/sdk` — TypeScript SDK
-├── demos/
-│   ├── web/          # web usage demo (React + Vite)
-│   └── desktop/      # desktop usage demo (Tauri)
 └── docker/           # Docker Compose (Postgres, Redis, Supabase)
 ```
 
@@ -60,33 +57,6 @@ docker compose up -d
 
 Services use the `agentkit` Compose project name (`agentkit-sdk`, `agentkit-worker`, `agentkit-bus-worker`).
 
-## Desktop App Setup
-
-### Prerequisites
-
-- [Bun](https://bun.sh)
-- [Rust](https://rustup.rs) (for Tauri)
-
-### 1. Install workspace dependencies
-
-```bash
-bun i
-```
-
-### 2. Start the desktop app
-
-```bash
-bun --filter @agentkit/desktop dev
-```
-
-### 3. Build the desktop app
-
-```bash
-bun --filter @agentkit/desktop build
-```
-
-Point the desktop client at your local API (`http://localhost:8080` by default).
-
 ## Running Tests
 
 ```bash
@@ -103,6 +73,6 @@ cd packages/serve && poetry run pytest tests/
 # Terminal 1: infrastructure + API (from docker/)
 cd docker && docker compose up -d
 
-# Terminal 2: desktop (from repo root)
-bun --filter @agentkit/desktop dev
+# Terminal 2: API server (from packages/serve/)
+cd packages/serve && poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

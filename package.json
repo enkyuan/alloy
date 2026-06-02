@@ -3,7 +3,6 @@
   "private": true,
   "workspaces": [
     "packages/*",
-    "demos/*",
     "apps/*"
   ],
   "scripts": {
@@ -15,10 +14,10 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "husky",
-    "docker:up": "docker compose -f apps/docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f apps/docker/docker-compose.yml down",
-    "docker:destroy": "docker compose -f apps/docker/docker-compose.yml down -v --remove-orphans",
-    "docker:logs": "docker compose -f apps/docker/docker-compose.yml logs -f"
+    "docker:up": "docker compose -f docker/agentpay/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/agentpay/docker-compose.yml down",
+    "docker:destroy": "docker compose -f docker/agentpay/docker-compose.yml down -v --remove-orphans",
+    "docker:logs": "docker compose -f docker/agentpay/docker-compose.yml logs -f"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

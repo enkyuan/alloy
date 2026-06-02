@@ -1,92 +1,79 @@
-# AgentKit
+# alloy
 
-AgentKit is an embeddable SDK for building agentic platforms in Python: an agent
-runtime, tool generation, retrieval, and pluggable LLM providers, for both text
-and voice. The core is dependency-injected and infra-free. `pip install
-agentkit`, import the building blocks you need, and compose them into your own
-product.
+this repository contains two related projects:
 
-The repo also ships a reference application built on the SDK: a real-time voice
-service (FastAPI, Redis, Postgres, behind the optional `server` extra) plus web
-and desktop clients.
+**agentpay** is a platform for small businesses to deploy ai agents that take
+orders, answer questions, and collect payments. a merchant configures an agent
+via the studio web app; the agent embeds on their site or phone system and
+handles the full customer interaction, including payment.
 
-> **Status:** pre-release. The core SDK is usable today; the reference voice
-> service wires the STT → LLM → TTS path (barge-in and durable persistence are in
-> progress).
+**agentkit** is the embeddable sdk that powers agentpay's agent runtime: an
+event-sourced agent loop, toolgen, pluggable llm providers, and stt/tts
+modalities. agentkit can also be used standalone in any python or typescript
+project.
 
-## Repository layout
+## repository layout
 
-All distributions live under `packages/`; the platform demos under `demos/` are
-managed as a [Bun](https://bun.sh) + [Turborepo](https://turborepo.com)
-workspace. Each unit owns its own README.
+| path | project | what it is | stack |
+| ---------------------------------- | ---------- | ------------------------------------------------- | ------------------------------- |
+| [`apps/api`](apps/api) | agentpay | rest api: agents, wallets, payment configs, sessions | go, postgresql, redis |
+| [`apps/web`](apps/web) | agentpay | studio: configure agents, connect payment providers | react, tanstack router, shadcn |
+| [`packages/sdk`](packages/sdk) | agentkit | `agentkit`: agent runtime, toolgen, providers | python 3.11 |
+| [`packages/serve`](packages/serve) | agentkit | `agentkit-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
+| [`packages/ts`](packages/ts) | agentkit | `@agentkit/sdk`: typescript runtime port | typescript |
 
-| Path | What it is | Stack |
-| ---------------------------------- | ------------------------------------------------------------------------- | ----------------------------------- |
-| [`packages/sdk`](packages/sdk) | The `agentkit` SDK: agent runtime, toolgen, providers, text/voice modalities | Python 3.11 |
-| [`packages/serve`](packages/serve) | `agentkit-serve` — reference FastAPI server + workers (path-depends on the SDK) | Python 3.11, FastAPI, TaskIQ, Redis |
-| [`packages/ts`](packages/ts) | `@agentkit/sdk` — the TypeScript SDK | TypeScript |
-| [`demos/web`](demos/web) | Web usage demo | React 19, Vite |
-| [`demos/desktop`](demos/desktop) | Desktop usage demo | Tauri 2, React 19, Vite |
+each package has its own readme with setup instructions and architecture
+details.
 
-The Python SDK is the heart of the project; `serve` deploys it as a service and
-the demos show how to consume it on each platform. See
-[`packages/sdk/agentkit/README.md`](packages/sdk/agentkit/README.md) for the SDK
-and its architecture in depth.
+## architecture
 
-## How the pieces fit together
-
-You embed the SDK in your own app, where an agent runtime drives an LLM over a
-typed event bus, generates and executes tools (concurrently, scatter-gather),
-and exchanges messages through whichever modality you wire up. The web and
-desktop demos here show how to connect to it on each platform.
+agentpay is built on agentkit. the go api configures and spawns agents; the
+agentkit runtime handles the actual llm loop, tool execution, and voice
+modalities. payment collection is a tool the agent calls.
 
 ```
-                                                    ┌────────────────────────────┐
-   ┌─────────────────────────┐                      │ your app  (embeds the SDK) │
-   │ demo clients            │                      │                            │
-   │ web · desktop · your UI │  ◀── text/audio ──▶  │ agent runtime + event bus  │
-   └─────────────────────────┘                      │ toolgen · providers · RAG  │
-                                                    └────────────────────────────┘
-                                                                  │ ToolCall / ToolResult
-                                                                  ▼
-                                                    ┌────────────────────────────┐
-                                                    │ tools  (async, concurrent) │
-                                                    └────────────────────────────┘
+   ┌──────────────────────────┐
+   │  studio  (apps/web)      │   react + tanstack router
+   │  configure agent,        │   better-auth session
+   │  connect payment rail    │
+   └───────────┬──────────────┘
+               │  rest  /v1/agents  /v1/payments  /v1/wallets
+               ▼
+   ┌──────────────────────────┐
+   │  @agentpay/api  (go)     │   chi router, pgx, jwt auth
+   │  agent · wallet ·        │
+   │  payment_config ·        │
+   │  session crud            │
+   └───────────┬──────────────┘
+               │  spawns / configures
+               ▼
+   ┌──────────────────────────┐
+   │  agentkit runtime        │   packages/sdk + packages/serve
+   │  llm loop · toolgen      │   fastapi, redis, postgres
+   │  stt/tts (voice)         │
+   └──────────────────────────┘
 ```
 
-The reference `server` extra runs that runtime as FastAPI, Redis, and Postgres
-processes (`api`, `bus-worker`, `worker`) so heavy tool execution never stalls a
-real-time exchange; a voice client adds STT/TTS at the edge. The
-[SDK README](packages/sdk/agentkit/README.md) breaks down each process and the event flow.
+## getting started
 
-## Getting started
-
-**Prerequisites:** [Bun](https://bun.sh) ≥ 1.3 and Node ≥ 22 (for the demos);
-Python 3.11+ and [Poetry](https://python-poetry.org/) (for the SDK); Docker
-(for Postgres + Redis).
+**prerequisites:** go 1.25+; [bun](https://bun.sh) ≥ 1.3 and node ≥ 22;
+python 3.11+ and [poetry](https://python-poetry.org/); docker (postgres + redis).
 
 ```bash
-# Install all JS/TS workspace dependencies from the repo root
+# js/ts workspace (studio + packages/ts)
 bun install
 
-# Run a demo (Turborepo filters by workspace)
-bun --filter @agentkit/desktop dev
-bun --filter web dev
+# go api
+cd apps/api
+go mod download
+go run ./cmd/migrate/main.go up
+go run ./cmd/api/main.go
 
-# The Python SDK has its own Poetry toolchain; see its README
+# studio
+bun --filter @agentpay/web dev
+
+# agentkit python sdk
 cd packages/sdk && poetry install && poetry run pytest
 ```
 
-Per-demo setup lives in each demo's README; the SDK's lives in
-[`packages/sdk/agentkit/README.md`](packages/sdk/agentkit/README.md). For full
-backend configuration, see the [Setup Guide](docs/SETUP.md).
-
-## Conventions
-
-- **JS/TS** is managed by Bun workspaces + Turborepo; lint and format via
-  [oxlint](https://oxc.rs) / oxfmt (`bun run lint`, `bun run format`).
-- **Python** (`packages/sdk`, `packages/serve`) is managed independently by
-  Poetry; it is not part of the Bun workspace.
-- Generated artifacts (`__pycache__/`, `*.pyc`, `logs/`, build output) stay out
-  of the repo.
-- Platform demos go under `demos/*`. The SDK is the root project.
+see [`apps/api/readme.md`](apps/api/readme.md) for the full api setup and environment variables.
