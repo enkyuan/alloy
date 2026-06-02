@@ -22,8 +22,7 @@ project.
 | [`packages/serve`](packages/serve) | agentkit | `agentkit-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
 | [`packages/ts`](packages/ts) | agentkit | `@agentkit/sdk`: typescript runtime port | typescript |
 
-each package has its own readme with setup instructions and architecture
-details.
+each package has its own readme with setup instructions and architecture details.
 
 ## architecture
 
@@ -76,4 +75,4 @@ bun --filter @agentpay/web dev
 cd packages/sdk && poetry install && poetry run pytest
 ```
 
-see [`apps/api/readme.md`](apps/api/readme.md) for the full api setup and environment variables.
+see [`docs/AGENTPAY.md`](docs/AGENTPAY.md) for the full agentpay setup, routes, and environment variables.

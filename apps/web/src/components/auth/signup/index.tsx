@@ -149,7 +149,10 @@ export function SignupForm({ className }: { className?: string }) {
         </form>
         <div className="mt-4 text-center text-xs text-muted-foreground">
           Already have an account?{" "}
-          <Link to="/login" className="text-primary underline underline-offset-4 hover:text-primary/80">
+          <Link
+            to="/login"
+            className="text-primary underline underline-offset-4 hover:text-primary/80"
+          >
             Login
           </Link>
         </div>
