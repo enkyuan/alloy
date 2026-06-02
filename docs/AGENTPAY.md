@@ -2,6 +2,8 @@
 
 agentpay lets small businesses deploy ai agents that take orders, answer questions, and collect payments. this directory contains the api service and the studio web app.
 
+the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md) for how the runtime works.
+
 ## what it does
 
 **the payment flow** (what happens when a customer interacts with an agent):

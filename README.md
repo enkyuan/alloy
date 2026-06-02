@@ -76,3 +76,4 @@ cd packages/sdk && poetry install && poetry run pytest
 ```
 
 see [`docs/AGENTPAY.md`](docs/AGENTPAY.md) for the full agentpay setup, routes, and environment variables.
+see [`docs/AGENTKIT.md`](docs/AGENTKIT.md) for agentkit concepts, architecture, and package overview.
