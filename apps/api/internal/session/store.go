@@ -25,6 +25,10 @@ type Session struct {
 	StartedAt                time.Time `json:"started_at"`
 }
 
+type scanner interface {
+	Scan(dest ...any) error
+}
+
 // Store handles session persistence.
 type Store struct {
 	db *pgxpool.Pool
@@ -73,9 +77,7 @@ func (s *Store) UpdateAfterPayment(ctx context.Context, piID, status, plainSumma
 	return err
 }
 
-func scanSession(row interface {
-	Scan(dest ...any) error
-}) (Session, error) {
+func scanSession(row scanner) (Session, error) {
 	var sess Session
 	var piID, custID, summary *string
 	err := row.Scan(
@@ -85,7 +87,7 @@ func scanSession(row interface {
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return Session{}, fmt.Errorf("not found")
+			return Session{}, fmt.Errorf("session not found")
 		}
 		return Session{}, fmt.Errorf("scan session: %w", err)
 	}
@@ -110,6 +112,6 @@ func nullableStr(s string) *string {
 
 func nowUTC() time.Time { return time.Now().UTC() }
 
-func encodeJSON(w io.Writer, v any) {
-	json.NewEncoder(w).Encode(v) //nolint:errcheck
+func encodeJSON(w io.Writer, v any) error {
+	return json.NewEncoder(w).Encode(v)
 }

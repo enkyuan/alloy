@@ -21,6 +21,10 @@ func testDB(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	if err := pool.Ping(context.Background()); err != nil {
+		pool.Close()
+		t.Fatalf("ping db: %v", err)
+	}
 	t.Cleanup(pool.Close)
 	return pool
 }
@@ -65,14 +69,18 @@ func seedAgent(t *testing.T, db *pgxpool.Pool) string {
 	t.Helper()
 	// seed a minimal org + agent for FK
 	orgID := "org-seed-" + t.Name()
-	_, _ = db.Exec(context.Background(),
+	if _, err := db.Exec(context.Background(),
 		`INSERT INTO orgs (id, name, created_at) VALUES ($1, $1, now()) ON CONFLICT DO NOTHING`,
-		orgID)
+		orgID); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
 	agentID := "agent-seed-" + t.Name()
-	_, _ = db.Exec(context.Background(), `
+	if _, err := db.Exec(context.Background(), `
 		INSERT INTO agents (id, org_id, name, business_type, system_prompt, tools, voice_enabled, embed_token, created_at, updated_at)
 		VALUES ($1, $2, 'test', 'custom', '', '{}', false, $1, now(), now()) ON CONFLICT DO NOTHING`,
-		agentID, orgID)
+		agentID, orgID); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
 	t.Cleanup(func() {
 		db.Exec(context.Background(), `DELETE FROM agents WHERE id = $1`, agentID)
 		db.Exec(context.Background(), `DELETE FROM orgs WHERE id = $1`, orgID)
