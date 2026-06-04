@@ -19,8 +19,11 @@ import (
 	"github.com/enkyuan/alloy/apps/api/internal/middleware"
 	obshandler "github.com/enkyuan/alloy/apps/api/internal/observability"
 	paymenthandler "github.com/enkyuan/alloy/apps/api/internal/payment"
+	sessionhandler "github.com/enkyuan/alloy/apps/api/internal/session"
+	stripehandler "github.com/enkyuan/alloy/apps/api/internal/stripe"
 	"github.com/enkyuan/alloy/apps/api/internal/store"
 	wallethandler "github.com/enkyuan/alloy/apps/api/internal/wallet"
+	webhookhandler "github.com/enkyuan/alloy/apps/api/internal/webhook"
 )
 
 func main() {
@@ -29,7 +32,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	s, err := store.New(ctx, mustEnv("DATABASE_URL"), mustEnv("REDIS_URL"))
 	if err != nil {
@@ -39,7 +43,15 @@ func main() {
 	defer s.Close()
 
 	authSecret := mustEnv("BETTER_AUTH_SECRET")
+	stripeKey := mustEnv("STRIPE_SECRET_KEY")
+	stripeWebhookSecret := mustEnv("STRIPE_WEBHOOK_SECRET")
 	port := envOr("PORT", "8080")
+
+	// Start webhook delivery worker
+	whStore := webhookhandler.NewStore(s.DB)
+	go webhookhandler.Worker(ctx, whStore, 2*time.Second)
+
+	sessStore := sessionhandler.NewStore(s.DB)
 
 	r := chi.NewRouter()
 	r.Use(chimiddleware.RequestID)
@@ -59,12 +71,17 @@ func main() {
 		fmt.Fprint(w, `{"status":"ok"}`)
 	})
 
+	// Stripe webhook — no JWT auth, verified by Stripe signature
+	r.Post("/stripe/webhook", stripehandler.New(stripeWebhookSecret, sessStore, whStore).ServeHTTP)
+
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(authSecret))
 		r.Mount("/v1/agents", agenthandler.Router(s.DB))
 		r.Mount("/v1/payments", paymenthandler.Router(s.DB))
 		r.Mount("/v1/wallet", wallethandler.Router(s.DB))
 		r.Mount("/v1/observability", obshandler.Router())
+		r.Mount("/v1/sessions", sessionhandler.Router(s.DB, stripeKey))
+		r.Mount("/v1/webhooks", webhookhandler.Router(s.DB))
 	})
 
 	srv := &http.Server{
@@ -87,8 +104,9 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	cancel() // stop delivery worker
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutCancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("shutdown error", "err", err)
 	}
