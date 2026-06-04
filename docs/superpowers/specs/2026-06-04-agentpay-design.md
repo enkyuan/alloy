@@ -275,7 +275,10 @@ auth: email + password, JWT issued by consumer service. stripe payment method ma
 
 ## open questions / deferred
 
-- consumer app platform: React Native (single codebase for mobile + web) vs separate web app vs PWA. decision can wait until spec is approved and implementation starts.
-- plain_label generation: hardcoded template strings at launch vs LLM-generated summaries. start with templates, upgrade later.
-- merchant connected account onboarding: Stripe Connect onboarding flow (standard vs express) needs a dedicated spec before implementation.
+- merchant connected account onboarding: using Stripe Connect Standard so agentpay owns the UI and submits KYB/KYC fields to Stripe via API. needs a dedicated spec before implementation.
 - rate limiting on webhook delivery: not scoped here, add before public launch.
+
+## decided
+
+- **consumer app platform:** Swift/SwiftUI, iOS-first. Stripe iOS SDK for payment method management. Android deferred until post-launch traction.
+- **plain_label format:** server-generated template strings at write time. format: `"Agent at {merchant_name} {action} - ${amount}"`. failure case: `"Payment to {merchant_name} failed - no charge made"`. consumer service requires `merchant_name` passed by the API webhook handler at transaction write time. LLM-generated summaries deferred to a later iteration.
