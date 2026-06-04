@@ -1,6 +1,6 @@
-// Package internal exposes an endpoint called only by @agentpay/api.
+// Package internalapi exposes an endpoint called only by @agentpay/api.
 // Secured by X-Internal-Secret header rather than consumer JWT.
-package internal
+package internalapi
 
 import (
 	"encoding/json"
