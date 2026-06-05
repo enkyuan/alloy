@@ -91,13 +91,6 @@ The bridge between agentkit and agentpay. Registers with `AgentRuntime`; when ca
 - Implementation in `packages/sdk/agentkit/tools/payment.py` (or equivalent) — thin HTTP call to agentpay API, configurable base URL via env.
 - Needs `@agentpay/api` session endpoint (item 8) live first.
 
-### 13. agentpay iOS consumer app (MISSING)
-Swift/SwiftUI app, iOS-first.
-- Three screens: wallet (Stripe Payment Element), transactions (paginated), activity (plain-language feed).
-- Auth: email + password -> JWT from consumer service.
-- Stripe iOS SDK for payment method management. No card data in app or consumer service.
-- Reads `GET /v1/transactions` and `GET /v1/activity` from consumer service.
-
 ---
 
 ## P3 — Capabilities promised but absent
@@ -118,7 +111,16 @@ Studio (`apps/web`) has no webhook management screens.
 - Add `/webhooks` route: register a URL, select events, view delivery history, inspect dead deliveries.
 - Feeds from `GET /v1/webhooks` and delivery log in `webhook_deliveries`.
 
-### 18. agentpay merchant onboarding — Stripe Connect (MISSING)
+### 18. agentpay iOS consumer app (MISSING)
+Deferred until the consumer service API and studio web app are stable.
+Swift/SwiftUI app, iOS-first.
+- Three screens: wallet (Stripe Payment Element), transactions (paginated), activity (plain-language feed).
+- Auth: email + password -> JWT from consumer service.
+- Stripe iOS SDK for payment method management. No card data in app or consumer service.
+- Reads `GET /v1/transactions` and `GET /v1/activity` from consumer service.
+- Blocked on items 9 and 17.
+
+### 19. agentpay merchant onboarding — Stripe Connect (MISSING)
 Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, submits KYB/KYC fields to Stripe via API.
 - Needs a dedicated spec before implementation. Deferred from the current design.
 
@@ -126,25 +128,25 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ## Voice / `agentkit-serve` — reference service gaps
 
-### 19. Barge-in / interruption (MISSING)
+### 20. Barge-in / interruption (MISSING)
 - No speech-activity events produced anywhere in the STT/voice/worker path.
 - `_synthesize_and_publish` in `packages/serve/agentkit_serve/workers/main.py` streams TTS with no cancellation hook.
 - DTMF lookahead buffer (`packages/sdk/agentkit/modalities/voice/utils/dtmf_lookahead_buffer.py`) is written but never fed.
 
-### 20. Automatic turn / endpoint detection (MISSING)
+### 21. Automatic turn / endpoint detection (MISSING)
 - `packages/sdk/agentkit/modalities/voice/turn_detection.py` — `resolve_turn_policy` has zero consumers.
 - `packages/sdk/agentkit/modalities/voice/stt/soniox_gateway.py:52` — `enable_endpoint_detection=False` hardcoded.
 
-### 21. Durable chat persistence (PARTIAL)
+### 22. Durable chat persistence (PARTIAL)
 - Postgres `Conversation` / `Message` models and migrations exist but nothing writes to them. History lives only in Redis, trimmed to `AGENT_HISTORY_LIMIT`.
 - `packages/serve/agentkit_serve/server/v1/sessions.py:10` — `/sessions` backed by in-memory store, lost on restart.
 
-### 22. Reconcile the two auth paths (PARTIAL)
+### 23. Reconcile the two auth paths (PARTIAL)
 - HTTP validates Bearer tokens locally via HS256 (`packages/serve/agentkit_serve/server/deps.py`).
 - STT WebSocket validates remotely against Supabase (`packages/sdk/agentkit/modalities/voice/stt/handler.py:209`).
 - Pick one canonical token model for REST and socket.
 
-### 23. Remove dead code (cleanup)
+### 24. Remove dead code (cleanup)
 - `packages/serve/agentkit_serve/workers/tasks/memory.py` — empty, reserved for future use. Implement or delete.
 - `packages/serve/agentkit_serve/workers/helpers/llm_response.py` and `response_text.py` — written but never imported.
 
@@ -152,15 +154,15 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ## TypeScript SDK — to make it drive an agent
 
-### 24. Provider layer (MISSING)
+### 25. Provider layer (MISSING)
 - `ModelProvider` interface, provider registry, mock provider, at least one real provider.
 - Mirror `packages/sdk/agentkit/runtime/providers/base.py`.
 
-### 25. Agent runtime (MISSING)
+### 26. Agent runtime (MISSING)
 - Port `AgentRuntime.run_turn` (`packages/sdk/agentkit/runtime/agents/runtime.py`): replay -> build messages -> stream from provider -> emit events -> execute tools -> loop.
 
-### 26. Tool-loop glue (MISSING)
+### 27. Tool-loop glue (MISSING)
 - Planner/runner that turns provider `tool_calls` into `executeTool` (`packages/ts/src/tools/registry.ts`) calls and emits the full tool event sequence.
 
-### 27. Reconcile sync vs async `publish` (design)
+### 28. Reconcile sync vs async `publish` (design)
 - `packages/ts/src/events/bus.ts:69` — `EventBus.publish` is synchronous; Python runtime awaits it. Settle before porting the runtime.
