@@ -116,7 +116,7 @@ there is a TS server runtime).
 ### providers
 
 LLM providers implement a common interface. the python SDK ships `kimi`
-(OpenRouter/Kimi, the default), `openai`, and `mock` (for tests). selected via
+(OpenRouter/Kimi, the default), `gemini`, `openai`, and `mock` (for tests). selected via
 `AGENTKIT_MODEL_PROVIDER`. adding a new provider means implementing the
 `ModelProvider` protocol and registering it.
 
