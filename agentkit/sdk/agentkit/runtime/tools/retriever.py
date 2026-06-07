@@ -10,21 +10,14 @@ cache the reference service wires up).
 
 import asyncio
 import logging
-import math
 from typing import Dict, List, Optional, Protocol, Tuple
 
+from agentkit.runtime.tools._vector_math import cosine_similarity  # re-exported
 from agentkit.runtime.tools.registry import list_tool_specs
 
 logger = logging.getLogger(__name__)
 
-
-def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-    dot = sum(a * b for a, b in zip(v1, v2))
-    norm1 = math.sqrt(sum(a * a for a in v1))
-    norm2 = math.sqrt(sum(a * a for a in v2))
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return dot / (norm1 * norm2)
+__all__ = ["cosine_similarity", "Embedder", "EmbeddingCache", "ToolRetriever", "get_tool_retriever"]
 
 
 class Embedder(Protocol):
