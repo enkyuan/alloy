@@ -1,4 +1,6 @@
 -- +goose Up
+CREATE EXTENSION IF NOT EXISTS citext;
+
 CREATE TABLE users (
     id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
     email       CITEXT      NOT NULL UNIQUE,
