@@ -8,6 +8,8 @@ on:
       - "agentkit/serve/**"
       - "agentkit/ts/**"
       - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - "agentpay/auth/**"
       - ".github/workflows/sdk-tests.yml"
   pull_request:
     paths:
@@ -15,6 +17,8 @@ on:
       - "agentkit/serve/**"
       - "agentkit/ts/**"
       - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - "agentpay/auth/**"
       - ".github/workflows/sdk-tests.yml"
 
 jobs:
