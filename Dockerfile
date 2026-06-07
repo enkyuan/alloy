@@ -1,6 +1,9 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
+ARG BUILD_COMMIT=unknown
+LABEL build.commit="${BUILD_COMMIT}"
+
 # Set working directory
 WORKDIR /app
 
@@ -32,6 +35,10 @@ COPY . .
 # Installing the serve distribution pulls in the SDK via its path dependency
 # (agentkit/serve -> ../sdk), so a single install gives both.
 RUN pip install ./agentkit/serve
+
+# Fail at build time if either package is unimportable (catches stale cached images
+# built before the monorepo restructure, where the installed path no longer matches).
+RUN python -c "import agentkit; import agentkit_serve"
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
