@@ -2,7 +2,8 @@
   "name": "agentkit",
   "private": true,
   "workspaces": [
-    "packages/*",
+    "agentpay/*",
+    "agentkit/*",
     "apps/*"
   ],
   "scripts": {
