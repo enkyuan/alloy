@@ -34,6 +34,9 @@ _LAZY: dict[str, str] = {
     "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",
     "SessionState": "agentkit.runtime.sessions",
+    "SessionStore": "agentkit.runtime.sessions.store",
+    "InMemorySessionStore": "agentkit.runtime.sessions.store",
+    "SessionRecord": "agentkit.runtime.sessions.store",
     # Providers
     "ModelProvider": "agentkit.runtime.providers",
     "get_provider": "agentkit.runtime.providers",
