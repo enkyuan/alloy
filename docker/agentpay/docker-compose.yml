@@ -63,7 +63,7 @@ services:
   # --------------------------------------------------------------------------
   api:
     build:
-      context: ../../apps/api
+      context: ../../agentpay/api
       dockerfile: Dockerfile
     container_name: agentpay-api
     restart: unless-stopped
@@ -72,7 +72,7 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - ../../apps/api/.env
+      - ../../agentpay/api/.env
     environment:
       DATABASE_URL: postgres://agentpay:agentpay-dev@postgres:5432/agentpay?sslmode=disable
       REDIS_URL: redis://redis:6379/0
