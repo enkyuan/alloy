@@ -70,7 +70,7 @@ func seedAgent(t *testing.T, db *pgxpool.Pool) string {
 	// seed a minimal org + agent for FK
 	orgID := "org-seed-" + t.Name()
 	if _, err := db.Exec(context.Background(),
-		`INSERT INTO orgs (id, name, created_at) VALUES ($1, $1, now()) ON CONFLICT DO NOTHING`,
+		`INSERT INTO orgs (id, name, slug, created_at) VALUES ($1, $1, $1, now()) ON CONFLICT DO NOTHING`,
 		orgID); err != nil {
 		t.Fatalf("seed org: %v", err)
 	}

@@ -33,7 +33,7 @@ func TestInsertAndListWebhook(t *testing.T) {
 	db := testDB(t)
 	orgID := "org-wh-test-" + t.Name()
 	if _, err := db.Exec(context.Background(),
-		`INSERT INTO orgs (id, name, created_at) VALUES ($1,$1,now()) ON CONFLICT DO NOTHING`, orgID); err != nil {
+		`INSERT INTO orgs (id, name, slug, created_at) VALUES ($1,$1,$1,now()) ON CONFLICT DO NOTHING`, orgID); err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
 	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM orgs WHERE id=$1`, orgID) })
@@ -68,7 +68,7 @@ func TestInsertDelivery(t *testing.T) {
 	db := testDB(t)
 	orgID := "org-del-test-" + t.Name()
 	if _, err := db.Exec(context.Background(),
-		`INSERT INTO orgs (id, name, created_at) VALUES ($1,$1,now()) ON CONFLICT DO NOTHING`, orgID); err != nil {
+		`INSERT INTO orgs (id, name, slug, created_at) VALUES ($1,$1,$1,now()) ON CONFLICT DO NOTHING`, orgID); err != nil {
 		t.Fatalf("seed org: %v", err)
 	}
 	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM orgs WHERE id=$1`, orgID) })
