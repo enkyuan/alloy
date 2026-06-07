@@ -108,8 +108,8 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
-      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
+      - ../agentkit/sdk/agentkit:/app/agentkit/sdk/agentkit:ro
+      - ../agentkit/serve/agentkit_serve:/app/agentkit/serve/agentkit_serve:ro
 
   worker:
     container_name: agentkit-worker
@@ -174,8 +174,8 @@ services:
         "agentkit_serve.workers.tasks.tools",
       ]
     volumes:
-      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
-      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
+      - ../agentkit/sdk/agentkit:/app/agentkit/sdk/agentkit:ro
+      - ../agentkit/serve/agentkit_serve:/app/agentkit/serve/agentkit_serve:ro
 
   bus-worker:
     container_name: agentkit-bus-worker
@@ -238,8 +238,8 @@ services:
 
     command: ["python", "-m", "agentkit_serve.workers.main"]
     volumes:
-      - ../packages/sdk/agentkit:/app/packages/sdk/agentkit:ro
-      - ../packages/serve/agentkit_serve:/app/packages/serve/agentkit_serve:ro
+      - ../agentkit/sdk/agentkit:/app/agentkit/sdk/agentkit:ro
+      - ../agentkit/serve/agentkit_serve:/app/agentkit/serve/agentkit_serve:ro
 
   # ============================================================================
   # Supabase Services

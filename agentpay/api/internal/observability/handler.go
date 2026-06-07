@@ -118,7 +118,7 @@ func streamEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: subscribe to the agent's event bus (Redis pub/sub from packages/sdk)
+	// TODO: subscribe to the agent's event bus (Redis pub/sub from agentkit/sdk)
 	// For now, keep the connection alive until client disconnects.
 	ctx := r.Context()
 	<-ctx.Done()
