@@ -53,6 +53,13 @@ _LAZY: dict[str, str] = {
     # Tool retrieval
     "ToolRetriever": "agentkit.runtime.tools.retriever",
     "get_tool_retriever": "agentkit.runtime.tools.retriever",
+    # Knowledge / document RAG
+    "DocumentRAG": "agentkit.knowledge",
+    "Document": "agentkit.knowledge",
+    "Chunk": "agentkit.knowledge",
+    "VectorStore": "agentkit.knowledge",
+    "InMemoryVectorStore": "agentkit.knowledge",
+    "chunk_text": "agentkit.knowledge",
 }
 
 __all__ = ["__version__", *sorted(_LAZY)]
