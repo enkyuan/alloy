@@ -231,24 +231,24 @@ See [`.env.example`](.env.example) for the full list.
 
 **Prerequisites:** Python 3.11+, [Poetry](https://python-poetry.org/), Docker.
 
-The SDK (`packages/sdk`) and the reference service (`packages/serve`) are
+The SDK (`agentkit/sdk`) and the reference service (`agentkit/serve`) are
 separate Poetry distributions.
 
 ```bash
 # Core SDK: install + test (no database, no server deps required).
-cd packages/sdk
+cd agentkit/sdk
 poetry install
 poetry run pytest tests/  # the SDK test suite, runs with no env configured
 
 # Reference service: install (pulls in the SDK via a path dependency) + test.
-cd packages/serve
+cd agentkit/serve
 poetry install
 docker compose -f ../../docker/docker-compose.yml up -d db  # Postgres for DB tests
 poetry run pytest tests/
 ```
 
 The SDK tests need no environment (the building blocks are infra-free). The
-service tests under `packages/serve/tests/` cover the API and workers; the
+service tests under `agentkit/serve/tests/` cover the API and workers; the
 database-backed ones need the Postgres service. CI runs the two suites as
 separate jobs (see [`.github/workflows/sdk-tests.yml`](../.github/workflows/sdk-tests.yml)).
 

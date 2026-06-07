@@ -4,7 +4,7 @@
 
 ```
 .
-├── packages/
+├── agentkit/
 │   ├── sdk/          # the `agentkit` SDK (Python)
 │   ├── serve/        # `agentkit-serve` — FastAPI + workers (path-depends on ../sdk)
 │   └── ts/           # `@agentkit/sdk` — TypeScript SDK
@@ -14,13 +14,13 @@
 ## FastAPI Backend Setup
 
 The reference service is the `agentkit-serve` distribution. Run these from
-`packages/serve/`; it pulls in the `agentkit` SDK via a path dependency
+`agentkit/serve/`; it pulls in the `agentkit` SDK via a path dependency
 (`../sdk`).
 
 ### 1. Install Poetry dependencies
 
 ```bash
-cd packages/serve
+cd agentkit/serve
 poetry install
 ```
 
@@ -60,11 +60,11 @@ Services use the `agentkit` Compose project name (`agentkit-sdk`, `agentkit-work
 ## Running Tests
 
 ```bash
-# Core SDK tests (from packages/sdk/ — no database needed)
-cd packages/sdk && poetry run pytest tests/
+# Core SDK tests (from agentkit/sdk/ — no database needed)
+cd agentkit/sdk && poetry run pytest tests/
 
-# Reference service tests (from packages/serve/ — DB tests need Postgres)
-cd packages/serve && poetry run pytest tests/
+# Reference service tests (from agentkit/serve/ — DB tests need Postgres)
+cd agentkit/serve && poetry run pytest tests/
 ```
 
 ## Quick Start
@@ -73,6 +73,6 @@ cd packages/serve && poetry run pytest tests/
 # Terminal 1: infrastructure + API (from docker/)
 cd docker && docker compose up -d
 
-# Terminal 2: API server (from packages/serve/)
-cd packages/serve && poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+# Terminal 2: API server (from agentkit/serve/)
+cd agentkit/serve && poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

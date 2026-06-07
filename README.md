@@ -16,11 +16,13 @@ project.
 
 | path | project | what it is | stack |
 | ---------------------------------- | ---------- | ------------------------------------------------- | ------------------------------- |
-| [`apps/api`](apps/api) | agentpay | rest api: agents, wallets, payment configs, sessions | go, postgresql, redis |
+| [`agentpay/api`](agentpay/api) | agentpay | rest api: agents, wallets, payment configs, sessions | go, postgresql, redis |
+| [`agentpay/consumer`](agentpay/consumer) | agentpay | consumer identity, wallet, transaction history | go, postgresql |
+| [`agentpay/auth`](agentpay/auth) | agentpay | auth service (better-auth + jwt) | bun, typescript |
 | [`apps/web`](apps/web) | agentpay | studio: configure agents, connect payment providers | react, tanstack router, shadcn |
-| [`packages/sdk`](packages/sdk) | agentkit | `agentkit`: agent runtime, toolgen, providers | python 3.11 |
-| [`packages/serve`](packages/serve) | agentkit | `agentkit-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
-| [`packages/ts`](packages/ts) | agentkit | `@agentkit/sdk`: typescript runtime port | typescript |
+| [`agentkit/sdk`](agentkit/sdk) | agentkit | `agentkit`: agent runtime, toolgen, providers | python 3.11 |
+| [`agentkit/serve`](agentkit/serve) | agentkit | `agentkit-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
+| [`agentkit/ts`](agentkit/ts) | agentkit | `@agentkit/sdk`: typescript runtime port | typescript |
 
 each package has its own readme with setup instructions and architecture details.
 
@@ -47,7 +49,7 @@ modalities. payment collection is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  agentkit runtime        │   packages/sdk + packages/serve
+   │  agentkit runtime        │   agentkit/sdk + agentkit/serve
    │  llm loop · toolgen      │   fastapi, redis, postgres
    │  stt/tts (voice)         │
    └──────────────────────────┘
@@ -59,11 +61,11 @@ modalities. payment collection is a tool the agent calls.
 python 3.11+ and [poetry](https://python-poetry.org/); docker (postgres + redis).
 
 ```bash
-# js/ts workspace (studio + packages/ts)
+# js/ts workspace (studio + agentkit/ts)
 bun install
 
 # go api
-cd apps/api
+cd agentpay/api
 go mod download
 go run ./cmd/migrate/main.go up
 go run ./cmd/api/main.go
@@ -72,7 +74,7 @@ go run ./cmd/api/main.go
 bun --filter @agentpay/web dev
 
 # agentkit python sdk
-cd packages/sdk && poetry install && poetry run pytest
+cd agentkit/sdk && poetry install && poetry run pytest
 ```
 
 see [`docs/AGENTPAY.md`](docs/AGENTPAY.md) for the full agentpay setup, routes, and environment variables.

@@ -19,11 +19,11 @@ the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md)
    └────────────────────┬──────────────────────────┘
                         │  calls request_payment tool
                         ▼
-   ┌───────────────────────────────────────────────┐
-   │  @agentpay/api  (merchant plane)              │
-   │  creates payment session + Stripe PaymentIntent│
-   │  writes ledger row, fires payment.initiated   │
-   └────────────────────┬──────────────────────────┘
+   ┌──────────────────────────────────────────────────┐
+   │  @agentpay/api  (merchant plane)                 │
+   │  creates payment session + Stripe PaymentIntent  │
+   │  writes ledger row, fires payment.initiated      │
+   └────────────────────┬─────────────────────────────┘
                         │
                         ▼
    ┌───────────────────────────────────────────────┐
