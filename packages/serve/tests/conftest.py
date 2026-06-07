@@ -164,19 +164,12 @@ def mock_current_user():
 
 @pytest.fixture
 def mock_supabase_auth():
-    """Mock the supabase_auth_service singleton methods."""
-    from agentkit.core.auth import supabase_auth_service
+    """Mock the supabase auth service via the factory function."""
+    from unittest.mock import patch
 
-    original_get_user = supabase_auth_service.get_user
-    original_refresh_token = supabase_auth_service.refresh_token
+    mock_svc = AsyncMock()
+    mock_svc.get_user = AsyncMock()
+    mock_svc.refresh_token = AsyncMock()
 
-    mock_get = AsyncMock()
-    mock_refresh = AsyncMock()
-
-    supabase_auth_service.get_user = mock_get
-    supabase_auth_service.refresh_token = mock_refresh
-
-    yield supabase_auth_service
-
-    supabase_auth_service.get_user = original_get_user
-    supabase_auth_service.refresh_token = original_refresh_token
+    with patch("agentkit.core.auth.get_supabase_auth_service", return_value=mock_svc):
+        yield mock_svc
