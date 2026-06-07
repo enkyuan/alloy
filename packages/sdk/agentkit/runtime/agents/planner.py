@@ -16,7 +16,23 @@ ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 
 
 class ToolPlanner:
-    """Plans and executes tool calls concurrently (Scatter-Gather)."""
+    """Plans and executes tool calls concurrently (Scatter-Gather).
+
+    Args:
+        executor: An async callable ``(tool_name: str, args: dict) -> dict``
+            that dispatches a single tool call. Typically wraps ``execute_tool``
+            from the tool registry:
+
+                ToolPlanner(
+                    executor=lambda name, args: execute_tool("user-1", name, args)
+                )
+
+            For per-agent scoping with a ``ToolRegistry`` instance:
+
+                ToolPlanner(
+                    executor=lambda name, args: registry.execute("user-1", name, args)
+                )
+    """
 
     def __init__(self, executor: ToolExecutor):
         self.executor = executor

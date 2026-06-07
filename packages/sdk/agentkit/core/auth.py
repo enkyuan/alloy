@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any
 
-from agentkit.core.config import settings
+from agentkit.core.config import get_settings
 from agentkit.core.errors import ServiceAuthError, ServiceError
 from agentkit.core.http import HTTPService
 
@@ -18,6 +19,7 @@ class SupabaseAuthService(HTTPService):
     SERVICE_NAME = "supabase"
 
     def __init__(self) -> None:
+        settings = get_settings()
         super().__init__(max_connections=80)
         self.base_url = f"{settings.SUPABASE_KONG_URL}/auth/v1"
         self.headers = {
@@ -124,4 +126,12 @@ class SupabaseAuthService(HTTPService):
             return False
 
 
-supabase_auth_service = SupabaseAuthService()
+@lru_cache(maxsize=1)
+def get_supabase_auth_service() -> SupabaseAuthService:
+    return SupabaseAuthService()
+
+
+def __getattr__(name: str) -> Any:
+    if name == "supabase_auth_service":
+        return get_supabase_auth_service()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -11,10 +11,10 @@ from agentkit.infra.events.bus import EventBus
 from agentkit.infra.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
 from agentkit.infra.events.store import InMemoryEventStore
 from agentkit.infra.events.types import EventType
-from agentkit.runtime.providers import get_provider
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from agentkit.runtime.tools.registry import ToolSpec
+from tests.helpers.mock_provider import MockProvider as _RegistryMockProvider
 
 
 class MockEventBus(EventBus):
@@ -89,11 +89,11 @@ async def test_agent_runtime_basic_turn():
 
 @pytest.mark.asyncio
 async def test_agent_runtime_tool_loop_end_to_end():
-    """A full request -> execute -> continue loop using the registered mock.
+    """A full request -> execute -> continue loop using MockProvider.
 
-    Proves the infra-free, public path: ``get_provider("mock")`` plus a tool
-    spec drives the model to request a tool, the planner executes it, and the
-    loop re-reads state (now containing the tool result) and finishes.
+    Exercises the tool path: MockProvider requests the first offered tool,
+    the planner executes it, and the loop re-reads state (now containing the
+    tool result) and finishes with a plain text response.
     """
     store = InMemoryEventStore()
     bus = MockEventBus()
@@ -105,7 +105,7 @@ async def test_agent_runtime_tool_loop_end_to_end():
         return {"ok": True}
 
     planner = ToolPlanner(executor=executor)
-    provider = get_provider("mock")
+    provider = _RegistryMockProvider()
 
     tools = [
         ToolSpec(
@@ -143,7 +143,7 @@ async def test_agent_runtime_no_tools_runs_clean():
     store = InMemoryEventStore()
     bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
-    provider = get_provider("mock")
+    provider = _RegistryMockProvider()
 
     runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
 
@@ -160,9 +160,12 @@ async def test_agent_runtime_no_tools_runs_clean():
 
 
 @pytest.mark.asyncio
-async def test_get_provider_mock_is_registered():
-    """The mock provider is reachable through the public registry."""
-    assert get_provider("mock") is not None
+async def test_get_provider_mock_not_in_public_registry():
+    """The mock provider is not in the public registry; a real API key is required."""
+    from agentkit.runtime.providers import get_provider
+    from agentkit.runtime.providers.errors import ProviderConfigError
+    with pytest.raises(ProviderConfigError):
+        get_provider("mock")
 
 
 @pytest.mark.asyncio
@@ -222,3 +225,26 @@ async def test_agent_runtime_cancellation():
 
     # AgentMessageCompleted should NOT be there because it was interrupted
     assert EventType.AGENT_MESSAGE_COMPLETED not in types
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_send_publishes_user_message_to_bus():
+    """send() must emit UserMessage via _emit (store + bus), not store-only."""
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+    planner = ToolPlanner(executor=mock_executor)
+    provider = MockProvider()
+
+    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    await runtime.send("s1", "hello via send")
+
+    events = await store.get_events("s1")
+    types = [e.type for e in events]
+
+    # UserMessage must be in the store
+    assert EventType.USER_MESSAGE in types
+    # UserMessage must also have been published to the bus
+    bus_types = [e.type for e in bus.published]
+    assert EventType.USER_MESSAGE in bus_types
+    # Agent turn ran and completed
+    assert EventType.AGENT_MESSAGE_COMPLETED in types

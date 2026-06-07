@@ -22,6 +22,8 @@ class ToolSpec:
     name: str
     description: str
     parameters: Dict[str, Any]
+    tags: tuple[str, ...] = ()
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -54,9 +56,25 @@ def register_tool(spec: ToolSpec):
     return wrapper
 
 
-def list_tool_specs() -> List[ToolSpec]:
-    """Return all registered tool specs."""
-    return list(_TOOL_SPECS.values())
+def _filter_specs(
+    specs: List[ToolSpec],
+    tags: Optional[List[str]],
+    enabled_only: bool,
+) -> List[ToolSpec]:
+    if enabled_only:
+        specs = [s for s in specs if s.enabled]
+    if tags:
+        tag_set = set(tags)
+        specs = [s for s in specs if tag_set.intersection(s.tags)]
+    return specs
+
+
+def list_tool_specs(
+    tags: Optional[List[str]] = None,
+    enabled_only: bool = True,
+) -> List[ToolSpec]:
+    """Return registered tool specs, optionally filtered by tags or enabled status."""
+    return _filter_specs(list(_TOOL_SPECS.values()), tags, enabled_only)
 
 
 def tool_spec_from_model(
@@ -85,3 +103,61 @@ async def execute_tool(
 
     ctx = ToolContext(user_id=user_id, db=db)
     return await handler(ctx, tool_args)
+
+
+class ToolRegistry:
+    """Scoped tool registry for per-agent or per-tenant isolation.
+
+    The module-level ``register_tool``, ``list_tool_specs``, and ``execute_tool``
+    functions share a single global registry suitable for simple single-agent
+    setups. Use ``ToolRegistry`` when you need multiple isolated registries or
+    want to pass a registry explicitly to ``AgentRuntime``.
+
+    Example::
+
+        registry = ToolRegistry()
+
+        @registry.register(ToolSpec(name="ping", description="...", parameters={}))
+        async def ping(ctx: ToolContext, args: dict) -> dict:
+            return {"pong": True}
+
+        runtime = AgentRuntime(..., tools=registry.list_specs())
+    """
+
+    def __init__(self) -> None:
+        self._specs: Dict[str, ToolSpec] = {}
+        self._handlers: Dict[str, ToolHandler] = {}
+
+    def register(self, spec: ToolSpec) -> Callable[[ToolHandler], ToolHandler]:
+        """Decorator to register a tool handler on this registry instance."""
+
+        def wrapper(func: ToolHandler) -> ToolHandler:
+            if spec.name in self._specs:
+                raise ValueError(f"Tool already registered: {spec.name}")
+            self._specs[spec.name] = spec
+            self._handlers[spec.name] = func
+            return func
+
+        return wrapper
+
+    def list_specs(
+        self,
+        tags: Optional[List[str]] = None,
+        enabled_only: bool = True,
+    ) -> List[ToolSpec]:
+        """Return specs from this registry, optionally filtered."""
+        return _filter_specs(list(self._specs.values()), tags, enabled_only)
+
+    async def execute(
+        self,
+        user_id: str,
+        tool_name: str,
+        tool_args: Dict[str, Any],
+        db: Optional["AsyncSession"] = None,
+    ) -> Dict[str, Any]:
+        """Execute a tool registered on this registry instance."""
+        handler = self._handlers.get(tool_name)
+        if handler is None:
+            raise ValueError(f"Unknown tool: {tool_name}")
+        ctx = ToolContext(user_id=user_id, db=db)
+        return await handler(ctx, tool_args)

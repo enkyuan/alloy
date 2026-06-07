@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  ToolRegistry,
   clearTools,
   executeTool,
   listToolSpecs,
@@ -71,5 +72,102 @@ describe("tool registry", () => {
     }));
     const result = await executeTool("u", "needs_db", {}, db);
     expect(result).toEqual({ sawDb: true });
+  });
+
+  it("listToolSpecs excludes disabled specs by default", () => {
+    registerTool({ name: "on", description: "d", parameters: {} }, async () => ({}));
+    registerTool(
+      { name: "off", description: "d", parameters: {}, enabled: false },
+      async () => ({}),
+    );
+    expect(listToolSpecs().map((s) => s.name)).toEqual(["on"]);
+  });
+
+  it("listToolSpecs with enabledOnly:false returns all specs", () => {
+    registerTool({ name: "on", description: "d", parameters: {} }, async () => ({}));
+    registerTool(
+      { name: "off", description: "d", parameters: {}, enabled: false },
+      async () => ({}),
+    );
+    expect(listToolSpecs({ enabledOnly: false })).toHaveLength(2);
+  });
+
+  it("listToolSpecs filters by tag", () => {
+    registerTool(
+      { name: "a", description: "d", parameters: {}, tags: ["payments"] },
+      async () => ({}),
+    );
+    registerTool({ name: "b", description: "d", parameters: {}, tags: ["crm"] }, async () => ({}));
+    expect(listToolSpecs({ tags: ["payments"] }).map((s) => s.name)).toEqual(["a"]);
+  });
+
+  it("listToolSpecs with empty tags array is treated as no tag filter", () => {
+    registerTool(
+      { name: "a", description: "d", parameters: {}, tags: ["payments"] },
+      async () => ({}),
+    );
+    // empty array = no tag constraint applied, same as omitting tags
+    expect(listToolSpecs({ tags: [] })).toHaveLength(1);
+  });
+});
+
+describe("ToolRegistry", () => {
+  it("register and execute round-trip", async () => {
+    const registry = new ToolRegistry();
+    registry.register({ name: "ping", description: "d", parameters: {} }, async () => ({
+      pong: true,
+    }));
+    const result = await registry.execute("u", "ping", {});
+    expect(result).toEqual({ pong: true });
+  });
+
+  it("duplicate registration throws", () => {
+    const registry = new ToolRegistry();
+    registry.register({ name: "dup", description: "d", parameters: {} }, async () => ({}));
+    expect(() =>
+      registry.register({ name: "dup", description: "d", parameters: {} }, async () => ({})),
+    ).toThrow(/already registered/);
+  });
+
+  it("execute throws for unknown tool", async () => {
+    const registry = new ToolRegistry();
+    await expect(registry.execute("u", "ghost", {})).rejects.toThrow(/Unknown tool/);
+  });
+
+  it("listSpecs excludes disabled by default", () => {
+    const registry = new ToolRegistry();
+    registry.register({ name: "on", description: "d", parameters: {} }, async () => ({}));
+    registry.register(
+      { name: "off", description: "d", parameters: {}, enabled: false },
+      async () => ({}),
+    );
+    expect(registry.listSpecs().map((s) => s.name)).toEqual(["on"]);
+  });
+
+  it("listSpecs with enabledOnly:false returns all", () => {
+    const registry = new ToolRegistry();
+    registry.register({ name: "on", description: "d", parameters: {} }, async () => ({}));
+    registry.register(
+      { name: "off", description: "d", parameters: {}, enabled: false },
+      async () => ({}),
+    );
+    expect(registry.listSpecs({ enabledOnly: false })).toHaveLength(2);
+  });
+
+  it("listSpecs filters by tag", () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      { name: "a", description: "d", parameters: {}, tags: ["payments"] },
+      async () => ({}),
+    );
+    registry.register({ name: "b", description: "d", parameters: {} }, async () => ({}));
+    expect(registry.listSpecs({ tags: ["payments"] }).map((s) => s.name)).toEqual(["a"]);
+  });
+
+  it("two registries are isolated", () => {
+    const r1 = new ToolRegistry();
+    const r2 = new ToolRegistry();
+    r1.register({ name: "x", description: "d", parameters: {} }, async () => ({}));
+    expect(r2.listSpecs()).toHaveLength(0);
   });
 });

@@ -66,7 +66,7 @@ export class EventBus {
   private readonly subscribers = new Map<string, Set<Subscription>>();
 
   /** Publish an event to every subscriber of its session. */
-  publish(event: AgentKitEvent): void {
+  async publish(event: AgentKitEvent): Promise<void> {
     const subs = this.subscribers.get(event.session_id);
     if (!subs) return;
     for (const sub of subs) sub.push(event);

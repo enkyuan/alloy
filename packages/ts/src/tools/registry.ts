@@ -13,6 +13,8 @@ export interface ToolSpec {
   name: string;
   description: string;
   parameters: JSONSchema;
+  tags?: string[];
+  enabled?: boolean;
 }
 
 /**
@@ -43,9 +45,25 @@ export function registerTool(spec: ToolSpec, handler: ToolHandler): void {
   toolHandlers.set(spec.name, handler);
 }
 
-/** Return all registered tool specs. */
-export function listToolSpecs(): ToolSpec[] {
-  return [...toolSpecs.values()];
+export interface ListToolSpecsOptions {
+  tags?: string[];
+  enabledOnly?: boolean;
+}
+
+function filterSpecs(all: ToolSpec[], options: ListToolSpecsOptions): ToolSpec[] {
+  const { tags, enabledOnly = true } = options;
+  let specs = all;
+  if (enabledOnly) specs = specs.filter((s) => s.enabled !== false);
+  if (tags && tags.length > 0) {
+    const tagSet = new Set(tags);
+    specs = specs.filter((s) => s.tags?.some((t) => tagSet.has(t)));
+  }
+  return specs;
+}
+
+/** Return registered tool specs, optionally filtered by tags or enabled status. */
+export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
+  return filterSpecs([...toolSpecs.values()], options);
 }
 
 /**
@@ -91,4 +109,54 @@ export async function executeTool(
 export function clearTools(): void {
   toolSpecs.clear();
   toolHandlers.clear();
+}
+
+/**
+ * Scoped tool registry for per-agent or per-tenant isolation.
+ *
+ * The module-level `registerTool`, `listToolSpecs`, and `executeTool`
+ * functions share a single global registry suitable for simple setups.
+ * Use `ToolRegistry` when you need multiple isolated registries.
+ *
+ * @example
+ * ```ts
+ * const registry = new ToolRegistry();
+ * registry.register({ name: "ping", description: "...", parameters: {} }, async (_ctx, _args) => ({ pong: true }));
+ * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs() });
+ * ```
+ */
+export class ToolRegistry {
+  private readonly specs = new Map<string, ToolSpec>();
+  private readonly handlers = new Map<string, ToolHandler>();
+
+  register(spec: ToolSpec, handler: ToolHandler): this {
+    if (this.specs.has(spec.name)) {
+      throw new Error(`Tool already registered: ${spec.name}`);
+    }
+    this.specs.set(spec.name, spec);
+    this.handlers.set(spec.name, handler);
+    return this;
+  }
+
+  listSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
+    return filterSpecs([...this.specs.values()], options);
+  }
+
+  async execute(
+    userId: string,
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    db?: unknown,
+  ): Promise<Record<string, unknown>> {
+    const handler = this.handlers.get(toolName);
+    if (handler === undefined) {
+      throw new Error(`Unknown tool: ${toolName}`);
+    }
+    return handler({ userId, db }, toolArgs);
+  }
+
+  clear(): void {
+    this.specs.clear();
+    this.handlers.clear();
+  }
 }

@@ -1,7 +1,7 @@
 """AgentReasoningNode runs end-to-end with no infra (#9).
 
-Default history store is in-memory and the mock provider needs no key, so the
-node's full generate() flow runs without Redis, a DB, or a network.
+The default history store is in-memory; we inject MockProvider directly so the
+node's full generate() flow runs without Redis, a DB, or a network call.
 """
 
 from unittest.mock import patch
@@ -16,6 +16,7 @@ from agentkit.modalities.voice.event_models import (
     ToolResult,
     UserTranscriptionReceived,
 )
+from tests.helpers.mock_provider import MockProvider
 
 
 def _message(content, user_id="u1"):
@@ -27,7 +28,10 @@ def _message(content, user_id="u1"):
 
 @pytest.fixture
 def use_mock_provider():
-    with patch("agentkit.core.config.settings.AGENTKIT_MODEL_PROVIDER", "mock"):
+    with patch(
+        "agentkit.runtime.agents.nodes.agentic.get_provider",
+        return_value=MockProvider(),
+    ):
         yield
 
 

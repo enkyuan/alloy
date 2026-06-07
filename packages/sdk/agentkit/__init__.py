@@ -29,6 +29,7 @@ _LAZY: dict[str, str] = {
     "AgentStrategy": "agentkit.runtime.agents",
     "CancellationToken": "agentkit.runtime.agents",
     "ToolPlanner": "agentkit.runtime.agents",
+    "ToolExecutor": "agentkit.runtime.agents.planner",
     # Sessions
     "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",
@@ -44,6 +45,7 @@ _LAZY: dict[str, str] = {
     # Toolgen
     "ToolSpec": "agentkit.runtime.tools.registry",
     "ToolContext": "agentkit.runtime.tools.registry",
+    "ToolRegistry": "agentkit.runtime.tools.registry",
     "register_tool": "agentkit.runtime.tools.registry",
     "list_tool_specs": "agentkit.runtime.tools.registry",
     "tool_spec_from_model": "agentkit.runtime.tools.registry",

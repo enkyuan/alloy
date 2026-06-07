@@ -15,7 +15,7 @@ describe("EventBus", () => {
     const bus = new EventBus();
     const sub = bus.subscribe("s1");
 
-    bus.publish(userMessage("s1", "hello"));
+    await bus.publish(userMessage("s1", "hello"));
 
     const { value, done } = await sub.next();
     expect(done).toBe(false);
@@ -28,8 +28,8 @@ describe("EventBus", () => {
     const bus = new EventBus();
     const sub = bus.subscribe("s1");
 
-    bus.publish(userMessage("s1", "one"));
-    bus.publish(userMessage("s1", "two"));
+    await bus.publish(userMessage("s1", "one"));
+    await bus.publish(userMessage("s1", "two"));
 
     const first = await sub.next();
     const second = await sub.next();
@@ -46,8 +46,8 @@ describe("EventBus", () => {
     const bus = new EventBus();
     const sub = bus.subscribe("s1");
 
-    bus.publish(userMessage("s2", "other"));
-    bus.publish(userMessage("s1", "mine"));
+    await bus.publish(userMessage("s2", "other"));
+    await bus.publish(userMessage("s1", "mine"));
 
     const { value } = await sub.next();
     expect(value?.type === EventType.USER_MESSAGE ? value.content : "").toBe(
@@ -62,7 +62,7 @@ describe("EventBus", () => {
     const a = bus.subscribe("s1");
     const b = bus.subscribe("s1");
 
-    bus.publish(userMessage("s1", "broadcast"));
+    await bus.publish(userMessage("s1", "broadcast"));
 
     const [ra, rb] = await Promise.all([a.next(), b.next()]);
     expect(ra.value?.type).toBe(EventType.USER_MESSAGE);

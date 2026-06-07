@@ -36,6 +36,8 @@ export {
   type ToolContext,
   type ToolHandler,
   type JSONSchema,
+  type ListToolSpecsOptions,
+  ToolRegistry,
   registerTool,
   listToolSpecs,
   toolSpecFromSchema,

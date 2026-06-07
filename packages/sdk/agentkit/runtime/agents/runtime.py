@@ -18,6 +18,7 @@ from agentkit.infra.events.schemas import (
     CancellationCompleted,
     SwarmAgentSpawned,
     SwarmRunStarted,
+    UserMessage,
 )
 from agentkit.infra.events.store import EventStore
 from agentkit.runtime.providers.base import ModelProvider
@@ -60,10 +61,29 @@ class AgentRuntime:
         await self.store.append(event)
         await self.bus.publish(event)
 
+    async def send(
+        self, session_id: str, content: str, cancellation_token: Optional[CancellationToken] = None
+    ) -> None:
+        """Append a user message and immediately run the agent turn.
+
+        This is the idiomatic one-shot call:
+
+            await runtime.send("s1", "What time is it?")
+
+        For more control (batch-append, replay, pre-seeding) call
+        ``store.append(UserMessage(...))`` and ``run_turn()`` separately.
+        """
+        await self._emit(UserMessage(session_id=session_id, content=content))
+        await self.run_turn(session_id, cancellation_token)
+
     async def run_turn(
         self, session_id: str, cancellation_token: Optional[CancellationToken] = None
     ) -> None:
-        """Run the core ReAct-style agent loop for a given session."""
+        """Run the core ReAct-style agent loop for a given session.
+
+        The event log must already contain at least one ``UserMessage`` for
+        ``session_id``. To send a message and run in one call, use ``send()``.
+        """
         token = cancellation_token or CancellationToken()
 
         await self._emit(AgentReasoningStarted(session_id=session_id))
