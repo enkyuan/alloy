@@ -28,6 +28,7 @@ type handler struct {
 // Router mounts the session routes.
 func Router(db *pgxpool.Pool, stripeKey string) http.Handler {
 	stripe.Key = stripeKey
+	
 	h := &handler{store: NewStore(db)}
 	r := chi.NewRouter()
 	r.Post("/", h.createSession)
