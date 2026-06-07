@@ -11,8 +11,8 @@ import (
 	"github.com/stripe/stripe-go/v82/paymentmethod"
 	"github.com/stripe/stripe-go/v82/setupintent"
 
-	"github.com/enkyuan/alloy/apps/consumer/internal/auth"
-	"github.com/enkyuan/alloy/apps/consumer/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/auth"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/middleware"
 )
 
 type handler struct {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/enkyuan/alloy/apps/consumer/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/middleware"
 )
 
 func makeToken(secret, consumerID, role string) string {

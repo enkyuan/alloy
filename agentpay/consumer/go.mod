@@ -1,4 +1,4 @@
-module github.com/enkyuan/alloy/apps/consumer
+module github.com/enkyuan/alloy/agentpay/consumer
 
 go 1.25.7
 

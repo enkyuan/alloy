@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enkyuan/alloy/apps/consumer/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/middleware"
 )
 
 type handler struct {

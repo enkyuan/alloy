@@ -15,12 +15,12 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 
-	authhandler "github.com/enkyuan/alloy/apps/consumer/internal/auth"
-	internalhandler "github.com/enkyuan/alloy/apps/consumer/internal/internalapi"
-	jwtmiddleware "github.com/enkyuan/alloy/apps/consumer/internal/middleware"
-	"github.com/enkyuan/alloy/apps/consumer/internal/store"
-	txhandler "github.com/enkyuan/alloy/apps/consumer/internal/transaction"
-	wallethandler "github.com/enkyuan/alloy/apps/consumer/internal/wallet"
+	authhandler "github.com/enkyuan/alloy/agentpay/consumer/internal/auth"
+	internalhandler "github.com/enkyuan/alloy/agentpay/consumer/internal/internalapi"
+	jwtmiddleware "github.com/enkyuan/alloy/agentpay/consumer/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/store"
+	txhandler "github.com/enkyuan/alloy/agentpay/consumer/internal/transaction"
+	wallethandler "github.com/enkyuan/alloy/agentpay/consumer/internal/wallet"
 )
 
 func main() {

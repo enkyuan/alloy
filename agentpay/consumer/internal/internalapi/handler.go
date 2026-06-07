@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enkyuan/alloy/apps/consumer/internal/transaction"
+	"github.com/enkyuan/alloy/agentpay/consumer/internal/transaction"
 )
 
 type handler struct {
