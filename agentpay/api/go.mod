@@ -1,4 +1,4 @@
-module github.com/enkyuan/alloy/apps/api
+module github.com/enkyuan/alloy/agentpay/api
 
 go 1.25.7
 

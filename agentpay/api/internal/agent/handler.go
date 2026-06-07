@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enkyuan/alloy/apps/api/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/api/internal/middleware"
 )
 
 // Agent represents a configured agent instance.

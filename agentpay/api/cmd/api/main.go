@@ -15,15 +15,15 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 
-	agenthandler "github.com/enkyuan/alloy/apps/api/internal/agent"
-	"github.com/enkyuan/alloy/apps/api/internal/middleware"
-	obshandler "github.com/enkyuan/alloy/apps/api/internal/observability"
-	paymenthandler "github.com/enkyuan/alloy/apps/api/internal/payment"
-	sessionhandler "github.com/enkyuan/alloy/apps/api/internal/session"
-	stripehandler "github.com/enkyuan/alloy/apps/api/internal/stripe"
-	"github.com/enkyuan/alloy/apps/api/internal/store"
-	wallethandler "github.com/enkyuan/alloy/apps/api/internal/wallet"
-	webhookhandler "github.com/enkyuan/alloy/apps/api/internal/webhook"
+	agenthandler "github.com/enkyuan/alloy/agentpay/api/internal/agent"
+	"github.com/enkyuan/alloy/agentpay/api/internal/middleware"
+	obshandler "github.com/enkyuan/alloy/agentpay/api/internal/observability"
+	paymenthandler "github.com/enkyuan/alloy/agentpay/api/internal/payment"
+	sessionhandler "github.com/enkyuan/alloy/agentpay/api/internal/session"
+	stripehandler "github.com/enkyuan/alloy/agentpay/api/internal/stripe"
+	"github.com/enkyuan/alloy/agentpay/api/internal/store"
+	wallethandler "github.com/enkyuan/alloy/agentpay/api/internal/wallet"
+	webhookhandler "github.com/enkyuan/alloy/agentpay/api/internal/webhook"
 )
 
 func main() {

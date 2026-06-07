@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enkyuan/alloy/apps/api/internal/session"
+	"github.com/enkyuan/alloy/agentpay/api/internal/session"
 )
 
 func testDB(t *testing.T) *pgxpool.Pool {

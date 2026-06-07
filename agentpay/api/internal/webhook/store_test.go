@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enkyuan/alloy/apps/api/internal/webhook"
+	"github.com/enkyuan/alloy/agentpay/api/internal/webhook"
 )
 
 func testDB(t *testing.T) *pgxpool.Pool {

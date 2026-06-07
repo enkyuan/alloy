@@ -9,7 +9,7 @@ import (
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/paymentintent"
 
-	"github.com/enkyuan/alloy/apps/api/internal/middleware"
+	"github.com/enkyuan/alloy/agentpay/api/internal/middleware"
 )
 
 // CreateSessionRequest is the payload sent by the agentkit request_payment tool.

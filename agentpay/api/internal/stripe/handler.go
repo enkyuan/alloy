@@ -13,8 +13,8 @@ import (
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 
-	"github.com/enkyuan/alloy/apps/api/internal/session"
-	wh "github.com/enkyuan/alloy/apps/api/internal/webhook"
+	"github.com/enkyuan/alloy/agentpay/api/internal/session"
+	wh "github.com/enkyuan/alloy/agentpay/api/internal/webhook"
 )
 
 // Handler handles POST /stripe/webhook.

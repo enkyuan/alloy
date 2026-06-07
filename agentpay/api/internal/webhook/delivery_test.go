@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/enkyuan/alloy/apps/api/internal/webhook"
+	"github.com/enkyuan/alloy/agentpay/api/internal/webhook"
 )
 
 func TestSignPayload(t *testing.T) {
