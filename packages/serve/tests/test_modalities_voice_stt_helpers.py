@@ -67,8 +67,9 @@ async def test_authenticate_ws_missing_token_closes_socket():
 async def test_authenticate_ws_invalid_user_closes_socket():
     websocket = AsyncMock()
     websocket.headers = {"authorization": "Bearer bad"}
-    with patch("agentkit.modalities.voice.stt.handler.supabase_auth_service") as auth:
-        auth.get_user = AsyncMock(return_value=None)
+    mock_auth = AsyncMock()
+    mock_auth.get_user = AsyncMock(return_value=None)
+    with patch("agentkit.modalities.voice.stt.handler.get_supabase_auth_service", return_value=mock_auth):
         result = await authenticate_ws(websocket)
     assert result is None
     websocket.close.assert_awaited_once_with(code=1008)
