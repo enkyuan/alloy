@@ -1,6 +1,9 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
+ARG BUILD_COMMIT=unknown
+LABEL build.commit="${BUILD_COMMIT}"
+
 # Set working directory
 WORKDIR /app
 
@@ -24,14 +27,18 @@ RUN pip install poetry==1.8.3
 # Configure poetry to not create a virtual environment
 RUN poetry config virtualenvs.create false
 
-# Copy the monorepo. The Python distributions live under packages/:
-#   packages/sdk   -> the agentkit SDK
-#   packages/serve -> the FastAPI + workers service (path-depends on ../sdk)
+# Copy the monorepo. The Python distributions live under agentkit/:
+#   agentkit/sdk   -> the agentkit SDK
+#   agentkit/serve -> the FastAPI + workers service (path-depends on ../sdk)
 COPY . .
 
 # Installing the serve distribution pulls in the SDK via its path dependency
-# (packages/serve -> ../sdk), so a single install gives both.
-RUN pip install ./packages/serve
+# (agentkit/serve -> ../sdk), so a single install gives both.
+RUN pip install ./agentkit/serve
+
+# Fail at build time if either package is unimportable (catches stale cached images
+# built before the monorepo restructure, where the installed path no longer matches).
+RUN python -c "import agentkit; import agentkit_serve"
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

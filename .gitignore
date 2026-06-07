@@ -138,11 +138,12 @@ Pods/
 node_modules/
 bun.lock
 
-# Go
-apps/api/bin/
+# Go binaries
+agentpay/api/bin/
+agentpay/consumer/consumer
 
 # agentpay local stack secrets
-apps/docker/.env
+docker/agentpay/.env
 
 # Turborepo
 .turbo/

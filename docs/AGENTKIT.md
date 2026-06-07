@@ -11,13 +11,13 @@ standalone in any python or typescript project.
 
 ## packages
 
-three packages live under `packages/`:
+three packages live under `agentkit/`:
 
 | package | path | what it is |
 | -------------------- | ---------------------- | ------------------------------------------------ |
-| `agentkit` | `packages/sdk` | python SDK: the core runtime, embed anywhere |
-| `agentkit-serve` | `packages/serve` | python: FastAPI + workers reference service |
-| `@agentkit/sdk` | `packages/ts` | TypeScript port of the core runtime |
+| `agentkit` | `agentkit/sdk` | python SDK: the core runtime, embed anywhere |
+| `agentkit-serve` | `agentkit/serve` | python: FastAPI + workers reference service |
+| `@agentkit/sdk` | `agentkit/ts` | TypeScript port of the core runtime |
 
 individual package setup lives in each package's own README. this doc covers
 the shared concepts across all three.
@@ -65,8 +65,8 @@ all session state is derived from an append-only event log. events are
 discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
 `agent.message.completed`). the full list lives in the SDK source:
 
-- `packages/sdk/agentkit/infra/events/schemas.py` (python)
-- `packages/ts/src/events/schemas.ts` (typescript)
+- `agentkit/sdk/agentkit/infra/events/schemas.py` (python)
+- `agentkit/ts/src/events/schemas.ts` (typescript)
 
 the event type string values are the wire format and are identical across both
 SDKs.
@@ -125,7 +125,7 @@ TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
 
 ## the reference service (agentkit-serve)
 
-`agentkit-serve` (`packages/serve`) wraps the SDK as three processes over Redis
+`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes over Redis
 so heavy tool execution never stalls a real-time exchange:
 
 | process | role |
@@ -142,7 +142,7 @@ embed `agentkit` directly when you want infra-free usage inside your own app.
 
 ## typescript SDK
 
-`@agentkit/sdk` (`packages/ts`) is a TypeScript port of the python core. it
+`@agentkit/sdk` (`agentkit/ts`) is a TypeScript port of the python core. it
 mirrors the public surface (event types, store, bus, replay, tool registry) and
 uses Zod 4 for validation. wire format (event type strings, field names) is
 identical to the python SDK so events can round-trip across both.
@@ -151,6 +151,6 @@ not yet ported: the reasoning loop, LLM providers, and voice modalities.
 
 ## further reading
 
-- individual package READMEs: `packages/sdk/agentkit/README.md`,
-  `packages/serve/README.md`, `packages/ts/README.md`
+- individual package READMEs: `agentkit/sdk/agentkit/README.md`,
+  `agentkit/serve/README.md`, `agentkit/ts/README.md`
 - agentpay (the product built on agentkit): [`docs/AGENTPAY.md`](AGENTPAY.md)

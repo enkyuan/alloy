@@ -4,17 +4,21 @@ on:
   push:
     branches: [main]
     paths:
-      - "packages/sdk/**"
-      - "packages/serve/**"
-      - "packages/ts/**"
-      - "apps/api/**"
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - "agentkit/ts/**"
+      - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - "agentpay/auth/**"
       - ".github/workflows/sdk-tests.yml"
   pull_request:
     paths:
-      - "packages/sdk/**"
-      - "packages/serve/**"
-      - "packages/ts/**"
-      - "apps/api/**"
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - "agentkit/ts/**"
+      - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - "agentpay/auth/**"
       - ".github/workflows/sdk-tests.yml"
 
 jobs:
@@ -24,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/sdk
+        working-directory: agentkit/sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +44,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('packages/sdk/poetry.lock') }}
+          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/sdk/poetry.lock') }}
           restore-keys: |
             poetry-sdk-${{ runner.os }}-py3.11-
 
@@ -54,7 +58,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-sdk
-          path: packages/sdk/coverage.xml
+          path: agentkit/sdk/coverage.xml
           retention-days: 7
 
   # ─── Reference service ─────────────────────────────────────────────────────
@@ -88,7 +92,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: packages/serve
+        working-directory: agentkit/serve
 
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +109,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('packages/serve/poetry.lock') }}
+          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
           restore-keys: |
             poetry-serve-${{ runner.os }}-py3.11-
 
@@ -119,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-serve
-          path: packages/serve/coverage.xml
+          path: agentkit/serve/coverage.xml
           retention-days: 7
 
   # ─── TypeScript SDK ─────────────────────────────────────────────────────────
@@ -127,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/ts
+        working-directory: agentkit/ts
     steps:
       - uses: actions/checkout@v4
 
@@ -153,7 +157,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/api
+        working-directory: agentpay/api
 
     services:
       postgres:
@@ -172,6 +176,7 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
     steps:
       - uses: actions/checkout@v4
@@ -179,11 +184,78 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: apps/api/go.mod
+          go-version-file: agentpay/api/go.mod
           cache: true
+
+      - name: Run migrations
+        run: go run ./cmd/migrate up
 
       - name: Vet
         run: go vet ./...
 
       - name: Test
         run: go test ./... -v -race -count=1
+
+  # ─── Go Consumer ────────────────────────────────────────────────────────────
+  consumer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/consumer
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agentpay/consumer/go.mod
+          cache: true
+
+      - name: Run migrations
+        run: go run ./cmd/migrate up
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -v -race -count=1
+
+  # ─── Auth service (TypeScript/Bun) ──────────────────────────────────────────
+  auth:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/auth
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Type check
+        run: bun run typecheck
