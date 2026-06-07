@@ -4,16 +4,16 @@ on:
   push:
     branches: [main]
     paths:
-      - "packages/sdk/**"
-      - "packages/serve/**"
-      - "packages/ts/**"
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - "agentkit/ts/**"
       - "agentpay/api/**"
       - ".github/workflows/sdk-tests.yml"
   pull_request:
     paths:
-      - "packages/sdk/**"
-      - "packages/serve/**"
-      - "packages/ts/**"
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - "agentkit/ts/**"
       - "agentpay/api/**"
       - ".github/workflows/sdk-tests.yml"
 
@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/sdk
+        working-directory: agentkit/sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('packages/sdk/poetry.lock') }}
+          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/sdk/poetry.lock') }}
           restore-keys: |
             poetry-sdk-${{ runner.os }}-py3.11-
 
@@ -54,7 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-sdk
-          path: packages/sdk/coverage.xml
+          path: agentkit/sdk/coverage.xml
           retention-days: 7
 
   # ─── Reference service ─────────────────────────────────────────────────────
@@ -88,7 +88,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: packages/serve
+        working-directory: agentkit/serve
 
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +105,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('packages/serve/poetry.lock') }}
+          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
           restore-keys: |
             poetry-serve-${{ runner.os }}-py3.11-
 
@@ -119,7 +119,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-serve
-          path: packages/serve/coverage.xml
+          path: agentkit/serve/coverage.xml
           retention-days: 7
 
   # ─── TypeScript SDK ─────────────────────────────────────────────────────────
@@ -127,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/ts
+        working-directory: agentkit/ts
     steps:
       - uses: actions/checkout@v4
 
