@@ -1,0 +1,30 @@
+---
+title: Tool registry
+description: Register a tool spec plus a handler; calls from one model turn run concurrently.
+---
+
+tools are registered with a spec (name, description, JSON-schema parameters) and
+a handler function. the runtime calls the LLM with the full tool-spec list. when
+the model requests a tool call, the registry dispatches it. multiple tool calls
+from one LLM turn run concurrently (scatter-gather) and results are collected
+before the next loop iteration.
+
+```python
+# Python
+@agentkit.register_tool(
+    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+)
+async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
+    return {"tempF": 68}
+```
+
+```ts
+// TypeScript
+registerTool(
+  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
+  async (ctx, args) => ({ tempF: 68 }),
+);
+```
+
+`ToolContext` carries `userId` / `user_id` and an optional `db` handle (null by
+default. inject one when the tool needs persistence).

@@ -1,0 +1,12 @@
+---
+title: Session state
+description: replaySession projects an event log into the conversation passed to the model.
+---
+
+`replaySession` (Python: `ReplaySession`) takes the event log for a session and
+projects it into a `SessionState`: `isActive` (Python: `is_active`), and
+`messages` - the conversation history in `{ role, content }` form that gets
+passed to the LLM.
+
+because state is a pure projection of the log, replay is deterministic: the same
+events always yield the same `SessionState`.

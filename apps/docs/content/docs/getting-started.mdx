@@ -1,0 +1,47 @@
+---
+title: Getting started
+description: Install agentkit and register your first tool.
+---
+
+## install
+
+```bash
+# TypeScript (from the monorepo JS workspace)
+bun install
+# the package is @agentkit/sdk
+
+# Python
+cd agentkit/sdk && poetry install
+```
+
+## register a tool
+
+tools are a spec (name, description, JSON-schema parameters) plus a handler.
+the runtime sends the full tool-spec list to the model. when the model requests
+a call, the registry dispatches the handler. multiple calls from one model turn
+run concurrently, and results are collected before the next loop iteration.
+
+```python
+# Python
+@agentkit.register_tool(
+    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+)
+async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
+    return {"tempF": 68}
+```
+
+```ts
+// TypeScript
+registerTool(
+  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
+  async (ctx, args) => ({ tempF: 68 }),
+);
+```
+
+`ToolContext` carries `userId` / `user_id` and an optional `db` handle (null by
+default. inject one when the tool needs persistence).
+
+## next
+
+read [core concepts](/docs/concepts/events) to understand events, session
+state, the tool registry, the event bus, and providers.
