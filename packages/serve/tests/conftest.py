@@ -164,12 +164,18 @@ def mock_current_user():
 
 @pytest.fixture
 def mock_supabase_auth():
-    """Mock the supabase auth service via the factory function."""
+    """Mock the supabase auth service at each consumption point.
+
+    agentkit_serve.server.v1.auth imports `supabase_auth_service` by name at
+    module load (via __getattr__ shim → lru_cache singleton). Patching the
+    factory would not intercept calls from that already-bound name, so we patch
+    the name in the consuming module directly.
+    """
     from unittest.mock import patch
 
     mock_svc = AsyncMock()
     mock_svc.get_user = AsyncMock()
     mock_svc.refresh_token = AsyncMock()
 
-    with patch("agentkit.core.auth.get_supabase_auth_service", return_value=mock_svc):
+    with patch("agentkit_serve.server.v1.auth.supabase_auth_service", mock_svc):
         yield mock_svc
