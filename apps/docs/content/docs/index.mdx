@@ -1,32 +1,32 @@
 ---
 title: agentkit
-description: Embeddable SDK for building agents - event-sourced runtime, tool registry, pluggable LLM providers, and STT/TTS modalities.
+description: agentkit is an embeddable, infra-free SDK for building agents in Python and TypeScript, with an event-sourced runtime, a tool registry, pluggable LLM providers, and STT/TTS voice modalities.
 ---
 
 agentkit is an embeddable SDK for building agents: an event-sourced runtime, a
-tool registry, pluggable LLM providers, and STT/TTS modalities. the core is
-infra-free. no database or server is required to import and use it. deploy it
+tool registry, pluggable LLM providers, and STT/TTS modalities. The core is
+infra-free. No database or server is required to import and use it. Deploy it
 yourself, or run the reference service (`agentkit-serve`) when you need a
 production-grade multi-process setup.
 
-it powers agentpay's agent runtime, and can also be used standalone in any
+It powers agentpay's agent runtime, and can also be used standalone in any
 Python or TypeScript project.
 
-## packages
+## Packages
 
-| package | path | what it is |
+| Package | Path | What It Is |
 | ---------------- | ---------------- | --------------------------------------------- |
 | `agentkit` | `agentkit/sdk` | Python SDK: the core runtime, embed anywhere |
 | `agentkit-serve` | `agentkit/serve` | Python: FastAPI + workers reference service |
 | `@agentkit/sdk` | `agentkit/ts` | TypeScript port of the core runtime |
 
-the concepts in these docs are stated language-neutrally. code samples show
-Python and TypeScript where both exist. the wire format (event type strings,
+The concepts in these docs are stated language-neutrally. Code samples show
+Python and TypeScript where both exist. The wire format (event type strings,
 field names) is identical across the Python SDK and the TypeScript port, so
 events round-trip across both.
 
-## when to embed vs. run the service
+## When to Embed vs. Run the Service
 
-embed `agentkit` directly for infra-free usage inside your own app. run
+Embed `agentkit` directly for infra-free usage inside your own app. Run
 `agentkit-serve` when you need multi-process durability and real-time voice.
-see [the reference service](/docs/reference-service).
+See [the reference service](/docs/reference-service).

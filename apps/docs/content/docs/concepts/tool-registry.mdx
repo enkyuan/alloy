@@ -1,11 +1,11 @@
 ---
-title: Tool registry
-description: Register a tool spec plus a handler; calls from one model turn run concurrently.
+title: Tool Registry
+description: Register a tool as a spec plus a handler in Python or TypeScript; the runtime dispatches model-requested calls and runs multiple calls from one turn concurrently.
 ---
 
-tools are registered with a spec (name, description, JSON-schema parameters) and
-a handler function. the runtime calls the LLM with the full tool-spec list. when
-the model requests a tool call, the registry dispatches it. multiple tool calls
+Tools are registered with a spec (name, description, JSON-schema parameters) and
+a handler function. The runtime calls the LLM with the full tool-spec list. When
+the model requests a tool call, the registry dispatches it. Multiple tool calls
 from one LLM turn run concurrently (scatter-gather) and results are collected
 before the next loop iteration.
 
@@ -26,5 +26,5 @@ registerTool(
 );
 ```
 
-`ToolContext` carries `userId` / `user_id` and an optional `db` handle (null by
-default. inject one when the tool needs persistence).
+`ToolContext` carries `userId` / `user_id` and an optional `db` handle (`null`
+by default). Inject one when the tool needs persistence.

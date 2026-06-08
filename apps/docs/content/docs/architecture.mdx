@@ -1,9 +1,9 @@
 ---
 title: Architecture
-description: The modality-agnostic ReAct runtime loop and where voice attaches.
+description: How the modality-agnostic ReAct runtime loop projects session state, calls the LLM provider, and runs tool calls, and where STT/TTS attach at the voice edges.
 ---
 
-## the runtime loop
+## The Runtime Loop
 
 ```
    ┌────────────────────────────────────────────────────┐
@@ -27,10 +27,10 @@ description: The modality-agnostic ReAct runtime loop and where voice attaches.
    └──────────────────┘        └──────────────────────┘
 ```
 
-## modalities attach at the edges
+## Modalities Attach at the Edges
 
-the reasoning loop is modality-agnostic. voice adds STT at the input edge and
-TTS at the output edge. text skips both.
+The reasoning loop is modality-agnostic. Voice adds STT at the input edge and
+TTS at the output edge. Text skips both.
 
 ```
    voice:   audio → STT → [runtime loop] → TTS → audio

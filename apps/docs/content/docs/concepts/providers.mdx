@@ -1,16 +1,16 @@
 ---
 title: Providers
-description: LLM, TTS, and STT providers implement common interfaces selected by configuration.
+description: LLM, TTS, and STT providers implement common interfaces selected by configuration; the Python SDK ships kimi, gemini, openai, and mock, with the TypeScript port mirroring the same neutral format.
 ---
 
-LLM providers implement a common interface. the Python SDK ships `kimi`
+LLM providers implement a common interface. The Python SDK ships `kimi`
 (OpenRouter/Kimi, the default), `gemini`, `openai`, and `mock` (for tests),
-selected via `AGENTKIT_MODEL_PROVIDER`. adding a provider means implementing the
+selected via `AGENTKIT_MODEL_PROVIDER`. Adding a provider means implementing the
 `ModelProvider` protocol and registering it.
 
 TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
 `TTSProvider` protocol. STT uses Soniox by default.
 
-the TypeScript port mirrors the same neutral message and tool-spec format, so a
-provider translates to its own API only at its own boundary. the runtime never
+The TypeScript port mirrors the same neutral message and tool-spec format, so a
+provider translates to its own API only at its own boundary. The runtime never
 imports provider-specific types.

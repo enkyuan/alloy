@@ -1,9 +1,9 @@
 ---
-title: Event bus
-description: The bus fans out events to per-session subscribers.
+title: Event Bus
+description: The event bus fans events out to per-session subscribers, with an in-memory default in both SDKs and a Redis Stream-backed bus in agentkit-serve for cross-process durability.
 ---
 
-the event bus fans out events to subscribers per session. in the Python SDK the
-default implementation is in-memory (`InMemoryEventBus`). a Redis Stream-backed
-bus is used in `agentkit-serve` for cross-process durability. the TypeScript SDK
+The event bus fans out events to subscribers per session. In the Python SDK the
+default implementation is in-memory (`InMemoryEventBus`). A Redis Stream-backed
+bus is used in `agentkit-serve` for cross-process durability. The TypeScript SDK
 ships an in-memory bus, which is sufficient for an embedded SDK.

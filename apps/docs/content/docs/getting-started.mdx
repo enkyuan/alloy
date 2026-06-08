@@ -1,9 +1,9 @@
 ---
-title: Getting started
-description: Install agentkit and register your first tool.
+title: Getting Started
+description: Install the agentkit SDK in Python or TypeScript and register your first tool, with the tool spec, handler signature, and ToolContext explained.
 ---
 
-## install
+## Installation
 
 ```bash
 # TypeScript (from the monorepo JS workspace)
@@ -14,11 +14,11 @@ bun install
 cd agentkit/sdk && poetry install
 ```
 
-## register a tool
+## Register a Tool
 
-tools are a spec (name, description, JSON-schema parameters) plus a handler.
-the runtime sends the full tool-spec list to the model. when the model requests
-a call, the registry dispatches the handler. multiple calls from one model turn
+Tools are a spec (name, description, JSON-schema parameters) plus a handler.
+The runtime sends the full tool-spec list to the model. When the model requests
+a call, the registry dispatches the handler. Multiple calls from one model turn
 run concurrently, and results are collected before the next loop iteration.
 
 ```python
@@ -38,10 +38,10 @@ registerTool(
 );
 ```
 
-`ToolContext` carries `userId` / `user_id` and an optional `db` handle (null by
-default. inject one when the tool needs persistence).
+`ToolContext` carries `userId` / `user_id` and an optional `db` handle (`null`
+by default). Inject one when the tool needs persistence.
 
-## next
+## Next
 
-read [core concepts](/docs/concepts/events) to understand events, session
+Read [core concepts](/docs/concepts/events) to understand events, session
 state, the tool registry, the event bus, and providers.
