@@ -113,7 +113,7 @@ describe("AgentRuntime.runTurn", () => {
     );
   });
 
-  it("terminates after exactly 2 iterations for one tool (C2 regression)", async () => {
+  it("emits exactly one completion for one tool call (C2 regression)", async () => {
     const { store, runtime } = setup();
     const s = "s-two-iter";
     await seed(store, s);
@@ -122,11 +122,12 @@ describe("AgentRuntime.runTurn", () => {
       async () => ({ tempF: 68 }),
     );
     await runtime.runTurn(s);
+    // One reasoning-started per runTurn, and exactly one completion: the
+    // tool-only first iteration emits no text completion (no phantom), the
+    // second iteration's final text emits one.
     const reasoningStarts = (await store.getEvents(s)).filter(
       (e) => e.type === EventType.AGENT_REASONING_STARTED,
     );
-    // One reasoning-started per runTurn; the loop runs 2 internal iterations but
-    // emits reasoning-started once. Assert exactly one completion (no phantom).
     expect(reasoningStarts).toHaveLength(1);
     const completions = (await store.getEvents(s)).filter(
       (e) => e.type === EventType.AGENT_MESSAGE_COMPLETED,
