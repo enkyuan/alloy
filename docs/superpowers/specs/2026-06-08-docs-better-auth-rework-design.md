@@ -72,24 +72,46 @@ and a subtle grid/noise textured background.
 
 ### 1. Design tokens — `apps/docs/app/global.css`
 
-Layer a full shadcn token set on top of the existing imports. Keep the existing
-`@import` lines (tailwindcss, black.css, preset.css) and the Geist `:root` font
-mapping. Add:
+Apply the COMPLETE better-auth design-token set (user requirement: the full set,
+not a subset). Keep the existing `@import` lines (tailwindcss, black.css,
+preset.css) and the Geist `:root` font mapping. The token VALUES are copied
+verbatim-accurate from better-auth's `globals.css` (these are CSS configuration
+values, not component code). Add all of:
 
-- A `:root` block with the light-theme shadcn tokens (values adapted from
-  better-auth): `--background`, `--foreground`, `--card`, `--popover`,
-  `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive`, `--border`,
-  `--input`, `--ring`, `--chart-1..5`, `--sidebar*`, plus `--radius: 0.2rem`,
-  the shadow scale, `--spacing: 0.25rem`.
-- A `.dark` block with the dark-theme values (adapted from better-auth's `.dark`).
-- The fumadocs layout dimension vars: `--fd-nav-height: 56px`; set a narrower
-  content width and toc width to match better-auth's density.
-- An `@theme inline` block mapping `--color-*` to the tokens and
-  `--radius-sm/md/lg/xl` derived from `--radius`, so Tailwind utilities
-  (`bg-card`, `border-border`, `rounded-md`) resolve.
+- A `:root` block with the FULL light-theme token set: `--background`,
+  `--foreground`, `--card`(+`-foreground`), `--popover`(+`-foreground`),
+  `--primary`(+`-foreground`), `--secondary`(+`-foreground`),
+  `--muted`(+`-foreground`), `--accent`(+`-foreground`),
+  `--destructive`(+`-foreground`), `--border`, `--input`, `--ring`,
+  `--chart-1..5`, the full `--sidebar*` set (sidebar, -foreground, -primary,
+  -primary-foreground, -accent, -accent-foreground, -border, -ring),
+  `--scrollbar-thumb`/`-hover`/`-track`, `--radius: 0.2rem`, the full shadow
+  scale (`--shadow-2xs` through `--shadow-2xl`), `--tracking-normal: 0em`,
+  `--spacing: 0.25rem`, and the layout vars `--landing-topbar-height`,
+  `--fd-nav-height: 56px`, `--fd-banner-height`, `--fd-tocnav-height`. Use the
+  exact oklch/hsl values from better-auth's `:root`.
+- A `.dark` block with the FULL dark-theme token set: every token above that
+  better-auth overrides in `.dark` (background, foreground, card, popover,
+  primary, secondary, muted, accent, destructive, border, input, ring,
+  chart-1..5, the sidebar set, scrollbar vars, and the shadow scale), using
+  better-auth's exact `.dark` values.
+- An `@theme inline` block mapping ALL `--color-*` to the tokens (background,
+  foreground, card, popover, primary, secondary, muted, accent, destructive,
+  border, input, ring, chart-1..5, the full sidebar set), the
+  `--radius-sm/md/lg/xl` scale derived from `--radius`, the full `--shadow-*`
+  passthrough, `--breakpoint-navbar: 64rem`, and the accordion animation tokens
+  (`--animate-accordion-down/up` + the `@keyframes accordion-down/up`).
+- The narrower content/toc dimensions to match better-auth's density (page width
+  and `--fd-toc-width`).
 - A subtle grid/texture background utility applied to the body or layout
   container (low opacity, theme-aware), recreating better-auth's textured feel
   with an ORIGINAL small SVG/CSS (not their exact asset).
+
+Completeness gate: the verification dogfood must confirm the token block is the
+full set (spot-check that `--card`, `--primary`, `--muted`, `--chart-1`, the
+`--sidebar*` set, `--radius: 0.2rem`, and the shadow scale are all present in
+both `:root` and `.dark`, and resolvable as Tailwind utilities `bg-card`,
+`bg-primary`, `text-muted-foreground`, `rounded-md`).
 
 Reconciliation note: `black.css` already sets fumadocs `--color-fd-*` tokens.
 The new shadcn `--color-*` tokens are ADDITIVE (different namespace). Where they
