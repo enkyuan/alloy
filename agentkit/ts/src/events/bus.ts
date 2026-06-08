@@ -65,7 +65,14 @@ class Subscription implements AsyncIterableIterator<AgentKitEvent> {
 export class EventBus {
   private readonly subscribers = new Map<string, Set<Subscription>>();
 
-  /** Publish an event to every subscriber of its session. */
+  /**
+   * Publish an event to every subscriber of its session.
+   *
+   * Intentionally `async` (returns a resolved Promise): the body is synchronous
+   * fan-out via `Subscription.push`, but an async signature lets every caller
+   * `await bus.publish(...)` uniformly, matching the Python runtime's
+   * `await self.bus.publish(event)`. The agent runtime depends on this shape.
+   */
   async publish(event: AgentKitEvent): Promise<void> {
     const subs = this.subscribers.get(event.session_id);
     if (!subs) return;

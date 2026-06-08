@@ -104,6 +104,60 @@ state = await store.get_events("s1")  # AgentMessageDelta/Completed, ToolCall* e
 For the full real-time voice service (STT → LLM → TTS over Redis), install the
 `server` extra and use the process layout below.
 
+### Document RAG
+
+Ingest documents and retrieve relevant chunks. Both the embedder and the vector
+store are pluggable; the example injects a tiny stub embedder so it runs with no
+API key (swap in a keyed embedder for production).
+
+```python
+import asyncio
+import agentkit
+
+# Inject any embedder; this stub keeps the example key-free and runnable.
+class StubEmbedder:
+    async def embed(self, text: str) -> list[float]:
+        return [1.0, 0.0] if "cat" in text.lower() else [0.0, 1.0]
+
+async def main():
+    rag = agentkit.DocumentRAG(embedder=StubEmbedder())
+    await rag.add_document(agentkit.Document(id="d1", text="cats purr; dogs bark"))
+    chunks = await rag.retrieve("tell me about cats", top_k=1)
+    print(chunks[0].text)  # "cats purr; dogs bark"
+
+asyncio.run(main())
+```
+
+`retrieve()` returns chunks; wiring them into the `AgentRuntime` prompt is your
+code today. Auto-injection is [roadmap item 14](../../../docs/ROADMAP.md)
+(deferred). With the default embedder and no `GEMINI_API_KEY`, `add_document`
+stores nothing and logs an actionable warning rather than failing silently.
+
+### Listing sessions
+
+`SessionManager.list_active` returns a user's sessions when a `SessionStore` is
+configured (the SDK ships an in-memory one; a durable backend lives in
+`agentkit-serve`).
+
+```python
+import asyncio
+import agentkit
+
+async def main():
+    store = agentkit.InMemoryEventStore()
+    sessions = agentkit.InMemorySessionStore()
+    mgr = agentkit.SessionManager(store, session_store=sessions)
+
+    await mgr.record_session("s1", user_id="u1", title="First chat")
+    active = await mgr.list_active("u1")
+    print(active)  # [{"session_id": "s1", "user_id": "u1", ...}]
+
+asyncio.run(main())
+```
+
+Without a `session_store`, `list_active` returns `[]` (the SDK ships no durable
+index by default).
+
 ## Reference service architecture
 
 The sections below describe the reference service the SDK ships with: one way to

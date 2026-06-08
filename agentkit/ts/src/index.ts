@@ -44,3 +44,23 @@ export {
   executeTool,
   clearTools,
 } from "./tools/registry";
+
+// Providers
+export type {
+  ModelProvider,
+  ModelResponse,
+  ModelResponseChunk,
+  ProviderMessage,
+  ToolCall,
+} from "./providers/base";
+export { MockProvider } from "./providers/mock";
+export { clearProviders, getProvider, registerProvider } from "./providers/registry";
+
+// Runtime
+export {
+  AgentRuntime,
+  type AgentRuntimeOptions,
+  type RunTurnOptions,
+} from "./runtime/runtime";
+export { CancellationToken } from "./runtime/cancellation";
+export { buildMessages } from "./runtime/context";

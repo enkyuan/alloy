@@ -147,7 +147,8 @@ mirrors the public surface (event types, store, bus, replay, tool registry) and
 uses Zod 4 for validation. wire format (event type strings, field names) is
 identical to the python SDK so events can round-trip across both.
 
-not yet ported: the reasoning loop, LLM providers, and voice modalities.
+the reasoning loop and LLM providers are being ported and are not yet part of
+the exported public surface. voice modalities (STT, TTS) are not yet ported.
 
 ## further reading
 

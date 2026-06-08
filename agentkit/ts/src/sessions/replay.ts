@@ -12,6 +12,8 @@ export interface Message {
   content: string;
   /** Set only for tool messages. */
   name?: string;
+  /** Set only for tool messages: the id from the originating tool call request. */
+  toolCallId?: string;
 }
 
 /** A projection of the event log into current session state. */
@@ -62,8 +64,18 @@ export function replaySession(events: readonly AgentKitEvent[]): SessionState {
           role: "tool",
           name: event.tool_name,
           content: stringifyResult(event.result),
+          // H3: carry the real tool_call_id through so buildMessages can
+          // reference it; a real provider rejects a tool result whose id does
+          // not match the originating request.
+          toolCallId: event.tool_call_id,
         });
         break;
+      // NOTE: AGENT_MESSAGE_DELTA and the transient tool events (REQUESTED,
+      // STARTED, FAILED) are intentionally NOT projected. The agent loop's
+      // termination depends on only AGENT_MESSAGE_COMPLETED -> assistant and
+      // TOOL_CALL_COMPLETED -> tool appearing in replayed history. Projecting
+      // deltas as assistant turns would make a tool-driven mock never see a
+      // tool result and loop forever.
       default:
         break;
     }

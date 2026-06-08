@@ -1,0 +1,38 @@
+---
+title: Architecture
+description: How the modality-agnostic ReAct runtime loop projects session state, calls the LLM provider, and runs tool calls, and where STT/TTS attach at the voice edges.
+---
+
+## The Runtime Loop
+
+```
+   ┌────────────────────────────────────────────────────┐
+   │  your app  (or agentpay/api)                       │
+   │  session manager   tool registry   model provider  │
+   └────────────────────────┬───────────────────────────┘
+                            ▼
+   ┌───────────────────────────────────────────────────┐
+   │  agent runtime  (ReAct loop)                      │
+   │  1. project session state from event log          │
+   │  2. call LLM provider with history + tool specs   │
+   │  3. execute tool calls scatter-gather             │
+   │  4. loop until model response is final            │
+   └────────┬────────────────────────────┬─────────────┘
+            │ events                     │ tool calls
+            ▼                            ▼
+   ┌──────────────────┐        ┌──────────────────────┐
+   │  event store     │        │  tool handlers       │
+   │  (in-memory or   │        │  (your functions,    │
+   │   persistent)    │        │   run concurrently)  │
+   └──────────────────┘        └──────────────────────┘
+```
+
+## Modalities Attach at the Edges
+
+The reasoning loop is modality-agnostic. Voice adds STT at the input edge and
+TTS at the output edge. Text skips both.
+
+```
+   voice:   audio → STT → [runtime loop] → TTS → audio
+   text:    text  →       [runtime loop] →       text
+```

@@ -95,16 +95,19 @@ The bridge between agentkit and agentpay. Registers with `AgentRuntime`; when ca
 
 ## P3 — Capabilities promised but absent
 
-### 14. General document / knowledge RAG (MISSING)
-No document ingestion, chunking, vector store, or retrieval-over-corpus. Only tool-selection RAG exists.
-- Design and build, or remove the claim from docs.
+### 14. General document / knowledge RAG (DONE — retrieval capability; runtime auto-injection deferred)
+- `agentkit/sdk/agentkit/knowledge/` — `Document`/`Chunk` types, deterministic `chunk_text`, `VectorStore` protocol + `InMemoryVectorStore` (cosine, dimension-guarded), `DocumentRAG` (ingest + retrieve). Infra-free by default; reuses the tool retriever's `Embedder` protocol.
+- Exported from the public API; runnable quickstart in the SDK README.
+- DEFERRED: auto-injecting retrieved chunks into the `AgentRuntime` prompt (when to retrieve, how to ground) — a memory-injection design owns that. `DocumentRAG.retrieve()` returns chunks; wiring into the loop is caller code today.
 
 ### 15. Multi-agent / swarm handoff (MISSING — stub)
 - `agentkit/sdk/agentkit/runtime/agents/router.py:13` — `determine_handoff` unconditionally returns `None`. Implement routing or drop the surface.
 
-### 16. Durable session persistence (MISSING)
-- `agentkit/sdk/agentkit/runtime/sessions/manager.py` — `list_active` returns `[]`.
-- Only `InMemoryEventStore` ships. Durable backend (likely in `agentkit-serve`) needs a store interface in the SDK first.
+### 16. Durable session persistence (DONE — SessionStore interface + in-memory impl; durable backend deferred to serve)
+- `agentkit/sdk/agentkit/runtime/sessions/store.py` — `SessionStore` protocol + `SessionRecord` + `InMemorySessionStore` (a cross-session index, distinct from the per-session `EventStore`).
+- `SessionManager` takes an optional `SessionStore`; `list_active` returns recorded sessions when configured, `[]` otherwise. `record_session` + round-trip test exercise the path.
+- Exported from the public API; runnable quickstart in the SDK README.
+- DEFERRED: the durable (Postgres) backend lives in `agentkit-serve` and implements this same protocol. Auto-recording from inside `AgentRuntime` is not wired (the runtime has no `user_id`); callers record via `SessionManager.record_session`.
 
 ### 17. agentpay merchant studio — webhooks UI (MISSING)
 Studio (`apps/web`) has no webhook management screens.
@@ -154,15 +157,15 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ## TypeScript SDK — to make it drive an agent
 
-### 25. Provider layer (MISSING)
-- `ModelProvider` interface, provider registry, mock provider, at least one real provider.
-- Mirror `agentkit/sdk/agentkit/runtime/providers/base.py`.
+### 25. Provider layer (DONE)
+- `agentkit/ts/src/providers/` — `ModelProvider` interface (`base.ts`), `registry.ts` (`registerProvider`/`getProvider`/`clearProviders`), `MockProvider` (drives the full tool loop with no network). Mirrors `agentkit/sdk/agentkit/runtime/providers/base.py`.
+- A real TS provider (OpenAI/Anthropic) is a clean follow-up; the interface is fixed so it has no design risk.
 
-### 26. Agent runtime (MISSING)
-- Port `AgentRuntime.run_turn` (`agentkit/sdk/agentkit/runtime/agents/runtime.py`): replay -> build messages -> stream from provider -> emit events -> execute tools -> loop.
+### 26. Agent runtime (DONE)
+- `agentkit/ts/src/runtime/runtime.ts` — ports `AgentRuntime.run_turn`: replay -> build messages -> stream from provider -> emit events -> scatter-gather tools -> loop. Plus `CancellationToken` and `buildMessages`. Guards the final completion on truthy text (matches the Python reference).
 
-### 27. Tool-loop glue (MISSING)
-- Planner/runner that turns provider `tool_calls` into `executeTool` (`agentkit/ts/src/tools/registry.ts`) calls and emits the full tool event sequence.
+### 27. Tool-loop glue (DONE)
+- The loop in `runtime.ts` turns provider `tool_calls` into `executeTool` (`agentkit/ts/src/tools/registry.ts`) calls and emits the full lifecycle (`ToolCallRequested -> Started -> Completed | Failed`), concurrently via `Promise.all`. The real `tool_call_id` is threaded through replay so a real provider can match results to requests.
 
-### 28. Reconcile sync vs async `publish` (design)
-- `agentkit/ts/src/events/bus.ts:69` — `EventBus.publish` is synchronous; Python runtime awaits it. Settle before porting the runtime.
+### 28. Reconcile sync vs async `publish` (DONE — publish stays async; runtime awaits it)
+- `agentkit/ts/src/events/bus.ts` — `EventBus.publish` is `async` (resolved-Promise) with a doc comment locking the decision; the runtime does `await bus.publish(event)`, matching the Python `await self.bus.publish(...)`.

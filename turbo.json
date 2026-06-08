@@ -49,6 +49,15 @@
     },
     "@agentpay/auth#lint": {
       "cache": true
+    },
+    "@agentkit/docs#build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "cache": true
+    },
+    "@agentkit/docs#dev": {
+      "cache": false,
+      "persistent": true
     }
   }
 }

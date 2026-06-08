@@ -61,8 +61,29 @@ describe("replaySession", () => {
 
     expect(state.messages).toEqual([
       { role: "user", content: "what is the weather" },
-      { role: "tool", name: "get_weather", content: '{"tempF":68}' },
+      {
+        role: "tool",
+        name: "get_weather",
+        content: '{"tempF":68}',
+        toolCallId: "c1",
+      },
     ]);
+  });
+
+  it("preserves the real tool_call_id on tool messages (H3)", () => {
+    const state = replaySession([
+      ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
+      ev({
+        type: EventType.TOOL_CALL_COMPLETED,
+        session_id: "s1",
+        tool_name: "do_thing",
+        tool_call_id: "call_abc",
+        result: { ok: true },
+        timestamp: 2,
+      }),
+    ]);
+    const tool = state.messages.find((m) => m.role === "tool");
+    expect(tool?.toolCallId).toBe("call_abc");
   });
 
   it("throws on an empty log", () => {
