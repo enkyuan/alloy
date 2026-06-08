@@ -67,7 +67,6 @@ export class AgentRuntime {
     await emit({ type: EventType.AGENT_REASONING_STARTED });
 
     const tools = listToolSpecs();
-    let finalContent = "";
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       token.throwIfCancelled();
@@ -88,8 +87,16 @@ export class AgentRuntime {
         toolCalls.push(...chunk.toolCalls);
       }
 
+      // Finalize the assistant text for THIS iteration before touching tools.
+      // Mirrors the Python reference (runtime.py:134): a turn that streams both
+      // text and tool calls must still emit AgentMessageCompleted, or the text
+      // is lost from replayed state. Guarded on truthy content so an empty
+      // tool-only turn (and max-iteration exhaustion) emits no phantom turn (C1).
+      if (content) {
+        await emit({ type: EventType.AGENT_MESSAGE_COMPLETED, content });
+      }
+
       if (toolCalls.length === 0) {
-        finalContent = content;
         break;
       }
 
@@ -130,14 +137,6 @@ export class AgentRuntime {
         }),
       );
       // Loop: next iteration replays state including the new tool results.
-    }
-
-    // C1: only emit a completion when there is actual text. The Python reference
-    // emits AgentMessageCompleted inside the loop guarded by truthy text and
-    // nothing afterward; emitting an empty completion on max-iteration
-    // exhaustion would inject a phantom assistant turn that replay then projects.
-    if (finalContent) {
-      await emit({ type: EventType.AGENT_MESSAGE_COMPLETED, content: finalContent });
     }
   }
 }

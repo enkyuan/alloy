@@ -150,6 +150,46 @@ describe("AgentRuntime.runTurn", () => {
     ).toBe(true);
   });
 
+  it("preserves assistant text when a turn streams both text and tool calls", async () => {
+    // A provider that, on its FIRST turn, returns text AND a tool call in the
+    // same response; on the second turn (after the tool result) returns plain
+    // text. The first turn's text must be finalized into an
+    // AgentMessageCompleted, not dropped (matches the Python reference).
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const mixedProvider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* (messages: { role: string }[]) {
+        const sawToolResult = messages.some((m) => m.role === "tool");
+        if (!sawToolResult) {
+          yield {
+            delta: "Let me check that for you.",
+            toolCalls: [{ id: "c1", name: "get_weather", args: {} }],
+          };
+        } else {
+          yield { delta: "It is 68F and sunny.", toolCalls: [] };
+        }
+      },
+    };
+    const runtime = new AgentRuntime({ provider: mixedProvider, store, bus });
+    const s = "s-mixed";
+    await seed(store, s);
+    registerTool(
+      toolSpecFromSchema("get_weather", "weather", z.object({})),
+      async () => ({ tempF: 68 }),
+    );
+
+    await runtime.runTurn(s);
+
+    const completions = (await store.getEvents(s)).filter(
+      (e) => e.type === EventType.AGENT_MESSAGE_COMPLETED,
+    );
+    const contents = completions.map((e) => ("content" in e ? e.content : ""));
+    // Both the pre-tool text and the final text must be preserved.
+    expect(contents).toContain("Let me check that for you.");
+    expect(contents).toContain("It is 68F and sunny.");
+  });
+
   it("rejects when cancelled before the loop", async () => {
     const { store, runtime } = setup();
     const s = "s-cancel";
