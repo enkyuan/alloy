@@ -6,11 +6,10 @@ This is a Next.js application generated with
 Run development server:
 
 ```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
+# From the repo root
+bun --filter @agentkit/docs dev
+# Or from this directory
+bun dev
 ```
 
 Open http://localhost:3000 with your browser to see the result.
