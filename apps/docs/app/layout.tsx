@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./global.css";
 import type { Metadata } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
+import { StaggeredNavFiles } from "@/components/landing/staggered-nav-files";
 import { Providers } from "@/components/providers";
 import { appName } from "@/lib/shared";
 
@@ -26,7 +27,12 @@ export default function Layout({ children }: LayoutProps<"/">) {
     >
       <body className="font-sans antialiased">
         <RootProvider>
-          <Providers>{children}</Providers>
+          <Providers>
+            <div className="relative min-h-dvh">
+              <StaggeredNavFiles />
+              {children}
+            </div>
+          </Providers>
         </RootProvider>
       </body>
     </html>
