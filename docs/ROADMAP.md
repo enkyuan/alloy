@@ -179,3 +179,4 @@ The docs landing page advertises a CLI tab, but there is no `agentkit` CLI yet. 
 - New `agentkit init` (and TS equivalent) that scaffolds `lib/agent.ts` (runtime + provider + tool registry + in-memory bus), a framework-appropriate API route handler, and `.env` keys (`AGENTKIT_API_KEY`, provider key).
 - Pattern reference: better-auth's CLI — one root binary with `init` / `generate` / `secret` subcommands, package-manager-tabbed install. agentkit has no schema/migration step, so `init` is the primary command.
 - Until this lands, the landing-page CLI tab shows the real install command, and the MCP tab (`npx agentkit mcp`) is likewise aspirational.
+- The CLI tab currently shows a single `pip install agentkit` command. Once the CLI ships, it should show two tabs: Python (`pip install agentkit` / `agentkit init`) and TypeScript (`bun add @agentkit/sdk` / `npx agentkit init`). Update `hero-readme.tsx` `InstallBlock` at that point.

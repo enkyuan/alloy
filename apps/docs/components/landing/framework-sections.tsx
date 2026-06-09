@@ -2,12 +2,13 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Icons as frameworkIcons } from "@/components/docs/icons";
+import { RiArrowUpLine } from "@/components/icons/remix";
 import { DynamicCodeBlock } from "@/components/ui/dynamic-code-block";
 
 // Tool-category glyphs for the tools showcase. Keyed by tool category, not provider brand.
-export const providerIcons: Record<string, () => ReactNode> = {
+export const toolIcons: Record<string, () => ReactNode> = {
   Function: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
       <path
@@ -107,7 +108,7 @@ export const providerIcons: Record<string, () => ReactNode> = {
 };
 
 // Built-in and example tools you register with the tool registry. Provider-neutral payloads.
-export const socialProviders = [
+export const builtinTools = [
   "get_weather",
   "web_search",
   "http_request",
@@ -299,7 +300,7 @@ const runtime = new AgentRuntime({
 provider: new AnthropicProvider()`,
 };
 
-export const serverCode = `import { AgentRuntime } from "@agentkit/sdk"
+export const serverCodeTs = `import { AgentRuntime } from "@agentkit/sdk"
 import { OpenAIProvider } from "@agentkit/sdk/providers"
 import { InMemoryEventBus } from "@agentkit/sdk/events"
 import { ToolRegistry, tool } from "@agentkit/sdk/tools"
@@ -321,25 +322,35 @@ export const agent = new AgentRuntime({
   bus: new InMemoryEventBus(),
 })`;
 
-export const clientCode = `import { agent } from "@/lib/agent"
+export const serverCodePy = `from agentkit.runtime.agents.runtime import AgentRuntime
+from agentkit.runtime.providers.openai import OpenAIProvider
+from agentkit.infra.events.bus import InMemoryEventBus
+from agentkit.runtime.tools.registry import register_tool, tool_spec_from_model
 
-const stream = agent.run({
-  session: "demo",
-  message: "What's the weather in Tokyo?",
-})
 
-for await (const event of stream) {
-  if (event.type === "text.delta") process.stdout.write(event.text)
-  if (event.type === "tool.call") console.log("tool", event.name)
-}`;
+@register_tool(tool_spec_from_model("get_weather", "Look up the weather", WeatherArgs))
+async def get_weather(ctx, args):
+    return await fetch_weather(args["city"])
 
-export function ServerClientTabs() {
+
+agent = AgentRuntime(
+    provider=OpenAIProvider(model="gpt-4o"),
+    bus=InMemoryEventBus(),
+    store=store,
+    planner=planner,
+)`;
+
+export function AgentLoopTabs() {
+  const [lang, setLang] = useState<"ts" | "py">("ts");
+  const code = lang === "ts" ? serverCodeTs : serverCodePy;
+  const filename = lang === "ts" ? "lib/agent.ts" : "agent.py";
+
   return (
     <div className="relative">
       <div className="absolute -inset-4 bg-gradient-to-br from-foreground/[0.02] via-transparent to-foreground/[0.02] rounded-2xl blur-xl pointer-events-none dark:from-foreground/[0.03] dark:to-foreground/[0.03]" />
 
       <div className="relative overflow-hidden bg-neutral-50 dark:bg-black">
-        <div className="px-3 py-1.5">
+        <div className="flex items-center justify-between px-3 py-1.5">
           <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-foreground/50 dark:text-foreground/40">
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 32 32">
               <rect
@@ -357,14 +368,31 @@ export function ServerClientTabs() {
                 d="M18.245 23.759v3.068a6.5 6.5 0 0 0 1.764.575a11.6 11.6 0 0 0 2.146.192a10 10 0 0 0 2.088-.211a5.1 5.1 0 0 0 1.735-.7a3.54 3.54 0 0 0 1.181-1.266a4.47 4.47 0 0 0 .186-3.394a3.4 3.4 0 0 0-.717-1.117a5.2 5.2 0 0 0-1.123-.877a12 12 0 0 0-1.477-.734q-.6-.249-1.08-.484a5.5 5.5 0 0 1-.813-.479a2.1 2.1 0 0 1-.516-.518a1.1 1.1 0 0 1-.181-.618a1.04 1.04 0 0 1 .162-.571a1.4 1.4 0 0 1 .459-.436a2.4 2.4 0 0 1 .726-.283a4.2 4.2 0 0 1 .956-.1a6 6 0 0 1 .808.058a6 6 0 0 1 .856.177a6 6 0 0 1 .836.3a4.7 4.7 0 0 1 .751.422V13.9a7.5 7.5 0 0 0-1.525-.4a12.4 12.4 0 0 0-1.9-.129a8.8 8.8 0 0 0-2.064.235a5.2 5.2 0 0 0-1.716.733a3.66 3.66 0 0 0-1.171 1.271a3.73 3.73 0 0 0-.431 1.845a3.6 3.6 0 0 0 .789 2.34a6 6 0 0 0 2.395 1.639q.63.26 1.175.509a6.5 6.5 0 0 1 .942.517a2.5 2.5 0 0 1 .626.585a1.2 1.2 0 0 1 .23.719a1.1 1.1 0 0 1-.144.552a1.3 1.3 0 0 1-.435.441a2.4 2.4 0 0 1-.726.292a4.4 4.4 0 0 1-1.018.105a5.8 5.8 0 0 1-1.969-.35a5.9 5.9 0 0 1-1.805-1.045m-5.154-7.638h4v-2.527H5.938v2.527H9.92v11.254h3.171Z"
               />
             </svg>
-            lib/agent.ts
+            {filename}
           </span>
+
+          <div className="flex items-center gap-0.5 text-[10px] font-mono">
+            {(["ts", "py"] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setLang(id)}
+                className={
+                  lang === id
+                    ? "px-1.5 py-0.5 rounded-sm text-foreground/80 bg-foreground/[0.06]"
+                    : "px-1.5 py-0.5 rounded-sm text-foreground/40 hover:text-foreground/65 transition-colors"
+                }
+              >
+                {id === "ts" ? "TypeScript" : "Python"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="relative h-[310px] overflow-hidden">
           <DynamicCodeBlock
-            lang="ts"
-            code={serverCode}
+            lang={lang}
+            code={code}
             codeblock={{
               className:
                 "border-0 rounded-none my-0 shadow-none bg-neutral-50 dark:bg-black [&_div]:bg-neutral-50 [&_div]:dark:bg-black [&_div]:text-[12px]",
@@ -380,7 +408,7 @@ export function ServerClientTabs() {
 
 const allProviders = [...providerDrivers, ...moreProviders];
 
-export function DatabaseSection() {
+export function ProvidersSection() {
   const featured = allProviders.find((d) => d.name === "OpenAI")!;
   const others = allProviders.filter((d) => d.name !== "OpenAI");
 
@@ -431,13 +459,13 @@ export function DatabaseSection() {
   );
 }
 
-export function SocialProvidersSection() {
+export function ToolsSection() {
   return (
     <div>
       <div className="flex gap-0 items-stretch min-h-[350px]">
         <div className="shrink-0 w-[100px] flex flex-col justify-center items-center">
           <span className="text-3xl font-light text-foreground/85 dark:text-foreground/75 tabular-nums">
-            {socialProviders.length}+
+            {builtinTools.length}+
           </span>
           <span className="text-[10px] font-mono uppercase tracking-widest text-foreground/45 dark:text-foreground/35 mt-1">
             Tools
@@ -449,15 +477,15 @@ export function SocialProvidersSection() {
 
         <div className="relative flex-1 h-[350px] overflow-hidden">
           <div className="grid grid-cols-4 h-full">
-            {socialProviders.map((toolName) => {
-              const Icon = providerIcons[toolIconForName[toolName] ?? "Function"];
+            {builtinTools.map((toolName) => {
+              const Icon = toolIcons[toolIconForName[toolName] ?? "Function"];
               return (
                 <span
                   key={toolName}
                   className="group inline-flex flex-col items-center justify-center gap-1.5 py-2 text-foreground/80 dark:text-foreground/70 border-b border-dashed border-foreground/[0.06] cursor-default bg-transparent hover:bg-foreground/[0.03] transition-colors"
                 >
                   <span className="inline-flex size-7 items-center justify-center shrink-0 text-foreground/85 dark:text-foreground/75 [&_svg]:w-5 [&_svg]:h-5">
-                    {Icon ? Icon() : providerIcons.Function()}
+                    {Icon ? Icon() : toolIcons.Function()}
                   </span>
                   <span className="text-[9px] font-mono text-foreground/75 dark:text-foreground/65 truncate max-w-[88px]">
                     {toolName}
@@ -635,7 +663,7 @@ export function IntegrationsSection() {
   );
 }
 
-export function PluginEcosystem() {
+export function CapabilitiesMarquee() {
   const half = Math.ceil(plugins.length / 2);
   const row1 = plugins.slice(0, half);
   const row2 = plugins.slice(half);
@@ -647,7 +675,9 @@ export function PluginEcosystem() {
         className="flex items-center justify-between w-full mb-4 text-[10px] font-mono text-foreground/35 dark:text-foreground/50 hover:text-foreground/55 transition-colors uppercase tracking-wider border-b border-dashed border-foreground/[0.1] px-3 py-1.5 bg-foreground/[0.02] hover:bg-foreground/[0.04]"
       >
         <span className="text-xs text-foreground/85 dark:text-foreground/75">Capabilities</span>
-        browse all &rarr;
+        <span className="flex items-center gap-1">
+          browse all <RiArrowUpLine className="size-[10px] rotate-45" />
+        </span>
       </Link>
 
       <div className="relative overflow-hidden">
