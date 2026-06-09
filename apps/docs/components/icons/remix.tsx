@@ -82,3 +82,4 @@ export const RiTerminalBoxLine = makeIcon(
   "RiTerminalBoxLine",
 );
 export const RiArrowUpLine = makeIcon("M12 4L20 12H15V20H9V12H4L12 4Z", "RiArrowUpLine");
+export const RiAddLine = makeIcon("M11 11V5H13V11H19V13H13V19H11V13H5V11H11Z", "RiAddLine");
