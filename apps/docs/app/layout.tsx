@@ -3,9 +3,10 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./global.css";
 import type { Metadata } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
-import { StaggeredNavFiles } from "@/components/landing/staggered-nav-files";
-import { Providers } from "@/components/providers";
-import { appName } from "@/lib/shared";
+import { Agentation } from "agentation";
+import { StaggeredNavFiles } from "@components/landing/nav/staggered-files";
+import { Providers } from "@components/providers";
+import { appName } from "@lib/shared";
 
 const fontSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const fontMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -32,6 +33,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
               <StaggeredNavFiles />
               {children}
             </div>
+            {process.env.NODE_ENV !== "production" && <Agentation />}
           </Providers>
         </RootProvider>
       </body>

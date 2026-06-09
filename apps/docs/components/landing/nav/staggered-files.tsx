@@ -6,11 +6,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
-import { AgentkitWordmark } from "../icons/logo";
-import { contents } from "../sidebar-content";
-import LogoContextMenu from "./shared/logo-menu";
-import { NavMobileMenu } from "./nav/mobile-menu";
-import { ProductsDropdown, ResourcesDropdown } from "./nav/desktop-dropdowns";
+import { AgentkitWordmark } from "../../icons/logo";
+import { contents } from "../../sidebar-content";
+import LogoContextMenu from "../shared/logo-menu";
+import { NavMobileMenu } from "./mobile-menu";
+import { ProductsDropdown, ResourcesDropdown } from "./desktop-dropdowns";
 import {
   mobileMenuSections,
   navFiles,
