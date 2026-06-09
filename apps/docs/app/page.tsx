@@ -1,8 +1,15 @@
-import { HeroReadMe } from "@/components/landing/hero-readme";
-import { HeroTitle } from "@/components/landing/hero-title";
-import { LineFieldBackground } from "@/components/landing/line-field-bg";
-import { SignatureMark } from "@/components/landing/signature-mark";
-import { getCommunityStats } from "@/lib/community-stats";
+import type { Metadata } from "next";
+import { HeroReadMe } from "@components/landing/hero/readme";
+import { HeroTitle } from "@components/landing/hero/title";
+import { LineFieldBackground } from "@components/landing/hero/field-bg";
+import { SignatureMark } from "@components/landing/signature-mark";
+import { getCommunityStats } from "@lib/community-stats";
+
+export const metadata: Metadata = {
+  title: "agentkit — open-source agentic platform",
+  description:
+    "The open-source SDK for building agentic applications. Tool registry, LLM providers, event bus, and more.",
+};
 
 export default async function HomePage() {
   const communityStats = await getCommunityStats();
