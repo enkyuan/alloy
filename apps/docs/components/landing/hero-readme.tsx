@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { RiNpmjsFill } from "../icons/remix";
+import { RiAddLine, RiNpmjsFill } from "../icons/remix";
 import {
   AgentLoopTabs,
   CapabilitiesMarquee,
@@ -841,19 +841,11 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                   </motion.div>
                 </Link>
               ))}
-              {/* + marks at grid intersections */}
-              <span className="hidden md:block absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 font-mono  -mt-[1px] -ml-[.5px] text-[10px] text-foreground/35 dark:text-foreground/20 select-none z-10">
-                +
-              </span>
-              <span className="hidden md:block absolute top-1/3 left-2/3 -translate-x-1/2 -translate-y-1/2 font-mono -mt-[1px] -ml-[.5px] text-[10px] text-foreground/35 dark:text-foreground/20 select-none z-10">
-                +
-              </span>
-              <span className="hidden md:block absolute top-2/3 left-1/3 -translate-x-1/2 -translate-y-1/2 font-mono  -mt-[1px] -ml-[.5px] text-[10px] text-foreground/35 dark:text-foreground/20 select-none z-10">
-                +
-              </span>
-              <span className="hidden md:block absolute top-2/3 left-2/3 -translate-x-1/2 -translate-y-1/2 font-mono  -mt-[1px] -ml-[.5px] text-[10px] text-foreground/35 dark:text-foreground/20 select-none z-10">
-                +
-              </span>
+              {/* + marks at grid border crossings (3×3 grid: col borders at 1/3, 2/3; row borders at 1/3, 2/3) */}
+              <RiAddLine className="hidden md:block absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
+              <RiAddLine className="hidden md:block absolute top-1/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
+              <RiAddLine className="hidden md:block absolute top-2/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
+              <RiAddLine className="hidden md:block absolute top-2/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
             </div>
 
             <div className="my-4">
