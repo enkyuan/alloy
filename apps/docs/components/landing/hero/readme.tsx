@@ -10,8 +10,8 @@ import {
   IntegrationsSection,
   ProvidersSection,
   ToolsSection,
-} from "../framework-sections";
-import { FeaturesGridMarks } from "../features-grid-marks";
+} from "../features";
+import { FeaturesGridMarks } from "../features/grid-marks";
 import { InstallBlock } from "../install/block";
 import { ReadmeFooter, type CommunityHeroStats } from "../footer/readme-stats";
 
