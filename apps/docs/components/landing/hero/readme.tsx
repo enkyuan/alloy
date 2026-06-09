@@ -4,13 +4,11 @@ import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
 import Link from "next/link";
 import { useState } from "react";
 import { cn } from "@lib/utils";
-import {
-  AgentLoopTabs,
-  CapabilitiesMarquee,
-  IntegrationsSection,
-  ProvidersSection,
-  ToolsSection,
-} from "../features";
+import { AgentLoopTabs } from "../features/agent-loop";
+import { CapabilitiesMarquee } from "../features/capabilities-marquee";
+import { IntegrationsSection } from "../integrations/section";
+import { ProvidersSection } from "../providers/section";
+import { ToolsSection } from "../tools/section";
 import { FeaturesGridMarks } from "../features/grid-marks";
 import { InstallBlock } from "../install/block";
 import { ReadmeFooter, type CommunityHeroStats } from "../footer/readme-stats";
