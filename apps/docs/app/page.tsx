@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { HeroReadMe } from "@components/landing/hero/readme";
 import { HeroTitle } from "@components/landing/hero/title";
 import { LineFieldBackground } from "@components/landing/hero/field-bg";
-import { SignatureMark } from "@components/landing/signature-mark";
+import { SignatureMark } from "@components/landing/footer/signature-mark";
 import { getCommunityStats } from "@lib/community-stats";
 
 export const metadata: Metadata = {
