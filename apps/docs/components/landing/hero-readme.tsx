@@ -3,7 +3,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ContributorInfo } from "@/lib/community-stats";
 import { cn } from "@/lib/utils";
 import { Icons } from "../icons";
 import {
@@ -483,118 +482,12 @@ function InstallBlock() {
   );
 }
 
-const EMPTY_CONTRIBUTORS: ContributorInfo[] = [];
-
 type CommunityHeroStats = {
   npmDownloads: number;
   npmWeeklyHistory: number[];
   githubStars: number;
   contributors: number;
 };
-
-function ContributorsSection({
-  contributors = EMPTY_CONTRIBUTORS,
-  contributorCount,
-}: {
-  contributors: ContributorInfo[];
-  contributorCount: number;
-}) {
-  if (contributors.length === 0) return null;
-
-  const colCount = 18;
-  const columns = Array.from({ length: colCount }, (_, i) => {
-    const perCol = Math.ceil(contributors.length / colCount);
-    return contributors.slice(i * perCol, (i + 1) * perCol);
-  });
-
-  const speeds = [
-    160, 190, 140, 176, 150, 184, 164, 144, 180, 156, 170, 136, 186, 152, 174, 146, 182, 158,
-  ];
-
-  return (
-    <div className="mt-10 pt-8">
-      <div className="flex items-center gap-4 mb-2">
-        <span className="text-lg font-medium text-foreground/90 dark:text-foreground/80 tracking-tight shrink-0">
-          Contributors
-        </span>
-        <div className="flex-1 border-t border-foreground/10" />
-      </div>
-      <p className="text-[13px] text-foreground/50 dark:text-foreground/40 mb-5 leading-relaxed">
-        Built by a community of{" "}
-        <span className="text-foreground/70 dark:text-foreground/60 font-medium tabular-nums">
-          {contributorCount}+
-        </span>{" "}
-        contributors.
-      </p>
-
-      {contributors.length > 0 && (
-        <div
-          className="relative overflow-hidden h-[220px] rounded-md"
-          style={{
-            perspective: "600px",
-            maskImage:
-              "linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)",
-            WebkitMaskImage:
-              "linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%)",
-          }}
-        >
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              backgroundImage: "radial-gradient(circle, currentColor 0.5px, transparent 0.5px)",
-              backgroundSize: "12px 12px",
-              opacity: 0.04,
-            }}
-          />
-          <div
-            className="grid h-full relative"
-            style={{
-              gridTemplateColumns: `repeat(${colCount}, 1fr)`,
-              transform: "rotateX(18deg)",
-              transformOrigin: "center center",
-            }}
-          >
-            {columns.map((col, i) => (
-              <div key={i} className="relative overflow-hidden h-full">
-                <div
-                  className="flex flex-col gap-1 items-center"
-                  style={{
-                    animation: `vertical-marquee ${speeds[i]}s linear infinite`,
-                  }}
-                >
-                  {[...col, ...col].map((c, j) => (
-                    <a
-                      key={`${c.login}-${j}`}
-                      href={c.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={c.login}
-                      className="relative group shrink-0"
-                    >
-                      <img
-                        src={`${c.avatar_url}&s=64`}
-                        alt={c.login}
-                        width={32}
-                        height={32}
-                        loading="lazy"
-                        className="rounded-sm grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-200 hover:scale-125 hover:z-10 relative"
-                      />
-                      <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 bg-foreground text-background text-[8px] font-mono rounded-sm opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20">
-                        {c.login}
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="absolute inset-y-0 left-0 w-8 bg-linear-to-r from-background to-transparent pointer-events-none z-10" />
-          <div className="absolute inset-y-0 right-0 w-8 bg-linear-to-l from-background to-transparent pointer-events-none z-10" />
-        </div>
-      )}
-    </div>
-  );
-}
 
 function formatCount(num: number | null | undefined): string {
   if (num == null) return "—";
@@ -646,12 +539,12 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
     <div className="relative mt-10 pt-8 pb-16 overflow-hidden">
       {/* Watermark logo */}
       <div
-        className="absolute -right-10 top-1/2 -translate-y-1/2 pointer-events-none select-none opacity-[0.03] dark:opacity-[0.04]"
+        className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none select-none opacity-[0.04] dark:opacity-[0.05]"
         aria-hidden="true"
       >
         <svg
-          width="280"
-          height="280"
+          width="200"
+          height="200"
           viewBox="0 0 48 48"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
@@ -753,15 +646,9 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
   );
 }
 
-export function HeroReadMe({
-  contributors,
-  stats,
-}: {
-  contributors: ContributorInfo[];
-  stats: CommunityHeroStats;
-}) {
+export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
   const [frameworkTab, setFrameworkTab] = useState<
-    "declarative" | "database" | "oauth" | "integrations"
+    "declarative" | "providers" | "tools" | "integrations"
   >("declarative");
 
   return (
@@ -1030,7 +917,7 @@ export function HeroReadMe({
                 <div className="flex-1 border-t border-foreground/10"></div>
               </div>
               <p className="text-[15px] sm:text-base text-foreground/50 mt-1">
-                The most comprehensive authentication framework for TypeScript.
+                A complete agent runtime for Python and TypeScript.
               </p>
             </div>
 
@@ -1048,8 +935,8 @@ export function HeroReadMe({
                         className="pr-3 sm:pr-5 pb-5 h-full"
                       >
                         {frameworkTab === "declarative" && <ServerClientTabs />}
-                        {frameworkTab === "database" && <DatabaseSection />}
-                        {frameworkTab === "oauth" && <SocialProvidersSection />}
+                        {frameworkTab === "providers" && <DatabaseSection />}
+                        {frameworkTab === "tools" && <SocialProvidersSection />}
                         {frameworkTab === "integrations" && <IntegrationsSection />}
                       </motion.div>
                     </AnimatePresence>
@@ -1058,8 +945,8 @@ export function HeroReadMe({
                   <div className="flex flex-row lg:flex-col lg:w-56 lg:shrink-0 border-t lg:border-t-0 lg:border-l border-foreground/[0.1] bg-neutral-50 dark:bg-black overflow-x-auto lg:overflow-visible">
                     {[
                       { id: "declarative", label: "Declarative Config" },
-                      { id: "database", label: "Bring Your Own Database" },
-                      { id: "oauth", label: "OAuth Providers" },
+                      { id: "providers", label: "Pluggable Providers" },
+                      { id: "tools", label: "Tool Registry" },
                       { id: "integrations", label: "Integrations" },
                     ].map((tab) => (
                       <button
@@ -1067,7 +954,7 @@ export function HeroReadMe({
                         type="button"
                         onClick={() =>
                           setFrameworkTab(
-                            tab.id as "declarative" | "database" | "oauth" | "integrations",
+                            tab.id as "declarative" | "providers" | "tools" | "integrations",
                           )
                         }
                         className={cn(
@@ -1077,14 +964,7 @@ export function HeroReadMe({
                             : "text-foreground/45 hover:text-foreground/70",
                         )}
                       >
-                        {tab.id === "database" ? (
-                          <>
-                            Bring Your Own{" "}
-                            <span className="text-amber-600 dark:text-amber-400">Database</span>
-                          </>
-                        ) : (
-                          tab.label
-                        )}
+                        {tab.label}
                         {frameworkTab === tab.id && (
                           <span className="absolute inset-y-0 right-0 w-[1.5px] bg-foreground/65 hidden lg:block" />
                         )}
@@ -1093,13 +973,13 @@ export function HeroReadMe({
                     <div className="hidden lg:flex flex-1 items-end p-4">
                       <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
                         {frameworkTab === "declarative" &&
-                          "No dashboard clicks. Your auth lives in code — version controlled, type-safe, and reviewable in PRs."}
-                        {frameworkTab === "database" &&
-                          "Use any database. Connect with a connection string or your favorite ORM. Your data stays yours."}
-                        {frameworkTab === "oauth" &&
-                          "40+ preconfigured providers. Add Google, GitHub, Apple, and more in seconds."}
+                          "No dashboard clicks. Your agent lives in code, version controlled, type-safe, and reviewable in PRs."}
+                        {frameworkTab === "providers" &&
+                          "Swap LLM providers behind one interface. OpenAI, Kimi, and Gemini, with no lock-in."}
+                        {frameworkTab === "tools" &&
+                          "Register any function as a tool. One provider-neutral payload, translated per provider."}
                         {frameworkTab === "integrations" &&
-                          "Works with every major framework. First-class support for 20+ integrations."}
+                          "Works with every major framework. Drop the agent route handler into your stack."}
                       </p>
                     </div>
                   </div>
@@ -1110,355 +990,6 @@ export function HeroReadMe({
                 <PluginEcosystem />
               </div>
             </div>
-
-            {/* Infrastructure */}
-            <div className="relative mt-8 pt-6 pb-2">
-              {/* Grain noise background — full bleed with fade edges */}
-              <div
-                className="absolute top-0 bottom-0 z-0 pointer-events-none"
-                style={{
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  width: "100vw",
-                  maskImage:
-                    "linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)",
-                  WebkitMaskImage:
-                    "linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)",
-                }}
-              >
-                <div className="absolute inset-0 bg-neutral-200/20 dark:bg-black/30" />
-                <div className="absolute inset-0 opacity-[0.03] dark:opacity-[0.07]">
-                  <svg className="w-full h-full">
-                    <filter id="infra-grain">
-                      <feTurbulence
-                        type="fractalNoise"
-                        baseFrequency="0.85"
-                        numOctaves="4"
-                        stitchTiles="stitch"
-                      />
-                      <feColorMatrix type="saturate" values="0" />
-                    </filter>
-                    <rect width="100%" height="100%" filter="url(#infra-grain)" />
-                  </svg>
-                </div>
-              </div>
-
-              <div className="relative z-10 mb-6">
-                <div className="flex items-center gap-4 mb-2">
-                  <span className="text-lg font-medium text-foreground/90 dark:text-foreground/80 tracking-tight shrink-0">
-                    Infrastructure
-                  </span>
-                  <div className="flex-1 border-t border-foreground/10" />
-                </div>
-                <p className="text-[15px] sm:text-base text-foreground/75 dark:text-foreground/65 leading-relaxed">
-                  Connect to our infrastructure and power your self-hosted agentkit with a
-                  dashboard, audit logs, security detection, enterprise features, and more.
-                </p>
-              </div>
-
-              {/* Dashboard video */}
-              <div
-                className="relative z-10 overflow-hidden border border-foreground/[0.08]"
-                style={{
-                  maskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
-                  WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
-                }}
-              >
-                <div className="flex items-center justify-between px-4 py-2 bg-foreground/[0.02] border-b border-foreground/[0.06]">
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="size-2 rounded-full bg-foreground/10" />
-                      <span className="size-2 rounded-full bg-foreground/10" />
-                      <span className="size-2 rounded-full bg-foreground/10" />
-                    </div>
-                    <span className="text-[10px] font-mono text-foreground/30 ml-2">
-                      github.com/enkyuan/alloy
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {["Overview", "Users", "Orgs", "Events"].map((tab, i) => (
-                      <span
-                        key={tab}
-                        className={cn(
-                          "text-[9px] font-mono uppercase tracking-wider",
-                          i === 0 ? "text-foreground/50" : "text-foreground/20",
-                        )}
-                      >
-                        {tab}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="overflow-hidden" suppressHydrationWarning>
-                  <div className="flex aspect-video w-full items-center justify-center bg-foreground/[0.02]">
-                    <span className="font-mono text-[10px] uppercase tracking-wider text-foreground/30">
-                      event timeline
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Feature grid — 3 columns */}
-              <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 mt-4 -mx-px">
-                {[
-                  {
-                    title: "Dashboard",
-                    features: [
-                      "User management",
-                      "Session monitoring",
-                      "Organization oversight",
-                      "User analytics",
-                    ],
-                  },
-                  {
-                    title: "Audit Logs",
-                    features: [
-                      "Auto-captured events",
-                      "Filter & search",
-                      "Configurable retention",
-                      "Log drain to SIEM",
-                    ],
-                  },
-                  {
-                    title: "Enterprise",
-                    features: ["Self-service SSO", "SCIM provisioning", "Directory sync", "RBAC"],
-                  },
-                ].map((group) => (
-                  <div
-                    key={group.title}
-                    className="relative overflow-hidden border-t border-r border-b border-dashed border-foreground/[0.06] first:border-l -mt-px p-4"
-                  >
-                    {group.title === "Dashboard" && (
-                      <div
-                        className="absolute inset-0 pointer-events-none"
-                        style={{
-                          backgroundImage:
-                            "radial-gradient(circle, rgb(180 160 130 / 0.3) 1.2px, transparent 1.2px)",
-                          backgroundSize: "6px 6px",
-                          maskImage:
-                            "linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 45%)",
-                          WebkitMaskImage:
-                            "linear-gradient(135deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 45%)",
-                        }}
-                      />
-                    )}
-                    <h4 className="relative text-[11px] sm:text-xs font-mono font-semibold uppercase tracking-widest text-foreground/90 dark:text-foreground/75 mb-3">
-                      {group.title}
-                    </h4>
-                    <ul className="space-y-1.5">
-                      {group.features.map((f) => (
-                        <li
-                          key={f}
-                          className="flex items-start gap-2 text-[13px] sm:text-[14px] text-foreground/70 dark:text-foreground/55"
-                        >
-                          <span className="text-foreground/35 mt-0.5 font-mono text-[11px] leading-none select-none shrink-0">
-                            +
-                          </span>
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    {/* Enterprise half-circle with provider icons */}
-                    {group.title === "Enterprise" && (
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-[160px] h-[160px] pointer-events-none">
-                        {/* Half-circle arcs */}
-                        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 160 160">
-                          <circle
-                            cx="80"
-                            cy="80"
-                            r="68"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="0.75"
-                            className="text-foreground/20"
-                            strokeDasharray="3 3"
-                          />
-                          <circle
-                            cx="80"
-                            cy="80"
-                            r="44"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="0.75"
-                            className="text-foreground/12"
-                            strokeDasharray="2 4"
-                          />
-                        </svg>
-                        {/* Okta — 270° top of outer arc */}
-                        <div className="absolute size-6 flex items-center justify-center left-[68px] top-0">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="15"
-                            height="15"
-                            viewBox="0 0 256 256"
-                            className="text-foreground/60"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="m140.844 1.778l-5.266 64.853a66 66 0 0 0-7.542-.427c-3.203 0-6.334.214-9.393.712l-2.99-31.432a1.72 1.72 0 0 1 1.709-1.848h5.337l-2.562-31.787C120.066.853 120.848 0 121.774 0h17.434c.996 0 1.779.853 1.636 1.849zm-43.976 3.2c-.285-.925-1.281-1.494-2.206-1.138L78.295 9.813c-.925.356-1.352 1.423-.925 2.276l13.307 29.013l-5.052 1.85c-.926.355-1.352 1.421-.926 2.275l13.592 28.515a61 61 0 0 1 15.868-6.044L96.94 4.978zM56.734 23.04l37.643 53.049c-4.768 3.129-9.108 6.827-12.809 11.093L59.011 64.996a1.72 1.72 0 0 1 .071-2.49l4.127-3.413L40.794 36.41c-.711-.711-.64-1.849.142-2.489l13.307-11.164c.783-.64 1.85-.498 2.42.284zM25.139 53.76c-.783-.569-1.921-.284-2.42.569l-8.68 15.075c-.499.854-.143 1.92.71 2.347L43.64 85.404l-2.704 4.623c-.498.853-.142 1.99.783 2.346l28.749 13.156a60.2 60.2 0 0 1 8.254-14.791zM3.862 94.72c.143-.996 1.139-1.564 2.064-1.351l62.976 16.427a62.3 62.3 0 0 0-2.704 16.782l-31.524-2.56a1.642 1.642 0 0 1-1.494-1.991l.925-5.263l-31.808-2.986c-.996-.071-1.637-.996-1.495-1.991l2.99-17.138zm-2.348 42.524c-.996.072-1.637.996-1.494 1.992l3.06 17.137c.142.996 1.138 1.565 2.063 1.351l30.883-8.035l.925 5.262c.143.996 1.139 1.565 2.064 1.351l30.456-8.39c-1.779-5.263-2.917-10.88-3.202-16.64l-64.826 5.972zM11.62 182.33c-.498-.853-.143-1.92.711-2.347l58.778-27.875c2.206 5.262 5.195 10.169 8.753 14.577L54.1 185.031c-.783.569-1.921.356-2.42-.498l-2.704-4.693l-26.257 18.133c-.783.57-1.922.285-2.42-.569l-8.752-15.075zm71.23-12.231L37.094 216.39c-.712.711-.64 1.849.142 2.489l13.378 11.164c.783.64 1.85.498 2.42-.284l18.501-26.027l4.127 3.485c.783.64 1.922.498 2.49-.356l17.933-26.026c-4.839-2.987-9.322-6.614-13.165-10.738zm-9.037 74.31c-.925-.355-1.352-1.421-.925-2.275L100 182.97c4.98 2.56 10.389 4.48 16.01 5.547l-7.97 30.577c-.213.925-1.28 1.494-2.205 1.138l-5.052-1.849l-8.468 30.791c-.285.925-1.281 1.494-2.206 1.138l-16.367-5.973zm46.68-55.11l-5.265 64.853c-.071.996.711 1.849 1.637 1.849h17.434c.996 0 1.779-.853 1.636-1.849l-2.561-31.787h5.336a1.72 1.72 0 0 0 1.708-1.848l-2.988-31.432c-3.06.498-6.191.712-9.393.712c-2.562 0-5.053-.143-7.543-.498m62.763-175.574c.427-.924 0-1.92-.925-2.275l-16.366-5.973c-.926-.356-1.922.213-2.206 1.137l-8.468 30.791l-5.053-1.848c-.925-.356-1.921.213-2.206 1.137l-7.97 30.578c5.693 1.138 11.03 3.058 16.011 5.547zm35.722 25.814L173.222 85.83a62 62 0 0 0-13.165-10.738l17.933-26.026c.569-.783 1.707-.996 2.49-.356l4.127 3.485l18.502-26.027c.57-.782 1.708-.925 2.42-.285l13.377 11.165c.783.64.783 1.778.143 2.489zm24.764 36.409c.925-.427 1.21-1.494.711-2.347L235.7 58.524c-.498-.853-1.637-1.066-2.42-.568l-26.257 18.133l-2.704-4.622c-.499-.854-1.637-1.138-2.42-.498l-25.76 18.347c3.558 4.408 6.476 9.315 8.753 14.577l58.778-27.875zm9.25 23.609l2.99 17.137c.142.996-.499 1.85-1.495 1.991l-64.826 6.045c-.285-5.831-1.424-11.378-3.203-16.64l30.457-8.391c.925-.285 1.921.355 2.063 1.35l.925 5.263l30.884-8.035c.925-.214 1.92.355 2.063 1.35zm-2.917 62.933c.925.213 1.921-.356 2.064-1.351L255.126 144c.143-.996-.498-1.849-1.494-1.991l-31.808-2.987l.925-5.262c.142-.996-.498-1.849-1.495-1.991l-31.523-2.56a62.3 62.3 0 0 1-2.704 16.782l62.976 16.427zM233.28 201.6c-.498.853-1.636 1.067-2.419.569l-53.583-36.978a60.2 60.2 0 0 0 8.254-14.791l28.749 13.156c.925.426 1.28 1.493.783 2.346l-2.704 4.622l28.89 13.654c.854.426 1.21 1.493.712 2.346zm-71.657-21.831l37.643 53.049c.57.782 1.708.924 2.42.284l13.306-11.164c.783-.64.783-1.778.143-2.49l-22.415-22.684l4.127-3.413c.783-.64.783-1.778.07-2.489l-22.557-22.186c-3.771 4.266-8.04 8.035-12.808 11.093zm-.356 72.249c-.925.355-1.921-.214-2.206-1.138l-17.22-62.72a61 61 0 0 0 15.868-6.044l13.592 28.515c.426.925 0 1.991-.926 2.276l-5.052 1.849l13.307 29.013c.427.924 0 1.92-.925 2.275l-16.367 5.974z"
-                            />
-                          </svg>
-                        </div>
-                        {/* Microsoft — 225° upper-left of outer arc */}
-                        <div className="absolute size-6 flex items-center justify-center left-[20px] top-[20px]">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="13"
-                            height="13"
-                            viewBox="0 0 256 256"
-                          >
-                            <path fill="#F1511B" d="M121.666 121.666H0V0h121.666z" />
-                            <path fill="#80CC28" d="M256 121.666H134.335V0H256z" />
-                            <path fill="#00ADEF" d="M121.663 256.002H0V134.336h121.663z" />
-                            <path fill="#FBBC09" d="M256 256.002H134.335V134.336H256z" />
-                          </svg>
-                        </div>
-                        {/* Google — 180° leftmost of outer arc */}
-                        <div className="absolute size-6 flex items-center justify-center left-0 top-[68px]">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="13"
-                            height="13"
-                            viewBox="0 0 16 16"
-                          >
-                            <g fill="none" fillRule="evenodd" clipRule="evenodd">
-                              <path
-                                fill="#f44336"
-                                d="M7.209 1.061c.725-.081 1.154-.081 1.933 0a6.57 6.57 0 0 1 3.65 1.82a100 100 0 0 0-1.986 1.93q-1.876-1.59-4.188-.734q-1.696.78-2.362 2.528a78 78 0 0 1-2.148-1.658a.26.26 0 0 0-.16-.027q1.683-3.245 5.26-3.86"
-                                opacity=".987"
-                              />
-                              <path
-                                fill="#ffc107"
-                                d="M1.946 4.92q.085-.013.161.027a78 78 0 0 0 2.148 1.658A7.6 7.6 0 0 0 4.04 7.99q.037.678.215 1.331L2 11.116Q.527 8.038 1.946 4.92"
-                                opacity=".997"
-                              />
-                              <path
-                                fill="#448aff"
-                                d="M12.685 13.29a26 26 0 0 0-2.202-1.74q1.15-.812 1.396-2.228H8.122V6.713q3.25-.027 6.497.055q.616 3.345-1.423 6.032a7 7 0 0 1-.51.49"
-                                opacity=".999"
-                              />
-                              <path
-                                fill="#43a047"
-                                d="M4.255 9.322q1.23 3.057 4.51 2.854a3.94 3.94 0 0 0 1.718-.626q1.148.812 2.202 1.74a6.62 6.62 0 0 1-4.027 1.684a6.4 6.4 0 0 1-1.02 0Q3.82 14.524 2 11.116z"
-                                opacity=".993"
-                              />
-                            </g>
-                          </svg>
-                        </div>
-                        {/* Keycloak — 135° lower-left of outer arc */}
-                        <div className="absolute size-6 flex items-center justify-center left-[20px] top-[116px]">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            className="text-foreground/60"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="m18.742 1.182l-12.493.002C4.155 4.784 2.079 8.393 0 12.002c2.071 3.612 4.162 7.214 6.252 10.816l12.49-.004l3.089-5.404h2.158v-.002H24L23.996 6.59h-2.168zM8.327 4.792h2.081l1.04 1.8l-3.12 5.413l3.117 5.403l-1.035 1.81H8.327a2048 2048 0 0 0-4.168-7.204zm6.241 0l2.086.003q2.088 3.608 4.166 7.222l-4.167 7.2h-2.08c-.382-.562-1.038-1.808-1.038-1.808l3.123-5.405l-3.124-5.413z"
-                            />
-                          </svg>
-                        </div>
-                        {/* Ping Identity — 90° bottom of outer arc */}
-                        <div className="absolute size-6 flex items-center justify-center left-[68px] top-[136px]">
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M23.7476 0H0V23.3473H23.7476V0Z" fill="#D20E0F" />
-                          </svg>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Sentinel row */}
-              <div className="relative z-10 border border-dashed border-foreground/[0.06] -mt-px -mx-px p-4">
-                <div className="flex flex-col sm:flex-row sm:items-start gap-4">
-                  <div className="sm:w-1/3">
-                    <div className="flex items-center gap-2 mb-1">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="text-foreground/70"
-                      >
-                        <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-                      </svg>
-                      <h4 className="text-[11px] sm:text-xs font-mono font-semibold uppercase tracking-widest text-foreground/90 dark:text-foreground/75">
-                        Sentinel
-                      </h4>
-                    </div>
-                    <p className="text-[13px] sm:text-[14px] text-foreground/60 dark:text-foreground/50 leading-relaxed">
-                      Real-time threat detection before it reaches your users.
-                    </p>
-                  </div>
-                  <div className="flex-1 flex flex-wrap gap-1.5">
-                    {[
-                      "Bot Detection",
-                      "Brute Force",
-                      "Breached Passwords",
-                      "Impossible Travel",
-                      "Rate Limiting",
-                      "Geo Blocking",
-                      "Suspicious IPs",
-                      "Disposable Emails",
-                      "Email Abuse",
-                      "Free Trial Abuse",
-                    ].map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center px-2 py-1 text-[10px] sm:text-[11px] font-mono uppercase tracking-wider text-foreground/70 dark:text-foreground/55 border border-foreground/[0.12] bg-foreground/[0.03] hover:bg-foreground/[0.06] hover:text-foreground/80 dark:hover:text-foreground/65 transition-colors"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* CTA */}
-              <div className="relative z-10 flex items-center justify-between mt-4 px-6 py-5 border border-dashed border-foreground/[0.08] bg-foreground/[0.01]">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[13px] sm:text-[14px] font-medium text-foreground/90 dark:text-foreground/85">
-                    Explore plans
-                  </span>
-                  <span className="text-[11px] sm:text-[12px] text-foreground/75 dark:text-foreground/60">
-                    Dashboard, audit logs, security detection, transactional comms, and more.
-                  </span>
-                </div>
-                <Link
-                  href="/pricing"
-                  className="inline-flex items-center gap-1.5 shrink-0 ml-4 px-4 py-2.5 bg-foreground text-background hover:opacity-90 transition-all font-mono text-[11px] uppercase tracking-widest group"
-                >
-                  View Plans
-                  <svg
-                    className="h-2.5 w-2.5 opacity-70 group-hover:translate-x-0.5 transition-transform"
-                    viewBox="0 0 10 10"
-                    fill="none"
-                  >
-                    <path d="M1 5H9M9 5L5 1M9 5L5 9" stroke="currentColor" strokeWidth="1.2" />
-                  </svg>
-                </Link>
-              </div>
-            </div>
-
-            <ContributorsSection
-              contributors={contributors}
-              contributorCount={stats.contributors}
-            />
-
             <ReadmeFooter stats={stats} />
           </motion.article>
         </div>

@@ -2,10 +2,9 @@ import { HeroReadMe } from "@/components/landing/hero-readme";
 import { HeroTitle } from "@/components/landing/hero-title";
 import { LineFieldBackground } from "@/components/landing/line-field-bg";
 import { SignatureMark } from "@/components/landing/signature-mark";
-import { getCommunityStats, getContributors } from "@/lib/community-stats";
+import { getCommunityStats } from "@/lib/community-stats";
 
 export default async function HomePage() {
-  const contributors = getContributors();
   const communityStats = await getCommunityStats();
 
   return (
@@ -25,7 +24,6 @@ export default async function HomePage() {
           <div className="relative z-0 w-full lg:w-[60%] overflow-x-hidden">
             <div className="flex items-start lg:items-center justify-center">
               <HeroReadMe
-                contributors={contributors}
                 stats={{
                   npmDownloads: communityStats.npmDownloads,
                   npmWeeklyHistory: communityStats.npmWeeklyHistory,
