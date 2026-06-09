@@ -1,6 +1,5 @@
 import type { SVGProps } from "react";
 import { cn } from "@lib/utils";
-import { FrameworkIconsExtended } from "./frameworks-extra";
 
 export const FrameworkIcons = {
   nextJS: (props?: SVGProps<any>) => (
@@ -283,5 +282,4 @@ export const FrameworkIcons = {
       />
     </svg>
   ),
-  ...FrameworkIconsExtended,
 };
