@@ -1757,24 +1757,11 @@ export function HeroReadMe({
                   </div>
                 </div>
                 <div className="overflow-hidden" suppressHydrationWarning>
-                  <video
-                    src={"/demo-dark.mp4"}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-auto -mt-[2px] dark:block hidden"
-                    suppressHydrationWarning
-                  />
-                  <video
-                    src={"/demo-light.mp4"}
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-auto -mt-[2px] dark:hidden"
-                    suppressHydrationWarning
-                  />
+                  <div className="flex aspect-video w-full items-center justify-center bg-foreground/[0.02]">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-foreground/30">
+                      event timeline
+                    </span>
+                  </div>
                 </div>
               </div>
 
