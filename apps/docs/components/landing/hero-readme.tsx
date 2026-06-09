@@ -841,11 +841,28 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                   </motion.div>
                 </Link>
               ))}
-              {/* + marks at the interior grid-line crossings (3×3: borders at 1/3 and 2/3) */}
-              <RiAddLine className="hidden md:block absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-2.5 text-foreground/35 dark:text-foreground/25 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-1/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-2.5 text-foreground/35 dark:text-foreground/25 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-2/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-2.5 text-foreground/35 dark:text-foreground/25 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-2/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-2.5 text-foreground/35 dark:text-foreground/25 select-none z-10 pointer-events-none" />
+              {/* + marks at the 4 interior cell-border crossings via a grid overlay */}
+              <div
+                aria-hidden="true"
+                className="hidden md:grid absolute inset-0 grid-cols-3 grid-rows-3 pointer-events-none select-none z-10"
+              >
+                {/* col 2 start × row 2 start */}
+                <div className="col-start-2 row-start-2 relative">
+                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
+                </div>
+                {/* col 3 start × row 2 start */}
+                <div className="col-start-3 row-start-2 relative">
+                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
+                </div>
+                {/* col 2 start × row 3 start */}
+                <div className="col-start-2 row-start-3 relative">
+                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
+                </div>
+                {/* col 3 start × row 3 start */}
+                <div className="col-start-3 row-start-3 relative">
+                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
+                </div>
+              </div>
             </div>
 
             <div className="my-4">
