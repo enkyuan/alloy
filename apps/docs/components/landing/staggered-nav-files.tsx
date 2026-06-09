@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { getVersionFromPathname, versionedDocsHref } from "@/lib/docs-versions";
 import { cn } from "@/lib/utils";
-import { BetterAuthWordmark } from "../icons/logo";
+import { AgentkitWordmark } from "../icons/logo";
 import { contents } from "../sidebar-content";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../ui/accordion";
 import { Badge } from "../ui/badge";
@@ -410,9 +410,7 @@ export function StaggeredNavFiles() {
             href="/"
             className="flex h-full items-center gap-1 px-4 py-3 transition-colors duration-150"
           >
-            <div className="flex flex-col gap-2 w-full">
-              <LogoContextMenu logo={<BetterAuthWordmark className="w-35 h-auto" />} />
-            </div>
+            <LogoContextMenu logo={<AgentkitWordmark />} />
           </Link>
         </motion.div>
 
@@ -427,7 +425,7 @@ export function StaggeredNavFiles() {
             href="/"
             className="flex h-full items-center gap-1 px-4 transition-colors duration-150"
           >
-            <BetterAuthWordmark className="w-35 h-auto" />
+            <AgentkitWordmark />
           </Link>
           <div className="flex items-center gap-1 pr-2">
             {isDocs && (
@@ -505,7 +503,7 @@ export function StaggeredNavFiles() {
               href="/"
               className={`flex h-full items-center gap-1 shrink-0 px-4 lg:px-7 py-3 border-r ${tabDividerClass} transition-colors duration-150`}
             >
-              <LogoContextMenu logo={<BetterAuthWordmark className="w-35 h-auto" />} />
+              <LogoContextMenu logo={<AgentkitWordmark />} />
             </Link>
           )}
           {/* File tabs */}

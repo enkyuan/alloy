@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ContributorInfo } from "@/lib/community-stats";
 import { cn } from "@/lib/utils";
 import { Icons } from "../icons";
@@ -13,13 +13,12 @@ import {
   ServerClientTabs,
   SocialProvidersSection,
 } from "./framework-sections";
-import { TrustedBy } from "./trusted-by";
 
 const mcpCommands = [
-  { name: "Cursor", command: "npx auth mcp --cursor" },
-  { name: "Claude Code", command: "npx auth mcp --claude-code" },
-  { name: "Open Code", command: "npx auth mcp --open-code" },
-  { name: "Manual", command: "npx auth mcp --manual" },
+  { name: "Cursor", command: "npx agentkit mcp --cursor" },
+  { name: "Claude Code", command: "npx agentkit mcp --claude-code" },
+  { name: "Open Code", command: "npx agentkit mcp --open-code" },
+  { name: "Manual", command: "npx agentkit mcp --manual" },
 ];
 
 const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm package).
@@ -39,109 +38,8 @@ const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm
 
 Refer to github.com/enkyuan/alloy for exact API and tool syntax.`;
 
-function CredentialFields() {
-  const emailText = "user@email.com";
-  const passwordDots = "••••••••";
-  const [emailDisplay, setEmailDisplay] = useState(emailText);
-  const [passwordDisplay, setPasswordDisplay] = useState(passwordDots);
-  const [isTyping, setIsTyping] = useState(false);
-  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
-  const isTypingRef = useRef(false);
-
-  const startTyping = useCallback(() => {
-    if (isTypingRef.current) return;
-    isTypingRef.current = true;
-    setIsTyping(true);
-
-    // Clear previous timeouts
-    for (const t of timeoutsRef.current) clearTimeout(t);
-    timeoutsRef.current = [];
-
-    // Reset to empty
-    setEmailDisplay("");
-    setPasswordDisplay("");
-
-    // Type email character by character
-    for (let i = 0; i <= emailText.length; i++) {
-      const t = setTimeout(() => {
-        setEmailDisplay(emailText.slice(0, i));
-      }, i * 60);
-      timeoutsRef.current.push(t);
-    }
-
-    // Type password dots after email finishes
-    const passwordStart = (emailText.length + 2) * 60;
-    for (let i = 0; i <= passwordDots.length; i++) {
-      const t = setTimeout(
-        () => {
-          setPasswordDisplay(passwordDots.slice(0, i));
-          if (i === passwordDots.length) {
-            isTypingRef.current = false;
-            setIsTyping(false);
-          }
-        },
-        passwordStart + i * 50,
-      );
-      timeoutsRef.current.push(t);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      for (const t of timeoutsRef.current) clearTimeout(t);
-    };
-  }, []);
-
-  return (
-    <div className="mt-3 flex items-center gap-1.5" onMouseEnter={startTyping}>
-      <div className="flex items-center h-5 px-2 border border-foreground/[0.08] bg-foreground/[0.02] flex-1 min-w-0">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="8"
-          height="8"
-          viewBox="0 0 24 24"
-          className="text-foreground/45 dark:text-foreground/30 shrink-0 mr-1.5"
-        >
-          <path
-            fill="currentColor"
-            d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2m0 4-8 5-8-5V6l8 5 8-5z"
-          />
-        </svg>
-        <span className="text-[9px] font-mono text-foreground/50 dark:text-foreground/35 truncate">
-          {emailDisplay}
-          {isTyping && emailDisplay.length < emailText.length && (
-            <span className="inline-block w-px h-2.5 bg-foreground/50 ml-px animate-[blink_0.8s_step-end_infinite] align-middle" />
-          )}
-        </span>
-      </div>
-      <div className="flex items-center h-5 px-2 border border-foreground/[0.08] bg-foreground/[0.02] flex-1 min-w-0">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="8"
-          height="8"
-          viewBox="0 0 24 24"
-          className="text-foreground/45 dark:text-foreground/30 shrink-0 mr-1.5"
-        >
-          <path
-            fill="currentColor"
-            d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z"
-          />
-        </svg>
-        <span className="text-[9px] font-mono text-foreground/50 dark:text-foreground/35 tracking-[0.1em]">
-          {passwordDisplay}
-          {isTyping &&
-            emailDisplay.length >= emailText.length &&
-            passwordDisplay.length < passwordDots.length && (
-              <span className="inline-block w-px h-2.5 bg-foreground/50 ml-px animate-[blink_0.8s_step-end_infinite] align-middle" />
-            )}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function InstallBlock() {
-  const [mode, setMode] = useState<"cli" | "prompt" | "mcp" | "skills">("cli");
+  const [mode, setMode] = useState<"cli" | "prompt" | "mcp">("cli");
   const [copied, setCopied] = useState(false);
   const [pmOpen, setPmOpen] = useState(false);
   const [promptOpen, setPromptOpen] = useState(false);
@@ -234,24 +132,6 @@ function InstallBlock() {
             <div className="absolute bottom-0 left-4 right-4 h-[1.5px] bg-neutral-600 dark:bg-neutral-400" />
           )}
         </button>
-        <button
-          onClick={() => {
-            setMode("skills");
-            setCopied(false);
-            setPmOpen(false);
-          }}
-          className={cn(
-            "px-4 py-2 text-[12px] transition-colors duration-150 relative",
-            mode === "skills"
-              ? "text-neutral-800 dark:text-neutral-200"
-              : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-400",
-          )}
-        >
-          Skills
-          {mode === "skills" && (
-            <div className="absolute bottom-0 left-4 right-4 h-[1.5px] bg-neutral-600 dark:bg-neutral-400" />
-          )}
-        </button>
       </div>
 
       {/* Content */}
@@ -265,88 +145,45 @@ function InstallBlock() {
         <div ref={contentRef}>
           <AnimatePresence mode="wait" initial={false}>
             <div>
-              {mode === "cli" || mode === "skills" ? (
+              {mode === "cli" ? (
                 <div className="flex items-center justify-between bg-neutral-100/50 dark:bg-[#050505] px-4 py-3">
                   <code
                     className="text-[13px]"
                     style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                   >
-                    {mode === "skills" ? (
-                      <>
-                        <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                        <span className="text-neutral-700 dark:text-neutral-300">
-                          skills add agentkit/skills
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                        <span className="text-neutral-700 dark:text-neutral-300">auth init</span>
-                      </>
-                    )}
+                    <span className="text-purple-600/90 dark:text-purple-400/90">pip</span>{" "}
+                    <span className="text-neutral-700 dark:text-neutral-300">install agentkit</span>
                   </code>
                   <div className="relative">
-                    {mode === "skills" ? (
-                      <button
-                        onClick={() => copy("npx skills add agentkit/skills")}
-                        className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
-                        aria-label="Copy command"
-                      >
-                        {copied ? (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
-                            />
-                          </svg>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => copy("npx auth init")}
-                        className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
-                        aria-label="Copy command"
-                      >
-                        {copied ? (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z"
-                            />
-                          </svg>
-                        ) : (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            className="h-4 w-4"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
-                            />
-                          </svg>
-                        )}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => copy("pip install agentkit")}
+                      className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
+                      aria-label="Copy command"
+                    >
+                      {copied ? (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z"
+                          />
+                        </svg>
+                      ) : (
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4"
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
+                          />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
               ) : mode === "mcp" ? (
@@ -356,7 +193,7 @@ function InstallBlock() {
                     style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                   >
                     <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                    <span className="text-neutral-700 dark:text-neutral-300">auth mcp</span>
+                    <span className="text-neutral-700 dark:text-neutral-300">agentkit mcp</span>
                   </code>
                   <div className="relative">
                     <button
@@ -813,16 +650,17 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
         aria-hidden="true"
       >
         <svg
-          width="300"
-          height="225"
-          viewBox="0 0 60 45"
+          width="280"
+          height="280"
+          viewBox="0 0 48 48"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
+          <path d="M31 3V17L17 3H31Z" className="fill-foreground" />
           <path
             fillRule="evenodd"
             clipRule="evenodd"
-            d="M0 0H15V15H30V30H15V45H0V30V15V0ZM45 30V15H30V0H45H60V15V30V45H45H30V30H45Z"
+            d="M45 31V17H31H17V31L3 17L17 3H3V17V31H17V45H31H45V31ZM45 31L31 45L17 31H31V17L45 31Z"
             className="fill-foreground"
           />
         </svg>
@@ -842,7 +680,7 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
       {/* CTA */}
       <div className="relative space-y-6">
         <p className="text-center text-lg text-balance text-foreground/60 dark:text-foreground/50 tracking-tight">
-          Roll your own auth with confidence in minutes.
+          Ship a tool-using agent in minutes, not months.
         </p>
 
         <div className="flex items-center justify-center gap-2">
@@ -922,7 +760,6 @@ export function HeroReadMe({
   contributors: ContributorInfo[];
   stats: CommunityHeroStats;
 }) {
-  const [socialHovered, setSocialHovered] = useState(false);
   const [frameworkTab, setFrameworkTab] = useState<
     "declarative" | "database" | "oauth" | "integrations"
   >("declarative");
@@ -949,30 +786,21 @@ export function HeroReadMe({
             </h1>
 
             <p className="text-sm sm:text-[15px] text-foreground/80 mb-6 sm:mb-8 leading-relaxed">
-              Auth that lives{" "}
+              The agent runtime that lives{" "}
               <span className="font-medium text-foreground/90 dark:text-foreground/80">
                 inside your app
               </span>
-              . Composable, plugin-based, and built to scale — powering from weekend projects to the
-              biggest{" "}
+              . An event-sourced agent loop, a tool registry, pluggable LLM providers, and STT/TTS
+              voice, in one{" "}
               <span className="font-medium text-foreground/90 dark:text-foreground/80">
-                consumer and enterprise apps
+                embeddable SDK
               </span>{" "}
-              on the planet.
+              for Python and TypeScript.
             </p>
 
             <InstallBlock />
 
-            <div className="flex items-center gap-3 my-4">
-              <div className="flex-1 border-t border-foreground/6"></div>
-              <span className="text-[11px] sm:text-xs text-foreground/50 dark:text-foreground/50 font-mono tracking-wider uppercase shrink-0">
-                Trusted By
-              </span>
-            </div>
-
-            <TrustedBy />
-
-            <div className="flex items-center gap-4 my-4">
+            <div className="flex items-center gap-4 my-4 mt-8">
               <span className="text-lg font-medium text-foreground/90 dark:text-foreground/80 tracking-tight shrink-0">
                 Features
               </span>
@@ -989,62 +817,52 @@ export function HeroReadMe({
                   href: "/docs",
                 },
                 {
-                  label: "Email & Password",
-                  headline: "Built-in credential auth.",
-                  desc: "Sessions, email verification, and password reset included.",
-                  credential: true,
+                  label: "Agent Loop",
+                  headline: "Event-sourced runtime.",
+                  desc: "A tool-using agent loop with replay and full event history.",
                   href: "/docs",
                 },
                 {
-                  label: "Social Sign-on",
-                  headline: "Social sign-on.",
-                  desc: "Google, GitHub, Apple, Discord, and more.",
-                  social: true,
+                  label: "Tools",
+                  headline: "Tool registry + toolgen.",
+                  desc: "Register functions as tools with a provider-neutral payload.",
                   href: "/docs",
                 },
                 {
-                  label: "Organizations",
-                  headline: "Multi-tenancy built in.",
-                  desc: "Teams, roles, invitations, and access control.",
-                  org: true,
+                  label: "Providers",
+                  headline: "Pluggable LLM providers.",
+                  desc: "OpenAI, Kimi, and Gemini behind one streaming interface.",
                   href: "/docs",
                 },
                 {
-                  label: "Enterprise",
-                  headline: "Enterprise ready.",
-                  desc: "SSO, SAML 2.0, SCIM, and directory sync.",
-                  enterprise: true,
+                  label: "Voice",
+                  headline: "STT/TTS modalities.",
+                  desc: "Speech-to-text and text-to-speech for voice agents.",
                   href: "/docs",
                 },
                 {
-                  label: "Plugins",
-                  headline: "50+ and growing.",
-                  desc: "Passkeys, magic links, API keys, JWTs, and more.",
-                  plugins: true,
+                  label: "Retrieval",
+                  headline: "RAG tool retriever.",
+                  desc: "Pluggable embedder and cache to select tools by relevance.",
                   href: "/docs",
                 },
                 {
-                  label: "Agent Auth",
-                  headline: "Auth for AI agents.",
-                  desc: "MCP auth, token exchange, and agent delegation.",
-                  agent: true,
+                  label: "Event Bus",
+                  headline: "In-memory or Redis.",
+                  desc: "Run infra-free locally, swap in Redis for live fan-out.",
                   href: "/docs",
                 },
                 {
-                  label: "Infrastructure",
-                  headline: "Security & observability.",
-                  desc: "Bot detection, IP blocking, and email validation.",
-                  security: true,
-                  href: "/pricing",
-                  managed: true,
+                  label: "Observability",
+                  headline: "Replay & projection.",
+                  desc: "Every turn is an event; project state and replay sessions.",
+                  href: "/docs",
                 },
                 {
-                  label: "Dashboard",
-                  headline: "User management.",
-                  desc: "Manage users, sessions, and organizations.",
-                  dashboard: true,
-                  href: "/pricing",
-                  managed: true,
+                  label: "Two SDKs",
+                  headline: "Python & TypeScript.",
+                  desc: "The same runtime core, embeddable in either ecosystem.",
+                  href: "/docs",
                 },
               ].map((feature, i) => (
                 <Link
@@ -1056,16 +874,6 @@ export function HeroReadMe({
                     whileHover={{
                       y: -2,
                       transition: { duration: 0.2, ease: "easeOut" },
-                    }}
-                    onMouseEnter={() => {
-                      if ("social" in feature && feature.social) {
-                        setSocialHovered(true);
-                      }
-                    }}
-                    onMouseLeave={() => {
-                      if ("social" in feature && feature.social) {
-                        setSocialHovered(false);
-                      }
                     }}
                     className={cn(
                       "group/card relative p-4 lg:p-5 border-foreground/[0.08] min-h-[100px] transition-all duration-200 hover:bg-foreground/[0.02] hover:shadow-[inset_0_1px_0_0_rgba(128,128,128,0.1)] hover:z-10",
@@ -1194,381 +1002,6 @@ export function HeroReadMe({
                         <div className="flex items-center justify-center size-[20px] border border-dashed border-foreground/[0.1] text-foreground/35 dark:text-foreground/20 transition-all duration-300 group-hover/card:text-foreground/60 dark:group-hover/card:text-foreground/40 group-hover/card:border-foreground/20 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.3s]">
                           <span className="text-[7px] font-mono leading-none">+14</span>
                         </div>
-                      </div>
-                    )}
-                    {"social" in feature && feature.social && (
-                      <div className="mt-3 relative overflow-hidden">
-                        <div className="flex items-center gap-2.5">
-                          <div className="relative flex items-center gap-2.5">
-                            <div className="absolute left-3 right-3 top-1/2 h-px -translate-y-1/2 bg-foreground/[0.08]" />
-                            {/* Google — stretches to "Sign in with Google" on hover */}
-                            <motion.div
-                              animate={{ width: socialHovered ? 120 : 24 }}
-                              transition={{
-                                duration: 0.3,
-                                ease: [0.4, 0, 0.2, 1],
-                              }}
-                              className="relative flex items-center h-6 border border-foreground/8 bg-background shrink-0 overflow-hidden opacity-60 transition-opacity duration-300 group-hover/card:opacity-100"
-                            >
-                              <div className="flex items-center gap-1.5 px-[7px]">
-                                <svg
-                                  xmlns="http://www.w3.org/2000/svg"
-                                  width="10"
-                                  height="10"
-                                  viewBox="0 0 48 48"
-                                  className="shrink-0"
-                                >
-                                  <path
-                                    fill="#FFC107"
-                                    d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917"
-                                  />
-                                  <path
-                                    fill="#FF3D00"
-                                    d="m6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691"
-                                  />
-                                  <path
-                                    fill="#4CAF50"
-                                    d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.9 11.9 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44"
-                                  />
-                                  <path
-                                    fill="#1976D2"
-                                    d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002l6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917"
-                                  />
-                                </svg>
-                                <motion.span
-                                  animate={{ opacity: socialHovered ? 1 : 0 }}
-                                  transition={{
-                                    duration: 0.2,
-                                    delay: socialHovered ? 0.1 : 0,
-                                  }}
-                                  className="text-[8px] font-mono text-foreground/60 dark:text-foreground/40 whitespace-nowrap"
-                                >
-                                  Sign in with Google
-                                </motion.span>
-                              </div>
-                            </motion.div>
-                            {/* GitHub */}
-                            <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-neutral-800 dark:text-neutral-200 shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  fill="currentColor"
-                                  d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
-                                />
-                              </svg>
-                            </div>
-                            {/* Apple */}
-                            <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-neutral-800 dark:text-neutral-200 shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  fill="currentColor"
-                                  d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"
-                                />
-                              </svg>
-                            </div>
-                            {/* Discord */}
-                            <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-[#5865F2] shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  fill="currentColor"
-                                  d="M20.317 4.37a19.8 19.8 0 0 0-4.885-1.515.07.07 0 0 0-.073.036c-.21.375-.444.864-.608 1.25a18.3 18.3 0 0 0-5.487 0 13 13 0 0 0-.617-1.25.07.07 0 0 0-.073-.036A19.7 19.7 0 0 0 3.69 4.37a.06.06 0 0 0-.032.025C.533 9.046-.32 13.58.099 18.057a.08.08 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.08.08 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.08.08 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.08.08 0 0 1-.008-.128q.188-.141.372-.287a.08.08 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.08.08 0 0 1 .079.01q.183.149.372.288a.08.08 0 0 1-.006.127c-.598.35-1.22.645-1.873.892a.08.08 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.08.08 0 0 0 .084.029 19.8 19.8 0 0 0 6.002-3.03.08.08 0 0 0 .032-.056c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.026M8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419s.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418m7.975 0c-1.183 0-2.157-1.085-2.157-2.419s.955-2.419 2.157-2.419c1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418"
-                                />
-                              </svg>
-                            </div>
-                            {/* Microsoft */}
-                            <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="9"
-                                height="9"
-                                viewBox="0 0 256 256"
-                              >
-                                <path fill="#F1511B" d="M121.666 121.666H0V0h121.666z" />
-                                <path fill="#80CC28" d="M256 121.666H134.335V0H256z" />
-                                <path fill="#00ADEF" d="M121.663 256.002H0V134.336h121.663z" />
-                                <path fill="#FBBC09" d="M256 256.002H134.335V134.336H256z" />
-                              </svg>
-                            </div>
-                            {/* X/Twitter */}
-                            <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-neutral-800 dark:text-neutral-200 shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="9"
-                                height="9"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  fill="currentColor"
-                                  d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
-                                />
-                              </svg>
-                            </div>
-                          </div>
-                          {/* +34 */}
-                          <div className="flex items-center justify-center size-6 border border-dashed border-foreground/[0.1] text-foreground/35 dark:text-foreground/20 shrink-0">
-                            <span className="text-[8px] font-mono leading-none">+34</span>
-                          </div>
-                        </div>
-                        <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
-                      </div>
-                    )}
-                    {"credential" in feature && feature.credential && <CredentialFields />}
-                    {"org" in feature && feature.org && (
-                      <div className="mt-3 flex items-center gap-2.5">
-                        {/* Overlapping member avatars */}
-                        <div className="flex -space-x-1.5">
-                          <div className="relative size-5 rounded-full border border-foreground/[0.08] bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center z-[3]">
-                            <span className="text-[8px] font-mono text-foreground/55 dark:text-foreground/35 leading-none">
-                              A
-                            </span>
-                          </div>
-                          <div className="relative size-5 rounded-full border border-foreground/[0.08] bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center z-[2]">
-                            <span className="text-[8px] font-mono text-foreground/50 dark:text-foreground/30 leading-none">
-                              B
-                            </span>
-                          </div>
-                          <div className="relative size-5 rounded-full border border-foreground/[0.08] bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center z-[1]">
-                            <span className="text-[8px] font-mono text-foreground/40 dark:text-foreground/50 leading-none">
-                              C
-                            </span>
-                          </div>
-                          <div className="relative size-5 rounded-full border border-dashed border-foreground/[0.1] bg-background flex items-center justify-center z-[0]">
-                            <span className="text-[8px] font-mono text-foreground/35 dark:text-foreground/20 leading-none">
-                              +
-                            </span>
-                          </div>
-                        </div>
-                        {/* Role badges */}
-                        <div className="flex items-center gap-1">
-                          <span className="text-[8px] font-mono text-foreground/50 dark:text-foreground/30 px-1.5 py-0.5 border border-foreground/[0.08] bg-foreground/[0.015]">
-                            owner
-                          </span>
-                          <span className="text-[8px] font-mono text-foreground/35 dark:text-foreground/20 px-1.5 py-0.5 border border-foreground/[0.06] bg-foreground/[0.015]">
-                            admin
-                          </span>
-                          <span className="text-[8px] font-mono text-foreground/30  px-1.5 py-0.5 border border-dashed border-foreground/[0.08]">
-                            member
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {"plugins" in feature && feature.plugins && (
-                      <div className="mt-3 relative overflow-hidden">
-                        <div className="flex items-center gap-1 overflow-hidden">
-                          {[
-                            "passkeys",
-                            "2fa",
-                            "magic-link",
-                            "jwt",
-                            "api-keys",
-                            "anonymous",
-                            "oidc",
-                            "otp",
-                            "bearer",
-                            "multi-session",
-                          ].map((plugin, i) => (
-                            <span
-                              key={plugin}
-                              className={`text-[8px] font-mono whitespace-nowrap px-1.5 py-0.5 border shrink-0 ${i < 2 ? "text-foreground/50 dark:text-foreground/30 border-foreground/[0.08] bg-foreground/[0.02]" : i < 4 ? "text-foreground/40 dark:text-foreground/22 border-foreground/[0.06] bg-foreground/[0.015]" : "text-foreground/30  border-foreground/[0.05]"}`}
-                            >
-                              {plugin}
-                            </span>
-                          ))}
-                        </div>
-                        {/* Fade-out gradient on the right to imply "there's more" */}
-                        <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
-                      </div>
-                    )}
-                    {"enterprise" in feature && feature.enterprise && (
-                      <div className="mt-3 flex items-center gap-2.5">
-                        <div className="relative flex items-center gap-2.5">
-                          <div className="absolute left-3 right-3 top-1/2 h-px -translate-y-1/2 bg-foreground/[0.08]" />
-                          {/* Okta */}
-                          <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-neutral-800 dark:text-neutral-200 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 256 256"
-                            >
-                              <path
-                                fill="currentColor"
-                                d="m140.844 1.778l-5.266 64.853a66 66 0 0 0-7.542-.427c-3.203 0-6.334.214-9.393.712l-2.99-31.432a1.72 1.72 0 0 1 1.709-1.848h5.337l-2.562-31.787C120.066.853 120.848 0 121.774 0h17.434c.996 0 1.779.853 1.636 1.849zm-43.976 3.2c-.285-.925-1.281-1.494-2.206-1.138L78.295 9.813c-.925.356-1.352 1.423-.925 2.276l13.307 29.013l-5.052 1.85c-.926.355-1.352 1.421-.926 2.275l13.592 28.515a61 61 0 0 1 15.868-6.044L96.94 4.978zM56.734 23.04l37.643 53.049c-4.768 3.129-9.108 6.827-12.809 11.093L59.011 64.996a1.72 1.72 0 0 1 .071-2.49l4.127-3.413L40.794 36.41c-.711-.711-.64-1.849.142-2.489l13.307-11.164c.783-.64 1.85-.498 2.42.284zM25.139 53.76c-.783-.569-1.921-.284-2.42.569l-8.68 15.075c-.499.854-.143 1.92.71 2.347L43.64 85.404l-2.704 4.623c-.498.853-.142 1.99.783 2.346l28.749 13.156a60.2 60.2 0 0 1 8.254-14.791zM3.862 94.72c.143-.996 1.139-1.564 2.064-1.351l62.976 16.427a62.3 62.3 0 0 0-2.704 16.782l-31.524-2.56a1.642 1.642 0 0 1-1.494-1.991l.925-5.263l-31.808-2.986c-.996-.071-1.637-.996-1.495-1.991l2.99-17.138zm-2.348 42.524c-.996.072-1.637.996-1.494 1.992l3.06 17.137c.142.996 1.138 1.565 2.063 1.351l30.883-8.035l.925 5.262c.143.996 1.139 1.565 2.064 1.351l30.456-8.39c-1.779-5.263-2.917-10.88-3.202-16.64l-64.826 5.972zM11.62 182.33c-.498-.853-.143-1.92.711-2.347l58.778-27.875c2.206 5.262 5.195 10.169 8.753 14.577L54.1 185.031c-.783.569-1.921.356-2.42-.498l-2.704-4.693l-26.257 18.133c-.783.57-1.922.285-2.42-.569l-8.752-15.075zm71.23-12.231L37.094 216.39c-.712.711-.64 1.849.142 2.489l13.378 11.164c.783.64 1.85.498 2.42-.284l18.501-26.027l4.127 3.485c.783.64 1.922.498 2.49-.356l17.933-26.026c-4.839-2.987-9.322-6.614-13.165-10.738zm-9.037 74.31c-.925-.355-1.352-1.421-.925-2.275L100 182.97c4.98 2.56 10.389 4.48 16.01 5.547l-7.97 30.577c-.213.925-1.28 1.494-2.205 1.138l-5.052-1.849l-8.468 30.791c-.285.925-1.281 1.494-2.206 1.138l-16.367-5.973zm46.68-55.11l-5.265 64.853c-.071.996.711 1.849 1.637 1.849h17.434c.996 0 1.779-.853 1.636-1.849l-2.561-31.787h5.336a1.72 1.72 0 0 0 1.708-1.848l-2.988-31.432c-3.06.498-6.191.712-9.393.712c-2.562 0-5.053-.143-7.543-.498m62.763-175.574c.427-.924 0-1.92-.925-2.275l-16.366-5.973c-.926-.356-1.922.213-2.206 1.137l-8.468 30.791l-5.053-1.848c-.925-.356-1.921.213-2.206 1.137l-7.97 30.578c5.693 1.138 11.03 3.058 16.011 5.547zm35.722 25.814L173.222 85.83a62 62 0 0 0-13.165-10.738l17.933-26.026c.569-.783 1.707-.996 2.49-.356l4.127 3.485l18.502-26.027c.57-.782 1.708-.925 2.42-.285l13.377 11.165c.783.64.783 1.778.143 2.489zm24.764 36.409c.925-.427 1.21-1.494.711-2.347L235.7 58.524c-.498-.853-1.637-1.066-2.42-.568l-26.257 18.133l-2.704-4.622c-.499-.854-1.637-1.138-2.42-.498l-25.76 18.347c3.558 4.408 6.476 9.315 8.753 14.577l58.778-27.875zm9.25 23.609l2.99 17.137c.142.996-.499 1.85-1.495 1.991l-64.826 6.045c-.285-5.831-1.424-11.378-3.203-16.64l30.457-8.391c.925-.285 1.921.355 2.063 1.35l.925 5.263l30.884-8.035c.925-.214 1.92.355 2.063 1.35zm-2.917 62.933c.925.213 1.921-.356 2.064-1.351L255.126 144c.143-.996-.498-1.849-1.494-1.991l-31.808-2.987l.925-5.262c.142-.996-.498-1.849-1.495-1.991l-31.523-2.56a62.3 62.3 0 0 1-2.704 16.782l62.976 16.427zM233.28 201.6c-.498.853-1.636 1.067-2.419.569l-53.583-36.978a60.2 60.2 0 0 0 8.254-14.791l28.749 13.156c.925.426 1.28 1.493.783 2.346l-2.704 4.622l28.89 13.654c.854.426 1.21 1.493.712 2.346zm-71.657-21.831l37.643 53.049c.57.782 1.708.924 2.42.284l13.306-11.164c.783-.64.783-1.778.143-2.49l-22.415-22.684l4.127-3.413c.783-.64.783-1.778.07-2.489l-22.557-22.186c-3.771 4.266-8.04 8.035-12.808 11.093zm-.356 72.249c-.925.355-1.921-.214-2.206-1.138l-17.22-62.72a61 61 0 0 0 15.868-6.044l13.592 28.515c.426.925 0 1.991-.926 2.276l-5.052 1.849l13.307 29.013c.427.924 0 1.92-.925 2.275l-16.367 5.974z"
-                              />
-                            </svg>
-                          </div>
-                          {/* Microsoft Entra / Azure AD */}
-                          <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                fill="#0078D4"
-                                d="M13.05 4.24L6.56 18.05L2 18l5.09-8.76zm.7 1.09L22 19.76H6.74l9.3-1.66l-4.87-5.79z"
-                              />
-                            </svg>
-                          </div>
-                          {/* SCIM / Directory Sync */}
-                          <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-[#10B981] shrink-0 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                              <circle cx="9" cy="7" r="4" />
-                              <polyline points="16 11 18 13 22 9" />
-                            </svg>
-                          </div>
-                          {/* Generic IdP / Building */}
-                          <div className="relative flex items-center justify-center size-6 border border-foreground/[0.08] bg-background text-neutral-800 dark:text-neutral-200 opacity-60 transition-opacity duration-300 group-hover/card:opacity-100">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                fill="currentColor"
-                                d="M12 7V3H2v18h20V7zM6 19H4v-2h2zm0-4H4v-2h2zm0-4H4V9h2zm0-4H4V5h2zm4 12H8v-2h2zm0-4H8v-2h2zm0-4H8V9h2zm0-4H8V5h2zm10 12h-8v-2h2v-2h-2v-2h2v-2h-2V9h8zm-2-8h-2v2h2zm0 4h-2v2h2z"
-                              />
-                            </svg>
-                          </div>
-                        </div>
-                        {/* +more */}
-                        <div className="flex items-center justify-center size-6 border border-dashed border-foreground/[0.1] text-foreground/35 dark:text-foreground/20">
-                          <span className="text-[8px] font-mono leading-none">+</span>
-                        </div>
-                      </div>
-                    )}
-                    {"agent" in feature && feature.agent && (
-                      <div className="mt-3 flex items-center h-5 px-2.5 border border-foreground/[0.06] bg-foreground/[0.015] font-mono text-[8px] gap-1">
-                        <span className="text-foreground/30 ">$</span>
-                        <span className="text-foreground/50 dark:text-foreground/30">
-                          agent
-                          <span className="text-foreground/30 ">.</span>
-                          auth
-                          <span className="text-foreground/30 ">()</span>
-                        </span>
-                        <span className="text-foreground/50 dark:text-foreground/10 mx-0.5">→</span>
-                        <span className="text-foreground/35 dark:text-foreground/20">
-                          sk-<span className="tracking-[0.08em]">••••</span>
-                        </span>
-                        <span className="text-foreground/40 dark:text-foreground/50">✓</span>
-                        <span className="inline-block w-px h-2.5 bg-foreground/30 animate-[blink_1s_steps(2)_infinite]" />
-                      </div>
-                    )}
-                    {"security" in feature && feature.security && (
-                      <div className="mt-3 relative overflow-hidden">
-                        <div className="flex items-center gap-1.5 font-mono text-[8px]">
-                          {/* Shield icon */}
-                          <div className="flex items-center justify-center size-5 border border-foreground/[0.08] bg-foreground/[0.02] shrink-0">
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                              className="text-foreground/50 dark:text-foreground/30"
-                            >
-                              <path
-                                fill="currentColor"
-                                d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12c5.16-1.26 9-6.45 9-12V5zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11z"
-                              />
-                            </svg>
-                          </div>
-                          {/* Blocked */}
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 border border-red-500/15 bg-red-500/[0.03] shrink-0">
-                            <span className="inline-block size-1 rounded-full bg-red-500/40" />
-                            <span className="text-red-500/40">blocked</span>
-                          </div>
-                          {/* Challenged */}
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 border border-yellow-600/15 bg-yellow-600/[0.03] shrink-0">
-                            <span className="inline-block size-1 rounded-full bg-yellow-600/40" />
-                            <span className="text-yellow-600/40">challenged</span>
-                          </div>
-                          {/* Allowed */}
-                          <div className="flex items-center gap-1 px-1.5 py-0.5 border border-green-500/15 bg-green-500/[0.03] shrink-0">
-                            <span className="inline-block size-1 rounded-full bg-green-500/50" />
-                            <span className="text-green-500/50">allowed</span>
-                          </div>
-                        </div>
-                        <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
-                      </div>
-                    )}
-                    {"dashboard" in feature && feature.dashboard && (
-                      <div className="mt-3 relative overflow-hidden h-5">
-                        <div className="flex animate-[marquee_20s_linear_infinite] gap-4">
-                          {[...Array(2)].map((_, setIdx) => (
-                            <div key={setIdx} className="flex gap-4 shrink-0">
-                              {[
-                                {
-                                  time: "10:50 AM",
-                                  user: "John",
-                                  action: "created a session",
-                                },
-                                {
-                                  time: "10:48 AM",
-                                  user: "Sarah",
-                                  action: "updated profile",
-                                },
-                                {
-                                  time: "10:45 AM",
-                                  user: "Alex",
-                                  action: "joined organization",
-                                },
-                                {
-                                  time: "10:42 AM",
-                                  user: "Emma",
-                                  action: "revoked token",
-                                },
-                                {
-                                  time: "10:38 AM",
-                                  user: "Mike",
-                                  action: "enabled 2FA",
-                                },
-                              ].map((event) => (
-                                <div
-                                  key={`${setIdx}-${event.time}-${event.user}`}
-                                  className="flex items-center gap-1.5 shrink-0 h-5 whitespace-nowrap"
-                                >
-                                  <span className="text-[8px] font-mono text-foreground/30 ">
-                                    {event.time}
-                                  </span>
-                                  <span className="text-[8px] font-mono text-foreground/50 dark:text-foreground/30 border-b border-dashed border-foreground/20">
-                                    {event.user}
-                                  </span>
-                                  <span className="text-[8px] font-mono text-foreground/35 dark:text-foreground/20">
-                                    {event.action}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                        <div className="absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent pointer-events-none" />
                       </div>
                     )}
                   </motion.div>

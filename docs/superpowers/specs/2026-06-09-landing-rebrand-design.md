@@ -58,7 +58,7 @@ All in `apps/docs`.
 
 | # | Element | File | Action |
 |---|---------|------|--------|
-| 1 | `cursor-pointer` 68×52 element top-left of left column | (agentation toolbar anchor — NOT our code) | **Flag to user, no change.** The `<Popper><PopoverAnchor>` React stack is agentation's own toolbar trigger, not a landing element. "Flex horizontally" has no clear target in our source. Confirm before touching. |
+| 1 | Nav brand: logo mark stacked above the "agentkit" wordmark | `icons/logo.tsx`, `staggered-nav-files.tsx` | **Fixed.** Root cause: `AgentkitWordmark`'s default `inline-flex items-center gap-2` was applied via `className \|\| default`, so the nav's `className="w-35 h-auto"` *replaced* it, collapsing the lockup and letting the fixed-size mark + text wrap (stack). Fix: merge classes with `cn("inline-flex items-center gap-2", className)` so the lockup always stays inline; drop the `w-35 h-auto` overrides (3 call sites) and the `flex flex-col` wrapper so the lockup sizes naturally — matching better-auth's inline nav lockup. |
 | 2 | "Trusted By" divider + `<TrustedBy />` logo strip | `hero-readme.tsx` ~966–973 | **Remove** the divider block and the `<TrustedBy />` render. Leave the `trusted-by.tsx` component file in place (unused) unless user wants it deleted. |
 | 3 | InstallBlock CLI tab (`npx auth init`) + Skills tab | `hero-readme.tsx` 143–647 | CLI tab → real install command. **Remove the Skills tab** entirely (button + `mode` union member + `skills` branches). Add CLI scaffold item to ROADMAP. |
 | 4 | README intro paragraph ("Auth that lives inside your app…") | `hero-readme.tsx` 951–962 | **Rewrite** to describe agentkit accurately. |
