@@ -695,13 +695,13 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
             </div>
 
             <div className="relative mb-2">
-              {/* + marks at interior border crossings — on outer wrapper so overflow-hidden on the grid doesn't clip them */}
+              {/* + marks at the four outer corners — on outer wrapper so overflow-hidden on the grid doesn't clip them */}
               {(
                 [
-                  ["calc(100%/3)", "calc(100%/3)"],
-                  ["calc(200%/3)", "calc(100%/3)"],
-                  ["calc(100%/3)", "calc(200%/3)"],
-                  ["calc(200%/3)", "calc(200%/3)"],
+                  ["0%", "0%"],
+                  ["100%", "0%"],
+                  ["0%", "100%"],
+                  ["100%", "100%"],
                 ] as [string, string][]
               ).map(([left, top]) => (
                 <RiAddLine
