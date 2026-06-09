@@ -7,6 +7,16 @@
     "nextjs"
   ],
   "categories": {},
+  "rules": {
+    "max-lines": [
+      "warn",
+      {
+        "max": 400,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ]
+  },
   "env": {
     "builtin": true
   },
