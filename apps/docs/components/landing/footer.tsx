@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Icons } from "@/components/icons";
+import { RiGithubFill } from "@/components/icons/remix";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const footerLinks = [
@@ -36,7 +36,7 @@ export default function Footer() {
               aria-label="GitHub"
               className="text-foreground/50 hover:text-foreground/80 transition-colors"
             >
-              <Icons.gitHub className="h-3.5 w-3.5" />
+              <RiGithubFill className="h-3.5 w-3.5" />
             </Link>
             <div className="h-4 w-4 flex text-foreground/15 items-center justify-center select-none">
               |

@@ -4,13 +4,13 @@ import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { Icons } from "../icons";
+import { RiNpmjsFill } from "../icons/remix";
 import {
-  DatabaseSection,
+  AgentLoopTabs,
+  CapabilitiesMarquee,
   IntegrationsSection,
-  PluginEcosystem,
-  ServerClientTabs,
-  SocialProvidersSection,
+  ProvidersSection,
+  ToolsSection,
 } from "./framework-sections";
 
 const mcpCommands = [
@@ -580,7 +580,7 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
           {stats.npmDownloads > 0 && (
             <a href="https://github.com/enkyuan/alloy" target="_blank" rel="noopener noreferrer">
               <div className="flex items-center gap-1.5 px-2.5 hover:bg-foreground/4 rounded-sm transition-colors text-foreground/50 dark:text-foreground/50">
-                <Icons.npm className="size-[11px] -translate-y-px" />
+                <RiNpmjsFill className="size-[11px] -translate-y-px" />
                 <span className="text-xs font-mono">{formatCount(stats.npmDownloads)} / week</span>
               </div>
             </a>
@@ -647,9 +647,9 @@ function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
 }
 
 export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
-  const [frameworkTab, setFrameworkTab] = useState<
-    "declarative" | "providers" | "tools" | "integrations"
-  >("declarative");
+  const [frameworkTab, setFrameworkTab] = useState<"loop" | "providers" | "tools" | "integrations">(
+    "loop",
+  );
 
   return (
     <motion.div
@@ -934,9 +934,9 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                         transition={{ duration: 0.2, ease: "easeOut" }}
                         className="pr-3 sm:pr-5 pb-5 h-full"
                       >
-                        {frameworkTab === "declarative" && <ServerClientTabs />}
-                        {frameworkTab === "providers" && <DatabaseSection />}
-                        {frameworkTab === "tools" && <SocialProvidersSection />}
+                        {frameworkTab === "loop" && <AgentLoopTabs />}
+                        {frameworkTab === "providers" && <ProvidersSection />}
+                        {frameworkTab === "tools" && <ToolsSection />}
                         {frameworkTab === "integrations" && <IntegrationsSection />}
                       </motion.div>
                     </AnimatePresence>
@@ -944,7 +944,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
 
                   <div className="flex flex-row lg:flex-col lg:w-56 lg:shrink-0 border-t lg:border-t-0 lg:border-l border-foreground/[0.1] bg-neutral-50 dark:bg-black overflow-x-auto lg:overflow-visible">
                     {[
-                      { id: "declarative", label: "Declarative Config" },
+                      { id: "loop", label: "Agent Loop" },
                       { id: "providers", label: "Pluggable Providers" },
                       { id: "tools", label: "Tool Registry" },
                       { id: "integrations", label: "Integrations" },
@@ -953,9 +953,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                         key={tab.id}
                         type="button"
                         onClick={() =>
-                          setFrameworkTab(
-                            tab.id as "declarative" | "providers" | "tools" | "integrations",
-                          )
+                          setFrameworkTab(tab.id as "loop" | "providers" | "tools" | "integrations")
                         }
                         className={cn(
                           "relative flex-1 lg:flex-none text-left px-3 sm:px-4 py-2.5 sm:py-3 text-[10px] sm:text-[11px] lg:text-xs font-mono tracking-wider uppercase transition-colors border-r lg:border-r-0 lg:border-b last:border-r-0 lg:last:border-b-0 border-foreground/[0.08] whitespace-nowrap lg:whitespace-normal",
@@ -972,8 +970,8 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                     ))}
                     <div className="hidden lg:flex flex-1 items-end p-4">
                       <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
-                        {frameworkTab === "declarative" &&
-                          "No dashboard clicks. Your agent lives in code, version controlled, type-safe, and reviewable in PRs."}
+                        {frameworkTab === "loop" &&
+                          "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done."}
                         {frameworkTab === "providers" &&
                           "Swap LLM providers behind one interface. OpenAI, Kimi, and Gemini, with no lock-in."}
                         {frameworkTab === "tools" &&
@@ -987,7 +985,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
               </div>
 
               <div className="mt-8">
-                <PluginEcosystem />
+                <CapabilitiesMarquee />
               </div>
             </div>
             <ReadmeFooter stats={stats} />

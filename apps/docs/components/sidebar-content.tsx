@@ -1,19 +1,27 @@
-import type { Folder, Root } from "fumadocs-core/page-tree";
-import type { LucideIcon } from "lucide-react";
-import { Book, Boxes, Cpu, GitBranch, Layers, Radio, Rocket, Server, Wrench } from "lucide-react";
 import type { ReactNode, SVGProps } from "react";
+import {
+  RiBook2Line,
+  RiBroadcastLine,
+  RiCpuLine,
+  RiGitBranchLine,
+  RiRocket2Line,
+  RiServerLine,
+  RiStackFill,
+  RiStackLine,
+  RiToolsLine,
+} from "@/components/icons/remix";
 
 export interface SubpageItem {
   title: string;
   href?: string;
-  icon?: ((props?: SVGProps<any>) => ReactNode) | LucideIcon;
+  icon?: (props?: SVGProps<any>) => ReactNode;
   group?: boolean;
 }
 
 export interface ListItem {
   title: string;
   href?: string;
-  icon: ((props?: SVGProps<any>) => ReactNode) | LucideIcon;
+  icon: (props?: SVGProps<any>) => ReactNode;
   group?: boolean;
   separator?: boolean;
   isNew?: boolean;
@@ -27,100 +35,43 @@ interface Content {
   href?: string;
   /** Expand this sidebar section when pathname is this URL or a child path (no extra nav row). */
   expandSectionForPathPrefix?: string;
-  Icon: ((props?: SVGProps<any>) => ReactNode) | LucideIcon;
+  Icon: (props?: SVGProps<any>) => ReactNode;
   isNew?: boolean;
   list: ListItem[];
-}
-
-export function getPageTree(): Root {
-  return {
-    $id: "root",
-    name: "docs",
-    children: [
-      {
-        type: "folder",
-        root: true,
-        name: "Docs",
-        description: "get started, concepts, and plugins.",
-        children: contents.map(contentToPageTree),
-      },
-      {
-        type: "folder",
-        root: true,
-        name: "Examples",
-        description: "exmaples and guides.",
-        children: examples.map(contentToPageTree),
-      },
-    ],
-  };
-}
-
-function contentToPageTree(content: Content): Folder {
-  return {
-    type: "folder",
-    icon: <content.Icon />,
-    name: content.title,
-    index: content.href
-      ? {
-          icon: <content.Icon />,
-          name: content.title,
-          type: "page",
-          url: content.href,
-        }
-      : undefined,
-    children: content.list
-      .filter((item) => !item.group && (item.href || item.separator))
-      .filter((item) => !item.external)
-      .map((item) =>
-        item.separator
-          ? ({
-              type: "separator",
-              name: item.title,
-            } as const)
-          : ({
-              type: "page",
-              url: item.href!,
-              name: item.title,
-              icon: <item.icon />,
-            } as const),
-      ),
-  };
 }
 
 export const contents: Content[] = [
   {
     title: "Get Started",
-    Icon: Rocket,
+    Icon: RiRocket2Line,
     list: [
-      { title: "Introduction", href: "/docs", icon: Book },
-      { title: "Getting Started", href: "/docs/getting-started", icon: Rocket },
-      { title: "Architecture", href: "/docs/architecture", icon: Layers },
+      { title: "Introduction", href: "/docs", icon: RiBook2Line },
+      { title: "Getting Started", href: "/docs/getting-started", icon: RiRocket2Line },
+      { title: "Architecture", href: "/docs/architecture", icon: RiStackLine },
       {
         title: "Reference Service",
         href: "/docs/reference-service",
-        icon: Server,
+        icon: RiServerLine,
       },
     ],
   },
   {
     title: "Concepts",
-    Icon: Boxes,
+    Icon: RiStackFill,
     list: [
-      { title: "Events", href: "/docs/concepts/events", icon: Radio },
+      { title: "Events", href: "/docs/concepts/events", icon: RiBroadcastLine },
       {
         title: "Session State",
         href: "/docs/concepts/session-state",
-        icon: GitBranch,
+        icon: RiGitBranchLine,
       },
       {
         title: "Tool Registry",
         href: "/docs/concepts/tool-registry",
-        icon: Wrench,
+        icon: RiToolsLine,
       },
-      { title: "Event Bus", href: "/docs/concepts/event-bus", icon: Boxes },
-      { title: "Providers", href: "/docs/concepts/providers", icon: Cpu },
+      { title: "Event Bus", href: "/docs/concepts/event-bus", icon: RiStackFill },
+      { title: "Providers", href: "/docs/concepts/providers", icon: RiCpuLine },
     ],
   },
 ];
-
-export const examples: Content[] = [];
