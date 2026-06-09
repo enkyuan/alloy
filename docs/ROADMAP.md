@@ -169,3 +169,13 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ### 28. Reconcile sync vs async `publish` (DONE — publish stays async; runtime awaits it)
 - `agentkit/ts/src/events/bus.ts` — `EventBus.publish` is `async` (resolved-Promise) with a doc comment locking the decision; the runtime does `await bus.publish(event)`, matching the Python `await self.bus.publish(...)`.
+
+---
+
+## Developer experience
+
+### 29. agentkit CLI / scaffold `init` (MISSING)
+The docs landing page advertises a CLI tab, but there is no `agentkit` CLI yet. Today onboarding is `pip install agentkit` / `bun add @agentkit/sdk` plus hand-wiring `lib/agent.ts` and a route handler. A scaffold command would collapse that into one step.
+- New `agentkit init` (and TS equivalent) that scaffolds `lib/agent.ts` (runtime + provider + tool registry + in-memory bus), a framework-appropriate API route handler, and `.env` keys (`AGENTKIT_API_KEY`, provider key).
+- Pattern reference: better-auth's CLI — one root binary with `init` / `generate` / `secret` subcommands, package-manager-tabbed install. agentkit has no schema/migration step, so `init` is the primary command.
+- Until this lands, the landing-page CLI tab shows the real install command, and the MCP tab (`npx agentkit mcp`) is likewise aspirational.
