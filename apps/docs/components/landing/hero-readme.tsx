@@ -13,6 +13,56 @@ import {
   ToolsSection,
 } from "./framework-sections";
 
+// Measures the features grid at runtime and places + marks exactly on interior border crossings.
+// The first row is taller than rows 2-3 (it has logos), so static %-based positioning is wrong.
+function FeaturesGridMarks() {
+  const [points, setPoints] = useState<Array<{ x: number; y: number }>>([]);
+
+  useLayoutEffect(() => {
+    function measure() {
+      // The grid is the relative-positioned ancestor; cards are its grandchildren (link > div).
+      const grid = document.getElementById("features-grid");
+      if (!grid) return;
+      const gridR = grid.getBoundingClientRect();
+      const cards = Array.from(grid.querySelectorAll<HTMLElement>(":scope > a > div"));
+      if (cards.length < 9) return;
+      // Interior row boundaries: bottom of card[2] (= top of card[3]) and bottom of card[5]
+      // Interior col boundaries: right of card[0] (= left of card[1]) and right of card[1]
+      const r0 = cards[0].getBoundingClientRect();
+      const r1 = cards[1].getBoundingClientRect();
+      const r2 = cards[2].getBoundingClientRect();
+      const r5 = cards[5].getBoundingClientRect();
+      const colX1 = r0.right - gridR.left; // right edge of col 0 = left edge of col 1
+      const colX2 = r1.right - gridR.left; // right edge of col 1 = left edge of col 2
+      const rowY1 = r2.bottom - gridR.top; // bottom of row 0 = top of row 1
+      const rowY2 = r5.bottom - gridR.top; // bottom of row 1 = top of row 2
+      setPoints([
+        { x: colX1, y: rowY1 },
+        { x: colX2, y: rowY1 },
+        { x: colX1, y: rowY2 },
+        { x: colX2, y: rowY2 },
+      ]);
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  if (points.length === 0) return null;
+  return (
+    <>
+      {points.map((p, i) => (
+        <RiAddLine
+          key={i}
+          aria-hidden="true"
+          className="hidden md:block absolute pointer-events-none select-none z-10 size-2.5 text-foreground/35 dark:text-foreground/25"
+          style={{ left: p.x - 5, top: p.y - 5 }}
+        />
+      ))}
+    </>
+  );
+}
+
 const mcpCommands = [
   { name: "Cursor", command: "npx agentkit mcp --cursor" },
   { name: "Claude Code", command: "npx agentkit mcp --claude-code" },
@@ -694,7 +744,10 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
               <div className="flex-1 border-t border-foreground/10" />
             </div>
 
-            <div className="relative grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 mb-2 border border-foreground/[0.08] overflow-hidden">
+            <div
+              id="features-grid"
+              className="relative grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 mb-2 border border-foreground/[0.08] overflow-hidden"
+            >
               {[
                 {
                   label: "Framework Agnostic",
@@ -722,9 +775,9 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                   href: "/docs",
                 },
                 {
-                  label: "Voice",
-                  headline: "STT/TTS modalities.",
-                  desc: "Speech-to-text and text-to-speech for voice agents.",
+                  label: "Modalities",
+                  headline: "Text and voice.",
+                  desc: "Streaming text agents or full voice loops with STT/TTS — same runtime core.",
                   href: "/docs",
                 },
                 {
@@ -841,28 +894,8 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                   </motion.div>
                 </Link>
               ))}
-              {/* + marks at the 4 interior cell-border crossings via a grid overlay */}
-              <div
-                aria-hidden="true"
-                className="hidden md:grid absolute inset-0 grid-cols-3 grid-rows-3 pointer-events-none select-none z-10"
-              >
-                {/* col 2 start × row 2 start */}
-                <div className="col-start-2 row-start-2 relative">
-                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
-                </div>
-                {/* col 3 start × row 2 start */}
-                <div className="col-start-3 row-start-2 relative">
-                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
-                </div>
-                {/* col 2 start × row 3 start */}
-                <div className="col-start-2 row-start-3 relative">
-                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
-                </div>
-                {/* col 3 start × row 3 start */}
-                <div className="col-start-3 row-start-3 relative">
-                  <RiAddLine className="absolute -top-[5px] -left-[5px] size-2.5 text-foreground/35 dark:text-foreground/25" />
-                </div>
-              </div>
+              {/* + marks rendered by FeaturesGridMarks — positions measured from actual card rects */}
+              <FeaturesGridMarks />
             </div>
 
             <div className="my-4">
