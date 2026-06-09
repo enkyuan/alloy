@@ -677,8 +677,8 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
               <span className="font-medium text-foreground/90 dark:text-foreground/80">
                 inside your app
               </span>
-              . Build text, voice, and multi-modal agents with a tool registry, pluggable LLM
-              providers, and STT/TTS, in one{" "}
+              . Build text, voice, and multi-modal agents with a tool registry and pluggable LLM
+              providers, in one{" "}
               <span className="font-medium text-foreground/90 dark:text-foreground/80">
                 embeddable SDK
               </span>{" "}
@@ -841,11 +841,21 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                   </motion.div>
                 </Link>
               ))}
-              {/* + marks at grid border crossings (3×3 grid: col borders at 1/3, 2/3; row borders at 1/3, 2/3) */}
-              <RiAddLine className="hidden md:block absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-1/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-2/3 left-1/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
-              <RiAddLine className="hidden md:block absolute top-2/3 left-2/3 -translate-x-1/2 -translate-y-1/2 size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none" />
+              {/* + marks pinned to the exact interior border crossings via calc */}
+              {(
+                [
+                  ["calc(100%/3)", "calc(100%/3)"],
+                  ["calc(200%/3)", "calc(100%/3)"],
+                  ["calc(100%/3)", "calc(200%/3)"],
+                  ["calc(200%/3)", "calc(200%/3)"],
+                ] as [string, string][]
+              ).map(([left, top]) => (
+                <RiAddLine
+                  key={`${left}-${top}`}
+                  className="hidden md:block absolute size-[9px] text-foreground/30 dark:text-foreground/20 select-none z-10 pointer-events-none -translate-x-1/2 -translate-y-1/2"
+                  style={{ left, top }}
+                />
+              ))}
             </div>
 
             <div className="my-4">
