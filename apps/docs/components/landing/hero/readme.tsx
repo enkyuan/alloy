@@ -6,7 +6,6 @@ import { useState } from "react";
 import { cn } from "@lib/utils";
 import { AgentLoopTabs } from "../features/agent-loop";
 import { CapabilitiesMarquee } from "../features/capabilities-marquee";
-import { IntegrationsSection } from "../integrations/section";
 import { ProvidersSection } from "../providers/section";
 import { ToolsSection } from "../tools/section";
 import { FeaturesGridMarks } from "../features/grid-marks";
@@ -75,7 +74,6 @@ const runtimeTabs = [
   { id: "loop", label: "Agent Loop" },
   { id: "providers", label: "Pluggable Providers" },
   { id: "tools", label: "Tool Registry" },
-  { id: "integrations", label: "Integrations" },
 ] as const;
 
 type RuntimeTabId = (typeof runtimeTabs)[number]["id"];
@@ -84,7 +82,6 @@ const runtimeTabDescriptions: Record<RuntimeTabId, string> = {
   loop: "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done.",
   providers: "Swap LLM providers behind one interface. OpenAI, Kimi, and Gemini, with no lock-in.",
   tools: "Register any function as a tool. One provider-neutral payload, translated per provider.",
-  integrations: "Works with every major framework. Drop the agent route handler into your stack.",
 };
 
 export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
@@ -256,7 +253,6 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                           {frameworkTab === "loop" && <AgentLoopTabs />}
                           {frameworkTab === "providers" && <ProvidersSection />}
                           {frameworkTab === "tools" && <ToolsSection />}
-                          {frameworkTab === "integrations" && <IntegrationsSection />}
                         </m.div>
                       </AnimatePresence>
                     </div>
