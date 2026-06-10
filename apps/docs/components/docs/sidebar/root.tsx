@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m } from "framer-motion";
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m } from "motion/react";
 import { useSearchContext } from "fumadocs-ui/contexts/search";
 import { ChevronDownIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
