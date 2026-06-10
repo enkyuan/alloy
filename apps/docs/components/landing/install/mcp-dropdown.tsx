@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@lib/utils";
-import { CopyIcon, CheckIcon, PlusIcon } from "@components/docs/icons/ui";
+import { CheckIcon, PlusIcon } from "@components/docs/icons/ui";
 import {
   CursorLogo,
   ClaudeCodeLogo,

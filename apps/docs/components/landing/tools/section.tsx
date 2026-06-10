@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DynamicCodeBlock } from "@components/ui/dynamic-code-block";
 import { cn } from "@lib/utils";
 
 type ToolLanguage = "py" | "ts";
@@ -40,9 +41,9 @@ registerTool(
   };
 
   return (
-    <div className="flex flex-col gap-4 pt-2 pb-1">
+    <div className="flex flex-col gap-3 pt-2 pb-1">
       {/* Language Switcher */}
-      <div className="flex gap-1 border-b border-foreground/[0.06]">
+      <div className="flex gap-1">
         {languages.map((lang) => (
           <button
             key={lang.id}
@@ -60,10 +61,16 @@ registerTool(
         ))}
       </div>
 
-      {/* Code Block */}
-      <pre className="text-[11px] font-mono leading-relaxed text-foreground/80 dark:text-foreground/70 whitespace-pre overflow-x-auto">
-        {snippets[language]}
-      </pre>
+      {/* Syntax-highlighted Code Block */}
+      <DynamicCodeBlock
+        lang={language}
+        code={snippets[language]}
+        allowCopy={false}
+        codeblock={{
+          className:
+            "border-0 rounded-none my-0 shadow-none bg-transparent [&_div]:bg-transparent [&_div]:text-[11px] [&_pre]:!p-0 [&_pre]:!overflow-hidden [&_div]:!overflow-hidden [&_code]:!overflow-hidden",
+        }}
+      />
     </div>
   );
 }
