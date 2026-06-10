@@ -1,6 +1,6 @@
 "use client";
 
-import { Code, Download, Palette, Type } from "lucide-react";
+import { RiCodeLine, RiDownloadCloud2Line, RiPaletteLine, RiTextBlock } from "@remixicon/react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import type React from "react";
@@ -78,7 +78,7 @@ export default function LogoContextMenu({ logo }: LogoContextMenuProps) {
           onClick={() => void copySvg(brandAssetPaths.mark[variant].svg, "Logo SVG")}
           className={itemClassName}
         >
-          <Code />
+          <RiCodeLine />
           Copy Logo as SVG
         </button>
         <button
@@ -86,16 +86,16 @@ export default function LogoContextMenu({ logo }: LogoContextMenuProps) {
           onClick={() => void copySvg(brandAssetPaths.wordmark[variant].svg, "Wordmark SVG")}
           className={itemClassName}
         >
-          <Type />
+          <RiTextBlock />
           Copy Wordmark as SVG
         </button>
         <button type="button" onClick={downloadAllAssets} className={itemClassName}>
-          <Download />
+          <RiDownloadCloud2Line />
           Download Brand Assets
         </button>
         <div className="-mx-1 my-1 h-px bg-border" />
         <Link href="/docs" onClick={() => setOpen(false)} className={itemClassName}>
-          <Palette />
+          <RiPaletteLine />
           Visit Docs
         </Link>
       </PopoverContent>
