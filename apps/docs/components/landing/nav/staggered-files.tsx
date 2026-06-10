@@ -1,18 +1,28 @@
 "use client";
 
 import { LazyMotion, domAnimation, m } from "framer-motion";
-import { Search } from "lucide-react";
+import { Search, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
-import { AgentkitWordmark } from "../../icons/logo";
-import { AgentPayLogo } from "../../icons/agentpay";
-import { contents } from "../../sidebar-content";
+import { AgentkitWordmark } from "@components/icons/logo";
+import { AgentPayLogo } from "@components/icons/agentpay";
+import { contents } from "@components/sidebar-content";
 import LogoContextMenu from "../shared/logo-menu";
 import { NavMobileMenu } from "./mobile-menu";
 import { ResourcesDropdown } from "./desktop-dropdowns";
 import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections-data";
+
+type NavTab = {
+  id: string;
+  type: "file" | "dropdown" | "link" | "cta";
+  label: string;
+  href?: string;
+  icon?: React.ReactNode;
+  delay: number;
+  external?: boolean;
+};
 
 // react-doctor-disable-next-line prefer-useReducer, react-doctor/prefer-useReducer, react-doctor/no-giant-component
 export function StaggeredNavFiles() {
@@ -48,6 +58,7 @@ export function StaggeredNavFiles() {
   const closeResources = () => {
     resourcesTimeout.current = setTimeout(() => setResourcesOpen(false), 150);
   };
+
   const isActive = useCallback((href: string) => pathname === href, [pathname]);
   const isActivePrefix = useCallback(
     (href: string) => pathname === href || pathname.startsWith(`${href}/`),
@@ -73,6 +84,33 @@ export function StaggeredNavFiles() {
   const tabDividerClass = isNarrowLeft ? "border-foreground/4" : "border-foreground/[0.06]";
   const activeTabBorderClass = isNarrowLeft ? "border-b-foreground/50" : "border-b-foreground/60";
   const dropdownBorderClass = isNarrowLeft ? "border-foreground/6" : "border-foreground/[0.08]";
+
+  const navTabs: NavTab[] = [
+    ...navFiles.map((item, idx) => ({
+      id: item.name,
+      type: "file" as const,
+      label: item.name,
+      href: item.href,
+      external: item.external,
+      delay: 0.05 + idx * 0.03,
+    })),
+    {
+      id: "resources",
+      type: "dropdown",
+      label: "resources",
+      delay: 0.17,
+    },
+    {
+      id: "agentpay",
+      type: "link",
+      label: "agentpay",
+      icon: <AgentPayLogo />,
+      href: "https://agentpay.ai",
+      external: true,
+      delay: 0.22,
+    },
+  ];
+
   const _router = useRouter();
   return (
     <LazyMotion features={domAnimation}>
@@ -195,113 +233,128 @@ export function StaggeredNavFiles() {
                 <LogoContextMenu logo={<AgentkitWordmark />} />
               </Link>
             )}
-            {/* File tabs */}
-            {navFiles.map((item, index) => {
-              const active = isActive(item.path || item.href) || (item.href === "/docs" && isDocs);
-              return (
-                <m.div
-                  key={item.name}
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.2,
-                    delay: 0.05 + index * 0.03,
-                    ease: "easeOut",
-                  }}
-                  className="flex-1"
-                >
-                  <Link
-                    href={item.href}
-                    target={item.external ? "_blank" : undefined}
-                    rel={item.external ? "noreferrer" : undefined}
-                    className={`group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r ${tabDividerClass} transition-colors duration-150 ${
-                      active
-                        ? `bg-background border-b-2 ${activeTabBorderClass}`
-                        : "bg-transparent hover:bg-foreground/[0.03]"
-                    }`}
+
+            {/* Nav tabs mapped */}
+            {navTabs.map((tab) => {
+              if (tab.type === "file") {
+                const active = isActive(tab.href || "") || (tab.href === "/docs" && isDocs);
+                return (
+                  <m.div
+                    key={tab.id}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.2,
+                      delay: tab.delay,
+                      ease: "easeOut",
+                    }}
+                    className="flex-1"
                   >
-                    <span
-                      className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
+                    <Link
+                      href={tab.href || "#"}
+                      target={tab.external ? "_blank" : undefined}
+                      rel={tab.external ? "noreferrer" : undefined}
+                      className={`group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r ${tabDividerClass} transition-colors duration-150 ${
                         active
-                          ? "text-foreground"
-                          : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
+                          ? `bg-background border-b-2 ${activeTabBorderClass}`
+                          : "bg-transparent hover:bg-foreground/[0.03]"
                       }`}
                     >
-                      {item.name}
-                    </span>
-                  </Link>
-                </m.div>
-              );
+                      <span
+                        className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
+                          active
+                            ? "text-foreground"
+                            : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
+                        }`}
+                      >
+                        {tab.label}
+                      </span>
+                    </Link>
+                  </m.div>
+                );
+              }
+
+              if (tab.type === "dropdown") {
+                return (
+                  <m.div
+                    key={tab.id}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: tab.delay, ease: "easeOut" }}
+                    className="relative flex-1"
+                    onMouseEnter={openResources}
+                    onMouseLeave={closeResources}
+                  >
+                    <div
+                      className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150 ${
+                        isResourcePage
+                          ? `bg-background border-b-2 ${activeTabBorderClass}`
+                          : resourcesOpen
+                            ? "bg-foreground/[0.04]"
+                            : "hover:bg-foreground/[0.03]"
+                      }`}
+                    >
+                      <span
+                        className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
+                          isResourcePage
+                            ? "text-foreground"
+                            : resourcesOpen
+                              ? "text-foreground/80"
+                              : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
+                        }`}
+                      >
+                        {tab.label}
+                      </span>
+                      <svg
+                        className={`h-2 w-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${
+                          resourcesOpen ? "rotate-180" : ""
+                        }`}
+                        viewBox="0 0 10 6"
+                        fill="none"
+                      >
+                        <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.2" />
+                      </svg>
+                    </div>
+
+                    <ResourcesDropdown
+                      isOpen={resourcesOpen}
+                      dropdownBorderClass={dropdownBorderClass}
+                      onClose={() => setResourcesOpen(false)}
+                    />
+                  </m.div>
+                );
+              }
+
+              if (tab.type === "link") {
+                return (
+                  <m.div
+                    key={tab.id}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: tab.delay, ease: "easeOut" }}
+                    className="relative flex-1"
+                  >
+                    <a
+                      href={tab.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+                    >
+                      {tab.icon && (
+                        <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
+                          {tab.icon}
+                        </span>
+                      )}
+                      <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
+                        {tab.label}
+                      </span>
+                    </a>
+                  </m.div>
+                );
+              }
+
+              return null;
             })}
-
-            {/* Resources folder tab */}
-            <m.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: 0.17, ease: "easeOut" }}
-              className="relative flex-1"
-              onMouseEnter={openResources}
-              onMouseLeave={closeResources}
-            >
-              <div
-                className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150 ${
-                  isResourcePage
-                    ? `bg-background border-b-2 ${activeTabBorderClass}`
-                    : resourcesOpen
-                      ? "bg-foreground/[0.04]"
-                      : "hover:bg-foreground/[0.03]"
-                }`}
-              >
-                <span
-                  className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
-                    isResourcePage
-                      ? "text-foreground"
-                      : resourcesOpen
-                        ? "text-foreground/80"
-                        : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                  }`}
-                >
-                  resources
-                </span>
-                <svg
-                  className={`h-2 w-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${
-                    resourcesOpen ? "rotate-180" : ""
-                  }`}
-                  viewBox="0 0 10 6"
-                  fill="none"
-                >
-                  <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.2" />
-                </svg>
-              </div>
-
-              <ResourcesDropdown
-                isOpen={resourcesOpen}
-                dropdownBorderClass={dropdownBorderClass}
-                onClose={() => setResourcesOpen(false)}
-              />
-            </m.div>
-
-            {/* AgentPay tab */}
-            <m.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: 0.22, ease: "easeOut" }}
-              className="relative flex-1"
-            >
-              <a
-                href="https://agentpay.ai"
-                target="_blank"
-                rel="noreferrer"
-                className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
-              >
-                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
-                  <AgentPayLogo />
-                </span>
-                <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
-                  agentpay
-                </span>
-              </a>
-            </m.div>
 
             {/* Sign In CTA — always visible */}
             <m.div
@@ -317,6 +370,7 @@ export function StaggeredNavFiles() {
                 className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
               >
                 <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
+                <ArrowUpRight className="size-3" />
               </a>
             </m.div>
           </m.div>
