@@ -2,7 +2,7 @@
 "use client";
 
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
-import { Check } from "lucide-react";
+import { RiCheckLine } from "@remixicon/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import type { DocsVersion } from "@lib/docs-versions";
@@ -108,7 +108,7 @@ function VersionSwitcher({ className }: { className?: string }) {
                     className="flex w-full items-center gap-2 px-3 py-1.5 hover:bg-foreground/[0.06] transition-colors duration-150 cursor-pointer"
                   >
                     <span className="w-3.5 shrink-0">
-                      {isActive && <Check className="h-3 w-3 text-foreground/70" />}
+                      {isActive && <RiCheckLine size={12} className="text-foreground/70" />}
                     </span>
                     <span className="font-mono text-[10px] uppercase tracking-wider text-foreground/75 dark:text-foreground/60 whitespace-nowrap">
                       {version.label}

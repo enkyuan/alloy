@@ -16,7 +16,7 @@ export function CapabilitiesMarquee() {
       >
         <span className="text-xs text-foreground/85 dark:text-foreground/75">Capabilities</span>
         <span className="flex items-center gap-1">
-          browse all <RiArrowRightUpLine className="size-[10px]" />
+          browse all <RiArrowRightUpLine size={12} />
         </span>
       </Link>
 

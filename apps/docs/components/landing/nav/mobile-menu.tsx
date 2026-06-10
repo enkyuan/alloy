@@ -6,9 +6,14 @@ import Link from "next/link";
 import { useCallback } from "react";
 import type { NavFileItem } from "@lib/landing/nav-data";
 import type { MobileMenuSection } from "@lib/landing/nav-data";
-import { contents } from "../../sidebar-content";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "../../ui/accordion";
-import { Badge } from "../../ui/badge";
+import { contents } from "@components/sidebar-content";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@components/ui/accordion";
+import { Badge } from "@components/ui/badge";
 import { cn } from "@lib/utils";
 import { getVersionFromPathname, versionedDocsHref } from "@lib/docs-versions";
 import { usePathname } from "next/navigation";
@@ -93,11 +98,12 @@ export function NavMobileMenu({
                               setMobileDocSection((prev) => (prev === index ? -1 : index))
                             }
                           >
-                            <section.Icon className="size-4.5" />
+                            <section.Icon size={18} />
                             <span className="grow">{section.title}</span>
                             <RiArrowDownSLine
+                              size={16}
                               className={cn(
-                                "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
+                                "shrink-0 text-muted-foreground transition-transform duration-200",
                                 mobileDocSection === index ? "rotate-180" : "",
                               )}
                             />

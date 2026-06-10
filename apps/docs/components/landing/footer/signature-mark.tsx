@@ -16,7 +16,7 @@ export function SignatureMark() {
           aria-label="GitHub"
           className="text-foreground/50 hover:text-foreground/80 transition-colors"
         >
-          <RiGithubFill className="h-3.5 w-3.5" />
+          <RiGithubFill size={18} />
         </Link>
         <div className="flex items-center">
           <span className="h-3 w-px bg-foreground/15 mr-1" />

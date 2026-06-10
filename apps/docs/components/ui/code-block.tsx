@@ -1,5 +1,5 @@
 "use client";
-import { Check, Copy } from "lucide-react";
+import { RiCheckLine, RiFileCopyLine } from "@remixicon/react";
 import type {
   ButtonHTMLAttributes,
   CSSProperties,
@@ -187,8 +187,11 @@ function CopyButton({
       onClick={onClick}
       {...props}
     >
-      <Check className={cn("size-3.5 transition-transform", !checked && "scale-0")} />
-      <Copy className={cn("absolute size-3.5 transition-transform", checked && "scale-0")} />
+      <RiCheckLine size={14} className={cn("transition-transform", !checked && "scale-0")} />
+      <RiFileCopyLine
+        size={14}
+        className={cn("absolute transition-transform", checked && "scale-0")}
+      />
     </button>
   );
 }

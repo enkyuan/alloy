@@ -7,7 +7,7 @@ import { copySchema } from "@lib/copy-schema";
 import { drizzleResolver } from "@lib/copy-schema/adapter/drizzle";
 import { prismaResolver } from "@lib/copy-schema/adapter/prisma";
 import { cn } from "@lib/utils";
-import { Key, Link as LinkIcon } from "lucide-react";
+import { RiKey2Line, RiLink } from "@remixicon/react";
 import { TypeIcon } from "./type-icon";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -278,13 +278,13 @@ export function DatabaseTable({ fields, name }: { fields: Field[]; name?: string
               <div className="px-4 py-2">
                 {field.isPrimaryKey && (
                   <span className="inline-flex items-center gap-1 font-mono text-[13px] text-amber-600 dark:text-amber-500 uppercase">
-                    <Key className="size-2.5" />
+                    <RiKey2Line size={10} />
                     PK
                   </span>
                 )}
                 {field.isForeignKey && (
                   <span className="inline-flex items-center gap-1 font-mono text-[13px] text-blue-600 dark:text-blue-400 uppercase">
-                    <LinkIcon className="size-2.5" />
+                    <RiLink size={10} />
                     FK
                   </span>
                 )}

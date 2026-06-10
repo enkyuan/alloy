@@ -1,7 +1,7 @@
 "use client";
 
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import { CheckIcon, MinusIcon } from "lucide-react";
+import { RiCheckLine, RiSubtractLine } from "@remixicon/react";
 import type * as React from "react";
 
 import { cn } from "@lib/utils";
@@ -28,11 +28,7 @@ function Checkbox({
         className="flex items-center justify-center text-current transition-none"
         forceMount={isIndeterminate ? true : undefined}
       >
-        {isIndeterminate ? (
-          <MinusIcon className="size-3.5" strokeWidth={3} />
-        ) : (
-          <CheckIcon className="size-3.5" />
-        )}
+        {isIndeterminate ? <RiSubtractLine size={14} strokeWidth={3} /> : <RiCheckLine size={14} />}
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

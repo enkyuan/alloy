@@ -1,7 +1,7 @@
 "use client";
 
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { Check, ChevronDown, ChevronsUpDown, ChevronUp } from "lucide-react";
+import { RiCheckLine, RiArrowDownSLine, RiArrowUpDownLine, RiArrowUpSLine } from "@remixicon/react";
 import * as React from "react";
 
 import { cn } from "@lib/utils";
@@ -29,7 +29,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronsUpDown className="size-4 opacity-50" />
+        <RiArrowUpDownLine size={16} className="opacity-50" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -46,7 +46,7 @@ function SelectScrollUpButton({
       className={cn("flex cursor-default items-center justify-center py-1", className)}
       {...props}
     >
-      <ChevronUp className="h-4 w-4" />
+      <RiArrowUpSLine size={16} />
     </SelectPrimitive.ScrollUpButton>
   );
 }
@@ -62,7 +62,7 @@ function SelectScrollDownButton({
       className={cn("flex cursor-default items-center justify-center py-1", className)}
       {...props}
     >
-      <ChevronDown className="h-4 w-4" />
+      <RiArrowDownSLine size={16} />
     </SelectPrimitive.ScrollDownButton>
   );
 }
@@ -134,7 +134,7 @@ function SelectItem({
     >
       <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Check className="h-4 w-4" />
+          <RiCheckLine size={16} />
         </SelectPrimitive.ItemIndicator>
       </span>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>

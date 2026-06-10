@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink } from "lucide-react";
+import { RiExternalLinkLine } from "@remixicon/react";
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -121,7 +121,7 @@ export function ForkButton({ url }: { url: string }) {
     <div className="flex items-center gap-2 my-2">
       <Link href={`https://codesandbox.io/p/github/${url}`} target="_blank">
         <Button className="gap-2" variant="outline" size="sm">
-          <ExternalLink size={12} />
+          <RiExternalLinkLine size={12} />
           Open in Stackblitz
         </Button>
       </Link>

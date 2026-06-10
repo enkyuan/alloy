@@ -1,5 +1,10 @@
 import { cva } from "class-variance-authority";
-import { CircleCheck, CircleX, Info, TriangleAlert } from "lucide-react";
+import {
+  RiCheckboxCircleLine,
+  RiCloseCircleLine,
+  RiInformationLine,
+  RiAlertLine,
+} from "@remixicon/react";
 import type * as React from "react";
 import type { ReactNode } from "react";
 import { cn } from "@lib/utils";
@@ -56,10 +61,10 @@ export function Callout({
     >
       {icon ??
         {
-          info: <Info className="size-5 fill-blue-500 text-fd-card" />,
-          warn: <TriangleAlert className="size-5 fill-orange-500 text-fd-card" />,
-          error: <CircleX className="size-5 fill-red-500 text-fd-card" />,
-          success: <CircleCheck className="size-5 fill-green-500 text-fd-card" />,
+          info: <RiInformationLine size={20} className="fill-blue-500 text-fd-card" />,
+          warn: <RiAlertLine size={20} className="fill-orange-500 text-fd-card" />,
+          error: <RiCloseCircleLine size={20} className="fill-red-500 text-fd-card" />,
+          success: <RiCheckboxCircleLine size={20} className="fill-green-500 text-fd-card" />,
         }[type]}
       <div className="min-w-0 flex flex-col gap-2 flex-1">
         {title ? <p className="font-medium !my-0">{title}</p> : null}

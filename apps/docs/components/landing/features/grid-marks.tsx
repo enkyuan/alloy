@@ -46,7 +46,8 @@ export function FeaturesGridMarks() {
         <RiAddLine
           key={i}
           aria-hidden="true"
-          className="hidden md:block absolute pointer-events-none select-none z-10 size-2.5 text-foreground/35 dark:text-foreground/25"
+          size={12}
+          className="hidden md:block absolute pointer-events-none select-none z-10 text-foreground/35 dark:text-foreground/25"
           style={{ left: p.x, top: p.y, transform: "translate(-60%, -60%)" }}
         />
       ))}
