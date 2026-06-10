@@ -267,7 +267,7 @@ export function SidebarVersionSwitcher() {
                     }`}
                   >
                     <span className="size-4 shrink-0 flex items-center justify-center">
-                      {isActive && <Check className="size-3.5 text-foreground/70" />}
+                      {isActive && <RiCheckLine size={14} className="text-foreground/70" />}
                     </span>
                     <span className="truncate">{version.label}</span>
                     {version.badge && (
