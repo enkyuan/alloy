@@ -2,10 +2,10 @@
 import type { HighlightOptions } from "fumadocs-core/highlight";
 import { useShiki } from "fumadocs-core/highlight/client";
 import type { ComponentProps, FC } from "react";
-import { createContext, Suspense, use } from "react";
-import type { CodeBlockProps } from "@/components/ui/code-block";
-import { CodeBlock, Pre } from "@/components/ui/code-block";
-import { cn } from "@/lib/utils";
+import { createContext, Suspense, use, useMemo } from "react";
+import type { CodeBlockProps } from "@components/ui/code-block";
+import { CodeBlock, Pre } from "@components/ui/code-block";
+import { cn } from "@lib/utils";
 
 export interface DynamicCodeblockProps {
   lang: string;
@@ -72,7 +72,9 @@ export function DynamicCodeBlock({
       </Suspense>
     );
 
-  return <PropsContext value={{ ...codeblock, allowCopy }}>{children}</PropsContext>;
+  const contextValue = useMemo(() => ({ ...codeblock, allowCopy }), [codeblock, allowCopy]);
+
+  return <PropsContext value={contextValue}>{children}</PropsContext>;
 }
 
 const EMPTY_COMPONENTS = {};
@@ -90,7 +92,7 @@ function Placeholder({
     <Pre>
       <Code>
         {code.split("\n").map((line, i) => (
-          <span key={i} className="line">
+          <span key={`${i}:${line}`} className="line">
             {line}
           </span>
         ))}

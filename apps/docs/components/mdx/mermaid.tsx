@@ -1,14 +1,18 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { use, useEffect, useId, useState } from "react";
+import { use, useId, useSyncExternalStore } from "react";
+
+function subscribe() {
+  return () => {};
+}
 
 export function Mermaid({ chart }: { chart: string }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    subscribe,
+    () => true,
+    () => false,
+  );
 
   if (!mounted) return;
   return <MermaidContent chart={chart} />;
@@ -49,6 +53,7 @@ function MermaidContent({ chart }: { chart: string }) {
       ref={(container) => {
         if (container) bindFunctions?.(container);
       }}
+      // react-doctor-disable-next-line no-danger, react-doctor/no-danger
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@lib/utils";
 
 function Cards({ className, ...props }: React.ComponentProps<"div">) {
   return <div className={cn("grid gap-3 sm:grid-cols-2 my-4", className)} {...props} />;

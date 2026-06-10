@@ -7,14 +7,15 @@ import type {
   HTMLAttributes,
   ReactElement,
   ReactNode,
+  Ref,
   RefObject,
 } from "react";
-import { createContext, forwardRef, useCallback, useContext, useMemo, useRef } from "react";
-import { buttonVariants } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn, mergeRefs } from "@/lib/utils";
+import { createContext, use, useCallback, useMemo, useRef } from "react";
+import { buttonVariants } from "@components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/tabs";
+import { cn, mergeRefs } from "@lib/utils";
 import { ScrollArea, ScrollBar, ScrollViewport } from "./scroll-area";
-import { useCopyButton } from "./use-copy-button";
+import { useCopyButton } from "@hooks/use-copy-button";
 
 export interface CodeBlockProps extends ComponentProps<"figure"> {
   /**
@@ -79,7 +80,7 @@ export function CodeBlock({
   Actions = (props) => <div {...props} className={cn("empty:hidden", props.className)} />,
   ...props
 }: CodeBlockProps) {
-  const isTab = useContext(TabsContext) !== null;
+  const isTab = use(TabsContext) !== null;
   const areaRef = useRef<HTMLDivElement>(null);
   allowCopy ??= !isTab;
   const bg = cn(
@@ -116,6 +117,7 @@ export function CodeBlock({
           {typeof icon === "string" ? (
             <div
               className="[&_svg]:size-3.5"
+              // react-doctor-disable-next-line no-danger, react-doctor/no-danger
               dangerouslySetInnerHTML={{
                 __html: icon,
               }}
@@ -190,9 +192,9 @@ function CopyButton({
     </button>
   );
 }
-export function CodeBlockTabs({ ref, ...props }: ComponentProps<typeof Tabs>) {
+function CodeBlockTabs({ ref, ...props }: ComponentProps<typeof Tabs>) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const nested = useContext(TabsContext) !== null;
+  const nested = use(TabsContext) !== null;
 
   return (
     <Tabs
@@ -218,7 +220,7 @@ export function CodeBlockTabs({ ref, ...props }: ComponentProps<typeof Tabs>) {
     </Tabs>
   );
 }
-export function CodeBlockTabsList(props: ComponentProps<typeof TabsList>) {
+function CodeBlockTabsList(props: ComponentProps<typeof TabsList>) {
   return (
     <TabsList
       {...props}
@@ -232,7 +234,7 @@ export function CodeBlockTabsList(props: ComponentProps<typeof TabsList>) {
   );
 }
 
-export function CodeBlockTabsTrigger({ children, ...props }: ComponentProps<typeof TabsTrigger>) {
+function CodeBlockTabsTrigger({ children, ...props }: ComponentProps<typeof TabsTrigger>) {
   return (
     <TabsTrigger
       {...props}
@@ -248,70 +250,75 @@ export function CodeBlockTabsTrigger({ children, ...props }: ComponentProps<type
 }
 
 // TODO: currently Vite RSC plugin has problem with adding `asChild` here, maybe revisit this in future
-export const CodeBlockTab = TabsContent;
+const CodeBlockTab = TabsContent;
 
-export const CodeBlockOld = forwardRef<HTMLElement, CodeBlockProps>(
-  ({ title, allowCopy = true, keepBackground = false, icon, viewportProps, ...props }, ref) => {
-    const areaRef = useRef<HTMLDivElement>(null);
-    const onCopy = useCallback(() => {
-      const pre = areaRef.current?.getElementsByTagName("pre").item(0);
+function CodeBlockOld({
+  ref,
+  title,
+  allowCopy = true,
+  keepBackground = false,
+  icon,
+  viewportProps,
+  ...props
+}: CodeBlockProps & { ref?: Ref<HTMLElement> }) {
+  const areaRef = useRef<HTMLDivElement>(null);
+  const onCopy = useCallback(() => {
+    const pre = areaRef.current?.getElementsByTagName("pre").item(0);
 
-      if (!pre) return;
+    if (!pre) return;
 
-      const clone = pre.cloneNode(true) as HTMLElement;
-      clone.querySelectorAll(".nd-copy-ignore").forEach((node) => {
-        node.remove();
-      });
+    const clone = pre.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll(".nd-copy-ignore").forEach((node) => {
+      node.remove();
+    });
 
-      void navigator.clipboard.writeText(clone.textContent ?? "");
-    }, []);
+    void navigator.clipboard.writeText(clone.textContent ?? "");
+  }, []);
 
-    return (
-      <figure
-        ref={ref}
-        {...props}
-        className={cn(
-          "not-prose group fd-codeblock relative my-6 overflow-hidden rounded-lg border bg-fd-secondary/50 text-sm",
-          keepBackground && "bg-[var(--shiki-light-bg)] dark:bg-[var(--shiki-dark-bg)]",
-          props.className,
-        )}
-      >
-        {title ? (
-          <div className="flex flex-row items-center gap-2 border-b bg-fd-muted px-4 py-1.5">
-            {icon ? (
-              <div
-                className="text-fd-muted-foreground [&_svg]:size-3.5"
-                dangerouslySetInnerHTML={
-                  typeof icon === "string"
-                    ? {
-                        __html: icon,
-                      }
-                    : undefined
-                }
-              >
-                {typeof icon !== "string" ? icon : null}
-              </div>
-            ) : null}
-            <figcaption className="flex-1 truncate text-fd-muted-foreground">{title}</figcaption>
-            {allowCopy ? <CopyButton className="-me-2" onCopy={onCopy} /> : null}
-          </div>
-        ) : (
-          allowCopy && (
-            <CopyButton className="absolute right-2 top-2 z-[2] backdrop-blur-md" onCopy={onCopy} />
-          )
-        )}
-        <ScrollArea ref={areaRef} dir="ltr">
-          <ScrollViewport
-            {...viewportProps}
-            className={cn("max-h-[600px]", viewportProps?.className)}
-          >
-            {props.children}
-          </ScrollViewport>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </figure>
-    );
-  },
-);
-
-CodeBlockOld.displayName = "CodeBlockOld";
+  return (
+    <figure
+      ref={ref}
+      {...props}
+      className={cn(
+        "not-prose group fd-codeblock relative my-6 overflow-hidden rounded-lg border bg-fd-secondary/50 text-sm",
+        keepBackground && "bg-[var(--shiki-light-bg)] dark:bg-[var(--shiki-dark-bg)]",
+        props.className,
+      )}
+    >
+      {title ? (
+        <div className="flex flex-row items-center gap-2 border-b bg-fd-muted px-4 py-1.5">
+          {icon ? (
+            <div
+              className="text-fd-muted-foreground [&_svg]:size-3.5"
+              // react-doctor-disable-next-line no-danger, react-doctor/no-danger
+              dangerouslySetInnerHTML={
+                typeof icon === "string"
+                  ? {
+                      __html: icon,
+                    }
+                  : undefined
+              }
+            >
+              {typeof icon !== "string" ? icon : null}
+            </div>
+          ) : null}
+          <figcaption className="flex-1 truncate text-fd-muted-foreground">{title}</figcaption>
+          {allowCopy ? <CopyButton className="-me-2" onCopy={onCopy} /> : null}
+        </div>
+      ) : (
+        allowCopy && (
+          <CopyButton className="absolute right-2 top-2 z-[2] backdrop-blur-md" onCopy={onCopy} />
+        )
+      )}
+      <ScrollArea ref={areaRef} dir="ltr">
+        <ScrollViewport
+          {...viewportProps}
+          className={cn("max-h-[600px]", viewportProps?.className)}
+        >
+          {props.children}
+        </ScrollViewport>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+    </figure>
+  );
+}

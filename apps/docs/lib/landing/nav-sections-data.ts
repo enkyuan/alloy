@@ -7,42 +7,13 @@ import type {
 } from "@lib/landing/nav-data";
 import {
   CommunityIcon,
-  FrameworkLogoIcon,
-  InfraLogoIcon,
   ScribblePattern,
   TimelinePattern,
-  VerticalLinesPattern,
 } from "@components/landing/nav/patterns";
 
 export const navFiles: NavFileItem[] = [
   { name: "readme", href: "/" },
   { name: "docs", href: "/docs" },
-];
-
-export const products: ProductItem[] = [
-  {
-    title: "SDK",
-    tagline: "Open source",
-    description:
-      "The embeddable agent runtime. Event-sourced core, tool registry, and pluggable LLM providers.",
-    href: "/docs/getting-started",
-    activatesTab: false,
-    Icon: FrameworkLogoIcon,
-    Pattern: VerticalLinesPattern,
-    patternClassName:
-      "absolute inset-0 w-full h-full text-primary/10 pointer-events-none [mask-image:linear-gradient(to_left,black_0%,transparent_40%)]",
-  },
-  {
-    title: "Modalities",
-    tagline: "Voice & RAG",
-    description: "STT/TTS modalities, retrieval-augmented generation, and tool generation.",
-    href: "/docs",
-    activatesTab: false,
-    Icon: InfraLogoIcon,
-    Pattern: VerticalLinesPattern,
-    patternClassName:
-      "absolute inset-0 w-full h-full text-primary/10 pointer-events-none [mask-image:linear-gradient(to_left,black_0%,transparent_40%)]",
-  },
 ];
 
 export const featuredResources: ProductItem[] = [
@@ -85,12 +56,5 @@ export const resourceFiles: NavFileItem[] = [
 ];
 
 export const mobileMenuSections: MobileMenuSection[] = [
-  {
-    name: "products",
-    children: products.map((p) => ({
-      name: p.title.toLowerCase(),
-      href: p.href,
-    })),
-  },
   { name: "resources", children: resourceFiles },
 ];

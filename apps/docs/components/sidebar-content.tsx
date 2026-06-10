@@ -1,4 +1,4 @@
-import type { ReactNode, SVGProps } from "react";
+import type { RemixiconComponentType } from "@remixicon/react";
 import {
   RiBook2Line,
   RiBroadcastLine,
@@ -9,19 +9,19 @@ import {
   RiStackFill,
   RiStackLine,
   RiToolsLine,
-} from "@/components/icons/remix";
+} from "@remixicon/react";
 
 export interface SubpageItem {
   title: string;
   href?: string;
-  icon?: (props?: SVGProps<any>) => ReactNode;
+  icon?: RemixiconComponentType;
   group?: boolean;
 }
 
 export interface ListItem {
   title: string;
   href?: string;
-  icon: (props?: SVGProps<any>) => ReactNode;
+  icon: RemixiconComponentType;
   group?: boolean;
   separator?: boolean;
   isNew?: boolean;
@@ -35,7 +35,7 @@ interface Content {
   href?: string;
   /** Expand this sidebar section when pathname is this URL or a child path (no extra nav row). */
   expandSectionForPathPrefix?: string;
-  Icon: (props?: SVGProps<any>) => ReactNode;
+  Icon: RemixiconComponentType;
   isNew?: boolean;
   list: ListItem[];
 }
