@@ -15,6 +15,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@agentkit/ui": "workspace:*",
     "@base-ui/react": "^1.5.0",
     "@fontsource-variable/dm-sans": "^5.2.8",
     "@remixicon/react": "^4.9.0",

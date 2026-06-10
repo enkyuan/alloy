@@ -43,7 +43,7 @@ export function PromptDialog({ open, copied, promptText, onClose, onCopy }: Prop
                 aria-label="Close"
                 className="absolute top-3 right-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors z-10"
               >
-                <CloseIcon className="h-4 w-4" />
+                <CloseIcon size={16} />
               </button>
 
               {/* Content */}
@@ -62,12 +62,12 @@ export function PromptDialog({ open, copied, promptText, onClose, onCopy }: Prop
                 >
                   {copied ? (
                     <>
-                      <CheckIcon className="h-3.5 w-3.5" />
+                      <CheckIcon size={14} />
                       Copied
                     </>
                   ) : (
                     <>
-                      <CopyIcon className="h-3.5 w-3.5" />
+                      <CopyIcon size={14} />
                       Copy prompt
                     </>
                   )}

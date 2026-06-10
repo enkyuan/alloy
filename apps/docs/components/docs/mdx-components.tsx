@@ -128,7 +128,7 @@ export function ForkButton({ url }: { url: string }) {
       </Link>
       <Link href={`https://github.com/${url}`} target="_blank">
         <Button className="gap-2" variant="secondary" size="sm">
-          <GitHubIcon className="size-4" />
+          <GitHubIcon size={16} />
           View on GitHub
         </Button>
       </Link>

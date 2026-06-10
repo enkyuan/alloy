@@ -4,7 +4,8 @@ import Link from "next/link";
 import LogoContextMenu from "../shared/logo-menu";
 
 import { LazyMotion, domAnimation, m } from "motion/react";
-import { RiSearch2Line, RiArrowRightUpLine } from "@remixicon/react";
+import { RiSearch2Line } from "@remixicon/react";
+import { ArrowUpRightIcon } from "@components/docs/icons/ui";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
@@ -13,7 +14,7 @@ import { AgentPayLogo } from "@components/icons/agentpay";
 import { contents } from "@components/sidebar-content";
 import { NavMobileMenu } from "./mobile-menu";
 import { ResourcesDropdown } from "./desktop-dropdowns";
-import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections-data";
+import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections";
 
 type NavTab = {
   id: string;
@@ -107,13 +108,13 @@ export function StaggeredNavFiles() {
   return (
     <LazyMotion features={domAnimation}>
       <>
-        <div className="fixed top-0 left-0 right-0 z-[99] flex items-start pointer-events-none">
+        <div className="fixed inset-x-0 top-0 z-[99] flex items-start pointer-events-none">
           {/* Left — Logo */}
           <m.div
             initial={{ x: -20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className={`${leftPaneWidthClass} hidden ${isKnownPage ? "lg:flex" : "lg:hidden"} h-(--landing-topbar-height) items-stretch shrink-0 pointer-events-auto transition-[width] duration-300 ease-out`}
+            className={`${leftPaneWidthClass} hidden ${isKnownPage ? "lg:flex" : "lg:hidden"} h-(--landing-topbar-height) shrink-0 items-stretch pointer-events-auto transition-[width] duration-300 ease-out`}
           >
             <Link
               href="/"
@@ -128,7 +129,7 @@ export function StaggeredNavFiles() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="lg:hidden flex items-center justify-between w-full h-(--landing-topbar-height) pointer-events-auto bg-background border-b border-foreground/[0.06]"
+            className="flex lg:hidden items-center justify-between w-full h-(--landing-topbar-height) border-b border-foreground/[0.06] bg-background pointer-events-auto"
           >
             <Link
               href="/"
@@ -214,13 +215,13 @@ export function StaggeredNavFiles() {
             initial={{ y: -10, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.28, delay: 0.04, ease: "easeOut" }}
-            className={`flex-1 hidden lg:flex h-[calc(var(--landing-topbar-height)+1px)] items-stretch border-b bg-background pointer-events-auto min-w-0 ${navBottomBorderClass}`}
+            className={`hidden lg:flex flex-1 items-stretch min-w-0 h-[calc(var(--landing-topbar-height)+1px)] border-b bg-background pointer-events-auto ${navBottomBorderClass}`}
           >
             {/* Inline logo when left pane is hidden */}
             {!isKnownPage && (
               <Link
                 href="/"
-                className={`flex h-full items-center gap-1 shrink-0 px-4 lg:px-7 py-3 border-r ${tabDividerClass} transition-colors duration-150`}
+                className={`flex h-full shrink-0 items-center gap-1 px-4 lg:px-7 py-3 border-r ${tabDividerClass} transition-colors duration-150`}
               >
                 <LogoContextMenu logo={<AgentkitWordmark />} />
               </Link>
@@ -246,18 +247,16 @@ export function StaggeredNavFiles() {
                       href={tab.href || "#"}
                       target={tab.external ? "_blank" : undefined}
                       rel={tab.external ? "noreferrer" : undefined}
-                      className={`group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r ${tabDividerClass} transition-colors duration-150 ${
-                        active
+                      className={`group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r ${tabDividerClass} transition-colors duration-150 ${active
                           ? `bg-background border-b-2 ${activeTabBorderClass}`
-                          : "bg-transparent hover:bg-foreground/[0.03]"
-                      }`}
+                          : "hover:bg-foreground/[0.03]"
+                        }`}
                     >
                       <span
-                        className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
-                          active
+                        className={`whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150 ${active
                             ? "text-foreground"
                             : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                        }`}
+                          }`}
                       >
                         {tab.label}
                       </span>
@@ -278,29 +277,26 @@ export function StaggeredNavFiles() {
                     onMouseLeave={closeResources}
                   >
                     <div
-                      className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150 ${
-                        isResourcePage
+                      className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150 ${isResourcePage
                           ? `bg-background border-b-2 ${activeTabBorderClass}`
                           : resourcesOpen
                             ? "bg-foreground/[0.04]"
                             : "hover:bg-foreground/[0.03]"
-                      }`}
+                        }`}
                     >
                       <span
-                        className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
-                          isResourcePage
+                        className={`whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150 ${isResourcePage
                             ? "text-foreground"
                             : resourcesOpen
                               ? "text-foreground/80"
                               : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                        }`}
+                          }`}
                       >
                         {tab.label}
                       </span>
                       <svg
-                        className={`h-2 w-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${
-                          resourcesOpen ? "rotate-180" : ""
-                        }`}
+                        className={`size-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${resourcesOpen ? "rotate-180" : ""
+                          }`}
                         viewBox="0 0 10 6"
                         fill="none"
                       >
@@ -330,14 +326,14 @@ export function StaggeredNavFiles() {
                       href={tab.href}
                       target="_blank"
                       rel="noreferrer"
-                      className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+                      className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r ${tabDividerClass} transition-colors duration-150 hover:bg-foreground/[0.03]`}
                     >
                       {tab.icon && (
-                        <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
+                        <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:size-4">
                           {tab.icon}
                         </span>
                       )}
-                      <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
+                      <span className="whitespace-nowrap font-mono text-xs uppercase tracking-wider text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 transition-colors duration-150">
                         {tab.label}
                       </span>
                     </a>
@@ -359,12 +355,12 @@ export function StaggeredNavFiles() {
                 href=""
                 target="_blank"
                 rel="noreferrer"
-                className="group/tab flex items-center justify-center gap-2 px-5 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+                className={`group/tab flex items-center justify-center gap-2 px-5 xl:px-4 py-3 h-full cursor-pointer border-l border-r ${tabDividerClass} transition-colors duration-150 hover:bg-foreground/[0.03]`}
               >
-                <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
+                <span className="whitespace-nowrap font-mono text-xs uppercase tracking-wider text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 transition-colors duration-150">
                   Try AgentPay
                 </span>
-                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-3 [&_svg]:h-3">
+                <span className="text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 [&_svg]:size-3 transition-colors duration-150">
                   <AgentPayLogo />
                 </span>
               </a>
@@ -375,17 +371,25 @@ export function StaggeredNavFiles() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.2, delay: 0.24, ease: "easeOut" }}
-              className="flex items-stretch shrink-0"
+              className="flex shrink-0 items-stretch"
             >
-              <a
+              <m.a
                 href=""
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
+                whileHover="hovered"
+                className="flex items-center gap-2 px-5 py-3 cursor-pointer font-mono text-xs uppercase tracking-wider bg-foreground text-background transition-opacity duration-150 hover:opacity-90"
               >
-                <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
-                <RiArrowRightUpLine size={16} />
-              </a>
+                <span>Sign In</span>
+                <m.span
+                  variants={{
+                    hovered: { x: 1, y: -2, transition: { duration: 0.2, ease: "easeOut" } },
+                  }}
+                  className="flex items-center"
+                >
+                  <ArrowUpRightIcon size={16} />
+                </m.span>
+              </m.a>
             </m.div>
           </m.div>
         </div>

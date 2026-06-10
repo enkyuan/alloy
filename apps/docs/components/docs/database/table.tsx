@@ -2,10 +2,10 @@
 
 import { startTransition, useState } from "react";
 import { DynamicCodeBlock } from "@components/ui/dynamic-code-block";
-import type { DBFieldAttribute, DBSchema, DefaultDialects } from "@lib/copy-schema";
-import { copySchema } from "@lib/copy-schema";
-import { drizzleResolver } from "@lib/copy-schema/adapter/drizzle";
-import { prismaResolver } from "@lib/copy-schema/adapter/prisma";
+import type { DBFieldAttribute, DBSchema, DefaultDialects } from "@lib/schemas";
+import { copySchema } from "@lib/schemas";
+import { drizzleResolver } from "@lib/schemas/adapter/drizzle";
+import { prismaResolver } from "@lib/schemas/adapter/prisma";
 import { cn } from "@lib/utils";
 import { RiKey2Line, RiLink } from "@remixicon/react";
 import { TypeIcon } from "./type-icon";

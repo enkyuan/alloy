@@ -1,8 +1,19 @@
-import type { SVGProps } from "react";
+interface IconProps {
+  size?: number;
+  color?: string;
+  className?: string;
+}
 
-export function CopyIcon({ className }: SVGProps<SVGSVGElement>) {
+export function CopyIcon({ size = 16, color, className }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
+    >
       <path
         fill="currentColor"
         d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
@@ -11,17 +22,31 @@ export function CopyIcon({ className }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function CheckIcon({ className }: SVGProps<SVGSVGElement>) {
+export function CheckIcon({ size = 16, color, className }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
+    >
       <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
     </svg>
   );
 }
 
-export function CloseIcon({ className }: SVGProps<SVGSVGElement>) {
+export function CloseIcon({ size = 16, color, className }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
+    >
       <path
         fill="currentColor"
         d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12z"
@@ -30,9 +55,16 @@ export function CloseIcon({ className }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function EyeIcon({ className }: SVGProps<SVGSVGElement>) {
+export function EyeIcon({ size = 16, color, className }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
+    >
       <path
         fill="currentColor"
         d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5s5 2.24 5 5s-2.24 5-5 5m0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3s3-1.34 3-3s-1.34-3-3-3"
@@ -41,12 +73,15 @@ export function EyeIcon({ className }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function GitHubIcon({ className }: SVGProps<SVGSVGElement>) {
+export function GitHubIcon({ size = 16, color, className }: IconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 15 15"
-      className={className ?? "h-4 w-4"}
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
       fill="currentColor"
     >
       <path
@@ -58,7 +93,7 @@ export function GitHubIcon({ className }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function ArrowUpRightIcon({ className }: SVGProps<SVGSVGElement>) {
+export function ArrowUpRightIcon({ size = 16, color, className }: IconProps) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
@@ -68,7 +103,10 @@ export function ArrowUpRightIcon({ className }: SVGProps<SVGSVGElement>) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className ?? "h-4 w-4"}
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
     >
       <line x1="7" y1="17" x2="17" y2="7" />
       <polyline points="7 7 17 7 17 17" />
@@ -76,9 +114,16 @@ export function ArrowUpRightIcon({ className }: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function PlusIcon({ className }: SVGProps<SVGSVGElement>) {
+export function PlusIcon({ size = 16, color, className }: IconProps) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      style={color ? { color } : undefined}
+      className={className}
+    >
       <path fill="currentColor" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" />
     </svg>
   );

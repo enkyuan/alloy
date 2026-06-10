@@ -59,42 +59,31 @@ const runtime = new AgentRuntime({
 provider: new AnthropicProvider()`,
 };
 
-export const serverCodeTs = `import { AgentRuntime } from "@agentkit/sdk"
-import { OpenAIProvider } from "@agentkit/sdk/providers"
-import { InMemoryEventBus } from "@agentkit/sdk/events"
-import { ToolRegistry, tool } from "@agentkit/sdk/tools"
+export const serverCodeTs = `import { EventType } from "@agentkit/sdk/events"
 
-const registry = new ToolRegistry()
+// Send a message and stream the response
+const session = crypto.randomUUID()
+await agent.runTurn(session)
 
-registry.add(
-  tool("get_weather", "Look up the weather for a city", {
-    city: { type: "string" },
-  }, async ({ city }) => fetchWeather(city)),
-)
+for await (const event of agent.bus.subscribe(session)) {
+  if (event.type === EventType.AGENT_MESSAGE_DELTA) {
+    process.stdout.write(event.delta)
+  }
+  if (event.type === EventType.AGENT_REASONING_COMPLETED) {
+    break
+  }
+}`;
 
-export const agent = new AgentRuntime({
-  provider: new OpenAIProvider({
-    apiKey: process.env.OPENAI_API_KEY,
-    model: "gpt-4o",
-  }),
-  tools: registry.list(),
-  bus: new InMemoryEventBus(),
-})`;
+export const serverCodePy = `from agentkit.runtime.events.types import AgentMessageDelta
+from agentkit.runtime.events.types import AgentReasoningCompleted
+import asyncio
 
-export const serverCodePy = `from agentkit.runtime.agents.runtime import AgentRuntime
-from agentkit.runtime.providers.openai import OpenAIProvider
-from agentkit.infra.events.bus import InMemoryEventBus
-from agentkit.runtime.tools.registry import register_tool, tool_spec_from_model
+# Send a message and stream the response
+session_id = "s1"
+await agent.send(session_id, "What's the weather in Tokyo?")
 
-
-@register_tool(tool_spec_from_model("get_weather", "Look up the weather", WeatherArgs))
-async def get_weather(ctx, args):
-    return await fetch_weather(args["city"])
-
-
-agent = AgentRuntime(
-    provider=OpenAIProvider(model="gpt-4o"),
-    bus=InMemoryEventBus(),
-    store=store,
-    planner=planner,
-)`;
+async for event in agent.bus.subscribe(session_id):
+    if isinstance(event, AgentMessageDelta):
+        print(event.delta, end="", flush=True)
+    if isinstance(event, AgentReasoningCompleted):
+        break`;

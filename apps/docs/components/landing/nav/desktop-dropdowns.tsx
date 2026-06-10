@@ -1,7 +1,7 @@
 // Desktop nav dropdown panels extracted to keep staggered-nav-files.tsx under 400 lines.
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
-import { featuredResources, linkResources } from "@lib/landing/nav-sections-data";
+import { featuredResources, linkResources } from "@lib/landing/nav-sections";
 import { GitHubIcon } from "@components/docs/icons/ui";
 
 // ─── ResourcesDropdown ───────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ export function ResourcesDropdown({
                 className="flex items-center justify-center p-1 text-foreground/55 dark:text-foreground/40 hover:text-foreground/75 transition-colors"
                 aria-label="GitHub"
               >
-                <GitHubIcon className="h-3.5 w-3.5" />
+                <GitHubIcon size={14} />
               </a>
             </div>
           </m.div>

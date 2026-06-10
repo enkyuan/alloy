@@ -24,7 +24,7 @@ export const featuredResources: ProductItem[] = [
       "absolute right-3 top-3 text-foreground/30 group-hover/p:text-foreground/60 transition-colors duration-200 pointer-events-none",
   },
   {
-    title: "GitHub",
+    title: "Changelog",
     tagline: "Source",
     description: "Browse the source and contribute",
     href: "https://github.com/enkyuan/alloy",

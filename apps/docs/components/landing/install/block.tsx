@@ -140,7 +140,7 @@ export function InstallBlock() {
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >
-                      {copied ? <CheckIcon /> : <CopyIcon />}
+                      {copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
                     </button>
                   </div>
                 ) : mode === "mcp" ? (
@@ -183,7 +183,7 @@ export function InstallBlock() {
                         onClick={() => dispatch({ type: "prompt_open" })}
                         className="flex items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                       >
-                        <EyeIcon className="h-3 w-3" />
+                        <EyeIcon size={12} />
                         View full prompt
                       </button>
                       <button
@@ -193,12 +193,12 @@ export function InstallBlock() {
                       >
                         {copied ? (
                           <>
-                            <CheckIcon className="h-3.5 w-3.5" />
+                            <CheckIcon size={14} />
                             Copied
                           </>
                         ) : (
                           <>
-                            <CopyIcon className="h-3.5 w-3.5" />
+                            <CopyIcon size={14} />
                             Copy prompt
                           </>
                         )}
