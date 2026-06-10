@@ -7,15 +7,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
 import { AgentkitWordmark } from "../../icons/logo";
+import { AgentPayLogo } from "../../icons/agentpay";
 import { contents } from "../../sidebar-content";
 import LogoContextMenu from "../shared/logo-menu";
 import { NavMobileMenu } from "./mobile-menu";
 import { ResourcesDropdown } from "./desktop-dropdowns";
-import {
-  mobileMenuSections,
-  navFiles,
-  resourceFiles,
-} from "@lib/landing/nav-sections-data";
+import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections-data";
 
 // react-doctor-disable-next-line prefer-useReducer, react-doctor/prefer-useReducer, react-doctor/no-giant-component
 export function StaggeredNavFiles() {
@@ -58,16 +55,14 @@ export function StaggeredNavFiles() {
   );
   const isDocs = pathname.startsWith("/docs");
   const isPricingPage = pathname === "/pricing";
-  const isResourcePage = resourceFiles.some((r) => {
-    const matchPath = r.path || r.href;
-    return pathname === matchPath || pathname.startsWith(`${matchPath}/`);
-  });
+  const isResourcePage =
+    !isDocs &&
+    resourceFiles.some((r) => {
+      const matchPath = r.path || r.href;
+      return pathname === matchPath || pathname.startsWith(`${matchPath}/`);
+    });
   const isKnownPage =
-    isActive("/") ||
-    isDocs ||
-    isPricingPage ||
-    isResourcePage ||
-    isActive("/enterprise");
+    isActive("/") || isDocs || isPricingPage || isResourcePage || isActive("/enterprise");
   const isNarrowLeft = isDocs;
   const leftPaneWidthClass = isNarrowLeft
     ? "w-[22vw] max-w-[300px]"
@@ -285,22 +280,44 @@ export function StaggeredNavFiles() {
                 onClose={() => setResourcesOpen(false)}
               />
             </m.div>
-            {/* Get Started CTA — always visible */}
+
+            {/* AgentPay tab */}
+            <m.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.22, ease: "easeOut" }}
+              className="relative flex-1"
+            >
+              <a
+                href="https://agentpay.ai"
+                target="_blank"
+                rel="noreferrer"
+                className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+              >
+                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
+                  <AgentPayLogo />
+                </span>
+                <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
+                  agentpay
+                </span>
+              </a>
+            </m.div>
+
+            {/* Sign In CTA — always visible */}
             <m.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ duration: 0.2, delay: 0.2, ease: "easeOut" }}
+              transition={{ duration: 0.2, delay: 0.24, ease: "easeOut" }}
               className="flex items-stretch shrink-0"
             >
-              <Link
-                href="/docs/getting-started"
-                className="flex items-center cursor-pointer gap-1.5 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
+              <a
+                href="https://agentpay.ai"
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
               >
-                <span className="font-mono text-xs uppercase tracking-wider">get-started</span>
-                <svg className="h-2.5 w-2.5 opacity-50" viewBox="0 0 10 10" fill="none">
-                  <path d="M1 9L9 1M9 1H3M9 1V7" stroke="currentColor" strokeWidth="1.2" />
-                </svg>
-              </Link>
+                <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
+              </a>
             </m.div>
           </m.div>
         </div>
