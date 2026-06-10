@@ -24,10 +24,6 @@ const staticContributors: ContributorInfo[] = [
   },
 ];
 
-function getContributors(): ContributorInfo[] {
-  return staticContributors;
-}
-
 export async function getCommunityStats(): Promise<CommunityStats> {
   return {
     npmDownloads: 0,

@@ -10,10 +10,9 @@ import type {
   Ref,
   RefObject,
 } from "react";
-import { createContext, use, useCallback, useMemo, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { buttonVariants } from "@components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@components/ui/tabs";
-import { cn, mergeRefs } from "@lib/utils";
+import { cn } from "@lib/utils";
 import { ScrollArea, ScrollBar, ScrollViewport } from "./scroll-area";
 import { useCopyButton } from "@hooks/use-copy-button";
 
@@ -195,67 +194,7 @@ function CopyButton({
     </button>
   );
 }
-function CodeBlockTabs({ ref, ...props }: ComponentProps<typeof Tabs>) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const nested = use(TabsContext) !== null;
-
-  return (
-    <Tabs
-      ref={mergeRefs(containerRef, ref)}
-      {...props}
-      className={cn(
-        "bg-fd-card p-1 rounded-xl border overflow-hidden",
-        !nested && "my-4",
-        props.className,
-      )}
-    >
-      <TabsContext.Provider
-        value={useMemo(
-          () => ({
-            containerRef,
-            nested,
-          }),
-          [nested],
-        )}
-      >
-        {props.children}
-      </TabsContext.Provider>
-    </Tabs>
-  );
-}
-function CodeBlockTabsList(props: ComponentProps<typeof TabsList>) {
-  return (
-    <TabsList
-      {...props}
-      className={cn(
-        "flex flex-row overflow-x-auto px-1 -mx-1 text-fd-muted-foreground",
-        props.className,
-      )}
-    >
-      {props.children}
-    </TabsList>
-  );
-}
-
-function CodeBlockTabsTrigger({ children, ...props }: ComponentProps<typeof TabsTrigger>) {
-  return (
-    <TabsTrigger
-      {...props}
-      className={cn(
-        "relative group inline-flex text-sm font-medium text-nowrap items-center transition-colors gap-2 px-2 first:ms-1 py-1.5 hover:text-fd-accent-foreground data-[state=active]:text-fd-primary [&_svg]:size-3.5",
-        props.className,
-      )}
-    >
-      <div className="absolute inset-x-2 bottom-0 h-px group-data-[state=active]:bg-fd-primary" />
-      {children}
-    </TabsTrigger>
-  );
-}
-
-// TODO: currently Vite RSC plugin has problem with adding `asChild` here, maybe revisit this in future
-const CodeBlockTab = TabsContent;
-
-function CodeBlockOld({
+function _CodeBlockOld({
   ref,
   title,
   allowCopy = true,

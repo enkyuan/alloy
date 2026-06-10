@@ -27,7 +27,8 @@ type NavTab = {
   external?: boolean;
 };
 
-// react-doctor-disable-next-line prefer-useReducer, react-doctor/prefer-useReducer, react-doctor/no-giant-component
+// react-doctor-disable-next-line prefer-useReducer, react-doctor/prefer-useReducer, react-doctor/no-giant-component, max-lines
+// eslint-disable-next-line max-lines
 export function StaggeredNavFiles() {
   const pathname = usePathname() || "/";
   const [resourcesOpen, setResourcesOpen] = useState(false);
@@ -63,10 +64,6 @@ export function StaggeredNavFiles() {
   };
 
   const isActive = useCallback((href: string) => pathname === href, [pathname]);
-  const isActivePrefix = useCallback(
-    (href: string) => pathname === href || pathname.startsWith(`${href}/`),
-    [pathname],
-  );
   const isDocs = pathname.startsWith("/docs");
   const isPricingPage = pathname === "/pricing";
   const isResourcePage =

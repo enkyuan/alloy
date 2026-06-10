@@ -13,11 +13,11 @@ import {
   versionedDocsHref,
 } from "@lib/docs-versions";
 
-function VersionSwitcher({ className }: { className?: string }) {
+function _VersionSwitcher({ className }: { className?: string }) {
   const pathname = usePathname() || "/docs";
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const timeout = useRef<NodeJS.Timeout>(undefined);
+  const _timeout = useRef<NodeJS.Timeout>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const currentVersion = getVersionFromPathname(pathname);
@@ -43,7 +43,7 @@ function VersionSwitcher({ className }: { className?: string }) {
     router.push(targetHref);
   }
 
-  const displayLabel = currentVersion.label;
+  const _displayLabel = currentVersion.label;
 
   return (
     <LazyMotion features={domAnimation}>
@@ -130,7 +130,7 @@ function VersionSwitcher({ className }: { className?: string }) {
 }
 
 /** Simplified version for mobile — just a row of buttons. */
-function MobileVersionSwitcher() {
+function _MobileVersionSwitcher() {
   const pathname = usePathname() || "/docs";
   const router = useRouter();
   const currentVersion = getVersionFromPathname(pathname);

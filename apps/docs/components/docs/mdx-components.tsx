@@ -93,7 +93,7 @@ function Method({ method }: { method: string }) {
 export function Endpoint({
   path,
   method = "GET",
-  isServerOnly,
+  _isServerOnly,
   className,
 }: {
   path?: string;
@@ -196,6 +196,6 @@ export function GenerateAppleJwt() {
 
 // ─── Features (placeholder) ─────────────────────────────────────────────────
 
-export function Features({ stars }: { stars?: string | null }) {
+export function Features({ _stars }: { stars?: string | null }) {
   return null;
 }
