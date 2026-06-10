@@ -24,15 +24,17 @@ export function ProvidersSection() {
                 {featured.name}
               </span>
             </div>
-            <DynamicCodeBlock
-              lang="ts"
-              code={providerSnippets.OpenAI}
-              allowCopy={false}
-              codeblock={{
-                className:
-                  "border-0 rounded-none my-0 shadow-none bg-transparent [&_div]:bg-transparent [&_div]:text-[11px] [&_pre]:!p-0 [&_pre]:!overflow-hidden [&_div]:!overflow-hidden [&_code]:!overflow-hidden",
-              }}
-            />
+            <div suppressHydrationWarning>
+              <DynamicCodeBlock
+                lang="ts"
+                code={providerSnippets.OpenAI}
+                allowCopy={false}
+                codeblock={{
+                  className:
+                    "border-0 rounded-none my-0 shadow-none bg-transparent [&_div]:bg-transparent [&_div]:text-[11px] [&_pre]:!p-0 [&_pre]:!overflow-hidden [&_div]:!overflow-hidden [&_code]:!overflow-hidden",
+                }}
+              />
+            </div>
             <div className="absolute inset-y-0 right-0 w-14 bg-gradient-to-l from-background to-transparent pointer-events-none" />
             <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none" />
           </div>
