@@ -82,7 +82,8 @@ type RuntimeTabId = (typeof runtimeTabs)[number]["id"];
 
 const runtimeTabDescriptions: Record<RuntimeTabId, string> = {
   loop: "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done.",
-  providers: "Swap LLM providers behind one interface. OpenAI, Kimi, Gemini, and more, with no lock-in.",
+  providers:
+    "Swap LLM providers behind one interface. OpenAI, Kimi, Gemini, and more, with no lock-in.",
   tools: "Register any function as a tool. One provider-neutral payload, translated per provider.",
 };
 
@@ -137,59 +138,58 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                 id="features-grid"
                 className="relative grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 mb-2 border border-foreground/[0.08] overflow-hidden"
               >
-                {featureCards.map((feature, i) => (
-                  <Link
-                    key={feature.label}
-                    href={"href" in feature ? feature.href : "#"}
-                    className="contents"
-                  >
-                    <m.div
-                      whileHover={{
-                        y: -2,
-                        transition: { duration: 0.2, ease: "easeOut" },
-                      }}
-                      className={cn(
-                        "group/card relative p-4 lg:p-5 border-foreground/[0.08] min-h-[100px] transition-all duration-200 hover:bg-foreground/[0.02] hover:shadow-[inset_0_1px_0_0_rgba(128,128,128,0.1)] hover:z-10",
-                        i < 8 && "border-b",
-                        i >= 6 && "md:border-b-0",
-                        i % 2 === 0 && i < 8 && "sm:border-r",
-                        i % 3 === 2 && "md:border-r-0",
-                        i % 2 !== 0 && i % 3 !== 2 && "md:border-r",
-                      )}
-                    >
-                      {/* Arrow icon — top right, visible on hover */}
-                      <span className="absolute top-3 right-3 lg:top-4 lg:right-4 opacity-0 -translate-y-0.5 group-hover/card:opacity-100 group-hover/card:translate-y-0 transition-all duration-200">
-                        <ArrowUpRightIcon
-                          size={16}
-                          className="text-foreground/40 dark:text-foreground/50"
-                        />
-                      </span>
-                      <div className="mb-1">
-                        <div className="text-[11px] font-mono text-violet-600 dark:text-violet-400 tracking-wider transition-colors duration-200 group-hover/card:text-violet-500 dark:group-hover/card:text-violet-300 font-semibold">
-                          {String(i + 1).padStart(2, "0")}
-                        </div>
-                        <div className="text-[13px] font-medium text-foreground/80 dark:text-neutral-100 transition-colors duration-200">
-                          {feature.headline}
-                        </div>
-                      </div>
-                      <div className="text-[13px] text-neutral-500 dark:text-neutral-400 leading-relaxed transition-colors duration-200 group-hover/card:text-neutral-400 dark:group-hover/card:text-neutral-300">
-                        {feature.desc}
-                      </div>
-                      {"logos" in feature && feature.logos && (
-                        <div className="flex items-center gap-3.5 mt-3">
-                          <PythonLogo
-                            size={15}
-                            className="text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]"
+                {featureCards.map((feature, i) => {
+                  const href = "href" in feature ? feature.href : "#";
+                  return (
+                    <Link key={feature.label} href={href} className="contents">
+                      <m.div
+                        whileHover={{
+                          y: -2,
+                          transition: { duration: 0.2, ease: "easeOut" },
+                        }}
+                        className={cn(
+                          "group/card relative p-4 lg:p-5 border-foreground/[0.08] min-h-[100px] transition-all duration-200 hover:bg-foreground/[0.02] hover:shadow-[inset_0_1px_0_0_rgba(128,128,128,0.1)] hover:z-10",
+                          i < 8 && "border-b",
+                          i >= 6 && "md:border-b-0",
+                          i % 2 === 0 && i < 8 && "sm:border-r",
+                          i % 3 === 2 && "md:border-r-0",
+                          i % 2 !== 0 && i % 3 !== 2 && "md:border-r",
+                        )}
+                      >
+                        {/* Arrow icon — top right, visible on hover */}
+                        <span className="absolute top-3 right-3 lg:top-4 lg:right-4 opacity-0 -translate-y-0.5 group-hover/card:opacity-100 group-hover/card:translate-y-0 transition-all duration-200">
+                          <ArrowUpRightIcon
+                            size={16}
+                            className="text-foreground/40 dark:text-foreground/50"
                           />
-                          <TypeScriptLogo
-                            size={15}
-                            className="text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]"
-                          />
+                        </span>
+                        <div className="mb-1">
+                          <div className="text-[11px] font-mono text-violet-600 dark:text-violet-400 tracking-wider transition-colors duration-200 group-hover/card:text-violet-500 dark:group-hover/card:text-violet-300 font-semibold">
+                            {String(i + 1).padStart(2, "0")}
+                          </div>
+                          <div className="text-[13px] font-medium text-foreground/80 dark:text-neutral-100 transition-colors duration-200">
+                            {feature.headline}
+                          </div>
                         </div>
-                      )}
-                    </m.div>
-                  </Link>
-                ))}
+                        <div className="text-[13px] text-neutral-500 dark:text-neutral-400 leading-relaxed transition-colors duration-200 group-hover/card:text-neutral-400 dark:group-hover/card:text-neutral-300">
+                          {feature.desc}
+                        </div>
+                        {"logos" in feature && feature.logos && (
+                          <div className="flex items-center gap-3.5 mt-3">
+                            <PythonLogo
+                              size={15}
+                              className="text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]"
+                            />
+                            <TypeScriptLogo
+                              size={15}
+                              className="text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]"
+                            />
+                          </div>
+                        )}
+                      </m.div>
+                    </Link>
+                  );
+                })}
                 {/* + marks rendered by FeaturesGridMarks — positions measured from actual card rects */}
                 <FeaturesGridMarks />
               </div>

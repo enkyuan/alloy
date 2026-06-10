@@ -6,6 +6,7 @@ import LogoContextMenu from "../shared/logo-menu";
 import { LazyMotion, domAnimation, m } from "motion/react";
 import { RiSearch2Line } from "@remixicon/react";
 import { ArrowUpRightIcon } from "@components/docs/icons/ui";
+import { cn } from "@lib/utils";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
@@ -247,16 +248,21 @@ export function StaggeredNavFiles() {
                       href={tab.href || "#"}
                       target={tab.external ? "_blank" : undefined}
                       rel={tab.external ? "noreferrer" : undefined}
-                      className={`group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r ${tabDividerClass} transition-colors duration-150 ${active
+                      className={cn(
+                        "group/tab relative flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full border-r transition-colors duration-150",
+                        tabDividerClass,
+                        active
                           ? `bg-background border-b-2 ${activeTabBorderClass}`
-                          : "hover:bg-foreground/[0.03]"
-                        }`}
+                          : "hover:bg-foreground/[0.03]",
+                      )}
                     >
                       <span
-                        className={`whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150 ${active
+                        className={cn(
+                          "whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150",
+                          active
                             ? "text-foreground"
-                            : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                          }`}
+                            : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75",
+                        )}
                       >
                         {tab.label}
                       </span>
@@ -277,26 +283,32 @@ export function StaggeredNavFiles() {
                     onMouseLeave={closeResources}
                   >
                     <div
-                      className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150 ${isResourcePage
+                      className={cn(
+                        "group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer transition-colors duration-150",
+                        isResourcePage
                           ? `bg-background border-b-2 ${activeTabBorderClass}`
                           : resourcesOpen
                             ? "bg-foreground/[0.04]"
-                            : "hover:bg-foreground/[0.03]"
-                        }`}
+                            : "hover:bg-foreground/[0.03]",
+                      )}
                     >
                       <span
-                        className={`whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150 ${isResourcePage
+                        className={cn(
+                          "whitespace-nowrap font-mono text-xs uppercase tracking-wider transition-colors duration-150",
+                          isResourcePage
                             ? "text-foreground"
                             : resourcesOpen
                               ? "text-foreground/80"
-                              : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                          }`}
+                              : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75",
+                        )}
                       >
                         {tab.label}
                       </span>
                       <svg
-                        className={`size-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${resourcesOpen ? "rotate-180" : ""
-                          }`}
+                        className={cn(
+                          "size-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200",
+                          resourcesOpen && "rotate-180",
+                        )}
                         viewBox="0 0 10 6"
                         fill="none"
                       >
