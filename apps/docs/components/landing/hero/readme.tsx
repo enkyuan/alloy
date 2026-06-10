@@ -11,6 +11,8 @@ import { ToolsSection } from "../tools/section";
 import { FeaturesGridMarks } from "../features/grid-marks";
 import { InstallBlock } from "../install/block";
 import { ReadmeFooter, type CommunityHeroStats } from "../footer/readme-stats";
+import { ArrowUpRightIcon } from "@components/docs/icons/ui";
+import { PythonLogo, TypeScriptLogo } from "@components/docs/icons/languages";
 
 const featureCards = [
   {
@@ -157,21 +159,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                     >
                       {/* Arrow icon — top right, visible on hover */}
                       <span className="absolute top-3 right-3 lg:top-4 lg:right-4 opacity-0 -translate-y-0.5 group-hover/card:opacity-100 group-hover/card:translate-y-0 transition-all duration-200">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="text-foreground/40 dark:text-foreground/50"
-                        >
-                          <line x1="7" y1="17" x2="17" y2="7" />
-                          <polyline points="7 7 17 7 17 17" />
-                        </svg>
+                        <ArrowUpRightIcon className="h-4 w-4 text-foreground/40 dark:text-foreground/50" />
                       </span>
                       <div className="mb-1">
                         <div className="text-[11px] font-mono text-violet-600 dark:text-violet-400 tracking-wider transition-colors duration-200 group-hover/card:text-violet-500 dark:group-hover/card:text-violet-300 font-semibold">
@@ -186,36 +174,8 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                       </div>
                       {"logos" in feature && feature.logos && (
                         <div className="flex items-center gap-3.5 mt-3">
-                          {/* Python */}
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="15"
-                            height="15"
-                            viewBox="0 0 24 24"
-                            className="text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M11.914 0C5.82 0 6.2 2.656 6.2 2.656l.007 2.752h5.814v.826H3.9S0 5.789 0 11.969c0 6.18 3.403 5.96 3.403 5.96h2.031v-2.867s-.109-3.408 3.35-3.408h5.762s3.239.052 3.239-3.13V3.147S18.28 0 11.914 0m-3.21 1.818a1.049 1.049 0 1 1 0 2.098a1.049 1.049 0 0 1 0-2.098"
-                            />
-                            <path
-                              fill="currentColor"
-                              d="M12.086 24c6.094 0 5.714-2.656 5.714-2.656l-.007-2.752h-5.814v-.826h8.121S24 18.211 24 12.031c0-6.18-3.403-5.96-3.403-5.96h-2.031v2.867s.109 3.408-3.35 3.408H9.454s-3.239-.052-3.239 3.13v5.377S5.72 24 12.086 24m3.21-1.818a1.049 1.049 0 1 1 0-2.098a1.049 1.049 0 0 1 0 2.098"
-                            />
-                          </svg>
-                          {/* TypeScript */}
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="15"
-                            height="15"
-                            viewBox="0 0 24 24"
-                            className="text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]"
-                          >
-                            <path
-                              fill="currentColor"
-                              d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75c.623 0 1.125-.502 1.125-1.125V1.125C24 .502 23.498 0 22.875 0zm17.363 9.75c.612 0 1.154.037 1.627.111a6.38 6.38 0 0 1 1.306.34v2.458a3.95 3.95 0 0 0-.643-.361a5.093 5.093 0 0 0-.717-.26a5.453 5.453 0 0 0-1.426-.2c-.3 0-.573.028-.819.086a2.1 2.1 0 0 0-.623.242c-.17.104-.3.229-.393.374a.888.888 0 0 0-.14.49c0 .196.053.373.156.529.104.156.252.304.443.444s.423.276.696.41c.273.135.582.274.926.416.47.197.892.407 1.266.628.374.222.695.473.963.753.268.279.472.598.614.957.142.359.214.776.214 1.253 0 .657-.125 1.21-.373 1.656a3.033 3.033 0 0 1-1.012 1.085a4.38 4.38 0 0 1-1.487.596c-.566.12-1.163.18-1.79.18a9.916 9.916 0 0 1-1.84-.164a5.544 5.544 0 0 1-1.512-.493v-2.63a5.033 5.033 0 0 0 3.237 1.2c.333 0 .624-.03.872-.09.249-.06.456-.144.623-.25.166-.108.29-.234.373-.38a1.023 1.023 0 0 0-.074-1.089a2.12 2.12 0 0 0-.537-.5a5.597 5.597 0 0 0-.807-.444a27.72 27.72 0 0 0-1.007-.436c-.918-.383-1.602-.852-2.053-1.405-.45-.553-.676-1.222-.676-2.005 0-.614.123-1.141.369-1.582.246-.441.58-.804 1.004-1.089a4.494 4.494 0 0 1 1.47-.629a7.536 7.536 0 0 1 1.77-.201zm-15.113.188h9.563v2.166H9.506v9.646H6.789v-9.646H3.375z"
-                            />
-                          </svg>
+                          <PythonLogo className="h-[15px] w-[15px] text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]" />
+                          <TypeScriptLogo className="h-[15px] w-[15px] text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]" />
                         </div>
                       )}
                     </m.div>
