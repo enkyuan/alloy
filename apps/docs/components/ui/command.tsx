@@ -2,7 +2,7 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Command as CommandPrimitive } from "cmdk";
-import { Search } from "lucide-react";
+import { RiSearchLine } from "@remixicon/react";
 import type * as React from "react";
 import { cn } from "@lib/utils";
 
@@ -45,7 +45,7 @@ function CommandInput({
 }: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
     <div className="flex items-center border-b border-foreground/[0.06] px-3">
-      <Search className="mr-2 size-4 shrink-0 opacity-50" />
+      <RiSearchLine size={16} className="mr-2 shrink-0 opacity-50" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(

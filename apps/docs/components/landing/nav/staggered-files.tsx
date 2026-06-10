@@ -356,16 +356,16 @@ export function StaggeredNavFiles() {
               className="relative flex-1"
             >
               <a
-                href="https://agentpay.ai"
+                href=""
                 target="_blank"
                 rel="noreferrer"
-                className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+                className="group/tab flex items-center justify-center gap-2 px-5 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
               >
-                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
-                  <AgentPayLogo />
-                </span>
                 <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
-                  AgentPay
+                  Try AgentPay
+                </span>
+                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-3 [&_svg]:h-3">
+                  <AgentPayLogo />
                 </span>
               </a>
             </m.div>
@@ -378,13 +378,13 @@ export function StaggeredNavFiles() {
               className="flex items-stretch shrink-0"
             >
               <a
-                href="https://agentpay.ai"
+                href=""
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
               >
                 <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
-                <RiArrowRightUpLine className="size-4 text-foreground/55 dark:text-foreground/40" />
+                <RiArrowRightUpLine size={16} />
               </a>
             </m.div>
           </m.div>

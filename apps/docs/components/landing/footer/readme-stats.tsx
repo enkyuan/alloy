@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { RiNpmjsFill } from "@remixicon/react";
+import { RiAddLine, RiNpmjsFill } from "@remixicon/react";
 import { formatCount } from "@lib/landing/readme-footer-utils";
 
 export type CommunityHeroStats = {
@@ -114,7 +114,7 @@ export function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
             <span className="absolute left-0 -top-[6px] -bottom-[6px] w-px bg-foreground/20 group-hover:bg-foreground/30 transition-colors" />
             <span className="absolute right-0 -top-[6px] -bottom-[6px] w-px bg-foreground/20 group-hover:bg-foreground/30 transition-colors" />
             <span className="absolute -bottom-[6px] -right-[6px] font-mono text-[8px] text-foreground/40 dark:text-foreground/50 leading-none select-none translate-x-1/2 translate-y-1/2">
-              +
+              <RiAddLine size={8} />
             </span>
             <span className="relative">GitHub </span>
           </Link>

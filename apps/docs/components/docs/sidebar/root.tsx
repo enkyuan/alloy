@@ -2,7 +2,7 @@
 
 import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m } from "motion/react";
 import { useSearchContext } from "fumadocs-ui/contexts/search";
-import { ChevronDownIcon } from "lucide-react";
+import { RiArrowDownSLine } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { contents } from "@components/sidebar-content";
@@ -124,9 +124,10 @@ export function DocsSidebar() {
                   >
                     <section.Icon className="size-4.5" />
                     <span className="grow tracking-normal">{section.title}</span>
-                    <ChevronDownIcon
+                    <RiArrowDownSLine
+                      size={16}
                       className={cn(
-                        "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
+                        "shrink-0 text-muted-foreground transition-transform duration-200",
                         currentOpen === index ? "rotate-180" : "",
                       )}
                     />

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon } from "lucide-react";
+import { RiArrowDownSLine } from "@remixicon/react";
 import { Accordion as AccordionPrimitive } from "radix-ui";
 import type * as React from "react";
 
@@ -39,7 +39,10 @@ function AccordionTrigger({
         {...props}
       >
         {children}
-        <ChevronDownIcon className="text-muted-foreground pointer-events-none size-4 shrink-0 translate-y-0.5 transition-transform duration-200" />
+        <RiArrowDownSLine
+          size={16}
+          className="text-muted-foreground pointer-events-none shrink-0 translate-y-0.5 transition-transform duration-200"
+        />
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   );
