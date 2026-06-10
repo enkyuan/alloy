@@ -1,12 +1,9 @@
 "use client";
 
-import {
-  KimiLogo,
-  AnthropicLogo,
-  OpenAILogo,
-  GeminiLogo,
-  OpenRouterLogo,
-} from "@components/icons/providers";
+import { OpenAILogo } from "@components/icons/openai";
+import { GeminiLogo } from "@components/icons/gemini";
+import { OpenRouterLogo } from "@components/icons/openrouter";
+import { KimiLogo, AnthropicLogo } from "@components/icons/providers";
 
 export const providerDrivers = [
   {

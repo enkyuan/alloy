@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
+import { CopyIcon, CheckIcon, CloseIcon } from "@components/docs/icons/ui";
 
 type Props = {
   open: boolean;
@@ -42,12 +43,7 @@ export function PromptDialog({ open, copied, promptText, onClose, onCopy }: Prop
                 aria-label="Close"
                 className="absolute top-3 right-3 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors z-10"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
-                  <path
-                    fill="currentColor"
-                    d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12z"
-                  />
-                </svg>
+                <CloseIcon className="h-4 w-4" />
               </button>
 
               {/* Content */}
@@ -66,30 +62,12 @@ export function PromptDialog({ open, copied, promptText, onClose, onCopy }: Prop
                 >
                   {copied ? (
                     <>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        className="h-3.5 w-3.5"
-                      >
-                        <path
-                          fill="currentColor"
-                          d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z"
-                        />
-                      </svg>
+                      <CheckIcon className="h-3.5 w-3.5" />
                       Copied
                     </>
                   ) : (
                     <>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        className="h-3.5 w-3.5"
-                      >
-                        <path
-                          fill="currentColor"
-                          d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
-                        />
-                      </svg>
+                      <CopyIcon className="h-3.5 w-3.5" />
                       Copy prompt
                     </>
                   )}
