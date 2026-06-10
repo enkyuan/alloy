@@ -10,11 +10,10 @@ import { AgentkitWordmark } from "../../icons/logo";
 import { contents } from "../../sidebar-content";
 import LogoContextMenu from "../shared/logo-menu";
 import { NavMobileMenu } from "./mobile-menu";
-import { ProductsDropdown, ResourcesDropdown } from "./desktop-dropdowns";
+import { ResourcesDropdown } from "./desktop-dropdowns";
 import {
   mobileMenuSections,
   navFiles,
-  products,
   resourceFiles,
 } from "@lib/landing/nav-sections-data";
 
@@ -22,12 +21,10 @@ import {
 export function StaggeredNavFiles() {
   const pathname = usePathname() || "/";
   const [resourcesOpen, setResourcesOpen] = useState(false);
-  const [productsOpen, setProductsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"docs" | "nav">("docs");
   const [mobileDocSection, setMobileDocSection] = useState(-1);
   const resourcesTimeout = useRef<NodeJS.Timeout>(undefined);
-  const productsTimeout = useRef<NodeJS.Timeout>(undefined);
 
   useEffect(() => {
     document.body.style.overflow = mobileMenuOpen ? "hidden" : "";
@@ -54,13 +51,6 @@ export function StaggeredNavFiles() {
   const closeResources = () => {
     resourcesTimeout.current = setTimeout(() => setResourcesOpen(false), 150);
   };
-  const openProducts = () => {
-    clearTimeout(productsTimeout.current);
-    setProductsOpen(true);
-  };
-  const closeProducts = () => {
-    productsTimeout.current = setTimeout(() => setProductsOpen(false), 150);
-  };
   const isActive = useCallback((href: string) => pathname === href, [pathname]);
   const isActivePrefix = useCallback(
     (href: string) => pathname === href || pathname.startsWith(`${href}/`),
@@ -68,9 +58,6 @@ export function StaggeredNavFiles() {
   );
   const isDocs = pathname.startsWith("/docs");
   const isPricingPage = pathname === "/pricing";
-  const isProductsPage = products.some(
-    (p) => p.activatesTab && (pathname === p.href || pathname.startsWith(`${p.href}/`)),
-  );
   const isResourcePage = resourceFiles.some((r) => {
     const matchPath = r.path || r.href;
     return pathname === matchPath || pathname.startsWith(`${matchPath}/`);
@@ -79,7 +66,6 @@ export function StaggeredNavFiles() {
     isActive("/") ||
     isDocs ||
     isPricingPage ||
-    isProductsPage ||
     isResourcePage ||
     isActive("/enterprise");
   const isNarrowLeft = isDocs;
@@ -252,53 +238,6 @@ export function StaggeredNavFiles() {
                 </m.div>
               );
             })}
-
-            {/* Products mega-menu tab */}
-            <m.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: 0.125, ease: "easeOut" }}
-              className="relative flex-1"
-              onMouseEnter={openProducts}
-              onMouseLeave={closeProducts}
-            >
-              <div
-                className={`group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r ${tabDividerClass} transition-colors duration-150 ${
-                  isProductsPage
-                    ? `bg-background border-b-2 ${activeTabBorderClass}`
-                    : productsOpen
-                      ? "bg-foreground/4"
-                      : "hover:bg-foreground/3"
-                }`}
-              >
-                <span
-                  className={`font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap ${
-                    isProductsPage
-                      ? "text-foreground"
-                      : productsOpen
-                        ? "text-foreground/80"
-                        : "text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75"
-                  }`}
-                >
-                  products
-                </span>
-                <svg
-                  className={`h-2 w-2 text-foreground/55 dark:text-foreground/40 transition-transform duration-200 ${
-                    productsOpen ? "rotate-180" : ""
-                  }`}
-                  viewBox="0 0 10 6"
-                  fill="none"
-                >
-                  <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.2" />
-                </svg>
-              </div>
-
-              <ProductsDropdown
-                isOpen={productsOpen}
-                dropdownBorderClass={dropdownBorderClass}
-                onClose={() => setProductsOpen(false)}
-              />
-            </m.div>
 
             {/* Resources folder tab */}
             <m.div

@@ -16,9 +16,9 @@ export const docsVersions: DocsVersion[] = [
   },
 ];
 
-export const latestVersion = docsVersions.find((v) => v.slug === null)!;
+const latestVersion = docsVersions.find((v) => v.slug === null)!;
 
-export function getVersionBySlug(slug: string): DocsVersion | undefined {
+function getVersionBySlug(slug: string): DocsVersion | undefined {
   return docsVersions.find((v) => v.slug === slug);
 }
 
@@ -36,11 +36,11 @@ export function stripVersionPrefix(pathname: string, _version: DocsVersion): str
   return pathname;
 }
 
-export function scopeDocsHref(href: string | undefined, _version: DocsVersion): string | undefined {
+function scopeDocsHref(href: string | undefined, _version: DocsVersion): string | undefined {
   return href;
 }
 
-export function resolveVersionFromSlug(slug: string[]): {
+function resolveVersionFromSlug(slug: string[]): {
   version: DocsVersion;
   relSlug: string[];
 } {

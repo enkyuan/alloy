@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
+import { cn } from "@lib/utils";
 
-export const AgentkitLogoMark = ({ className }: { className?: string }) => {
+const AgentkitLogoMark = ({ className }: { className?: string }) => {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className={className || "size-5"}>
       <path d="M31 3V17L17 3H31Z" fill="#FF6E3C" />

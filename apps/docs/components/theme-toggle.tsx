@@ -1,7 +1,7 @@
 "use client";
 import { useTheme } from "next-themes";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@components/ui/button";
 
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -54,7 +54,7 @@ export function ThemeToggle() {
         suppressHydrationWarning
       >
         <path
-          d="M16 2.66667V29.3333C19.5362 29.3333 22.9276 27.9286 25.4281 25.4281C27.9286 22.9276 29.3333 19.5362 29.3333 16C29.3333 12.4638 27.9286 9.07239 25.4281 6.57191C22.9276 4.07142 19.5362 2.66667 16 2.66667Z"
+          d="M16 2.67V29.33C19.54 29.33 22.93 27.93 25.43 25.43C27.93 22.93 29.33 19.54 29.33 16C29.33 12.46 27.93 9.07 25.43 6.57C22.93 4.07 19.54 2.67 16 2.67Z"
           fill="#fff"
         />
       </svg>

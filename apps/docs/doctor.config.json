@@ -1,0 +1,23 @@
+{
+  "$schema": "https://react.doctor/schema/config.json",
+  "rules": {
+    "react-doctor/no-danger": "warn"
+  },
+  "ignore": {
+    "rules": ["deslop/unused-dependency"],
+    "overrides": [
+      {
+        "files": ["components/ui/**"],
+        "rules": [
+          "react-doctor/no-multi-comp",
+          "react-doctor/only-export-components",
+          "deslop/unused-file"
+        ]
+      },
+      {
+        "files": ["components/mdx/mermaid.tsx"],
+        "rules": ["deslop/unused-file"]
+      }
+    ]
+  }
+}

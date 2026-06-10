@@ -174,7 +174,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                         </svg>
                       </span>
                       <div className="mb-1">
-                        <div className="text-[11px] font-mono text-foreground/45 dark:text-foreground/30 tracking-wider transition-colors duration-200 group-hover/card:text-foreground/60 dark:group-hover/card:text-foreground/40">
+                        <div className="text-[11px] font-mono text-violet-600 dark:text-violet-400 tracking-wider transition-colors duration-200 group-hover/card:text-violet-500 dark:group-hover/card:text-violet-300 font-semibold">
                           {String(i + 1).padStart(2, "0")}
                         </div>
                         <div className="text-[13px] font-medium text-foreground/80 dark:text-neutral-100 transition-colors duration-200">

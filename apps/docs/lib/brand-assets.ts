@@ -22,7 +22,7 @@ export const brandAssetPaths = {
   },
 } as const;
 
-export const brandLogoPreviews = [
+const brandLogoPreviews = [
   {
     label: "Mark · Light",
     src: brandAssetPaths.mark.light.svg,

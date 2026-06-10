@@ -161,11 +161,13 @@ export const categoryLabels: Record<string, string> = {
   events: "Events",
 };
 
-const _categoryColors: Record<string, string> = {
-  provider: "text-violet-500/50 dark:text-violet-400/40",
-  tools: "text-sky-500/50 dark:text-sky-400/40",
-  retrieval: "text-emerald-500/50 dark:text-emerald-400/40",
-  voice: "text-pink-500/50 dark:text-pink-400/40",
-  runtime: "text-amber-500/50 dark:text-amber-400/40",
-  events: "text-red-500/50 dark:text-red-400/40",
+export const categoryColors: Record<string, string> = {
+  Function: "text-indigo-500/70 dark:text-indigo-400/60",
+  Http: "text-sky-500/70 dark:text-sky-400/60",
+  Database: "text-emerald-500/70 dark:text-emerald-400/60",
+  Search: "text-orange-500/70 dark:text-orange-400/60",
+  File: "text-cyan-500/70 dark:text-cyan-400/60",
+  Code: "text-violet-500/70 dark:text-violet-400/60",
+  Mcp: "text-pink-500/70 dark:text-pink-400/60",
+  Voice: "text-rose-500/70 dark:text-rose-400/60",
 };

@@ -1,0 +1,261 @@
+"use client";
+
+import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
+import { useEffect, useReducer, useRef, useState } from "react";
+import { cn } from "@lib/utils";
+import { McpDropdown } from "../install/mcp-dropdown";
+import { PromptDialog } from "../install/prompt-dialog";
+
+const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm package).
+
+1. Install agentkit.
+
+2. Create lib/agent.ts — instantiate the agent runtime with:
+   - An LLM provider (OpenAI or Kimi)
+   - A tool registry with my project's tools
+   - The in-memory event bus for local development
+
+3. Wire up the agent loop so it can call tools and stream responses.
+
+4. Add the API route handler for my framework (e.g. app/api/agent/route.ts for Next.js App Router).
+
+5. Add AGENTKIT_API_KEY to my .env if it doesn't exist.
+
+Refer to github.com/enkyuan/alloy for exact API and tool syntax.`;
+
+function CopyIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
+      <path
+        fill="currentColor"
+        d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
+      <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
+    </svg>
+  );
+}
+
+type UIState = { copied: boolean; pmOpen: boolean; promptOpen: boolean };
+type UIAction =
+  | { type: "copy" }
+  | { type: "copy_reset" }
+  | { type: "pm_toggle" }
+  | { type: "pm_close" }
+  | { type: "prompt_open" }
+  | { type: "prompt_close" }
+  | { type: "reset" };
+
+function uiReducer(state: UIState, action: UIAction): UIState {
+  switch (action.type) {
+    case "copy":
+      return { ...state, copied: true, pmOpen: false };
+    case "copy_reset":
+      return { ...state, copied: false };
+    case "pm_toggle":
+      return { ...state, pmOpen: !state.pmOpen };
+    case "pm_close":
+      return { ...state, pmOpen: false };
+    case "prompt_open":
+      return { ...state, promptOpen: true };
+    case "prompt_close":
+      return { ...state, promptOpen: false };
+    case "reset":
+      return { copied: false, pmOpen: false, promptOpen: false };
+    default:
+      return state;
+  }
+}
+
+export function InstallBlock() {
+  const [mode, setMode] = useState<"cli" | "prompt" | "mcp">("cli");
+  const [ui, dispatch] = useReducer(uiReducer, { copied: false, pmOpen: false, promptOpen: false });
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState<number | "auto">("auto");
+  const [animationDone, setAnimationDone] = useState(true);
+
+  const { copied, pmOpen, promptOpen } = ui;
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setContentHeight(el.offsetHeight);
+    });
+    // react-doctor-disable-next-line no-initialize-state, react-doctor/no-initialize-state
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const overflow: "hidden" | "visible" = pmOpen || animationDone ? "visible" : "hidden";
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    dispatch({ type: "copy" });
+    setTimeout(() => dispatch({ type: "copy_reset" }), 1500);
+  };
+
+  return (
+    <LazyMotion features={domAnimation}>
+      <div className="mb-6 rounded-md border border-foreground/[0.1] relative">
+        {/* Tabs */}
+        <div className="flex items-center border-b border-foreground/[0.1]">
+          {(["cli", "prompt", "mcp"] as const).map((id) => (
+            <button
+              type="button"
+              key={id}
+              onClick={() => {
+                setMode(id);
+                dispatch({ type: "reset" });
+                setAnimationDone(false);
+              }}
+              className={cn(
+                "px-4 py-2 text-[12px] transition-colors duration-150 relative capitalize",
+                mode === id
+                  ? "text-neutral-800 dark:text-neutral-200"
+                  : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-400",
+              )}
+            >
+              {id === "cli" ? "CLI" : id === "mcp" ? "MCP" : "Prompt"}
+              {mode === id && (
+                <div className="absolute bottom-0 left-4 right-4 h-[1.5px] bg-neutral-600 dark:bg-neutral-400" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <m.div
+          animate={{ height: contentHeight }}
+          initial={false}
+          transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+          onAnimationComplete={() => setAnimationDone(true)}
+          style={{ overflow }}
+        >
+          <div ref={contentRef}>
+            <AnimatePresence mode="wait" initial={false}>
+              <div>
+                {mode === "cli" ? (
+                  <div className="flex items-center justify-between bg-neutral-100/50 dark:bg-[#050505] px-4 py-3">
+                    <code
+                      className="text-[13px]"
+                      style={{ fontFamily: "var(--font-geist-pixel-square)" }}
+                    >
+                      <span className="text-purple-600/90 dark:text-purple-400/90">pip</span>{" "}
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        install agentkit
+                      </span>
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copy("pip install agentkit")}
+                      className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
+                      aria-label="Copy command"
+                    >
+                      {copied ? <CheckIcon /> : <CopyIcon />}
+                    </button>
+                  </div>
+                ) : mode === "mcp" ? (
+                  <div className="flex items-center justify-between bg-neutral-100/50 dark:bg-[#050505] px-4 py-3">
+                    <code
+                      className="text-[13px] truncate"
+                      style={{ fontFamily: "var(--font-geist-pixel-square)" }}
+                    >
+                      <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
+                      <span className="text-neutral-700 dark:text-neutral-300">agentkit mcp</span>
+                    </code>
+                    <McpDropdown
+                      copied={copied}
+                      open={pmOpen}
+                      onToggle={() => {
+                        if (!copied) dispatch({ type: "pm_toggle" });
+                      }}
+                      onClose={() => dispatch({ type: "pm_close" })}
+                      onCopy={copy}
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-neutral-100/50 dark:bg-[#050505] px-5 py-4">
+                    <p className="text-[13px] font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
+                      Set up an agent in my project using agentkit.
+                    </p>
+                    <div className="relative mt-1.5">
+                      <p className="text-[11px] text-neutral-400 dark:text-neutral-500 leading-relaxed line-clamp-2">
+                        Install agentkit. Create lib/agent.ts with the{" "}
+                        <code className="text-neutral-500 dark:text-neutral-400">
+                          agent runtime
+                        </code>
+                        , register your tools, add the route handler, and start the loop...
+                      </p>
+                      <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-100/50 dark:from-[#050505] to-transparent pointer-events-none" />
+                    </div>
+                    <div className="flex items-center justify-between mt-3 pt-2 border-t border-foreground/[0.04]">
+                      <button
+                        type="button"
+                        onClick={() => dispatch({ type: "prompt_open" })}
+                        className="flex items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          className="h-3 w-3"
+                        >
+                          <path
+                            fill="currentColor"
+                            d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5s5 2.24 5 5s-2.24 5-5 5m0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3s3-1.34 3-3s-1.34-3-3-3"
+                          />
+                        </svg>
+                        View full prompt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => copy(aiPromptText)}
+                        className="flex items-center gap-1.5 text-[11px] text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+                      >
+                        {copied ? (
+                          <>
+                            <CheckIcon className="h-3.5 w-3.5" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              className="h-3.5 w-3.5"
+                            >
+                              <path
+                                fill="currentColor"
+                                d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
+                              />
+                            </svg>
+                            Copy prompt
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AnimatePresence>
+          </div>
+        </m.div>
+
+        {/* Prompt dialog */}
+        <PromptDialog
+          open={promptOpen}
+          copied={copied}
+          promptText={aiPromptText}
+          onClose={() => dispatch({ type: "prompt_close" })}
+          onCopy={copy}
+        />
+      </div>
+    </LazyMotion>
+  );
+}

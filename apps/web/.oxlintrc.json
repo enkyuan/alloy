@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "import"],
+  "categories": {},
+  "rules": {
+    "max-lines": ["warn", { "max": 400, "skipBlankLines": true, "skipComments": true }]
+  },
+  "env": { "builtin": true },
+  "settings": {
+    "react": { "version": "19.2.6" },
+    "tailwindcss": { "callees": ["clsx", "cva", "cn"] }
+  },
+  "ignorePatterns": ["node_modules/", "dist/", "src/routeTree.gen.ts"]
+}

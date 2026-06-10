@@ -1,6 +1,6 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { appName, gitConfig } from "@/lib/shared";
-import { AgentkitMark } from "@/components/icons";
+import { appName, gitConfig } from "@lib/shared";
+import { AgentkitMark } from "@components/icons";
 
 export function baseOptions(): BaseLayoutProps {
   return {

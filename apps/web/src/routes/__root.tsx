@@ -1,4 +1,5 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { Agentation } from "agentation";
 import { authClient } from "@lib/auth";
 
 export const Route = createRootRoute({
@@ -6,5 +7,10 @@ export const Route = createRootRoute({
     const { data: session } = await authClient.getSession();
     return { session };
   },
-  component: () => <Outlet />,
+  component: () => (
+    <>
+      <Outlet />
+      {import.meta.env.DEV && <Agentation />}
+    </>
+  ),
 });

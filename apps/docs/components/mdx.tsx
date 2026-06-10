@@ -1,7 +1,7 @@
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
-import { Callout } from "@/components/ui/callout";
-import { Card, Cards } from "@/components/ui/card";
+import { Callout } from "@components/ui/callout";
+import { Card, Cards } from "@components/ui/card";
 import {
   APIMethod,
   DatabaseTable,
@@ -11,7 +11,7 @@ import {
   ForkButton,
   GenerateAppleJwt,
   GenerateSecret,
-} from "@/components/docs/mdx-components";
+} from "@components/docs/mdx-components";
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
@@ -31,7 +31,7 @@ export function getMDXComponents(components?: MDXComponents) {
   } satisfies MDXComponents;
 }
 
-export const useMDXComponents = getMDXComponents;
+const useMDXComponents = getMDXComponents;
 
 declare global {
   type MDXProvidedComponents = ReturnType<typeof getMDXComponents>;

@@ -24,7 +24,7 @@ const staticContributors: ContributorInfo[] = [
   },
 ];
 
-export function getContributors(): ContributorInfo[] {
+function getContributors(): ContributorInfo[] {
   return staticContributors;
 }
 

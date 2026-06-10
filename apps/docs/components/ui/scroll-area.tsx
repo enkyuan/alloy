@@ -1,9 +1,10 @@
+/* react-doctor-disable no-multi-comp */
 "use client";
 
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 import * as React from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@lib/utils";
 
 function ScrollArea({
   className,
@@ -27,20 +28,22 @@ function ScrollArea({
     </ScrollAreaPrimitive.Root>
   );
 }
-const ScrollViewport = React.forwardRef<
-  React.ComponentRef<typeof ScrollAreaPrimitive.Viewport>,
-  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Viewport>
->(({ className, children, ...props }, ref) => (
-  <ScrollAreaPrimitive.Viewport
-    ref={ref}
-    className={cn("size-full rounded-[inherit]", className)}
-    {...props}
-  >
-    {children}
-  </ScrollAreaPrimitive.Viewport>
-));
-
-ScrollViewport.displayName = ScrollAreaPrimitive.Viewport.displayName;
+function ScrollViewport({
+  ref,
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Viewport>) {
+  return (
+    <ScrollAreaPrimitive.Viewport
+      ref={ref}
+      className={cn("size-full rounded-[inherit]", className)}
+      {...props}
+    >
+      {children}
+    </ScrollAreaPrimitive.Viewport>
+  );
+}
 
 function ScrollBar({
   className,
