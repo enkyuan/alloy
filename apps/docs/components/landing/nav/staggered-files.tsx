@@ -101,15 +101,6 @@ export function StaggeredNavFiles() {
       label: "resources",
       delay: 0.17,
     },
-    {
-      id: "agentpay",
-      type: "link",
-      label: "agentpay",
-      icon: <AgentPayLogo />,
-      href: "https://agentpay.ai",
-      external: true,
-      delay: 0.22,
-    },
   ];
 
   const _router = useRouter();
@@ -357,6 +348,28 @@ export function StaggeredNavFiles() {
               return null;
             })}
 
+            {/* AgentPay tab */}
+            <m.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.2, ease: "easeOut" }}
+              className="relative flex-1"
+            >
+              <a
+                href="https://agentpay.ai"
+                target="_blank"
+                rel="noreferrer"
+                className="group/tab flex items-center justify-center gap-1.5 px-2 xl:px-4 py-3 h-full cursor-pointer border-r border-foreground/[0.06] transition-colors duration-150 hover:bg-foreground/[0.03]"
+              >
+                <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-4 [&_svg]:h-4">
+                  <AgentPayLogo />
+                </span>
+                <span className="font-mono text-xs uppercase tracking-wider transition-colors duration-150 whitespace-nowrap text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75">
+                  AgentPay
+                </span>
+              </a>
+            </m.div>
+
             {/* Sign In CTA — always visible */}
             <m.div
               initial={{ opacity: 0 }}
@@ -371,7 +384,7 @@ export function StaggeredNavFiles() {
                 className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
               >
                 <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
-                <RiArrowRightUpLine className="size-4" />
+                <RiArrowRightUpLine className="size-4 text-foreground/55 dark:text-foreground/40" />
               </a>
             </m.div>
           </m.div>

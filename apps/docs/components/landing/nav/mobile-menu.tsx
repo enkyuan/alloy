@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
-import { ChevronDownIcon } from "lucide-react";
+import { RiArrowDownSLine } from "@remixicon/react";
 import Link from "next/link";
 import { useCallback } from "react";
 import type { NavFileItem } from "@lib/landing/nav-data";
@@ -95,7 +95,7 @@ export function NavMobileMenu({
                           >
                             <section.Icon className="size-4.5" />
                             <span className="grow">{section.title}</span>
-                            <ChevronDownIcon
+                            <RiArrowDownSLine
                               className={cn(
                                 "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
                                 mobileDocSection === index ? "rotate-180" : "",
