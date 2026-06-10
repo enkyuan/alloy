@@ -3,6 +3,7 @@
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { cn } from "@lib/utils";
+import { CopyIcon, CheckIcon, EyeIcon } from "@components/docs/icons/ui";
 import { McpDropdown } from "../install/mcp-dropdown";
 import { PromptDialog } from "../install/prompt-dialog";
 
@@ -22,25 +23,6 @@ const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm
 5. Add AGENTKIT_API_KEY to my .env if it doesn't exist.
 
 Refer to github.com/enkyuan/alloy for exact API and tool syntax.`;
-
-function CopyIcon() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-4 w-4">
-      <path
-        fill="currentColor"
-        d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
-      />
-    </svg>
-  );
-}
-
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className ?? "h-4 w-4"}>
-      <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
-    </svg>
-  );
-}
 
 type UIState = { copied: boolean; pmOpen: boolean; promptOpen: boolean };
 type UIAction =
@@ -201,16 +183,7 @@ export function InstallBlock() {
                         onClick={() => dispatch({ type: "prompt_open" })}
                         className="flex items-center gap-1 text-[11px] text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                       >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          className="h-3 w-3"
-                        >
-                          <path
-                            fill="currentColor"
-                            d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5s5 2.24 5 5s-2.24 5-5 5m0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3s3-1.34 3-3s-1.34-3-3-3"
-                          />
-                        </svg>
+                        <EyeIcon className="h-3 w-3" />
                         View full prompt
                       </button>
                       <button
@@ -225,16 +198,7 @@ export function InstallBlock() {
                           </>
                         ) : (
                           <>
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              className="h-3.5 w-3.5"
-                            >
-                              <path
-                                fill="currentColor"
-                                d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2m0 16H8V7h11z"
-                              />
-                            </svg>
+                            <CopyIcon className="h-3.5 w-3.5" />
                             Copy prompt
                           </>
                         )}
