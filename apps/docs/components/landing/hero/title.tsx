@@ -1,6 +1,6 @@
 "use client";
 
-import { LazyMotion, domAnimation, m } from "framer-motion";
+import { LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
 
 export function HeroTitle() {

@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
+import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { cn } from "@lib/utils";
 import { McpDropdown } from "../install/mcp-dropdown";

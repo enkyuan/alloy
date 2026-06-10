@@ -6,7 +6,7 @@
 
 **Architecture:** Both apps are fumadocs 16 + Tailwind 4 + Next 16. We swap alloy's *design layer* (CSS tokens, fonts, UI component library, MDX component specs, custom docs sidebar, landing) while keeping alloy's working content pipeline (`collections/server`, `source.config.ts`, `proxy.ts`, `app/llms.txt`, `app/og`). Dependencies are matched to better-auth exactly. The SDK review is a written report only — no SDK code changes.
 
-**Tech Stack:** Next 16.2.7, React 19, fumadocs-ui/core/mdx 16.9.3, Tailwind CSS 4, Geist fonts, Radix UI, class-variance-authority, framer-motion, lucide-react, bun (package manager).
+**Tech Stack:** Next 16.2.7, React 19, fumadocs-ui/core/mdx 16.9.3, Tailwind CSS 4, Geist fonts, Radix UI, class-variance-authority, motion/react, lucide-react, bun (package manager).
 
 **Source repo (read-only reference):** `/Users/Enkang.Yuan1/Desktop/Projects/better-auth/docs`
 **Target:** `/Users/Enkang.Yuan1/Desktop/Projects/alloy/apps/docs`
@@ -78,7 +78,7 @@ cd apps/docs
   @radix-ui/react-tabs @radix-ui/react-toggle @radix-ui/react-toggle-group \
   @radix-ui/react-tooltip radix-ui \
   class-variance-authority clsx cmdk vaul sonner next-themes \
-  framer-motion embla-carousel-react react-fast-marquee \
+  motion/react embla-carousel-react react-fast-marquee \
   recharts mermaid shiki rehype-highlight \
   react-hook-form @hookform/resolvers zod \
   date-fns input-otp lucide-react \
@@ -688,7 +688,7 @@ const config = {
   experimental: {
     optimizePackageImports: [
       "lucide-react",
-      "framer-motion",
+      "motion/react",
       "@radix-ui/react-tabs",
       "@radix-ui/react-scroll-area",
       "@radix-ui/react-popover",

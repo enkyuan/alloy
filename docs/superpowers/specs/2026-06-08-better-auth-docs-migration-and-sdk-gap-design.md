@@ -154,7 +154,7 @@ table, tabs, textarea, tooltip, use-copy-button.
 ### A8. Config
 
 - `next.config.mjs`: keep alloy's `createMDX()` + `reactStrictMode`; merge in
-  better-auth's `experimental.optimizePackageImports` (lucide, framer-motion,
+  better-auth's `experimental.optimizePackageImports` (lucide, motion/react,
   radix tabs/scroll-area/popover/select/checkbox) and `images.remotePatterns`.
   Do **not** copy better-auth's auth-specific `redirects()`.
 - Adopt `components.json`.
@@ -164,7 +164,7 @@ table, tabs, textarea, tooltip, use-copy-button.
 ### A9. Dependencies (match better-auth exactly)
 
 Add to `apps/docs/package.json` the better-auth dependency set: full `@radix-ui/*`
-suite, `class-variance-authority`, `clsx`, `cmdk`, `framer-motion`, `next-themes`,
+suite, `class-variance-authority`, `clsx`, `cmdk`, `motion/react`, `next-themes`,
 `sonner`, `vaul`, `tw-animate-css`, `tailwindcss-animate`, `recharts`, `mermaid`,
 `shiki`, `react-hook-form` + `@hookform/resolvers` + `zod`, `embla-carousel-react`,
 `lucide-react`, `@vercel/analytics`, etc. Install with **bun** (per repo

@@ -1,5 +1,5 @@
 // Desktop nav dropdown panels extracted to keep staggered-nav-files.tsx under 400 lines.
-import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
+import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
 import { featuredResources, linkResources } from "@lib/landing/nav-sections-data";
 

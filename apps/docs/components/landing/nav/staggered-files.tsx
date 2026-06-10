@@ -1,15 +1,16 @@
 "use client";
 
-import { LazyMotion, domAnimation, m } from "framer-motion";
-import { Search, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import LogoContextMenu from "../shared/logo-menu";
+
+import { LazyMotion, domAnimation, m } from "motion/react";
+import { RiSearch2Line, RiArrowRightUpLine } from "@remixicon/react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeToggle } from "@components/theme-toggle";
 import { AgentkitWordmark } from "@components/icons/logo";
 import { AgentPayLogo } from "@components/icons/agentpay";
 import { contents } from "@components/sidebar-content";
-import LogoContextMenu from "../shared/logo-menu";
 import { NavMobileMenu } from "./mobile-menu";
 import { ResourcesDropdown } from "./desktop-dropdowns";
 import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections-data";
@@ -160,7 +161,7 @@ export function StaggeredNavFiles() {
                   className="flex items-center justify-center size-8 text-foreground/50 hover:text-foreground/80 transition-colors"
                   aria-label="Search"
                 >
-                  <Search className="size-4" />
+                  <RiSearch2Line className="size-4" />
                 </button>
               )}
               <div className="flex items-center justify-center size-8 text-foreground/50 [&_button]:text-foreground/50 [&_button:hover]:text-foreground/80">
@@ -370,7 +371,7 @@ export function StaggeredNavFiles() {
                 className="flex items-center cursor-pointer gap-2 px-5 py-3 bg-foreground text-background hover:opacity-90 transition-colors duration-150"
               >
                 <span className="font-mono text-xs uppercase tracking-wider">Sign In</span>
-                <ArrowUpRight className="size-3" />
+                <RiArrowRightUpLine className="size-4" />
               </a>
             </m.div>
           </m.div>

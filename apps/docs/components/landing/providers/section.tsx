@@ -8,7 +8,7 @@ export function ProvidersSection() {
   const others = allProviders.filter((d) => d.name !== "OpenAI");
 
   return (
-    <div className="h-full flex items-center">
+    <div className="h-full flex items-center" suppressHydrationWarning>
       <div className="w-full max-w-[920px] mx-auto">
         <div className="grid grid-cols-4 sm:grid-cols-6 gap-0">
           {/* OpenAI — intentionally larger feature tile */}

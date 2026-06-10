@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, LazyMotion, domAnimation, m } from "framer-motion";
+import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { ListItem } from "@components/sidebar-content";
