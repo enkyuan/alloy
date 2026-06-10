@@ -33,7 +33,7 @@ export function McpDropdown({ copied, open, onToggle, onClose, onCopy }: Props) 
         className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
         aria-label="Add MCP"
       >
-        {copied ? <CheckIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
+        {copied ? <CheckIcon size={16} /> : <PlusIcon size={16} />}
       </button>
       {open && (
         <>
@@ -60,10 +60,10 @@ export function McpDropdown({ copied, open, onToggle, onClose, onCopy }: Props) 
                 )}
               >
                 <span className="flex items-center justify-center w-3.5 h-3.5 shrink-0">
-                  {mc.name === "Cursor" && <CursorLogo className="h-3.5 w-3.5" />}
-                  {mc.name === "Claude Code" && <ClaudeCodeLogo className="h-3.5 w-3.5" />}
-                  {mc.name === "Open Code" && <OpenCodeLogo className="h-3.5 w-3.5" />}
-                  {mc.name === "Manual" && <TerminalIcon className="h-3.5 w-3.5" />}
+                  {mc.name === "Cursor" && <CursorLogo size={14} />}
+                  {mc.name === "Claude Code" && <ClaudeCodeLogo size={14} />}
+                  {mc.name === "Open Code" && <OpenCodeLogo size={14} />}
+                  {mc.name === "Manual" && <TerminalIcon size={14} />}
                 </span>
                 <span className="font-mono text-[11px]">{mc.name}</span>
               </button>

@@ -4,7 +4,8 @@
   "workspaces": [
     "agentpay/*",
     "agentkit/*",
-    "apps/*"
+    "apps/*",
+    "packages/*"
   ],
   "scripts": {
     "build": "turbo run build",

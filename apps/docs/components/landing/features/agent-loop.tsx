@@ -5,7 +5,7 @@ import { DynamicCodeBlock } from "@components/ui/dynamic-code-block";
 import { serverCodeTs, serverCodePy } from "../providers/data";
 
 export function AgentLoopTabs() {
-  const [lang, setLang] = useState<"ts" | "py">("ts");
+  const [lang, setLang] = useState<"ts" | "py">("py");
   const code = lang === "ts" ? serverCodeTs : serverCodePy;
   const filename = lang === "ts" ? "lib/agent.ts" : "agent.py";
 
@@ -36,7 +36,7 @@ export function AgentLoopTabs() {
           </span>
 
           <div className="flex items-center gap-0.5 text-[10px] font-mono">
-            {(["ts", "py"] as const).map((id) => (
+            {(["py", "ts"] as const).map((id) => (
               <button
                 key={id}
                 type="button"

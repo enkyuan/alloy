@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { RiAddLine, RiNpmjsFill } from "@remixicon/react";
-import { formatCount } from "@lib/landing/readme-footer-utils";
+import { formatCount } from "@lib/landing/readme-footer";
 
 export type CommunityHeroStats = {
   npmDownloads: number;
@@ -10,7 +10,7 @@ export type CommunityHeroStats = {
 };
 
 // react-doctor-disable-next-line only-export-components, react-doctor/only-export-components
-export { formatCount } from "@lib/landing/readme-footer-utils";
+export { formatCount } from "@lib/landing/readme-footer";
 
 export function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
   return (

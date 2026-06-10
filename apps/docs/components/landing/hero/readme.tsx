@@ -6,7 +6,7 @@ import { useState } from "react";
 import { cn } from "@lib/utils";
 import { AgentLoopTabs } from "../features/agent-loop";
 import { CapabilitiesMarquee } from "../features/capabilities-marquee";
-import { ProvidersSection } from "../providers/section";
+import { ProvidersSection, ProviderLogosGrid } from "../providers/section";
 import { ToolsSection } from "../tools/section";
 import { FeaturesGridMarks } from "../features/grid-marks";
 import { InstallBlock } from "../install/block";
@@ -74,15 +74,15 @@ const featureCards = [
 
 const runtimeTabs = [
   { id: "loop", label: "Agent Loop" },
-  { id: "providers", label: "Pluggable Providers" },
   { id: "tools", label: "Tool Registry" },
+  { id: "providers", label: "Pluggable Providers" },
 ] as const;
 
 type RuntimeTabId = (typeof runtimeTabs)[number]["id"];
 
 const runtimeTabDescriptions: Record<RuntimeTabId, string> = {
   loop: "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done.",
-  providers: "Swap LLM providers behind one interface. OpenAI, Kimi, and Gemini, with no lock-in.",
+  providers: "Swap LLM providers behind one interface. OpenAI, Kimi, Gemini, and more, with no lock-in.",
   tools: "Register any function as a tool. One provider-neutral payload, translated per provider.",
 };
 
@@ -159,7 +159,10 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                     >
                       {/* Arrow icon — top right, visible on hover */}
                       <span className="absolute top-3 right-3 lg:top-4 lg:right-4 opacity-0 -translate-y-0.5 group-hover/card:opacity-100 group-hover/card:translate-y-0 transition-all duration-200">
-                        <ArrowUpRightIcon className="h-4 w-4 text-foreground/40 dark:text-foreground/50" />
+                        <ArrowUpRightIcon
+                          size={16}
+                          className="text-foreground/40 dark:text-foreground/50"
+                        />
                       </span>
                       <div className="mb-1">
                         <div className="text-[11px] font-mono text-violet-600 dark:text-violet-400 tracking-wider transition-colors duration-200 group-hover/card:text-violet-500 dark:group-hover/card:text-violet-300 font-semibold">
@@ -174,8 +177,14 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                       </div>
                       {"logos" in feature && feature.logos && (
                         <div className="flex items-center gap-3.5 mt-3">
-                          <PythonLogo className="h-[15px] w-[15px] text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]" />
-                          <TypeScriptLogo className="h-[15px] w-[15px] text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]" />
+                          <PythonLogo
+                            size={15}
+                            className="text-[#3776AB] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0s]"
+                          />
+                          <TypeScriptLogo
+                            size={15}
+                            className="text-[#3178C6] opacity-90 transition-all duration-300 group-hover/card:opacity-100 group-hover/card:animate-[icon-bounce_0.4s_ease-out_0.05s]"
+                          />
                         </div>
                       )}
                     </m.div>
@@ -236,11 +245,22 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                           )}
                         </button>
                       ))}
-                      <div className="hidden lg:flex flex-1 items-end p-4">
-                        <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
-                          {runtimeTabDescriptions[frameworkTab]}
-                        </p>
-                      </div>
+                      {frameworkTab === "providers" ? (
+                        <div className="hidden lg:flex flex-col flex-1">
+                          <ProviderLogosGrid exclude={["OpenAI"]} />
+                          <div className="flex-1 flex items-end p-4">
+                            <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
+                              {runtimeTabDescriptions.providers}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="hidden lg:flex flex-1 items-end p-4">
+                          <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
+                            {runtimeTabDescriptions[frameworkTab]}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
