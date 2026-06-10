@@ -1,0 +1,35 @@
+name: format-lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - ".github/workflows/format-lint.yml"
+  pull_request:
+    paths:
+      - "apps/**"
+      - ".github/workflows/format-lint.yml"
+
+jobs:
+  format-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting with oxfmt
+        run: bun run format:check
+
+      - name: Lint with oxlint
+        run: bun run lint
