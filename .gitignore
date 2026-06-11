@@ -1,161 +1,99 @@
-# Environment Variables
+# ── Secrets & environment ────────────────────────────────────────────────────
 .env
-.env.local
-.env.*.local
-*.env
-.env.backup.*
-docker/.env
-docker/supabase/.env
+.env.*
 !.env.example
+!.env.*.example
+.env.keys
 
-# Xcode Configuration (contains secrets)
-apps/havenos/Config.xcconfig
-**/Config.xcconfig
-!**/Config.xcconfig.example
-
-# OS Files
+# ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
-# IDE & Editor
+# ── Editors & IDEs ───────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-.vim/
+
+# ── AI / LLM tool state ──────────────────────────────────────────────────────
+.claude/
+.cursor/
 .gemini/
 .kiro/
-.cursor/
+.gstack/
 
-# Python
+# ── Node / Bun ───────────────────────────────────────────────────────────────
+node_modules/
+bun.lock
+
+# ── Build output ─────────────────────────────────────────────────────────────
+dist/
+out/
+build/
+.next/
+*.tsbuildinfo
+
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-# The Python `lib/` ignore above is too broad: it also matches the docs app's
-# TypeScript source dir. Re-include it (holds the fumadocs source loader).
-!apps/docs/lib/
-!apps/docs/lib/**
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
-MANIFEST
+.eggs/
 .pytest_cache/
 .coverage
 .coverage.*
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pyrefly/
 .tox/
 .nox/
 .hypothesis/
-*.log
+MANIFEST
 
-# Virtual Environments
-venv/
-ENV/
-env/
+# ── Virtual environments ─────────────────────────────────────────────────────
 .venv
+venv/
+env/
+ENV/
 
-# Python linters / type checkers
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.ruff_cache/
-.pyrefly/
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
 
-# Local databases
+# ── Local databases ───────────────────────────────────────────────────────────
 *.db
 *.sqlite
 *.sqlite3
 
-# Docker
+# ── Turborepo ────────────────────────────────────────────────────────────────
+.turbo/
+
+# ── Docker / Supabase volumes ────────────────────────────────────────────────
 docker/supabase/volumes/db/data/
 docker/supabase/volumes/storage/
-docker/supabase/volumes/logs/*.log
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
-.pnpm-debug.log*
-
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
-
-# Xcode / iOS
-*.xcuserstate
-*.xcbkptlist
-xcuserdata/
-DerivedData/
-*.moved-aside
-*.mode1v3
-*.mode2v3
-*.perspectivev3
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
-*.pbxuser
-!default.pbxuser
-*.xccheckout
-*.xcscmblueprint
-
-# Swift Package Manager
-# NOTE: the SwiftPM `Packages/` pattern is intentionally omitted — on a
-# case-insensitive filesystem (macOS default) it matches this monorepo's
-# lowercase `packages/` and silently ignores every newly added package file.
-# This repo has no Swift code; re-add an anchored pattern if that changes.
-.build/
-Package.pins
-Package.resolved
-*.swiftpm
-
-# CocoaPods
-Pods/
-
-# Node / Bun
-node_modules/
-bun.lock
-
-# Go binaries
+# ── Go binaries ──────────────────────────────────────────────────────────────
 agentpay/api/bin/
 agentpay/consumer/consumer
 
-# agentpay local stack secrets
-docker/agentpay/.env
+# ── iOS / Xcode ──────────────────────────────────────────────────────────────
+apps/havenos/Config.xcconfig
+**/Config.xcconfig
+!**/Config.xcconfig.example
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.ipa
+*.dSYM
+.build/
 
-# Turborepo
-.turbo/
-
-# Tauri / Rust
-target/
-*.rs.bk
-
-# Misc
+# ── Misc ─────────────────────────────────────────────────────────────────────
+*.tmp
+*.bak
 imgs/
-.gstack/
+
+# ── Scoped re-includes ───────────────────────────────────────────────────────
+# Python's `lib/` rule above would also swallow the docs app's TS source tree.
+# There is no `lib/` rule above — removed. Previously needed negation is gone.

@@ -4,7 +4,7 @@ import Link from "next/link";
 import LogoContextMenu from "../shared/logo-menu";
 
 import { LazyMotion, domAnimation, m } from "motion/react";
-import { RiSearch2Line } from "@remixicon/react";
+import { RiArrowRightUpLine, RiArrowRightUpLongLine, RiSearch2Line } from "@remixicon/react";
 import { ArrowUpRightIcon } from "@components/docs/icons/ui";
 import { cn } from "@lib/utils";
 import { usePathname, useRouter } from "next/navigation";
@@ -14,7 +14,7 @@ import { AgentkitWordmark } from "@components/icons/logo";
 import { AgentPayLogo } from "@components/icons/agentpay";
 import { contents } from "@components/sidebar-content";
 import { NavMobileMenu } from "./mobile-menu";
-import { ResourcesDropdown } from "./desktop-dropdowns";
+import { ResourcesDropdown } from "./dropdowns";
 import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections";
 
 type NavTab = {
@@ -29,7 +29,7 @@ type NavTab = {
 
 // react-doctor-disable-next-line prefer-useReducer, react-doctor/prefer-useReducer, react-doctor/no-giant-component, max-lines
 // eslint-disable-next-line max-lines
-export function StaggeredNavFiles() {
+export function Nav() {
   const pathname = usePathname() || "/";
   const [resourcesOpen, setResourcesOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -396,7 +396,7 @@ export function StaggeredNavFiles() {
                   }}
                   className="flex items-center"
                 >
-                  <ArrowUpRightIcon size={16} />
+                  <RiArrowRightUpLongLine size={14} />
                 </m.span>
               </m.a>
             </m.div>

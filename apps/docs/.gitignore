@@ -1,27 +1,15 @@
-# deps
-/node_modules
+# Next.js build output (also in root .gitignore, repeated here for oxfmt)
+.next/
+out/
 
-# generated content
+# fumadocs generated content map
 .source
 
-# test & build
-/coverage
-/.next/
-/out/
-/build
-*.tsbuildinfo
-
-# misc
-.DS_Store
-*.pem
-/.pnp
-.pnp.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# others
-.env*.local
-.vercel
+# Next.js type declarations (auto-regenerated)
 next-env.d.ts
+
+# superpowers skill cache (dev-only, not committed)
 /docs/superpowers
+
+# coverage
+/coverage

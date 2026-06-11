@@ -1,10 +1,4 @@
 {
   "title": "agentkit",
-  "pages": [
-    "index",
-    "getting-started",
-    "concepts",
-    "architecture",
-    "reference-service"
-  ]
+  "pages": ["index", "getting-started", "concepts", "architecture", "reference-service"]
 }

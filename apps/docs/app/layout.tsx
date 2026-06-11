@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./global.css";
 import type { Metadata } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
-import { StaggeredNavFiles } from "@components/landing/nav/staggered-files";
+import { Nav } from "@components/landing/nav/nav";
 import { Providers } from "@components/providers";
 import { AgentationClient } from "@components/agentation-client";
 import { appName } from "@lib/shared";
@@ -30,7 +30,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
         <RootProvider>
           <Providers>
             <div className="relative min-h-dvh">
-              <StaggeredNavFiles />
+              <Nav />
               {children}
             </div>
             {process.env.NODE_ENV !== "production" && <AgentationClient />}
