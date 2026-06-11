@@ -42,6 +42,8 @@ class AgentRuntime:
         system_prompt: str = "You are a helpful assistant.",
         strategy: Optional[AgentStrategy] = None,
         tools: Optional[List[ToolSpec]] = None,
+        rag: Optional[Any] = None,
+        rag_top_k: int = 5,
     ):
         self.bus = bus
         self.store = store
@@ -55,6 +57,10 @@ class AgentRuntime:
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
         self.tools = tools or []
+        # Optional DocumentRAG instance. When set, the last user message is used
+        # to retrieve relevant chunks which are prepended to the system prompt.
+        self._rag = rag
+        self._rag_top_k = rag_top_k
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -98,7 +104,36 @@ class AgentRuntime:
 
             # 1. Materialize current session state from Event Log
             state = await self.state_manager.load_state(session_id)
-            messages = ContextBuilder.build_messages(state, self.prompt)
+
+            # 1a. RAG: retrieve chunks relevant to the latest user message and
+            # prepend them to the system prompt so the model has grounded context.
+            rag_system_prefix = ""
+            if self._rag is not None:
+                last_user = next(
+                    (
+                        m["content"]
+                        for m in reversed(state.messages)
+                        if m["role"] == "user"
+                    ),
+                    None,
+                )
+                if last_user:
+                    try:
+                        chunks = await self._rag.retrieve(
+                            last_user, top_k=self._rag_top_k
+                        )
+                        if chunks:
+                            joined = "\n\n".join(c.text for c in chunks)
+                            rag_system_prefix = f"## Relevant context\n\n{joined}\n\n"
+                    except Exception as e:  # retrieval must never crash the turn
+                        logger.warning("RAG retrieval failed: %s", e)
+
+            prompt_for_turn = (
+                SystemPrompt(rag_system_prefix + self.prompt.template)
+                if rag_system_prefix
+                else self.prompt
+            )
+            messages = ContextBuilder.build_messages(state, prompt_for_turn)
 
             # 2. Surface available tools to the provider. The payload is
             # provider-neutral (name/description/parameters); each provider
