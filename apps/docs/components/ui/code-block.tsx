@@ -7,13 +7,11 @@ import type {
   HTMLAttributes,
   ReactElement,
   ReactNode,
-  Ref,
   RefObject,
 } from "react";
 import { createContext, use, useCallback, useRef } from "react";
 import { buttonVariants } from "@components/ui/button";
 import { cn } from "@lib/utils";
-import { ScrollArea, ScrollBar, ScrollViewport } from "./scroll-area";
 import { useCopyButton } from "@hooks/use-copy-button";
 
 export interface CodeBlockProps extends ComponentProps<"figure"> {
