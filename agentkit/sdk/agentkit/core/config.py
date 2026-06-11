@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_BASE_URL: Optional[str] = None
 
+    # Anthropic
+    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+
     # Application
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"

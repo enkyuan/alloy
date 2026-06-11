@@ -39,7 +39,7 @@ class GeminiService:
 
         logger.info("Initializing Gemini client...")
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-2.5-flash"
+        self.model = get_settings().GEMINI_MODEL
         logger.info("Gemini client initialized with model: %s", self.model)
 
     async def _get_active_cache(

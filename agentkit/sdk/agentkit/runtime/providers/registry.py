@@ -18,6 +18,7 @@ def _ensure_builtin_providers_loaded() -> None:
         return
 
     # Provider modules self-register through register_provider(...)
+    importlib.import_module("agentkit.runtime.providers.anthropic")
     importlib.import_module("agentkit.runtime.providers.gemini")
     importlib.import_module("agentkit.runtime.providers.kimi")
     importlib.import_module("agentkit.runtime.providers.openai")
