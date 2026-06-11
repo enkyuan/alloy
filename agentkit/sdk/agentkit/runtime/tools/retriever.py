@@ -17,24 +17,27 @@ from agentkit.runtime.tools.registry import list_tool_specs
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["cosine_similarity", "Embedder", "EmbeddingCache", "ToolRetriever", "get_tool_retriever"]
+__all__ = [
+    "cosine_similarity",
+    "Embedder",
+    "EmbeddingCache",
+    "ToolRetriever",
+    "get_tool_retriever",
+]
 
 
 class Embedder(Protocol):
     """Turns text into a vector. Return an empty list to signal "no embedding"."""
 
-    async def embed(self, text: str) -> List[float]:
-        ...
+    async def embed(self, text: str) -> List[float]: ...
 
 
 class EmbeddingCache(Protocol):
     """Persists the tool-name -> vector map between runs."""
 
-    async def load(self) -> Dict[str, List[float]]:
-        ...
+    async def load(self) -> Dict[str, List[float]]: ...
 
-    async def save(self, embeddings: Dict[str, List[float]]) -> None:
-        ...
+    async def save(self, embeddings: Dict[str, List[float]]) -> None: ...
 
 
 class GeminiEmbedder:

@@ -79,7 +79,9 @@ async def test_execute_tool_invokes_handler():
 
 
 def _make_spec(name: str, *, tags: tuple = (), enabled: bool = True) -> ToolSpec:
-    return ToolSpec(name=name, description=name, parameters={}, tags=tags, enabled=enabled)
+    return ToolSpec(
+        name=name, description=name, parameters={}, tags=tags, enabled=enabled
+    )
 
 
 def test_list_tool_specs_excludes_disabled_by_default():

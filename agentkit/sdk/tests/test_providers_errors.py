@@ -33,18 +33,30 @@ def test_classify_http_error(status: int, expected_type: type):
 
 
 def test_service_error_to_http_status_mapping():
-    assert service_error_to_http_status(ServiceAuthError(
-        service="x", action="y", message="m"
-    )) == 401
-    assert service_error_to_http_status(ServiceRateLimitError(
-        service="x", action="y", message="m"
-    )) == 429
-    assert service_error_to_http_status(ServiceNetworkError(
-        service="x", action="y", message="m"
-    )) == 503
-    assert service_error_to_http_status(ServiceAPIError(
-        service="x", action="y", message="m"
-    )) == 502
+    assert (
+        service_error_to_http_status(
+            ServiceAuthError(service="x", action="y", message="m")
+        )
+        == 401
+    )
+    assert (
+        service_error_to_http_status(
+            ServiceRateLimitError(service="x", action="y", message="m")
+        )
+        == 429
+    )
+    assert (
+        service_error_to_http_status(
+            ServiceNetworkError(service="x", action="y", message="m")
+        )
+        == 503
+    )
+    assert (
+        service_error_to_http_status(
+            ServiceAPIError(service="x", action="y", message="m")
+        )
+        == 502
+    )
 
 
 def test_service_error_to_detail_masks_internals():

@@ -165,9 +165,8 @@ class OpenAIProvider(ModelProvider):
             raise ProviderAPIError(f"OpenAI stream failed: {e}") from e
 
         async for chunk in stream:
-            if (
-                cancellation_token
-                and getattr(cancellation_token, "is_cancelled", False)
+            if cancellation_token and getattr(
+                cancellation_token, "is_cancelled", False
             ):
                 break
 

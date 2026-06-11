@@ -78,6 +78,8 @@ async def test_tool_planner_generates_call_id_when_missing():
         [{"name": "search", "arguments": {}}],
         emit,
     )
-    started = next(event for event in emitted if event.type == EventType.TOOL_CALL_STARTED)
+    started = next(
+        event for event in emitted if event.type == EventType.TOOL_CALL_STARTED
+    )
     assert isinstance(started, ToolCallStarted)
     assert started.tool_call_id

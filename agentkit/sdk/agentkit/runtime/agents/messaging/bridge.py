@@ -11,7 +11,11 @@ from collections import defaultdict
 from fnmatch import fnmatch
 from typing import TYPE_CHECKING, Any, Callable, List, Optional, Type, TypeVar, Union
 
-from agentkit.modalities.voice.event_registry import EventInstance, EventsRegistry, EventTypeOrAlias
+from agentkit.modalities.voice.event_registry import (
+    EventInstance,
+    EventsRegistry,
+    EventTypeOrAlias,
+)
 from agentkit.runtime.agents.messaging.bus import Bus, Message
 from agentkit.runtime.agents.messaging.route_builder import RouteBuilder, RouteHandler
 

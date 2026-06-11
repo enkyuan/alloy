@@ -109,9 +109,7 @@ class AgentReasoningNode(ReasoningNode):
         )
         # Injected so tool execution stays database-free by default. Callers that
         # need persistence (server/workers) pass a factory yielding a real session.
-        self._session_factory: SessionFactory = (
-            session_factory or _null_session_factory
-        )
+        self._session_factory: SessionFactory = session_factory or _null_session_factory
         # Conversation history backend. In-memory by default (no infra); the
         # reference service injects a Redis-backed store for durable history.
         self._history: HistoryStore = history_store or InMemoryHistoryStore()

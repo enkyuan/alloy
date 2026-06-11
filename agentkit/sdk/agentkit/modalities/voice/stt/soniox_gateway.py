@@ -40,7 +40,9 @@ async def connect_soniox(
             error,
             exc_info=True,
         )
-        await send_error_message(websocket, "Failed to connect to transcription service.")
+        await send_error_message(
+            websocket, "Failed to connect to transcription service."
+        )
         await websocket.close(code=1011, reason="Soniox connection failed")
         return None
 
@@ -110,7 +112,9 @@ async def listen_to_soniox(
 
             if response.get("finished"):
                 complete_text = compose_final_text(state.final_tokens)
-                await safe_send_json(websocket, {"type": "complete", "text": complete_text})
+                await safe_send_json(
+                    websocket, {"type": "complete", "text": complete_text}
+                )
                 logger.info("Session finished. Complete text: %s", complete_text)
                 break
     except websockets.exceptions.ConnectionClosed:

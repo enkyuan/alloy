@@ -22,7 +22,10 @@ from agentkit.modalities.voice.stt import (
     stream_agent_updates,
 )
 from agentkit.modalities.voice.stt.soniox_service import soniox_service
-from agentkit.modalities.voice.stt.soniox_gateway import connect_soniox, listen_to_soniox
+from agentkit.modalities.voice.stt.soniox_gateway import (
+    connect_soniox,
+    listen_to_soniox,
+)
 
 logger = logging.getLogger(__name__)
 

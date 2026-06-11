@@ -22,9 +22,7 @@ def get_broker() -> ListQueueBroker:
     return ListQueueBroker(
         url=settings.REDIS_URL,
         queue_name="default",
-    ).with_result_backend(
-        RedisAsyncResultBackend(redis_url=settings.REDIS_URL)
-    )
+    ).with_result_backend(RedisAsyncResultBackend(redis_url=settings.REDIS_URL))
 
 
 def __getattr__(name: str) -> Any:

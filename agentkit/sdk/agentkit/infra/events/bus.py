@@ -33,9 +33,7 @@ class InMemoryEventBus:
         logger.debug("Published event %s for %s", event.type, event.session_id)
         return str(len(self._log[event.session_id]) - 1)
 
-    async def subscribe(
-        self, session_id: str
-    ) -> AsyncGenerator[AgentKitEvent, None]:
+    async def subscribe(self, session_id: str) -> AsyncGenerator[AgentKitEvent, None]:
         """Yield events for a session: the backlog first, then new ones live."""
         queue: "asyncio.Queue[AgentKitEvent]" = asyncio.Queue()
         for event in self._log[session_id]:

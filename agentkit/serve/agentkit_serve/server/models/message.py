@@ -26,12 +26,16 @@ class Message(Base):
     conversation_id: Mapped[str] = mapped_column(
         String, ForeignKey("conversations.id"), nullable=False, index=True
     )
-    role: Mapped[str] = mapped_column(String, nullable=False)  # "user", "assistant", "system"
+    role: Mapped[str] = mapped_column(
+        String, nullable=False
+    )  # "user", "assistant", "system"
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_final: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
     # Relationships

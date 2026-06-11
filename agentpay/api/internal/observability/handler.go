@@ -30,24 +30,24 @@ const (
 
 // SessionEvent is a single event within an agent session.
 type SessionEvent struct {
-	ID        string            `json:"id"`
-	SessionID string            `json:"session_id"`
-	AgentID   string            `json:"agent_id"`
-	Kind      EventKind         `json:"kind"`
-	Payload   map[string]any    `json:"payload,omitempty"`
-	Timestamp time.Time         `json:"timestamp"`
+	ID        string         `json:"id"`
+	SessionID string         `json:"session_id"`
+	AgentID   string         `json:"agent_id"`
+	Kind      EventKind      `json:"kind"`
+	Payload   map[string]any `json:"payload,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // SessionSummary is the top-level view shown in the dashboard sessions list.
 type SessionSummary struct {
-	SessionID      string    `json:"session_id"`
-	AgentID        string    `json:"agent_id"`
-	StartedAt      time.Time `json:"started_at"`
-	EndedAt        *time.Time `json:"ended_at,omitempty"`
-	EventCount     int       `json:"event_count"`
-	AmountCollectedCents int64 `json:"amount_collected_cents"`
-	Currency       string    `json:"currency"`
-	Status         string    `json:"status"` // "active" | "completed" | "abandoned"
+	SessionID            string     `json:"session_id"`
+	AgentID              string     `json:"agent_id"`
+	StartedAt            time.Time  `json:"started_at"`
+	EndedAt              *time.Time `json:"ended_at,omitempty"`
+	EventCount           int        `json:"event_count"`
+	AmountCollectedCents int64      `json:"amount_collected_cents"`
+	Currency             string     `json:"currency"`
+	Status               string     `json:"status"` // "active" | "completed" | "abandoned"
 }
 
 func Router() http.Handler {

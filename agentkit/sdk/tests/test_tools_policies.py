@@ -1,6 +1,9 @@
 import pytest
 
-from agentkit.runtime.tools.idempotency import ToolIdempotencyGuard, build_tool_idempotency_key
+from agentkit.runtime.tools.idempotency import (
+    ToolIdempotencyGuard,
+    build_tool_idempotency_key,
+)
 from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 
 

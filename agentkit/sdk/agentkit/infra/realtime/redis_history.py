@@ -34,9 +34,7 @@ class RedisHistoryStore:
         self, key: str, role: str, content: str, *, history_limit: int
     ) -> None:
         redis = await self._client()
-        await append_history(
-            redis, key, role, content, history_limit=history_limit
-        )
+        await append_history(redis, key, role, content, history_limit=history_limit)
 
     async def get(self, key: str) -> List[Dict[str, str]]:
         redis = await self._client()

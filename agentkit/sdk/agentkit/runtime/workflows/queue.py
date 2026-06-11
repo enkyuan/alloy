@@ -4,11 +4,17 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from pydantic import BaseModel
 
-from agentkit.infra.events.envelope import is_supported_event_version, parse_event_envelope
+from agentkit.infra.events.envelope import (
+    is_supported_event_version,
+    parse_event_envelope,
+)
 from agentkit.modalities.voice.event_registry import EventInstance, EventsRegistry
 from agentkit.core.redis import RedisKeys, get_redis_client, get_redis_stream_client
 from agentkit.runtime.agents.messaging import Bus, Message
-from agentkit.infra.realtime.redis_events import publish_user_update_safely, run_stream_with_dlq
+from agentkit.infra.realtime.redis_events import (
+    publish_user_update_safely,
+    run_stream_with_dlq,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,11 @@ def _parse_event_envelope(envelope: Dict[str, Any]) -> List[EventInstance]:
         logger.warning("Failed to parse event payload for %s: %s", parsed.type, exc)
         return []
 
-    if hasattr(event, "user_id") and getattr(event, "user_id") is None and parsed.user_id:
+    if (
+        hasattr(event, "user_id")
+        and getattr(event, "user_id") is None
+        and parsed.user_id
+    ):
         try:
             setattr(event, "user_id", str(parsed.user_id))
         except Exception as exc:

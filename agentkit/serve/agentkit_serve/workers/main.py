@@ -190,6 +190,7 @@ async def run() -> None:
     # skip synthesis entirely (and never build a provider client).
     tts_provider: TTSProvider = get_tts_provider()
     if not isinstance(tts_provider, VoiceTTSAdapter):
+
         async def synthesize_audio(message: Message) -> None:
             await _synthesize_and_publish(message, publisher, tts_provider)
 

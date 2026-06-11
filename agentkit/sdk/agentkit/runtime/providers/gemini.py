@@ -358,7 +358,9 @@ class GeminiProvider(ModelProvider):
         text = response.text or ""
 
         # Extract tool calls using the helper
-        from agentkit.runtime.tools.function_calls import extract_response_function_calls
+        from agentkit.runtime.tools.function_calls import (
+            extract_response_function_calls,
+        )
 
         function_calls = extract_response_function_calls(response)
 
@@ -412,9 +414,8 @@ class GeminiProvider(ModelProvider):
             temperature=temperature,
             tools=gemini_tools,
         ):
-            if (
-                cancellation_token
-                and getattr(cancellation_token, "is_cancelled", False)
+            if cancellation_token and getattr(
+                cancellation_token, "is_cancelled", False
             ):
                 break
 

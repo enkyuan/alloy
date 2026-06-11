@@ -124,7 +124,9 @@ async def async_client_fixture(session) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_redis_client] = override_get_redis
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
         yield ac
 
     app.dependency_overrides.clear()
@@ -180,6 +182,11 @@ def mock_supabase_auth():
     mock_svc.get_user = AsyncMock()
     mock_svc.refresh_token = AsyncMock()
 
-    with patch("agentkit_serve.server.v1.auth.supabase_auth_service", mock_svc), \
-         patch("agentkit.modalities.voice.stt.handler.get_supabase_auth_service", return_value=mock_svc):
+    with (
+        patch("agentkit_serve.server.v1.auth.supabase_auth_service", mock_svc),
+        patch(
+            "agentkit.modalities.voice.stt.handler.get_supabase_auth_service",
+            return_value=mock_svc,
+        ),
+    ):
         yield mock_svc

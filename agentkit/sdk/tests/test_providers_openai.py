@@ -47,7 +47,9 @@ def test_openai_parse_tool_calls_normalizes_shape():
 def test_openai_parse_tool_calls_handles_bad_json():
     from agentkit.runtime.providers.openai import OpenAIProvider
 
-    raw = [SimpleNamespace(id="c", function=SimpleNamespace(name="n", arguments="{bad"))]
+    raw = [
+        SimpleNamespace(id="c", function=SimpleNamespace(name="n", arguments="{bad"))
+    ]
     assert OpenAIProvider._parse_tool_calls(raw)[0]["arguments"] == {}
 
 
@@ -72,9 +74,7 @@ async def test_openai_generate_translates_tools_and_parses_response():
                     )
                 )
             ],
-            usage=SimpleNamespace(
-                prompt_tokens=3, completion_tokens=2, total_tokens=5
-            ),
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5),
         )
 
     fake_client = SimpleNamespace(
@@ -86,7 +86,11 @@ async def test_openai_generate_translates_tools_and_parses_response():
         provider._client = fake_client  # bypass real AsyncOpenAI construction
 
         neutral_tools = [
-            {"name": "lookup", "description": "Look up.", "parameters": {"type": "object"}}
+            {
+                "name": "lookup",
+                "description": "Look up.",
+                "parameters": {"type": "object"},
+            }
         ]
         result = await provider.generate(
             messages=[{"role": "user", "content": "hi"}],

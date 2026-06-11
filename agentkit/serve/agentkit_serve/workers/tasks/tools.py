@@ -177,9 +177,7 @@ async def execute_tool_call(
             },
         )
 
-        await mark_tool_call_execution_complete(
-            redis, tool_call_id=tool_call_id
-        )
+        await mark_tool_call_execution_complete(redis, tool_call_id=tool_call_id)
         execution_marked_complete = True
         logger.info("Publishing tool result")
         try:

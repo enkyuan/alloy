@@ -62,7 +62,10 @@ class AgentRuntime:
         await self.bus.publish(event)
 
     async def send(
-        self, session_id: str, content: str, cancellation_token: Optional[CancellationToken] = None
+        self,
+        session_id: str,
+        content: str,
+        cancellation_token: Optional[CancellationToken] = None,
     ) -> None:
         """Append a user message and immediately run the agent turn.
 

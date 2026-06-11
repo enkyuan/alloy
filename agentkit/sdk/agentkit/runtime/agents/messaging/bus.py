@@ -446,7 +446,9 @@ class Bus:
         elif isinstance(message.event, ToolCall):
             reason = message.event.tool_args.get("reason", "")
 
-        logger.info("Processing handoff: %s -> %s (%s)", from_agent, target_agent, reason)
+        logger.info(
+            "Processing handoff: %s -> %s (%s)", from_agent, target_agent, reason
+        )
 
         # Tell user bridge to change authorization
         user_auth_event = Authorize(agent=target_agent)

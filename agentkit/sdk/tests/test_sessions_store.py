@@ -33,7 +33,11 @@ async def test_recording_same_session_is_idempotent():
 @pytest.mark.asyncio
 async def test_list_sorted_newest_first():
     store = InMemorySessionStore()
-    await store.record_session(SessionRecord(session_id="old", user_id="u1", created_at=1.0))
-    await store.record_session(SessionRecord(session_id="new", user_id="u1", created_at=2.0))
+    await store.record_session(
+        SessionRecord(session_id="old", user_id="u1", created_at=1.0)
+    )
+    await store.record_session(
+        SessionRecord(session_id="new", user_id="u1", created_at=2.0)
+    )
     ids = [r.session_id for r in await store.list_sessions("u1")]
     assert ids == ["new", "old"]

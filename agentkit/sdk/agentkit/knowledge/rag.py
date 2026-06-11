@@ -50,7 +50,9 @@ class DocumentRAG:
             try:
                 vec = await self._embedder.embed(piece)
             except Exception as e:  # embedder failure must not crash ingestion
-                logger.warning("Embedding failed for %s chunk %d: %s", document.id, i, e)
+                logger.warning(
+                    "Embedding failed for %s chunk %d: %s", document.id, i, e
+                )
                 vec = []
             if not vec:
                 continue

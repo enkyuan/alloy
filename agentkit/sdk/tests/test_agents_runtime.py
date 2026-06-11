@@ -8,7 +8,11 @@ from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.runtime.agents.runtime import AgentRuntime
 from agentkit.runtime.agents.strategy import AgentStrategy
 from agentkit.infra.events.bus import EventBus
-from agentkit.infra.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
+from agentkit.infra.events.schemas import (
+    AgentKitEvent,
+    CancellationRequested,
+    UserMessage,
+)
 from agentkit.infra.events.store import InMemoryEventStore
 from agentkit.infra.events.types import EventType
 from agentkit.runtime.providers.base import ModelProvider
@@ -164,6 +168,7 @@ async def test_get_provider_mock_not_in_public_registry():
     """The mock provider is not in the public registry; a real API key is required."""
     from agentkit.runtime.providers import get_provider
     from agentkit.runtime.providers.errors import ProviderConfigError
+
     with pytest.raises(ProviderConfigError):
         get_provider("mock")
 

@@ -15,7 +15,9 @@ class DTMFLookAheadStringBuffer:
     def __init__(self):
         self.buffer = DTMFLookAheadCharacterBuffer()
 
-    def feed(self, string: str) -> Generator[Union[AgentResponse, DTMFOutputEvent], None, None]:
+    def feed(
+        self, string: str
+    ) -> Generator[Union[AgentResponse, DTMFOutputEvent], None, None]:
         for char in string:
             for item in self.buffer.feed(char):
                 if isinstance(item, DTMFOutputEvent):
@@ -60,7 +62,9 @@ class DTMFLookAheadCharacterBuffer:
         self.full_expression = re.compile(r"dtmf=(\d+)")
         self.dtmf_preamble = "dtmf="
 
-    def feed(self, char: str) -> Generator[Union[AgentResponse, DTMFOutputEvent], None, None]:
+    def feed(
+        self, char: str
+    ) -> Generator[Union[AgentResponse, DTMFOutputEvent], None, None]:
         """
         Feed a character into the buffer and see if we yield anything
         """
@@ -108,7 +112,9 @@ class DTMFLookAheadCharacterBuffer:
 
             return
 
-        raise RuntimeError(f"Invalid state: {char=} {self.dtmf_buffer=} {self.non_dtmf_buffer=}")
+        raise RuntimeError(
+            f"Invalid state: {char=} {self.dtmf_buffer=} {self.non_dtmf_buffer=}"
+        )
 
     def flush(self) -> Generator[Union[AgentResponse, DTMFOutputEvent], None, None]:
         if self.dtmf_buffer.startswith(self.dtmf_preamble):

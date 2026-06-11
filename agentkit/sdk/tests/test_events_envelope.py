@@ -66,5 +66,7 @@ def test_core_events_parse_event_envelope_rejects_string_payload():
         "payload": AgentResponse(content="hello").model_dump_json(),
     }
 
-    with pytest.raises(ValueError, match="String event payloads are no longer supported"):
+    with pytest.raises(
+        ValueError, match="String event payloads are no longer supported"
+    ):
         parse_event_envelope(envelope)

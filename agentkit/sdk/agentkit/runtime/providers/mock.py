@@ -36,7 +36,13 @@ class MockProvider:
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-        _ = (system_instruction, temperature, max_tokens, response_format, cancellation_token)
+        _ = (
+            system_instruction,
+            temperature,
+            max_tokens,
+            response_format,
+            cancellation_token,
+        )
         if tools and not _tool_already_called(messages):
             return GenerateResponse(text="", tool_calls=[_first_tool_call(tools)])
         return GenerateResponse(text="mock response", tool_calls=[])
