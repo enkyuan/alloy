@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, m } from "motion/react";
-import { RiArrowDownSLine, RiArrowRightUpLongLine } from "@remixicon/react";
+import { RiArrowDownSLine } from "@remixicon/react";
 import Link from "next/link";
 import { cn } from "@lib/utils";
 import { usePathname } from "next/navigation";
@@ -25,14 +25,12 @@ import { Topbar } from "./topbar";
 import { DesktopNavTabs } from "./desktop";
 
 function MobileDocsSections({
-  mobileMenuOpen,
   setMobileMenuOpen,
   mobileDocSection,
   setMobileDocSection,
   pathname,
   prefixHref,
 }: {
-  mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
   mobileDocSection: number;
   setMobileDocSection: (idx: number | ((prev: number) => number)) => void;
@@ -102,13 +100,11 @@ function MobileDocsSections({
 
 function MobileMenuSectionsNav({
   isDocs,
-  mobileMenuOpen,
   setMobileMenuOpen,
   isActive,
   isActivePrefix,
 }: {
   isDocs: boolean;
-  mobileMenuOpen: boolean;
   setMobileMenuOpen: (open: boolean) => void;
   isActive: (path: string) => boolean;
   isActivePrefix: (path: string) => boolean;
@@ -251,7 +247,6 @@ export function Nav() {
                       onClick={() => setMobileView("nav")}
                     />
                     <MobileDocsSections
-                      mobileMenuOpen={mobileMenuOpen}
                       setMobileMenuOpen={setMobileMenuOpen}
                       mobileDocSection={mobileDocSection}
                       setMobileDocSection={setMobileDocSection}
@@ -270,7 +265,6 @@ export function Nav() {
                     )}
                     <MobileMenuSectionsNav
                       isDocs={isDocs}
-                      mobileMenuOpen={mobileMenuOpen}
                       setMobileMenuOpen={setMobileMenuOpen}
                       isActive={isActive}
                       isActivePrefix={isActivePrefix}
