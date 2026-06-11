@@ -28,9 +28,9 @@ export function ProvidersSection() {
   const featured = allProviders.find((d) => d.name === "OpenAI")!;
 
   return (
-    <div className="h-full flex items-center" suppressHydrationWarning>
+    <div className="h-full flex" suppressHydrationWarning>
       <div className="w-full">
-        <div className="relative border border-dashed border-foreground/[0.06] p-3 sm:p-4 min-h-[200px] sm:min-h-[240px] cursor-default overflow-hidden group/provider">
+        <div className="relative p-3 sm:p-4 min-h-[200px] sm:min-h-[240px] cursor-default overflow-hidden group/provider">
           <div className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[10px] font-semibold text-white bg-violet-600 dark:bg-violet-500 px-2 py-0.5 rounded opacity-0 group-hover/provider:opacity-100 transition-opacity duration-200">
             default
           </div>

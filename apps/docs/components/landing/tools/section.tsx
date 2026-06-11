@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { DynamicCodeBlock } from "@components/ui/dynamic-code-block";
-import { cn } from "@lib/utils";
 
 type ToolLanguage = "py" | "ts";
 
@@ -10,8 +9,8 @@ export function ToolsSection() {
   const [language, setLanguage] = useState<ToolLanguage>("py");
 
   const languages = [
-    { id: "py" as const, label: "Python" },
-    { id: "ts" as const, label: "TypeScript" },
+    { id: "py" as const, label: "Python", filename: "tools.py" },
+    { id: "ts" as const, label: "TypeScript", filename: "tools.ts" },
   ];
 
   const pySnippet = `from agentkit import register_tool, tool_spec_from_model
@@ -40,25 +39,30 @@ registerTool(
     ts: tsSnippet,
   };
 
+  const current = languages.find((l) => l.id === language)!;
+
   return (
     <div className="flex flex-col gap-3 pt-2 pb-1">
-      {/* Language Switcher */}
-      <div className="flex gap-1">
-        {languages.map((lang) => (
-          <button
-            key={lang.id}
-            type="button"
-            onClick={() => setLanguage(lang.id)}
-            className={cn(
-              "px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px",
-              language === lang.id
-                ? "text-foreground/85 border-b-foreground/50"
-                : "text-foreground/50 hover:text-foreground/65 border-b-transparent",
-            )}
-          >
-            {lang.label}
-          </button>
-        ))}
+      <div className="flex items-center justify-between px-0 py-0">
+        <span className="text-[11px] font-mono text-foreground/50 dark:text-foreground/40">
+          {current.filename}
+        </span>
+        <div className="flex items-center gap-0.5 text-[10px] font-mono">
+          {languages.map((lang) => (
+            <button
+              key={lang.id}
+              type="button"
+              onClick={() => setLanguage(lang.id)}
+              className={
+                language === lang.id
+                  ? "px-1.5 py-0.5 rounded-sm text-foreground/80 bg-foreground/[0.06]"
+                  : "px-1.5 py-0.5 rounded-sm text-foreground/40 hover:text-foreground/65 transition-colors"
+              }
+            >
+              {lang.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Syntax-highlighted Code Block */}

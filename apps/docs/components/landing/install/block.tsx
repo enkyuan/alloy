@@ -56,7 +56,7 @@ function uiReducer(state: UIState, action: UIAction): UIState {
 }
 
 export function InstallBlock() {
-  const [mode, setMode] = useState<"cli" | "prompt" | "mcp">("cli");
+  const [mode, setMode] = useState<"install" | "cli" | "prompt" | "mcp">("cli");
   const [ui, dispatch] = useReducer(uiReducer, { copied: false, pmOpen: false, promptOpen: false });
   const contentRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | "auto">("auto");
@@ -88,7 +88,7 @@ export function InstallBlock() {
       <div className="mb-6 rounded-md border border-foreground/[0.1] relative">
         {/* Tabs */}
         <div className="flex items-center border-b border-foreground/[0.1]">
-          {(["cli", "prompt", "mcp"] as const).map((id) => (
+          {(["cli", "install", "prompt", "mcp"] as const).map((id) => (
             <button
               type="button"
               key={id}
@@ -104,7 +104,7 @@ export function InstallBlock() {
                   : "text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-400",
               )}
             >
-              {id === "cli" ? "CLI" : id === "mcp" ? "MCP" : "Prompt"}
+              {id === "mcp" ? "MCP" : id === "prompt" ? "Prompt" : id === "cli" ? "CLI" : "Install"}
               {mode === id && (
                 <div className="absolute bottom-0 left-4 right-4 h-[1.5px] bg-neutral-600 dark:bg-neutral-400" />
               )}
@@ -123,7 +123,7 @@ export function InstallBlock() {
           <div ref={contentRef}>
             <AnimatePresence mode="wait" initial={false}>
               <div>
-                {mode === "cli" ? (
+                {mode === "install" ? (
                   <div className="flex items-center justify-between bg-neutral-100/50 dark:bg-[#050505] px-4 py-3">
                     <code
                       className="text-[13px]"
@@ -137,6 +137,24 @@ export function InstallBlock() {
                     <button
                       type="button"
                       onClick={() => copy("pip install agentkit")}
+                      className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
+                      aria-label="Copy command"
+                    >
+                      {copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
+                    </button>
+                  </div>
+                ) : mode === "cli" ? (
+                  <div className="flex items-center justify-between bg-neutral-100/50 dark:bg-[#050505] px-4 py-3">
+                    <code
+                      className="text-[13px]"
+                      style={{ fontFamily: "var(--font-geist-pixel-square)" }}
+                    >
+                      <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
+                      <span className="text-neutral-700 dark:text-neutral-300">agentkit init</span>
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => copy("npx agentkit init")}
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >

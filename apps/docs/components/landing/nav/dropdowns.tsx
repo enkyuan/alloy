@@ -61,7 +61,7 @@ export function ResourcesDropdown({
                 </Link>
               ))}
             </div>
-            <div className="grid grid-cols-4 divide-x divide-foreground/[0.06] border-t border-foreground/[0.06]">
+            {/* <div className="grid grid-cols-4 divide-x divide-foreground/[0.06] border-t border-foreground/[0.06]">
               {linkResources.map((r) => (
                 <Link
                   key={r.title}
@@ -75,7 +75,7 @@ export function ResourcesDropdown({
                   </span>
                 </Link>
               ))}
-            </div>
+            </div> */}
             <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(1.75rem,1fr))] items-center justify-items-center gap-y-0.5 border-t border-foreground/[0.06] px-2 py-2">
               <a
                 href="https://github.com/enkyuan/alloy"

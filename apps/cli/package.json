@@ -1,0 +1,44 @@
+{
+  "name": "@agentkit/cli",
+  "version": "0.0.1",
+  "description": "The CLI for agentkit",
+  "license": "MIT",
+  "bin": {
+    "agentkit": "./dist/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "executableFiles": [
+      "./dist/index.mjs"
+    ]
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsx ./src/index.ts",
+    "start": "node ./dist/index.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "chalk": "^5.4.1",
+    "commander": "^14.0.0",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "@agentkit/shared": "workspace:*",
+    "@types/node": "^25.9.1",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.68.0",
+    "tsdown": "^0.12.9",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

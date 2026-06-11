@@ -1,0 +1,8 @@
+{
+  "extends": "@agentkit/shared/tsconfig/node",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"]
+}

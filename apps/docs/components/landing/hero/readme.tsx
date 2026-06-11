@@ -245,22 +245,33 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                           )}
                         </button>
                       ))}
-                      {frameworkTab === "providers" ? (
-                        <div className="hidden lg:flex flex-col flex-1">
-                          <ProviderLogosGrid exclude={["OpenAI"]} />
-                          <div className="flex-1 flex items-end p-4">
-                            <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
-                              {runtimeTabDescriptions.providers}
-                            </p>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="hidden lg:flex flex-1 items-end p-4">
-                          <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
-                            {runtimeTabDescriptions[frameworkTab]}
-                          </p>
-                        </div>
-                      )}
+                      <AnimatePresence mode="wait" initial={false}>
+                        <m.div
+                          key={frameworkTab}
+                          initial={{ opacity: 0, y: -6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.2, ease: "easeOut" }}
+                          className="hidden lg:flex flex-col flex-1"
+                        >
+                          {frameworkTab === "providers" ? (
+                            <>
+                              <ProviderLogosGrid exclude={["OpenAI"]} />
+                              <div className="flex-1 flex items-end p-4">
+                                <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
+                                  {runtimeTabDescriptions.providers}
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex-1 flex items-end p-4">
+                              <p className="text-[13px] leading-relaxed text-foreground/60 dark:text-foreground/50">
+                                {runtimeTabDescriptions[frameworkTab]}
+                              </p>
+                            </div>
+                          )}
+                        </m.div>
+                      </AnimatePresence>
                     </div>
                   </div>
                 </div>

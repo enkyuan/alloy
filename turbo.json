@@ -58,6 +58,15 @@
     "@agentkit/docs#dev": {
       "cache": false,
       "persistent": true
+    },
+    "@agentkit/cli#build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"],
+      "cache": true
+    },
+    "@agentkit/cli#dev": {
+      "cache": false,
+      "persistent": false
     }
   }
 }
