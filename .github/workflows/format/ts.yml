@@ -1,0 +1,77 @@
+name: format / ts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/ts/**"
+      - "agentpay/auth/**"
+      - "packages/ui/**"
+      - ".github/workflows/format/ts.yml"
+  pull_request:
+    paths:
+      - "agentkit/ts/**"
+      - "agentpay/auth/**"
+      - "packages/ui/**"
+      - ".github/workflows/format/ts.yml"
+
+jobs:
+  agentkit-ts:
+    name: agentkit/ts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting
+        run: bun run format:check
+
+  auth:
+    name: agentpay/auth
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/auth
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting
+        run: bun run format:check
+
+  ui:
+    name: packages/ui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check formatting
+        run: bun run format:check

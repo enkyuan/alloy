@@ -1,0 +1,76 @@
+name: test / python-serve
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/workflows/test/python-serve.yml"
+  pull_request:
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/workflows/test/python-serve.yml"
+
+jobs:
+  serve:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+
+    defaults:
+      run:
+        working-directory: agentkit/serve
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
+          restore-keys: |
+            poetry-serve-${{ runner.os }}-py3.11-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --sync
+
+      - name: Run tests
+        run: poetry run pytest tests/ --cov=agentkit_serve --cov-report=xml --cov-fail-under=35
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-serve
+          path: agentkit/serve/coverage.xml
+          retention-days: 7

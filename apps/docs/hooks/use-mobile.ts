@@ -1,32 +1,37 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useBreakpoint } from "@hooks/use-breakpoint";
+import { contents } from "@lib/sidebar-config";
 
-const MOBILE_BREAKPOINT = 1024;
-
-/** Returns true when the viewport is narrower than the lg breakpoint (1024px). */
-export function useIsMobile(): boolean {
-  const [isMobile, setIsMobile] = useState(false);
+export function useMobile(pathname: string, isDocs: boolean) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"docs" | "nav">("docs");
+  const [docSection, setDocSection] = useState(-1);
 
   useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    setIsMobile(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
-
-  return isMobile;
-}
-
-/** Calls `onDesktop` when the viewport crosses into lg (≥1024px). */
-export function useOnDesktop(onDesktop: () => void): void {
-  useEffect(() => {
-    const mql = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`);
-    const handler = (e: MediaQueryListEvent) => {
-      if (e.matches) onDesktop();
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
     };
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, [onDesktop]);
+  }, [open]);
+
+  useBreakpoint(() => setOpen(false));
+
+  const openMenu = () => {
+    setOpen(true);
+    setView(isDocs ? "docs" : "nav");
+    if (isDocs) {
+      const idx = contents.findIndex((s) => {
+        const prefix = s.expandSectionForPathPrefix;
+        if (prefix && (pathname === prefix || pathname.startsWith(`${prefix}/`))) return true;
+        return s.list.some(
+          (l) => l.href === pathname || (l.subpages?.length && pathname.startsWith(`${l.href}/`)),
+        );
+      });
+      setDocSection(idx === -1 ? 0 : idx);
+    }
+  };
+
+  return { open, setOpen, view, setView, docSection, setDocSection, openMenu };
 }

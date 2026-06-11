@@ -1,0 +1,38 @@
+name: test / ts-sdk
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/ts/**"
+      - ".github/workflows/test/ts-sdk.yml"
+  pull_request:
+    paths:
+      - "agentkit/ts/**"
+      - ".github/workflows/test/ts-sdk.yml"
+
+jobs:
+  ts-sdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Test
+        run: bun run test

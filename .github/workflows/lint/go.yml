@@ -1,0 +1,51 @@
+name: lint / go
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - ".github/workflows/lint/go.yml"
+  pull_request:
+    paths:
+      - "agentpay/api/**"
+      - "agentpay/consumer/**"
+      - ".github/workflows/lint/go.yml"
+
+jobs:
+  api:
+    name: agentpay/api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agentpay/api/go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...
+
+  consumer:
+    name: agentpay/consumer
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/consumer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: agentpay/consumer/go.mod
+          cache: true
+
+      - name: Vet
+        run: go vet ./...

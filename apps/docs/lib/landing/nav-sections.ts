@@ -54,3 +54,24 @@ export const resourceFiles: NavFileItem[] = [
 export const mobileMenuSections: MobileMenuSection[] = [
   { name: "resources", children: resourceFiles },
 ];
+
+export type NavTab = {
+  id: string;
+  type: "file" | "dropdown";
+  label: string;
+  href?: string;
+  external?: boolean;
+  delay: number;
+};
+
+export const navTabs: NavTab[] = [
+  ...navFiles.map((item, idx) => ({
+    id: item.name,
+    type: "file" as const,
+    label: item.name,
+    href: item.href,
+    external: item.external,
+    delay: 0.05 + idx * 0.03,
+  })),
+  { id: "resources", type: "dropdown" as const, label: "resources", delay: 0.17 },
+];

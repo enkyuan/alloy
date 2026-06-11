@@ -1,22 +1,22 @@
-name: format-lint
+name: test / auth
 
 on:
   push:
     branches: [main]
     paths:
-      - "apps/**"
-      - ".github/workflows/format-lint.yml"
+      - "agentpay/auth/**"
+      - ".github/workflows/test/auth.yml"
   pull_request:
     paths:
-      - "apps/**"
-      - ".github/workflows/format-lint.yml"
+      - "agentpay/auth/**"
+      - ".github/workflows/test/auth.yml"
 
 jobs:
-  format-lint:
+  auth:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/docs
+        working-directory: agentpay/auth
     steps:
       - uses: actions/checkout@v4
 
@@ -28,8 +28,5 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Check formatting with oxfmt
-        run: bun run format:check
-
-      - name: Lint with oxlint
-        run: bun run lint
+      - name: Typecheck
+        run: bun run typecheck

@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./global.css";
 import type { Metadata } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
-import { Nav } from "@components/landing/nav/nav";
+import { Nav } from "@components/landing/nav";
 import { Providers } from "@components/providers";
 import { appName } from "@lib/shared";
 
