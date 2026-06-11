@@ -1,7 +1,8 @@
 // Nav dropdown panels.
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
-import { featuredResources, linkResources } from "@lib/landing/nav-sections";
+import { featuredResources } from "@lib/landing/nav-sections";
+// import { linkResources } from "@lib/landing/nav-sections";
 import { GitHubIcon } from "@components/docs/icons/ui";
 
 // ─── ResourcesDropdown ───────────────────────────────────────────────────────
