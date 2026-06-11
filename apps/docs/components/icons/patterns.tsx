@@ -1,27 +1,4 @@
-// SVG icon and pattern components used in the nav menus.
 import type React from "react";
-
-export const FrameworkLogoIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    viewBox="0 0 30 45"
-    fill="currentColor"
-    className={`${className ?? ""} rotate-12`}
-    aria-hidden="true"
-  >
-    <path fillRule="evenodd" clipRule="evenodd" d="M0 0H15V15H30V30H15V45H0V30V15V0Z" />
-  </svg>
-);
-
-export const InfraLogoIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    viewBox="30 0 30 45"
-    fill="currentColor"
-    className={`${className ?? ""} -rotate-12`}
-    aria-hidden="true"
-  >
-    <path fillRule="evenodd" clipRule="evenodd" d="M45 30V15H30V0H45H60V15V30V45H45H30V30H45Z" />
-  </svg>
-);
 
 export const CommunityIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg
@@ -85,28 +62,3 @@ export const ScribblePattern: React.FC<{ className?: string }> = ({ className })
     />
   </svg>
 );
-
-export const VerticalLinesPattern: React.FC<{ className?: string }> = ({ className }) => {
-  const cols = 72;
-  const width = cols * 3;
-  const height = 100;
-  const lines: React.ReactElement[] = [];
-  for (let i = 0; i < cols; i++) {
-    const x = i * 3 + 1;
-    lines.push(
-      <line key={i} x1={x} y1={0} x2={x} y2={height} stroke="currentColor" strokeWidth="0.75" />,
-    );
-  }
-  return (
-    <svg
-      width="100%"
-      height="100%"
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="none"
-      className={className}
-      aria-hidden="true"
-    >
-      {lines}
-    </svg>
-  );
-};

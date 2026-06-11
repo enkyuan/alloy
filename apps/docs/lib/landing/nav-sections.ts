@@ -5,7 +5,7 @@ import type {
   NavFileItem,
   ProductItem,
 } from "@lib/landing/nav-data";
-import { CommunityIcon, ScribblePattern, TimelinePattern } from "@components/landing/nav/patterns";
+import { CommunityIcon, ScribblePattern, TimelinePattern } from "@components/icons/patterns";
 
 export const navFiles: NavFileItem[] = [
   { name: "readme", href: "/" },
