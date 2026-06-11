@@ -5,7 +5,6 @@ import type { Metadata } from "next";
 import { RootProvider } from "fumadocs-ui/provider/next";
 import { Nav } from "@components/landing/nav/nav";
 import { Providers } from "@components/providers";
-import { AgentationClient } from "@components/agentation-client";
 import { appName } from "@lib/shared";
 
 const fontSans = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -28,12 +27,11 @@ export default function Layout({ children }: LayoutProps<"/">) {
     >
       <body className="font-sans antialiased">
         <RootProvider>
-          <Providers>
+          <Providers withAgentation={process.env.NODE_ENV !== "production"}>
             <div className="relative min-h-dvh">
               <Nav />
               {children}
             </div>
-            {process.env.NODE_ENV !== "production" && <AgentationClient />}
           </Providers>
         </RootProvider>
       </body>

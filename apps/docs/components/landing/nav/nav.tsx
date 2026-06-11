@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import LogoContextMenu from "../shared/logo-menu";
+import LogoContextMenu from "../shared/logo-context-menu";
 
 import { LazyMotion, domAnimation, m } from "motion/react";
 import { RiArrowRightUpLongLine, RiSearch2Line } from "@remixicon/react";
 import { cn } from "@lib/utils";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOnDesktop } from "@hooks/use-mobile";
 import { ThemeToggle } from "@components/theme-toggle";
 import { AgentkitWordmark } from "@components/icons/logo";
 import { AgentPayLogo } from "@components/icons/agentpay";
-import { contents } from "@components/sidebar-content";
+import { contents } from "@lib/sidebar-config";
 import { NavMobileMenu } from "./mobile-menu";
 import { ResourcesDropdown } from "./dropdowns";
 import { mobileMenuSections, navFiles, resourceFiles } from "@lib/landing/nav-sections";
@@ -43,16 +44,7 @@ export function Nav() {
     };
   }, [mobileMenuOpen]);
 
-  useEffect(() => {
-    const mql = window.matchMedia("(min-width: 1024px)");
-    const handler = () => {
-      if (mql.matches) {
-        setMobileMenuOpen(false);
-      }
-    };
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
+  useOnDesktop(() => setMobileMenuOpen(false));
 
   const openResources = () => {
     clearTimeout(resourcesTimeout.current);

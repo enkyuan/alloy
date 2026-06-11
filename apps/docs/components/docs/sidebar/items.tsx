@@ -3,7 +3,7 @@
 import { AnimatePresence, LazyMotion, domAnimation, m } from "motion/react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { ListItem } from "@components/sidebar-content";
+import type { ListItem } from "@lib/sidebar-config";
 import { Badge } from "@components/ui/badge";
 import { cn } from "@lib/utils";
 

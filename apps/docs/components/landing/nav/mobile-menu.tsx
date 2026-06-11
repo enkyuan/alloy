@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCallback } from "react";
 import type { NavFileItem } from "@lib/landing/nav-data";
 import type { MobileMenuSection } from "@lib/landing/nav-data";
-import { contents } from "@components/sidebar-content";
+import { contents } from "@lib/sidebar-config";
 import {
   Accordion,
   AccordionContent,

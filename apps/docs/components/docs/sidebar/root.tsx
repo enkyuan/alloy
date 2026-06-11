@@ -5,7 +5,7 @@ import { useSearchContext } from "fumadocs-ui/contexts/search";
 import { RiArrowDownSLine } from "@remixicon/react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { contents } from "@components/sidebar-content";
+import { contents } from "@lib/sidebar-config";
 import { ThemeToggle } from "@components/theme-toggle";
 import { SidebarVersionSwitcher } from "@components/version-switcher";
 import { getVersionFromPathname, stripVersionPrefix, versionedDocsHref } from "@lib/docs-versions";

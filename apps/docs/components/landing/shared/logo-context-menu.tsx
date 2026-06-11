@@ -4,7 +4,8 @@ import { RiCodeLine, RiDownloadCloud2Line, RiPaletteLine, RiTextBlock } from "@r
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnDesktop } from "@hooks/use-mobile";
 import { toast } from "sonner";
 import { Popover, PopoverAnchor, PopoverContent } from "@components/ui/popover";
 import { brandAssetPaths } from "@lib/brand-assets";
@@ -21,16 +22,7 @@ export default function LogoContextMenu({ logo }: LogoContextMenuProps) {
   const { resolvedTheme } = useTheme();
   const variant = resolvedTheme === "dark" ? "light" : "dark";
 
-  useEffect(() => {
-    const mql = window.matchMedia("(min-width: 1024px)");
-    const onChange = () => {
-      if (!mql.matches) {
-        setOpen(false);
-      }
-    };
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, []);
+  useOnDesktop(() => setOpen(false));
 
   const copySvg = async (svgPath: string, label: string) => {
     try {
