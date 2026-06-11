@@ -4,8 +4,7 @@ import Link from "next/link";
 import LogoContextMenu from "../shared/logo-menu";
 
 import { LazyMotion, domAnimation, m } from "motion/react";
-import { RiArrowRightUpLine, RiArrowRightUpLongLine, RiSearch2Line } from "@remixicon/react";
-import { ArrowUpRightIcon } from "@components/docs/icons/ui";
+import { RiArrowRightUpLongLine, RiSearch2Line } from "@remixicon/react";
 import { cn } from "@lib/utils";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
