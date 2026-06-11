@@ -5,11 +5,11 @@ on:
     branches: [main]
     paths:
       - "agentkit/ts/**"
-      - ".github/workflows/test/ts-sdk.yml"
+      - ".github/workflows/ts-sdk.test.yml"
   pull_request:
     paths:
       - "agentkit/ts/**"
-      - ".github/workflows/test/ts-sdk.yml"
+      - ".github/workflows/ts-sdk.test.yml"
 
 jobs:
   ts-sdk:

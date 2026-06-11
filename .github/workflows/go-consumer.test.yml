@@ -5,11 +5,11 @@ on:
     branches: [main]
     paths:
       - "agentpay/consumer/**"
-      - ".github/workflows/test/go-consumer.yml"
+      - ".github/workflows/go-consumer.test.yml"
   pull_request:
     paths:
       - "agentpay/consumer/**"
-      - ".github/workflows/test/go-consumer.yml"
+      - ".github/workflows/go-consumer.test.yml"
 
 jobs:
   consumer:

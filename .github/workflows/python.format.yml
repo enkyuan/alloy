@@ -6,12 +6,12 @@ on:
     paths:
       - "agentkit/sdk/**"
       - "agentkit/serve/**"
-      - ".github/workflows/format/python.yml"
+      - ".github/workflows/python.format.yml"
   pull_request:
     paths:
       - "agentkit/sdk/**"
       - "agentkit/serve/**"
-      - ".github/workflows/format/python.yml"
+      - ".github/workflows/python.format.yml"
 
 jobs:
   sdk:

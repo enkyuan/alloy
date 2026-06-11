@@ -1,22 +1,22 @@
-name: lint / docs
+name: test / auth
 
 on:
   push:
     branches: [main]
     paths:
-      - "apps/docs/**"
-      - ".github/workflows/lint/docs.yml"
+      - "agentpay/auth/**"
+      - ".github/workflows/auth.test.yml"
   pull_request:
     paths:
-      - "apps/docs/**"
-      - ".github/workflows/lint/docs.yml"
+      - "agentpay/auth/**"
+      - ".github/workflows/auth.test.yml"
 
 jobs:
-  lint:
+  auth:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/docs
+        working-directory: agentpay/auth
     steps:
       - uses: actions/checkout@v4
 
@@ -28,5 +28,5 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Lint
-        run: bun run lint
+      - name: Typecheck
+        run: bun run typecheck

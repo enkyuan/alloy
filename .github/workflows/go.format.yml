@@ -6,12 +6,12 @@ on:
     paths:
       - "agentpay/api/**"
       - "agentpay/consumer/**"
-      - ".github/workflows/format/go.yml"
+      - ".github/workflows/go.format.yml"
   pull_request:
     paths:
       - "agentpay/api/**"
       - "agentpay/consumer/**"
-      - ".github/workflows/format/go.yml"
+      - ".github/workflows/go.format.yml"
 
 jobs:
   api:

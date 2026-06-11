@@ -1,4 +1,4 @@
-name: lint / ts
+name: format / ts
 
 on:
   push:
@@ -7,13 +7,13 @@ on:
       - "agentkit/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
-      - ".github/workflows/lint/ts.yml"
+      - ".github/workflows/ts.format.yml"
   pull_request:
     paths:
       - "agentkit/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
-      - ".github/workflows/lint/ts.yml"
+      - ".github/workflows/ts.format.yml"
 
 jobs:
   agentkit-ts:
@@ -33,8 +33,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check formatting
+        run: bun run format:check
 
   auth:
     name: agentpay/auth
@@ -53,8 +53,8 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check formatting
+        run: bun run format:check
 
   ui:
     name: packages/ui
@@ -73,5 +73,5 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check formatting
+        run: bun run format:check

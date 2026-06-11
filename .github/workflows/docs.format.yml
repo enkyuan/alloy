@@ -1,22 +1,22 @@
-name: test / auth
+name: format / docs
 
 on:
   push:
     branches: [main]
     paths:
-      - "agentpay/auth/**"
-      - ".github/workflows/test/auth.yml"
+      - "apps/docs/**"
+      - ".github/workflows/docs.format.yml"
   pull_request:
     paths:
-      - "agentpay/auth/**"
-      - ".github/workflows/test/auth.yml"
+      - "apps/docs/**"
+      - ".github/workflows/docs.format.yml"
 
 jobs:
-  auth:
+  format:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentpay/auth
+        working-directory: apps/docs
     steps:
       - uses: actions/checkout@v4
 
@@ -28,5 +28,5 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Check formatting
+        run: bun run format:check
