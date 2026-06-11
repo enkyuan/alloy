@@ -71,11 +71,7 @@ export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
  * `{ type, properties, required }` shape the LLM tool API expects (mirrors the
  * Python `tool_spec_from_model`).
  */
-export function toolSpecFromSchema(
-  name: string,
-  description: string,
-  schema: z.ZodType,
-): ToolSpec {
+export function toolSpecFromSchema(name: string, description: string, schema: z.ZodType): ToolSpec {
   const json = z.toJSONSchema(schema) as {
     properties?: Record<string, unknown>;
     required?: string[];

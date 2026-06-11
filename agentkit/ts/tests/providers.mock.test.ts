@@ -1,17 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import type {
-  ModelProvider,
-  ModelResponseChunk,
-  ProviderMessage,
-} from "../src/providers/base";
+import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "../src/providers/base";
 import { MockProvider } from "../src/providers/mock";
-import {
-  clearProviders,
-  getProvider,
-  registerProvider,
-} from "../src/providers/registry";
+import { clearProviders, getProvider, registerProvider } from "../src/providers/registry";
 import { toolSpecFromSchema } from "../src/tools/registry";
 
 afterEach(() => clearProviders());
@@ -25,9 +17,7 @@ describe("provider registry", () => {
 
   it("throws on duplicate registration", () => {
     registerProvider("dup", new MockProvider());
-    expect(() => registerProvider("dup", new MockProvider())).toThrow(
-      /already registered/,
-    );
+    expect(() => registerProvider("dup", new MockProvider())).toThrow(/already registered/);
   });
 
   it("throws on unknown provider", () => {
@@ -66,10 +56,7 @@ describe("MockProvider", () => {
   });
 
   it("returns text immediately with no tools", async () => {
-    const r = await new MockProvider().generate(
-      [{ role: "user", content: "hi" }],
-      [],
-    );
+    const r = await new MockProvider().generate([{ role: "user", content: "hi" }], []);
     expect(r.toolCalls).toHaveLength(0);
   });
 

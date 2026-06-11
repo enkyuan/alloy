@@ -18,8 +18,10 @@ describe("InMemoryEventStore", () => {
     await store.append(userMessage("s1", "first", 100));
 
     const events = await store.getEvents("s1");
-    expect(events.map((e) => (e.type === EventType.USER_MESSAGE ? e.content : "")))
-      .toEqual(["first", "second"]);
+    expect(events.map((e) => (e.type === EventType.USER_MESSAGE ? e.content : ""))).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("scopes events per session", async () => {

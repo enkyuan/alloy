@@ -9,11 +9,7 @@ import { MockProvider } from "../src/providers/mock";
 import { CancellationToken } from "../src/runtime/cancellation";
 import { buildMessages } from "../src/runtime/context";
 import { AgentRuntime } from "../src/runtime/runtime";
-import {
-  clearTools,
-  registerTool,
-  toolSpecFromSchema,
-} from "../src/tools/registry";
+import { clearTools, registerTool, toolSpecFromSchema } from "../src/tools/registry";
 import type { Message } from "../src/sessions/replay";
 
 afterEach(() => clearTools());
@@ -139,16 +135,13 @@ describe("AgentRuntime.runTurn", () => {
     const { store, runtime } = setup();
     const s = "s-fail";
     await seed(store, s);
-    registerTool(
-      toolSpecFromSchema("bad", "fails", z.object({})),
-      async () => {
-        throw new Error("boom");
-      },
-    );
+    registerTool(toolSpecFromSchema("bad", "fails", z.object({})), async () => {
+      throw new Error("boom");
+    });
     await runtime.runTurn(s);
-    expect(
-      (await store.getEvents(s)).some((e) => e.type === EventType.TOOL_CALL_FAILED),
-    ).toBe(true);
+    expect((await store.getEvents(s)).some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(
+      true,
+    );
   });
 
   it("preserves assistant text when a turn streams both text and tool calls", async () => {
@@ -175,10 +168,9 @@ describe("AgentRuntime.runTurn", () => {
     const runtime = new AgentRuntime({ provider: mixedProvider, store, bus });
     const s = "s-mixed";
     await seed(store, s);
-    registerTool(
-      toolSpecFromSchema("get_weather", "weather", z.object({})),
-      async () => ({ tempF: 68 }),
-    );
+    registerTool(toolSpecFromSchema("get_weather", "weather", z.object({})), async () => ({
+      tempF: 68,
+    }));
 
     await runtime.runTurn(s);
 
@@ -197,9 +189,7 @@ describe("AgentRuntime.runTurn", () => {
     await seed(store, s);
     const token = new CancellationToken();
     token.cancel();
-    await expect(runtime.runTurn(s, { cancellationToken: token })).rejects.toThrow(
-      /cancelled/,
-    );
+    await expect(runtime.runTurn(s, { cancellationToken: token })).rejects.toThrow(/cancelled/);
   });
 
   it("does NOT emit an empty completion on max-iteration exhaustion (C1)", async () => {
@@ -219,10 +209,9 @@ describe("AgentRuntime.runTurn", () => {
     const runtime = new AgentRuntime({ provider: alwaysToolProvider, store, bus });
     const s = "s-exhaust";
     await seed(store, s);
-    registerTool(
-      toolSpecFromSchema("loop", "always called", z.object({})),
-      async () => ({ ok: true }),
-    );
+    registerTool(toolSpecFromSchema("loop", "always called", z.object({})), async () => ({
+      ok: true,
+    }));
 
     await runtime.runTurn(s);
 

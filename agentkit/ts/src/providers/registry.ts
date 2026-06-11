@@ -18,9 +18,7 @@ export function registerProvider(name: string, provider: ModelProvider): void {
 export function getProvider(name: string): ModelProvider {
   const p = providers.get(name);
   if (p === undefined) {
-    throw new Error(
-      `Unknown provider: ${name}. Register it with registerProvider() first.`,
-    );
+    throw new Error(`Unknown provider: ${name}. Register it with registerProvider() first.`);
   }
   return p;
 }

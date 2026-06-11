@@ -1,0 +1,77 @@
+name: format / python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/workflows/python.format.yml"
+  pull_request:
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/workflows/python.format.yml"
+
+jobs:
+  sdk:
+    name: agentkit/sdk
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/sdk/poetry.lock') }}
+          restore-keys: |
+            poetry-sdk-${{ runner.os }}-py3.11-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --sync
+
+      - name: Check formatting
+        run: poetry run ruff format --check .
+
+  serve:
+    name: agentkit/serve
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/serve
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Cache Poetry virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
+          restore-keys: |
+            poetry-serve-${{ runner.os }}-py3.11-
+
+      - name: Install dependencies
+        run: poetry install --no-interaction --sync
+
+      - name: Check formatting
+        run: poetry run ruff format --check .

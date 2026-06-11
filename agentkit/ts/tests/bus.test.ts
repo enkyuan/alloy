@@ -34,9 +34,7 @@ describe("EventBus", () => {
     const first = await sub.next();
     const second = await sub.next();
     expect(
-      [first, second].map((r) =>
-        r.value?.type === EventType.USER_MESSAGE ? r.value.content : "",
-      ),
+      [first, second].map((r) => (r.value?.type === EventType.USER_MESSAGE ? r.value.content : "")),
     ).toEqual(["one", "two"]);
 
     await sub.return?.();
@@ -50,9 +48,7 @@ describe("EventBus", () => {
     await bus.publish(userMessage("s1", "mine"));
 
     const { value } = await sub.next();
-    expect(value?.type === EventType.USER_MESSAGE ? value.content : "").toBe(
-      "mine",
-    );
+    expect(value?.type === EventType.USER_MESSAGE ? value.content : "").toBe("mine");
 
     await sub.return?.();
   });

@@ -56,9 +56,7 @@ describe("tool registry", () => {
   it("rejects a duplicate registration", () => {
     const spec = toolSpecFromSchema("dup", "d", z.object({}));
     registerTool(spec, async () => ({}));
-    expect(() => registerTool(spec, async () => ({}))).toThrow(
-      /already registered/,
-    );
+    expect(() => registerTool(spec, async () => ({}))).toThrow(/already registered/);
   });
 
   it("throws when executing an unknown tool", async () => {

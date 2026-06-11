@@ -5,10 +5,7 @@
 import type { ProviderMessage } from "../providers/base";
 import type { Message } from "../sessions/replay";
 
-export function buildMessages(
-  messages: Message[],
-  systemPrompt?: string,
-): ProviderMessage[] {
+export function buildMessages(messages: Message[], systemPrompt?: string): ProviderMessage[] {
   const result: ProviderMessage[] = [];
   if (systemPrompt) {
     result.push({ role: "system", content: systemPrompt });
