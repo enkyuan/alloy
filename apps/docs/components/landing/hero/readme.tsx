@@ -209,7 +209,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
               <div className="mt-8 mb-10">
                 <div className="border-r border-foreground/[0.1] bg-foreground/[0.01] overflow-hidden">
                   <div className="flex flex-col lg:flex-row">
-                    <div className="min-w-0 flex-1 min-h-[320px] sm:min-h-[360px] lg:h-[400px] overflow-hidden">
+                    <div className="relative min-w-0 flex-1 min-h-[320px] sm:min-h-[360px] lg:h-[400px] overflow-hidden">
                       <AnimatePresence mode="wait" initial={false}>
                         <m.div
                           key={frameworkTab}
@@ -224,6 +224,7 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                           {frameworkTab === "tools" && <ToolsSection />}
                         </m.div>
                       </AnimatePresence>
+                      <div className="hidden lg:block absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background to-transparent pointer-events-none" />
                     </div>
 
                     <div className="flex flex-row lg:flex-col lg:w-56 lg:shrink-0 border-t lg:border-t-0 lg:border-l border-foreground/[0.1] bg-neutral-50 dark:bg-black overflow-x-auto lg:overflow-visible">

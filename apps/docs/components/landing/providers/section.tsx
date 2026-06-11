@@ -31,7 +31,7 @@ export function ProvidersSection() {
     <div className="h-full flex" suppressHydrationWarning>
       <div className="w-full">
         <div className="relative p-3 sm:p-4 min-h-[200px] sm:min-h-[240px] cursor-default overflow-hidden group/provider">
-          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[10px] font-semibold text-white bg-violet-600 dark:bg-violet-500 px-2 py-0.5 rounded opacity-0 group-hover/provider:opacity-100 transition-opacity duration-200">
+          <div className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[10px] font-semibold text-white bg-orange-500 dark:bg-orange-500 px-2 py-0.5 rounded opacity-0 group-hover/provider:opacity-100 transition-opacity duration-200">
             default
           </div>
           <div className="flex items-center gap-2 mb-2">
@@ -50,10 +50,10 @@ export function ProvidersSection() {
               codeblock={{
                 className:
                   "border-0 rounded-none my-0 shadow-none bg-transparent [&_div]:bg-transparent [&_div]:text-[11px] [&_pre]:!p-0 [&_pre]:!overflow-hidden [&_div]:!overflow-hidden [&_code]:!overflow-hidden",
+                "data-line-numbers": true,
               }}
             />
           </div>
-          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent pointer-events-none" />
         </div>
       </div>
     </div>
