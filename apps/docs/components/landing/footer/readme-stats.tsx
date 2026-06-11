@@ -88,7 +88,7 @@ export function ReadmeFooter({ stats }: { stats: CommunityHeroStats }) {
 
         <div className="flex flex-wrap items-center justify-center gap-4 pt-1">
           <Link
-            href="/docs/installation"
+            href="/docs/getting-started"
             className="inline-flex items-center gap-1.5 px-4 sm:px-5 py-2 bg-neutral-900 text-neutral-100 dark:bg-neutral-100 dark:text-neutral-900 text-xs sm:text-sm font-medium hover:opacity-90 transition-colors"
           >
             Get Started
