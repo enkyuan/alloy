@@ -39,6 +39,9 @@ jobs:
           restore-keys: |
             poetry-sdk-${{ runner.os }}-py3.11-
 
+      - name: Lock dependencies
+        run: poetry lock --no-update
+
       - name: Install dependencies
         run: poetry install --no-interaction --sync
 
@@ -69,6 +72,9 @@ jobs:
           key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
           restore-keys: |
             poetry-serve-${{ runner.os }}-py3.11-
+
+      - name: Lock dependencies
+        run: poetry lock --no-update
 
       - name: Install dependencies
         run: poetry install --no-interaction --sync
