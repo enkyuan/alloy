@@ -6,4 +6,8 @@ export type {
   ToolCall,
 } from "./base";
 export { MockProvider } from "./mock";
+export { AnthropicProvider } from "./anthropic";
+export type { AnthropicProviderOptions } from "./anthropic";
+export { OpenAIProvider } from "./openai";
+export type { OpenAIProviderOptions } from "./openai";
 export { clearProviders, getProvider, registerProvider } from "./registry";
