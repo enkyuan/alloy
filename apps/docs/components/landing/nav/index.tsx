@@ -214,6 +214,7 @@ export function Nav() {
             )
           }
           leftPane={<AgentkitWordmark />}
+          leftPaneWidthClass={styles.leftPaneWidthClass}
         />
 
         <DesktopNavTabs

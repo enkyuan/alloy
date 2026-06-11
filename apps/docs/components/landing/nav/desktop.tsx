@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import { LazyMotion, domAnimation, m } from "motion/react";
+import { RiArrowRightUpLongLine } from "@remixicon/react";
 import { cn } from "@lib/utils";
 import { ChevronDownSmallIcon } from "@components/icons";
+import { AgentkitWordmark } from "@components/icons/logo";
+import { AgentPayLogo } from "@components/icons/agentpay";
 import { ResourcesDropdown } from "./dropdowns";
 import { navTabs } from "@lib/landing/nav-sections";
 
@@ -50,7 +53,7 @@ export function DesktopNavTabs({
             href="/"
             className={`flex h-full shrink-0 items-center gap-1 px-4 lg:px-7 py-3 border-r ${styles.tabDividerClass} transition-colors duration-150`}
           >
-            {/* Logo */}
+            <AgentkitWordmark />
           </Link>
         )}
 
@@ -149,6 +152,9 @@ export function DesktopNavTabs({
             <span className="whitespace-nowrap font-mono text-xs uppercase tracking-wider text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 transition-colors duration-150">
               Try AgentPay
             </span>
+            <span className="text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 [&_svg]:size-3 transition-colors duration-150">
+              <AgentPayLogo />
+            </span>
           </a>
         </m.div>
 
@@ -167,6 +173,14 @@ export function DesktopNavTabs({
             className="flex items-center gap-2 px-5 py-3 cursor-pointer font-mono text-xs uppercase tracking-wider bg-foreground text-background transition-opacity duration-150 hover:opacity-90"
           >
             <span>Sign In</span>
+            <m.span
+              variants={{
+                hovered: { x: 1, y: -2, transition: { duration: 0.2, ease: "easeOut" } },
+              }}
+              className="flex items-center"
+            >
+              <RiArrowRightUpLongLine size={14} />
+            </m.span>
           </m.a>
         </m.div>
       </m.div>

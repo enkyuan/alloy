@@ -13,6 +13,7 @@ interface TopbarProps {
   onMobileMenuToggle: () => void;
   onSearch?: () => void;
   leftPane?: React.ReactNode;
+  leftPaneWidthClass?: string;
 }
 
 export function Topbar({
@@ -22,6 +23,7 @@ export function Topbar({
   onMobileMenuToggle,
   onSearch,
   leftPane,
+  leftPaneWidthClass = "",
 }: TopbarProps) {
   return (
     <LazyMotion features={domAnimation}>
@@ -31,7 +33,7 @@ export function Topbar({
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.28, ease: "easeOut" }}
-          className={`${isKnownPage ? "lg:flex" : "lg:hidden"} hidden h-(--landing-topbar-height) shrink-0 items-stretch pointer-events-auto transition-[width] duration-300 ease-out`}
+          className={`${leftPaneWidthClass} hidden ${isKnownPage ? "lg:flex" : "lg:hidden"} h-(--landing-topbar-height) shrink-0 items-stretch pointer-events-auto transition-[width] duration-300 ease-out`}
         >
           <Link
             href="/"
