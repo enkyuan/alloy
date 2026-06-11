@@ -26,7 +26,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: agentpay/api/go.mod
+          go-version: "1.24"
           cache: true
 
       - name: Vet
@@ -44,7 +44,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: agentpay/consumer/go.mod
+          go-version: "1.24"
           cache: true
 
       - name: Vet

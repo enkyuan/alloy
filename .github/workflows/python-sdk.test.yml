@@ -37,7 +37,7 @@ jobs:
             poetry-sdk-${{ runner.os }}-py3.11-
 
       - name: Lock dependencies
-        run: poetry lock --no-update
+        run: poetry lock
 
       - name: Install dependencies
         run: poetry install --no-interaction --sync
