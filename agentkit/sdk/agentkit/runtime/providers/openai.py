@@ -22,6 +22,7 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
+from agentkit.runtime.providers._translate import normalize_role
 from agentkit.runtime.tools.payload import to_openai
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ class OpenAIProvider(ModelProvider):
         if system_instruction:
             formatted.append({"role": "system", "content": system_instruction})
         for msg in messages:
-            role = "user" if msg["role"] == "user" else "assistant"
+            role = normalize_role(msg["role"])
             formatted.append({"role": role, "content": msg.get("content", "")})
         return formatted
 

@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from agentkit.core.config import get_settings
+from agentkit.runtime.providers._translate import to_gemini_role
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +172,19 @@ class GeminiService:
 
             contents = []
             for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
+                role = to_gemini_role(msg["role"])
                 contents.append({"role": role, "parts": [{"text": msg["content"]}]})
 
             config: Any = {"temperature": temperature}
+
+            # Always include system_instruction and tools regardless of caching.
+            if system_instruction:
+                config["system_instruction"] = system_instruction
+                logger.debug(
+                    "Using system instruction: %s...", system_instruction[:100]
+                )
+            if tools:
+                config["tools"] = tools
 
             # Context Caching Heuristics
             active_contents = contents
@@ -185,14 +195,6 @@ class GeminiService:
                 config["cached_content"] = cache_name
                 # Only pass the un-cached remainder (last two messages) to the LLM
                 active_contents = contents[-2:] if len(contents) >= 2 else contents
-            else:
-                if system_instruction:
-                    config["system_instruction"] = system_instruction
-                    logger.debug(
-                        "Using system instruction: %s...", system_instruction[:100]
-                    )
-                if tools:
-                    config["tools"] = tools
 
             logger.info("Calling Gemini API with model: %s", self.model)
             response = await asyncio.to_thread(
@@ -261,7 +263,7 @@ class GeminiService:
         try:
             contents = []
             for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
+                role = to_gemini_role(msg["role"])
                 contents.append(
                     {"role": role, "parts": [{"text": msg.get("content", "")}]}
                 )

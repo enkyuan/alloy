@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 
 from agentkit.core.config import get_settings
+from agentkit.runtime.providers._translate import normalize_role
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
 from agentkit.runtime.providers.registry import register_provider
@@ -76,7 +77,7 @@ class KimiProvider(ModelProvider):
             formatted_messages.append({"role": "system", "content": system_instruction})
 
         for msg in messages:
-            role = "user" if msg["role"] == "user" else "assistant"
+            role = normalize_role(msg["role"])
             formatted_messages.append({"role": role, "content": msg["content"]})
 
         payload: Dict[str, Any] = {
