@@ -13,7 +13,7 @@ from typing import Any, Optional, cast
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
-from agentkit.core.auth import get_supabase_auth_service
+from agentkit.core.auth_utils import decode_bearer_token
 from agentkit.core.redis import RedisKeys, get_redis_stream_client
 from agentkit.infra.events.envelope import (
     build_event_envelope,
@@ -206,21 +206,21 @@ async def authenticate_ws(websocket: WebSocket) -> tuple[str, str] | None:
         return None
 
     logger.info("Authenticating STT websocket user")
-    user = await get_supabase_auth_service().get_user(access_token)
-    if not user:
+    try:
+        payload = decode_bearer_token(access_token)
+    except Exception:
         logger.warning("Authentication failed: invalid or expired STT token")
         await send_error_message(websocket, "Invalid or expired token.")
         await websocket.close(code=1008)
         return None
 
-    raw_user_id = user.get("id")
-    if not raw_user_id:
+    user_id = str(payload.get("id") or payload.get("sub", ""))
+    if not user_id:
         logger.error("User object missing ID")
         await send_error_message(websocket, "User ID missing from token.")
         await websocket.close(code=1008)
         return None
 
-    user_id = str(raw_user_id)
     session_id = str(uuid.uuid4())
     logger.info("User %s authenticated. Starting STT session %s", user_id, session_id)
     return user_id, session_id
