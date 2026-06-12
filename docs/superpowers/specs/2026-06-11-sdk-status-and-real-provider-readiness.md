@@ -48,25 +48,19 @@ AGENTKIT_MODEL_PROVIDER=gemini GEMINI_API_KEY=... python -c "import agentkit"
 
 ### TypeScript (`agentkit/ts`)
 
-The `ModelProvider` interface is stable (`src/providers/base.ts`). No concrete
-providers ship. To run against a real model, implement the interface and
-register before running the agent:
+**Updated 2026-06-11:** `OpenAIProvider` and `AnthropicProvider` now ship and
+are exported from the top-level `@agentkit/sdk` package. Both are optional-dep
+lazy-loaded (tree-shake safe). Quick start:
 
 ```ts
-class OpenAIProvider implements ModelProvider {
-  async generate(messages: ProviderMessage[], tools: ToolSpec[]): Promise<ModelResponse> {
-    // translate to OpenAI format, call SDK, parse response
-  }
-  async *generateStream(messages, tools): AsyncGenerator<ModelResponseChunk> {
-    // stream deltas + tool call chunks
-  }
-}
-registerProvider("openai", new OpenAIProvider());
+import { OpenAIProvider, registerProvider, AgentRuntime } from "@agentkit/sdk";
+registerProvider("openai", new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }));
 ```
 
-The interface carries `{ content, toolCalls }` out of `generate`. No
-temperature, token caps, or cancellation handle yet (diverges from Python
-`ModelProvider` signature — see `docs/sdk-gap-analysis.md §4 issue 3`).
+The `ModelProvider` interface now carries optional `ModelProviderOptions`
+(`temperature`, `maxTokens`, `cancellationToken`) on both `generate` and
+`generateStream`, matching the Python signature. The asymmetry noted in
+`docs/sdk-gap-analysis.md §4 issue 3` is resolved.
 
 ---
 
@@ -88,7 +82,8 @@ final response.
 | Cancellation | Works | Works |
 | Redis event bus (opt-in) | Works | — |
 | `InMemoryHistoryStore` | Works | — |
-| `AgentRuntime.send()` convenience | Works | Missing (callers must append UserMessage manually) |
+| `AgentRuntime.send()` convenience | Works | Works |
+| `AgentStrategy` (configurable loop limits) | Works | Works (`maxToolIterations`) |
 
 ---
 
@@ -156,16 +151,20 @@ The TS SDK is the Python core loop without the features that came after it. The
 event wire format (type strings, field names) is identical between SDKs.
 
 Missing from TS vs Python:
-- Concrete LLM providers (OpenAI, Kimi, Gemini, Anthropic)
+- Kimi and Gemini providers (OpenAI and Anthropic now ship)
 - Neutral tool-payload translators (`to_openai`, `to_gemini`)
 - RAG / knowledge retrieval engine
 - `ToolRetriever` (semantic tool selection)
 - Voice / STT / TTS
 - Multi-agent swarm routing
 - `SessionManager` / `SessionStore`
-- `AgentStrategy` config (TS hardcodes `MAX_TOOL_ITERATIONS = 10`)
 - Redis opt-in for bus / store
-- `AgentRuntime.send()` convenience method
+
+Resolved since initial draft:
+- `AgentRuntime.send()` — now implemented
+- `AgentStrategy.maxToolIterations` — now configurable (was hardcoded to 10)
+- `ModelProvider` interface — `temperature`, `maxTokens`, `cancellationToken` added
+- `OpenAIProvider`, `AnthropicProvider` — now shipped and exported
 
 Divergences that break cross-SDK event-log replay — see `docs/sdk-gap-analysis.md §5`.
 
@@ -189,7 +188,7 @@ means running manually with real API keys.
 | --- | --- | --- |
 | Works with your stack (Python + TS) | Partial — TS has no providers; no CLI scaffold | Achievable — TS providers + `agentkit init` |
 | Event-sourced runtime | Done | Done |
-| Tool registry + toolgen | Done | Done |
+| Tool registry + toolgen | Partial — registry done; ToolGen (build-time code generation) not implemented | Partial — ToolGen V0 (OpenAPI source) is ~1 week; full pipeline is months |
 | Pluggable LLM providers | Partial — Python: OpenAI/Kimi work; Gemini partial; Anthropic missing. TS: interface only. | Achievable — Anthropic (Py) + OpenAI/Anthropic (TS) |
 | Text and voice | Partial — text streaming works; voice has 4 blocking gaps | Risky — voice gaps are 3-4 weeks of dedicated work on their own |
 | RAG tool retriever | Partial — retrieval works; prompt injection is not wired | Achievable — injection is one focused week |
@@ -201,11 +200,111 @@ means running manually with real API keys.
 
 ## 10. Ordered work to unblock real-model testing
 
-1. **Anthropic provider (Python)** — `providers/anthropic.py` + add `anthropic` to `pyproject.toml` + `ANTHROPIC_API_KEY` config. ~3h.
-2. **Fix Gemini model name** — `providers/gemini.py:42` hardcodes `gemini-2.5-flash`; reconcile with config default. ~30m.
-3. **OpenAI + Anthropic provider adapters (TypeScript)** — implement `ModelProvider` interface for both. ~4h each.
-4. **Integration test scaffold** — `pytest -m integration` harness (Python) + Vitest integration suite (TS) gated behind env flag. ~1d.
-5. **RAG prompt injection** — auto-inject retrieved chunks into `AgentRuntime` prompt (ROADMAP 14). ~half-day.
-6. **`agentkit init` CLI** — currently shown on the landing page but not implemented (ROADMAP 29). ~1-2d.
-7. **Voice: barge-in + turn detection** — `serve/workers/main.py` + `stt/soniox_gateway.py`. ~1 week.
-8. **Auth reconciliation (serve)** — single token model for HTTP and WebSocket. ~half-day once decided.
+~~1. **Anthropic provider (Python)**~~ — Done. `providers/anthropic.py` ships; `anthropic` in `pyproject.toml`.
+~~2. **Fix Gemini model name**~~ — Done. Reads `GEMINI_MODEL` from config.
+~~3. **OpenAI + Anthropic provider adapters (TypeScript)**~~ — Done. Both ship and export from `@agentkit/sdk`.
+~~4a. **`AgentRuntime.send()` (TypeScript)**~~ — Done.
+~~4b. **`AgentStrategy.maxToolIterations` (TypeScript)**~~ — Done. Was hardcoded to 10.
+~~4c. **`ModelProvider` interface hardening**~~ — Done. `temperature`, `maxTokens`, `cancellationToken` added.
+~~5. **RAG prompt injection**~~ — Done. Auto-injected in `runtime.py:108-135`.
+
+~~4. **Auth reconciliation (serve)**~~ — Done. `decode_bearer_token()` shared between HTTP deps and WebSocket `authenticate_ws()`; both now do local HS256 decode instead of the WS path calling Supabase over HTTP.
+~~5. **Integration base class + namespaced tools + risk labels**~~ — Done. `Integration` ABC (Python + TS), `ToolSpec.risk` field, namespace-prefix registration via `register(registry)`. Tests: 4 Python + 4 TS.
+~~6. **Approval events + `ToolPolicy` upgrade**~~ — Done. `ToolPolicy` (Python + TS) with allow/deny lists + risk-gated approval. `ToolPlanner` emits `TOOL_APPROVAL_REQUESTED/APPROVED/REJECTED`; fail-safe: no handler = rejected.
+~~7. **`Agent` facade**~~ — Done as `AgentBuilder` (builder pattern, cleaner long-term than constructor params). Fluent `.provider().integration().policy().build()` in both SDKs. Tests: 4 Python + 4 TS.
+~~8. **ToolGen V0**~~ — Done as `agentkit gen --spec <openapi.json> --out <dir>` in `@agentkit/cli`. Emits `ToolSpec[]` + fetch-based stub handlers. Risk inferred from HTTP method. Zero new runtime deps.
+
+Remaining:
+1. **Integration test scaffold** — `pytest -m integration` harness (Python) + Vitest integration suite (TS) gated behind env flag. ~1d.
+2. **`agentkit init` CLI** — scaffold exists (`apps/cli/src/commands/init.ts`) but is a stub (no file writes, no real setup). ~1-2d.
+3. **`@tool` decorator** — `@tool(risk=..., require_approval=...)` shorthand for registering tools on an Integration without boilerplate. ~0.5d.
+4. **`TOOL_CALL_FAILED` projection (TS)** — TS replay skips it; diverges from Python. ~0.5d.
+5. **`SessionManager` / `SessionStore` (TS)** — Python has durable session management; TS has none. ~1d.
+
+<!-- TODO(task-12): Voice — Deepgram STT + barge-in
+     Why Deepgram over Soniox for barge-in: Deepgram emits structured VAD events
+     (SpeechStarted) server-side over the same WebSocket during TTS playback, so
+     barge-in is 3 lines of event handling rather than a local amplitude-threshold
+     VAD pipeline. The newer Flux model adds StartOfTurn/EndOfTurn events that are
+     semantically aware (not silence-only), reducing false positives on mid-sentence
+     pauses. The current Soniox path has no VAD event surface at all.
+     
+     Scope when ready:
+     - STT provider interface (swappable, same shape as ModelProvider)
+     - DeepgramSTTProvider: stream PCM, parse VAD events, emit SpeechStarted
+     - SpeechStarted during TTS playback = barge-in signal: cancel in-flight LLM
+       turn (via CancellationToken) + stop TTS output
+     - Turn-end via speech_final:true or EndOfTurn (Flux model)
+     - Replace Soniox gateway in serve/server/v1/voice.py
+     - Est: ~1 week including integration tests against Deepgram sandbox
+-->
+
+---
+
+## 11. Integration layer status
+
+Introduced by the integrations/toolgen design doc. This entire layer sits above the runtime kernel and is currently absent. The runtime kernel (§2) is the correct foundation; none of these items require changes to it.
+
+| Concept | Status | Blocking on | Est. |
+| --- | --- | --- | --- |
+| `Integration` base class / protocol | Done (Python + TS) | — | — |
+| Namespaced tool names (`gmail.search_emails`) | Done (Python + TS) | — | — |
+| Risk classification (`read`, `write`, `external_effect`, `financial`, `destructive`, `admin`) | Done (`ToolSpec.risk`, Python + TS) | — | — |
+| `ToolPolicy` upgrade (risk-driven, not just allow/deny) | Done (Python + TS) | — | — |
+| Approval events (`approval.requested/approved/rejected`) | Done (Python + TS via `ToolPlanner`) | — | — |
+| `AgentBuilder` facade | Done (Python + TS) | — | — |
+| `@tool(risk=..., require_approval=...)` decorator | Missing | `Integration` base | 0.5d |
+| Integration manifests (YAML per integration) | Missing | `Integration` base | 1d |
+| OAuth / ConnectedAccounts (tool-level auth) | Missing | manifests | 1-2d |
+| Sync/indexing adapters | Missing | OAuth layer | weeks |
+| Capability abstraction (`Email()`, `CRM()`) | Missing | official integrations | weeks |
+| Official connectors (Gmail, Slack, Airtable, etc.) | Missing | all of the above | weeks each |
+
+The first six rows of the critical path are now done. Remaining integration-layer items fan out from the `@tool` decorator and official connectors.
+
+**Current `ToolPolicy` state** (`runtime/tools/policies.py`): risk-gated allow/deny with approval hooks in `ToolPlanner`. `ToolSpec.risk` field added in both SDKs.
+
+---
+
+## 12. ToolGen status
+
+ToolGen is the build-time pipeline that converts APIs, schemas, and app metadata into agent-ready `Integration` packages. It is not a runtime concept.
+
+**Current state: not started.** The landing page lists "toolgen" as a shipped feature — this is incorrect. The tool *registry* is done; ToolGen (the code generator) does not exist.
+
+**What ToolGen produces** (target output, none exists today):
+
+```
+agentkit_billing/
+  pyproject.toml
+  integration.yaml        ← manifest
+  agentkit_billing/
+    integration.py        ← Integration subclass
+    tools.py              ← @tool handlers (stubs, ready to fill)
+    schemas.py            ← Pydantic request/response models
+    auth.py               ← auth config
+    policies.py           ← risk + approval defaults
+  tests/
+    test_customers.py
+    test_payments.py
+```
+
+**Planned sources** (in priority order):
+
+| Source | CLI | Status | Notes |
+| --- | --- | --- | --- |
+| OpenAPI spec | `agentkit toolgen from-openapi ./spec.yaml` | Missing | Highest leverage; most APIs have one |
+| MCP server | `agentkit toolgen from-mcp github` | Missing | Wraps MCP as an Integration, adds policy/approval layer |
+| Postgres schema | `agentkit toolgen from-postgres $DATABASE_URL` | Missing | Infers business entities from table/column names |
+| Airtable base | `agentkit toolgen from-airtable --base app123` | Missing | SaaS-specific; generates domain tools from base schema |
+| Docs / runbooks | `agentkit toolgen from-docs ./docs` | Missing | Advanced; requires human review before use |
+
+**Pipeline stages** (target, none implemented):
+
+```
+Source → Introspect → Normalize → Select → Group → Name → Schema → Policy → Generate → Test → Publish
+```
+
+The key design constraint (from the doc, §19): ToolGen generates at **build time**, reviewed by the developer before use. Runtime tool invention by the LLM is explicitly out of scope — it creates security, auditability, and versioning problems.
+
+**V0 scope** (what makes ToolGen useful enough to ship): OpenAPI source only, include/exclude filters, risk inference from HTTP method + path keywords, review YAML output, generated `Integration` subclass with typed handler stubs, basic schema validation tests. Everything else is V1+.
