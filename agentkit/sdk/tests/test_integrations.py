@@ -1,6 +1,6 @@
 import pytest
 
-from agentkit.runtime.integrations import Integration
+from agentkit.runtime.integrations import Integration, tool
 from agentkit.runtime.tools.registry import ToolContext, ToolRegistry, ToolSpec
 
 
@@ -29,7 +29,7 @@ class MultiToolIntegration(Integration):
         return [(spec_a, _dummy_handler), (spec_b, _dummy_handler)]
 
 
-# --- tests ---
+# --- existing tests ---
 
 
 def test_namespace_prefixes_tool_names():
@@ -55,9 +55,67 @@ def test_cannot_instantiate_without_namespace():
         NoNamespace()
 
 
-def test_cannot_instantiate_without_tools():
-    class NoTools(Integration):
-        namespace = "x"
+# --- @tool decorator tests ---
 
-    with pytest.raises(TypeError):
-        NoTools()
+
+def test_tool_decorator_auto_registers():
+    """A class with @tool-decorated methods exposes them via tools()."""
+
+    class ChargeIntegration(Integration):
+        namespace = "stripe"
+
+        @tool(
+            description="Retrieve a charge",
+            parameters={"charge_id": {"type": "string"}},
+            risk="read",
+        )
+        async def retrieve_charge(self, ctx: ToolContext, args: dict) -> dict:
+            return {}
+
+    integration = ChargeIntegration()
+    pairs = integration.tools()
+    assert len(pairs) == 1
+    spec, handler = pairs[0]
+    assert spec.name == "retrieve_charge"
+    assert spec.description == "Retrieve a charge"
+    assert spec.risk == "read"
+    # Bound methods are re-created on each attribute access, so compare by
+    # underlying function identity rather than object identity.
+    assert handler.__func__ is type(integration).retrieve_charge  # type: ignore[union-attr]
+
+
+def test_tool_decorator_namespace_prefix():
+    """After register(), tool names are namespace-prefixed in the registry."""
+
+    class PayIntegration(Integration):
+        namespace = "pay"
+
+        @tool(
+            description="Make a payment",
+            parameters={},
+            risk="financial",
+        )
+        async def make_payment(self, ctx: ToolContext, args: dict) -> dict:
+            return {}
+
+    registry = ToolRegistry()
+    PayIntegration().register(registry)
+    names = [s.name for s in registry.list_specs(enabled_only=False)]
+    assert names == ["pay.make_payment"]
+
+
+def test_manual_tools_override_still_works():
+    """A subclass that manually overrides tools() is unaffected by the decorator scan."""
+
+    custom_spec = ToolSpec(name="custom_op", description="Custom", parameters={})
+
+    class ManualIntegration(Integration):
+        namespace = "manual"
+
+        def tools(self):
+            return [(custom_spec, _dummy_handler)]
+
+    registry = ToolRegistry()
+    ManualIntegration().register(registry)
+    names = [s.name for s in registry.list_specs(enabled_only=False)]
+    assert names == ["manual.custom_op"]

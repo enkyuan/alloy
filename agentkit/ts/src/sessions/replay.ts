@@ -70,12 +70,23 @@ export function replaySession(events: readonly AgentKitEvent[]): SessionState {
           toolCallId: event.tool_call_id,
         });
         break;
+      case EventType.TOOL_CALL_FAILED:
+        // Record the failure as a tool message so the agent loop sees the error
+        // in history and can react, instead of re-requesting the same tool on
+        // every iteration until maxToolIterations is exhausted. Matches Python.
+        state.messages.push({
+          role: "tool",
+          name: event.tool_name,
+          content: `Error: ${event.error}`,
+          toolCallId: event.tool_call_id,
+        });
+        break;
       // NOTE: AGENT_MESSAGE_DELTA and the transient tool events (REQUESTED,
-      // STARTED, FAILED) are intentionally NOT projected. The agent loop's
-      // termination depends on only AGENT_MESSAGE_COMPLETED -> assistant and
-      // TOOL_CALL_COMPLETED -> tool appearing in replayed history. Projecting
-      // deltas as assistant turns would make a tool-driven mock never see a
-      // tool result and loop forever.
+      // STARTED) are intentionally NOT projected. The agent loop's termination
+      // depends on only AGENT_MESSAGE_COMPLETED -> assistant and
+      // TOOL_CALL_COMPLETED / TOOL_CALL_FAILED -> tool appearing in replayed
+      // history. Projecting deltas as assistant turns would make a tool-driven
+      // mock never see a tool result and loop forever.
       default:
         break;
     }

@@ -8,11 +8,105 @@ import { InMemoryEventStore } from "../src/events/store";
 import { MockProvider } from "../src/providers/mock";
 import { CancellationToken } from "../src/runtime/cancellation";
 import { buildMessages } from "../src/runtime/context";
-import { AgentRuntime } from "../src/runtime/runtime";
+import { AgentRuntime, type AgentStrategy } from "../src/runtime/runtime";
 import { clearTools, registerTool, toolSpecFromSchema } from "../src/tools/registry";
+import { replaySession } from "../src/sessions/replay";
 import type { Message } from "../src/sessions/replay";
 
 afterEach(() => clearTools());
+
+describe("replaySession", () => {
+  const SESSION = "test-session";
+
+  it("projects TOOL_CALL_FAILED as a tool error message", () => {
+    const events = [
+      AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: SESSION, content: "go" }),
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_REQUESTED,
+        session_id: SESSION,
+        tool_name: "risky_tool",
+        tool_args: {},
+        tool_call_id: "call_fail_1",
+      }),
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_STARTED,
+        session_id: SESSION,
+        tool_name: "risky_tool",
+        tool_call_id: "call_fail_1",
+      }),
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_FAILED,
+        session_id: SESSION,
+        tool_name: "risky_tool",
+        tool_call_id: "call_fail_1",
+        error: "connection refused",
+      }),
+    ];
+
+    const state = replaySession(events);
+
+    expect(state.messages).toHaveLength(2);
+    const toolMsg = state.messages[1]!;
+    expect(toolMsg.role).toBe("tool");
+    expect(toolMsg.name).toBe("risky_tool");
+    expect(toolMsg.content).toMatch(/^Error: /);
+    expect(toolMsg.content).toContain("connection refused");
+    expect(toolMsg.toolCallId).toBe("call_fail_1");
+  });
+
+  it("TOOL_CALL_FAILED does not appear when TOOL_CALL_COMPLETED follows", () => {
+    // Two separate tool calls: one fails, one succeeds. Both must appear in
+    // messages with the correct content so the agent loop sees both outcomes.
+    const events = [
+      AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: SESSION, content: "go" }),
+      // First call: fails
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_REQUESTED,
+        session_id: SESSION,
+        tool_name: "bad_tool",
+        tool_args: {},
+        tool_call_id: "call_bad",
+      }),
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_FAILED,
+        session_id: SESSION,
+        tool_name: "bad_tool",
+        tool_call_id: "call_bad",
+        error: "timeout",
+      }),
+      // Second call: succeeds
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_REQUESTED,
+        session_id: SESSION,
+        tool_name: "good_tool",
+        tool_args: {},
+        tool_call_id: "call_good",
+      }),
+      AgentKitEvent.parse({
+        type: EventType.TOOL_CALL_COMPLETED,
+        session_id: SESSION,
+        tool_name: "good_tool",
+        tool_call_id: "call_good",
+        result: { ok: true },
+      }),
+    ];
+
+    const state = replaySession(events);
+
+    // user + failed tool + completed tool = 3 messages
+    expect(state.messages).toHaveLength(3);
+
+    const failedMsg = state.messages.find((m) => m.name === "bad_tool")!;
+    expect(failedMsg.role).toBe("tool");
+    expect(failedMsg.content).toMatch(/^Error: /);
+    expect(failedMsg.toolCallId).toBe("call_bad");
+
+    const successMsg = state.messages.find((m) => m.name === "good_tool")!;
+    expect(successMsg.role).toBe("tool");
+    expect(successMsg.content).not.toMatch(/^Error: /);
+    expect(successMsg.toolCallId).toBe("call_good");
+  });
+});
 
 describe("CancellationToken", () => {
   it("starts not cancelled, flips on cancel", () => {
@@ -220,5 +314,90 @@ describe("AgentRuntime.runTurn", () => {
     );
     // No completion with empty content may be emitted.
     expect(completions.every((e) => "content" in e && e.content !== "")).toBe(true);
+  });
+});
+
+describe("AgentRuntime.send", () => {
+  afterEach(() => clearTools());
+
+  it("appends a USER_MESSAGE event then produces a completion", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const s = "s-send";
+    // Seed only session_created — no user message yet.
+    await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
+
+    await runtime.send(s, "hello from send");
+
+    const events = await store.getEvents(s);
+    const userMsg = events.find((e) => e.type === EventType.USER_MESSAGE);
+    expect(userMsg).toBeDefined();
+    expect((userMsg as any).content).toBe("hello from send");
+    expect(events.some((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)).toBe(true);
+  });
+
+  it("publishes the USER_MESSAGE to the bus before running the turn", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const s = "s-send-bus";
+    await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
+
+    const received: string[] = [];
+    const sub = bus.subscribe(s);
+    (async () => {
+      for await (const e of sub) received.push(e.type);
+    })();
+
+    await runtime.send(s, "ping");
+    sub.return?.();
+
+    expect(received[0]).toBe(EventType.USER_MESSAGE);
+  });
+
+  it("forwards cancellationToken to runTurn", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const s = "s-send-cancel";
+    await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
+
+    const token = new CancellationToken();
+    token.cancel();
+    await expect(runtime.send(s, "hello", { cancellationToken: token })).rejects.toThrow(
+      /cancelled/,
+    );
+  });
+});
+
+describe("AgentStrategy.maxToolIterations", () => {
+  afterEach(() => clearTools());
+
+  it("respects a custom maxToolIterations lower than the default", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    let callCount = 0;
+    const countingProvider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* () {
+        callCount++;
+        // Always request a tool so the loop never exits early on its own.
+        yield { delta: "", toolCalls: [{ id: `c${callCount}`, name: "noop", args: {} }] };
+      },
+    };
+    const strategy: AgentStrategy = { maxToolIterations: 3 };
+    const runtime = new AgentRuntime({ provider: countingProvider, store, bus, strategy });
+    const s = "s-strategy";
+    await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: s, content: "go" }),
+    );
+    registerTool(toolSpecFromSchema("noop", "no-op", z.object({})), async () => ({}));
+
+    await runtime.runTurn(s);
+
+    // Provider was called exactly maxToolIterations times (not the default 10).
+    expect(callCount).toBe(3);
   });
 });

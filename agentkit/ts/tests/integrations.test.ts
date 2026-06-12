@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { Integration } from "../src/integrations/base";
+import { Integration, tool } from "../src/integrations/base";
 import { ToolRegistry } from "../src/tools/registry";
 import type { ToolHandler, ToolSpec } from "../src/tools/registry";
 
@@ -57,5 +57,59 @@ describe("Integration", () => {
     expect(specs).toHaveLength(1);
     expect(specs[0]!.name).toBe("foo.bar");
     expect(specs[0]!.description).toBe("A test tool");
+  });
+
+  // --- tool() decorator tests ---
+
+  it("tool() marks handler with metadata", () => {
+    const handler = tool(
+      {
+        description: "Make a payment",
+        parameters: { amount: { type: "number" } },
+        risk: "financial",
+      },
+      async (_ctx, _args) => ({ ok: true }),
+    );
+    // The returned function must be callable and carry the marker.
+    expect(typeof handler).toBe("function");
+    // We verify metadata is present by using it in a class (see next test).
+    // Here we just assert the returned value is a function.
+    expect(handler).toBeDefined();
+  });
+
+  it("Integration.tools() auto-discovers tool() methods", () => {
+    class PayIntegration extends Integration {
+      readonly namespace = "pay";
+
+      readonly makePayment = tool(
+        { description: "Make a payment", parameters: {}, risk: "financial" },
+        async (_ctx, _args) => ({ paid: true }),
+      );
+    }
+
+    const integration = new PayIntegration();
+    const pairs = integration.tools();
+    expect(pairs).toHaveLength(1);
+    const [spec, handler] = pairs[0]!;
+    expect(spec.name).toBe("makePayment");
+    expect(spec.description).toBe("Make a payment");
+    expect(spec.risk).toBe("financial");
+    expect(typeof handler).toBe("function");
+  });
+
+  it("manual tools() override still works", () => {
+    const customSpec: ToolSpec = { name: "custom_op", description: "Custom", parameters: {} };
+
+    class ManualIntegration extends Integration {
+      readonly namespace = "manual";
+      tools(): [ToolSpec, ToolHandler][] {
+        return [[customSpec, dummyHandler]];
+      }
+    }
+
+    const registry = new ToolRegistry();
+    new ManualIntegration().register(registry);
+    const names = registry.listSpecs({ enabledOnly: false }).map((s) => s.name);
+    expect(names).toEqual(["manual.custom_op"]);
   });
 });

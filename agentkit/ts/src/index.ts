@@ -65,7 +65,7 @@ export type { AnthropicProviderOptions } from "./providers/anthropic";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
 
 // Integrations
-export { Integration } from "./integrations";
+export { Integration, tool } from "./integrations";
 
 // Runtime
 export {

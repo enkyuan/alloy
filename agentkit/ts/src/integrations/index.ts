@@ -1,1 +1,1 @@
-export { Integration } from "./base";
+export { Integration, tool } from "./base";
