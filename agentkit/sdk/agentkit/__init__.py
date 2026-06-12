@@ -45,6 +45,8 @@ _LAZY: dict[str, str] = {
     "TTSProvider": "agentkit.modalities.voice.tts",
     "VoiceTTSAdapter": "agentkit.modalities.voice.tts",
     "get_tts_provider": "agentkit.modalities.voice.tts",
+    # Integrations
+    "Integration": "agentkit.runtime.integrations",
     # Toolgen
     "ToolSpec": "agentkit.runtime.tools.registry",
     "ToolContext": "agentkit.runtime.tools.registry",

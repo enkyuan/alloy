@@ -64,6 +64,9 @@ export { AnthropicProvider } from "./providers/anthropic";
 export type { AnthropicProviderOptions } from "./providers/anthropic";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
 
+// Integrations
+export { Integration } from "./integrations";
+
 // Runtime
 export {
   AgentRuntime,
@@ -73,3 +76,4 @@ export {
 } from "./runtime/runtime";
 export { CancellationToken } from "./runtime/cancellation";
 export { buildMessages } from "./runtime/context";
+export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "./runtime/builder";
