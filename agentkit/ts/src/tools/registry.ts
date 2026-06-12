@@ -15,6 +15,9 @@ export interface ToolSpec {
   parameters: JSONSchema;
   tags?: string[];
   enabled?: boolean;
+  /** Risk classification for policy enforcement and approval routing.
+   * undefined = unclassified, treated as "read" by default policies. */
+  risk?: "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
 }
 
 /**

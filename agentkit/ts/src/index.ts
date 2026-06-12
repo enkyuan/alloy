@@ -32,19 +32,44 @@ export {
   executeTool,
   clearTools,
 } from "./tools/registry";
+export {
+  ToolPolicy,
+  ToolPolicyViolation,
+  type ToolPolicyOptions,
+  type ToolRisk,
+} from "./tools/policy";
+export {
+  ToolPlanner,
+  type ToolPlannerOptions,
+  type ToolCallInstruction,
+  type ToolCallResult,
+  type ToolExecutor,
+  type ApprovalHandler,
+  type EmitFn,
+} from "./tools/planner";
 
 // Providers
 export type {
   ModelProvider,
+  ModelProviderOptions,
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
 } from "./providers/base";
 export { MockProvider } from "./providers/mock";
+export { OpenAIProvider } from "./providers/openai";
+export type { OpenAIProviderOptions } from "./providers/openai";
+export { AnthropicProvider } from "./providers/anthropic";
+export type { AnthropicProviderOptions } from "./providers/anthropic";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
 
 // Runtime
-export { AgentRuntime, type AgentRuntimeOptions, type RunTurnOptions } from "./runtime/runtime";
+export {
+  AgentRuntime,
+  type AgentRuntimeOptions,
+  type AgentStrategy,
+  type RunTurnOptions,
+} from "./runtime/runtime";
 export { CancellationToken } from "./runtime/cancellation";
 export { buildMessages } from "./runtime/context";

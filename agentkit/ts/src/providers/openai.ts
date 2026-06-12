@@ -10,6 +10,7 @@
  */
 import type {
   ModelProvider,
+  ModelProviderOptions,
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
@@ -89,13 +90,18 @@ export class OpenAIProvider implements ModelProvider {
     });
   }
 
-  async generate(messages: ProviderMessage[], tools: ToolSpec[]): Promise<ModelResponse> {
+  async generate(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): Promise<ModelResponse> {
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
     const params: any = {
       model: this.opts.model,
       messages: this.buildMessages(messages),
-      temperature: this.opts.temperature,
-      max_tokens: this.opts.maxTokens,
+      temperature: options?.temperature ?? this.opts.temperature,
+      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
@@ -111,13 +117,15 @@ export class OpenAIProvider implements ModelProvider {
   async *generateStream(
     messages: ProviderMessage[],
     tools: ToolSpec[],
+    options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
     const params: any = {
       model: this.opts.model,
       messages: this.buildMessages(messages),
-      temperature: this.opts.temperature,
-      max_tokens: this.opts.maxTokens,
+      temperature: options?.temperature ?? this.opts.temperature,
+      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
       stream: true,
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);

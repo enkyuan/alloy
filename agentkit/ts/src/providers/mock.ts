@@ -5,7 +5,13 @@
  * tool with empty args; otherwise it returns a fixed text response. This drives
  * the full tool loop without a network call.
  */
-import type { ModelProvider, ModelResponse, ModelResponseChunk, ProviderMessage } from "./base";
+import type {
+  ModelProvider,
+  ModelProviderOptions,
+  ModelResponse,
+  ModelResponseChunk,
+  ProviderMessage,
+} from "./base";
 import type { ToolSpec } from "../tools/registry";
 
 const FINAL_TEXT = "The mock provider has completed the tool loop.";
@@ -15,7 +21,12 @@ function hasToolResult(messages: ProviderMessage[]): boolean {
 }
 
 export class MockProvider implements ModelProvider {
-  async generate(messages: ProviderMessage[], tools: ToolSpec[]): Promise<ModelResponse> {
+  async generate(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): Promise<ModelResponse> {
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const first = tools[0];
     if (first !== undefined && !hasToolResult(messages)) {
       return {
@@ -29,8 +40,9 @@ export class MockProvider implements ModelProvider {
   async *generateStream(
     messages: ProviderMessage[],
     tools: ToolSpec[],
+    options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
-    const result = await this.generate(messages, tools);
+    const result = await this.generate(messages, tools, options);
     yield { delta: result.content, toolCalls: result.toolCalls };
   }
 }

@@ -9,6 +9,7 @@
  */
 import type {
   ModelProvider,
+  ModelProviderOptions,
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
@@ -101,15 +102,20 @@ export class AnthropicProvider implements ModelProvider {
     return this.client;
   }
 
-  async generate(messages: ProviderMessage[], tools: ToolSpec[]): Promise<ModelResponse> {
+  async generate(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): Promise<ModelResponse> {
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
     const params: any = {
       model: this.opts.model,
       messages: anthropicMessages,
-      temperature: this.opts.temperature,
-      max_tokens: this.opts.maxTokens,
+      temperature: options?.temperature ?? this.opts.temperature,
+      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
     };
     if (system) params.system = system;
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
@@ -121,15 +127,17 @@ export class AnthropicProvider implements ModelProvider {
   async *generateStream(
     messages: ProviderMessage[],
     tools: ToolSpec[],
+    options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
     const params: any = {
       model: this.opts.model,
       messages: anthropicMessages,
-      temperature: this.opts.temperature,
-      max_tokens: this.opts.maxTokens,
+      temperature: options?.temperature ?? this.opts.temperature,
+      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
     };
     if (system) params.system = system;
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
