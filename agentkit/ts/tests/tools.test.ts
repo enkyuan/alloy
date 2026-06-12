@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  TOOL_META,
   ToolRegistry,
   clearTools,
   executeTool,
@@ -9,6 +10,7 @@ import {
   registerTool,
   toolSpecFromSchema,
 } from "../src/index";
+import { tool } from "../src/index";
 
 afterEach(() => {
   clearTools();
@@ -107,6 +109,35 @@ describe("tool registry", () => {
     // empty array = no tag constraint applied, same as omitting tags
     expect(listToolSpecs({ tags: [] })).toHaveLength(1);
   });
+
+  it("registerTool(name, taggedHandler) derives spec from TOOL_META", async () => {
+    const handler = tool(
+      {
+        description: "Ping the service",
+        parameters: { type: "object", properties: {} },
+        risk: "read",
+      },
+      async (_ctx, _args) => ({ pong: true }),
+    );
+
+    registerTool("ping", handler);
+
+    const specs = listToolSpecs();
+    expect(specs).toHaveLength(1);
+    expect(specs[0]).toMatchObject({
+      name: "ping",
+      description: "Ping the service",
+      risk: "read",
+    });
+
+    const result = await executeTool("u", "ping", {});
+    expect(result).toEqual({ pong: true });
+  });
+
+  it("registerTool(name, handler) throws when handler has no TOOL_META", () => {
+    const bare = async () => ({});
+    expect(() => registerTool("bare", bare)).toThrow(/TOOL_META/);
+  });
 });
 
 describe("ToolRegistry", () => {
@@ -167,5 +198,45 @@ describe("ToolRegistry", () => {
     const r2 = new ToolRegistry();
     r1.register({ name: "x", description: "d", parameters: {} }, async () => ({}));
     expect(r2.listSpecs()).toHaveLength(0);
+  });
+
+  it("register(name, taggedHandler) derives spec from TOOL_META", async () => {
+    const registry = new ToolRegistry();
+    const handler = tool(
+      {
+        description: "Get balance",
+        parameters: { type: "object", properties: {} },
+        risk: "read",
+        tags: ["finance"],
+      },
+      async (_ctx, _args) => ({ balance: 42 }),
+    );
+
+    registry.register("getBalance", handler);
+
+    const specs = registry.listSpecs();
+    expect(specs).toHaveLength(1);
+    expect(specs[0]).toMatchObject({
+      name: "getBalance",
+      description: "Get balance",
+      risk: "read",
+      tags: ["finance"],
+    });
+
+    const result = await registry.execute("u", "getBalance", {});
+    expect(result).toEqual({ balance: 42 });
+  });
+
+  it("register(name, handler) throws when handler has no TOOL_META", () => {
+    const registry = new ToolRegistry();
+    const bare = async () => ({});
+    expect(() => registry.register("bare", bare)).toThrow(/TOOL_META/);
+  });
+
+  it("TOOL_META symbol is exported and can be read from tagged handlers", () => {
+    const handler = tool({ description: "Test", parameters: {} }, async () => ({}));
+    const meta = (handler as unknown as Record<symbol, unknown>)[TOOL_META];
+    expect(meta).toBeDefined();
+    expect((meta as { description: string }).description).toBe("Test");
   });
 });

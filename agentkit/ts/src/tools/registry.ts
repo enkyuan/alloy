@@ -36,11 +36,47 @@ export type ToolHandler = (
   args: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
+/** Metadata attached to a handler by `tool(meta, fn)`. */
+export interface ToolMeta {
+  description: string;
+  parameters: JSONSchema;
+  risk?: ToolSpec["risk"];
+  tags?: string[];
+  enabled?: boolean;
+}
+
+/** Symbol key used to tag a handler with its ToolMeta. */
+export const TOOL_META = Symbol("tool_meta");
+
+/** A ToolHandler that may carry attached ToolMeta (set by `tool()`). */
+export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
+
 const toolSpecs = new Map<string, ToolSpec>();
 const toolHandlers = new Map<string, ToolHandler>();
 
-/** Register a tool handler under its spec's name. Throws on a duplicate name. */
-export function registerTool(spec: ToolSpec, handler: ToolHandler): void {
+function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
+  const meta = (handler as TaggedHandler)[TOOL_META];
+  if (!meta) {
+    throw new Error(
+      `handler for "${name}" has no TOOL_META — wrap it with tool(meta, fn) before registering by name`,
+    );
+  }
+  return {
+    name,
+    description: meta.description,
+    parameters: meta.parameters,
+    ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+    ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+    ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+  };
+}
+
+/** Register a tool handler. Accepts either a full ToolSpec + handler, or a
+ * pre-tagged handler (from `tool(meta, fn)`) with just a name string. */
+export function registerTool(spec: ToolSpec, handler: ToolHandler): void;
+export function registerTool(name: string, handler: ToolHandler): void;
+export function registerTool(specOrName: ToolSpec | string, handler: ToolHandler): void {
+  const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
   if (toolSpecs.has(spec.name)) {
     throw new Error(`Tool already registered: ${spec.name}`);
   }
@@ -128,7 +164,10 @@ export class ToolRegistry {
   private readonly specs = new Map<string, ToolSpec>();
   private readonly handlers = new Map<string, ToolHandler>();
 
-  register(spec: ToolSpec, handler: ToolHandler): this {
+  register(spec: ToolSpec, handler: ToolHandler): this;
+  register(name: string, handler: ToolHandler): this;
+  register(specOrName: ToolSpec | string, handler: ToolHandler): this {
+    const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
     if (this.specs.has(spec.name)) {
       throw new Error(`Tool already registered: ${spec.name}`);
     }

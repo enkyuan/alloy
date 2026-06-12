@@ -2,20 +2,9 @@
  * Integration abstract base class: namespace-scoped tool bundle.
  * Mirrors `agentkit.runtime.integrations.base.Integration`.
  */
-import type { JSONSchema, ToolHandler, ToolSpec } from "../tools/registry";
-import { ToolRegistry } from "../tools/registry";
-
-interface ToolMeta {
-  description: string;
-  parameters: JSONSchema;
-  risk?: ToolSpec["risk"];
-  tags?: string[];
-  enabled?: boolean;
-}
-
-const TOOL_META = Symbol("tool_meta");
-
-type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
+import type { ToolHandler, ToolSpec } from "../tools/registry";
+import { TOOL_META, ToolRegistry } from "../tools/registry";
+import type { TaggedHandler, ToolMeta } from "../tools/registry";
 
 /**
  * Mark a handler function as a tool with the given metadata.
