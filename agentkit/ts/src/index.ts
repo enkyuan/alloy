@@ -17,6 +17,8 @@ export { type EventStore, InMemoryEventStore } from "./events/store";
 
 // Sessions
 export { replaySession, ReplaySession, type SessionState, type Message } from "./sessions/replay";
+export { SessionManager } from "./sessions/manager";
+export { type SessionRecord, type SessionStore, InMemorySessionStore } from "./sessions/store";
 
 // Tools
 export {
