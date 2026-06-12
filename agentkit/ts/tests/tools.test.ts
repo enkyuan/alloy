@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  ToolPolicy,
   ToolRegistry,
   clearTools,
   executeTool,
@@ -9,6 +10,12 @@ import {
   registerTool,
   toolSpecFromSchema,
 } from "../src/index";
+import { EventBus } from "../src/events/bus";
+import { EventType } from "../src/events/types";
+import { InMemoryEventStore } from "../src/events/store";
+import { AgentKitEvent } from "../src/events/schemas";
+import { AgentRuntime } from "../src/runtime/runtime";
+import { MockProvider } from "../src/providers/mock";
 
 afterEach(() => {
   clearTools();
@@ -167,5 +174,107 @@ describe("ToolRegistry", () => {
     const r2 = new ToolRegistry();
     r1.register({ name: "x", description: "d", parameters: {} }, async () => ({}));
     expect(r2.listSpecs()).toHaveLength(0);
+  });
+});
+
+describe("AgentRuntime with ToolPolicy", () => {
+  async function seed(store: InMemoryEventStore, sessionId: string) {
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "do something dangerous",
+      }),
+    );
+  }
+
+  it("emits TOOL_CALL_FAILED when a denied tool is called", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const policy = new ToolPolicy({ denied: new Set(["dangerous_op"]) });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-denied";
+    await seed(store, s);
+    registerTool({ name: "dangerous_op", description: "d", parameters: {} }, async () => ({
+      done: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    expect(failedEvent).toBeDefined();
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/not permitted/);
+    }
+    // The tool handler must NOT have been called — no TOOL_CALL_COMPLETED
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("emits TOOL_CALL_FAILED with approval-rejected error when risk requires approval", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    // Policy that requires approval for any "financial" risk tool
+    const policy = new ToolPolicy({
+      requireApprovalFor: new Set(["financial"]),
+    });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-approval";
+    await seed(store, s);
+    // Register a tool with financial risk — MockProvider will try to call it
+    registerTool(
+      { name: "charge_card", description: "charges a card", parameters: {}, risk: "financial" },
+      async () => ({ charged: true }),
+    );
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    expect(failedEvent).toBeDefined();
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/approval required/);
+    }
+    // Tool must not have executed
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("executes tools normally when no policy is configured", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+
+    const s = "s-no-policy";
+    await seed(store, s);
+    registerTool({ name: "safe_op", description: "safe", parameters: {} }, async () => ({
+      ok: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(true);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(false);
   });
 });

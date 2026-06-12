@@ -17,10 +17,13 @@ export { type EventStore, InMemoryEventStore } from "./events/store";
 
 // Sessions
 export { replaySession, ReplaySession, type SessionState, type Message } from "./sessions/replay";
+export { SessionManager } from "./sessions/manager";
+export { type SessionStore, type SessionRecord, InMemorySessionStore } from "./sessions/store";
 
 // Tools
 export {
   type ToolSpec,
+  type ToolRisk,
   type ToolContext,
   type ToolHandler,
   type JSONSchema,
@@ -32,6 +35,7 @@ export {
   executeTool,
   clearTools,
 } from "./tools/registry";
+export { ToolPolicy, ToolPolicyViolation, type ToolPolicyOptions } from "./tools/policy";
 
 // Providers
 export type {

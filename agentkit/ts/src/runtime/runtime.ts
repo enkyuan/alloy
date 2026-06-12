@@ -13,6 +13,7 @@ import type { EventStore } from "../events/store";
 import type { ModelProvider, ToolCall } from "../providers/base";
 import { replaySession } from "../sessions/replay";
 import { executeTool, listToolSpecs } from "../tools/registry";
+import type { ToolPolicy } from "../tools/policy";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
 
@@ -23,6 +24,10 @@ export interface AgentRuntimeOptions {
   store: EventStore;
   bus: EventBus;
   systemPrompt?: string;
+  /** Optional policy to enforce before each tool call. */
+  policy?: ToolPolicy;
+  /** User identifier threaded into tool execution context. Defaults to "agent". */
+  userId?: string;
 }
 
 export interface RunTurnOptions {
@@ -44,12 +49,16 @@ export class AgentRuntime {
   private readonly store: EventStore;
   private readonly bus: EventBus;
   private readonly systemPrompt?: string;
+  private readonly policy?: ToolPolicy;
+  private readonly userId: string;
 
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
     this.store = options.store;
     this.bus = options.bus;
     this.systemPrompt = options.systemPrompt;
+    this.policy = options.policy;
+    this.userId = options.userId ?? "agent";
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
@@ -113,13 +122,40 @@ export class AgentRuntime {
       // Scatter-gather: run concurrently, emit started/completed|failed per call.
       await Promise.all(
         toolCalls.map(async (tc) => {
+          // Policy enforcement: check deny-list and risk-based approval gate
+          // before touching the tool. Emit TOOL_CALL_FAILED and skip execution
+          // if the policy blocks the call; existing event ordering is preserved.
+          if (this.policy !== undefined) {
+            if (!this.policy.isAllowed(tc.name)) {
+              await emit({
+                type: EventType.TOOL_CALL_FAILED,
+                tool_name: tc.name,
+                tool_call_id: tc.id,
+                error: `Tool not permitted: ${tc.name}`,
+              });
+              return;
+            }
+
+            // Look up the spec to find the risk level.
+            const spec = listToolSpecs({ enabledOnly: false }).find((s) => s.name === tc.name);
+            if (this.policy.requiresApproval(tc.name, spec?.risk)) {
+              await emit({
+                type: EventType.TOOL_CALL_FAILED,
+                tool_name: tc.name,
+                tool_call_id: tc.id,
+                error: `Tool approval required: ${tc.name}`,
+              });
+              return;
+            }
+          }
+
           await emit({
             type: EventType.TOOL_CALL_STARTED,
             tool_name: tc.name,
             tool_call_id: tc.id,
           });
           try {
-            const result = await executeTool("runtime", tc.name, tc.args);
+            const result = await executeTool(this.userId, tc.name, tc.args);
             await emit({
               type: EventType.TOOL_CALL_COMPLETED,
               tool_name: tc.name,
