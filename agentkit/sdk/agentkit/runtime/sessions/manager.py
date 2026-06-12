@@ -29,6 +29,11 @@ class SessionManager:
 
     async def get_state(self, session_id: str) -> SessionState:
         events = await self._store.get_events(session_id)
+        if not events:
+            # Session exists in the index but has no events yet (e.g. created
+            # via record_session before the first event was appended).  Return
+            # a minimal empty state rather than raising.
+            return SessionState(session_id=session_id)
         return ReplaySession(events)
 
     async def record_session(

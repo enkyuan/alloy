@@ -51,3 +51,14 @@ async def test_record_session_noop_without_store():
     mgr = SessionManager(InMemoryEventStore())
     await mgr.record_session("s1", "u1")
     assert await mgr.list_active("u1") == []
+
+
+@pytest.mark.asyncio
+async def test_get_state_empty_session_returns_minimal_state():
+    # A session that exists in the index but has no events yet must not raise.
+    store = InMemoryEventStore()
+    mgr = SessionManager(store)
+    state = await mgr.get_state("nonexistent")
+    assert state.session_id == "nonexistent"
+    assert state.is_active is False
+    assert state.messages == []
