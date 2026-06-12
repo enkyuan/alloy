@@ -214,12 +214,20 @@ means running manually with real API keys.
 ~~7. **`Agent` facade**~~ — Done as `AgentBuilder` (builder pattern, cleaner long-term than constructor params). Fluent `.provider().integration().policy().build()` in both SDKs. Tests: 4 Python + 4 TS.
 ~~8. **ToolGen V0**~~ — Done as `agentkit gen --spec <openapi.json> --out <dir>` in `@agentkit/cli`. Emits `ToolSpec[]` + fetch-based stub handlers. Risk inferred from HTTP method. Zero new runtime deps.
 
+~~3. **`@tool` decorator**~~ — Done. `tool(meta, fn)` in `integrations/base.ts`; overload on `ToolRegistry.register` + `registerTool` auto-derives spec from tagged handler.
+~~4. **`TOOL_CALL_FAILED` projection (TS)**~~ — Done. Replay projects failed tool calls; `AgentRuntime` emits `TOOL_CALL_FAILED` on execution errors.
+~~5. **`SessionManager` / `SessionStore` (TS)**~~ — Done. `sessions/store.ts` (`InMemorySessionStore`) + `sessions/manager.ts` with `getState`/`recordSession`/`listActive`.
+
+Also resolved (not originally tracked):
+- `AgentRuntime` bypassed `ToolPolicy` entirely — now enforces deny-list + risk-based approval in scatter-gather before execution.
+- `SessionManager.getState` threw on empty event log — now returns empty `SessionState` (both SDKs).
+- Gemini provider dropped `tools`/`system_instruction` in cached path — fixed in `providers/gemini.py`.
+- Shared `normalize_role` / `to_gemini_role` translator in `providers/_translate.py` — OpenAI, Kimi, Gemini now use it.
+- `userId` was hardcoded as `"runtime"` in TS `AgentRuntime` — now threaded from `AgentRuntimeOptions.userId`.
+
 Remaining:
 1. **Integration test scaffold** — `pytest -m integration` harness (Python) + Vitest integration suite (TS) gated behind env flag. ~1d.
 2. **`agentkit init` CLI** — scaffold exists (`apps/cli/src/commands/init.ts`) but is a stub (no file writes, no real setup). ~1-2d.
-3. **`@tool` decorator** — `@tool(risk=..., require_approval=...)` shorthand for registering tools on an Integration without boilerplate. ~0.5d.
-4. **`TOOL_CALL_FAILED` projection (TS)** — TS replay skips it; diverges from Python. ~0.5d.
-5. **`SessionManager` / `SessionStore` (TS)** — Python has durable session management; TS has none. ~1d.
 
 <!-- TODO(task-12): Voice — Deepgram STT + barge-in
      Why Deepgram over Soniox for barge-in: Deepgram emits structured VAD events
