@@ -24,6 +24,11 @@ class ToolSpec:
     parameters: Dict[str, Any]
     tags: tuple[str, ...] = ()
     enabled: bool = True
+    # Risk classification for policy enforcement and approval routing.
+    # Recognised values: "read", "write", "external_effect", "financial",
+    # "destructive", "admin". None means unclassified (treated as "read" by
+    # default policies).
+    risk: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -2,12 +2,17 @@ import pytest
 
 from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.infra.events.schemas import (
+    ToolApprovalApproved,
+    ToolApprovalRejected,
+    ToolApprovalRequested,
     ToolCallCompleted,
     ToolCallFailed,
     ToolCallRequested,
     ToolCallStarted,
 )
 from agentkit.infra.events.types import EventType
+from agentkit.runtime.tools.policies import ToolPolicy
+from agentkit.runtime.tools.registry import ToolSpec
 
 
 @pytest.mark.asyncio
@@ -83,3 +88,138 @@ async def test_tool_planner_generates_call_id_when_missing():
     )
     assert isinstance(started, ToolCallStarted)
     assert started.tool_call_id
+
+
+# --- Approval gate tests ---
+
+
+@pytest.mark.asyncio
+async def test_approval_approved_proceeds_to_execution():
+    emitted = []
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        return {"ok": True}
+
+    async def approve(_name, _args, _risk):
+        return True
+
+    policy = ToolPolicy(require_approval_for={"destructive"})
+    spec = ToolSpec(name="nuke", description="nuke", parameters={}, risk="destructive")
+    planner = ToolPlanner(
+        executor=executor,
+        policy=policy,
+        approval_handler=approve,
+        specs={"nuke": spec},
+    )
+    results = await planner.execute_scatter_gather(
+        "sess-approval",
+        [{"id": "c1", "name": "nuke", "arguments": {}}],
+        emit,
+    )
+
+    types = [e.type for e in emitted]
+    assert EventType.TOOL_APPROVAL_REQUESTED in types
+    assert EventType.TOOL_APPROVAL_APPROVED in types
+    assert EventType.TOOL_CALL_COMPLETED in types
+    assert results[0]["result"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_approval_rejected_skips_execution():
+    emitted = []
+    executor_called = False
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        nonlocal executor_called
+        executor_called = True
+        return {"ok": True}
+
+    async def reject(_name, _args, _risk):
+        return False
+
+    policy = ToolPolicy(require_approval_for={"financial"})
+    spec = ToolSpec(name="charge", description="charge card", parameters={}, risk="financial")
+    planner = ToolPlanner(
+        executor=executor,
+        policy=policy,
+        approval_handler=reject,
+        specs={"charge": spec},
+    )
+    results = await planner.execute_scatter_gather(
+        "sess-reject",
+        [{"id": "c2", "name": "charge", "arguments": {}}],
+        emit,
+    )
+
+    assert not executor_called, "executor must not be called when approval is rejected"
+    types = [e.type for e in emitted]
+    assert EventType.TOOL_APPROVAL_REQUESTED in types
+    assert EventType.TOOL_APPROVAL_REJECTED in types
+    assert EventType.TOOL_CALL_STARTED not in types
+    assert "error" in results[0]
+
+
+@pytest.mark.asyncio
+async def test_no_approval_needed_for_unclassified_risk():
+    """Tools with no policy or low-risk specs skip the approval gate entirely."""
+    emitted = []
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        return {"ok": True}
+
+    policy = ToolPolicy(require_approval_for={"destructive"})
+    spec = ToolSpec(name="search", description="search", parameters={}, risk="read")
+    planner = ToolPlanner(
+        executor=executor,
+        policy=policy,
+        specs={"search": spec},
+    )
+    await planner.execute_scatter_gather(
+        "sess-no-approval",
+        [{"id": "c3", "name": "search", "arguments": {}}],
+        emit,
+    )
+
+    types = [e.type for e in emitted]
+    assert EventType.TOOL_APPROVAL_REQUESTED not in types
+    assert EventType.TOOL_CALL_COMPLETED in types
+
+
+@pytest.mark.asyncio
+async def test_no_approval_handler_rejects_by_default():
+    """When approval is required but no handler is provided, execution is rejected."""
+    emitted = []
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        return {"ok": True}
+
+    policy = ToolPolicy(require_approval_for={"admin"})
+    spec = ToolSpec(name="add_user", description="add user", parameters={}, risk="admin")
+    planner = ToolPlanner(
+        executor=executor,
+        policy=policy,
+        approval_handler=None,
+        specs={"add_user": spec},
+    )
+    results = await planner.execute_scatter_gather(
+        "sess-no-handler",
+        [{"id": "c4", "name": "add_user", "arguments": {}}],
+        emit,
+    )
+
+    types = [e.type for e in emitted]
+    assert EventType.TOOL_APPROVAL_REJECTED in types
+    assert EventType.TOOL_CALL_STARTED not in types
+    assert "error" in results[0]

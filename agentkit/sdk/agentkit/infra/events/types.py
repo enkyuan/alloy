@@ -23,6 +23,10 @@ class EventType(str, Enum):
     TOOL_CALL_COMPLETED = "tool.call.completed"
     TOOL_CALL_FAILED = "tool.call.failed"
 
+    TOOL_APPROVAL_REQUESTED = "tool.approval.requested"
+    TOOL_APPROVAL_APPROVED = "tool.approval.approved"
+    TOOL_APPROVAL_REJECTED = "tool.approval.rejected"
+
     WORKFLOW_STARTED = "workflow.started"
     WORKFLOW_COMPLETED = "workflow.completed"
     WORKFLOW_FAILED = "workflow.failed"

@@ -106,6 +106,27 @@ export const ToolCallFailed = event({
   error: z.string(),
 });
 
+export const ToolApprovalRequested = event({
+  type: z.literal(EventType.TOOL_APPROVAL_REQUESTED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+  tool_args: z.record(z.string(), z.unknown()),
+  risk: z.string().nullish(),
+});
+
+export const ToolApprovalApproved = event({
+  type: z.literal(EventType.TOOL_APPROVAL_APPROVED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+});
+
+export const ToolApprovalRejected = event({
+  type: z.literal(EventType.TOOL_APPROVAL_REJECTED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+  reason: z.string().nullish(),
+});
+
 export const WorkflowStarted = event({
   type: z.literal(EventType.WORKFLOW_STARTED),
   workflow_name: z.string(),
@@ -186,6 +207,9 @@ export const AgentKitEvent = z.discriminatedUnion("type", [
   ToolCallStarted,
   ToolCallCompleted,
   ToolCallFailed,
+  ToolApprovalRequested,
+  ToolApprovalApproved,
+  ToolApprovalRejected,
   WorkflowStarted,
   WorkflowCompleted,
   WorkflowFailed,

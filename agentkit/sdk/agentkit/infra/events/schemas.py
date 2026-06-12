@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union  # noqa: F401
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -107,6 +107,27 @@ class ToolCallFailed(BaseEvent):
     error: str
 
 
+class ToolApprovalRequested(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_REQUESTED] = EventType.TOOL_APPROVAL_REQUESTED
+    tool_name: str
+    tool_call_id: str
+    tool_args: Dict[str, Any]
+    risk: Optional[str] = None
+
+
+class ToolApprovalApproved(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_APPROVED] = EventType.TOOL_APPROVAL_APPROVED
+    tool_name: str
+    tool_call_id: str
+
+
+class ToolApprovalRejected(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_REJECTED] = EventType.TOOL_APPROVAL_REJECTED
+    tool_name: str
+    tool_call_id: str
+    reason: Optional[str] = None
+
+
 class WorkflowStarted(BaseEvent):
     type: Literal[EventType.WORKFLOW_STARTED] = EventType.WORKFLOW_STARTED
     workflow_name: str
@@ -186,6 +207,9 @@ AgentKitEvent = Union[
     ToolCallStarted,
     ToolCallCompleted,
     ToolCallFailed,
+    ToolApprovalRequested,
+    ToolApprovalApproved,
+    ToolApprovalRejected,
     WorkflowStarted,
     WorkflowCompleted,
     WorkflowFailed,
