@@ -8,6 +8,9 @@ import { z } from "zod";
 /** A JSON Schema object describing a tool's parameters. */
 export type JSONSchema = Record<string, unknown>;
 
+/** Risk level for a tool, used by ToolPolicy to gate execution. */
+export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
+
 /** Definition of a tool exposed to the LLM. */
 export interface ToolSpec {
   name: string;

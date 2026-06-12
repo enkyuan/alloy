@@ -42,6 +42,8 @@ export interface AgentRuntimeOptions {
    * always blocked at this layer).
    */
   policy?: ToolPolicy;
+  /** User identifier threaded into tool execution context. Defaults to "agent". */
+  userId?: string;
 }
 
 export interface RunTurnOptions {
@@ -65,7 +67,8 @@ export class AgentRuntime {
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly _tools: ToolSpec[] | undefined;
-  readonly policy: ToolPolicy | undefined;
+  private readonly policy: ToolPolicy | undefined;
+  private readonly userId: string;
 
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
@@ -75,6 +78,7 @@ export class AgentRuntime {
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this._tools = options.tools;
     this.policy = options.policy;
+    this.userId = options.userId ?? "agent";
   }
 
   /**
@@ -158,13 +162,39 @@ export class AgentRuntime {
       // Scatter-gather: run concurrently, emit started/completed|failed per call.
       await Promise.all(
         toolCalls.map(async (tc) => {
+          // Policy enforcement: deny-list and risk-based approval gate fire
+          // before TOOL_CALL_STARTED — a blocked call never enters execution.
+          if (this.policy !== undefined) {
+            if (!this.policy.isAllowed(tc.name)) {
+              await emit({
+                type: EventType.TOOL_CALL_FAILED,
+                tool_name: tc.name,
+                tool_call_id: tc.id,
+                error: `Tool not permitted: ${tc.name}`,
+              });
+              return;
+            }
+            const spec = (this._tools ?? listToolSpecs({ enabledOnly: false })).find(
+              (s) => s.name === tc.name,
+            );
+            if (this.policy.requiresApproval(tc.name, spec?.risk)) {
+              await emit({
+                type: EventType.TOOL_CALL_FAILED,
+                tool_name: tc.name,
+                tool_call_id: tc.id,
+                error: `Tool approval required: ${tc.name}`,
+              });
+              return;
+            }
+          }
+
           await emit({
             type: EventType.TOOL_CALL_STARTED,
             tool_name: tc.name,
             tool_call_id: tc.id,
           });
           try {
-            const result = await executeTool("runtime", tc.name, tc.args);
+            const result = await executeTool(this.userId, tc.name, tc.args);
             await emit({
               type: EventType.TOOL_CALL_COMPLETED,
               tool_name: tc.name,

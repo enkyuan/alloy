@@ -14,6 +14,9 @@ export class SessionManager {
 
   async getState(sessionId: string): Promise<SessionState> {
     const events = await this._store.getEvents(sessionId);
+    if (events.length === 0) {
+      return { sessionId, isActive: false, messages: [] };
+    }
     return replaySession(events);
   }
 

@@ -14,6 +14,12 @@ function makeEvent(input: Record<string, unknown>) {
 
 describe("SessionManager", () => {
   describe("getState", () => {
+    it("returns empty SessionState for a session with no events (no throw)", async () => {
+      const manager = new SessionManager(new InMemoryEventStore());
+      const state = await manager.getState("nonexistent-session");
+      expect(state).toEqual({ sessionId: "nonexistent-session", isActive: false, messages: [] });
+    });
+
     it("returns correct SessionState from replayed events", async () => {
       const eventStore = new InMemoryEventStore();
       await eventStore.append(

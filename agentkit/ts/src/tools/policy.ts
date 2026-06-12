@@ -3,10 +3,9 @@
  * Controls which tools may run and which require explicit approval before
  * execution, keyed on tool name and risk classification.
  */
-import type { ToolSpec } from "./registry";
+import type { ToolRisk } from "./registry";
 
-/** The set of recognised risk levels, derived from ToolSpec. */
-export type ToolRisk = ToolSpec["risk"];
+export type { ToolRisk };
 
 /** Thrown by `ToolPolicy.enforce` when a tool call is not permitted. */
 export class ToolPolicyViolation extends Error {
@@ -52,9 +51,9 @@ export class ToolPolicy {
    * Returns true when the tool's effective risk level is in the approval set.
    * `undefined` risk is treated as `"read"` (lowest risk), matching Python behaviour.
    */
-  requiresApproval(_toolName: string, risk: ToolRisk): boolean {
+  requiresApproval(_toolName: string, risk: ToolRisk | undefined): boolean {
     if (this.requireApprovalFor.size === 0) return false;
-    const effectiveRisk: NonNullable<ToolRisk> = risk ?? "read";
+    const effectiveRisk: ToolRisk = risk ?? "read";
     return this.requireApprovalFor.has(effectiveRisk);
   }
 }

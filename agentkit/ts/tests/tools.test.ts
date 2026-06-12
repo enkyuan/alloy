@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   TOOL_META,
+  ToolPolicy,
   ToolRegistry,
   clearTools,
   executeTool,
@@ -11,6 +12,12 @@ import {
   toolSpecFromSchema,
 } from "../src/index";
 import { tool } from "../src/index";
+import { AgentRuntime } from "../src/runtime/runtime";
+import { MockProvider } from "../src/providers/mock";
+import { EventBus } from "../src/events/bus";
+import { EventType } from "../src/events/types";
+import { InMemoryEventStore } from "../src/events/store";
+import { AgentKitEvent } from "../src/events/schemas";
 
 afterEach(() => {
   clearTools();
@@ -238,5 +245,99 @@ describe("ToolRegistry", () => {
     const meta = (handler as unknown as Record<symbol, unknown>)[TOOL_META];
     expect(meta).toBeDefined();
     expect((meta as { description: string }).description).toBe("Test");
+  });
+});
+
+describe("AgentRuntime with ToolPolicy", () => {
+  async function seed(store: InMemoryEventStore, sessionId: string) {
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "do something",
+      }),
+    );
+  }
+
+  it("emits TOOL_CALL_FAILED when a denied tool is called", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const policy = new ToolPolicy({ denied: new Set(["dangerous_op"]) });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-denied";
+    await seed(store, s);
+    registerTool({ name: "dangerous_op", description: "d", parameters: {} }, async () => ({
+      done: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/not permitted/);
+    }
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("emits TOOL_CALL_FAILED with approval-required error for financial-risk tools", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["financial"]) });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-approval";
+    await seed(store, s);
+    registerTool(
+      { name: "charge_card", description: "charges a card", parameters: {}, risk: "financial" },
+      async () => ({ charged: true }),
+    );
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/approval required/);
+    }
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("executes tools normally when no policy is configured", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+
+    const s = "s-no-policy";
+    await seed(store, s);
+    registerTool({ name: "safe_op", description: "safe", parameters: {} }, async () => ({
+      ok: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(true);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(false);
   });
 });
