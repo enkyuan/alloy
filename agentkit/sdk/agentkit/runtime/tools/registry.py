@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    # Imported for typing only — keeps the core tool registry usable without
-    # SQLAlchemy installed (it lives behind the optional ``server`` extra).
-    from sqlalchemy.ext.asyncio import AsyncSession
 
 ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
@@ -41,7 +36,7 @@ class ToolContext:
     """
 
     user_id: str
-    db: Optional["AsyncSession"] = None
+    db: Optional[Any] = None
 
 
 _TOOL_SPECS: Dict[str, ToolSpec] = {}
@@ -99,7 +94,7 @@ async def execute_tool(
     user_id: str,
     tool_name: str,
     tool_args: Dict[str, Any],
-    db: Optional["AsyncSession"] = None,
+    db: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Execute a registered tool call for a given user."""
     handler = _TOOL_HANDLERS.get(tool_name)
@@ -158,7 +153,7 @@ class ToolRegistry:
         user_id: str,
         tool_name: str,
         tool_args: Dict[str, Any],
-        db: Optional["AsyncSession"] = None,
+        db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute a tool registered on this registry instance."""
         handler = self._handlers.get(tool_name)

@@ -22,8 +22,8 @@ class AgentAudioChunk(BaseModel):
 
     Emitted by the TTS stage as it synthesizes an ``AgentResponse``. ``seq``
     orders chunks within one response so the client can reassemble/play them.
-    Audio is base64-encoded so the event survives JSON serialization over the
-    Redis envelope and the client WebSocket.
+    Audio is base64-encoded so the event survives JSON serialization across
+    transports.
     """
 
     audio_b64: str

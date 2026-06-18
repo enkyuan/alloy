@@ -1,4 +1,4 @@
-"""Turn / endpoint detection policy hooks for voice STT."""
+"""Turn / endpoint detection policy hooks for voice input."""
 
 from __future__ import annotations
 

@@ -2,20 +2,32 @@
 
 `agentkit` is an embeddable SDK for building agents into your own platform:
 import the pieces you need and compose them. The core is dependency-injected and
-infra-free (no database, Supabase, or web server). A reference service (FastAPI,
-Redis, Postgres) ships behind the optional `server` extra, structured so heavy
-tool execution never stalls a real-time exchange.
+infra-free (no database, Supabase, FastAPI, or web server). A separate reference
+service (`agentkit-serve`) provides FastAPI, Redis, Postgres, STT, and workers,
+structured so heavy tool execution never stalls a real-time exchange.
 
-> **Status:** pre-release. The core SDK (runtime, toolgen, providers,
-> text/voice) is usable today. The reference voice service wires the STT → LLM →
-> TTS path (Soniox STT, Gemini LLM, Gemini/OpenAI TTS); barge-in and durable
-> persistence are in progress.
+> **Status:** pre-beta. The core SDK (runtime, toolgen, LLM providers, text
+> modality, and TTS adapters) is suitable for internal embedded agents. Static
+> type-checking passes, core tests cover the builder → planner → registry →
+> runtime path. Multi-process platform features (Redis event backbone, durable
+> sessions, voice workers) are present but not production-hardened — do not
+> deploy the realtime/voice stack without additional load and durability testing.
 
 ## Install
 
 ```bash
 pip install agentkit         # core SDK, embed in your own app
 pip install agentkit-serve   # the reference service (FastAPI + workers); pulls in agentkit
+```
+
+Provider packages are optional:
+
+```bash
+pip install 'agentkit[openai]'
+pip install 'agentkit[anthropic]'
+pip install 'agentkit[gemini]'
+pip install 'agentkit[providers]'   # all optional LLM provider SDKs
+pip install 'agentkit[realtime]'    # Redis event/realtime helpers
 ```
 
 ## Quick start
@@ -101,8 +113,8 @@ state = await store.get_events("s1")  # AgentMessageDelta/Completed, ToolCall* e
 > run and for tests. Swap in `get_provider("kimi")` (or another provider, with
 > its key set) for real generations.
 
-For the full real-time voice service (STT → LLM → TTS over Redis), install the
-`server` extra and use the process layout below.
+For the full real-time voice service (STT → LLM → TTS over Redis), install
+`agentkit-serve` and use the process layout below.
 
 ### Document RAG
 
@@ -128,10 +140,24 @@ async def main():
 asyncio.run(main())
 ```
 
-`retrieve()` returns chunks; wiring them into the `AgentRuntime` prompt is your
-code today. Auto-injection is [roadmap item 14](../../../docs/ROADMAP.md)
-(deferred). With the default embedder and no `GEMINI_API_KEY`, `add_document`
-stores nothing and logs an actionable warning rather than failing silently.
+Pass a `DocumentRAG` instance to `AgentRuntime(rag=rag)` to automatically inject
+retrieved chunks into the system prompt on each turn. With the default embedder
+and no `GEMINI_API_KEY`, `add_document` stores nothing and logs an actionable
+warning rather than failing silently.
+
+### Text sessions
+
+For a small text-chat facade, use `TextModalityAdapter`. `create_session()`
+returns a serializable descriptor; `open_session()` binds a session to an
+`AgentRuntime` and can send messages directly. With no runtime supplied it uses
+the built-in mock provider and in-memory event log.
+
+```python
+import agentkit
+
+session = agentkit.TextModalityAdapter().open_session("s1", "u1")
+events = await session.send("hello")
+```
 
 ### Listing sessions
 
@@ -157,6 +183,16 @@ asyncio.run(main())
 
 Without a `session_store`, `list_active` returns `[]` (the SDK ships no durable
 index by default).
+
+### CLI scaffold
+
+```bash
+agentkit init ./my-agent
+```
+
+This writes a minimal `agent.py` and `.env.example` using the in-memory bus,
+event store, mock provider, and tool planner. It is intentionally small so it
+can be adapted to FastAPI, Flask, workers, notebooks, or tests.
 
 ## Reference service architecture
 
@@ -217,29 +253,27 @@ layers do not import upper layers.
 
 ```
 agentkit/
-├── core/             # foundation: config, redis, db, http, auth, errors
+├── core/             # foundation: config, logging, provider/service errors
 ├── types/            # shared type definitions
 ├── infra/            # backbone above core
 │   ├── events/       #   event envelopes, store, replay
 │   ├── realtime/     #   redis stream/pub-sub helpers (history, outbox, DLQ)
 │   └── observability/#   tracing, metrics, timeline
 ├── modalities/       # input/output channels that plug into the runtime
-│   ├── voice/        #   STT (soniox), TTS (gemini/openai), audio
-│   │   ├── stt/
+│   ├── voice/        #   TTS adapters and voice event/turn helpers
 │   │   └── tts/
 │   └── text/         #   text modality
 └── runtime/          # the agent reasoning/orchestration engine
     ├── agents/       #   reasoning loop (NOT voice-specific)
-    │   ├── messaging/#     typed event bus: Bus, Bridge, RouteBuilder
-    │   └── nodes/    #     reasoning nodes: ReasoningNode, AgentReasoningNode
     ├── providers/    #   LLM providers (gemini, kimi, openai, mock) + errors
     ├── tools/        #   tool registry, execution, retrieval, policies
-    ├── sessions/     #   session state + websocket lifecycle
-    └── workflows/    #   idempotency + queue helpers
+    ├── sessions/     #   session state, replay, and optional session index
+    └── workflows/    #   idempotency helpers
 ```
 
-The FastAPI server and TaskIQ workers are **not** in the SDK — they live in the
-separate [`agentkit-serve`](../../serve/README.md) distribution.
+FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
+nodes, Redis queue helpers, and TaskIQ workers are **not** in the SDK — they live
+in the separate [`agentkit-serve`](../../serve/README.md) distribution.
 
 `infra`, `modalities`, and `runtime` are organizational groupings; `core` and
 `types` stay at the root because nearly everything depends on them.
@@ -314,7 +348,21 @@ service, which path-depends on the SDK). The SDK has no dependency on the
 service — the boundary mirrors langchain / langserve.
 
 Within the SDK, the top-level groupings (`infra`, `modalities`, `runtime`) are
-organizational; `core` and `types` stay at the root because nearly everything
-depends on them. The Redis stream/pub-sub helpers used by both the runtime and
-the service workers live in `infra/realtime/` (a neutral home above `core`),
-which is what let the service workers extract cleanly into `agentkit-serve`.
+organizational. Redis stream/pub-sub helpers remain opt-in under
+`infra/realtime/` and the `realtime` extra; the server/workers that consume them
+live in `agentkit-serve`.
+
+## Testing
+
+The default test path is non-network and uses mocked provider clients:
+
+```bash
+poetry run pytest -m "not integration"
+```
+
+Live provider checks are opt-in and skipped unless their keys are present:
+
+```bash
+OPENAI_API_KEY=... poetry run pytest -m integration tests/integration/test_openai_provider.py
+ANTHROPIC_API_KEY=... poetry run pytest -m integration tests/integration/test_anthropic_provider.py
+```

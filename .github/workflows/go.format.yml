@@ -6,11 +6,13 @@ on:
     paths:
       - "agentpay/api/**"
       - "agentpay/consumer/**"
+      - ".github/actions/setup-go-cache/**"
       - ".github/workflows/go.format.yml"
   pull_request:
     paths:
       - "agentpay/api/**"
       - "agentpay/consumer/**"
+      - ".github/actions/setup-go-cache/**"
       - ".github/workflows/go.format.yml"
 
 jobs:
@@ -23,11 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: ./.github/actions/setup-go-cache
         with:
-          go-version: "1.25"
-          cache: true
+          working-directory: agentpay/api
 
       - name: Check formatting
         run: |
@@ -47,11 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: ./.github/actions/setup-go-cache
         with:
-          go-version: "1.25"
-          cache: true
+          working-directory: agentpay/consumer
 
       - name: Check formatting
         run: |

@@ -144,43 +144,6 @@ export const WorkflowFailed = event({
   error: z.string(),
 });
 
-export const SwarmRunStarted = event({
-  type: z.literal(EventType.SWARM_RUN_STARTED),
-  run_id: z.string(),
-});
-
-export const SwarmAgentSpawned = event({
-  type: z.literal(EventType.SWARM_AGENT_SPAWNED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  agent_role: z.string(),
-});
-
-export const SwarmAgentCompleted = event({
-  type: z.literal(EventType.SWARM_AGENT_COMPLETED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  result: z.unknown(),
-});
-
-export const SwarmAgentFailed = event({
-  type: z.literal(EventType.SWARM_AGENT_FAILED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  error: z.string(),
-});
-
-export const SwarmMergeStarted = event({
-  type: z.literal(EventType.SWARM_MERGE_STARTED),
-  run_id: z.string(),
-});
-
-export const SwarmMergeCompleted = event({
-  type: z.literal(EventType.SWARM_MERGE_COMPLETED),
-  run_id: z.string(),
-  merged_result: z.unknown(),
-});
-
 export const CancellationRequested = event({
   type: z.literal(EventType.CANCELLATION_REQUESTED),
   reason: z.string(),
@@ -213,12 +176,6 @@ export const AgentKitEvent = z.discriminatedUnion("type", [
   WorkflowStarted,
   WorkflowCompleted,
   WorkflowFailed,
-  SwarmRunStarted,
-  SwarmAgentSpawned,
-  SwarmAgentCompleted,
-  SwarmAgentFailed,
-  SwarmMergeStarted,
-  SwarmMergeCompleted,
   CancellationRequested,
   CancellationCompleted,
 ]);

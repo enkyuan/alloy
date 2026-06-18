@@ -26,8 +26,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from unittest.mock import AsyncMock
 
 from agentkit_serve.server.app import app
-from agentkit.core.database import Base, get_db
-from agentkit.core.redis import get_redis_client
+from agentkit_serve.server.database import Base, get_db
+from agentkit.infra.realtime.redis import get_redis_client
 from agentkit_serve.server.deps import get_current_supabase_user
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -166,27 +166,12 @@ def mock_current_user():
 
 @pytest.fixture
 def mock_supabase_auth():
-    """Mock the supabase auth service at every consumption point.
-
-    Two separate consumers, two separate patch targets:
-    - agentkit_serve.server.v1.auth imports `supabase_auth_service` by name at
-      module load (via __getattr__ shim → lru_cache singleton) — must patch the
-      bound name in that module.
-    - agentkit.modalities.voice.stt.handler calls get_supabase_auth_service()
-      at call time — must patch the factory in that module's namespace.
-    Both must point at the same mock object so tests see consistent state.
-    """
+    """Mock the Supabase auth service where route code binds it by name."""
     from unittest.mock import patch
 
     mock_svc = AsyncMock()
     mock_svc.get_user = AsyncMock()
     mock_svc.refresh_token = AsyncMock()
 
-    with (
-        patch("agentkit_serve.server.v1.auth.supabase_auth_service", mock_svc),
-        patch(
-            "agentkit.modalities.voice.stt.handler.get_supabase_auth_service",
-            return_value=mock_svc,
-        ),
-    ):
+    with patch("agentkit_serve.server.v1.auth.supabase_auth_service", mock_svc):
         yield mock_svc

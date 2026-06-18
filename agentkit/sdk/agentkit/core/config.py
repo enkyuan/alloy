@@ -1,7 +1,9 @@
 """Application configuration and settings management."""
 
+from __future__ import annotations
+
 from functools import lru_cache
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional, overload
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -85,10 +87,6 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "AgentKit SDK"
     CORS_ALLOW_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
 
-    # TaskIQ
-    TASKIQ_BROKER: str = "redis"  # Options: redis
-    TASKIQ_RESULT_BACKEND: str = "redis"
-
     # Agent pipeline
     AGENT_HISTORY_LIMIT: Optional[int] = 200
     AGENT_CACHE_TTL_SECONDS: int = 300
@@ -129,6 +127,20 @@ def get_settings() -> Settings:
     instance for different env can call ``get_settings.cache_clear()``.
     """
     return Settings()
+
+
+if TYPE_CHECKING:
+    # Provides a typed ``settings`` attribute for type checkers (PEP 562).
+    # At runtime the value is supplied by ``__getattr__`` below.
+    settings: Settings
+
+
+@overload
+def __getattr__(name: Literal["settings"]) -> Settings: ...
+
+
+@overload
+def __getattr__(name: str) -> Any: ...
 
 
 def __getattr__(name: str) -> Any:

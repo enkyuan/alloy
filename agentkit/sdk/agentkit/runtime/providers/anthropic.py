@@ -20,6 +20,7 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
+from agentkit.runtime.providers._translate import format_messages_anthropic
 from agentkit.runtime.tools.payload import to_anthropic
 
 logger = logging.getLogger(__name__)
@@ -43,7 +44,12 @@ class AnthropicProvider(ModelProvider):
     def client(self) -> Any:
         """Lazily construct the async Anthropic client."""
         if self._client is None:
-            from anthropic import AsyncAnthropic
+            try:
+                from anthropic import AsyncAnthropic
+            except ImportError as error:
+                raise ProviderConfigError(
+                    "Anthropic provider requires anthropic. Install agentkit[anthropic]."
+                ) from error
 
             self._client = AsyncAnthropic(api_key=self.api_key)
         return self._client
@@ -55,25 +61,11 @@ class AnthropicProvider(ModelProvider):
     ) -> tuple[Optional[str], List[Dict[str, Any]]]:
         """Return (system_prompt, anthropic_messages).
 
-        Anthropic requires system content as a top-level string, not a role in
-        the messages list.
+        Delegates to :func:`format_messages_anthropic` which correctly maps
+        tool results to Anthropic ``tool_result`` content blocks rather than
+        collapsing them to assistant text.
         """
-        system_parts: List[str] = []
-        if system_instruction:
-            system_parts.append(system_instruction)
-
-        formatted: List[Dict[str, Any]] = []
-        for msg in messages:
-            role = msg["role"]
-            content = msg.get("content", "")
-            if role == "system":
-                system_parts.append(content)
-            else:
-                anthropic_role = "user" if role == "user" else "assistant"
-                formatted.append({"role": anthropic_role, "content": content})
-
-        system = "\n\n".join(system_parts) if system_parts else None
-        return system, formatted
+        return format_messages_anthropic(messages, system_instruction)
 
     @staticmethod
     def _parse_tool_use(content_blocks: Any) -> tuple[str, List[Dict[str, Any]]]:

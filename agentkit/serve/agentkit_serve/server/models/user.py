@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import String, Boolean, DateTime
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from agentkit.core.database import Base
+from agentkit_serve.server.database import Base
 
 
 class User(Base):

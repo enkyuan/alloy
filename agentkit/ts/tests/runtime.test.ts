@@ -9,6 +9,8 @@ import { MockProvider } from "../src/providers/mock";
 import { CancellationToken } from "../src/runtime/cancellation";
 import { buildMessages } from "../src/runtime/context";
 import { AgentRuntime, type AgentStrategy } from "../src/runtime/runtime";
+import { AgentBuilder } from "../src/runtime/builder";
+import { ToolPolicy } from "../src/tools/policy";
 import { clearTools, registerTool, toolSpecFromSchema } from "../src/tools/registry";
 import { replaySession } from "../src/sessions/replay";
 import type { Message } from "../src/sessions/replay";
@@ -399,5 +401,148 @@ describe("AgentStrategy.maxToolIterations", () => {
 
     // Provider was called exactly maxToolIterations times (not the default 10).
     expect(callCount).toBe(3);
+  });
+});
+
+describe("AgentRuntime policy via ToolPlanner", () => {
+  afterEach(() => clearTools());
+
+  async function seed(store: InMemoryEventStore, sessionId: string) {
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "go",
+      }),
+    );
+  }
+
+  it("rejects denied tools through runTurn", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy: new ToolPolicy({ denied: new Set(["get_weather"]) }),
+    });
+    const s = "s-policy-deny";
+    await seed(store, s);
+    registerTool(
+      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+      async () => ({ tempF: 68 }),
+    );
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(true);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("runs approval-required tools when approvalHandler approves", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
+      approvalHandler: async () => true,
+      tools: [
+        {
+          name: "get_weather",
+          description: "weather",
+          parameters: {},
+          risk: "destructive",
+        },
+      ],
+      toolExecutor: async () => ({ tempF: 68 }),
+    });
+    const s = "s-policy-approve";
+    await seed(store, s);
+
+    await runtime.runTurn(s);
+
+    const types = (await store.getEvents(s)).map((e) => e.type);
+    expect(types).toContain(EventType.TOOL_APPROVAL_APPROVED);
+    expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
+});
+
+describe("AgentBuilder policy", () => {
+  it("enforces deny policy through builder-created runtime", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const sessionId = "s-builder-deny";
+
+    class WeatherIntegration {
+      register(registry: import("../src/tools/registry").ToolRegistry): void {
+        registry.register(
+          toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+          async () => ({ tempF: 68 }),
+        );
+      }
+    }
+
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider())
+      .integration(new WeatherIntegration())
+      .policy(new ToolPolicy({ denied: new Set(["get_weather"]) }))
+      .build({ bus, store });
+
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "go",
+      }),
+    );
+    await runtime.runTurn(sessionId);
+
+    const events = await store.getEvents(sessionId);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(true);
+  });
+});
+
+describe("AgentRuntime cancellationToken forwarded to provider", () => {
+  afterEach(() => clearTools());
+
+  it("passes the cancellationToken to generateStream options", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const s = "s-cancel-forward";
+
+    let receivedToken: { isCancelled: boolean } | undefined;
+
+    const tokenCapturingProvider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* (
+        _messages: unknown,
+        _tools: unknown,
+        options?: { cancellationToken?: { isCancelled: boolean } },
+      ) {
+        receivedToken = options?.cancellationToken;
+        yield { delta: "done", toolCalls: [] };
+      },
+    };
+
+    const runtime = new AgentRuntime({ provider: tokenCapturingProvider, store, bus });
+    await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: s, content: "hi" }),
+    );
+
+    const token = new CancellationToken();
+    await runtime.runTurn(s, { cancellationToken: token });
+
+    expect(receivedToken).toBeDefined();
+    expect(typeof receivedToken?.isCancelled).toBe("boolean");
   });
 });

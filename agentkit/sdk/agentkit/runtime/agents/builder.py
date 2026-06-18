@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.protocols import EventBusProtocol
 from agentkit.infra.events.store import EventStore
 from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.runtime.agents.runtime import AgentRuntime
@@ -59,7 +59,7 @@ class AgentBuilder:
         self._strategy = s
         return self
 
-    def build(self, *, bus: EventBus, store: EventStore) -> AgentRuntime:
+    def build(self, *, bus: EventBusProtocol, store: EventStore) -> AgentRuntime:
         if self._provider is None:
             raise ValueError("provider() must be called before build()")
 

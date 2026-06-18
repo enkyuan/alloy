@@ -4,7 +4,7 @@ Public names are resolved lazily (PEP 562): ``import agentkit`` performs no
 heavy submodule imports and requires no environment configured. A name is
 imported from its module only when first accessed, e.g. ``from agentkit import
 EventBus`` or ``agentkit.register_tool``. For lower-level building blocks,
-import the relevant subpackage directly (e.g. ``agentkit.modalities.voice.stt``).
+import the relevant subpackage directly (e.g. ``agentkit.modalities.voice.tts``).
 """
 
 import importlib
@@ -19,6 +19,7 @@ _LAZY: dict[str, str] = {
     "AgentKitEvent": "agentkit.infra.events",
     "BaseEvent": "agentkit.infra.events",
     "EventBus": "agentkit.infra.events",
+    "EventBusProtocol": "agentkit.infra.events",
     "EventStore": "agentkit.infra.events",
     "EventType": "agentkit.infra.events",
     "InMemoryEventBus": "agentkit.infra.events",
@@ -28,8 +29,13 @@ _LAZY: dict[str, str] = {
     "AgentRuntime": "agentkit.runtime.agents",
     "AgentStrategy": "agentkit.runtime.agents",
     "CancellationToken": "agentkit.runtime.agents",
+    "AgentBuilder": "agentkit.runtime.agents",
     "ToolPlanner": "agentkit.runtime.agents",
     "ToolExecutor": "agentkit.runtime.agents.planner",
+    # Text
+    "TextModalityAdapter": "agentkit.modalities.text",
+    "TextSession": "agentkit.modalities.text",
+    "TextSessionConfig": "agentkit.modalities.text",
     # Sessions
     "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",

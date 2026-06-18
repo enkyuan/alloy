@@ -7,11 +7,17 @@ import json
 
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from google import genai
-from google.genai import types
-
 from agentkit.core.config import get_settings
-from agentkit.runtime.providers._translate import to_gemini_role
+from agentkit.runtime.providers.base import ModelProvider
+from agentkit.runtime.providers.errors import ProviderConfigError
+from agentkit.runtime.providers.registry import register_provider
+from agentkit.runtime.providers.types import (
+    GenerateResponse,
+    ModelMetadata,
+    ModelResponseChunk,
+    TokenMetrics,
+)
+from agentkit.runtime.providers._translate import format_messages_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -27,18 +33,19 @@ class GeminiService:
         Args:
             api_key: Optional API key. If not provided, uses GEMINI_API_KEY from settings.
         """
-        if genai is None:
-            raise ImportError(
-                "google-genai package is not installed. "
-                "Install it with: pip install google-genai"
-            )
-
         self.api_key = get_settings().GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
             raise ValueError("GEMINI_API_KEY is required")
 
         logger.info("Initializing Gemini client...")
+        try:
+            from google import genai
+        except ImportError as error:
+            raise ProviderConfigError(
+                "Gemini provider requires google-genai. Install agentkit[gemini]."
+            ) from error
+
         self.client = genai.Client(api_key=self.api_key)
         self.model = get_settings().GEMINI_MODEL
         logger.info("Gemini client initialized with model: %s", self.model)
@@ -170,10 +177,7 @@ class GeminiService:
             logger.info("Generating chat response with %s messages", len(messages))
             logger.debug("Messages: %s", messages)
 
-            contents = []
-            for msg in messages:
-                role = to_gemini_role(msg["role"])
-                contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            contents = format_messages_gemini(messages)
 
             config: Any = {"temperature": temperature}
 
@@ -261,12 +265,7 @@ class GeminiService:
         intentionally not applied on the streaming path.
         """
         try:
-            contents = []
-            for msg in messages:
-                role = to_gemini_role(msg["role"])
-                contents.append(
-                    {"role": role, "parts": [{"text": msg.get("content", "")}]}
-                )
+            contents = format_messages_gemini(messages)
 
             config: Any = {"temperature": temperature}
             if system_instruction:
@@ -316,16 +315,6 @@ def get_gemini_service() -> GeminiService:
     if gemini_service is None:
         gemini_service = GeminiService()
     return gemini_service
-
-
-from agentkit.runtime.providers.base import ModelProvider
-from agentkit.runtime.providers.registry import register_provider
-from agentkit.runtime.providers.types import (
-    GenerateResponse,
-    ModelMetadata,
-    ModelResponseChunk,
-    TokenMetrics,
-)
 
 
 class GeminiProvider(ModelProvider):

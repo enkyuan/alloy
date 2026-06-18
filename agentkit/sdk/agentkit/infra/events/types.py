@@ -31,13 +31,5 @@ class EventType(str, Enum):
     WORKFLOW_COMPLETED = "workflow.completed"
     WORKFLOW_FAILED = "workflow.failed"
 
-    SWARM_RUN_STARTED = "swarm.run.started"
-    SWARM_AGENT_SPAWNED = "swarm.agent.spawned"
-    SWARM_AGENT_COMPLETED = "swarm.agent.completed"
-    SWARM_AGENT_FAILED = "swarm.agent.failed"
-
-    SWARM_MERGE_STARTED = "swarm.merge.started"
-    SWARM_MERGE_COMPLETED = "swarm.merge.completed"
-
     CANCELLATION_REQUESTED = "cancellation.requested"
     CANCELLATION_COMPLETED = "cancellation.completed"

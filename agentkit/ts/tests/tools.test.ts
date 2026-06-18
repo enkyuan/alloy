@@ -292,7 +292,10 @@ describe("AgentRuntime with ToolPolicy", () => {
     expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
   });
 
-  it("emits TOOL_CALL_FAILED with approval-required error for financial-risk tools", async () => {
+  it("emits TOOL_APPROVAL_REJECTED and TOOL_CALL_FAILED for financial-risk tools with no approval handler", async () => {
+    // When no approvalHandler is configured, the planner emits TOOL_APPROVAL_REJECTED
+    // (for approval-aware consumers) AND TOOL_CALL_FAILED (so replaySession projects
+    // the outcome into model history and the loop terminates cleanly).
     const store = new InMemoryEventStore();
     const bus = new EventBus();
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["financial"]) });
@@ -314,11 +317,14 @@ describe("AgentRuntime with ToolPolicy", () => {
     await runtime.runTurn(s);
 
     const events = await store.getEvents(s);
+    // Approval-aware consumers see the rejection event.
+    expect(events.some((e) => e.type === EventType.TOOL_APPROVAL_REJECTED)).toBe(true);
+    // Replay-visible TOOL_CALL_FAILED so the model loop terminates.
     const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
     expect(failed.length).toBeGreaterThan(0);
     const failedEvent = failed[0];
     if (failedEvent && "error" in failedEvent) {
-      expect(failedEvent.error).toMatch(/approval required/);
+      expect(failedEvent.error).toMatch(/approval rejected/i);
     }
     expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
   });

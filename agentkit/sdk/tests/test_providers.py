@@ -1,14 +1,12 @@
-import json
-from unittest.mock import AsyncMock, patch
+import sys
+from unittest.mock import patch
 
 import pytest
 
 from agentkit.core.config import settings
-from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
-from agentkit.runtime.providers.gemini import GeminiProvider
+from agentkit.runtime.providers.errors import ProviderConfigError
 from agentkit.runtime.providers.kimi import KimiProvider
-from agentkit.runtime.providers.registry import get_provider, register_provider
-from agentkit.runtime.providers.types import ModelResponseChunk
+from agentkit.runtime.providers.registry import get_provider
 
 
 @pytest.mark.asyncio
@@ -26,6 +24,22 @@ async def test_provider_registry_selects_kimi_by_default():
 def test_missing_provider_config_fails_clearly():
     with pytest.raises(ProviderConfigError, match="not registered"):
         get_provider("nonexistent")
+
+
+def test_mock_provider_does_not_eager_import_optional_provider_modules():
+    for module in [
+        "agentkit.runtime.providers.anthropic",
+        "agentkit.runtime.providers.gemini",
+        "agentkit.runtime.providers.openai",
+    ]:
+        sys.modules.pop(module, None)
+
+    provider = get_provider("mock")
+
+    assert provider.__class__.__name__ == "MockProvider"
+    assert "agentkit.runtime.providers.anthropic" not in sys.modules
+    assert "agentkit.runtime.providers.gemini" not in sys.modules
+    assert "agentkit.runtime.providers.openai" not in sys.modules
 
 
 @pytest.mark.asyncio
@@ -85,6 +99,45 @@ async def test_kimi_provider_normalizes_mocked_streaming_response():
                 chunks.append(chunk.delta)
 
             assert chunks == ["Hello", " world"]
+
+
+@pytest.mark.asyncio
+async def test_kimi_provider_accumulates_fragmented_streaming_tool_calls():
+    with patch("agentkit.core.config.settings.KIMI_API_KEY", "test_key"):
+        provider = KimiProvider()
+
+        class MockResponse:
+            status_code = 200
+
+            async def aiter_lines(self):
+                yield 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{\\"q\\":"}}]}}]}'
+                yield 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"type":"function","function":{"arguments":"\\"weather\\"}"}}]}}]}'
+                yield "data: [DONE]"
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        class MockClient:
+            def stream(self, *args, **kwargs):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                pass
+
+        with patch("httpx.AsyncClient", return_value=MockClient()):
+            chunks = [chunk async for chunk in provider.generate_stream(messages=[])]
+
+    assert len(chunks) == 1
+    assert chunks[0].delta == ""
+    assert chunks[0].tool_calls == [
+        {"id": "call-1", "name": "lookup", "arguments": {"q": "weather"}}
+    ]
 
 
 def test_gemini_provider_remains_loadable():

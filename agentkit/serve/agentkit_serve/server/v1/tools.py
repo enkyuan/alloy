@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 
 from agentkit_serve.server.deps import get_current_supabase_user
-from agentkit.core.redis import RedisKeys, get_redis_client
+from agentkit.infra.realtime.redis import RedisKeys, get_redis_client
 from agentkit.runtime.tools.manifest import list_tool_specs
 
 router = APIRouter(prefix="/tools", tags=["tools"])

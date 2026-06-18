@@ -1,4 +1,5 @@
 from .bus import EventBus, InMemoryEventBus
+from .protocols import EventBusProtocol
 from .replay import ReplaySession, SessionState
 from .schemas import AgentKitEvent, BaseEvent, UserMessage
 from .store import EventStore, InMemoryEventStore
@@ -10,6 +11,7 @@ __all__ = [
     "BaseEvent",
     "UserMessage",
     "EventBus",
+    "EventBusProtocol",
     "InMemoryEventBus",
     "EventStore",
     "InMemoryEventStore",

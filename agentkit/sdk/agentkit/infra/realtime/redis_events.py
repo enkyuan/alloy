@@ -5,16 +5,15 @@ worker entrypoints.
 """
 
 import base64
+import asyncio
 import json
 import logging
-import uuid
-import asyncio
 from typing import Any, cast
 
 import msgpack
 
 from agentkit.infra.events.envelope import build_event_envelope, to_redis_stream_fields
-from agentkit.core.redis import RedisConfig, RedisKeys
+from agentkit.infra.realtime.redis import RedisConfig, RedisKeys
 
 logger = logging.getLogger(__name__)
 

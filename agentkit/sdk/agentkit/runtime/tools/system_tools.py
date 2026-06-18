@@ -1,4 +1,11 @@
-"""System tool definitions for Voice Agents."""
+"""System tool definitions for Voice Agents (legacy).
+
+.. deprecated::
+   This module uses the older ``ToolDefinition`` ABC.  New voice tools should
+   be implemented as ``ToolSpec`` instances registered via ``ToolRegistry``
+   (``agentkit.runtime.tools.registry``).  These tools are re-exported from
+   ``agentkit.modalities.voice.legacy.system_tools`` for serve-side compatibility.
+"""
 
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
 

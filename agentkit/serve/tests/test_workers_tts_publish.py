@@ -1,7 +1,5 @@
 """Tests for the bus-worker TTS output handler (_synthesize_and_publish)."""
 
-import pytest
-
 from agentkit.modalities.voice.event_models import AgentAudioChunk
 
 
@@ -30,7 +28,7 @@ class _RecordingPublisher:
 async def test_synthesize_and_publish_emits_seqed_audio_chunks():
     """The output-bridge TTS handler turns an AgentResponse into ordered
     AgentAudioChunk events on the publisher."""
-    from agentkit.runtime.agents.messaging import Message
+    from agentkit_serve.runtime.messaging import Message
     from agentkit.modalities.voice.event_models import AgentResponse
     from agentkit_serve.workers.main import _synthesize_and_publish
 
@@ -51,7 +49,7 @@ async def test_synthesize_and_publish_emits_seqed_audio_chunks():
 
 
 async def test_synthesize_and_publish_skips_empty_response():
-    from agentkit.runtime.agents.messaging import Message
+    from agentkit_serve.runtime.messaging import Message
     from agentkit.modalities.voice.event_models import AgentResponse
     from agentkit_serve.workers.main import _synthesize_and_publish
 

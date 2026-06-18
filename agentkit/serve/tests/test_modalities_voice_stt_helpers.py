@@ -2,11 +2,10 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
 from agentkit.infra.events.envelope import parse_event_envelope
-from agentkit.modalities.voice.stt import (
+from agentkit_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,
     compose_final_text,
@@ -67,11 +66,9 @@ async def test_authenticate_ws_missing_token_closes_socket():
 async def test_authenticate_ws_invalid_user_closes_socket():
     websocket = AsyncMock()
     websocket.headers = {"authorization": "Bearer bad"}
-    mock_auth = AsyncMock()
-    mock_auth.get_user = AsyncMock(return_value=None)
     with patch(
-        "agentkit.modalities.voice.stt.handler.get_supabase_auth_service",
-        return_value=mock_auth,
+        "agentkit_serve.modalities.voice.stt.handler.decode_bearer_token",
+        side_effect=Exception("bad token"),
     ):
         result = await authenticate_ws(websocket)
     assert result is None

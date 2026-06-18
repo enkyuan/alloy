@@ -1,9 +1,4 @@
-"""Gemini TTS service — holds the client/config for speech synthesis.
-
-Mirrors the STT ``SonioxService`` shape: this class owns credentials and
-builds the provider request config; the streaming/synthesis transport lives in
-``gemini_provider``.
-"""
+"""Gemini TTS service — holds the client/config for speech synthesis."""
 
 from __future__ import annotations
 

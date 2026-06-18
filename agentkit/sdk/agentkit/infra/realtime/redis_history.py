@@ -11,7 +11,7 @@ in-memory. Wire this in for durable, cross-process history::
 
 from typing import Any, Dict, List, Optional
 
-from agentkit.core.redis import get_redis_client
+from agentkit.infra.realtime.redis import get_redis_client
 from agentkit.infra.realtime.redis_events import append_history, get_history
 
 

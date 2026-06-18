@@ -22,7 +22,7 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
-from agentkit.runtime.providers._translate import normalize_role
+from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.tools.payload import to_openai
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,12 @@ class OpenAIProvider(ModelProvider):
     def client(self) -> Any:
         """Lazily construct the async OpenAI client."""
         if self._client is None:
-            from openai import AsyncOpenAI
+            try:
+                from openai import AsyncOpenAI
+            except ImportError as error:
+                raise ProviderConfigError(
+                    "OpenAI provider requires openai. Install agentkit[openai]."
+                ) from error
 
             self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
@@ -57,13 +62,7 @@ class OpenAIProvider(ModelProvider):
         messages: List[Dict[str, Any]],
         system_instruction: Optional[str],
     ) -> List[Dict[str, Any]]:
-        formatted: List[Dict[str, Any]] = []
-        if system_instruction:
-            formatted.append({"role": "system", "content": system_instruction})
-        for msg in messages:
-            role = normalize_role(msg["role"])
-            formatted.append({"role": role, "content": msg.get("content", "")})
-        return formatted
+        return format_messages_openai(messages, system_instruction)
 
     @staticmethod
     def _parse_tool_calls(raw: Any) -> List[Dict[str, Any]]:
@@ -89,6 +88,58 @@ class OpenAIProvider(ModelProvider):
                 {
                     "id": field(tc, "id"),
                     "name": field(func, "name"),
+                    "arguments": args,
+                }
+            )
+        return calls
+
+    @staticmethod
+    def _field(obj: Any, key: str) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key)
+        return getattr(obj, key, None)
+
+    @classmethod
+    def _accumulate_stream_tool_calls(
+        cls, pending: Dict[int, Dict[str, str]], raw: Any
+    ) -> None:
+        for fallback_index, tc in enumerate(raw or []):
+            index = cls._field(tc, "index")
+            if not isinstance(index, int):
+                index = fallback_index
+            current = pending.setdefault(
+                index, {"id": "", "name": "", "arguments": ""}
+            )
+
+            tool_call_id = cls._field(tc, "id")
+            if tool_call_id:
+                current["id"] = str(tool_call_id)
+
+            func = cls._field(tc, "function")
+            name = cls._field(func, "name")
+            if name:
+                current["name"] += str(name)
+
+            arguments = cls._field(func, "arguments")
+            if arguments:
+                current["arguments"] += str(arguments)
+
+    @staticmethod
+    def _finalize_stream_tool_calls(
+        pending: Dict[int, Dict[str, str]]
+    ) -> List[Dict[str, Any]]:
+        calls: List[Dict[str, Any]] = []
+        for _, item in sorted(pending.items()):
+            if not item["name"]:
+                continue
+            try:
+                args = json.loads(item["arguments"] or "{}")
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+            calls.append(
+                {
+                    "id": item["id"] or None,
+                    "name": item["name"],
                     "arguments": args,
                 }
             )
@@ -165,6 +216,8 @@ class OpenAIProvider(ModelProvider):
             logger.error("OpenAI streaming API error: %s", e)
             raise ProviderAPIError(f"OpenAI stream failed: {e}") from e
 
+        pending_tool_calls: Dict[int, Dict[str, str]] = {}
+
         async for chunk in stream:
             if cancellation_token and getattr(
                 cancellation_token, "is_cancelled", False
@@ -175,9 +228,15 @@ class OpenAIProvider(ModelProvider):
                 continue
             delta = chunk.choices[0].delta
             text = getattr(delta, "content", None) or ""
-            tool_calls = self._parse_tool_calls(getattr(delta, "tool_calls", None))
-            if text or tool_calls:
-                yield ModelResponseChunk(delta=text, tool_calls=tool_calls)
+            self._accumulate_stream_tool_calls(
+                pending_tool_calls, getattr(delta, "tool_calls", None)
+            )
+            if text:
+                yield ModelResponseChunk(delta=text, tool_calls=[])
+
+        tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+        if tool_calls:
+            yield ModelResponseChunk(delta="", tool_calls=tool_calls)
 
 
 register_provider("openai", OpenAIProvider)

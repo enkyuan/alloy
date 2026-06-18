@@ -170,7 +170,7 @@ services:
       [
         "taskiq",
         "worker",
-        "agentkit.core.broker:broker",
+        "agentkit_serve.workers.broker:broker",
         "agentkit_serve.workers.tasks.tools",
       ]
     volumes:

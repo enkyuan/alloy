@@ -1,4 +1,4 @@
-"""Session management — state, store, replay, and WebSocket auth."""
+"""Session management — state, store, and replay."""
 
 from agentkit.runtime.sessions.manager import SessionManager
 from agentkit.runtime.sessions.replay import ReplaySession

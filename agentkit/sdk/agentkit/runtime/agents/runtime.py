@@ -5,19 +5,16 @@ from agentkit.runtime.agents.cancellation import CancellationToken
 from agentkit.runtime.agents.context import ContextBuilder
 from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.runtime.agents.prompts import SystemPrompt
-from agentkit.runtime.agents.router import SwarmRouter
 from agentkit.runtime.agents.state import SessionStateManager
 from agentkit.runtime.agents.strategy import AgentStrategy
 from agentkit.runtime.tools.registry import ToolSpec
-from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.protocols import EventBusProtocol
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
     AgentMessageCompleted,
     AgentMessageDelta,
     AgentReasoningStarted,
     CancellationCompleted,
-    SwarmAgentSpawned,
-    SwarmRunStarted,
     UserMessage,
 )
 from agentkit.infra.events.store import EventStore
@@ -30,12 +27,12 @@ class AgentRuntime:
     """A generic, provider-agnostic agent runtime.
 
     Consumes AgentKit events, maintains session state, calls an abstract ModelProvider,
-    executes scatter-gather tool workflows via ToolPlanner, and orchestrates Swarm behaviors.
+    executes scatter-gather tool workflows via ToolPlanner.
     """
 
     def __init__(
         self,
-        bus: EventBus,
+        bus: EventBusProtocol,
         store: EventStore,
         provider: ModelProvider,
         planner: ToolPlanner,
@@ -52,7 +49,6 @@ class AgentRuntime:
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         self.state_manager = SessionStateManager(store)
-        self.router = SwarmRouter()
         # Tools surfaced to the provider each turn. Empty by default, so a
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
@@ -174,26 +170,11 @@ class AgentRuntime:
                     AgentMessageCompleted(session_id=session_id, content=full_response)
                 )
 
-                # 5. Check for Swarm Handoff
-                handoff = self.router.determine_handoff(full_response)
-                if handoff:
-                    await self._emit(
-                        SwarmRunStarted(session_id=session_id, run_id=handoff)
-                    )
-                    await self._emit(
-                        SwarmAgentSpawned(
-                            session_id=session_id,
-                            run_id=handoff,
-                            agent_id="next_agent",
-                            agent_role="handoff",
-                        )
-                    )
-
-            # 6. Break if done
+            # 5. Break if done
             if not tool_calls or not self.strategy.allow_tool_calls:
                 break
 
-            # 7. Execute tools concurrently (Scatter-Gather)
+            # 6. Execute tools concurrently (Scatter-Gather)
             await self.planner.execute_scatter_gather(
                 session_id, tool_calls, self._emit
             )

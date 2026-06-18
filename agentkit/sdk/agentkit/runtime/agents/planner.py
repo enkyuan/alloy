@@ -12,7 +12,7 @@ from agentkit.infra.events.schemas import (
     ToolCallRequested,
     ToolCallStarted,
 )
-from agentkit.runtime.tools.policies import ToolPolicy
+from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 from agentkit.runtime.tools.registry import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,23 @@ class ToolPlanner:
             )
         )
 
-        # 2. Approval gate: if policy requires it, pause and ask.
+        # 2. Allow/deny gate: policy violations fail before approval/execution.
+        if self.policy is not None:
+            try:
+                self.policy.enforce(tool_name)
+            except ToolPolicyViolation as error:
+                error_msg = str(error)
+                await emit_event(
+                    ToolCallFailed(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        tool_call_id=call_id,
+                        error=error_msg,
+                    )
+                )
+                return {"id": call_id, "name": tool_name, "error": error_msg}
+
+        # 3. Approval gate: if policy requires it, pause and ask.
         if self.policy is not None and self.policy.requires_approval(tool_name, risk):
             await emit_event(
                 ToolApprovalRequested(
@@ -120,7 +136,11 @@ class ToolPlanner:
                 approved = await self.approval_handler(tool_name, tool_args, risk)
 
             if not approved:
-                reason = "No approval handler registered" if self.approval_handler is None else "Rejected by approval handler"
+                reason = (
+                    "No approval handler registered"
+                    if self.approval_handler is None
+                    else "Rejected by approval handler"
+                )
                 await emit_event(
                     ToolApprovalRejected(
                         session_id=session_id,
@@ -129,7 +149,11 @@ class ToolPlanner:
                         reason=reason,
                     )
                 )
-                return {"id": call_id, "name": tool_name, "error": f"Tool approval rejected: {reason}"}
+                return {
+                    "id": call_id,
+                    "name": tool_name,
+                    "error": f"Tool approval rejected: {reason}",
+                }
 
             await emit_event(
                 ToolApprovalApproved(
@@ -139,7 +163,7 @@ class ToolPlanner:
                 )
             )
 
-        # 3. Mark execution as started
+        # 4. Mark execution as started
         await emit_event(
             ToolCallStarted(
                 session_id=session_id, tool_name=tool_name, tool_call_id=call_id
@@ -147,10 +171,10 @@ class ToolPlanner:
         )
 
         try:
-            # 4. Call the actual implementation
+            # 5. Call the actual implementation
             result = await self.executor(tool_name, tool_args)
 
-            # 5. Mark success
+            # 6. Mark success
             await emit_event(
                 ToolCallCompleted(
                     session_id=session_id,
@@ -165,7 +189,7 @@ class ToolPlanner:
             error_msg = str(e)
             logger.error("Tool execution failed: %s", error_msg)
 
-            # 5. Mark failure
+            # 6. Mark failure
             await emit_event(
                 ToolCallFailed(
                     session_id=session_id,

@@ -108,6 +108,44 @@ describe("ToolPlanner", () => {
     expect(results[0]).toHaveProperty("error");
   });
 
+  it("deny-list blocks execution before TOOL_CALL_STARTED", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const policy = new ToolPolicy({ denied: new Set(["blocked"]) });
+    const planner = new ToolPlanner({ executor, policy });
+
+    const results = await planner.executeScatterGather(
+      "sess-deny",
+      [{ id: "c-deny", name: "blocked", arguments: {} }],
+      async (e) => {
+        emitted.push(e);
+      },
+    );
+
+    expect(executor).not.toHaveBeenCalled();
+    const types = emitted.map((e) => e.type);
+    expect(types).toEqual([EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]);
+    expect(results[0]).toHaveProperty("error", "Tool not permitted: blocked");
+  });
+
+  it("allow-list permits only listed tools", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const policy = new ToolPolicy({ allowed: new Set(["allowed_tool"]) });
+    const planner = new ToolPlanner({ executor, policy });
+
+    await planner.executeScatterGather(
+      "sess-allow",
+      [{ id: "c-allow", name: "allowed_tool", arguments: {} }],
+      async (e) => {
+        emitted.push(e);
+      },
+    );
+
+    expect(executor).toHaveBeenCalledOnce();
+    expect(emitted.map((e) => e.type)).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
+
   it("unclassified risk skips approval gate", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });

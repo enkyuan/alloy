@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from agentkit.core.auth_utils import decode_bearer_token
+from agentkit_serve.server.auth_utils import decode_bearer_token
 
 security = HTTPBearer()
 

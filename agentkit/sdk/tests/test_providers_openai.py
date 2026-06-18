@@ -1,6 +1,5 @@
-import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -113,3 +112,90 @@ async def test_openai_generate_translates_tools_and_parses_response():
     assert result.tool_calls == [{"id": "c1", "name": "lookup", "arguments": {}}]
     assert result.metrics.total_tokens == 5
     assert result.metadata.provider_name == "openai"
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_accumulates_fragmented_tool_call_arguments():
+    class FakeStream:
+        def __aiter__(self):
+            return self._iter()
+
+        async def _iter(self):
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="call-1",
+                                    function=SimpleNamespace(
+                                        name="lookup", arguments='{"q":'
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            )
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    function=SimpleNamespace(
+                                        name=None, arguments='"weather"}'
+                                    ),
+                                )
+                            ],
+                        )
+                    )
+                ]
+            )
+
+    async def fake_create(**_kwargs):
+        return FakeStream()
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+
+    with patch("agentkit.core.config.settings.OPENAI_API_KEY", "test-key"):
+        provider = get_provider("openai")
+        provider._client = fake_client
+        chunks = [
+            chunk async for chunk in provider.generate_stream(messages=[], tools=[])
+        ]
+
+    assert len(chunks) == 1
+    assert chunks[0].delta == ""
+    assert chunks[0].tool_calls == [
+        {"id": "call-1", "name": "lookup", "arguments": {"q": "weather"}}
+    ]
+
+
+def test_format_messages_openai_preserves_tool_call_id():
+    """Tool messages must carry tool_call_id so multi-turn loops work."""
+    from agentkit.runtime.providers._translate import format_messages_openai
+
+    messages = [
+        {"role": "user", "content": "hello"},
+        {"role": "tool", "name": "lookup", "content": '{"x": 1}', "tool_call_id": "c-1"},
+    ]
+    formatted = format_messages_openai(messages)
+    tool_msg = next(m for m in formatted if m["role"] == "tool")
+    assert tool_msg["tool_call_id"] == "c-1"
+    assert tool_msg["content"] == '{"x": 1}'
+
+
+def test_format_messages_openai_falls_back_to_name_when_no_id():
+    from agentkit.runtime.providers._translate import format_messages_openai
+
+    messages = [{"role": "tool", "name": "lookup", "content": "ok"}]
+    formatted = format_messages_openai(messages)
+    assert formatted[0]["tool_call_id"] == "lookup"

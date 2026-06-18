@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { EventBus } from "../src/events/bus";
+import { AgentKitEvent } from "../src/events/schemas";
+import { EventType } from "../src/events/types";
 import { InMemoryEventStore } from "../src/events/store";
 import { MockProvider } from "../src/providers/mock";
 import { AgentRuntime } from "../src/runtime/runtime";
@@ -38,6 +40,34 @@ describe("AgentBuilder", () => {
     const { bus, store } = makeInfra();
     const runtime = new AgentBuilder().provider(new MockProvider()).build({ bus, store });
     expect(runtime).toBeInstanceOf(AgentRuntime);
+  });
+
+  it("executes integration tools via scoped registry", async () => {
+    const { bus, store } = makeInfra();
+    const sessionId = "s-builder-ping";
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "ping",
+      }),
+    );
+
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider())
+      .integration(new PingIntegration())
+      .build({ bus, store });
+
+    await runtime.runTurn(sessionId);
+
+    const events = await store.getEvents(sessionId);
+    const types = events.map((e) => e.type);
+    expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
+    const completed = events.find((e) => e.type === EventType.TOOL_CALL_COMPLETED);
+    expect(completed && "result" in completed ? completed.result : null).toEqual({ pong: true });
   });
 
   it("registers integration tools into runtime", () => {

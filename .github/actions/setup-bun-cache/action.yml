@@ -1,0 +1,37 @@
+name: Setup Bun Cache
+description: Set up Bun and install workspace dependencies.
+
+inputs:
+  working-directory:
+    description: Directory where bun install should run.
+    required: true
+  bun-version:
+    description: Bun version to install.
+    required: false
+    default: latest
+  install-args:
+    description: Arguments passed to bun install.
+    required: false
+    default: "--frozen-lockfile"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
+
+    - name: Cache Bun install cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ inputs.working-directory }}-${{ hashFiles('bun.lock', 'package.json', format('{0}/package.json', inputs.working-directory)) }}
+        restore-keys: |
+          bun-${{ runner.os }}-${{ inputs.working-directory }}-
+          bun-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bun install ${{ inputs.install-args }}

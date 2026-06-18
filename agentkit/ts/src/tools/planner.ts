@@ -47,6 +47,21 @@ export class ToolPlanner {
     this.specs = opts.specs ?? new Map();
   }
 
+  /**
+   * Execute all tool calls concurrently (scatter-gather) and collect results.
+   *
+   * Each call emits `TOOL_CALL_REQUESTED` as its first step before entering
+   * the approval/execution phase. For multiple simultaneous calls, lifecycle
+   * events from different calls will interleave — e.g. call A's
+   * `TOOL_CALL_STARTED` may appear between call B's `TOOL_CALL_REQUESTED` and
+   * `TOOL_CALL_STARTED`. Consumers that require strict per-call ordering
+   * should correlate events by `tool_call_id`.
+   *
+   * Approval rejection emits both `TOOL_APPROVAL_REJECTED` and
+   * `TOOL_CALL_FAILED` so `replaySession` projects the outcome into
+   * model-visible history, preventing the agent from re-requesting the same
+   * tool indefinitely.
+   */
   async executeScatterGather(
     sessionId: string,
     toolCalls: ToolCallInstruction[],
@@ -77,7 +92,22 @@ export class ToolPlanner {
       }),
     );
 
-    // 2. Approval gate
+    // 2. Allow/deny gate: policy violations fail before approval/execution.
+    if (this.policy !== undefined && !this.policy.isAllowed(toolName)) {
+      const errorMsg = `Tool not permitted: ${toolName}`;
+      await emit(
+        AgentKitEvent.parse({
+          type: EventType.TOOL_CALL_FAILED,
+          session_id: sessionId,
+          tool_name: toolName,
+          tool_call_id: callId,
+          error: errorMsg,
+        }),
+      );
+      return { id: callId, name: toolName, error: errorMsg };
+    }
+
+    // 3. Approval gate
     if (this.policy?.requiresApproval(toolName, risk)) {
       await emit(
         AgentKitEvent.parse({
@@ -100,6 +130,7 @@ export class ToolPlanner {
           this.approvalHandler === undefined
             ? "No approval handler registered"
             : "Rejected by approval handler";
+        const errorMsg = `Tool approval rejected: ${reason}`;
         await emit(
           AgentKitEvent.parse({
             type: EventType.TOOL_APPROVAL_REJECTED,
@@ -109,7 +140,19 @@ export class ToolPlanner {
             reason,
           }),
         );
-        return { id: callId, name: toolName, error: `Tool approval rejected: ${reason}` };
+        // Also emit TOOL_CALL_FAILED so replaySession projects this into
+        // model-visible history. Without it, the next iteration sees no tool
+        // result and re-requests the same tool until maxToolIterations.
+        await emit(
+          AgentKitEvent.parse({
+            type: EventType.TOOL_CALL_FAILED,
+            session_id: sessionId,
+            tool_name: toolName,
+            tool_call_id: callId,
+            error: errorMsg,
+          }),
+        );
+        return { id: callId, name: toolName, error: errorMsg };
       }
 
       await emit(
@@ -122,7 +165,7 @@ export class ToolPlanner {
       );
     }
 
-    // 3. Mark execution started
+    // 4. Mark execution started
     await emit(
       AgentKitEvent.parse({
         type: EventType.TOOL_CALL_STARTED,
@@ -132,7 +175,7 @@ export class ToolPlanner {
       }),
     );
 
-    // 4. Execute
+    // 5. Execute
     try {
       const result = await this.executor(toolName, toolArgs);
       await emit(

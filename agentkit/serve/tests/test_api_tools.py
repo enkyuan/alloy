@@ -3,7 +3,7 @@ from httpx import AsyncClient
 from unittest.mock import patch, MagicMock
 import fakeredis.aioredis
 
-from agentkit.core.redis import RedisKeys
+from agentkit.infra.realtime.redis import RedisKeys
 
 
 @pytest.fixture

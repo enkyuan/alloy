@@ -7,12 +7,18 @@ on:
       - "agentkit/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/ts.format.yml"
   pull_request:
     paths:
       - "agentkit/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/ts.format.yml"
 
 jobs:
@@ -25,13 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-cache
         with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
+          working-directory: agentkit/ts
 
       - name: Check formatting
         run: bun run format:check
@@ -45,13 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-cache
         with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
+          working-directory: agentpay/auth
 
       - name: Check formatting
         run: bun run format:check
@@ -65,13 +63,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-cache
         with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
+          working-directory: packages/ui
 
       - name: Check formatting
         run: bun run format:check

@@ -6,6 +6,7 @@ import { AgentRuntime } from "./runtime";
 import type { AgentStrategy } from "./runtime";
 import type { ModelProvider } from "../providers/base";
 import type { ToolPolicy } from "../tools/policy";
+import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
 import { ToolRegistry } from "../tools/registry";
 import type { EventBus } from "../events/bus";
 import type { EventStore } from "../events/store";
@@ -24,6 +25,7 @@ export class AgentBuilder {
   private _provider: ModelProvider | undefined;
   private readonly _integrations: Integrable[] = [];
   private _policy: ToolPolicy | undefined;
+  private _approvalHandler: ApprovalHandler | undefined;
   private _systemPrompt = "You are a helpful assistant.";
   private _strategy: AgentStrategy | undefined;
 
@@ -39,6 +41,11 @@ export class AgentBuilder {
 
   policy(p: ToolPolicy): this {
     this._policy = p;
+    return this;
+  }
+
+  approvalHandler(handler: ApprovalHandler): this {
+    this._approvalHandler = handler;
     return this;
   }
 
@@ -62,6 +69,16 @@ export class AgentBuilder {
       integration.register(registry);
     }
 
+    const specs = new Map(
+      registry.listSpecs({ enabledOnly: false }).map((spec) => [spec.name, spec]),
+    );
+    const planner = new ToolPlanner({
+      executor: (name, args) => registry.execute("builder", name, args),
+      policy: this._policy,
+      approvalHandler: this._approvalHandler,
+      specs,
+    });
+
     return new AgentRuntime({
       provider: this._provider,
       bus: opts.bus,
@@ -70,6 +87,7 @@ export class AgentBuilder {
       strategy: this._strategy,
       tools: registry.listSpecs(),
       policy: this._policy,
+      planner,
     });
   }
 }

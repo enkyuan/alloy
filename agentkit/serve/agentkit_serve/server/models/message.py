@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from agentkit.core.database import Base
+from agentkit_serve.server.database import Base
 
 
 class Message(Base):

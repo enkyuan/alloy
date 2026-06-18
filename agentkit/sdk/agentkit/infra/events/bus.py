@@ -3,7 +3,6 @@ import logging
 from collections import defaultdict
 from typing import AsyncGenerator, Dict, List
 
-from agentkit.core.redis import get_redis_client
 from agentkit.infra.events.schemas import AgentKitEvent
 
 logger = logging.getLogger(__name__)
@@ -57,6 +56,8 @@ class EventBus:
 
     async def publish(self, event: AgentKitEvent) -> str:
         """Publish an event to the Redis stream."""
+        from agentkit.infra.realtime.redis import get_redis_client
+
         redis = await get_redis_client()
         stream_key = self._get_stream_key(event.session_id)
 
@@ -73,6 +74,8 @@ class EventBus:
         self, session_id: str, last_id: str = "0", block_ms: int = 2000
     ) -> AsyncGenerator[AgentKitEvent, None]:
         """Subscribe to events for a specific session."""
+        from agentkit.infra.realtime.redis import get_redis_client
+
         redis = await get_redis_client()
         stream_key = self._get_stream_key(session_id)
         current_id = last_id

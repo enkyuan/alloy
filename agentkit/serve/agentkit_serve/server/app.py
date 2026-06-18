@@ -10,15 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from agentkit_serve.server.router import api_router
 from agentkit.core.config import settings
 from agentkit.core.logging import setup_logging
-from agentkit.core.broker import broker
-from agentkit.core.database import close_async_engine
-from agentkit.core.redis import close_redis_client
-from agentkit.core.lifecycle import close_registered_services
+from agentkit_serve.server.database import close_async_engine
+from agentkit.infra.realtime.redis import close_redis_client
+from agentkit_serve.server.lifecycle import close_registered_services
 from agentkit.runtime.providers.errors import (
     ServiceError,
     service_error_to_detail,
     service_error_to_http_status,
 )
+from agentkit_serve.workers.broker import broker
 
 setup_logging(debug=settings.DEBUG)
 

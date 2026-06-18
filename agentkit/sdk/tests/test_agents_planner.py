@@ -2,9 +2,6 @@ import pytest
 
 from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.infra.events.schemas import (
-    ToolApprovalApproved,
-    ToolApprovalRejected,
-    ToolApprovalRequested,
     ToolCallCompleted,
     ToolCallFailed,
     ToolCallRequested,
@@ -223,3 +220,79 @@ async def test_no_approval_handler_rejects_by_default():
     assert EventType.TOOL_APPROVAL_REJECTED in types
     assert EventType.TOOL_CALL_STARTED not in types
     assert "error" in results[0]
+
+
+@pytest.mark.asyncio
+async def test_policy_denied_tool_skips_execution_and_approval():
+    emitted = []
+    executor_called = False
+    approval_called = False
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        nonlocal executor_called
+        executor_called = True
+        return {"ok": True}
+
+    async def approve(_name, _args, _risk):
+        nonlocal approval_called
+        approval_called = True
+        return True
+
+    policy = ToolPolicy(denied={"delete"}, require_approval_for={"destructive"})
+    spec = ToolSpec(
+        name="delete",
+        description="delete",
+        parameters={},
+        risk="destructive",
+    )
+    planner = ToolPlanner(
+        executor=executor,
+        policy=policy,
+        approval_handler=approve,
+        specs={"delete": spec},
+    )
+
+    results = await planner.execute_scatter_gather(
+        "sess-denied",
+        [{"id": "c5", "name": "delete", "arguments": {}}],
+        emit,
+    )
+
+    assert executor_called is False
+    assert approval_called is False
+    types = [event.type for event in emitted]
+    assert types == [EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]
+    assert "not permitted" in results[0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_policy_allowlist_blocks_unlisted_tool():
+    emitted = []
+    executor_called = False
+
+    async def emit(event):
+        emitted.append(event)
+
+    async def executor(_name: str, _args: dict):
+        nonlocal executor_called
+        executor_called = True
+        return {"ok": True}
+
+    planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"search"}))
+
+    results = await planner.execute_scatter_gather(
+        "sess-allowlist",
+        [{"id": "c6", "name": "charge", "arguments": {}}],
+        emit,
+    )
+
+    assert executor_called is False
+    assert [event.type for event in emitted] == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    assert results[0]["name"] == "charge"
+    assert "not permitted" in results[0]["error"]

@@ -40,9 +40,13 @@ def ReplaySession(events: Sequence[AgentKitEvent]) -> SessionState:
             # For voice sessions, final transcript acts as a user message
             state.messages.append({"role": "user", "content": event.text})
         elif event.type == EventType.TOOL_CALL_COMPLETED:
-            # Simplified tool result tracking
             state.messages.append(
-                {"role": "tool", "name": event.tool_name, "content": str(event.result)}
+                {
+                    "role": "tool",
+                    "name": event.tool_name,
+                    "content": str(event.result),
+                    "tool_call_id": event.tool_call_id,
+                }
             )
         elif event.type == EventType.TOOL_CALL_FAILED:
             # Record the failure as a tool message too, so the agent loop sees
@@ -53,6 +57,7 @@ def ReplaySession(events: Sequence[AgentKitEvent]) -> SessionState:
                     "role": "tool",
                     "name": event.tool_name,
                     "content": f"Error: {event.error}",
+                    "tool_call_id": event.tool_call_id,
                 }
             )
 

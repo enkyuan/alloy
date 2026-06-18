@@ -16,7 +16,7 @@ from typing import Dict, List, cast
 
 import msgpack
 
-from agentkit.core.redis import get_redis_client
+from agentkit.infra.realtime.redis import get_redis_binary_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,7 @@ _DEFAULT_TTL_SECONDS = 30 * 24 * 3600  # 30 days
 
 
 class RedisEmbeddingCache:
-    """Durable tool-embedding cache stored as a msgpack blob in Redis.
-
-    NOTE: this needs a Redis client created WITHOUT ``decode_responses=True``
-    (msgpack is binary). The shared ``get_redis_client()`` currently decodes
-    responses to ``str``, so ``load`` will fail to unpack and fall back to a
-    cold recompute. Tracked as a follow-up; wire a bytes-mode client to make the
-    cache effective.
-    """
+    """Durable tool-embedding cache stored as a msgpack blob in Redis."""
 
     def __init__(
         self, cache_key: str = _DEFAULT_KEY, ttl_seconds: int = _DEFAULT_TTL_SECONDS
@@ -41,7 +34,7 @@ class RedisEmbeddingCache:
         self.ttl_seconds = ttl_seconds
 
     async def load(self) -> Dict[str, List[float]]:
-        redis = await get_redis_client()
+        redis = await get_redis_binary_client()
         cached_bytes = await redis.get(self.cache_key)
         if not cached_bytes:
             return {}
@@ -54,7 +47,7 @@ class RedisEmbeddingCache:
         }
 
     async def save(self, embeddings: Dict[str, List[float]]) -> None:
-        redis = await get_redis_client()
+        redis = await get_redis_binary_client()
         await redis.setex(
             self.cache_key,
             self.ttl_seconds,

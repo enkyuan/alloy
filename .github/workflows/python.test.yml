@@ -1,0 +1,121 @@
+name: test / python
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/actions/setup-python-poetry/**"
+      - ".github/workflows/python.test.yml"
+  pull_request:
+    paths:
+      - "agentkit/sdk/**"
+      - "agentkit/serve/**"
+      - ".github/actions/setup-python-poetry/**"
+      - ".github/workflows/python.test.yml"
+
+jobs:
+  sdk:
+    name: agentkit/sdk
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          working-directory: agentkit/sdk
+
+      - name: Run non-network tests
+        run: poetry run pytest tests/ -m "not integration" --cov=agentkit --cov-report=xml --cov-fail-under=35
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-sdk
+          path: agentkit/sdk/coverage.xml
+          retention-days: 7
+
+  serve:
+    name: agentkit/serve
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    defaults:
+      run:
+        working-directory: agentkit/serve
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          working-directory: agentkit/serve
+
+      - name: Run tests
+        run: poetry run pytest tests/ --cov=agentkit_serve --cov-report=xml --cov-fail-under=35
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-serve
+          path: agentkit/serve/coverage.xml
+          retention-days: 7
+
+  live-openai:
+    name: live provider / openai
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    defaults:
+      run:
+        working-directory: agentkit/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          working-directory: agentkit/sdk
+          install-args: "--no-interaction --sync -E openai"
+
+      - name: Run OpenAI integration smoke
+        run: poetry run pytest -m integration tests/integration/test_openai_provider.py
+
+  live-anthropic:
+    name: live provider / anthropic
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    defaults:
+      run:
+        working-directory: agentkit/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          working-directory: agentkit/sdk
+          install-args: "--no-interaction --sync -E anthropic"
+
+      - name: Run Anthropic integration smoke
+        run: poetry run pytest -m integration tests/integration/test_anthropic_provider.py

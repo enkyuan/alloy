@@ -160,7 +160,11 @@ export function clearTools(): void {
  * ```ts
  * const registry = new ToolRegistry();
  * registry.register({ name: "ping", description: "...", parameters: {} }, async (_ctx, _args) => ({ pong: true }));
- * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs() });
+ * const planner = new ToolPlanner({
+ *   executor: (name, args) => registry.execute("user-1", name, args),
+ *   specs: new Map(registry.listSpecs().map((s) => [s.name, s])),
+ * });
+ * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs(), planner });
  * ```
  */
 export class ToolRegistry {

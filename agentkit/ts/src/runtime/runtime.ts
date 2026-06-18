@@ -14,6 +14,7 @@ import type { ModelProvider, ToolCall } from "../providers/base";
 import { replaySession } from "../sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
 import type { ToolPolicy } from "../tools/policy";
+import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
 
@@ -37,11 +38,24 @@ export interface AgentRuntimeOptions {
   tools?: ToolSpec[];
   /**
    * Optional tool policy. When provided, tool calls whose risk level is in
-   * `policy.requireApprovalFor` are rejected before execution (fail-safe:
-   * no approval handler in the runtime, so approval-required tools are
-   * always blocked at this layer).
+   * `policy.requireApprovalFor` require an `approvalHandler` before execution.
    */
   policy?: ToolPolicy;
+  /**
+   * Optional approval handler for tools that require explicit approval.
+   * Wired into the default `ToolPlanner` when `planner` is not provided.
+   */
+  approvalHandler?: ApprovalHandler;
+  /**
+   * Tool execution planner. When omitted, a default planner is constructed from
+   * `toolExecutor`, `policy`, `approvalHandler`, and `tools`.
+   */
+  planner?: ToolPlanner;
+  /**
+   * Scoped tool executor. Used by the default planner when `planner` is omitted.
+   * Falls back to the global `executeTool` registry.
+   */
+  toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   /** User identifier threaded into tool execution context. Defaults to "agent". */
   userId?: string;
 }
@@ -67,7 +81,7 @@ export class AgentRuntime {
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly _tools: ToolSpec[] | undefined;
-  private readonly policy: ToolPolicy | undefined;
+  private readonly planner: ToolPlanner;
   private readonly userId: string;
 
   constructor(options: AgentRuntimeOptions) {
@@ -77,8 +91,22 @@ export class AgentRuntime {
     this.systemPrompt = options.systemPrompt;
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this._tools = options.tools;
-    this.policy = options.policy;
     this.userId = options.userId ?? "agent";
+
+    const specList = options.tools ?? listToolSpecs({ enabledOnly: false });
+    const specs = new Map(specList.map((spec) => [spec.name, spec]));
+    const executor =
+      options.toolExecutor ??
+      ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
+
+    this.planner =
+      options.planner ??
+      new ToolPlanner({
+        executor,
+        policy: options.policy,
+        approvalHandler: options.approvalHandler,
+        specs,
+      });
   }
 
   /**
@@ -127,7 +155,9 @@ export class AgentRuntime {
       let content = "";
       const toolCalls: ToolCall[] = [];
 
-      for await (const chunk of this.provider.generateStream(messages, tools)) {
+      for await (const chunk of this.provider.generateStream(messages, tools, {
+        cancellationToken: token,
+      })) {
         token.throwIfCancelled();
         if (chunk.delta) {
           content += chunk.delta;
@@ -149,67 +179,17 @@ export class AgentRuntime {
         break;
       }
 
-      // Announce all requests first (matches the Python planner's ordering).
-      for (const tc of toolCalls) {
-        await emit({
-          type: EventType.TOOL_CALL_REQUESTED,
-          tool_name: tc.name,
-          tool_args: tc.args,
-          tool_call_id: tc.id,
-        });
-      }
-
-      // Scatter-gather: run concurrently, emit started/completed|failed per call.
-      await Promise.all(
-        toolCalls.map(async (tc) => {
-          // Policy enforcement: deny-list and risk-based approval gate fire
-          // before TOOL_CALL_STARTED — a blocked call never enters execution.
-          if (this.policy !== undefined) {
-            if (!this.policy.isAllowed(tc.name)) {
-              await emit({
-                type: EventType.TOOL_CALL_FAILED,
-                tool_name: tc.name,
-                tool_call_id: tc.id,
-                error: `Tool not permitted: ${tc.name}`,
-              });
-              return;
-            }
-            const spec = (this._tools ?? listToolSpecs({ enabledOnly: false })).find(
-              (s) => s.name === tc.name,
-            );
-            if (this.policy.requiresApproval(tc.name, spec?.risk)) {
-              await emit({
-                type: EventType.TOOL_CALL_FAILED,
-                tool_name: tc.name,
-                tool_call_id: tc.id,
-                error: `Tool approval required: ${tc.name}`,
-              });
-              return;
-            }
-          }
-
-          await emit({
-            type: EventType.TOOL_CALL_STARTED,
-            tool_name: tc.name,
-            tool_call_id: tc.id,
-          });
-          try {
-            const result = await executeTool(this.userId, tc.name, tc.args);
-            await emit({
-              type: EventType.TOOL_CALL_COMPLETED,
-              tool_name: tc.name,
-              tool_call_id: tc.id,
-              result,
-            });
-          } catch (err) {
-            await emit({
-              type: EventType.TOOL_CALL_FAILED,
-              tool_name: tc.name,
-              tool_call_id: tc.id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }),
+      await this.planner.executeScatterGather(
+        sessionId,
+        toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.args,
+        })),
+        async (event) => {
+          await this.store.append(event);
+          await this.bus.publish(event);
+        },
       );
       // Loop: next iteration replays state including the new tool results.
     }

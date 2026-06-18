@@ -145,43 +145,6 @@ class WorkflowFailed(BaseEvent):
     error: str
 
 
-class SwarmRunStarted(BaseEvent):
-    type: Literal[EventType.SWARM_RUN_STARTED] = EventType.SWARM_RUN_STARTED
-    run_id: str
-
-
-class SwarmAgentSpawned(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_SPAWNED] = EventType.SWARM_AGENT_SPAWNED
-    run_id: str
-    agent_id: str
-    agent_role: str
-
-
-class SwarmAgentCompleted(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_COMPLETED] = EventType.SWARM_AGENT_COMPLETED
-    run_id: str
-    agent_id: str
-    result: Any
-
-
-class SwarmAgentFailed(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_FAILED] = EventType.SWARM_AGENT_FAILED
-    run_id: str
-    agent_id: str
-    error: str
-
-
-class SwarmMergeStarted(BaseEvent):
-    type: Literal[EventType.SWARM_MERGE_STARTED] = EventType.SWARM_MERGE_STARTED
-    run_id: str
-
-
-class SwarmMergeCompleted(BaseEvent):
-    type: Literal[EventType.SWARM_MERGE_COMPLETED] = EventType.SWARM_MERGE_COMPLETED
-    run_id: str
-    merged_result: Any
-
-
 class CancellationRequested(BaseEvent):
     type: Literal[EventType.CANCELLATION_REQUESTED] = EventType.CANCELLATION_REQUESTED
     reason: str
@@ -213,12 +176,6 @@ AgentKitEvent = Union[
     WorkflowStarted,
     WorkflowCompleted,
     WorkflowFailed,
-    SwarmRunStarted,
-    SwarmAgentSpawned,
-    SwarmAgentCompleted,
-    SwarmAgentFailed,
-    SwarmMergeStarted,
-    SwarmMergeCompleted,
     CancellationRequested,
     CancellationCompleted,
 ]

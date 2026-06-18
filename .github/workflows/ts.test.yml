@@ -1,0 +1,77 @@
+name: test / ts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "agentkit/ts/**"
+      - "agentpay/auth/**"
+      - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/ts.test.yml"
+  pull_request:
+    paths:
+      - "agentkit/ts/**"
+      - "agentpay/auth/**"
+      - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/ts.test.yml"
+
+jobs:
+  agentkit-ts:
+    name: agentkit/ts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: agentkit/ts
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Test
+        run: bun run test
+
+  auth:
+    name: agentpay/auth
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentpay/auth
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: agentpay/auth
+
+      - name: Typecheck
+        run: bun run typecheck
+
+  ui:
+    name: packages/ui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: packages/ui
+
+      - name: Typecheck
+        run: bun run typecheck

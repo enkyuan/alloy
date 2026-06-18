@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 import httpx
 
 from agentkit.core.config import get_settings
-from agentkit.runtime.providers._translate import normalize_role
+from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
 from agentkit.runtime.providers.registry import register_provider
@@ -72,13 +72,7 @@ class KimiProvider(ModelProvider):
         stream: bool = False,
     ) -> Dict[str, Any]:
 
-        formatted_messages = []
-        if system_instruction:
-            formatted_messages.append({"role": "system", "content": system_instruction})
-
-        for msg in messages:
-            role = normalize_role(msg["role"])
-            formatted_messages.append({"role": role, "content": msg["content"]})
+        formatted_messages = format_messages_openai(messages, system_instruction)
 
         payload: Dict[str, Any] = {
             "model": self.model_name,
@@ -101,6 +95,48 @@ class KimiProvider(ModelProvider):
             payload["response_format"] = response_format
 
         return payload
+
+    @staticmethod
+    def _accumulate_stream_tool_calls(
+        pending: Dict[int, Dict[str, str]], raw: Any
+    ) -> None:
+        for fallback_index, tc in enumerate(raw or []):
+            index = tc.get("index")
+            if not isinstance(index, int):
+                index = fallback_index
+            current = pending.setdefault(
+                index, {"id": "", "name": "", "arguments": ""}
+            )
+
+            if tc.get("id"):
+                current["id"] = str(tc["id"])
+
+            func = tc.get("function") or {}
+            if func.get("name"):
+                current["name"] += str(func["name"])
+            if func.get("arguments"):
+                current["arguments"] += str(func["arguments"])
+
+    @staticmethod
+    def _finalize_stream_tool_calls(
+        pending: Dict[int, Dict[str, str]]
+    ) -> List[Dict[str, Any]]:
+        tool_calls: List[Dict[str, Any]] = []
+        for _, item in sorted(pending.items()):
+            if not item["name"]:
+                continue
+            try:
+                parsed_args = json.loads(item["arguments"] or "{}")
+            except Exception:
+                parsed_args = {}
+            tool_calls.append(
+                {
+                    "id": item["id"] or None,
+                    "name": item["name"],
+                    "arguments": parsed_args,
+                }
+            )
+        return tool_calls
 
     async def generate(
         self,
@@ -209,6 +245,8 @@ class KimiProvider(ModelProvider):
                         f"Kimi Streaming API Error {response.status_code}: {body}"
                     )
 
+                pending_tool_calls: Dict[int, Dict[str, str]] = {}
+
                 async for line in response.aiter_lines():
                     if (
                         cancellation_token
@@ -234,31 +272,18 @@ class KimiProvider(ModelProvider):
 
                         chunk_text = delta.get("content", "") or ""
 
-                        tool_calls_data = delta.get("tool_calls", [])
-                        tool_calls = []
-                        for tc in tool_calls_data:
-                            if tc.get("type") == "function":
-                                func = tc.get("function", {})
-                                args = func.get("arguments", "{}")
-                                try:
-                                    parsed_args = json.loads(args)
-                                except Exception:
-                                    parsed_args = {}
+                        self._accumulate_stream_tool_calls(
+                            pending_tool_calls, delta.get("tool_calls", [])
+                        )
 
-                                tool_calls.append(
-                                    {
-                                        "id": tc.get("id"),
-                                        "name": func.get("name"),
-                                        "arguments": parsed_args,
-                                    }
-                                )
-
-                        if chunk_text or tool_calls:
-                            yield ModelResponseChunk(
-                                delta=chunk_text, tool_calls=tool_calls
-                            )
+                        if chunk_text:
+                            yield ModelResponseChunk(delta=chunk_text, tool_calls=[])
                     except json.JSONDecodeError:
                         continue
+
+                tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+                if tool_calls:
+                    yield ModelResponseChunk(delta="", tool_calls=tool_calls)
 
 
 register_provider("kimi", KimiProvider)

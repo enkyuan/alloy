@@ -8,9 +8,9 @@ via the studio web app; the agent embeds on their site or phone system and
 handles the full customer interaction, including payment.
 
 **agentkit** is the embeddable sdk that powers agentpay's agent runtime: an
-event-sourced agent loop, toolgen, pluggable llm providers, and stt/tts
-modalities. agentkit can also be used standalone in any python or typescript
-project.
+event-sourced agent loop, toolgen, pluggable llm providers, and optional voice
+edges through `agentkit-serve`. agentkit can also be used standalone in any
+python or typescript project.
 
 ## repository layout
 
@@ -50,8 +50,7 @@ modalities. payment collection is a tool the agent calls.
                ▼
    ┌──────────────────────────┐
    │  agentkit runtime        │   agentkit/sdk + agentkit/serve
-   │  llm loop · toolgen      │   fastapi, redis, postgres
-   │  stt/tts (voice)         │
+   │  llm loop · toolgen      │   serve adds fastapi, redis, postgres, voice
    └──────────────────────────┘
 ```
 

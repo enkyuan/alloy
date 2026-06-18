@@ -1,3 +1,11 @@
+"""Legacy tool abstraction — use ``agentkit.runtime.tools.registry.ToolSpec`` instead.
+
+.. deprecated::
+   ``ToolDefinition`` predates the provider-neutral ``ToolSpec`` / ``ToolRegistry``
+   model.  It is retained for voice-agent serve-side compatibility and will be
+   removed in a future release.  New code should use ``ToolSpec``.
+"""
+
 from abc import ABC, abstractmethod
 from typing import Any, Dict, cast
 
