@@ -138,7 +138,11 @@ def format_messages_gemini(
         if role == "tool":
             tool_call_id = msg.get("tool_call_id") or msg.get("name", "")
             try:
-                result_value = json.loads(content) if isinstance(content, str) and content.startswith("{") else content
+                result_value = (
+                    json.loads(content)
+                    if isinstance(content, str) and content.startswith("{")
+                    else content
+                )
             except (json.JSONDecodeError, TypeError):
                 result_value = content
             contents.append(

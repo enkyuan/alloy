@@ -141,7 +141,9 @@ async def test_approval_rejected_skips_execution():
         return False
 
     policy = ToolPolicy(require_approval_for={"financial"})
-    spec = ToolSpec(name="charge", description="charge card", parameters={}, risk="financial")
+    spec = ToolSpec(
+        name="charge", description="charge card", parameters={}, risk="financial"
+    )
     planner = ToolPlanner(
         executor=executor,
         policy=policy,
@@ -203,7 +205,9 @@ async def test_no_approval_handler_rejects_by_default():
         return {"ok": True}
 
     policy = ToolPolicy(require_approval_for={"admin"})
-    spec = ToolSpec(name="add_user", description="add user", parameters={}, risk="admin")
+    spec = ToolSpec(
+        name="add_user", description="add user", parameters={}, risk="admin"
+    )
     planner = ToolPlanner(
         executor=executor,
         policy=policy,
@@ -225,20 +229,17 @@ async def test_no_approval_handler_rejects_by_default():
 @pytest.mark.asyncio
 async def test_policy_denied_tool_skips_execution_and_approval():
     emitted = []
-    executor_called = False
-    approval_called = False
+    called = {"executor": False, "approval": False}
 
     async def emit(event):
         emitted.append(event)
 
     async def executor(_name: str, _args: dict):
-        nonlocal executor_called
-        executor_called = True
+        called["executor"] = True
         return {"ok": True}
 
     async def approve(_name, _args, _risk):
-        nonlocal approval_called
-        approval_called = True
+        called["approval"] = True
         return True
 
     policy = ToolPolicy(denied={"delete"}, require_approval_for={"destructive"})
@@ -261,8 +262,8 @@ async def test_policy_denied_tool_skips_execution_and_approval():
         emit,
     )
 
-    assert executor_called is False
-    assert approval_called is False
+    assert called["executor"] is False
+    assert called["approval"] is False
     types = [event.type for event in emitted]
     assert types == [EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]
     assert "not permitted" in results[0]["error"]
@@ -271,14 +272,13 @@ async def test_policy_denied_tool_skips_execution_and_approval():
 @pytest.mark.asyncio
 async def test_policy_allowlist_blocks_unlisted_tool():
     emitted = []
-    executor_called = False
+    called = {"executor": False}
 
     async def emit(event):
         emitted.append(event)
 
     async def executor(_name: str, _args: dict):
-        nonlocal executor_called
-        executor_called = True
+        called["executor"] = True
         return {"ok": True}
 
     planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"search"}))
@@ -289,7 +289,7 @@ async def test_policy_allowlist_blocks_unlisted_tool():
         emit,
     )
 
-    assert executor_called is False
+    assert called["executor"] is False
     assert [event.type for event in emitted] == [
         EventType.TOOL_CALL_REQUESTED,
         EventType.TOOL_CALL_FAILED,

@@ -7,14 +7,13 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, cast
+from importlib import import_module
+from typing import Any, Dict
 
 try:
-    from google.genai import types as gemini_types
+    gemini_types = import_module("google.genai.types")
 except ImportError:
     gemini_types = None
-
-gemini_types = cast(Any, gemini_types)
 
 
 class ToolDefinition(ABC):

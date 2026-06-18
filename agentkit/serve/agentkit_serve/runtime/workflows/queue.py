@@ -9,7 +9,11 @@ from agentkit.infra.events.envelope import (
     parse_event_envelope,
 )
 from agentkit.modalities.voice.event_registry import EventInstance, EventsRegistry
-from agentkit.infra.realtime.redis import RedisKeys, get_redis_client, get_redis_stream_client
+from agentkit.infra.realtime.redis import (
+    RedisKeys,
+    get_redis_client,
+    get_redis_stream_client,
+)
 from agentkit_serve.runtime.messaging import Bus, Message
 from agentkit.infra.realtime.redis_events import (
     publish_user_update_safely,

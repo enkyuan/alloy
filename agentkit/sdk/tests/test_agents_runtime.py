@@ -3,23 +3,23 @@ from typing import Any, AsyncGenerator, Dict, List
 
 import pytest
 
-from agentkit.runtime.agents.cancellation import CancellationToken
-from agentkit.runtime.agents.planner import ToolPlanner
-from agentkit.runtime.agents.runtime import AgentRuntime
-from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.bus import InMemoryEventBus
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
     UserMessage,
 )
 from agentkit.infra.events.store import InMemoryEventStore
 from agentkit.infra.events.types import EventType
+from agentkit.runtime.agents.cancellation import CancellationToken
+from agentkit.runtime.agents.planner import ToolPlanner
+from agentkit.runtime.agents.runtime import AgentRuntime
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from agentkit.runtime.tools.registry import ToolSpec
 from tests.helpers.mock_provider import MockProvider as _RegistryMockProvider
 
 
-class MockEventBus(EventBus):
+class MockEventBus(InMemoryEventBus):
     def __init__(self):
         self.published = []
 
@@ -263,7 +263,6 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     from agentkit.infra.events.replay import ReplaySession
     from agentkit.infra.events.schemas import (
         ToolCallCompleted,
-        ToolCallFailed,
         ToolCallRequested,
         ToolCallStarted,
         UserMessage,
@@ -283,7 +282,9 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
         )
     )
     await store.append(
-        ToolCallStarted(session_id=session_id, tool_name="lookup", tool_call_id="call-abc")
+        ToolCallStarted(
+            session_id=session_id, tool_name="lookup", tool_call_id="call-abc"
+        )
     )
     await store.append(
         ToolCallCompleted(

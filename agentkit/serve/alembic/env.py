@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Import settings and models
 from agentkit.core.config import settings
 from agentkit_serve.server.database import Base
-from agentkit_serve.server.models.conversation import Conversation
-from agentkit_serve.server.models.user import User  # Import all models here
+from agentkit_serve.server.models.conversation import Conversation  # noqa: F401
+from agentkit_serve.server.models.user import User  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

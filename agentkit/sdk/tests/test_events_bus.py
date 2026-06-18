@@ -14,6 +14,7 @@ async def test_in_memory_bus_replays_backlog_to_late_subscriber():
 
     seen = []
     async for event in bus.subscribe("s1"):
+        assert isinstance(event, UserMessage)
         seen.append(event.content)
         if len(seen) == 2:
             break
@@ -28,6 +29,7 @@ async def test_in_memory_bus_fans_out_live_events():
 
     async def consume():
         async for event in bus.subscribe("s1"):
+            assert isinstance(event, UserMessage)
             received.append(event.content)
             if event.content == "stop":
                 break
@@ -49,6 +51,7 @@ async def test_in_memory_bus_isolates_sessions_and_blocks_until_published():
 
     async def consume():
         async for event in bus.subscribe("s2"):
+            assert isinstance(event, UserMessage)
             return event.content
 
     task = asyncio.create_task(consume())

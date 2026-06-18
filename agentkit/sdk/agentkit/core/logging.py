@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import sys
 from functools import lru_cache
+from importlib import import_module
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -54,8 +55,8 @@ def get_logger_config(debug: bool = False) -> LoggerConfig:
 
     # Use Rich logging if available
     if RICH_AVAILABLE:
-        from rich.logging import RichHandler
-        from rich.traceback import install as install_rich_traceback
+        RichHandler = import_module("rich.logging").RichHandler
+        install_rich_traceback = import_module("rich.traceback").install
 
         # Install rich traceback handler for better error display
         install_rich_traceback(

@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from agentkit.core.config import get_settings
-
-if TYPE_CHECKING:
-    import redis.asyncio as redis_asyncio
 
 logger = logging.getLogger(__name__)
 

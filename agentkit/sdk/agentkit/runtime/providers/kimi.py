@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 import httpx
 
@@ -71,7 +71,6 @@ class KimiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         stream: bool = False,
     ) -> Dict[str, Any]:
-
         formatted_messages = format_messages_openai(messages, system_instruction)
 
         payload: Dict[str, Any] = {
@@ -104,9 +103,7 @@ class KimiProvider(ModelProvider):
             index = tc.get("index")
             if not isinstance(index, int):
                 index = fallback_index
-            current = pending.setdefault(
-                index, {"id": "", "name": "", "arguments": ""}
-            )
+            current = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
 
             if tc.get("id"):
                 current["id"] = str(tc["id"])
@@ -119,7 +116,7 @@ class KimiProvider(ModelProvider):
 
     @staticmethod
     def _finalize_stream_tool_calls(
-        pending: Dict[int, Dict[str, str]]
+        pending: Dict[int, Dict[str, str]],
     ) -> List[Dict[str, Any]]:
         tool_calls: List[Dict[str, Any]] = []
         for _, item in sorted(pending.items()):
@@ -148,7 +145,6 @@ class KimiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-
         payload = self._prepare_payload(
             messages,
             tools,
@@ -214,7 +210,10 @@ class KimiProvider(ModelProvider):
             )
 
             return GenerateResponse(
-                text=text, tool_calls=tool_calls, metadata=metadata, metrics=metrics
+                text=text,
+                tool_calls=cast(Any, tool_calls),
+                metadata=metadata,
+                metrics=metrics,
             )
 
     async def generate_stream(
@@ -226,7 +225,6 @@ class KimiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
-
         payload = self._prepare_payload(
             messages, tools, system_instruction, temperature, max_tokens, stream=True
         )
@@ -283,7 +281,7 @@ class KimiProvider(ModelProvider):
 
                 tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
                 if tool_calls:
-                    yield ModelResponseChunk(delta="", tool_calls=tool_calls)
+                    yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
 
 
 register_provider("kimi", KimiProvider)

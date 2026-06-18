@@ -44,6 +44,7 @@ class MultiIntegration:
             def _make_handler(tool_name: str) -> Any:
                 async def _handler(ctx: ToolContext, args: dict) -> dict:
                     return {"tool": tool_name}
+
                 return _handler
 
             registry.register(spec)(_make_handler(name))

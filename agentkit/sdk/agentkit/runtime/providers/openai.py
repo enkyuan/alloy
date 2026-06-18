@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from importlib import import_module
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from agentkit.core.config import get_settings
 from agentkit.runtime.providers.base import ModelProvider
@@ -48,7 +49,7 @@ class OpenAIProvider(ModelProvider):
         """Lazily construct the async OpenAI client."""
         if self._client is None:
             try:
-                from openai import AsyncOpenAI
+                AsyncOpenAI = import_module("openai").AsyncOpenAI
             except ImportError as error:
                 raise ProviderConfigError(
                     "OpenAI provider requires openai. Install agentkit[openai]."
@@ -107,9 +108,7 @@ class OpenAIProvider(ModelProvider):
             index = cls._field(tc, "index")
             if not isinstance(index, int):
                 index = fallback_index
-            current = pending.setdefault(
-                index, {"id": "", "name": "", "arguments": ""}
-            )
+            current = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
 
             tool_call_id = cls._field(tc, "id")
             if tool_call_id:
@@ -126,7 +125,7 @@ class OpenAIProvider(ModelProvider):
 
     @staticmethod
     def _finalize_stream_tool_calls(
-        pending: Dict[int, Dict[str, str]]
+        pending: Dict[int, Dict[str, str]],
     ) -> List[Dict[str, Any]]:
         calls: List[Dict[str, Any]] = []
         for _, item in sorted(pending.items()):
@@ -187,7 +186,10 @@ class OpenAIProvider(ModelProvider):
         metadata = ModelMetadata(provider_name="openai", model_name=self.model_name)
 
         return GenerateResponse(
-            text=text, tool_calls=tool_calls, metadata=metadata, metrics=metrics
+            text=text,
+            tool_calls=cast(Any, tool_calls),
+            metadata=metadata,
+            metrics=metrics,
         )
 
     async def generate_stream(
@@ -236,7 +238,7 @@ class OpenAIProvider(ModelProvider):
 
         tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
         if tool_calls:
-            yield ModelResponseChunk(delta="", tool_calls=tool_calls)
+            yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
 
 
 register_provider("openai", OpenAIProvider)

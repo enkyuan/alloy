@@ -5,7 +5,6 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AnthropicProvider } from "../src/providers/anthropic";
-import type { ProviderMessage } from "../src/providers/base";
 
 // ---------------------------------------------------------------------------
 // splitMessages (module-local helper) — tested via generate() with mocked client

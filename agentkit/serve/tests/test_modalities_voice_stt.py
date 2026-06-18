@@ -124,9 +124,7 @@ def test_modalities_voice_websocket_flow(
             assert "partial" in received_types or "final" in received_types
 
             # Verify text content
-            complete_msg = next(
-                m for m in received_messages if m["type"] == "complete"
-            )
+            complete_msg = next(m for m in received_messages if m["type"] == "complete")
             assert "Hello world" in complete_msg["text"]
 
 

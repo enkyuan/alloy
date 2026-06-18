@@ -5,6 +5,7 @@ import logging
 import hashlib
 import json
 
+from importlib import import_module
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from agentkit.core.config import get_settings
@@ -40,7 +41,7 @@ class GeminiService:
 
         logger.info("Initializing Gemini client...")
         try:
-            from google import genai
+            genai = import_module("google.genai")
         except ImportError as error:
             raise ProviderConfigError(
                 "Gemini provider requires google-genai. Install agentkit[gemini]."
@@ -333,7 +334,6 @@ class GeminiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-
         # Translate the neutral tool payload to Gemini's function-declaration form.
         from agentkit.runtime.tools.payload import to_gemini
 

@@ -8,7 +8,8 @@ to Anthropic's ``input_schema`` format via ``to_anthropic``. Enable with
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from importlib import import_module
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from agentkit.core.config import get_settings
 from agentkit.runtime.providers.base import ModelProvider
@@ -45,7 +46,7 @@ class AnthropicProvider(ModelProvider):
         """Lazily construct the async Anthropic client."""
         if self._client is None:
             try:
-                from anthropic import AsyncAnthropic
+                AsyncAnthropic = import_module("anthropic").AsyncAnthropic
             except ImportError as error:
                 raise ProviderConfigError(
                     "Anthropic provider requires anthropic. Install agentkit[anthropic]."
@@ -149,7 +150,10 @@ class AnthropicProvider(ModelProvider):
         metadata = ModelMetadata(provider_name="anthropic", model_name=self.model_name)
 
         return GenerateResponse(
-            text=text, tool_calls=tool_calls, metadata=metadata, metrics=metrics
+            text=text,
+            tool_calls=cast(Any, tool_calls),
+            metadata=metadata,
+            metrics=metrics,
         )
 
     async def generate_stream(
@@ -223,13 +227,16 @@ class AnthropicProvider(ModelProvider):
                         args = {}
                     yield ModelResponseChunk(
                         delta="",
-                        tool_calls=[
-                            {
-                                "id": pending_tool.get("id"),
-                                "name": pending_tool.get("name"),
-                                "arguments": args,
-                            }
-                        ],
+                        tool_calls=cast(
+                            Any,
+                            [
+                                {
+                                    "id": pending_tool.get("id"),
+                                    "name": pending_tool.get("name"),
+                                    "arguments": args,
+                                }
+                            ],
+                        ),
                     )
                     pending_tool = {}
 

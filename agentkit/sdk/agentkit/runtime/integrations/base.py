@@ -1,9 +1,10 @@
 """Integration abstract base class."""
+
 from __future__ import annotations
 
 import abc
 from dataclasses import replace
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from agentkit.runtime.tools.registry import ToolHandler, ToolRegistry, ToolSpec
 
@@ -15,10 +16,10 @@ def tool(
     risk: Optional[str] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
-) -> Callable[[ToolHandler], ToolHandler]:
+) -> Callable[[Any], Any]:
     """Decorator to declare a method as a tool on an Integration subclass."""
 
-    def decorator(fn: ToolHandler) -> ToolHandler:
+    def decorator(fn: Any) -> Any:
         fn.__tool_spec__ = dict(  # type: ignore[attr-defined]
             description=description,
             parameters=parameters,
@@ -69,7 +70,7 @@ class Integration(abc.ABC):
                     tags=spec_meta["tags"],
                     enabled=spec_meta["enabled"],
                 )
-                result.append((spec, method))
+                result.append((spec, cast(ToolHandler, method)))
         return result
 
     def register(self, registry: ToolRegistry) -> None:

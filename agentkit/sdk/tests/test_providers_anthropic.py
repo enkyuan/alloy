@@ -47,7 +47,9 @@ def test_anthropic_provider_requires_api_key():
     from agentkit.runtime.providers.anthropic import AnthropicProvider
 
     with patch(_PATCH) as mock_gs:
-        mock_gs.return_value = MagicMock(ANTHROPIC_API_KEY=None, ANTHROPIC_MODEL="claude-sonnet-4-6")
+        mock_gs.return_value = MagicMock(
+            ANTHROPIC_API_KEY=None, ANTHROPIC_MODEL="claude-sonnet-4-6"
+        )
         with pytest.raises(ProviderConfigError, match="ANTHROPIC_API_KEY"):
             AnthropicProvider()
 
@@ -68,7 +70,9 @@ def test_anthropic_split_messages_extracts_system():
 
 def test_anthropic_split_messages_no_system():
     provider = _provider()
-    system, messages = provider._split_messages([{"role": "user", "content": "hi"}], None)
+    system, messages = provider._split_messages(
+        [{"role": "user", "content": "hi"}], None
+    )
     assert system is None
     assert len(messages) == 1
 
@@ -76,7 +80,10 @@ def test_anthropic_split_messages_no_system():
 def test_anthropic_split_messages_role_system_absorbed():
     provider = _provider()
     system, messages = provider._split_messages(
-        [{"role": "system", "content": "You are helpful"}, {"role": "user", "content": "hi"}],
+        [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "hi"},
+        ],
         system_instruction=None,
     )
     assert system == "You are helpful"
@@ -109,7 +116,9 @@ def test_anthropic_split_messages_tool_result_becomes_user_block():
 def test_anthropic_parse_tool_use_extracts_text_and_tools():
     provider = _provider()
     text_block = SimpleNamespace(type="text", text="Hello")
-    tool_block = SimpleNamespace(type="tool_use", id="c1", name="lookup", input={"q": "x"})
+    tool_block = SimpleNamespace(
+        type="tool_use", id="c1", name="lookup", input={"q": "x"}
+    )
     text, tool_calls = provider._parse_tool_use([text_block, tool_block])
     assert text == "Hello"
     assert tool_calls == [{"id": "c1", "name": "lookup", "arguments": {"q": "x"}}]
@@ -165,7 +174,9 @@ async def test_anthropic_generate_with_tools_passes_translated_payload():
         captured.update(kwargs)
         return SimpleNamespace(
             content=[
-                SimpleNamespace(type="tool_use", id="c1", name="search", input={"q": "test"})
+                SimpleNamespace(
+                    type="tool_use", id="c1", name="search", input={"q": "test"}
+                )
             ],
             usage=SimpleNamespace(input_tokens=2, output_tokens=1),
         )
@@ -174,8 +185,16 @@ async def test_anthropic_generate_with_tools_passes_translated_payload():
     fake_client.messages.create = fake_create
     provider._client = fake_client
 
-    neutral_tools = [{"name": "search", "description": "Search", "parameters": {"type": "object", "properties": {}}}]
-    result = await provider.generate([{"role": "user", "content": "find x"}], tools=neutral_tools)
+    neutral_tools = [
+        {
+            "name": "search",
+            "description": "Search",
+            "parameters": {"type": "object", "properties": {}},
+        }
+    ]
+    result = await provider.generate(
+        [{"role": "user", "content": "find x"}], tools=neutral_tools
+    )
 
     assert "tools" in captured
     assert result.tool_calls[0]["name"] == "search"

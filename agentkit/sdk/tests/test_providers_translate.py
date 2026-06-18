@@ -1,7 +1,5 @@
 """Tests for the shared role translator."""
 
-import pytest
-
 from agentkit.runtime.providers._translate import normalize_role, to_gemini_role
 
 

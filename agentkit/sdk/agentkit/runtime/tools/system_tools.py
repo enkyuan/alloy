@@ -7,7 +7,8 @@
    ``agentkit.modalities.voice.legacy.system_tools`` for serve-side compatibility.
 """
 
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
+from importlib import import_module
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -16,11 +17,9 @@ from agentkit.types.tool import ToolDefinition
 from agentkit.modalities.voice.utils.phone_numbers import is_e164_phone_number
 
 try:
-    from google.genai import types as gemini_types
+    gemini_types = import_module("google.genai.types")
 except ImportError:
     gemini_types = None
-
-gemini_types = cast(Any, gemini_types)
 
 
 class EndCallArgs(BaseModel):

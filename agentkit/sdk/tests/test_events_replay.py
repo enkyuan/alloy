@@ -10,7 +10,6 @@ from agentkit.infra.events.schemas import (
     TranscriptFinal,
     UserMessage,
 )
-from agentkit.infra.events.types import EventType
 
 
 def test_replay_session_builds_message_history():

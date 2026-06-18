@@ -68,7 +68,9 @@ def test_requires_approval_false_when_no_set_configured():
 
 
 def test_existing_allow_deny_still_work_with_risk_fields():
-    policy = ToolPolicy(allowed={"search"}, denied={"delete"}, require_approval_for={"financial"})
+    policy = ToolPolicy(
+        allowed={"search"}, denied={"delete"}, require_approval_for={"financial"}
+    )
     assert policy.is_allowed("search") is True
     assert policy.is_allowed("delete") is False
     assert policy.requires_approval("charge", "financial") is True

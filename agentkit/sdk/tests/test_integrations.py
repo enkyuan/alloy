@@ -1,7 +1,14 @@
+from typing import List, Tuple
+
 import pytest
 
 from agentkit.runtime.integrations import Integration, tool
-from agentkit.runtime.tools.registry import ToolContext, ToolRegistry, ToolSpec
+from agentkit.runtime.tools.registry import (
+    ToolContext,
+    ToolHandler,
+    ToolRegistry,
+    ToolSpec,
+)
 
 
 # --- helpers ---
@@ -16,14 +23,14 @@ async def _dummy_handler(ctx: ToolContext, args: dict) -> dict:
 class FooIntegration(Integration):
     namespace = "foo"
 
-    def tools(self):
+    def tools(self) -> List[Tuple[ToolSpec, ToolHandler]]:
         return [(_DUMMY_SPEC, _dummy_handler)]
 
 
 class MultiToolIntegration(Integration):
     namespace = "svc"
 
-    def tools(self):
+    def tools(self) -> List[Tuple[ToolSpec, ToolHandler]]:
         spec_a = ToolSpec(name="alpha", description="alpha", parameters={})
         spec_b = ToolSpec(name="beta", description="beta", parameters={})
         return [(spec_a, _dummy_handler), (spec_b, _dummy_handler)]
@@ -47,9 +54,7 @@ def test_multiple_tools_all_prefixed():
 
 
 def test_cannot_instantiate_without_namespace():
-    class NoNamespace(Integration):
-        def tools(self):
-            return []
+    NoNamespace = type("NoNamespace", (Integration,), {})
 
     with pytest.raises(TypeError):
         NoNamespace()
@@ -112,7 +117,7 @@ def test_manual_tools_override_still_works():
     class ManualIntegration(Integration):
         namespace = "manual"
 
-        def tools(self):
+        def tools(self) -> List[Tuple[ToolSpec, ToolHandler]]:
             return [(custom_spec, _dummy_handler)]
 
     registry = ToolRegistry()

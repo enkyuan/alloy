@@ -1,11 +1,12 @@
 """Tests for AgentBuilder."""
+
 from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 
-from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.bus import InMemoryEventBus
 from agentkit.infra.events.store import InMemoryEventStore
 from agentkit.runtime.agents.builder import AgentBuilder
 from agentkit.runtime.agents.runtime import AgentRuntime
@@ -57,7 +58,7 @@ class _PingIntegration:
 
 
 def _make_infra():
-    bus = EventBus()
+    bus = InMemoryEventBus()
     store = InMemoryEventStore()
     return bus, store
 

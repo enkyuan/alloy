@@ -81,7 +81,10 @@ export class AgentRuntime {
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly _tools: ToolSpec[] | undefined;
-  private readonly planner: ToolPlanner;
+  private readonly planner: ToolPlanner | undefined;
+  private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  private readonly policy: ToolPolicy | undefined;
+  private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly userId: string;
 
   constructor(options: AgentRuntimeOptions) {
@@ -92,21 +95,22 @@ export class AgentRuntime {
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this._tools = options.tools;
     this.userId = options.userId ?? "agent";
-
-    const specList = options.tools ?? listToolSpecs({ enabledOnly: false });
-    const specs = new Map(specList.map((spec) => [spec.name, spec]));
-    const executor =
+    this.policy = options.policy;
+    this.approvalHandler = options.approvalHandler;
+    this.toolExecutor =
       options.toolExecutor ??
       ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
+    this.planner = options.planner;
+  }
 
-    this.planner =
-      options.planner ??
-      new ToolPlanner({
-        executor,
-        policy: options.policy,
-        approvalHandler: options.approvalHandler,
-        specs,
-      });
+  private makePlanner(tools: ToolSpec[]): ToolPlanner {
+    if (this.planner !== undefined) return this.planner;
+    return new ToolPlanner({
+      executor: this.toolExecutor,
+      policy: this.policy,
+      approvalHandler: this.approvalHandler,
+      specs: new Map(tools.map((spec) => [spec.name, spec])),
+    });
   }
 
   /**
@@ -179,7 +183,7 @@ export class AgentRuntime {
         break;
       }
 
-      await this.planner.executeScatterGather(
+      await this.makePlanner(tools).executeScatterGather(
         sessionId,
         toolCalls.map((tc) => ({
           id: tc.id,

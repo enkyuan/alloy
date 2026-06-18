@@ -101,14 +101,19 @@ async def test_planner_deny_blocks_before_started():
     )
 
     executor.assert_not_called()
-    assert _types(emitted) == [EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]
+    assert _types(emitted) == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
     assert "not permitted" in results[0]["error"].lower()
 
 
 @pytest.mark.asyncio
 async def test_planner_allow_list_permits_listed_tool():
     executor = AsyncMock(return_value={"x": 1})
-    planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"allowed_tool"}))
+    planner = ToolPlanner(
+        executor=executor, policy=ToolPolicy(allowed={"allowed_tool"})
+    )
 
     emitted, _ = await _collect(
         planner, "sess-allow", [{"id": "a1", "name": "allowed_tool", "arguments": {}}]
@@ -124,7 +129,9 @@ async def test_planner_allow_list_blocks_unlisted_tool():
     planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"search"}))
 
     emitted, results = await _collect(
-        planner, "sess-allow-block", [{"id": "ab1", "name": "other_tool", "arguments": {}}]
+        planner,
+        "sess-allow-block",
+        [{"id": "ab1", "name": "other_tool", "arguments": {}}],
     )
 
     executor.assert_not_called()
@@ -140,10 +147,16 @@ async def test_planner_allow_list_blocks_unlisted_tool():
 @pytest.mark.asyncio
 async def test_planner_approval_approved_proceeds():
     executor = AsyncMock(return_value={"done": True})
-    specs = {"nuke": ToolSpec(name="nuke", description="d", parameters={}, risk="destructive")}
+    specs = {
+        "nuke": ToolSpec(
+            name="nuke", description="d", parameters={}, risk="destructive"
+        )
+    }
     policy = ToolPolicy(require_approval_for={"destructive"})
     approval_handler = AsyncMock(return_value=True)
-    planner = ToolPlanner(executor=executor, policy=policy, approval_handler=approval_handler, specs=specs)
+    planner = ToolPlanner(
+        executor=executor, policy=policy, approval_handler=approval_handler, specs=specs
+    )
 
     emitted, results = await _collect(
         planner, "sess-approved", [{"id": "ap1", "name": "nuke", "arguments": {}}]
@@ -159,10 +172,16 @@ async def test_planner_approval_approved_proceeds():
 @pytest.mark.asyncio
 async def test_planner_approval_rejected_skips_execution():
     executor = AsyncMock(return_value={})
-    specs = {"charge": ToolSpec(name="charge", description="d", parameters={}, risk="financial")}
+    specs = {
+        "charge": ToolSpec(
+            name="charge", description="d", parameters={}, risk="financial"
+        )
+    }
     policy = ToolPolicy(require_approval_for={"financial"})
     approval_handler = AsyncMock(return_value=False)
-    planner = ToolPlanner(executor=executor, policy=policy, approval_handler=approval_handler, specs=specs)
+    planner = ToolPlanner(
+        executor=executor, policy=policy, approval_handler=approval_handler, specs=specs
+    )
 
     emitted, results = await _collect(
         planner, "sess-rejected", [{"id": "rj1", "name": "charge", "arguments": {}}]
@@ -178,7 +197,11 @@ async def test_planner_approval_rejected_skips_execution():
 @pytest.mark.asyncio
 async def test_planner_no_approval_handler_rejects_by_default():
     executor = AsyncMock(return_value={})
-    specs = {"add_user": ToolSpec(name="add_user", description="d", parameters={}, risk="admin")}
+    specs = {
+        "add_user": ToolSpec(
+            name="add_user", description="d", parameters={}, risk="admin"
+        )
+    }
     policy = ToolPolicy(require_approval_for={"admin"})
     planner = ToolPlanner(executor=executor, policy=policy, specs=specs)
 
@@ -194,7 +217,9 @@ async def test_planner_no_approval_handler_rejects_by_default():
 @pytest.mark.asyncio
 async def test_planner_low_risk_tool_skips_approval_gate():
     executor = AsyncMock(return_value={})
-    specs = {"search": ToolSpec(name="search", description="d", parameters={}, risk="read")}
+    specs = {
+        "search": ToolSpec(name="search", description="d", parameters={}, risk="read")
+    }
     policy = ToolPolicy(require_approval_for={"destructive"})
     planner = ToolPlanner(executor=executor, policy=policy, specs=specs)
 
@@ -231,5 +256,7 @@ async def test_planner_scatter_gather_runs_both_calls():
 
     assert sorted(call_log) == ["tool_a", "tool_b"]
     assert len(results) == 2
-    completed_types = [e.type for e in emitted if e.type == EventType.TOOL_CALL_COMPLETED]
+    completed_types = [
+        e.type for e in emitted if e.type == EventType.TOOL_CALL_COMPLETED
+    ]
     assert len(completed_types) == 2

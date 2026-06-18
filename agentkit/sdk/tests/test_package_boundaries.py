@@ -9,7 +9,9 @@ PACKAGE_ROOT = SDK_ROOT / "agentkit"
 
 
 def _python_files(root: Path) -> list[Path]:
-    return sorted(path for path in root.rglob("*.py") if "__pycache__" not in path.parts)
+    return sorted(
+        path for path in root.rglob("*.py") if "__pycache__" not in path.parts
+    )
 
 
 def _imports(path: Path) -> set[str]:
@@ -167,7 +169,10 @@ def test_non_integration_tests_do_not_use_redis_event_bus() -> None:
             continue
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "agentkit.infra.events.bus":
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "agentkit.infra.events.bus"
+            ):
                 for alias in node.names:
                     if alias.name == "EventBus":
                         violations.append(str(path.relative_to(SDK_ROOT)))
