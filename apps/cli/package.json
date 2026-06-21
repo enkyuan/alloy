@@ -24,21 +24,27 @@
     "lint": "oxlint .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
     "chalk": "^5.4.1",
     "commander": "^14.0.0",
-    "dotenv": "^17.3.1"
+    "dotenv": "^17.3.1",
+    "semver": "^7.8.5",
+    "yocto-spinner": "^1.2.0"
   },
   "devDependencies": {
     "@agentkit/shared": "workspace:*",
     "@types/node": "^25.9.1",
+    "@types/semver": "^7.7.1",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.68.0",
     "tsdown": "^0.12.9",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }
