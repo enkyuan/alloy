@@ -12,7 +12,7 @@ inputs:
   install-args:
     description: Arguments passed to bun install.
     required: false
-    default: "--frozen-lockfile"
+    default: ""
 
 runs:
   using: composite
