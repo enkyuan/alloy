@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 
-export function copyToClipboard(text: string): boolean {
+export async function copyToClipboard(text: string): Promise<boolean> {
   const tries: { cmd: string; args: string[] }[] =
     process.platform === "darwin"
       ? [{ cmd: "pbcopy", args: [] }]
