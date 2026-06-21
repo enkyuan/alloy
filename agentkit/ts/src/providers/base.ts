@@ -36,11 +36,24 @@ export interface ModelResponse {
   toolCalls: ToolCall[];
 }
 
+/** Per-call options that callers may override from the constructor defaults. */
+export interface ModelProviderOptions {
+  temperature?: number;
+  maxTokens?: number;
+  /** Providers should check `.isCancelled` before / between network round trips. */
+  cancellationToken?: { isCancelled: boolean };
+}
+
 /** Common interface every LLM provider implements. */
 export interface ModelProvider {
-  generate(messages: ProviderMessage[], tools: ToolSpec[]): Promise<ModelResponse>;
+  generate(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): Promise<ModelResponse>;
   generateStream(
     messages: ProviderMessage[],
     tools: ToolSpec[],
+    options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk>;
 }

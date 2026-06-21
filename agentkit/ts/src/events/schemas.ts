@@ -106,6 +106,27 @@ export const ToolCallFailed = event({
   error: z.string(),
 });
 
+export const ToolApprovalRequested = event({
+  type: z.literal(EventType.TOOL_APPROVAL_REQUESTED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+  tool_args: z.record(z.string(), z.unknown()),
+  risk: z.string().nullish(),
+});
+
+export const ToolApprovalApproved = event({
+  type: z.literal(EventType.TOOL_APPROVAL_APPROVED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+});
+
+export const ToolApprovalRejected = event({
+  type: z.literal(EventType.TOOL_APPROVAL_REJECTED),
+  tool_name: z.string(),
+  tool_call_id: z.string(),
+  reason: z.string().nullish(),
+});
+
 export const WorkflowStarted = event({
   type: z.literal(EventType.WORKFLOW_STARTED),
   workflow_name: z.string(),
@@ -121,43 +142,6 @@ export const WorkflowFailed = event({
   type: z.literal(EventType.WORKFLOW_FAILED),
   workflow_name: z.string(),
   error: z.string(),
-});
-
-export const SwarmRunStarted = event({
-  type: z.literal(EventType.SWARM_RUN_STARTED),
-  run_id: z.string(),
-});
-
-export const SwarmAgentSpawned = event({
-  type: z.literal(EventType.SWARM_AGENT_SPAWNED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  agent_role: z.string(),
-});
-
-export const SwarmAgentCompleted = event({
-  type: z.literal(EventType.SWARM_AGENT_COMPLETED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  result: z.unknown(),
-});
-
-export const SwarmAgentFailed = event({
-  type: z.literal(EventType.SWARM_AGENT_FAILED),
-  run_id: z.string(),
-  agent_id: z.string(),
-  error: z.string(),
-});
-
-export const SwarmMergeStarted = event({
-  type: z.literal(EventType.SWARM_MERGE_STARTED),
-  run_id: z.string(),
-});
-
-export const SwarmMergeCompleted = event({
-  type: z.literal(EventType.SWARM_MERGE_COMPLETED),
-  run_id: z.string(),
-  merged_result: z.unknown(),
 });
 
 export const CancellationRequested = event({
@@ -186,15 +170,12 @@ export const AgentKitEvent = z.discriminatedUnion("type", [
   ToolCallStarted,
   ToolCallCompleted,
   ToolCallFailed,
+  ToolApprovalRequested,
+  ToolApprovalApproved,
+  ToolApprovalRejected,
   WorkflowStarted,
   WorkflowCompleted,
   WorkflowFailed,
-  SwarmRunStarted,
-  SwarmAgentSpawned,
-  SwarmAgentCompleted,
-  SwarmAgentFailed,
-  SwarmMergeStarted,
-  SwarmMergeCompleted,
   CancellationRequested,
   CancellationCompleted,
 ]);

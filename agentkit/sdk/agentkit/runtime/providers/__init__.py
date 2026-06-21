@@ -1,6 +1,13 @@
 """LLM provider package."""
 
 from agentkit.runtime.providers.base import ModelProvider
-from agentkit.runtime.providers.registry import get_provider, register_provider
+from agentkit.runtime.providers.registry import (
+    GetProvider,
+    RegisterProvider,
+)
 
-__all__ = ["ModelProvider", "get_provider", "register_provider"]
+__all__ = [
+    "GetProvider",
+    "ModelProvider",
+    "RegisterProvider",
+]

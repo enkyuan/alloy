@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentkit_serve.server.deps import get_current_supabase_user
-from agentkit.core.auth import supabase_auth_service
-from agentkit.core.database import get_db
+from agentkit_serve.server.supabase_auth import supabase_auth_service
+from agentkit_serve.server.database import get_db
 from agentkit_serve.server.models.user import User
 from agentkit_serve.server.models.auth import (
     RefreshTokenRequest,

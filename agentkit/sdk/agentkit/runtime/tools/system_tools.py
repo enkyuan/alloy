@@ -1,6 +1,14 @@
-"""System tool definitions for Voice Agents."""
+"""System tool definitions for Voice Agents (legacy).
 
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union, cast
+.. deprecated::
+   This module uses the older ``ToolDefinition`` ABC.  New voice tools should
+   be implemented as ``ToolSpec`` instances registered via ``ToolRegistry``
+   (``agentkit.runtime.tools.registry``).  These tools are re-exported from
+   ``agentkit.modalities.voice.legacy.system_tools`` for serve-side compatibility.
+"""
+
+from importlib import import_module
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -9,11 +17,9 @@ from agentkit.types.tool import ToolDefinition
 from agentkit.modalities.voice.utils.phone_numbers import is_e164_phone_number
 
 try:
-    from google.genai import types as gemini_types
+    gemini_types = import_module("google.genai.types")
 except ImportError:
     gemini_types = None
-
-gemini_types = cast(Any, gemini_types)
 
 
 class EndCallArgs(BaseModel):

@@ -12,17 +12,52 @@ import { EventType } from "../events/types";
 import type { EventStore } from "../events/store";
 import type { ModelProvider, ToolCall } from "../providers/base";
 import { replaySession } from "../sessions/replay";
-import { executeTool, listToolSpecs } from "../tools/registry";
+import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
+import type { ToolPolicy } from "../tools/policy";
+import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
 
-const MAX_TOOL_ITERATIONS = 10;
+/** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
+export interface AgentStrategy {
+  /** Maximum tool-call iterations before the loop terminates. Default: 10. */
+  maxToolIterations?: number;
+}
 
 export interface AgentRuntimeOptions {
   provider: ModelProvider;
   store: EventStore;
   bus: EventBus;
   systemPrompt?: string;
+  strategy?: AgentStrategy;
+  /**
+   * Tool specs to surface to the provider each turn. When provided, only
+   * these tools are offered (scoped registry). When omitted, falls back to
+   * `listToolSpecs()` from the global registry.
+   */
+  tools?: ToolSpec[];
+  /**
+   * Optional tool policy. When provided, tool calls whose risk level is in
+   * `policy.requireApprovalFor` require an `approvalHandler` before execution.
+   */
+  policy?: ToolPolicy;
+  /**
+   * Optional approval handler for tools that require explicit approval.
+   * Wired into the default `ToolPlanner` when `planner` is not provided.
+   */
+  approvalHandler?: ApprovalHandler;
+  /**
+   * Tool execution planner. When omitted, a default planner is constructed from
+   * `toolExecutor`, `policy`, `approvalHandler`, and `tools`.
+   */
+  planner?: ToolPlanner;
+  /**
+   * Scoped tool executor. Used by the default planner when `planner` is omitted.
+   * Falls back to the global `executeTool` registry.
+   */
+  toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  /** User identifier threaded into tool execution context. Defaults to "agent". */
+  userId?: string;
 }
 
 export interface RunTurnOptions {
@@ -44,12 +79,58 @@ export class AgentRuntime {
   private readonly store: EventStore;
   private readonly bus: EventBus;
   private readonly systemPrompt?: string;
+  private readonly maxToolIterations: number;
+  private readonly _tools: ToolSpec[] | undefined;
+  private readonly planner: ToolPlanner | undefined;
+  private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  private readonly policy: ToolPolicy | undefined;
+  private readonly approvalHandler: ApprovalHandler | undefined;
+  private readonly userId: string;
 
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
     this.store = options.store;
     this.bus = options.bus;
     this.systemPrompt = options.systemPrompt;
+    this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
+    this._tools = options.tools;
+    this.userId = options.userId ?? "agent";
+    this.policy = options.policy;
+    this.approvalHandler = options.approvalHandler;
+    this.toolExecutor =
+      options.toolExecutor ??
+      ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
+    this.planner = options.planner;
+  }
+
+  private makePlanner(tools: ToolSpec[]): ToolPlanner {
+    if (this.planner !== undefined) return this.planner;
+    return new ToolPlanner({
+      executor: this.toolExecutor,
+      policy: this.policy,
+      approvalHandler: this.approvalHandler,
+      specs: new Map(tools.map((spec) => [spec.name, spec])),
+    });
+  }
+
+  /**
+   * Append a user message and immediately run the agent turn.
+   *
+   * This is the idiomatic one-shot call:
+   *   await runtime.send("s1", "What time is it?");
+   *
+   * For more control (batch-append, replay, pre-seeding) append a USER_MESSAGE
+   * event to the store directly and call `runTurn()` separately.
+   */
+  async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
+    const event = AgentKitEvent.parse({
+      type: EventType.USER_MESSAGE,
+      session_id: sessionId,
+      content,
+    });
+    await this.store.append(event);
+    await this.bus.publish(event);
+    await this.runTurn(sessionId, options);
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
@@ -66,9 +147,9 @@ export class AgentRuntime {
 
     await emit({ type: EventType.AGENT_REASONING_STARTED });
 
-    const tools = listToolSpecs();
+    const tools = this._tools ?? listToolSpecs();
 
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+    for (let i = 0; i < this.maxToolIterations; i++) {
       token.throwIfCancelled();
 
       const events = await this.store.getEvents(sessionId);
@@ -78,7 +159,9 @@ export class AgentRuntime {
       let content = "";
       const toolCalls: ToolCall[] = [];
 
-      for await (const chunk of this.provider.generateStream(messages, tools)) {
+      for await (const chunk of this.provider.generateStream(messages, tools, {
+        cancellationToken: token,
+      })) {
         token.throwIfCancelled();
         if (chunk.delta) {
           content += chunk.delta;
@@ -100,41 +183,17 @@ export class AgentRuntime {
         break;
       }
 
-      // Announce all requests first (matches the Python planner's ordering).
-      for (const tc of toolCalls) {
-        await emit({
-          type: EventType.TOOL_CALL_REQUESTED,
-          tool_name: tc.name,
-          tool_args: tc.args,
-          tool_call_id: tc.id,
-        });
-      }
-
-      // Scatter-gather: run concurrently, emit started/completed|failed per call.
-      await Promise.all(
-        toolCalls.map(async (tc) => {
-          await emit({
-            type: EventType.TOOL_CALL_STARTED,
-            tool_name: tc.name,
-            tool_call_id: tc.id,
-          });
-          try {
-            const result = await executeTool("runtime", tc.name, tc.args);
-            await emit({
-              type: EventType.TOOL_CALL_COMPLETED,
-              tool_name: tc.name,
-              tool_call_id: tc.id,
-              result,
-            });
-          } catch (err) {
-            await emit({
-              type: EventType.TOOL_CALL_FAILED,
-              tool_name: tc.name,
-              tool_call_id: tc.id,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          }
-        }),
+      await this.makePlanner(tools).executeScatterGather(
+        sessionId,
+        toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.args,
+        })),
+        async (event) => {
+          await this.store.append(event);
+          await this.bus.publish(event);
+        },
       );
       // Loop: next iteration replays state including the new tool results.
     }

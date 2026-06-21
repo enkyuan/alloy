@@ -1,23 +1,20 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agentkit.runtime.agents.cancellation import CancellationToken
 from agentkit.runtime.agents.context import ContextBuilder
-from agentkit.runtime.agents.planner import ToolPlanner
+from agentkit.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from agentkit.runtime.agents.prompts import SystemPrompt
-from agentkit.runtime.agents.router import SwarmRouter
 from agentkit.runtime.agents.state import SessionStateManager
 from agentkit.runtime.agents.strategy import AgentStrategy
 from agentkit.runtime.tools.registry import ToolSpec
-from agentkit.infra.events.bus import EventBus
+from agentkit.infra.events.protocols import EventBusProtocol
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
     AgentMessageCompleted,
     AgentMessageDelta,
     AgentReasoningStarted,
     CancellationCompleted,
-    SwarmAgentSpawned,
-    SwarmRunStarted,
     UserMessage,
 )
 from agentkit.infra.events.store import EventStore
@@ -25,36 +22,88 @@ from agentkit.runtime.providers.base import ModelProvider
 
 logger = logging.getLogger(__name__)
 
+ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
+
 
 class AgentRuntime:
     """A generic, provider-agnostic agent runtime.
 
     Consumes AgentKit events, maintains session state, calls an abstract ModelProvider,
-    executes scatter-gather tool workflows via ToolPlanner, and orchestrates Swarm behaviors.
+    executes scatter-gather tool workflows via ToolPlanner.
+
+    ``planner`` is optional. When omitted, a default ``ToolPlanner`` is
+    constructed from ``tool_executor`` (falls back to the global
+    ``execute_tool`` registry), ``policy``, and ``approval_handler`` — the same
+    lazy-build pattern as the TypeScript ``AgentRuntime``. Pass an explicit
+    ``planner`` (e.g. from ``AgentBuilder``) to use a scoped registry instead.
     """
 
     def __init__(
         self,
-        bus: EventBus,
+        bus: EventBusProtocol,
         store: EventStore,
         provider: ModelProvider,
-        planner: ToolPlanner,
+        planner: Optional[ToolPlanner] = None,
         system_prompt: str = "You are a helpful assistant.",
         strategy: Optional[AgentStrategy] = None,
         tools: Optional[List[ToolSpec]] = None,
+        rag: Optional[Any] = None,
+        rag_top_k: int = 5,
+        # Optional wiring for the default planner (ignored when planner is given)
+        tool_executor: Optional[ToolExecutor] = None,
+        policy: Optional[Any] = None,
+        approval_handler: Optional[ApprovalHandler] = None,
+        user_id: str = "agent",
     ):
         self.bus = bus
         self.store = store
         self.provider = provider
-        self.planner = planner
+        self._explicit_planner = planner
+        self._tool_executor = tool_executor
+        self._policy = policy
+        self._approval_handler = approval_handler
+        self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         self.state_manager = SessionStateManager(store)
-        self.router = SwarmRouter()
         # Tools surfaced to the provider each turn. Empty by default, so a
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
         self.tools = tools or []
+        # Optional DocumentRAG instance. When set, the last user message is used
+        # to retrieve relevant chunks which are prepended to the system prompt.
+        self._rag = rag
+        self._rag_top_k = rag_top_k
+
+    def _make_planner(self) -> ToolPlanner:
+        """Return the explicit planner, or build a default one from injected fields."""
+        if self._explicit_planner is not None:
+            return self._explicit_planner
+
+        # Lazy import to avoid a top-level circular dependency; execute_tool
+        # lives in the global tool registry.
+        from agentkit.runtime.tools.registry import execute_tool  # noqa: PLC0415
+
+        executor: ToolExecutor = self._tool_executor or (
+            lambda name, args: execute_tool(self._user_id, name, args)
+        )
+        specs = {spec.name: spec for spec in self.tools}
+        return ToolPlanner(
+            executor=executor,
+            policy=self._policy,
+            approval_handler=self._approval_handler,
+            specs=specs,
+        )
+
+    @property
+    def planner(self) -> ToolPlanner:
+        """Planner used for tool execution.
+
+        Kept as a read-only compatibility surface for callers/tests that inspect
+        builder wiring. Runtime execution still calls ``_make_planner`` so the
+        default planner sees the current tool specs.
+        """
+        return self._make_planner()
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -62,7 +111,10 @@ class AgentRuntime:
         await self.bus.publish(event)
 
     async def send(
-        self, session_id: str, content: str, cancellation_token: Optional[CancellationToken] = None
+        self,
+        session_id: str,
+        content: str,
+        cancellation_token: Optional[CancellationToken] = None,
     ) -> None:
         """Append a user message and immediately run the agent turn.
 
@@ -95,7 +147,36 @@ class AgentRuntime:
 
             # 1. Materialize current session state from Event Log
             state = await self.state_manager.load_state(session_id)
-            messages = ContextBuilder.build_messages(state, self.prompt)
+
+            # 1a. RAG: retrieve chunks relevant to the latest user message and
+            # prepend them to the system prompt so the model has grounded context.
+            rag_system_prefix = ""
+            if self._rag is not None:
+                last_user = next(
+                    (
+                        m["content"]
+                        for m in reversed(state.messages)
+                        if m["role"] == "user"
+                    ),
+                    None,
+                )
+                if last_user:
+                    try:
+                        chunks = await self._rag.retrieve(
+                            last_user, top_k=self._rag_top_k
+                        )
+                        if chunks:
+                            joined = "\n\n".join(c.text for c in chunks)
+                            rag_system_prefix = f"## Relevant context\n\n{joined}\n\n"
+                    except Exception as e:  # retrieval must never crash the turn
+                        logger.warning("RAG retrieval failed: %s", e)
+
+            prompt_for_turn = (
+                SystemPrompt(rag_system_prefix + self.prompt.template)
+                if rag_system_prefix
+                else self.prompt
+            )
+            messages = ContextBuilder.build_messages(state, prompt_for_turn)
 
             # 2. Surface available tools to the provider. The payload is
             # provider-neutral (name/description/parameters); each provider
@@ -136,27 +217,12 @@ class AgentRuntime:
                     AgentMessageCompleted(session_id=session_id, content=full_response)
                 )
 
-                # 5. Check for Swarm Handoff
-                handoff = self.router.determine_handoff(full_response)
-                if handoff:
-                    await self._emit(
-                        SwarmRunStarted(session_id=session_id, run_id=handoff)
-                    )
-                    await self._emit(
-                        SwarmAgentSpawned(
-                            session_id=session_id,
-                            run_id=handoff,
-                            agent_id="next_agent",
-                            agent_role="handoff",
-                        )
-                    )
-
-            # 6. Break if done
+            # 5. Break if done
             if not tool_calls or not self.strategy.allow_tool_calls:
                 break
 
-            # 7. Execute tools concurrently (Scatter-Gather)
-            await self.planner.execute_scatter_gather(
+            # 6. Execute tools concurrently (Scatter-Gather)
+            await self._make_planner().execute_scatter_gather(
                 session_id, tool_calls, self._emit
             )
 

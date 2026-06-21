@@ -8,13 +8,23 @@ import { z } from "zod";
 /** A JSON Schema object describing a tool's parameters. */
 export type JSONSchema = Record<string, unknown>;
 
+/** Parameter schema accepted at tool authoring boundaries. */
+export type ToolParameters = JSONSchema | z.ZodType;
+
+/** Risk level for a tool, used by ToolPolicy to gate execution. */
+export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
+
 /** Definition of a tool exposed to the LLM. */
 export interface ToolSpec {
   name: string;
   description: string;
   parameters: JSONSchema;
+  catalogName?: string;
   tags?: string[];
   enabled?: boolean;
+  /** Risk classification for policy enforcement and approval routing.
+   * undefined = unclassified, treated as "read" by default policies. */
+  risk?: "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
 }
 
 /**
@@ -33,11 +43,71 @@ export type ToolHandler = (
   args: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
+/** Metadata attached to a handler by `tool(meta, fn)`. */
+export interface ToolMeta {
+  description: string;
+  parameters: ToolParameters;
+  risk?: ToolSpec["risk"];
+  tags?: string[];
+  enabled?: boolean;
+}
+
+/** Symbol key used to tag a handler with its ToolMeta. */
+export const TOOL_META = Symbol("tool_meta");
+
+/** A ToolHandler that may carry attached ToolMeta (set by `tool()`). */
+export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
+
 const toolSpecs = new Map<string, ToolSpec>();
 const toolHandlers = new Map<string, ToolHandler>();
 
-/** Register a tool handler under its spec's name. Throws on a duplicate name. */
-export function registerTool(spec: ToolSpec, handler: ToolHandler): void {
+export function providerSafeToolName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+}
+
+function isZodSchema(parameters: ToolParameters): parameters is z.ZodType {
+  return typeof parameters === "object" && parameters !== null && "_zod" in parameters;
+}
+
+function schemaParameters(schema: z.ZodType): JSONSchema {
+  const json = z.toJSONSchema(schema) as {
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
+  return {
+    type: "object",
+    properties: json.properties ?? {},
+    required: json.required ?? [],
+  };
+}
+
+export function toolParametersToJSONSchema(parameters: ToolParameters): JSONSchema {
+  return isZodSchema(parameters) ? schemaParameters(parameters) : parameters;
+}
+
+function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
+  const meta = (handler as TaggedHandler)[TOOL_META];
+  if (!meta) {
+    throw new Error(
+      `handler for "${name}" has no TOOL_META — wrap it with tool(meta, fn) before registering by name`,
+    );
+  }
+  return {
+    name,
+    description: meta.description,
+    parameters: toolParametersToJSONSchema(meta.parameters),
+    ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+    ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+    ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+  };
+}
+
+/** Register a tool handler. Accepts either a full ToolSpec + handler, or a
+ * pre-tagged handler (from `tool(meta, fn)`) with just a name string. */
+export function registerTool(spec: ToolSpec, handler: ToolHandler): void;
+export function registerTool(name: string, handler: ToolHandler): void;
+export function registerTool(specOrName: ToolSpec | string, handler: ToolHandler): void {
+  const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
   if (toolSpecs.has(spec.name)) {
     throw new Error(`Tool already registered: ${spec.name}`);
   }
@@ -72,18 +142,10 @@ export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
  * Python `tool_spec_from_model`).
  */
 export function toolSpecFromSchema(name: string, description: string, schema: z.ZodType): ToolSpec {
-  const json = z.toJSONSchema(schema) as {
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
   return {
     name,
     description,
-    parameters: {
-      type: "object",
-      properties: json.properties ?? {},
-      required: json.required ?? [],
-    },
+    parameters: schemaParameters(schema),
   };
 }
 
@@ -118,14 +180,21 @@ export function clearTools(): void {
  * ```ts
  * const registry = new ToolRegistry();
  * registry.register({ name: "ping", description: "...", parameters: {} }, async (_ctx, _args) => ({ pong: true }));
- * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs() });
+ * const planner = new ToolPlanner({
+ *   executor: (name, args) => registry.execute("user-1", name, args),
+ *   specs: new Map(registry.listSpecs().map((s) => [s.name, s])),
+ * });
+ * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs(), planner });
  * ```
  */
 export class ToolRegistry {
   private readonly specs = new Map<string, ToolSpec>();
   private readonly handlers = new Map<string, ToolHandler>();
 
-  register(spec: ToolSpec, handler: ToolHandler): this {
+  register(spec: ToolSpec, handler: ToolHandler): this;
+  register(name: string, handler: ToolHandler): this;
+  register(specOrName: ToolSpec | string, handler: ToolHandler): this {
+    const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
     if (this.specs.has(spec.name)) {
       throw new Error(`Tool already registered: ${spec.name}`);
     }

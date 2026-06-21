@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - "apps/docs/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/docs.lint.yml"
   pull_request:
     paths:
       - "apps/docs/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/docs.lint.yml"
 
 jobs:
@@ -20,13 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: ./.github/actions/setup-bun-cache
         with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
+          working-directory: apps/docs
 
       - name: Lint
         run: bun run lint

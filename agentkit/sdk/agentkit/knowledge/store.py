@@ -18,13 +18,11 @@ logger = logging.getLogger(__name__)
 class VectorStore(Protocol):
     """Stores embedded chunks and returns the nearest by cosine similarity."""
 
-    async def add(self, chunks: List[Chunk]) -> None:
-        ...
+    async def add(self, chunks: List[Chunk]) -> None: ...
 
     async def search(
         self, query_embedding: List[float], top_k: int = 5, threshold: float = 0.0
-    ) -> List[Chunk]:
-        ...
+    ) -> List[Chunk]: ...
 
 
 class InMemoryVectorStore:

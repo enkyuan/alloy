@@ -12,29 +12,34 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Protocol, Tuple
 
-from agentkit.runtime.tools._vector_math import cosine_similarity  # re-exported
+from agentkit.runtime.tools._vector_math import cosine_similarity
 from agentkit.runtime.tools.registry import list_tool_specs
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["cosine_similarity", "Embedder", "EmbeddingCache", "ToolRetriever", "get_tool_retriever"]
+CosineSimilarity = cosine_similarity
+
+__all__ = [
+    "CosineSimilarity",
+    "Embedder",
+    "EmbeddingCache",
+    "GetToolRetriever",
+    "ToolRetriever",
+]
 
 
 class Embedder(Protocol):
     """Turns text into a vector. Return an empty list to signal "no embedding"."""
 
-    async def embed(self, text: str) -> List[float]:
-        ...
+    async def embed(self, text: str) -> List[float]: ...
 
 
 class EmbeddingCache(Protocol):
     """Persists the tool-name -> vector map between runs."""
 
-    async def load(self) -> Dict[str, List[float]]:
-        ...
+    async def load(self) -> Dict[str, List[float]]: ...
 
-    async def save(self, embeddings: Dict[str, List[float]]) -> None:
-        ...
+    async def save(self, embeddings: Dict[str, List[float]]) -> None: ...
 
 
 class GeminiEmbedder:
@@ -193,3 +198,6 @@ def get_tool_retriever() -> ToolRetriever:
     if _retriever is None:
         _retriever = ToolRetriever()
     return _retriever
+
+
+GetToolRetriever = get_tool_retriever

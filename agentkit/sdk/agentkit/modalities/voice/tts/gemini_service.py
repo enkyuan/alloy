@@ -1,13 +1,9 @@
-"""Gemini TTS service — holds the client/config for speech synthesis.
-
-Mirrors the STT ``SonioxService`` shape: this class owns credentials and
-builds the provider request config; the streaming/synthesis transport lives in
-``gemini_provider``.
-"""
+"""Gemini TTS service — holds the client/config for speech synthesis."""
 
 from __future__ import annotations
 
 import logging
+from importlib import import_module
 from typing import Any, Optional
 
 from agentkit.core.config import get_settings
@@ -44,14 +40,14 @@ class GeminiTTSService:
         if self._client is None:
             if not self.api_key:
                 raise ValueError("GEMINI_API_KEY is required for Gemini TTS.")
-            from google import genai
+            genai = import_module("google.genai")
 
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
     def build_config(self) -> Any:
         """Build the ``GenerateContentConfig`` for an audio response."""
-        from google.genai import types
+        types = import_module("google.genai.types")
 
         return types.GenerateContentConfig(
             response_modalities=["AUDIO"],

@@ -11,10 +11,9 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 
-from agentkit.core.broker import QUEUE_HIGH_PRIORITY, broker
-from agentkit.core.database import AsyncSessionLocal
+from agentkit_serve.server.database import AsyncSessionLocal
 from agentkit.modalities.voice.event_models import ToolResult
-from agentkit.core.redis import get_redis_client
+from agentkit.infra.realtime.redis import get_redis_client
 from agentkit.runtime.providers.errors import ServiceNetworkError
 from agentkit.runtime.tools.registry import execute_tool
 from agentkit.infra.realtime.redis_events import (
@@ -25,6 +24,7 @@ from agentkit.infra.realtime.redis_events import (
     mark_tool_call_execution_complete,
     publish_user_update,
 )
+from agentkit_serve.workers.broker import QUEUE_HIGH_PRIORITY, broker
 
 logger = logging.getLogger(__name__)
 
@@ -177,9 +177,7 @@ async def execute_tool_call(
             },
         )
 
-        await mark_tool_call_execution_complete(
-            redis, tool_call_id=tool_call_id
-        )
+        await mark_tool_call_execution_complete(redis, tool_call_id=tool_call_id)
         execution_marked_complete = True
         logger.info("Publishing tool result")
         try:

@@ -1,12 +1,19 @@
+"""Legacy tool abstraction — use ``agentkit.runtime.tools.registry.ToolSpec`` instead.
+
+.. deprecated::
+   ``ToolDefinition`` predates the provider-neutral ``ToolSpec`` / ``ToolRegistry``
+   model.  It is retained for voice-agent serve-side compatibility and will be
+   removed in a future release.  New code should use ``ToolSpec``.
+"""
+
 from abc import ABC, abstractmethod
-from typing import Any, Dict, cast
+from importlib import import_module
+from typing import Any, Dict
 
 try:
-    from google.genai import types as gemini_types
+    gemini_types = import_module("google.genai.types")
 except ImportError:
     gemini_types = None
-
-gemini_types = cast(Any, gemini_types)
 
 
 class ToolDefinition(ABC):

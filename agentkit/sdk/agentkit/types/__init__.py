@@ -1,6 +1,5 @@
-"""Shared type helpers and schemas used across the API app."""
+"""Shared SDK type helpers and schemas."""
 
-from agentkit.types.sqlalchemy import EncryptedText
 from agentkit.types.tool import ToolDefinition
 
-__all__ = ["EncryptedText", "ToolDefinition"]
+__all__ = ["ToolDefinition"]

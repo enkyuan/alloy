@@ -20,8 +20,8 @@ import (
 	obshandler "github.com/enkyuan/alloy/agentpay/api/internal/observability"
 	paymenthandler "github.com/enkyuan/alloy/agentpay/api/internal/payment"
 	sessionhandler "github.com/enkyuan/alloy/agentpay/api/internal/session"
-	stripehandler "github.com/enkyuan/alloy/agentpay/api/internal/stripe"
 	"github.com/enkyuan/alloy/agentpay/api/internal/store"
+	stripehandler "github.com/enkyuan/alloy/agentpay/api/internal/stripe"
 	wallethandler "github.com/enkyuan/alloy/agentpay/api/internal/wallet"
 	webhookhandler "github.com/enkyuan/alloy/agentpay/api/internal/webhook"
 )

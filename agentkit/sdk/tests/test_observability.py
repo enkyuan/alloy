@@ -1,7 +1,7 @@
 import pytest
 
 from agentkit.infra.events.schemas import SessionCreated, UserMessage
-from agentkit.infra.observability import EventTimeline, InMemoryMetrics, trace_span
+from agentkit.infra.observability import EventTimeline, InMemoryMetrics, TraceSpan
 from agentkit.infra.observability.tracing import Span
 
 
@@ -21,7 +21,7 @@ def test_in_memory_metrics_rejects_negative_increment():
 
 
 def test_trace_span_records_duration():
-    with trace_span("unit.test") as span:
+    with TraceSpan("unit.test") as span:
         span.attributes["key"] = "value"
         assert isinstance(span, Span)
     assert span.end_time is not None

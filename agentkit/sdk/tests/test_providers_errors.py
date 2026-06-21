@@ -1,15 +1,15 @@
 import pytest
 
 from agentkit.runtime.providers.errors import (
+    ClassifyHTTPError,
     ProviderAPIError,
     ProviderConfigError,
+    ServiceErrorToDetail,
+    ServiceErrorToHTTPStatus,
     ServiceAPIError,
     ServiceAuthError,
     ServiceNetworkError,
     ServiceRateLimitError,
-    classify_http_error,
-    service_error_to_detail,
-    service_error_to_http_status,
 )
 
 
@@ -24,7 +24,7 @@ from agentkit.runtime.providers.errors import (
     ],
 )
 def test_classify_http_error(status: int, expected_type: type):
-    error = classify_http_error(
+    error = ClassifyHTTPError(
         service="test", action="fetch", status_code=status, response_text="body"
     )
     assert isinstance(error, expected_type)
@@ -33,22 +33,30 @@ def test_classify_http_error(status: int, expected_type: type):
 
 
 def test_service_error_to_http_status_mapping():
-    assert service_error_to_http_status(ServiceAuthError(
-        service="x", action="y", message="m"
-    )) == 401
-    assert service_error_to_http_status(ServiceRateLimitError(
-        service="x", action="y", message="m"
-    )) == 429
-    assert service_error_to_http_status(ServiceNetworkError(
-        service="x", action="y", message="m"
-    )) == 503
-    assert service_error_to_http_status(ServiceAPIError(
-        service="x", action="y", message="m"
-    )) == 502
+    assert (
+        ServiceErrorToHTTPStatus(ServiceAuthError(service="x", action="y", message="m"))
+        == 401
+    )
+    assert (
+        ServiceErrorToHTTPStatus(
+            ServiceRateLimitError(service="x", action="y", message="m")
+        )
+        == 429
+    )
+    assert (
+        ServiceErrorToHTTPStatus(
+            ServiceNetworkError(service="x", action="y", message="m")
+        )
+        == 503
+    )
+    assert (
+        ServiceErrorToHTTPStatus(ServiceAPIError(service="x", action="y", message="m"))
+        == 502
+    )
 
 
 def test_service_error_to_detail_masks_internals():
-    detail = service_error_to_detail(
+    detail = ServiceErrorToDetail(
         ServiceAuthError(service="spotify", action="auth", message="x"),
         fallback="failed",
     )

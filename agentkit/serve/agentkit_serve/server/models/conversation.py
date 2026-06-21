@@ -7,7 +7,7 @@ from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from agentkit.core.database import Base
+from agentkit_serve.server.database import Base
 from agentkit_serve.server.models.mixins import MetadataJsonMixin
 
 
@@ -36,7 +36,9 @@ class Conversation(MetadataJsonMixin, Base):
     meta_data: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

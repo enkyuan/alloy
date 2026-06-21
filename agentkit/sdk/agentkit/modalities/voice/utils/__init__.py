@@ -1,12 +1,17 @@
 """Voice modality utilities (DTMF, phone validation, async helpers)."""
 
-from agentkit.modalities.voice.utils.async_tasks import await_tasks_safe, cancel_tasks_safe
-from agentkit.modalities.voice.utils.dtmf_lookahead_buffer import DTMFLookAheadStringBuffer
-from agentkit.modalities.voice.utils.phone_numbers import is_e164_phone_number
+from agentkit.modalities.voice.utils.async_tasks import (
+    AwaitTasksSafe,
+    CancelTasksSafe,
+)
+from agentkit.modalities.voice.utils.dtmf_lookahead_buffer import (
+    DTMFLookAheadStringBuffer,
+)
+from agentkit.modalities.voice.utils.phone_numbers import IsE164PhoneNumber
 
 __all__ = [
+    "AwaitTasksSafe",
+    "CancelTasksSafe",
     "DTMFLookAheadStringBuffer",
-    "await_tasks_safe",
-    "cancel_tasks_safe",
-    "is_e164_phone_number",
+    "IsE164PhoneNumber",
 ]

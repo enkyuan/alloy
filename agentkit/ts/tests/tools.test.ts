@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  TOOL_META,
+  ToolPolicy,
   ToolRegistry,
   clearTools,
   executeTool,
@@ -9,6 +11,13 @@ import {
   registerTool,
   toolSpecFromSchema,
 } from "../src/index";
+import { tool } from "../src/index";
+import { AgentRuntime } from "../src/runtime/runtime";
+import { MockProvider } from "../src/providers/mock";
+import { EventBus } from "../src/events/bus";
+import { EventType } from "../src/events/types";
+import { InMemoryEventStore } from "../src/events/store";
+import { AgentKitEvent } from "../src/events/schemas";
 
 afterEach(() => {
   clearTools();
@@ -107,6 +116,40 @@ describe("tool registry", () => {
     // empty array = no tag constraint applied, same as omitting tags
     expect(listToolSpecs({ tags: [] })).toHaveLength(1);
   });
+
+  it("registerTool(name, taggedHandler) derives spec from TOOL_META", async () => {
+    const handler = tool(
+      {
+        description: "Ping the service",
+        parameters: z.object({ message: z.string() }),
+        risk: "read",
+      },
+      async (_ctx, _args) => ({ pong: true }),
+    );
+
+    registerTool("ping", handler);
+
+    const specs = listToolSpecs();
+    expect(specs).toHaveLength(1);
+    expect(specs[0]).toMatchObject({
+      name: "ping",
+      description: "Ping the service",
+      risk: "read",
+    });
+    expect(specs[0]?.parameters).toEqual({
+      type: "object",
+      properties: { message: { type: "string" } },
+      required: ["message"],
+    });
+
+    const result = await executeTool("u", "ping", {});
+    expect(result).toEqual({ pong: true });
+  });
+
+  it("registerTool(name, handler) throws when handler has no TOOL_META", () => {
+    const bare = async () => ({});
+    expect(() => registerTool("bare", bare)).toThrow(/TOOL_META/);
+  });
 });
 
 describe("ToolRegistry", () => {
@@ -167,5 +210,145 @@ describe("ToolRegistry", () => {
     const r2 = new ToolRegistry();
     r1.register({ name: "x", description: "d", parameters: {} }, async () => ({}));
     expect(r2.listSpecs()).toHaveLength(0);
+  });
+
+  it("register(name, taggedHandler) derives spec from TOOL_META", async () => {
+    const registry = new ToolRegistry();
+    const handler = tool(
+      {
+        description: "Get balance",
+        parameters: { type: "object", properties: {} },
+        risk: "read",
+        tags: ["finance"],
+      },
+      async (_ctx, _args) => ({ balance: 42 }),
+    );
+
+    registry.register("getBalance", handler);
+
+    const specs = registry.listSpecs();
+    expect(specs).toHaveLength(1);
+    expect(specs[0]).toMatchObject({
+      name: "getBalance",
+      description: "Get balance",
+      risk: "read",
+      tags: ["finance"],
+    });
+
+    const result = await registry.execute("u", "getBalance", {});
+    expect(result).toEqual({ balance: 42 });
+  });
+
+  it("register(name, handler) throws when handler has no TOOL_META", () => {
+    const registry = new ToolRegistry();
+    const bare = async () => ({});
+    expect(() => registry.register("bare", bare)).toThrow(/TOOL_META/);
+  });
+
+  it("TOOL_META symbol is exported and can be read from tagged handlers", () => {
+    const handler = tool({ description: "Test", parameters: {} }, async () => ({}));
+    const meta = (handler as unknown as Record<symbol, unknown>)[TOOL_META];
+    expect(meta).toBeDefined();
+    expect((meta as { description: string }).description).toBe("Test");
+  });
+});
+
+describe("AgentRuntime with ToolPolicy", () => {
+  async function seed(store: InMemoryEventStore, sessionId: string) {
+    await store.append(
+      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+    );
+    await store.append(
+      AgentKitEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: sessionId,
+        content: "do something",
+      }),
+    );
+  }
+
+  it("emits TOOL_CALL_FAILED when a denied tool is called", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const policy = new ToolPolicy({ denied: new Set(["dangerous_op"]) });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-denied";
+    await seed(store, s);
+    registerTool({ name: "dangerous_op", description: "d", parameters: {} }, async () => ({
+      done: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/not permitted/);
+    }
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("emits TOOL_APPROVAL_REJECTED and TOOL_CALL_FAILED for financial-risk tools with no approval handler", async () => {
+    // When no approvalHandler is configured, the planner emits TOOL_APPROVAL_REJECTED
+    // (for approval-aware consumers) AND TOOL_CALL_FAILED (so replaySession projects
+    // the outcome into model history and the loop terminates cleanly).
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["financial"]) });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy,
+      userId: "test-user",
+    });
+
+    const s = "s-policy-approval";
+    await seed(store, s);
+    registerTool(
+      { name: "charge_card", description: "charges a card", parameters: {}, risk: "financial" },
+      async () => ({ charged: true }),
+    );
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    // Approval-aware consumers see the rejection event.
+    expect(events.some((e) => e.type === EventType.TOOL_APPROVAL_REJECTED)).toBe(true);
+    // Replay-visible TOOL_CALL_FAILED so the model loop terminates.
+    const failed = events.filter((e) => e.type === EventType.TOOL_CALL_FAILED);
+    expect(failed.length).toBeGreaterThan(0);
+    const failedEvent = failed[0];
+    if (failedEvent && "error" in failedEvent) {
+      expect(failedEvent.error).toMatch(/approval rejected/i);
+    }
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+  });
+
+  it("executes tools normally when no policy is configured", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+
+    const s = "s-no-policy";
+    await seed(store, s);
+    registerTool({ name: "safe_op", description: "safe", parameters: {} }, async () => ({
+      ok: true,
+    }));
+
+    await runtime.runTurn(s);
+
+    const events = await store.getEvents(s);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(true);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(false);
   });
 });

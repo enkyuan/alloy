@@ -6,11 +6,13 @@ on:
     paths:
       - "agentkit/sdk/**"
       - "agentkit/serve/**"
+      - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.lint.yml"
   pull_request:
     paths:
       - "agentkit/sdk/**"
       - "agentkit/serve/**"
+      - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.lint.yml"
 
 jobs:
@@ -23,30 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-poetry
         with:
-          python-version: "3.11"
-
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/sdk/poetry.lock') }}
-          restore-keys: |
-            poetry-sdk-${{ runner.os }}-py3.11-
-
-      - name: Lock dependencies
-        run: poetry lock --no-update
-
-      - name: Install dependencies
-        run: poetry install --no-interaction --sync
+          working-directory: agentkit/sdk
 
       - name: Type check
-        run: poetry run pyrefly check .
+        run: poetry run pyrefly check
+
+      - name: Lint
+        run: poetry run ruff check agentkit tests
 
   serve:
     name: agentkit/serve
@@ -57,27 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-poetry
         with:
-          python-version: "3.11"
+          working-directory: agentkit/serve
 
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry/virtualenvs
-          key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
-          restore-keys: |
-            poetry-serve-${{ runner.os }}-py3.11-
-
-      - name: Lock dependencies
-        run: poetry lock --no-update
-
-      - name: Install dependencies
-        run: poetry install --no-interaction --sync
-
-      - name: Type check
-        run: poetry run pyrefly check .
+      - name: Lint
+        run: poetry run ruff check agentkit_serve tests alembic

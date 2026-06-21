@@ -59,6 +59,7 @@ def build_event_envelope(
 
 def parse_event_envelope(raw: Union[Dict[str, Any], bytes, bytearray]) -> EventEnvelope:
     """Validate and parse an incoming event envelope."""
+
     def _unpack(raw_bytes: bytes) -> Dict[str, Any]:
         unpacked = msgpack.unpackb(raw_bytes, raw=False, strict_map_key=False)
         if not isinstance(unpacked, dict):

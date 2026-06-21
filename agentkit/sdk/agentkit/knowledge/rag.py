@@ -5,9 +5,8 @@ Infra-free by default: the embedder defaults to the same lazily-constructed
 whole thing degrades to "stores nothing / retrieves nothing" rather than
 raising). Inject any ``Embedder`` and ``VectorStore`` to swap backends.
 
-This builds the retrieval *capability*. Auto-injecting retrieved context into
-``AgentRuntime`` (when to retrieve, how to ground the prompt) is intentionally
-left to a future memory-injection design - see ROADMAP item 14.
+Pass a ``DocumentRAG`` instance to ``AgentRuntime(rag=...)`` to automatically
+retrieve and inject context into the system prompt on every turn.
 """
 
 import logging
@@ -50,7 +49,9 @@ class DocumentRAG:
             try:
                 vec = await self._embedder.embed(piece)
             except Exception as e:  # embedder failure must not crash ingestion
-                logger.warning("Embedding failed for %s chunk %d: %s", document.id, i, e)
+                logger.warning(
+                    "Embedding failed for %s chunk %d: %s", document.id, i, e
+                )
                 vec = []
             if not vec:
                 continue

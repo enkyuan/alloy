@@ -3,21 +3,23 @@ from typing import Any, AsyncGenerator, Dict, List
 
 import pytest
 
+from agentkit.infra.events.bus import InMemoryEventBus
+from agentkit.infra.events.schemas import (
+    AgentKitEvent,
+    UserMessage,
+)
+from agentkit.infra.events.store import InMemoryEventStore
+from agentkit.infra.events.types import EventType
 from agentkit.runtime.agents.cancellation import CancellationToken
 from agentkit.runtime.agents.planner import ToolPlanner
 from agentkit.runtime.agents.runtime import AgentRuntime
-from agentkit.runtime.agents.strategy import AgentStrategy
-from agentkit.infra.events.bus import EventBus
-from agentkit.infra.events.schemas import AgentKitEvent, CancellationRequested, UserMessage
-from agentkit.infra.events.store import InMemoryEventStore
-from agentkit.infra.events.types import EventType
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from agentkit.runtime.tools.registry import ToolSpec
 from tests.helpers.mock_provider import MockProvider as _RegistryMockProvider
 
 
-class MockEventBus(EventBus):
+class MockEventBus(InMemoryEventBus):
     def __init__(self):
         self.published = []
 
@@ -160,12 +162,12 @@ async def test_agent_runtime_no_tools_runs_clean():
 
 
 @pytest.mark.asyncio
-async def test_get_provider_mock_not_in_public_registry():
-    """The mock provider is not in the public registry; a real API key is required."""
-    from agentkit.runtime.providers import get_provider
-    from agentkit.runtime.providers.errors import ProviderConfigError
-    with pytest.raises(ProviderConfigError):
-        get_provider("mock")
+async def test_get_provider_mock_is_public_zero_setup_provider():
+    """The mock provider is public so quickstarts and tests run with no API key."""
+    from agentkit.runtime.providers import GetProvider
+    from agentkit.runtime.providers.mock import MockProvider
+
+    assert isinstance(GetProvider("mock"), MockProvider)
 
 
 @pytest.mark.asyncio
@@ -248,3 +250,97 @@ async def test_agent_runtime_send_publishes_user_message_to_bus():
     assert EventType.USER_MESSAGE in bus_types
     # Agent turn ran and completed
     assert EventType.AGENT_MESSAGE_COMPLETED in types
+
+
+@pytest.mark.asyncio
+async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
+    """ReplaySession must include tool_call_id on tool messages.
+
+    This is the regression test for the multi-turn tool loop bug: without
+    tool_call_id the second provider request is structurally broken for
+    OpenAI/Anthropic (they require matching IDs on tool results).
+    """
+    from agentkit.infra.events.replay import ReplaySession
+    from agentkit.infra.events.schemas import (
+        ToolCallCompleted,
+        ToolCallRequested,
+        ToolCallStarted,
+        UserMessage,
+    )
+    from agentkit.infra.events.store import InMemoryEventStore
+
+    store = InMemoryEventStore()
+    session_id = "s-replay-id"
+
+    await store.append(UserMessage(session_id=session_id, content="do something"))
+    await store.append(
+        ToolCallRequested(
+            session_id=session_id,
+            tool_name="lookup",
+            tool_args={"q": "test"},
+            tool_call_id="call-abc",
+        )
+    )
+    await store.append(
+        ToolCallStarted(
+            session_id=session_id, tool_name="lookup", tool_call_id="call-abc"
+        )
+    )
+    await store.append(
+        ToolCallCompleted(
+            session_id=session_id,
+            tool_name="lookup",
+            tool_call_id="call-abc",
+            result={"answer": 42},
+        )
+    )
+
+    events = await store.get_events(session_id)
+    state = ReplaySession(events)
+
+    tool_msgs = [m for m in state.messages if m["role"] == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0]["tool_call_id"] == "call-abc", (
+        "tool_call_id must be preserved in replay so providers can correlate results"
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_call_id_preserved_on_failed_tool_replay():
+    """TOOL_CALL_FAILED events must also carry tool_call_id through replay."""
+    from agentkit.infra.events.replay import ReplaySession
+    from agentkit.infra.events.schemas import (
+        ToolCallFailed,
+        ToolCallRequested,
+        UserMessage,
+    )
+    from agentkit.infra.events.store import InMemoryEventStore
+
+    store = InMemoryEventStore()
+    session_id = "s-replay-fail"
+
+    await store.append(UserMessage(session_id=session_id, content="try something"))
+    await store.append(
+        ToolCallRequested(
+            session_id=session_id,
+            tool_name="risky",
+            tool_args={},
+            tool_call_id="call-xyz",
+        )
+    )
+    await store.append(
+        ToolCallFailed(
+            session_id=session_id,
+            tool_name="risky",
+            tool_call_id="call-xyz",
+            error="timeout",
+        )
+    )
+
+    events = await store.get_events(session_id)
+    state = ReplaySession(events)
+
+    tool_msgs = [m for m in state.messages if m["role"] == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0]["tool_call_id"] == "call-xyz"
+    assert "Error:" in tool_msgs[0]["content"]

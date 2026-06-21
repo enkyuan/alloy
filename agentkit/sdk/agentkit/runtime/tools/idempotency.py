@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentkit.runtime.workflows.idempotency import IdempotencyStore, build_idempotency_key
+from agentkit.runtime.workflows.idempotency import (
+    IdempotencyStore,
+    build_idempotency_key,
+)
 
 
 def build_tool_idempotency_key(

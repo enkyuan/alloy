@@ -5,12 +5,20 @@ import logging
 import hashlib
 import json
 
+from importlib import import_module
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from google import genai
-from google.genai import types
-
 from agentkit.core.config import get_settings
+from agentkit.runtime.providers.base import ModelProvider
+from agentkit.runtime.providers.errors import ProviderConfigError
+from agentkit.runtime.providers.registry import register_provider
+from agentkit.runtime.providers.types import (
+    GenerateResponse,
+    ModelMetadata,
+    ModelResponseChunk,
+    TokenMetrics,
+)
+from agentkit.runtime.providers._translate import format_messages_gemini
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +34,21 @@ class GeminiService:
         Args:
             api_key: Optional API key. If not provided, uses GEMINI_API_KEY from settings.
         """
-        if genai is None:
-            raise ImportError(
-                "google-genai package is not installed. "
-                "Install it with: pip install google-genai"
-            )
-
         self.api_key = get_settings().GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
             raise ValueError("GEMINI_API_KEY is required")
 
         logger.info("Initializing Gemini client...")
+        try:
+            genai = import_module("google.genai")
+        except ImportError as error:
+            raise ProviderConfigError(
+                "Gemini provider requires google-genai. Install agentkit[gemini]."
+            ) from error
+
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-2.5-flash"
+        self.model = get_settings().GEMINI_MODEL
         logger.info("Gemini client initialized with model: %s", self.model)
 
     async def _get_active_cache(
@@ -169,12 +178,18 @@ class GeminiService:
             logger.info("Generating chat response with %s messages", len(messages))
             logger.debug("Messages: %s", messages)
 
-            contents = []
-            for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            contents = format_messages_gemini(messages)
 
             config: Any = {"temperature": temperature}
+
+            # Always include system_instruction and tools regardless of caching.
+            if system_instruction:
+                config["system_instruction"] = system_instruction
+                logger.debug(
+                    "Using system instruction: %s...", system_instruction[:100]
+                )
+            if tools:
+                config["tools"] = tools
 
             # Context Caching Heuristics
             active_contents = contents
@@ -185,14 +200,6 @@ class GeminiService:
                 config["cached_content"] = cache_name
                 # Only pass the un-cached remainder (last two messages) to the LLM
                 active_contents = contents[-2:] if len(contents) >= 2 else contents
-            else:
-                if system_instruction:
-                    config["system_instruction"] = system_instruction
-                    logger.debug(
-                        "Using system instruction: %s...", system_instruction[:100]
-                    )
-                if tools:
-                    config["tools"] = tools
 
             logger.info("Calling Gemini API with model: %s", self.model)
             response = await asyncio.to_thread(
@@ -259,12 +266,7 @@ class GeminiService:
         intentionally not applied on the streaming path.
         """
         try:
-            contents = []
-            for msg in messages:
-                role = "user" if msg["role"] == "user" else "model"
-                contents.append(
-                    {"role": role, "parts": [{"text": msg.get("content", "")}]}
-                )
+            contents = format_messages_gemini(messages)
 
             config: Any = {"temperature": temperature}
             if system_instruction:
@@ -316,16 +318,6 @@ def get_gemini_service() -> GeminiService:
     return gemini_service
 
 
-from agentkit.runtime.providers.base import ModelProvider
-from agentkit.runtime.providers.registry import register_provider
-from agentkit.runtime.providers.types import (
-    GenerateResponse,
-    ModelMetadata,
-    ModelResponseChunk,
-    TokenMetrics,
-)
-
-
 class GeminiProvider(ModelProvider):
     """Gemini provider implementing the generic ModelProvider interface."""
 
@@ -342,7 +334,6 @@ class GeminiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-
         # Translate the neutral tool payload to Gemini's function-declaration form.
         from agentkit.runtime.tools.payload import to_gemini
 
@@ -358,7 +349,9 @@ class GeminiProvider(ModelProvider):
         text = response.text or ""
 
         # Extract tool calls using the helper
-        from agentkit.runtime.tools.function_calls import extract_response_function_calls
+        from agentkit.runtime.tools.function_calls import (
+            extract_response_function_calls,
+        )
 
         function_calls = extract_response_function_calls(response)
 
@@ -412,9 +405,8 @@ class GeminiProvider(ModelProvider):
             temperature=temperature,
             tools=gemini_tools,
         ):
-            if (
-                cancellation_token
-                and getattr(cancellation_token, "is_cancelled", False)
+            if cancellation_token and getattr(
+                cancellation_token, "is_cancelled", False
             ):
                 break
 

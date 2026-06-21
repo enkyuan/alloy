@@ -1,6 +1,6 @@
 import time
 import uuid
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union  # noqa: F401
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -107,6 +107,27 @@ class ToolCallFailed(BaseEvent):
     error: str
 
 
+class ToolApprovalRequested(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_REQUESTED] = EventType.TOOL_APPROVAL_REQUESTED
+    tool_name: str
+    tool_call_id: str
+    tool_args: Dict[str, Any]
+    risk: Optional[str] = None
+
+
+class ToolApprovalApproved(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_APPROVED] = EventType.TOOL_APPROVAL_APPROVED
+    tool_name: str
+    tool_call_id: str
+
+
+class ToolApprovalRejected(BaseEvent):
+    type: Literal[EventType.TOOL_APPROVAL_REJECTED] = EventType.TOOL_APPROVAL_REJECTED
+    tool_name: str
+    tool_call_id: str
+    reason: Optional[str] = None
+
+
 class WorkflowStarted(BaseEvent):
     type: Literal[EventType.WORKFLOW_STARTED] = EventType.WORKFLOW_STARTED
     workflow_name: str
@@ -122,43 +143,6 @@ class WorkflowFailed(BaseEvent):
     type: Literal[EventType.WORKFLOW_FAILED] = EventType.WORKFLOW_FAILED
     workflow_name: str
     error: str
-
-
-class SwarmRunStarted(BaseEvent):
-    type: Literal[EventType.SWARM_RUN_STARTED] = EventType.SWARM_RUN_STARTED
-    run_id: str
-
-
-class SwarmAgentSpawned(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_SPAWNED] = EventType.SWARM_AGENT_SPAWNED
-    run_id: str
-    agent_id: str
-    agent_role: str
-
-
-class SwarmAgentCompleted(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_COMPLETED] = EventType.SWARM_AGENT_COMPLETED
-    run_id: str
-    agent_id: str
-    result: Any
-
-
-class SwarmAgentFailed(BaseEvent):
-    type: Literal[EventType.SWARM_AGENT_FAILED] = EventType.SWARM_AGENT_FAILED
-    run_id: str
-    agent_id: str
-    error: str
-
-
-class SwarmMergeStarted(BaseEvent):
-    type: Literal[EventType.SWARM_MERGE_STARTED] = EventType.SWARM_MERGE_STARTED
-    run_id: str
-
-
-class SwarmMergeCompleted(BaseEvent):
-    type: Literal[EventType.SWARM_MERGE_COMPLETED] = EventType.SWARM_MERGE_COMPLETED
-    run_id: str
-    merged_result: Any
 
 
 class CancellationRequested(BaseEvent):
@@ -186,15 +170,12 @@ AgentKitEvent = Union[
     ToolCallStarted,
     ToolCallCompleted,
     ToolCallFailed,
+    ToolApprovalRequested,
+    ToolApprovalApproved,
+    ToolApprovalRejected,
     WorkflowStarted,
     WorkflowCompleted,
     WorkflowFailed,
-    SwarmRunStarted,
-    SwarmAgentSpawned,
-    SwarmAgentCompleted,
-    SwarmAgentFailed,
-    SwarmMergeStarted,
-    SwarmMergeCompleted,
     CancellationRequested,
     CancellationCompleted,
 ]

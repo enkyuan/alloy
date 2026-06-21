@@ -44,11 +44,9 @@ class SessionRecord:
 class SessionStore(Protocol):
     """Cross-session index, keyed by user."""
 
-    async def record_session(self, record: SessionRecord) -> None:
-        ...
+    async def record_session(self, record: SessionRecord) -> None: ...
 
-    async def list_sessions(self, user_id: str) -> List[SessionRecord]:
-        ...
+    async def list_sessions(self, user_id: str) -> List[SessionRecord]: ...
 
 
 class InMemorySessionStore:

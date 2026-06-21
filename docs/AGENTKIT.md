@@ -1,10 +1,10 @@
 # agentkit
 
 agentkit is an embeddable SDK for building agents: an event-sourced runtime,
-tool registry, pluggable LLM providers, and STT/TTS modalities. the core is
-infra-free — no database or server required to import and use it. deploy it
-yourself or run the reference service (`agentkit-serve`) when you need a
-production-grade multi-process setup.
+tool registry, and pluggable LLM/TTS providers. the core is infra-free — no
+database or server required to import and use it. deploy it yourself or run the
+reference service (`agentkit-serve`) when you need FastAPI, Redis/Postgres
+persistence, workers, or STT voice input.
 
 it is used by agentpay as the agent runtime layer. it can also be used
 standalone in any python or typescript project.
@@ -49,8 +49,8 @@ the shared concepts across all three.
    └──────────────────┘        └──────────────────────┘
 ```
 
-the reasoning loop is modality-agnostic. voice adds STT at the input edge and
-TTS at the output edge; text skips both.
+the reasoning loop is modality-agnostic. `agentkit-serve` adds STT at the input
+edge and TTS at the output edge; text skips both.
 
 ```
    voice:   audio → STT → [runtime loop] → TTS → audio
@@ -116,12 +116,15 @@ there is a TS server runtime).
 ### providers
 
 LLM providers implement a common interface. the python SDK ships `kimi`
-(OpenRouter/Kimi, the default), `gemini`, `openai`, and `mock` (for tests). selected via
-`AGENTKIT_MODEL_PROVIDER`. adding a new provider means implementing the
+(OpenRouter/Kimi, the default), `gemini`, `openai`, `anthropic`, and `mock`
+(for tests). selected via `AGENTKIT_MODEL_PROVIDER`. provider SDKs are optional
+extras (`agentkit[openai]`, `agentkit[anthropic]`, `agentkit[gemini]`, or
+`agentkit[providers]`). adding a new provider means implementing the
 `ModelProvider` protocol and registering it.
 
 TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
-`TTSProvider` protocol. STT uses Soniox by default.
+`TTSProvider` protocol. STT/Soniox lives in `agentkit-serve`, not the embeddable
+SDK.
 
 ## the reference service (agentkit-serve)
 
@@ -131,7 +134,7 @@ so heavy tool execution never stalls a real-time exchange:
 | process | role |
 | ------------ | ------------------------------------------------------- |
 | `api` | FastAPI app: REST routes and STT WebSocket |
-| `bus-worker` | reasoning loop: LLM calls, event bus, tool dispatch |
+| `bus-worker` | service runtime: LLM calls, event bus, tool dispatch |
 | `worker` | async tool execution (TaskIQ), results back to bus-worker |
 
 Redis Streams provide durable at-least-once hand-off between processes.
@@ -143,12 +146,12 @@ embed `agentkit` directly when you want infra-free usage inside your own app.
 ## typescript SDK
 
 `@agentkit/sdk` (`agentkit/ts`) is a TypeScript port of the python core. it
-mirrors the public surface (event types, store, bus, replay, tool registry) and
-uses Zod 4 for validation. wire format (event type strings, field names) is
-identical to the python SDK so events can round-trip across both.
+mirrors the public surface (event types, store, bus, replay, tool registry,
+agent runtime, and provider interfaces) and uses Zod 4 for validation. wire
+format (event type strings, field names) is identical to the python SDK so
+events can round-trip across both.
 
-the reasoning loop and LLM providers are being ported and are not yet part of
-the exported public surface. voice modalities (STT, TTS) are not yet ported.
+voice modalities (STT, TTS) are not yet ported to TypeScript.
 
 ## further reading
 

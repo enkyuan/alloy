@@ -5,18 +5,18 @@ worker entrypoints.
 """
 
 import base64
+import asyncio
 import json
 import logging
-import uuid
-import asyncio
 from typing import Any, cast
 
 import msgpack
 
 from agentkit.infra.events.envelope import build_event_envelope, to_redis_stream_fields
-from agentkit.core.redis import RedisConfig, RedisKeys
+from agentkit.infra.realtime.redis import RedisConfig, RedisKeys
 
 logger = logging.getLogger(__name__)
+
 
 def history_key(user_id: str) -> str:
     return f"agent:history:{user_id}"
@@ -260,12 +260,23 @@ async def drain_generic_dlq(
         if next_attempt > max_retries:
             try:
                 await enqueue_generic_dlq(
-                    redis, dead_key, payload, maxlen, dead_ttl_seconds,
-                    reason=next_reason, attempts=next_attempt, **extras
+                    redis,
+                    dead_key,
+                    payload,
+                    maxlen,
+                    dead_ttl_seconds,
+                    reason=next_reason,
+                    attempts=next_attempt,
+                    **extras,
                 )
                 logger.error(
                     "DLQ dead-letter entry exhausted retries",
-                    extra={"dead_key": dead_key, "attempts": next_attempt, "reason": next_reason, **extras},
+                    extra={
+                        "dead_key": dead_key,
+                        "attempts": next_attempt,
+                        "reason": next_reason,
+                        **extras,
+                    },
                 )
             except Exception as error:
                 logger.warning(
@@ -277,12 +288,23 @@ async def drain_generic_dlq(
 
         try:
             await enqueue_generic_dlq(
-                redis, dlq_key, payload, maxlen, ttl_seconds,
-                reason=next_reason, attempts=next_attempt, **extras
+                redis,
+                dlq_key,
+                payload,
+                maxlen,
+                ttl_seconds,
+                reason=next_reason,
+                attempts=next_attempt,
+                **extras,
             )
             logger.warning(
                 "Requeued failed dead-letter payload for retry",
-                extra={"attempts": next_attempt, "reason": next_reason, "dlq_key": dlq_key, **extras},
+                extra={
+                    "attempts": next_attempt,
+                    "reason": next_reason,
+                    "dlq_key": dlq_key,
+                    **extras,
+                },
             )
         except Exception as error:
             logger.warning(
@@ -291,7 +313,10 @@ async def drain_generic_dlq(
                 exc_info=True,
             )
     if drained:
-        logger.info("Processed dead-letter messages", extra={"drained": drained, "dlq_key": dlq_key})
+        logger.info(
+            "Processed dead-letter messages",
+            extra={"drained": drained, "dlq_key": dlq_key},
+        )
     return drained
 
 
@@ -430,7 +455,9 @@ async def _publish_with_retry(
                     )
                 raise
 
-            delay = RedisConfig.TOOL_RESULT_PUBLISH_BASE_RETRY_DELAY_SECONDS * (2 ** (attempt - 1))
+            delay = RedisConfig.TOOL_RESULT_PUBLISH_BASE_RETRY_DELAY_SECONDS * (
+                2 ** (attempt - 1)
+            )
             logger.warning(
                 "Retrying user update publish after publish error (%s/%s)",
                 attempt,
@@ -588,7 +615,7 @@ async def run_stream_with_dlq(
     except Exception as error:
         if "BUSYGROUP" not in str(error):
             logger.warning("Error creating consumer group %s: %s", group_name, error)
-            
+
     while True:
         try:
             await drain_user_update_outbox(redis)
@@ -596,25 +623,40 @@ async def run_stream_with_dlq(
             logger.warning("Failed to drain outbox: %s", error)
 
         try:
+
             async def dlq_handler(redis_client, payload, **kwargs):
-                return await handler_callback(redis_client, payload, kwargs.get("message_id"))
-            
+                return await handler_callback(
+                    redis_client, payload, kwargs.get("message_id")
+                )
+
             await drain_generic_dlq(
-                redis, dlq_key, dlq_dead_key, dlq_max_drain, dlq_max_retries,
-                dlq_maxlen, dlq_ttl, dlq_dead_ttl, dlq_handler
+                redis,
+                dlq_key,
+                dlq_dead_key,
+                dlq_max_drain,
+                dlq_max_retries,
+                dlq_maxlen,
+                dlq_ttl,
+                dlq_dead_ttl,
+                dlq_handler,
             )
         except Exception as error:
             logger.warning("Failed to drain DLQ: %s", error)
 
         try:
             messages = await redis.xreadgroup(
-                groupname=group_name, consumername=consumer_name,
-                streams={stream_key: ">"}, count=stream_poll_batch, block=200,
+                groupname=group_name,
+                consumername=consumer_name,
+                streams={stream_key: ">"},
+                count=stream_poll_batch,
+                block=200,
             )
             if not messages:
                 messages = await redis.xreadgroup(
-                    groupname=group_name, consumername=consumer_name,
-                    streams={stream_key: "0"}, count=stream_pending_batch,
+                    groupname=group_name,
+                    consumername=consumer_name,
+                    streams={stream_key: "0"},
+                    count=stream_pending_batch,
                 )
         except Exception as error:
             logger.warning("Error reading stream %s: %s", stream_key, error)
@@ -631,20 +673,32 @@ async def run_stream_with_dlq(
                 try:
                     handled = await handler_callback(redis, raw_payload, message_id)
                 except Exception as error:
-                    logger.warning("Error handling message %s: %s", message_id, error, exc_info=True)
+                    logger.warning(
+                        "Error handling message %s: %s",
+                        message_id,
+                        error,
+                        exc_info=True,
+                    )
 
                 enqueued = False
                 if not handled:
                     try:
                         await enqueue_generic_dlq(
-                            redis, dlq_key, raw_payload, dlq_maxlen, dlq_ttl,
-                            reason="stream_failed", attempts=1, coerce_fields=dlq_coerce_fields, message_id=message_id
+                            redis,
+                            dlq_key,
+                            raw_payload,
+                            dlq_maxlen,
+                            dlq_ttl,
+                            reason="stream_failed",
+                            attempts=1,
+                            coerce_fields=dlq_coerce_fields,
+                            message_id=message_id,
                         )
                         enqueued = True
                     except Exception as error:
                         logger.warning("Failed to queue DLQ: %s", error)
                         await asyncio.sleep(0.05)
-                
+
                 if handled or enqueued:
                     try:
                         await redis.xack(stream_key, group_name, message_id)

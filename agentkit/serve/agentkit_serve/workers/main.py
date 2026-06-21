@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 
-from agentkit.runtime.agents.nodes.agentic import AgentReasoningNode
+from agentkit_serve.runtime.nodes.agentic import AgentReasoningNode
 from agentkit.runtime.agents.prompts import ASSISTANT_SYSTEM_INSTRUCTION
 from agentkit.infra.realtime.redis_history import RedisHistoryStore
 from agentkit.modalities.voice.event_models import (
@@ -13,11 +13,11 @@ from agentkit.modalities.voice.event_models import (
     ToolResult,
     UserTranscriptionReceived,
 )
-from agentkit.runtime.agents.messaging import Bridge, Bus, Message
-from agentkit.runtime.workflows.queue import RedisPublisher, RedisStreamInput
+from agentkit_serve.runtime.messaging import Bridge, Bus, Message
+from agentkit_serve.runtime.workflows.queue import RedisPublisher, RedisStreamInput
 from agentkit.core.config import get_settings
-from agentkit.core.database import get_sessionmaker
-from agentkit.core.redis import RedisConfig, RedisKeys
+from agentkit_serve.server.database import get_sessionmaker
+from agentkit.infra.realtime.redis import RedisConfig, RedisKeys
 from agentkit.modalities.voice.tts import (
     TTSNotConfiguredError,
     TTSProvider,
@@ -190,6 +190,7 @@ async def run() -> None:
     # skip synthesis entirely (and never build a provider client).
     tts_provider: TTSProvider = get_tts_provider()
     if not isinstance(tts_provider, VoiceTTSAdapter):
+
         async def synthesize_audio(message: Message) -> None:
             await _synthesize_and_publish(message, publisher, tts_provider)
 
@@ -224,8 +225,6 @@ async def run() -> None:
 
     # Run the DLQ-enabled stream consumers in the background
     import socket
-
-    from agentkit.core.redis import RedisKeys
 
     host_id = socket.gethostname()
 

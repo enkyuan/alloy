@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { init } from "./commands/init.js";
+import { gen } from "./commands/gen.js";
 
 import "dotenv/config";
 
@@ -13,6 +14,7 @@ async function main() {
 
   program
     .addCommand(init)
+    .addCommand(gen)
     .version("0.0.1")
     .description("agentkit CLI")
     .action(() => program.help());

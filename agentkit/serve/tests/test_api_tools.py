@@ -3,12 +3,12 @@ from httpx import AsyncClient
 from unittest.mock import patch, MagicMock
 import fakeredis.aioredis
 
-from agentkit.core.redis import RedisKeys
+from agentkit.infra.realtime.redis import RedisKeys
 
 
 @pytest.fixture
 def mock_tool_specs():
-    with patch("agentkit_serve.server.v1.tools.list_tool_specs") as mock:
+    with patch("agentkit_serve.server.v1.tools.ListToolSpecs") as mock:
         # Mock ToolSpec object
         spec = MagicMock()
         spec.name = "test_tool"
@@ -26,7 +26,9 @@ def mock_redis():
     async def get_redis():
         return fake_redis
 
-    with patch("agentkit_serve.server.v1.tools.get_redis_client", side_effect=get_redis):
+    with patch(
+        "agentkit_serve.server.v1.tools.get_redis_client", side_effect=get_redis
+    ):
         yield fake_redis
 
 

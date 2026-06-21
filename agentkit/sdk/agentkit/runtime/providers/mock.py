@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from agentkit.runtime.providers.registry import register_provider
 from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
@@ -36,9 +36,17 @@ class MockProvider:
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-        _ = (system_instruction, temperature, max_tokens, response_format, cancellation_token)
+        _ = (
+            system_instruction,
+            temperature,
+            max_tokens,
+            response_format,
+            cancellation_token,
+        )
         if tools and not _tool_already_called(messages):
-            return GenerateResponse(text="", tool_calls=[_first_tool_call(tools)])
+            return GenerateResponse(
+                text="", tool_calls=cast(Any, [_first_tool_call(tools)])
+            )
         return GenerateResponse(text="mock response", tool_calls=[])
 
     async def generate_stream(
@@ -52,7 +60,9 @@ class MockProvider:
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         _ = (system_instruction, temperature, max_tokens, cancellation_token)
         if tools and not _tool_already_called(messages):
-            yield ModelResponseChunk(delta="", tool_calls=[_first_tool_call(tools)])
+            yield ModelResponseChunk(
+                delta="", tool_calls=cast(Any, [_first_tool_call(tools)])
+            )
             return
         yield ModelResponseChunk(delta="mock")
 

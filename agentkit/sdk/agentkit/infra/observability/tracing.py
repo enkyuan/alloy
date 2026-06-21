@@ -36,3 +36,6 @@ def trace_span(
         yield span
     finally:
         span.end_time = time.time()
+
+
+TraceSpan = trace_span

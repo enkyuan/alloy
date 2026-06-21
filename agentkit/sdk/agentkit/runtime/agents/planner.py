@@ -1,18 +1,25 @@
 import asyncio
 import logging
 import uuid
-from typing import Any, Awaitable, Callable, Dict, List
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agentkit.infra.events.schemas import (
+    ToolApprovalApproved,
+    ToolApprovalRejected,
+    ToolApprovalRequested,
     ToolCallCompleted,
     ToolCallFailed,
     ToolCallRequested,
     ToolCallStarted,
 )
+from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+from agentkit.runtime.tools.registry import ToolSpec
 
 logger = logging.getLogger(__name__)
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
+# Approval handler: receives (tool_name, tool_args, risk) and returns True to approve.
+ApprovalHandler = Callable[[str, Dict[str, Any], Optional[str]], Awaitable[bool]]
 
 
 class ToolPlanner:
@@ -32,10 +39,33 @@ class ToolPlanner:
                 ToolPlanner(
                     executor=lambda name, args: registry.execute("user-1", name, args)
                 )
+
+        policy: Optional ``ToolPolicy``. When provided, tools whose risk level
+            is in ``policy.require_approval_for`` will pause for approval via
+            ``approval_handler`` before execution.
+
+        approval_handler: Async callback invoked when a tool requires approval.
+            Receives ``(tool_name, tool_args, risk)`` and must return ``True``
+            to allow execution or ``False`` to reject it. When omitted and a
+            tool requires approval, it is rejected by default (fail-safe).
+
+        specs: Optional mapping of tool name → ``ToolSpec`` used to look up
+            the ``risk`` field per tool. When not provided, risk is treated as
+            ``None`` (unclassified) for all tools.
     """
 
-    def __init__(self, executor: ToolExecutor):
+    def __init__(
+        self,
+        executor: ToolExecutor,
+        *,
+        policy: Optional[ToolPolicy] = None,
+        approval_handler: Optional[ApprovalHandler] = None,
+        specs: Optional[Dict[str, ToolSpec]] = None,
+    ):
         self.executor = executor
+        self.policy = policy
+        self.approval_handler = approval_handler
+        self._specs: Dict[str, ToolSpec] = specs or {}
 
     async def execute_scatter_gather(
         self,
@@ -43,7 +73,7 @@ class ToolPlanner:
         tool_calls: List[Dict[str, Any]],
         emit_event: Callable[[Any], Awaitable[None]],
     ) -> List[Dict[str, Any]]:
-        """Executes multiple tools simultaneously and emits standard AgentKit lifecycle events."""
+        """Execute multiple tools simultaneously and emit lifecycle events."""
         tasks = []
         for call in tool_calls:
             tasks.append(self._execute_single(session_id, call, emit_event))
@@ -56,10 +86,18 @@ class ToolPlanner:
         call: Dict[str, Any],
         emit_event: Callable[[Any], Awaitable[None]],
     ) -> Dict[str, Any]:
-        """Executes a single tool safely wrapped in events."""
+        """Execute a single tool with policy enforcement and approval hooks."""
         tool_name = call.get("name", "unknown")
         tool_args = call.get("arguments", {})
         call_id = call.get("id", str(uuid.uuid4()))
+        spec = self._specs.get(tool_name)
+        risk = spec.risk if spec else None
+        catalog_name = spec.catalog_name if spec else None
+        aliases = [catalog_name] if catalog_name else []
+        metadata: Dict[str, Any] = (
+            {"catalog_name": spec.catalog_name} if spec and spec.catalog_name else {}
+        )
+        event_metadata: Any = metadata
 
         # 1. Announce intent to call
         await emit_event(
@@ -68,27 +106,109 @@ class ToolPlanner:
                 tool_name=tool_name,
                 tool_args=tool_args,
                 tool_call_id=call_id,
+                metadata=event_metadata,
             )
         )
 
-        # 2. Mark execution as started
+        # 2. Allow/deny gate: policy violations fail before approval/execution.
+        if self.policy is not None:
+            try:
+                self.policy.enforce_any(tool_name, aliases)
+            except ToolPolicyViolation as error:
+                error_msg = str(error)
+                await emit_event(
+                    ToolCallFailed(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        tool_call_id=call_id,
+                        error=error_msg,
+                        metadata=event_metadata,
+                    )
+                )
+                return {"id": call_id, "name": tool_name, "error": error_msg}
+
+        # 3. Approval gate: if policy requires it, pause and ask.
+        if self.policy is not None and self.policy.requires_approval(tool_name, risk):
+            await emit_event(
+                ToolApprovalRequested(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    tool_call_id=call_id,
+                    tool_args=tool_args,
+                    risk=risk,
+                    metadata=event_metadata,
+                )
+            )
+
+            approved = False
+            if self.approval_handler is not None:
+                approved = await self.approval_handler(tool_name, tool_args, risk)
+
+            if not approved:
+                reason = (
+                    "No approval handler registered"
+                    if self.approval_handler is None
+                    else "Rejected by approval handler"
+                )
+                error_msg = f"Tool approval rejected: {reason}"
+                await emit_event(
+                    ToolApprovalRejected(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        tool_call_id=call_id,
+                        reason=reason,
+                        metadata=event_metadata,
+                    )
+                )
+                # Also emit ToolCallFailed so replay projects this into
+                # model-visible history. Without it, the next iteration sees no
+                # tool result and re-requests the same tool until max_iterations.
+                await emit_event(
+                    ToolCallFailed(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        tool_call_id=call_id,
+                        error=error_msg,
+                        metadata=event_metadata,
+                    )
+                )
+                return {
+                    "id": call_id,
+                    "name": tool_name,
+                    "error": error_msg,
+                }
+
+            await emit_event(
+                ToolApprovalApproved(
+                    session_id=session_id,
+                    tool_name=tool_name,
+                    tool_call_id=call_id,
+                    metadata=event_metadata,
+                )
+            )
+
+        # 4. Mark execution as started
         await emit_event(
             ToolCallStarted(
-                session_id=session_id, tool_name=tool_name, tool_call_id=call_id
+                session_id=session_id,
+                tool_name=tool_name,
+                tool_call_id=call_id,
+                metadata=event_metadata,
             )
         )
 
         try:
-            # 3. Call the actual implementation (via the adapter/executor)
+            # 5. Call the actual implementation
             result = await self.executor(tool_name, tool_args)
 
-            # 4. Mark success
+            # 6. Mark success
             await emit_event(
                 ToolCallCompleted(
                     session_id=session_id,
                     tool_name=tool_name,
                     tool_call_id=call_id,
                     result=result,
+                    metadata=event_metadata,
                 )
             )
             return {"id": call_id, "name": tool_name, "result": result}
@@ -97,13 +217,14 @@ class ToolPlanner:
             error_msg = str(e)
             logger.error("Tool execution failed: %s", error_msg)
 
-            # 4. Mark failure
+            # 6. Mark failure
             await emit_event(
                 ToolCallFailed(
                     session_id=session_id,
                     tool_name=tool_name,
                     tool_call_id=call_id,
                     error=error_msg,
+                    metadata=event_metadata,
                 )
             )
             return {"id": call_id, "name": tool_name, "error": error_msg}

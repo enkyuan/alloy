@@ -3,8 +3,8 @@
 Public names are resolved lazily (PEP 562): ``import agentkit`` performs no
 heavy submodule imports and requires no environment configured. A name is
 imported from its module only when first accessed, e.g. ``from agentkit import
-EventBus`` or ``agentkit.register_tool``. For lower-level building blocks,
-import the relevant subpackage directly (e.g. ``agentkit.modalities.voice.stt``).
+EventBus`` or ``agentkit.RegisterTool``. For lower-level building blocks,
+import the relevant subpackage directly (e.g. ``agentkit.modalities.voice.tts``).
 """
 
 import importlib
@@ -19,6 +19,7 @@ _LAZY: dict[str, str] = {
     "AgentKitEvent": "agentkit.infra.events",
     "BaseEvent": "agentkit.infra.events",
     "EventBus": "agentkit.infra.events",
+    "EventBusProtocol": "agentkit.infra.events",
     "EventStore": "agentkit.infra.events",
     "EventType": "agentkit.infra.events",
     "InMemoryEventBus": "agentkit.infra.events",
@@ -28,6 +29,7 @@ _LAZY: dict[str, str] = {
     "AgentRuntime": "agentkit.runtime.agents",
     "AgentStrategy": "agentkit.runtime.agents",
     "CancellationToken": "agentkit.runtime.agents",
+    "AgentBuilder": "agentkit.runtime.agents",
     "ToolPlanner": "agentkit.runtime.agents",
     "ToolExecutor": "agentkit.runtime.agents.planner",
     # Sessions
@@ -39,30 +41,22 @@ _LAZY: dict[str, str] = {
     "SessionRecord": "agentkit.runtime.sessions.store",
     # Providers
     "ModelProvider": "agentkit.runtime.providers",
-    "get_provider": "agentkit.runtime.providers",
-    "register_provider": "agentkit.runtime.providers",
-    # Voice / TTS
-    "TTSProvider": "agentkit.modalities.voice.tts",
-    "VoiceTTSAdapter": "agentkit.modalities.voice.tts",
-    "get_tts_provider": "agentkit.modalities.voice.tts",
+    "GetProvider": "agentkit.runtime.providers",
+    "RegisterProvider": "agentkit.runtime.providers",
+    # Integrations
+    "Integration": "agentkit.runtime.integrations",
+    "Tool": "agentkit.runtime.integrations",
     # Toolgen
     "ToolSpec": "agentkit.runtime.tools.registry",
     "ToolContext": "agentkit.runtime.tools.registry",
     "ToolRegistry": "agentkit.runtime.tools.registry",
-    "register_tool": "agentkit.runtime.tools.registry",
-    "list_tool_specs": "agentkit.runtime.tools.registry",
-    "tool_spec_from_model": "agentkit.runtime.tools.registry",
-    "execute_tool": "agentkit.runtime.tools.registry",
-    # Tool retrieval
-    "ToolRetriever": "agentkit.runtime.tools.retriever",
-    "get_tool_retriever": "agentkit.runtime.tools.retriever",
-    # Knowledge / document RAG
-    "DocumentRAG": "agentkit.knowledge",
-    "Document": "agentkit.knowledge",
-    "Chunk": "agentkit.knowledge",
-    "VectorStore": "agentkit.knowledge",
-    "InMemoryVectorStore": "agentkit.knowledge",
-    "chunk_text": "agentkit.knowledge",
+    "RegisterTool": "agentkit.runtime.tools.registry",
+    "ListToolSpecs": "agentkit.runtime.tools.registry",
+    "ToolSpecFromModel": "agentkit.runtime.tools.registry",
+    "ExecuteTool": "agentkit.runtime.tools.registry",
+    "ClearTools": "agentkit.runtime.tools.registry",
+    "ToolPolicy": "agentkit.runtime.tools.policies",
+    "ToolPolicyViolation": "agentkit.runtime.tools.policies",
 }
 
 __all__ = ["__version__", *sorted(_LAZY)]

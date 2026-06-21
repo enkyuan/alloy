@@ -15,11 +15,9 @@ class HistoryStore(Protocol):
 
     async def append(
         self, key: str, role: str, content: str, *, history_limit: int
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    async def get(self, key: str) -> List[Dict[str, str]]:
-        ...
+    async def get(self, key: str) -> List[Dict[str, str]]: ...
 
 
 class InMemoryHistoryStore:

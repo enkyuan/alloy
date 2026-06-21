@@ -2,107 +2,176 @@
 
 `agentkit` is an embeddable SDK for building agents into your own platform:
 import the pieces you need and compose them. The core is dependency-injected and
-infra-free (no database, Supabase, or web server). A reference service (FastAPI,
-Redis, Postgres) ships behind the optional `server` extra, structured so heavy
-tool execution never stalls a real-time exchange.
+infra-free (no database, Supabase, FastAPI, or web server required).
 
-> **Status:** pre-release. The core SDK (runtime, toolgen, providers,
-> text/voice) is usable today. The reference voice service wires the STT → LLM →
-> TTS path (Soniox STT, Gemini LLM, Gemini/OpenAI TTS); barge-in and durable
-> persistence are in progress.
+> **Status:** pre-beta, MVP-ready for embedded agents. The core SDK (runtime,
+> toolgen, OpenAI/Anthropic providers, and session replay) is suitable for
+> internal embedded agents. Multi-process platform features (Redis event
+> backbone, durable sessions, voice workers) are present but not
+> production-hardened — do not deploy the realtime/voice stack without
+> additional load and durability testing.
+
+See [**AgentKit MVP**](../MVP.md) for the full five-step developer path and scope
+definition.
 
 ## Install
 
 ```bash
-pip install agentkit         # core SDK, embed in your own app
-pip install agentkit-serve   # the reference service (FastAPI + workers); pulls in agentkit
+pip install 'agentkit[openai]'     # OpenAI (recommended)
+# or
+pip install 'agentkit[anthropic]'  # Anthropic
+# or
+pip install agentkit               # core only, bring your own provider
+```
+
+Other optional extras:
+
+```bash
+pip install 'agentkit[gemini]'      # Gemini provider
+pip install 'agentkit[realtime]'    # Redis event bus (multi-process)
+pip install 'agentkit[providers]'   # all provider SDKs
 ```
 
 ## Quick start
 
-`import agentkit` works with no environment configured. Compose the building
-blocks yourself:
+Set an API key, then build an agent with `AgentBuilder`:
 
-```python
-import agentkit
-
-# Event-sourced building blocks, all in-memory by default (no infra required):
-store = agentkit.InMemoryEventStore()
-bus = agentkit.InMemoryEventBus()
-sessions = agentkit.SessionManager(store)
-
-# Toolgen: register your own tools. Schemas can be generated from Pydantic models.
-from pydantic import BaseModel
-
-class GetWeather(BaseModel):
-    city: str
-
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
-)
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
-    return {"city": args["city"], "tempF": 68}
-
-# Tools execute without a database by default; ctx.db is None unless you inject one.
-result = await agentkit.execute_tool("user-1", "get_weather", {"city": "Seattle"})
+```bash
+export OPENAI_API_KEY=sk-...
+# or: export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-### Run an agent
-
-`AgentRuntime` is the provider-agnostic ReAct loop: it projects session state
-from the event log, calls a `ModelProvider`, and executes tool calls
-scatter-gather, looping until the model is done. It needs no infra — the built-in
-`mock` provider runs the whole loop with no API key, which is the zero-setup way
-to see it work (swap in `get_provider("kimi")` or another provider for real
-generations).
-
 ```python
+import asyncio
 import agentkit
 
-store = agentkit.InMemoryEventStore()
-bus = agentkit.InMemoryEventBus()
 
-# A tool the agent can call. (The built-in mock provider calls tools with empty
-# arguments, so give it one that needs none to see the loop run cleanly.)
-@agentkit.register_tool(
-    agentkit.ToolSpec(
-        name="server_time",
-        description="Return the current server time.",
-        parameters={"type": "object", "properties": {}, "required": []},
+class WeatherIntegration(agentkit.Integration):
+    namespace = "weather"
+
+    @agentkit.Tool(
+        description="Return weather for a city.",
+        parameters={
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+        risk="read",
     )
-)
-async def server_time(ctx: agentkit.ToolContext, args: dict) -> dict:
-    import time
-    return {"epoch": time.time()}
+    async def get_weather(self, ctx: agentkit.ToolContext, args: dict) -> dict:
+        return {"city": args["city"], "tempF": 68}
 
-# The planner runs tool calls the model requests; wire it to execute_tool so the
-# tools you registered are reachable.
-planner = agentkit.ToolPlanner(
-    executor=lambda name, args: agentkit.execute_tool("user-1", name, args)
-)
 
-runtime = agentkit.AgentRuntime(
-    bus=bus,
-    store=store,
-    provider=agentkit.get_provider("mock"),
-    planner=planner,
-    tools=agentkit.list_tool_specs(),  # surface registered tools to the model
-)
+async def main():
+    bus = agentkit.InMemoryEventBus()
+    store = agentkit.InMemoryEventStore()
 
-# Seed a user turn, then run the loop. Emitted events land in the store: the
-# mock requests the tool, the planner runs it, and the loop finishes.
-await store.append(agentkit.UserMessage(session_id="s1", content="What time is it?"))
-await runtime.run_turn("s1")
+    runtime = (
+        agentkit.AgentBuilder()
+        .provider(agentkit.GetProvider("openai"))  # reads OPENAI_API_KEY
+        .integration(WeatherIntegration())
+        .system_prompt("You are a weather assistant.")
+        .build(bus=bus, store=store)
+    )
 
-state = await store.get_events("s1")  # AgentMessageDelta/Completed, ToolCall* events
+    await store.append(agentkit.UserMessage(session_id="s1", content="Weather in Seattle?"))
+    await runtime.run_turn("s1")
+
+    events = await store.get_events("s1")
+    for e in events:
+        print(e.type, getattr(e, "content", getattr(e, "delta", "")))
+
+
+asyncio.run(main())
 ```
 
-> The `mock` provider runs the whole loop with no API key — ideal for a first
-> run and for tests. Swap in `get_provider("kimi")` (or another provider, with
-> its key set) for real generations.
+`AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
+tools are both visible to the model and executable. Swap `.provider(agentkit.GetProvider("anthropic"))` to use Anthropic.
 
-For the full real-time voice service (STT → LLM → TTS over Redis), install the
-`server` extra and use the process layout below.
+## CLI scaffold
+
+```bash
+agentkit init ./my-agent
+```
+
+Creates `agent.py` and `.env.example` in `./my-agent` wired to `AgentBuilder`
+with an env-driven provider (set `AGENTKIT_MODEL_PROVIDER` to `openai` or
+`anthropic`, plus the matching API key).
+
+## What's exported
+
+| Name | What it is |
+| --- | --- |
+| `AgentBuilder` | Fluent builder wiring provider + integrations + policy into `AgentRuntime` |
+| `AgentRuntime` | Provider-agnostic ReAct loop |
+| `ToolSpec`, `ToolRegistry`, `ToolPlanner`, `ToolPolicy` | Tool definition, registration, policy, and scatter-gather execution |
+| `InMemoryEventStore`, `InMemoryEventBus` | Infra-free event log and pub/sub |
+| `EventType`, `AgentKitEvent` | Event discriminants and typed event union |
+| `replaySession`, `SessionManager` | Session state projection and management |
+| `GetProvider`, `RegisterProvider` | Provider registry |
+| `CancellationToken` | Cooperative cancellation across async boundaries |
+
+Events use snake_case field names (`session_id`, `tool_name`) as the wire format
+shared with the TypeScript SDK.
+
+## Python vs TypeScript parity
+
+| Feature | Python SDK | TS SDK |
+| --- | --- | --- |
+| Event-sourced runtime | Yes | Yes |
+| Tool registry + planner + policy | Yes | Yes |
+| `AgentBuilder` + integrations | Yes | Yes |
+| OpenAI / Anthropic providers | Yes | Yes |
+| Kimi / Gemini providers | Yes | No |
+| Document RAG / vector store | Yes (non-MVP) | No |
+| Tool retriever | Yes (non-MVP) | No |
+| Text modality adapter | Yes (non-MVP) | No |
+| Voice / TTS | Yes (non-MVP) | No |
+| Redis realtime bus | Yes (non-MVP) | No |
+| CLI scaffold | Yes | No |
+
+## Development
+
+**Prerequisites:** Python 3.11+, [Poetry](https://python-poetry.org/).
+
+```bash
+cd agentkit/sdk
+poetry install
+poetry run pytest tests/          # no API keys required
+poetry run pyrefly check          # static type check
+poetry run ruff check agentkit    # lint
+```
+
+Live provider tests are opt-in:
+
+```bash
+OPENAI_API_KEY=... poetry run pytest -m integration tests/integration/test_openai_provider.py
+ANTHROPIC_API_KEY=... poetry run pytest -m integration tests/integration/test_anthropic_provider.py
+```
+
+The SDK test suite needs no environment. The service tests under
+`agentkit/serve/tests/` cover the FastAPI app and workers; those need Postgres
+(see `agentkit/serve/README.md`).
+
+## Testing without API keys
+
+The default test path mocks provider HTTP clients and requires no keys:
+
+```bash
+poetry run pytest -m "not integration"
+```
+
+`MockProvider` is a deterministic stub used in unit tests to exercise the full
+tool loop without network calls. It is not the recommended provider for building
+real agents — it produces fixed, non-intelligent responses.
+
+---
+
+## Extensions (non-MVP)
+
+The following features are available in the Python SDK but are outside the
+five-step MVP path. They require additional configuration, infra, or hardening
+before production use.
 
 ### Document RAG
 
@@ -112,28 +181,37 @@ API key (swap in a keyed embedder for production).
 
 ```python
 import asyncio
-import agentkit
+from agentkit.knowledge import Document, DocumentRAG
 
-# Inject any embedder; this stub keeps the example key-free and runnable.
 class StubEmbedder:
     async def embed(self, text: str) -> list[float]:
         return [1.0, 0.0] if "cat" in text.lower() else [0.0, 1.0]
 
 async def main():
-    rag = agentkit.DocumentRAG(embedder=StubEmbedder())
-    await rag.add_document(agentkit.Document(id="d1", text="cats purr; dogs bark"))
+    rag = DocumentRAG(embedder=StubEmbedder())
+    await rag.add_document(Document(id="d1", text="cats purr; dogs bark"))
     chunks = await rag.retrieve("tell me about cats", top_k=1)
     print(chunks[0].text)  # "cats purr; dogs bark"
 
 asyncio.run(main())
 ```
 
-`retrieve()` returns chunks; wiring them into the `AgentRuntime` prompt is your
-code today. Auto-injection is [roadmap item 14](../../../docs/ROADMAP.md)
-(deferred). With the default embedder and no `GEMINI_API_KEY`, `add_document`
-stores nothing and logs an actionable warning rather than failing silently.
+Pass a `DocumentRAG` instance to `AgentRuntime(rag=rag)` to automatically inject
+retrieved chunks into the system prompt on each turn.
 
-### Listing sessions
+### Text sessions
+
+For a small text-chat facade, use `TextModalityAdapter`. `open_session()` binds
+a session to an `AgentRuntime` and can send messages directly.
+
+```python
+from agentkit.modalities.text import TextModalityAdapter
+
+session = TextModalityAdapter().open_session("s1", "u1")
+events = await session.send("hello")
+```
+
+### Session management
 
 `SessionManager.list_active` returns a user's sessions when a `SessionStore` is
 configured (the SDK ships an in-memory one; a durable backend lives in
@@ -150,171 +228,115 @@ async def main():
 
     await mgr.record_session("s1", user_id="u1", title="First chat")
     active = await mgr.list_active("u1")
-    print(active)  # [{"session_id": "s1", "user_id": "u1", ...}]
+    print(active)
 
 asyncio.run(main())
 ```
 
-Without a `session_store`, `list_active` returns `[]` (the SDK ships no durable
-index by default).
+### Redis realtime bus
+
+For multi-process deployments where multiple workers share events, replace the
+in-memory bus with the Redis-backed `EventBus`:
+
+```bash
+pip install 'agentkit[realtime]'
+export REDIS_URL=redis://localhost:6379/0
+```
+
+```python
+from agentkit.infra.events.bus import EventBus
+bus = EventBus()  # Redis-backed; same interface as InMemoryEventBus
+```
+
+This is the SDK-level building block. The full hosted platform (FastAPI, async
+tool workers, Postgres) is in `agentkit-serve`.
+
+### When to use Redis vs agentkit-serve
+
+| Need | Use |
+|------|-----|
+| Single process, one agent | `InMemoryEventBus` — no Redis |
+| Multiple processes sharing events | `agentkit[realtime]` + `EventBus` |
+| Full hosted platform (REST, voice, workers) | `agentkit-serve` |
+
+---
 
 ## Reference service architecture
 
-The sections below describe the reference service the SDK ships with: one way to
-deploy the runtime, not a requirement for using it. It runs as three processes
-over Redis, so a slow tool call can never stall a real-time exchange.
+`agentkit-serve` is a deployable reference service — one way to run the SDK in
+production, not a requirement for using it. It runs as three processes over Redis:
 
 | Process | Responsibility |
-| ------------- | ---------------------------------------------------------------- |
+| --- | --- |
 | `api` | FastAPI app: REST routes and the (voice) STT WebSocket endpoint |
-| `bus-worker` | The reasoning loop: consumes input, calls the LLM, runs the event bus, emits responses and tool calls |
-| `worker` | TaskIQ workers that execute tool calls asynchronously and publish results |
-
-### Data flow
-
-The voice path is STT → LLM → TTS: audio enters over a WebSocket, the LLM drives
-the response, and tool calls fan out to the worker and back. A text
-configuration uses the same loop without the STT/TTS edges.
+| `bus-worker` | The reasoning loop: consumes input, calls the LLM, runs the event bus |
+| `worker` | TaskIQ workers that execute tool calls asynchronously |
 
 ```
    ┌────────────────────────────────┐
    │             client             │
    └────────┬──────────────┴────────┘
-            ▼              │            in: text / audio          out: text / audio
+            ▼              │
    ┌────────────────────────────────┐
-   │         api (FastAPI)          │   REST + STT/TTS WebSocket (voice)
+   │         api (FastAPI)          │
    └────────┬──────────────┴────────┘
-            ▼              │            in: message (Redis Stream)   out: response (Pub/Sub)
+            ▼              │            Redis streams / pub-sub
    ┌────────────────────────────────┐
-   │     bus-worker (reasoning)     │   LLM loop + event bus
+   │     bus-worker (reasoning)     │
    └────────┬──────────────┴────────┘
-            ▼              │            out: ToolCall (TaskIQ)    in: ToolResult (Redis Stream)
+            ▼              │            TaskIQ / Redis streams
    ┌────────────────────────────────┐
-   │       worker (tool exec)       │   async tools, scatter-gather
+   │       worker (tool exec)       │
    └────────────────────────────────┘
 ```
 
-Everything below the `api` row is modality-agnostic. Two paths close the loop
-(the up-arrows above):
+FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
+nodes, and TaskIQ workers are **not** in the SDK — they live in the separate
+[`agentkit-serve`](../../serve/README.md) distribution.
 
-- **`bus-worker` → client**: each `AgentResponse` is published on Redis Pub/Sub
-  and streamed to the client. With a TTS provider configured (`TTS_PROVIDER`),
-  the response is also synthesized and streamed as ordered `AgentAudioChunk`
-  events alongside the text.
-- **`worker` → `bus-worker`**: each tool result is written back to a Redis
-  Stream, re-entering the reasoning loop so the LLM can continue.
-
-The two Redis mechanisms are deliberate: Streams for durable, at-least-once
-hand-off between processes (consumer groups, dead-letter queues); Pub/Sub for
-fire-and-forget fan-out to the client. Tools run scatter-gather: multiple tool
-calls dispatch concurrently and the loop resumes once results return, bounded by
-a max round-trip count.
-
-### Module layout
-
-The package is organized in layers, from foundational to orchestration. Lower
-layers do not import upper layers.
+## Module layout
 
 ```
 agentkit/
-├── core/             # foundation: config, redis, db, http, auth, errors
+├── core/             # foundation: config, logging, errors
 ├── types/            # shared type definitions
 ├── infra/            # backbone above core
 │   ├── events/       #   event envelopes, store, replay
-│   ├── realtime/     #   redis stream/pub-sub helpers (history, outbox, DLQ)
+│   ├── realtime/     #   redis stream/pub-sub helpers (opt-in, [realtime] extra)
 │   └── observability/#   tracing, metrics, timeline
 ├── modalities/       # input/output channels that plug into the runtime
-│   ├── voice/        #   STT (soniox), TTS (gemini/openai), audio
-│   │   ├── stt/
-│   │   └── tts/
-│   └── text/         #   text modality
+│   ├── voice/        #   TTS adapters (not hardened)
+│   └── text/         #   text modality adapter
 └── runtime/          # the agent reasoning/orchestration engine
-    ├── agents/       #   reasoning loop (NOT voice-specific)
-    │   ├── messaging/#     typed event bus: Bus, Bridge, RouteBuilder
-    │   └── nodes/    #     reasoning nodes: ReasoningNode, AgentReasoningNode
-    ├── providers/    #   LLM providers (gemini, kimi, openai, mock) + errors
-    ├── tools/        #   tool registry, execution, retrieval, policies
-    ├── sessions/     #   session state + websocket lifecycle
-    └── workflows/    #   idempotency + queue helpers
+    ├── agents/       #   AgentRuntime, AgentBuilder, ToolPlanner
+    ├── providers/    #   OpenAI, Anthropic, Kimi, Gemini, mock
+    ├── tools/        #   tool registry, execution, policies
+    ├── sessions/     #   session state, replay
+    └── workflows/    #   idempotency helpers
 ```
-
-The FastAPI server and TaskIQ workers are **not** in the SDK — they live in the
-separate [`agentkit-serve`](../../serve/README.md) distribution.
-
-`infra`, `modalities`, and `runtime` are organizational groupings; `core` and
-`types` stay at the root because nearly everything depends on them.
-`runtime/agents/` (the event bus and reasoning loop) is generic, not tied to
-voice. Voice is one modality under `modalities/voice/` that plugs into it.
-
-### Providers and modalities are pluggable
-
-- **LLM providers** implement a common interface in `runtime/providers/`
-  (Gemini, Kimi/OpenRouter, OpenAI, plus a keyless `mock`). Selected via
-  `AGENTKIT_MODEL_PROVIDER` (default `kimi`). Tools are passed to providers in a
-  neutral `[{name, description, parameters}]` format; each provider translates it
-  to its own function-calling shape, so a tool works across providers unchanged.
-- **TTS providers** implement the `TTSProvider` protocol in
-  `modalities/voice/tts/` and are selected via `TTS_PROVIDER` (`none` by
-  default; `gemini` and `openai` available). A factory returns a no-op adapter
-  when TTS is unconfigured, so text-only operation always works.
 
 ## Configuration
 
-Settings load lazily from environment variables (or a `.env` file) via
-`agentkit.core.config.get_settings()`, constructed only when a component that
-needs them is used. No configuration is needed to `import agentkit`. The
-variables below apply to the server stack (`server` extra); the core SDK needs
-none of them.
+Settings load lazily from environment variables (or a `.env` file). No
+configuration is needed to `import agentkit`.
 
 | Variable | Required | Purpose |
-| -------------------------- | --------------- | ----------------------------------- |
-| `DATABASE_URL` | server only | Postgres connection (asyncpg) |
-| `SUPABASE_ANON_KEY` | server only | Supabase auth |
-| `JWT_SECRET` | server only | Token signing / encryption fallback |
-| `REDIS_URL` | for the bus/workers | Defaults to `redis://redis:6379/0` |
-| `SONIOX_API_KEY` | no | Enables real-time STT |
-| `AGENTKIT_MODEL_PROVIDER` | no | LLM provider: `kimi` (default), `gemini`, `openai`, `mock` |
-| `GEMINI_API_KEY` | no | Gemini LLM + TTS |
-| `OPENAI_API_KEY` | no | OpenAI LLM + TTS |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | for openai provider | OpenAI LLM |
+| `ANTHROPIC_API_KEY` | for anthropic provider | Anthropic LLM |
+| `AGENTKIT_MODEL_PROVIDER` | no | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
 | `OPENAI_MODEL` | no | OpenAI model (default `gpt-4o`) |
+| `REDIS_URL` | for realtime extra | Defaults to `redis://redis:6379/0` |
+| `GEMINI_API_KEY` | for gemini provider | Gemini LLM + TTS |
 | `TTS_PROVIDER` | no | `none` (default), `gemini`, or `openai` |
+| `DATABASE_URL` | agentkit-serve only | Postgres connection |
+| `SUPABASE_ANON_KEY` | agentkit-serve only | Supabase auth |
 
 See [`.env.example`](.env.example) for the full list.
-
-## Development
-
-**Prerequisites:** Python 3.11+, [Poetry](https://python-poetry.org/), Docker.
-
-The SDK (`agentkit/sdk`) and the reference service (`agentkit/serve`) are
-separate Poetry distributions.
-
-```bash
-# Core SDK: install + test (no database, no server deps required).
-cd agentkit/sdk
-poetry install
-poetry run pytest tests/  # the SDK test suite, runs with no env configured
-
-# Reference service: install (pulls in the SDK via a path dependency) + test.
-cd agentkit/serve
-poetry install
-docker compose -f ../../docker/docker-compose.yml up -d db  # Postgres for DB tests
-poetry run pytest tests/
-```
-
-The SDK tests need no environment (the building blocks are infra-free). The
-service tests under `agentkit/serve/tests/` cover the API and workers; the
-database-backed ones need the Postgres service. CI runs the two suites as
-separate jobs (see [`.github/workflows/sdk-tests.yml`](../.github/workflows/sdk-tests.yml)).
 
 ## Project layout notes
 
 The repo ships **two distributions**: `agentkit` (this SDK) and
 [`agentkit-serve`](../../serve/README.md) (the reference FastAPI + workers
-service, which path-depends on the SDK). The SDK has no dependency on the
-service — the boundary mirrors langchain / langserve.
-
-Within the SDK, the top-level groupings (`infra`, `modalities`, `runtime`) are
-organizational; `core` and `types` stay at the root because nearly everything
-depends on them. The Redis stream/pub-sub helpers used by both the runtime and
-the service workers live in `infra/realtime/` (a neutral home above `core`),
-which is what let the service workers extract cleanly into `agentkit-serve`.
+service). The SDK has no dependency on the service — the boundary mirrors
+langchain / langserve.

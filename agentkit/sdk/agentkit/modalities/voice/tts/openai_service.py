@@ -9,6 +9,7 @@ it directly without a worker thread.
 from __future__ import annotations
 
 import logging
+from importlib import import_module
 from typing import Any, Optional
 
 from agentkit.core.config import get_settings
@@ -48,7 +49,7 @@ class OpenAITTSService:
         if self._client is None:
             if not self.api_key:
                 raise ValueError("OPENAI_API_KEY is required for OpenAI TTS.")
-            from openai import AsyncOpenAI
+            AsyncOpenAI = import_module("openai").AsyncOpenAI
 
             self._client = AsyncOpenAI(api_key=self.api_key)
         return self._client

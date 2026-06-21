@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "../src/providers/base";
+import { ProviderConfigError } from "../src/providers/errors";
 import { MockProvider } from "../src/providers/mock";
 import { clearProviders, getProvider, registerProvider } from "../src/providers/registry";
 import { toolSpecFromSchema } from "../src/tools/registry";
@@ -18,10 +19,12 @@ describe("provider registry", () => {
   it("throws on duplicate registration", () => {
     registerProvider("dup", new MockProvider());
     expect(() => registerProvider("dup", new MockProvider())).toThrow(/already registered/);
+    expect(() => registerProvider("dup", new MockProvider())).toThrow(ProviderConfigError);
   });
 
   it("throws on unknown provider", () => {
     expect(() => getProvider("nope")).toThrow(/Unknown provider/);
+    expect(() => getProvider("nope")).toThrow(ProviderConfigError);
   });
 });
 

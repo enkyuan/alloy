@@ -16,9 +16,14 @@ _NEUTRAL = [
 
 
 def test_spec_to_neutral_shape():
-    spec = ToolSpec(name="t", description="d", parameters={"type": "object"})
+    spec = ToolSpec(
+        name="catalog_safe_t",
+        catalog_name="catalog.safe.t",
+        description="d",
+        parameters={"type": "object"},
+    )
     assert spec_to_neutral(spec) == {
-        "name": "t",
+        "name": "catalog_safe_t",
         "description": "d",
         "parameters": {"type": "object"},
     }
@@ -26,9 +31,7 @@ def test_spec_to_neutral_shape():
 
 def test_build_tools_payload_is_flat_neutral_list(monkeypatch):
     specs = [ToolSpec(name="a", description="A", parameters={"type": "object"})]
-    monkeypatch.setattr(
-        "agentkit.runtime.tools.payload.list_tool_specs", lambda: specs
-    )
+    monkeypatch.setattr("agentkit.runtime.tools.payload.list_tool_specs", lambda: specs)
     payload = build_tools_payload()
     # Flat list of {name, description, parameters} — NOT wrapped in
     # function_declarations or {type: function}.
@@ -42,9 +45,7 @@ def test_build_tools_payload_filters_by_allowed_names(monkeypatch):
         ToolSpec(name="a", description="A", parameters={}),
         ToolSpec(name="b", description="B", parameters={}),
     ]
-    monkeypatch.setattr(
-        "agentkit.runtime.tools.payload.list_tool_specs", lambda: specs
-    )
+    monkeypatch.setattr("agentkit.runtime.tools.payload.list_tool_specs", lambda: specs)
     payload = build_tools_payload(allowed_names=["b"])
     assert [t["name"] for t in payload] == ["b"]
 

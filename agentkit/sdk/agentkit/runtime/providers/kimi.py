@@ -1,10 +1,11 @@
 import json
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 import httpx
 
 from agentkit.core.config import get_settings
+from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
 from agentkit.runtime.providers.registry import register_provider
@@ -70,14 +71,7 @@ class KimiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         stream: bool = False,
     ) -> Dict[str, Any]:
-
-        formatted_messages = []
-        if system_instruction:
-            formatted_messages.append({"role": "system", "content": system_instruction})
-
-        for msg in messages:
-            role = "user" if msg["role"] == "user" else "assistant"
-            formatted_messages.append({"role": role, "content": msg["content"]})
+        formatted_messages = format_messages_openai(messages, system_instruction)
 
         payload: Dict[str, Any] = {
             "model": self.model_name,
@@ -101,6 +95,46 @@ class KimiProvider(ModelProvider):
 
         return payload
 
+    @staticmethod
+    def _accumulate_stream_tool_calls(
+        pending: Dict[int, Dict[str, str]], raw: Any
+    ) -> None:
+        for fallback_index, tc in enumerate(raw or []):
+            index = tc.get("index")
+            if not isinstance(index, int):
+                index = fallback_index
+            current = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
+
+            if tc.get("id"):
+                current["id"] = str(tc["id"])
+
+            func = tc.get("function") or {}
+            if func.get("name"):
+                current["name"] += str(func["name"])
+            if func.get("arguments"):
+                current["arguments"] += str(func["arguments"])
+
+    @staticmethod
+    def _finalize_stream_tool_calls(
+        pending: Dict[int, Dict[str, str]],
+    ) -> List[Dict[str, Any]]:
+        tool_calls: List[Dict[str, Any]] = []
+        for _, item in sorted(pending.items()):
+            if not item["name"]:
+                continue
+            try:
+                parsed_args = json.loads(item["arguments"] or "{}")
+            except Exception:
+                parsed_args = {}
+            tool_calls.append(
+                {
+                    "id": item["id"] or None,
+                    "name": item["name"],
+                    "arguments": parsed_args,
+                }
+            )
+        return tool_calls
+
     async def generate(
         self,
         messages: List[Dict[str, Any]],
@@ -111,7 +145,6 @@ class KimiProvider(ModelProvider):
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
     ) -> GenerateResponse:
-
         payload = self._prepare_payload(
             messages,
             tools,
@@ -177,7 +210,10 @@ class KimiProvider(ModelProvider):
             )
 
             return GenerateResponse(
-                text=text, tool_calls=tool_calls, metadata=metadata, metrics=metrics
+                text=text,
+                tool_calls=cast(Any, tool_calls),
+                metadata=metadata,
+                metrics=metrics,
             )
 
     async def generate_stream(
@@ -189,7 +225,6 @@ class KimiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
-
         payload = self._prepare_payload(
             messages, tools, system_instruction, temperature, max_tokens, stream=True
         )
@@ -207,6 +242,8 @@ class KimiProvider(ModelProvider):
                     raise ProviderAPIError(
                         f"Kimi Streaming API Error {response.status_code}: {body}"
                     )
+
+                pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
                 async for line in response.aiter_lines():
                     if (
@@ -233,31 +270,18 @@ class KimiProvider(ModelProvider):
 
                         chunk_text = delta.get("content", "") or ""
 
-                        tool_calls_data = delta.get("tool_calls", [])
-                        tool_calls = []
-                        for tc in tool_calls_data:
-                            if tc.get("type") == "function":
-                                func = tc.get("function", {})
-                                args = func.get("arguments", "{}")
-                                try:
-                                    parsed_args = json.loads(args)
-                                except Exception:
-                                    parsed_args = {}
+                        self._accumulate_stream_tool_calls(
+                            pending_tool_calls, delta.get("tool_calls", [])
+                        )
 
-                                tool_calls.append(
-                                    {
-                                        "id": tc.get("id"),
-                                        "name": func.get("name"),
-                                        "arguments": parsed_args,
-                                    }
-                                )
-
-                        if chunk_text or tool_calls:
-                            yield ModelResponseChunk(
-                                delta=chunk_text, tool_calls=tool_calls
-                            )
+                        if chunk_text:
+                            yield ModelResponseChunk(delta=chunk_text, tool_calls=[])
                     except json.JSONDecodeError:
                         continue
+
+                tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+                if tool_calls:
+                    yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
 
 
 register_provider("kimi", KimiProvider)

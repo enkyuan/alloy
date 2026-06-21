@@ -51,6 +51,23 @@ def to_gemini(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [{"function_declarations": tools}]
 
 
+def to_anthropic(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Translate the neutral list to Anthropic's ``tools`` form.
+
+    Anthropic expects ``[{"name": ..., "description": ..., "input_schema": {...}}]``.
+    """
+    return [
+        {
+            "name": tool["name"],
+            "description": tool.get("description", ""),
+            "input_schema": tool.get(
+                "parameters", {"type": "object", "properties": {}}
+            ),
+        }
+        for tool in tools
+    ]
+
+
 def to_openai(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Translate the neutral list to OpenAI's ``tools`` form.
 

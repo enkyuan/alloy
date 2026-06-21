@@ -11,8 +11,8 @@ import websockets
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketState
 
-from agentkit.core.redis import get_redis_client
-from agentkit.modalities.voice.stt import (
+from agentkit.infra.realtime.redis import get_redis_client
+from agentkit_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,
     cancel_pending_publish,
@@ -21,8 +21,11 @@ from agentkit.modalities.voice.stt import (
     send_error_message,
     stream_agent_updates,
 )
-from agentkit.modalities.voice.stt.soniox_service import soniox_service
-from agentkit.modalities.voice.stt.soniox_gateway import connect_soniox, listen_to_soniox
+from agentkit_serve.modalities.voice.stt.soniox_service import soniox_service
+from agentkit_serve.modalities.voice.stt.soniox_gateway import (
+    connect_soniox,
+    listen_to_soniox,
+)
 
 logger = logging.getLogger(__name__)
 

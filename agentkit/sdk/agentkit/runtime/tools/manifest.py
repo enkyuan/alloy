@@ -1,10 +1,15 @@
 """Tool manifest — definitions exposed to the LLM."""
 
-from agentkit.runtime.tools.registry import ToolSpec, list_tool_specs, register_tool, tool_spec_from_model
+from agentkit.runtime.tools.registry import (
+    ListToolSpecs,
+    RegisterTool,
+    ToolSpec,
+    ToolSpecFromModel,
+)
 
 __all__ = [
+    "ListToolSpecs",
+    "RegisterTool",
     "ToolSpec",
-    "list_tool_specs",
-    "register_tool",
-    "tool_spec_from_model",
+    "ToolSpecFromModel",
 ]

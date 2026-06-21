@@ -59,3 +59,7 @@ def _raise_if_task_errors(results: list[object]) -> None:
         raise ExceptionGroup(
             "Multiple errors occurred during task cancellation", errors
         )
+
+
+CancelTasksSafe = cancel_tasks_safe
+AwaitTasksSafe = await_tasks_safe

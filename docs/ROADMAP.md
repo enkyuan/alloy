@@ -33,11 +33,10 @@ Completed 2026-05-31. `import agentkit` -> run an agent -> call a tool works end
 - `agentkit/sdk/agentkit/runtime/providers/openai.py` — `generate` + `generate_stream` with tool calls via async openai SDK. Kimi stays default.
 - Tests: `agentkit/sdk/tests/test_providers_openai.py`.
 
-### 5. Anthropic provider (MISSING)
-No way to talk to Claude. Most visible provider gap.
-- New `agentkit/sdk/agentkit/runtime/providers/anthropic.py` — streaming + tool use.
-- Add `anthropic` dep in `agentkit/sdk/pyproject.toml`, `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` to config.
-- Self-register in `registry.py`.
+### 5. Anthropic provider (DONE)
+- `agentkit/sdk/agentkit/runtime/providers/anthropic.py` — Messages API provider with streaming + tool use.
+- `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` config path exists.
+- Unit and opt-in live integration tests: `agentkit/sdk/tests/test_providers_errors.py`, `agentkit/sdk/tests/integration/test_anthropic_provider.py`.
 
 ### 6. Fix Gemini streaming (DONE)
 - `agentkit/sdk/agentkit/runtime/providers/gemini.py` — `generate_stream` now has full history + tool calls parity with `generate`.
@@ -95,19 +94,20 @@ The bridge between agentkit and agentpay. Registers with `AgentRuntime`; when ca
 
 ## P3 — Capabilities promised but absent
 
-### 14. General document / knowledge RAG (DONE — retrieval capability; runtime auto-injection deferred)
+### 14. General document / knowledge RAG (DONE)
 - `agentkit/sdk/agentkit/knowledge/` — `Document`/`Chunk` types, deterministic `chunk_text`, `VectorStore` protocol + `InMemoryVectorStore` (cosine, dimension-guarded), `DocumentRAG` (ingest + retrieve). Infra-free by default; reuses the tool retriever's `Embedder` protocol.
 - Exported from the public API; runnable quickstart in the SDK README.
-- DEFERRED: auto-injecting retrieved chunks into the `AgentRuntime` prompt (when to retrieve, how to ground) — a memory-injection design owns that. `DocumentRAG.retrieve()` returns chunks; wiring into the loop is caller code today.
+- `AgentRuntime(rag=...)` retrieves from the latest user message and injects relevant chunks into the system prompt each turn.
 
-### 15. Multi-agent / swarm handoff (MISSING — stub)
-- `agentkit/sdk/agentkit/runtime/agents/router.py:13` — `determine_handoff` unconditionally returns `None`. Implement routing or drop the surface.
+### 15. Multi-agent / swarm handoff (MISSING)
+- The previous no-op swarm router and swarm event stubs were removed. Add this only with a real routing/runtime design.
 
-### 16. Durable session persistence (DONE — SessionStore interface + in-memory impl; durable backend deferred to serve)
+### 16. Durable session persistence (DONE — SessionStore interface + serve Postgres backend)
 - `agentkit/sdk/agentkit/runtime/sessions/store.py` — `SessionStore` protocol + `SessionRecord` + `InMemorySessionStore` (a cross-session index, distinct from the per-session `EventStore`).
 - `SessionManager` takes an optional `SessionStore`; `list_active` returns recorded sessions when configured, `[]` otherwise. `record_session` + round-trip test exercise the path.
 - Exported from the public API; runnable quickstart in the SDK README.
-- DEFERRED: the durable (Postgres) backend lives in `agentkit-serve` and implements this same protocol. Auto-recording from inside `AgentRuntime` is not wired (the runtime has no `user_id`); callers record via `SessionManager.record_session`.
+- `agentkit/serve/agentkit_serve/server/session_store.py` — `PostgresSessionStore` implements the same protocol over the existing `Conversation` table.
+- Auto-recording from inside `AgentRuntime` is not wired (the runtime has no `user_id`); callers record via `SessionManager.record_session` or service routes.
 
 ### 17. agentpay merchant studio — webhooks UI (MISSING)
 Studio (`apps/web`) has no webhook management screens.
@@ -138,16 +138,15 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ### 21. Automatic turn / endpoint detection (MISSING)
 - `agentkit/sdk/agentkit/modalities/voice/turn_detection.py` — `resolve_turn_policy` has zero consumers.
-- `agentkit/sdk/agentkit/modalities/voice/stt/soniox_gateway.py:52` — `enable_endpoint_detection=False` hardcoded.
+- `agentkit/serve/agentkit_serve/modalities/voice/stt/soniox_gateway.py` — endpoint detection is not yet wired through.
 
 ### 22. Durable chat persistence (PARTIAL)
-- Postgres `Conversation` / `Message` models and migrations exist but nothing writes to them. History lives only in Redis, trimmed to `AGENT_HISTORY_LIMIT`.
-- `agentkit/serve/agentkit_serve/server/v1/sessions.py:10` — `/sessions` backed by in-memory store, lost on restart.
+- `/sessions` now lists `Conversation` rows through `PostgresSessionStore`.
+- Message history still lives only in Redis, trimmed to `AGENT_HISTORY_LIMIT`; `Message` rows are not yet written by the service runtime.
 
-### 23. Reconcile the two auth paths (PARTIAL)
+### 23. Reconcile the two auth paths (DONE)
 - HTTP validates Bearer tokens locally via HS256 (`agentkit/serve/agentkit_serve/server/deps.py`).
-- STT WebSocket validates remotely against Supabase (`agentkit/sdk/agentkit/modalities/voice/stt/handler.py:209`).
-- Pick one canonical token model for REST and socket.
+- STT WebSocket auth now uses the same local JWT decode helper in `agentkit/serve/agentkit_serve/server/auth_utils.py`.
 
 ### 24. Remove dead code (cleanup)
 - `agentkit/serve/agentkit_serve/workers/tasks/memory.py` — empty, reserved for future use. Implement or delete.
@@ -174,9 +173,8 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ## Developer experience
 
-### 29. agentkit CLI / scaffold `init` (MISSING)
-The docs landing page advertises a CLI tab, but there is no `agentkit` CLI yet. Today onboarding is `pip install agentkit` / `bun add @agentkit/sdk` plus hand-wiring `lib/agent.ts` and a route handler. A scaffold command would collapse that into one step.
-- New `agentkit init` (and TS equivalent) that scaffolds `lib/agent.ts` (runtime + provider + tool registry + in-memory bus), a framework-appropriate API route handler, and `.env` keys (`AGENTKIT_API_KEY`, provider key).
-- Pattern reference: better-auth's CLI — one root binary with `init` / `generate` / `secret` subcommands, package-manager-tabbed install. agentkit has no schema/migration step, so `init` is the primary command.
+### 29. agentkit CLI / scaffold `init` (PARTIAL)
+- `agentkit/sdk/agentkit/cli.py` — `agentkit init [path]` writes a minimal Python `agent.py` and `.env.example`.
+- Remaining: TS scaffold and framework-specific route templates.
 - Until this lands, the landing-page CLI tab shows the real install command, and the MCP tab (`npx agentkit mcp`) is likewise aspirational.
 - The CLI tab currently shows a single `pip install agentkit` command. Once the CLI ships, it should show two tabs: Python (`pip install agentkit` / `agentkit init`) and TypeScript (`bun add @agentkit/sdk` / `npx agentkit init`). Update `hero-readme.tsx` `InstallBlock` at that point.

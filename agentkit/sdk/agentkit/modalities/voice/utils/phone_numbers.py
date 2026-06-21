@@ -28,3 +28,6 @@ def is_e164_phone_number(phone: str) -> bool:
         return False
 
     return True
+
+
+IsE164PhoneNumber = is_e164_phone_number

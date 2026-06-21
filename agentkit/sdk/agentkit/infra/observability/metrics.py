@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from agentkit.core.redis import RedisKeys
+from agentkit.infra.realtime.redis import RedisKeys
 
 __all__ = ["InMemoryMetrics", "RedisKeys"]
 
