@@ -56,7 +56,7 @@ async def test_tool_planner_emits_failure_event():
         emit,
     )
 
-    assert results[0]["error"] == "tool exploded"
+    assert results[0]["error"] == "RuntimeError: tool exploded"
     assert any(event.type == EventType.TOOL_CALL_FAILED for event in emitted)
     assert isinstance(
         next(event for event in emitted if event.type == EventType.TOOL_CALL_FAILED),

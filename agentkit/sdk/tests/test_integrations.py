@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import pytest
+from pydantic import BaseModel, Field
 
 from agentkit.runtime.integrations import Integration, Tool
 from agentkit.runtime.tools.registry import (
@@ -109,6 +110,37 @@ def test_tool_decorator_namespace_prefix():
     specs = registry.list_specs(enabled_only=False)
     assert [s.name for s in specs] == ["pay_make_payment"]
     assert [s.catalog_name for s in specs] == ["pay.make_payment"]
+
+
+def test_tool_decorator_accepts_pydantic_model():
+    """@Tool(parameters=<BaseModel>) converts to JSON Schema at registration."""
+
+    class WeatherArgs(BaseModel):
+        city: str = Field(description="City name")
+        units: str = "fahrenheit"
+
+    class WeatherIntegration(Integration):
+        namespace = "weather"
+
+        @Tool(
+            description="Return weather for a city.",
+            parameters=WeatherArgs,
+            risk="read",
+        )
+        async def get_weather(self, ctx: ToolContext, args: dict) -> dict:
+            return {"city": args["city"]}
+
+    specs = WeatherIntegration().tools()
+    assert len(specs) == 1
+    spec, _ = specs[0]
+    assert spec.parameters["type"] == "object"
+    assert "city" in spec.parameters["properties"]
+    assert spec.parameters["required"] == ["city"]
+
+
+def test_tool_decorator_rejects_missing_parameters():
+    with pytest.raises(TypeError):
+        Tool(description="bad")  # type: ignore[call-arg]
 
 
 def test_manual_tools_override_still_works():

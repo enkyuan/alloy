@@ -65,15 +65,28 @@ class ToolPolicy:
     def requires_approval(self, tool_name: str, risk: Optional[str]) -> bool:
         """Return True if this tool needs human approval before execution.
 
-        A tool requires approval when its risk level is in
-        ``require_approval_for``.  Unknown or unclassified risk (``None``) is
-        treated as ``"read"`` and will not trigger approval unless ``"read"`` is
-        explicitly listed.
+        ``require_approval_for`` acts as a *floor*: any tool whose risk is at
+        or above the minimum rank in the set requires approval. So
+        ``require_approval_for={"destructive"}`` also captures ``"admin"``
+        because ``"admin"`` ranks higher. Unknown or unclassified risk
+        (``None``) is treated as ``"read"`` (lowest rank) and will not trigger
+        approval unless ``"read"`` is explicitly listed.
         """
         if not self.require_approval_for:
             return False
         effective_risk = risk or "read"
-        return effective_risk in self.require_approval_for
+        # Unknown risk strings fall back to literal-membership semantics so we
+        # don't silently fail-open on a typo.
+        if effective_risk not in _RISK_RANK:
+            return effective_risk in self.require_approval_for
+        floor = (
+            min(_RISK_RANK[r] for r in self.require_approval_for if r in _RISK_RANK)
+            if any(r in _RISK_RANK for r in self.require_approval_for)
+            else None
+        )
+        if floor is None:
+            return effective_risk in self.require_approval_for
+        return _RISK_RANK[effective_risk] >= floor
 
 
 class ToolPolicyViolation(PermissionError):

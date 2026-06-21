@@ -21,10 +21,22 @@ export class InMemoryEventStore implements EventStore {
   private readonly events = new Map<string, AgentKitEvent[]>();
 
   async append(event: AgentKitEvent): Promise<void> {
-    const bucket = this.events.get(event.session_id) ?? [];
+    // Fast path: runtime-emitted events have monotonically increasing
+    // timestamps, so the bucket stays sorted with a single `push`. Only
+    // re-sort when a caller (test fixture, replay tooling) backdates the
+    // timestamp.
+    const bucket = this.events.get(event.session_id);
+    if (bucket === undefined) {
+      this.events.set(event.session_id, [event]);
+      return;
+    }
     bucket.push(event);
-    bucket.sort((a, b) => a.timestamp - b.timestamp);
-    this.events.set(event.session_id, bucket);
+    if (
+      bucket.length > 1 &&
+      bucket[bucket.length - 1]!.timestamp < bucket[bucket.length - 2]!.timestamp
+    ) {
+      bucket.sort((a, b) => a.timestamp - b.timestamp);
+    }
   }
 
   async getEvents(sessionId: string): Promise<AgentKitEvent[]> {

@@ -78,7 +78,14 @@ export {
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
 
 // Integrations
-export { Integration, tool } from "./integrations";
+export {
+  BoundTool,
+  FunctionTool,
+  type FunctionToolHandler,
+  type FunctionToolMeta,
+  Integration,
+  tool,
+} from "./integrations";
 
 // Runtime
 export {

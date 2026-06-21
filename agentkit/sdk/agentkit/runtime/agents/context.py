@@ -14,12 +14,7 @@ class ContextBuilder:
         variables: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Construct the message array for the model."""
-        messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": prompt.render(variables)}
+        return [
+            {"role": "system", "content": prompt.render(variables)},
+            *state.messages,
         ]
-
-        # Append all historical turns safely
-        for msg in state.messages:
-            messages.append(msg)
-
-        return messages

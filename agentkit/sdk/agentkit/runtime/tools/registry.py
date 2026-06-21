@@ -182,3 +182,4 @@ ListToolSpecs = list_tool_specs
 ToolSpecFromModel = tool_spec_from_model
 ExecuteTool = execute_tool
 ClearTools = clear_tools
+ProviderSafeToolName = provider_safe_tool_name

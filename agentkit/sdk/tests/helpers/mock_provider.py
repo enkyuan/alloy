@@ -60,6 +60,34 @@ class MockProvider(ModelProvider):
         yield ModelResponseChunk(delta="mock")
 
 
+_JSON_TYPE_PLACEHOLDERS: Dict[str, Any] = {
+    "string": "mock",
+    "integer": 0,
+    "number": 0,
+    "boolean": False,
+    "array": [],
+    "object": {},
+    "null": None,
+}
+
+
+def _placeholder_args(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    """Build args that satisfy the tool's JSON Schema 'required' + property types."""
+    props = parameters.get("properties") or {}
+    required = parameters.get("required") or []
+    args: Dict[str, Any] = {}
+    for key in required:
+        prop = props.get(key, {}) if isinstance(props.get(key, {}), dict) else {}
+        args[key] = _JSON_TYPE_PLACEHOLDERS.get(prop.get("type", "string"), "mock")
+    return args
+
+
 def _first_tool_call(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-    name = tools[0].get("name", "unknown")
-    return {"id": "mock-call-1", "name": name, "arguments": {}}
+    spec = tools[0]
+    name = spec.get("name", "unknown")
+    parameters = spec.get("parameters") or {}
+    return {
+        "id": "mock-call-1",
+        "name": name,
+        "arguments": _placeholder_args(parameters),
+    }

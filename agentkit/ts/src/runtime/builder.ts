@@ -8,8 +8,8 @@ import type { ModelProvider } from "../providers/base";
 import type { ToolPolicy } from "../tools/policy";
 import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
 import { ToolRegistry } from "../tools/registry";
-import type { EventBus } from "../events/bus";
-import type { EventStore } from "../events/store";
+import { EventBus } from "../events/bus";
+import { InMemoryEventStore, type EventStore } from "../events/store";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -17,8 +17,10 @@ export interface Integrable {
 }
 
 export interface AgentBuilderBuildOptions {
-  bus: EventBus;
-  store: EventStore;
+  /** Defaults to a fresh `EventBus` instance. */
+  bus?: EventBus;
+  /** Defaults to a fresh `InMemoryEventStore` instance. */
+  store?: EventStore;
 }
 
 export class AgentBuilder {
@@ -36,6 +38,12 @@ export class AgentBuilder {
 
   integration(i: Integrable): this {
     this._integrations.push(i);
+    return this;
+  }
+
+  /** Add a function-level tool created by `FunctionTool({...}, handler)`. */
+  tool(bound: Integrable): this {
+    this._integrations.push(bound);
     return this;
   }
 
@@ -59,10 +67,12 @@ export class AgentBuilder {
     return this;
   }
 
-  build(opts: AgentBuilderBuildOptions): AgentRuntime {
+  build(opts: AgentBuilderBuildOptions = {}): AgentRuntime {
     if (!this._provider) {
       throw new Error("provider() must be called before build()");
     }
+    const bus = opts.bus ?? new EventBus();
+    const store = opts.store ?? new InMemoryEventStore();
 
     const registry = new ToolRegistry();
     for (const integration of this._integrations) {
@@ -81,8 +91,8 @@ export class AgentBuilder {
 
     return new AgentRuntime({
       provider: this._provider,
-      bus: opts.bus,
-      store: opts.store,
+      bus,
+      store,
       systemPrompt: this._systemPrompt,
       strategy: this._strategy,
       tools: registry.listSpecs(),

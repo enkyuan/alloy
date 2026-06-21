@@ -38,7 +38,7 @@ describe("ToolPlanner", () => {
       },
     );
 
-    expect(results[0]).toHaveProperty("error", "tool exploded");
+    expect(results[0]).toHaveProperty("error", "Error: tool exploded");
     expect(emitted.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(true);
   });
 

@@ -81,11 +81,13 @@ export class AgentRuntime {
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly _tools: ToolSpec[] | undefined;
-  private readonly planner: ToolPlanner | undefined;
+  private readonly explicitPlanner: ToolPlanner | undefined;
   private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly userId: string;
+  /** Cached planner when tools are known up front. `undefined` means rebuild per turn. */
+  private readonly cachedPlanner: ToolPlanner | undefined;
 
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
@@ -100,17 +102,26 @@ export class AgentRuntime {
     this.toolExecutor =
       options.toolExecutor ??
       ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
-    this.planner = options.planner;
+    this.explicitPlanner = options.planner;
+    // Cache the planner when the tool set is fixed at construction time.
+    // If `options.tools` is omitted, we fall through to `listToolSpecs()`
+    // each turn so dynamic registry mutations remain visible.
+    this.cachedPlanner =
+      this.explicitPlanner ??
+      (this._tools !== undefined ? this.buildPlanner(this._tools) : undefined);
   }
 
-  private makePlanner(tools: ToolSpec[]): ToolPlanner {
-    if (this.planner !== undefined) return this.planner;
+  private buildPlanner(tools: ToolSpec[]): ToolPlanner {
     return new ToolPlanner({
       executor: this.toolExecutor,
       policy: this.policy,
       approvalHandler: this.approvalHandler,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
     });
+  }
+
+  private makePlanner(tools: ToolSpec[]): ToolPlanner {
+    return this.cachedPlanner ?? this.buildPlanner(tools);
   }
 
   /**
@@ -131,6 +142,14 @@ export class AgentRuntime {
     await this.store.append(event);
     await this.bus.publish(event);
     await this.runTurn(sessionId, options);
+  }
+
+  /**
+   * Return the event log for `sessionId` in append order. Shortcut for
+   * `runtime.store.getEvents(sessionId)`.
+   */
+  async history(sessionId: string): Promise<AgentKitEvent[]> {
+    return this.store.getEvents(sessionId);
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {

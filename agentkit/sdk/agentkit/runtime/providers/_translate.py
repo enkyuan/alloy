@@ -70,6 +70,27 @@ def format_messages_openai(
                     "tool_call_id": msg.get("tool_call_id") or msg.get("name", ""),
                 }
             )
+        elif role == "assistant" and msg.get("tool_calls"):
+            # Carry over tool calls so the subsequent role:tool messages have
+            # a parent assistant turn to reference. OpenAI requires
+            # tool_calls[].function.{name,arguments} and tool_calls[].id.
+            formatted.append(
+                {
+                    "role": "assistant",
+                    "content": msg.get("content", "") or None,
+                    "tool_calls": [
+                        {
+                            "id": call["id"],
+                            "type": "function",
+                            "function": {
+                                "name": call["name"],
+                                "arguments": json.dumps(call.get("arguments", {})),
+                            },
+                        }
+                        for call in msg["tool_calls"]
+                    ],
+                }
+            )
         else:
             formatted.append({"role": role, "content": msg.get("content", "")})
     return formatted
@@ -115,12 +136,48 @@ def format_messages_anthropic(
                     ],
                 }
             )
+        elif role == "assistant" and msg.get("tool_calls"):
+            blocks: List[Dict[str, Any]] = []
+            if content:
+                blocks.append({"type": "text", "text": content})
+            for call in msg["tool_calls"]:
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": call["id"],
+                        "name": call["name"],
+                        "input": call.get("arguments", {}),
+                    }
+                )
+            formatted.append({"role": "assistant", "content": blocks})
         else:
             anthropic_role = "user" if role == "user" else "assistant"
             formatted.append({"role": anthropic_role, "content": content})
 
     system = "\n\n".join(system_parts) if system_parts else None
     return system, formatted
+
+
+def split_system_for_gemini(
+    messages: List[Dict[str, Any]],
+) -> tuple[Optional[str], List[Dict[str, Any]]]:
+    """Extract any ``role: system`` text and return (system_text, rest).
+
+    Gemini rejects ``role: system`` in ``contents`` and routes system text via
+    the top-level ``system_instruction`` config field. Callers should pass the
+    returned text into ``system_instruction`` and only feed ``rest`` to
+    ``format_messages_gemini``.
+    """
+    system_parts: List[str] = []
+    rest: List[Dict[str, Any]] = []
+    for msg in messages:
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if content:
+                system_parts.append(content)
+        else:
+            rest.append(msg)
+    return ("\n\n".join(system_parts) or None, rest)
 
 
 def format_messages_gemini(
@@ -130,11 +187,18 @@ def format_messages_gemini(
 
     Gemini uses ``"model"`` for assistant turns and expects tool results as
     ``functionResponse`` parts. Text content is wrapped in ``text`` parts.
+
+    System messages are intentionally dropped here — Gemini routes system text
+    through the top-level ``system_instruction`` config parameter, not via
+    ``contents``. Use ``split_system_for_gemini`` to peel system content
+    before calling this; passing system inline would be rejected by the API.
     """
     contents: List[Dict[str, Any]] = []
     for msg in messages:
         role = msg["role"]
         content = msg.get("content", "")
+        if role == "system":
+            continue
         if role == "tool":
             tool_call_id = msg.get("tool_call_id") or msg.get("name", "")
             try:

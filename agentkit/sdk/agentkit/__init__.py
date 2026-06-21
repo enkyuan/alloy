@@ -43,7 +43,12 @@ _LAZY: dict[str, str] = {
     "ModelProvider": "agentkit.runtime.providers",
     "GetProvider": "agentkit.runtime.providers",
     "RegisterProvider": "agentkit.runtime.providers",
+    "ProviderError": "agentkit.runtime.providers.errors",
+    "ProviderConfigError": "agentkit.runtime.providers.errors",
+    "ProviderAPIError": "agentkit.runtime.providers.errors",
     # Integrations
+    "BoundTool": "agentkit.runtime.integrations",
+    "FunctionTool": "agentkit.runtime.integrations",
     "Integration": "agentkit.runtime.integrations",
     "Tool": "agentkit.runtime.integrations",
     # Toolgen

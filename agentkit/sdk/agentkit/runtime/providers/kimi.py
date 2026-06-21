@@ -1,8 +1,8 @@
 import json
 import logging
+import httpx
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
-import httpx
 
 from agentkit.core.config import get_settings
 from agentkit.runtime.providers._translate import format_messages_openai
@@ -124,8 +124,10 @@ class KimiProvider(ModelProvider):
                 continue
             try:
                 parsed_args = json.loads(item["arguments"] or "{}")
-            except Exception:
-                parsed_args = {}
+            except json.JSONDecodeError as exc:
+                parsed_args = {
+                    "__parse_error": f"Kimi tool args were not valid JSON: {exc}"
+                }
             tool_calls.append(
                 {
                     "id": item["id"] or None,
@@ -186,8 +188,10 @@ class KimiProvider(ModelProvider):
                     args = func.get("arguments", "{}")
                     try:
                         parsed_args = json.loads(args)
-                    except Exception:
-                        parsed_args = {}
+                    except json.JSONDecodeError as exc:
+                        parsed_args = {
+                            "__parse_error": f"Kimi tool args were not valid JSON: {exc}"
+                        }
 
                     tool_calls.append(
                         {
