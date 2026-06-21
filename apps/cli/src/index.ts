@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import { doctor } from "./commands/doctor.js";
 import { gen } from "./commands/gen.js";
 import { info } from "./commands/info.js";
 import { init } from "./commands/init.js";
@@ -21,6 +22,7 @@ async function main() {
     .addCommand(gen)
     .addCommand(info)
     .addCommand(upgrade)
+    .addCommand(doctor)
     .version("0.0.1")
     .description("agentkit CLI")
     .action(() => program.help());
