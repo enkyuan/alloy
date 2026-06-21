@@ -1,7 +1,10 @@
 ---
 title: Events
-description: All agentkit session state derives from an append-only event log of typed events, with wire-format type strings that are identical across the Python and TypeScript SDKs.
+description: All agentkit session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
 ---
+
+You won't usually emit events yourself — the runtime does. Reach into the
+event log when you want to inspect, persist, or replay a session.
 
 All session state is derived from an append-only event log. Events are
 discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
@@ -10,5 +13,5 @@ discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
 - `agentkit/sdk/agentkit/infra/events/schemas.py` (Python)
 - `agentkit/ts/src/events/schemas.ts` (TypeScript)
 
-The event-type string values are the wire format and are identical across both
-SDKs, so an event log written by one can be replayed by the other.
+The event-type strings are the wire format and are identical across both
+SDKs, so a log written by one can be replayed by the other.

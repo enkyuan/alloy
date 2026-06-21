@@ -1,47 +1,163 @@
 ---
 title: Getting Started
-description: Install the agentkit SDK in Python or TypeScript and register your first tool, with the tool spec, handler signature, and ToolContext explained.
+description: Install agentkit, define a tool, and run an agent turn end-to-end. Python and TypeScript.
 ---
 
-## Installation
+This page takes you from `install` to a working agent in five steps. By the
+end you'll have sent a user message and received a model response, with one
+tool wired in.
 
-```bash
-# TypeScript (from the monorepo JS workspace)
-bun install
-# the package is @agentkit/sdk
+<Steps>
+  <Step>
+    ### Install
 
-# Python
-cd agentkit/sdk && poetry install
-```
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        ```bash
+        cd agentkit/sdk && poetry install
+        ```
+      </Tab>
+      <Tab value="typescript">
+        ```bash
+        bun install
+        # the package is @agentkit/sdk
+        ```
+      </Tab>
+    </Tabs>
 
-## Register a Tool
+    The core has no required runtime dependencies beyond Python or Node. A
+    provider (OpenAI, Anthropic, etc.) is the only thing you need a key for.
 
-Tools are a spec (name, description, JSON-schema parameters) plus a handler.
-The runtime sends the full tool-spec list to the model. When the model requests
-a call, the registry dispatches the handler. Multiple calls from one model turn
-run concurrently, and results are collected before the next loop iteration.
+  </Step>
 
-```python
-# Python
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
-)
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
-    return {"tempF": 68}
-```
+  <Step>
+    ### Set a provider key
 
-```ts
-// TypeScript
-registerTool(
-  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
-  async (ctx, args) => ({ tempF: 68 }),
-);
-```
+    Pick one provider and export its key. The default in Python is `kimi`
+    (OpenRouter); the TypeScript SDK ships `openai` and `anthropic`.
 
-`ToolContext` carries `userId` / `user_id` and an optional `db` handle (`null`
-by default). Inject one when the tool needs persistence.
+    ```bash
+    export OPENAI_API_KEY=sk-...        # or
+    export ANTHROPIC_API_KEY=sk-ant-... # or
+    export KIMI_API_KEY=...              # Python default
+    ```
+
+    To override the Python default, set `AGENTKIT_MODEL_PROVIDER=openai`.
+
+  </Step>
+
+  <Step>
+    ### Define a tool
+
+    Tools are a spec (name, description, JSON-schema parameters) plus a
+    handler. The `@FunctionTool` decorator derives the spec from type hints
+    and the docstring.
+
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        ```python
+        from agentkit.runtime.integrations import FunctionTool
+
+        @FunctionTool
+        async def get_weather(city: str) -> dict:
+            """Look up the weather for a city."""
+            return {"city": city, "tempF": 68}
+        ```
+      </Tab>
+      <Tab value="typescript">
+        ```ts
+        import { FunctionTool } from "@agentkit/sdk";
+        import { z } from "zod";
+
+        const getWeather = FunctionTool(
+          {
+            name: "get_weather",
+            description: "Look up the weather for a city.",
+            parameters: z.object({ city: z.string() }),
+          },
+          async ({ city }) => ({ city, tempF: 68 }),
+        );
+        ```
+      </Tab>
+    </Tabs>
+
+  </Step>
+
+  <Step>
+    ### Build the runtime
+
+    `AgentBuilder` wires a provider, tools, and an in-memory bus + store into
+    a runnable `AgentRuntime`.
+
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        ```python
+        from agentkit import AgentBuilder, GetProvider
+
+        runtime = (
+            AgentBuilder()
+            .provider(GetProvider("openai"))
+            .tool(get_weather)
+            .system_prompt("You are a helpful assistant.")
+            .build()
+        )
+        ```
+      </Tab>
+      <Tab value="typescript">
+        ```ts
+        import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
+
+        const runtime = new AgentBuilder()
+          .provider(new OpenAIProvider())
+          .tool(getWeather)
+          .systemPrompt("You are a helpful assistant.")
+          .build();
+        ```
+      </Tab>
+    </Tabs>
+
+    No DB. No server. The runtime holds an `InMemoryEventStore` and
+    `InMemoryEventBus` by default.
+
+  </Step>
+
+  <Step>
+    ### Send a message
+
+    `send()` appends a `UserMessage` to the event log and runs one turn. The
+    model decides whether to call your tool; the runtime dispatches it,
+    collects the result, and produces a final response.
+
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        ```python
+        import asyncio
+
+        async def main():
+            await runtime.send("session-1", "What's the weather in NYC?")
+            for event in await runtime.history("session-1"):
+                print(event.type, getattr(event, "content", ""))
+
+        asyncio.run(main())
+        ```
+      </Tab>
+      <Tab value="typescript">
+        ```ts
+        await runtime.send("session-1", "What's the weather in NYC?");
+        for (const event of await runtime.history("session-1")) {
+          console.log(event.type, event.content ?? "");
+        }
+        ```
+      </Tab>
+    </Tabs>
+
+    To stream events as they happen instead of reading them after the turn,
+    subscribe to the bus. See [event bus](/docs/concepts/event-bus).
+
+  </Step>
+</Steps>
 
 ## Next
 
-Read [core concepts](/docs/concepts/events) to understand events, session
-state, the tool registry, the event bus, and providers.
+Read [core concepts](/docs/concepts/events) for events, session state, the
+tool registry, the event bus, and providers.

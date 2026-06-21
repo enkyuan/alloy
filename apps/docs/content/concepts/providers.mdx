@@ -1,16 +1,28 @@
 ---
 title: Providers
-description: LLM, TTS, and STT providers implement common interfaces selected by configuration; the Python SDK ships kimi, gemini, openai, and mock, with the TypeScript port mirroring the same neutral format.
+description: LLM, TTS, and STT providers implement common interfaces. The Python SDK ships kimi, openai, anthropic, gemini, and mock. The TypeScript SDK ships openai and anthropic.
 ---
 
-LLM providers implement a common interface. The Python SDK ships `kimi`
-(OpenRouter/Kimi, the default), `gemini`, `openai`, and `mock` (for tests),
-selected via `AGENTKIT_MODEL_PROVIDER`. Adding a provider means implementing the
-`ModelProvider` protocol and registering it.
+Pick a provider when you build the runtime. The runtime never imports
+provider-specific types — translation happens at the provider boundary
+against a neutral message and tool-spec format.
 
-TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
-`TTSProvider` protocol. STT uses Soniox by default.
+## LLM providers
 
-The TypeScript port mirrors the same neutral message and tool-spec format, so a
-provider translates to its own API only at its own boundary. The runtime never
-imports provider-specific types.
+| Provider    | Python SDK  | TypeScript SDK | Env var             |
+| ----------- | ----------- | -------------- | ------------------- |
+| `openai`    | ✓           | ✓              | `OPENAI_API_KEY`    |
+| `anthropic` | ✓           | ✓              | `ANTHROPIC_API_KEY` |
+| `kimi`      | ✓ (default) | —              | `KIMI_API_KEY`      |
+| `gemini`    | ✓           | —              | `GEMINI_API_KEY`    |
+| `mock`      | ✓           | —              | —                   |
+
+Select the Python default via `AGENTKIT_MODEL_PROVIDER`. Adding a provider
+means implementing the `ModelProvider` protocol and registering it with
+`RegisterProvider` (`registerProvider` in TS).
+
+## TTS and STT
+
+TTS providers (`gemini`, `openai`, `none`) implement `TTSProvider`. STT uses
+Soniox by default. Both attach at the voice edges of the runtime; the
+reasoning loop itself is modality-agnostic.
