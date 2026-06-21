@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
+import { gen } from "./commands/gen.js";
+import { info } from "./commands/info.js";
 import { init } from "./commands/init.js";
 import { secret } from "./commands/secret.js";
-import { gen } from "./commands/gen.js";
 
 import "dotenv/config";
 
@@ -17,6 +18,7 @@ async function main() {
     .addCommand(init)
     .addCommand(secret)
     .addCommand(gen)
+    .addCommand(info)
     .version("0.0.1")
     .description("agentkit CLI")
     .action(() => program.help());
