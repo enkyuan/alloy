@@ -145,8 +145,11 @@ describe("OpenAIProvider.generate", () => {
     (provider as any).client = fakeClient;
 
     const result = await provider.generate([{ role: "user", content: "go" }], []);
-    // Bad JSON falls back to empty args rather than throwing.
-    expect(result.toolCalls[0]?.args).toEqual({});
+    // Unparseable tool args carry a __parse_error sentinel; planner converts it
+    // into TOOL_CALL_FAILED rather than silently passing {} to the handler.
+    expect(result.toolCalls[0]?.args).toMatchObject({
+      __parse_error: expect.stringContaining("OpenAI tool args were not valid JSON"),
+    });
   });
 
   it("passes tool_call_id in message history to the client", async () => {

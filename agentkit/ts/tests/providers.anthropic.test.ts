@@ -327,7 +327,10 @@ describe("AnthropicProvider.generateStream", () => {
     }
 
     const toolChunk = chunks.find((c) => c.toolCalls.length > 0);
-    // Bad JSON falls back to empty args rather than throwing.
-    expect(toolChunk?.toolCalls[0]?.args).toEqual({});
+    // Unparseable tool args carry a __parse_error sentinel; planner converts it
+    // into TOOL_CALL_FAILED rather than silently passing {} to the handler.
+    expect(toolChunk?.toolCalls[0]?.args).toMatchObject({
+      __parse_error: expect.stringContaining("Anthropic tool args were not valid JSON"),
+    });
   });
 });

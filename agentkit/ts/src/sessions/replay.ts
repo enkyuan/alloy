@@ -24,9 +24,9 @@ export interface SessionState {
 }
 
 /**
- * Reconstruct session state by replaying a sequence of events. Events are
- * sorted by timestamp before projection. Throws on an empty log, matching the
- * Python implementation.
+ * Reconstruct session state by replaying a sequence of events. Events from
+ * `EventStore` arrive in append order; out-of-order inputs (e.g. constructed
+ * in tests) are sorted on the fly. Throws on an empty log, matching Python.
  */
 export function replaySession(events: readonly AgentKitEvent[]): SessionState {
   const first = events[0];
@@ -40,7 +40,14 @@ export function replaySession(events: readonly AgentKitEvent[]): SessionState {
     messages: [],
   };
 
-  const ordered = [...events].sort((a, b) => a.timestamp - b.timestamp);
+  let ordered: readonly AgentKitEvent[] = events;
+  for (let i = 1; i < events.length; i++) {
+    if (events[i]!.timestamp < events[i - 1]!.timestamp) {
+      ordered = [...events].sort((a, b) => a.timestamp - b.timestamp);
+      break;
+    }
+  }
+
   for (const event of ordered) {
     switch (event.type) {
       case EventType.SESSION_CREATED:

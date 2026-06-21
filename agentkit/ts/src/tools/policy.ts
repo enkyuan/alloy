@@ -43,15 +43,12 @@ export class ToolPolicy {
   }
 
   isAllowedAny(toolNames: Iterable<string>): boolean {
-    const names = new Set(toolNames);
-    for (const name of names) {
+    let anyAllowed = false;
+    for (const name of toolNames) {
       if (this.denied.has(name)) return false;
+      if (this.allowed === undefined || this.allowed.has(name)) anyAllowed = true;
     }
-    if (this.allowed === undefined) return true;
-    for (const name of names) {
-      if (this.allowed.has(name)) return true;
-    }
-    return false;
+    return anyAllowed || this.allowed === undefined;
   }
 
   /** Throws `ToolPolicyViolation` if the tool is not allowed. */

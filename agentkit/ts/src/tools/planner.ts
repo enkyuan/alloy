@@ -7,6 +7,55 @@ import { EventType } from "../events/types";
 import type { ToolSpec } from "./registry";
 import type { ToolPolicy } from "./policy";
 
+const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
+  object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),
+  array: Array.isArray,
+  string: (v) => typeof v === "string",
+  integer: (v) => typeof v === "number" && Number.isInteger(v),
+  number: (v) => typeof v === "number",
+  boolean: (v) => typeof v === "boolean",
+  null: (v) => v === null,
+};
+
+/** Shallow JSON Schema check against ToolSpec.parameters. Returns null on success. */
+function validateArgs(spec: ToolSpec, args: Record<string, unknown>): string | null {
+  const schema = (spec.parameters ?? {}) as Record<string, unknown>;
+  if (
+    schema.type === "object" &&
+    (typeof args !== "object" || args === null || Array.isArray(args))
+  ) {
+    return `arguments must be an object, got ${Array.isArray(args) ? "array" : typeof args}`;
+  }
+  const required = (schema.required as string[] | undefined) ?? [];
+  for (const key of required) {
+    if (!(key in args)) return `missing required argument: '${key}'`;
+  }
+  const properties = (schema.properties as Record<string, { type?: string }> | undefined) ?? {};
+  for (const [key, propSchema] of Object.entries(properties)) {
+    if (!(key in args)) continue;
+    const expected = propSchema?.type;
+    if (!expected) continue;
+    const check = JSON_TYPE_CHECK[expected];
+    if (check && !check(args[key])) {
+      return `argument '${key}': expected ${expected}, got ${typeof args[key]}`;
+    }
+  }
+  return null;
+}
+
+const ERROR_MSG_MAX = 200;
+
+/** Return a log-safe error string. Includes class name and a length-capped message. */
+function sanitizeError(err: unknown): string {
+  if (err instanceof Error) {
+    const msg =
+      err.message.length > ERROR_MSG_MAX ? err.message.slice(0, ERROR_MSG_MAX) + "…" : err.message;
+    return msg ? `${err.name}: ${msg}` : err.name;
+  }
+  const s = String(err);
+  return s.length > ERROR_MSG_MAX ? s.slice(0, ERROR_MSG_MAX) + "…" : s;
+}
+
 /** A single tool call instruction from the LLM. */
 export interface ToolCallInstruction {
   id?: string;
@@ -80,8 +129,9 @@ export class ToolPlanner {
     const callId = call.id ?? crypto.randomUUID();
     const spec = this.specs.get(toolName);
     const risk = spec?.risk;
-    const aliases = spec?.catalogName ? [spec.catalogName] : [];
-    const metadata = spec?.catalogName ? { catalog_name: spec.catalogName } : {};
+    const catalogName = spec?.catalogName;
+    const aliases = catalogName ? [catalogName] : [];
+    const metadata = catalogName ? { catalog_name: catalogName } : {};
 
     // 1. Announce intent
     await emit(
@@ -95,7 +145,42 @@ export class ToolPlanner {
       }),
     );
 
-    // 2. Allow/deny gate: policy violations fail before approval/execution.
+    // 2a. Provider parse-error sentinel: model produced unparseable tool JSON.
+    if (typeof toolArgs.__parse_error === "string") {
+      const errorMsg = `Invalid tool arguments: ${toolArgs.__parse_error}`;
+      await emit(
+        AgentKitEvent.parse({
+          type: EventType.TOOL_CALL_FAILED,
+          session_id: sessionId,
+          tool_name: toolName,
+          tool_call_id: callId,
+          error: errorMsg,
+          metadata,
+        }),
+      );
+      return { id: callId, name: toolName, error: errorMsg };
+    }
+
+    // 2b. Schema validation: fail closed on malformed args from the model.
+    if (spec !== undefined) {
+      const schemaError = validateArgs(spec, toolArgs);
+      if (schemaError !== null) {
+        const errorMsg = `Invalid tool arguments: ${schemaError}`;
+        await emit(
+          AgentKitEvent.parse({
+            type: EventType.TOOL_CALL_FAILED,
+            session_id: sessionId,
+            tool_name: toolName,
+            tool_call_id: callId,
+            error: errorMsg,
+            metadata,
+          }),
+        );
+        return { id: callId, name: toolName, error: errorMsg };
+      }
+    }
+
+    // 3. Allow/deny gate: policy violations fail before approval/execution.
     if (this.policy !== undefined && !this.policy.isAllowedAny([toolName, ...aliases])) {
       const errorMsg = `Tool not permitted: ${toolName}`;
       await emit(
@@ -199,7 +284,7 @@ export class ToolPlanner {
       );
       return { id: callId, name: toolName, result };
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = sanitizeError(err);
       await emit(
         AgentKitEvent.parse({
           type: EventType.TOOL_CALL_FAILED,

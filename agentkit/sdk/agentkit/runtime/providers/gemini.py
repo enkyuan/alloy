@@ -120,41 +120,31 @@ class GeminiService:
         max_tokens: Optional[int] = None,
     ) -> str:
         """Generate a response from Gemini."""
-        try:
-            config = self._build_generation_config(
-                temperature=temperature,
-                system_instruction=system_instruction,
-                max_tokens=max_tokens,
-            )
+        config = self._build_generation_config(
+            temperature=temperature,
+            system_instruction=system_instruction,
+            max_tokens=max_tokens,
+        )
 
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model,
-                contents=prompt,
-                config=config,
-            )
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
+            model=self.model,
+            contents=prompt,
+            config=config,
+        )
 
-            logger.info("Generated Gemini response for prompt: %s...", prompt[:50])
-            return response.text or ""
-
-        except Exception as e:
-            logger.error("Failed to generate Gemini response: %s", e, exc_info=True)
-            raise
+        return response.text or ""
 
     async def embed_text(self, text: str) -> List[float]:
         """Embed text directly through Gemini models natively"""
-        try:
-            response = await asyncio.to_thread(
-                self.client.models.embed_content,
-                model="text-embedding-004",
-                contents=text,
-            )
-            if not response.embeddings or not response.embeddings[0].values:
-                return []
-            return list(response.embeddings[0].values)
-        except Exception as e:
-            logger.error("Failed to embed text: %s", e)
-            raise
+        response = await asyncio.to_thread(
+            self.client.models.embed_content,
+            model="text-embedding-004",
+            contents=text,
+        )
+        if not response.embeddings or not response.embeddings[0].values:
+            return []
+        return list(response.embeddings[0].values)
 
     async def generate_chat_response(
         self,
@@ -174,49 +164,31 @@ class GeminiService:
         Returns:
             Generated response object
         """
-        try:
-            logger.info("Generating chat response with %s messages", len(messages))
-            logger.debug("Messages: %s", messages)
+        contents = format_messages_gemini(messages)
 
-            contents = format_messages_gemini(messages)
+        config: Any = {"temperature": temperature}
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+        if tools:
+            config["tools"] = tools
 
-            config: Any = {"temperature": temperature}
+        # Context Caching Heuristics
+        active_contents = contents
+        cache_name = await self._get_active_cache(
+            system_instruction, contents, tools
+        )
+        if cache_name:
+            config["cached_content"] = cache_name
+            # Only pass the un-cached remainder (last two messages) to the LLM
+            active_contents = contents[-2:] if len(contents) >= 2 else contents
 
-            # Always include system_instruction and tools regardless of caching.
-            if system_instruction:
-                config["system_instruction"] = system_instruction
-                logger.debug(
-                    "Using system instruction: %s...", system_instruction[:100]
-                )
-            if tools:
-                config["tools"] = tools
-
-            # Context Caching Heuristics
-            active_contents = contents
-            cache_name = await self._get_active_cache(
-                system_instruction, contents, tools
-            )
-            if cache_name:
-                config["cached_content"] = cache_name
-                # Only pass the un-cached remainder (last two messages) to the LLM
-                active_contents = contents[-2:] if len(contents) >= 2 else contents
-
-            logger.info("Calling Gemini API with model: %s", self.model)
-            response = await asyncio.to_thread(
-                self.client.models.generate_content,
-                model=self.model,
-                contents=active_contents,
-                config=config,
-            )
-
-            logger.info("Successfully generated chat response")
-            return response
-
-        except Exception as e:
-            logger.error("Failed to generate chat response: %s", e, exc_info=True)
-            logger.error("Error type: %s", type(e).__name__)
-            logger.error("Messages that failed: %s", messages)
-            raise
+        response = await asyncio.to_thread(
+            self.client.models.generate_content,
+            model=self.model,
+            contents=active_contents,
+            config=config,
+        )
+        return response
 
     async def generate_streaming_response(
         self,
@@ -225,31 +197,24 @@ class GeminiService:
         temperature: float = 0.7,
     ):
         """Generate a streaming response from Gemini."""
-        try:
-            config = self._build_generation_config(
-                temperature=temperature,
-                system_instruction=system_instruction,
-            )
+        config = self._build_generation_config(
+            temperature=temperature,
+            system_instruction=system_instruction,
+        )
 
-            response = await asyncio.to_thread(
-                self.client.models.generate_content_stream,
-                model=self.model,
-                contents=prompt,
-                config=config,
-            )
-            iterator = iter(response)
-            while True:
-                chunk = await asyncio.to_thread(lambda: next(iterator, None))
-                if chunk is None:
-                    break
-                if chunk.text:
-                    yield chunk.text
-
-        except Exception as e:
-            logger.error(
-                f"Failed to generate streaming response: {str(e)}", exc_info=True
-            )
-            raise
+        response = await asyncio.to_thread(
+            self.client.models.generate_content_stream,
+            model=self.model,
+            contents=prompt,
+            config=config,
+        )
+        iterator = iter(response)
+        while True:
+            chunk = await asyncio.to_thread(lambda: next(iterator, None))
+            if chunk is None:
+                break
+            if chunk.text:
+                yield chunk.text
 
     async def generate_chat_stream(
         self,
@@ -265,31 +230,26 @@ class GeminiService:
         can extract both text deltas and function-call parts. Context caching is
         intentionally not applied on the streaming path.
         """
-        try:
-            contents = format_messages_gemini(messages)
+        contents = format_messages_gemini(messages)
 
-            config: Any = {"temperature": temperature}
-            if system_instruction:
-                config["system_instruction"] = system_instruction
-            if tools:
-                config["tools"] = tools
+        config: Any = {"temperature": temperature}
+        if system_instruction:
+            config["system_instruction"] = system_instruction
+        if tools:
+            config["tools"] = tools
 
-            response = await asyncio.to_thread(
-                self.client.models.generate_content_stream,
-                model=self.model,
-                contents=contents,
-                config=config,
-            )
-            iterator = iter(response)
-            while True:
-                chunk = await asyncio.to_thread(lambda: next(iterator, None))
-                if chunk is None:
-                    break
-                yield chunk
-
-        except Exception as e:
-            logger.error("Failed to generate chat stream: %s", e, exc_info=True)
-            raise
+        response = await asyncio.to_thread(
+            self.client.models.generate_content_stream,
+            model=self.model,
+            contents=contents,
+            config=config,
+        )
+        iterator = iter(response)
+        while True:
+            chunk = await asyncio.to_thread(lambda: next(iterator, None))
+            if chunk is None:
+                break
+            yield chunk
 
     def _build_generation_config(
         self,

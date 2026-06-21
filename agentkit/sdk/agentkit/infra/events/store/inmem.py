@@ -17,10 +17,17 @@ class InMemoryEventStore:
         self._events: dict[str, List[AgentKitEvent]] = {}
 
     async def append(self, event: AgentKitEvent) -> None:
-        if event.session_id not in self._events:
-            self._events[event.session_id] = []
-        self._events[event.session_id].append(event)
-        self._events[event.session_id].sort(key=lambda e: e.timestamp)
+        # Fast path: runtime-emitted events have monotonically increasing
+        # timestamps, so the bucket stays sorted with a single ``append``.
+        # Only re-sort when a caller (test fixture, replay tooling) backdates
+        # the timestamp.
+        bucket = self._events.get(event.session_id)
+        if bucket is None:
+            self._events[event.session_id] = [event]
+            return
+        bucket.append(event)
+        if len(bucket) > 1 and bucket[-1].timestamp < bucket[-2].timestamp:
+            bucket.sort(key=lambda e: e.timestamp)
 
     async def get_events(self, session_id: str) -> List[AgentKitEvent]:
         return self._events.get(session_id, []).copy()

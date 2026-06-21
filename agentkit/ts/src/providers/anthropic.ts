@@ -183,11 +183,12 @@ export class AnthropicProvider implements ModelProvider {
             pendingTool.argsRaw += delta.partial_json ?? "";
           }
         } else if (type === "content_block_stop" && pendingTool !== null) {
-          let args: Record<string, unknown> = {};
+          let args: Record<string, unknown>;
           try {
-            args = JSON.parse(pendingTool.argsRaw);
-          } catch {
-            /* leave empty */
+            args = pendingTool.argsRaw === "" ? {} : JSON.parse(pendingTool.argsRaw);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            args = { __parse_error: `Anthropic tool args were not valid JSON: ${msg}` };
           }
           yield {
             delta: "",

@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
+from agentkit.infra.events.bus import InMemoryEventBus
 from agentkit.infra.events.protocols import EventBusProtocol
 from agentkit.infra.events.store import EventStore
+from agentkit.infra.events.store.inmem import InMemoryEventStore
 from agentkit.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from agentkit.runtime.agents.runtime import AgentRuntime
 from agentkit.runtime.agents.strategy import AgentStrategy
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.tools.policies import ToolPolicy
 from agentkit.runtime.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from agentkit.runtime.integrations.base import Integration
+    from agentkit.runtime.integrations.functional import BoundTool
 
 
 class AgentBuilder:
@@ -35,7 +41,7 @@ class AgentBuilder:
 
     def __init__(self) -> None:
         self._provider: Optional[ModelProvider] = None
-        self._integrations: List[Any] = []  # List[Integration] — avoid circular import
+        self._integrations: List["Integration"] = []
         self._policy: Optional[ToolPolicy] = None
         self._approval_handler: Optional[ApprovalHandler] = None
         self._system_prompt: str = "You are a helpful assistant."
@@ -45,9 +51,14 @@ class AgentBuilder:
         self._provider = p
         return self
 
-    def integration(self, i: Any) -> "AgentBuilder":
+    def integration(self, i: "Integration") -> "AgentBuilder":
         """Add an Integration. Accepts any object with a register(ToolRegistry) method."""
         self._integrations.append(i)
+        return self
+
+    def tool(self, bound: "BoundTool") -> "AgentBuilder":
+        """Add a function-level tool created by ``@FunctionTool``."""
+        self._integrations.append(bound)  # type: ignore[arg-type]
         return self
 
     def policy(self, p: ToolPolicy) -> "AgentBuilder":
@@ -73,9 +84,21 @@ class AgentBuilder:
         self._strategy = s
         return self
 
-    def build(self, *, bus: EventBusProtocol, store: EventStore) -> AgentRuntime:
+    def build(
+        self,
+        *,
+        bus: Optional[EventBusProtocol] = None,
+        store: Optional[EventStore] = None,
+    ) -> AgentRuntime:
+        """Build the runtime. ``bus`` and ``store`` default to in-memory
+        implementations, suitable for embedded single-process agents.
+        """
         if self._provider is None:
             raise ValueError("provider() must be called before build()")
+        if bus is None:
+            bus = InMemoryEventBus()
+        if store is None:
+            store = InMemoryEventStore()
 
         registry = ToolRegistry()
         for integration in self._integrations:

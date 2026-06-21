@@ -70,22 +70,34 @@ class AgentRuntime:
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
         self.tools = tools or []
+        # Provider-neutral tool payload (name/description/parameters). Built
+        # once because ``self.tools`` is set at construction time and never
+        # mutated; each provider translates this at its boundary.
+        self._tool_payload: List[Dict[str, Any]] = [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.parameters,
+            }
+            for spec in self.tools
+        ]
         # Optional DocumentRAG instance. When set, the last user message is used
         # to retrieve relevant chunks which are prepended to the system prompt.
         self._rag = rag
         self._rag_top_k = rag_top_k
+        self._planner = self._build_planner()
 
-    def _make_planner(self) -> ToolPlanner:
-        """Return the explicit planner, or build a default one from injected fields."""
+    def _build_planner(self) -> ToolPlanner:
+        """Construct the planner used for tool execution."""
         if self._explicit_planner is not None:
             return self._explicit_planner
 
-        # Lazy import to avoid a top-level circular dependency; execute_tool
+        # Lazy import to avoid a top-level circular dependency; ExecuteTool
         # lives in the global tool registry.
-        from agentkit.runtime.tools.registry import execute_tool  # noqa: PLC0415
+        from agentkit.runtime.tools.registry import ExecuteTool  # noqa: PLC0415
 
         executor: ToolExecutor = self._tool_executor or (
-            lambda name, args: execute_tool(self._user_id, name, args)
+            lambda name, args: ExecuteTool(self._user_id, name, args)
         )
         specs = {spec.name: spec for spec in self.tools}
         return ToolPlanner(
@@ -97,13 +109,8 @@ class AgentRuntime:
 
     @property
     def planner(self) -> ToolPlanner:
-        """Planner used for tool execution.
-
-        Kept as a read-only compatibility surface for callers/tests that inspect
-        builder wiring. Runtime execution still calls ``_make_planner`` so the
-        default planner sees the current tool specs.
-        """
-        return self._make_planner()
+        """Planner used for tool execution."""
+        return self._planner
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -127,6 +134,13 @@ class AgentRuntime:
         """
         await self._emit(UserMessage(session_id=session_id, content=content))
         await self.run_turn(session_id, cancellation_token)
+
+    async def history(self, session_id: str) -> List[AgentKitEvent]:
+        """Return the event log for ``session_id`` in append order.
+
+        Shortcut for ``runtime.store.get_events(session_id)``.
+        """
+        return await self.store.get_events(session_id)
 
     async def run_turn(
         self, session_id: str, cancellation_token: Optional[CancellationToken] = None
@@ -178,23 +192,12 @@ class AgentRuntime:
             )
             messages = ContextBuilder.build_messages(state, prompt_for_turn)
 
-            # 2. Surface available tools to the provider. The payload is
-            # provider-neutral (name/description/parameters); each provider
-            # translates it to its own function-calling format at its boundary.
-            tools: List[Dict[str, Any]] = [
-                {
-                    "name": spec.name,
-                    "description": spec.description,
-                    "parameters": spec.parameters,
-                }
-                for spec in self.tools
-            ]
-
+            # 2. Surface tools to the provider (cached payload, see __init__).
             full_response = ""
             tool_calls = []
 
             # 3. Stream from Provider
-            async for chunk in self.provider.generate_stream(messages, tools):
+            async for chunk in self.provider.generate_stream(messages, self._tool_payload):
                 if token.is_cancelled:
                     break
 
@@ -222,7 +225,7 @@ class AgentRuntime:
                 break
 
             # 6. Execute tools concurrently (Scatter-Gather)
-            await self._make_planner().execute_scatter_gather(
+            await self._planner.execute_scatter_gather(
                 session_id, tool_calls, self._emit
             )
 

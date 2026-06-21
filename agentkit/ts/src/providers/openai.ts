@@ -38,19 +38,23 @@ function toOpenAITools(tools: ToolSpec[]) {
   }));
 }
 
+function parseToolCallArgs(raw: unknown): Record<string, unknown> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "string") return raw as Record<string, unknown>;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { __parse_error: `OpenAI tool args were not valid JSON: ${msg}` };
+  }
+}
+
 function parseToolCalls(raw: unknown[]): ToolCall[] {
-  return (raw ?? []).map((tc: any) => {
-    let args: Record<string, unknown> = {};
-    try {
-      args =
-        typeof tc.function?.arguments === "string"
-          ? JSON.parse(tc.function.arguments)
-          : (tc.function?.arguments ?? {});
-    } catch {
-      args = {};
-    }
-    return { id: tc.id ?? "", name: tc.function?.name ?? "", args };
-  });
+  return raw.map((tc: any) => ({
+    id: tc.id ?? "",
+    name: tc.function?.name ?? "",
+    args: parseToolCallArgs(tc.function?.arguments),
+  }));
 }
 
 export class OpenAIProvider implements ModelProvider {
@@ -173,13 +177,11 @@ export class OpenAIProvider implements ModelProvider {
         // Flush completed tool calls when a finish_reason is present.
         if (chunk.choices[0]?.finish_reason === "tool_calls") {
           for (const entry of pendingCalls.values()) {
-            let args: Record<string, unknown> = {};
-            try {
-              args = JSON.parse(entry.argsRaw);
-            } catch {
-              /* leave empty */
-            }
-            incomingCalls.push({ id: entry.id, name: entry.name, args });
+            incomingCalls.push({
+              id: entry.id,
+              name: entry.name,
+              args: parseToolCallArgs(entry.argsRaw),
+            });
           }
           pendingCalls.clear();
         }

@@ -13,7 +13,7 @@ import logging
 from typing import Dict, List, Optional, Protocol, Tuple
 
 from agentkit.runtime.tools._vector_math import cosine_similarity
-from agentkit.runtime.tools.registry import list_tool_specs
+from agentkit.runtime.tools.registry import ListToolSpecs
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class ToolRetriever:
                 self._embeddings = {}
 
             needs_update = False
-            for spec in list_tool_specs():
+            for spec in ListToolSpecs():
                 if spec.name in self._embeddings:
                     continue
                 repr_text = (
@@ -162,16 +162,16 @@ class ToolRetriever:
         await self.initialize()
 
         if not self._embeddings:
-            return [spec.name for spec in list_tool_specs()]
+            return [spec.name for spec in ListToolSpecs()]
 
         try:
             query_vec = await self._embed_text(query)
         except Exception as e:
             logger.error("Failed to embed query for tool RAG: %s", e)
-            return [spec.name for spec in list_tool_specs()]
+            return [spec.name for spec in ListToolSpecs()]
 
         if not query_vec:
-            return [spec.name for spec in list_tool_specs()]
+            return [spec.name for spec in ListToolSpecs()]
 
         scores: List[Tuple[str, float]] = []
         for tool_name, tool_vec in self._embeddings.items():

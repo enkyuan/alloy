@@ -13,7 +13,7 @@ the caller knowing which one is configured.
 
 from typing import Any, Dict, List, Optional
 
-from agentkit.runtime.tools.registry import ToolSpec, list_tool_specs
+from agentkit.runtime.tools.registry import ListToolSpecs, ToolSpec
 
 
 def spec_to_neutral(spec: ToolSpec) -> Dict[str, Any]:
@@ -35,7 +35,7 @@ def build_tools_payload(
     """
     return [
         spec_to_neutral(spec)
-        for spec in list_tool_specs()
+        for spec in ListToolSpecs()
         if allowed_names is None or spec.name in allowed_names
     ]
 

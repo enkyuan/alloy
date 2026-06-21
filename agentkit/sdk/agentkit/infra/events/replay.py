@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, Iterable, List, Sequence
 
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
@@ -19,15 +19,19 @@ class SessionState:
 def ReplaySession(events: Sequence[AgentKitEvent]) -> SessionState:
     """Reconstruct session state by replaying a sequence of events.
 
-    The append-only event log is the source of truth.
-    Session state is a projection of events.
+    The append-only event log is the source of truth. Events from
+    ``EventStore`` arrive in append order; out-of-order inputs (e.g.
+    constructed in tests) are sorted on the fly.
     """
     if not events:
         raise ValueError("Cannot replay empty event log")
 
     state = SessionState(session_id=events[0].session_id)
+    ordered: Iterable[AgentKitEvent] = events
+    if any(events[i].timestamp < events[i - 1].timestamp for i in range(1, len(events))):
+        ordered = sorted(events, key=lambda e: e.timestamp)
 
-    for event in sorted(events, key=lambda e: e.timestamp):
+    for event in ordered:
         if event.type == EventType.SESSION_CREATED:
             state.is_active = True
         elif event.type == EventType.SESSION_CLOSED:

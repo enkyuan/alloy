@@ -4,30 +4,41 @@ from __future__ import annotations
 
 import abc
 from dataclasses import replace
-from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
+
+from pydantic import BaseModel
 
 from agentkit.runtime.tools.registry import (
+    ProviderSafeToolName,
     ToolHandler,
     ToolRegistry,
     ToolSpec,
-    provider_safe_tool_name,
+    ToolSpecFromModel,
 )
 
 
 def tool(
     *,
     description: str,
-    parameters: Dict[str, Any],
+    parameters: Union[Dict[str, Any], Type[BaseModel]],
     risk: Optional[str] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
 ) -> Callable[[Any], Any]:
-    """Decorator to declare a method as a tool on an Integration subclass."""
+    """Decorator to declare a method as a tool on an Integration subclass.
+
+    ``parameters`` accepts either a JSON Schema dict or a Pydantic ``BaseModel``
+    subclass; the model is converted to JSON Schema at registration time.
+    """
+    if isinstance(parameters, type) and issubclass(parameters, BaseModel):
+        parameters_schema = ToolSpecFromModel("_", "_", parameters).parameters
+    else:
+        parameters_schema = parameters
 
     def decorator(fn: Any) -> Any:
         fn.__tool_spec__ = dict(  # type: ignore[attr-defined]
             description=description,
-            parameters=parameters,
+            parameters=parameters_schema,
             risk=risk,
             tags=tags,
             enabled=enabled,
@@ -89,7 +100,7 @@ class Integration(abc.ABC):
             catalog_name = f"{self.namespace}.{spec.name}"
             prefixed = replace(
                 spec,
-                name=provider_safe_tool_name(catalog_name),
+                name=ProviderSafeToolName(catalog_name),
                 catalog_name=catalog_name,
             )
             registry.register(prefixed)(handler)
