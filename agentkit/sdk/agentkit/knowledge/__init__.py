@@ -5,11 +5,13 @@ from agentkit.knowledge.rag import DocumentRAG
 from agentkit.knowledge.store import InMemoryVectorStore, VectorStore
 from agentkit.knowledge.types import Chunk, Document
 
+ChunkText = chunk_text
+
 __all__ = [
-    "chunk_text",
     "Chunk",
+    "ChunkText",
     "Document",
-    "VectorStore",
-    "InMemoryVectorStore",
     "DocumentRAG",
+    "InMemoryVectorStore",
+    "VectorStore",
 ]

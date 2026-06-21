@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { ProviderAPIError, ProviderConfigError } from "../src/providers/errors";
 import { OpenAIProvider } from "../src/providers/openai";
 import type { ProviderMessage } from "../src/providers/base";
 
@@ -60,6 +61,11 @@ describe("OpenAIProvider.buildMessages", () => {
 // ---------------------------------------------------------------------------
 
 describe("OpenAIProvider.generate", () => {
+  it("throws a config error when apiKey is empty", () => {
+    expect(() => new OpenAIProvider({ apiKey: "" })).toThrow(ProviderConfigError);
+    expect(() => new OpenAIProvider({ apiKey: "   " })).toThrow(/API key is not configured/);
+  });
+
   it("returns text content from a plain response", async () => {
     const provider = new OpenAIProvider({ apiKey: "test-key" });
     const fakeClient = {
@@ -170,6 +176,62 @@ describe("OpenAIProvider.generate", () => {
 
     const toolMsg = captured.find((m: any) => m.role === "tool");
     expect(toolMsg?.tool_call_id).toBe("call-abc");
+  });
+
+  it("sends provider-safe tool names to OpenAI", async () => {
+    const provider = new OpenAIProvider({ apiKey: "test-key" });
+    const captured: any = {};
+    const fakeClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockImplementation((params: any) => {
+            Object.assign(captured, params);
+            return Promise.resolve({
+              choices: [{ message: { content: "done", tool_calls: null } }],
+            });
+          }),
+        },
+      },
+    };
+    (provider as any).client = fakeClient;
+
+    await provider.generate(
+      [{ role: "user", content: "weather?" }],
+      [
+        {
+          name: "weather_getWeather",
+          catalogName: "weather.getWeather",
+          description: "Get weather",
+          parameters: {},
+        },
+      ],
+    );
+
+    expect(captured.tools[0].function.name).toBe("weather_getWeather");
+    expect(captured.tools[0].function.name).not.toContain(".");
+  });
+
+  it("wraps client failures in ProviderAPIError", async () => {
+    const provider = new OpenAIProvider({ apiKey: "test-key" });
+    const error = Object.assign(new Error("rate limited"), {
+      status: 429,
+      response: { text: "too many requests" },
+    });
+    (provider as any).client = {
+      chat: { completions: { create: vi.fn().mockRejectedValue(error) } },
+    };
+
+    const caught = await provider
+      .generate([{ role: "user", content: "hi" }], [])
+      .catch((err) => err);
+    expect(caught).toBeInstanceOf(ProviderAPIError);
+    expect(caught).toMatchObject({
+      service: "openai",
+      action: "api call",
+      statusCode: 429,
+      responseText: "too many requests",
+    });
+    expect((caught as ProviderAPIError).cause).toBe(error);
   });
 });
 

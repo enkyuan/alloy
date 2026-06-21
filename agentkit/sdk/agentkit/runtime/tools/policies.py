@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Iterable, Optional
 
 
 # Ordered from least to most sensitive. Used for threshold comparisons.
@@ -45,8 +45,21 @@ class ToolPolicy:
             return True
         return tool_name in self.allowed
 
+    def is_allowed_any(self, tool_names: Iterable[str]) -> bool:
+        names = set(tool_names)
+        if names.intersection(self.denied):
+            return False
+        if self.allowed is None:
+            return True
+        return bool(names.intersection(self.allowed))
+
     def enforce(self, tool_name: str) -> None:
         if not self.is_allowed(tool_name):
+            raise ToolPolicyViolation(f"Tool not permitted: {tool_name}")
+
+    def enforce_any(self, tool_name: str, aliases: Iterable[str] = ()) -> None:
+        names = [tool_name, *aliases]
+        if not self.is_allowed_any(names):
             raise ToolPolicyViolation(f"Tool not permitted: {tool_name}")
 
     def requires_approval(self, tool_name: str, risk: Optional[str]) -> bool:

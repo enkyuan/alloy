@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
+import { ProviderAPIError, ProviderConfigError } from "../src/providers/errors";
 import { AnthropicProvider } from "../src/providers/anthropic";
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,35 @@ describe("AnthropicProvider message formatting (via captured params)", () => {
     const systemMsgs = captured.messages.filter((m: any) => m.role === "system");
     expect(systemMsgs).toHaveLength(0);
   });
+
+  it("sends provider-safe tool names to Anthropic", async () => {
+    const provider = makeProvider();
+    const captured: any = {};
+
+    (provider as any).client = {
+      messages: {
+        create: vi.fn().mockImplementation((params: any) => {
+          Object.assign(captured, params);
+          return Promise.resolve({ content: [{ type: "text", text: "ok" }] });
+        }),
+      },
+    };
+
+    await provider.generate(
+      [{ role: "user", content: "weather?" }],
+      [
+        {
+          name: "weather_getWeather",
+          catalogName: "weather.getWeather",
+          description: "Get weather",
+          parameters: {},
+        },
+      ],
+    );
+
+    expect(captured.tools[0].name).toBe("weather_getWeather");
+    expect(captured.tools[0].name).not.toContain(".");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -122,6 +152,11 @@ describe("AnthropicProvider message formatting (via captured params)", () => {
 // ---------------------------------------------------------------------------
 
 describe("AnthropicProvider.generate", () => {
+  it("throws a config error when apiKey is empty", () => {
+    expect(() => new AnthropicProvider({ apiKey: "" })).toThrow(ProviderConfigError);
+    expect(() => new AnthropicProvider({ apiKey: "   " })).toThrow(/API key is not configured/);
+  });
+
   it("returns text from a text content block", async () => {
     const provider = new AnthropicProvider({ apiKey: "test-key" });
     (provider as any).client = {
@@ -168,6 +203,29 @@ describe("AnthropicProvider.generate", () => {
     const result = await provider.generate([{ role: "user", content: "hi" }], []);
     expect(result.content).toBe("Let me check.");
     expect(result.toolCalls[0]?.name).toBe("lookup");
+  });
+
+  it("wraps client failures in ProviderAPIError", async () => {
+    const provider = new AnthropicProvider({ apiKey: "test-key" });
+    const error = Object.assign(new Error("overloaded"), {
+      statusCode: 529,
+      response: "try later",
+    });
+    (provider as any).client = {
+      messages: { create: vi.fn().mockRejectedValue(error) },
+    };
+
+    const caught = await provider
+      .generate([{ role: "user", content: "hi" }], [])
+      .catch((err) => err);
+    expect(caught).toBeInstanceOf(ProviderAPIError);
+    expect(caught).toMatchObject({
+      service: "anthropic",
+      action: "api call",
+      statusCode: 529,
+      responseText: "try later",
+    });
+    expect((caught as ProviderAPIError).cause).toBe(error);
   });
 });
 

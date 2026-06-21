@@ -92,6 +92,12 @@ class ToolPlanner:
         call_id = call.get("id", str(uuid.uuid4()))
         spec = self._specs.get(tool_name)
         risk = spec.risk if spec else None
+        catalog_name = spec.catalog_name if spec else None
+        aliases = [catalog_name] if catalog_name else []
+        metadata: Dict[str, Any] = (
+            {"catalog_name": spec.catalog_name} if spec and spec.catalog_name else {}
+        )
+        event_metadata: Any = metadata
 
         # 1. Announce intent to call
         await emit_event(
@@ -100,13 +106,14 @@ class ToolPlanner:
                 tool_name=tool_name,
                 tool_args=tool_args,
                 tool_call_id=call_id,
+                metadata=event_metadata,
             )
         )
 
         # 2. Allow/deny gate: policy violations fail before approval/execution.
         if self.policy is not None:
             try:
-                self.policy.enforce(tool_name)
+                self.policy.enforce_any(tool_name, aliases)
             except ToolPolicyViolation as error:
                 error_msg = str(error)
                 await emit_event(
@@ -115,6 +122,7 @@ class ToolPlanner:
                         tool_name=tool_name,
                         tool_call_id=call_id,
                         error=error_msg,
+                        metadata=event_metadata,
                     )
                 )
                 return {"id": call_id, "name": tool_name, "error": error_msg}
@@ -128,6 +136,7 @@ class ToolPlanner:
                     tool_call_id=call_id,
                     tool_args=tool_args,
                     risk=risk,
+                    metadata=event_metadata,
                 )
             )
 
@@ -141,18 +150,32 @@ class ToolPlanner:
                     if self.approval_handler is None
                     else "Rejected by approval handler"
                 )
+                error_msg = f"Tool approval rejected: {reason}"
                 await emit_event(
                     ToolApprovalRejected(
                         session_id=session_id,
                         tool_name=tool_name,
                         tool_call_id=call_id,
                         reason=reason,
+                        metadata=event_metadata,
+                    )
+                )
+                # Also emit ToolCallFailed so replay projects this into
+                # model-visible history. Without it, the next iteration sees no
+                # tool result and re-requests the same tool until max_iterations.
+                await emit_event(
+                    ToolCallFailed(
+                        session_id=session_id,
+                        tool_name=tool_name,
+                        tool_call_id=call_id,
+                        error=error_msg,
+                        metadata=event_metadata,
                     )
                 )
                 return {
                     "id": call_id,
                     "name": tool_name,
-                    "error": f"Tool approval rejected: {reason}",
+                    "error": error_msg,
                 }
 
             await emit_event(
@@ -160,13 +183,17 @@ class ToolPlanner:
                     session_id=session_id,
                     tool_name=tool_name,
                     tool_call_id=call_id,
+                    metadata=event_metadata,
                 )
             )
 
         # 4. Mark execution as started
         await emit_event(
             ToolCallStarted(
-                session_id=session_id, tool_name=tool_name, tool_call_id=call_id
+                session_id=session_id,
+                tool_name=tool_name,
+                tool_call_id=call_id,
+                metadata=event_metadata,
             )
         )
 
@@ -181,6 +208,7 @@ class ToolPlanner:
                     tool_name=tool_name,
                     tool_call_id=call_id,
                     result=result,
+                    metadata=event_metadata,
                 )
             )
             return {"id": call_id, "name": tool_name, "result": result}
@@ -196,6 +224,7 @@ class ToolPlanner:
                     tool_name=tool_name,
                     tool_call_id=call_id,
                     error=error_msg,
+                    metadata=event_metadata,
                 )
             )
             return {"id": call_id, "name": tool_name, "error": error_msg}

@@ -16,9 +16,14 @@ _NEUTRAL = [
 
 
 def test_spec_to_neutral_shape():
-    spec = ToolSpec(name="t", description="d", parameters={"type": "object"})
+    spec = ToolSpec(
+        name="catalog_safe_t",
+        catalog_name="catalog.safe.t",
+        description="d",
+        parameters={"type": "object"},
+    )
     assert spec_to_neutral(spec) == {
-        "name": "t",
+        "name": "catalog_safe_t",
         "description": "d",
         "parameters": {"type": "object"},
     }

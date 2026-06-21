@@ -14,6 +14,9 @@ def build_idempotency_key(*, workflow: str, payload: dict[str, Any]) -> str:
     return digest[:32]
 
 
+BuildIdempotencyKey = build_idempotency_key
+
+
 class IdempotencyStore:
     """In-memory deduplication guard for workflow side effects."""
 

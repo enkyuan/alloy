@@ -15,6 +15,7 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "./base";
+import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
 import type { ToolSpec } from "../tools/registry";
 
 export interface AnthropicProviderOptions {
@@ -87,6 +88,11 @@ export class AnthropicProvider implements ModelProvider {
   private client: any = null;
 
   constructor(opts: AnthropicProviderOptions) {
+    if (!opts.apiKey?.trim()) {
+      throw new ProviderConfigError("Anthropic API key is not configured.", {
+        service: "anthropic",
+      });
+    }
     this.opts = {
       model: "claude-sonnet-4-6",
       temperature: 0.7,
@@ -97,8 +103,16 @@ export class AnthropicProvider implements ModelProvider {
 
   private async getClient(): Promise<any> {
     if (this.client !== null) return this.client;
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    this.client = new Anthropic({ apiKey: this.opts.apiKey });
+    try {
+      const { default: Anthropic } = await import("@anthropic-ai/sdk");
+      this.client = new Anthropic({ apiKey: this.opts.apiKey });
+    } catch (error) {
+      if (error instanceof ProviderError) throw error;
+      throw new ProviderConfigError("Anthropic provider requires the @anthropic-ai/sdk package.", {
+        service: "anthropic",
+        cause: error,
+      });
+    }
     return this.client;
   }
 
@@ -120,8 +134,12 @@ export class AnthropicProvider implements ModelProvider {
     if (system) params.system = system;
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
 
-    const response = await client.messages.create(params);
-    return parseContentBlocks(response.content);
+    try {
+      const response = await client.messages.create(params);
+      return parseContentBlocks(response.content);
+    } catch (error) {
+      throw providerAPIErrorFromUnknown("anthropic", error);
+    }
   }
 
   async *generateStream(
@@ -146,36 +164,40 @@ export class AnthropicProvider implements ModelProvider {
     // that must be accumulated before the args are parseable.
     let pendingTool: { id: string; name: string; argsRaw: string } | null = null;
 
-    const stream = client.messages.stream(params);
+    try {
+      const stream = client.messages.stream(params);
 
-    for await (const event of stream) {
-      const type: string = (event as any).type;
+      for await (const event of stream) {
+        const type: string = (event as any).type;
 
-      if (type === "content_block_start") {
-        const block = (event as any).content_block;
-        if (block?.type === "tool_use") {
-          pendingTool = { id: block.id ?? "", name: block.name ?? "", argsRaw: "" };
+        if (type === "content_block_start") {
+          const block = (event as any).content_block;
+          if (block?.type === "tool_use") {
+            pendingTool = { id: block.id ?? "", name: block.name ?? "", argsRaw: "" };
+          }
+        } else if (type === "content_block_delta") {
+          const delta = (event as any).delta;
+          if (delta?.type === "text_delta") {
+            yield { delta: delta.text ?? "", toolCalls: [] };
+          } else if (delta?.type === "input_json_delta" && pendingTool !== null) {
+            pendingTool.argsRaw += delta.partial_json ?? "";
+          }
+        } else if (type === "content_block_stop" && pendingTool !== null) {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(pendingTool.argsRaw);
+          } catch {
+            /* leave empty */
+          }
+          yield {
+            delta: "",
+            toolCalls: [{ id: pendingTool.id, name: pendingTool.name, args }],
+          };
+          pendingTool = null;
         }
-      } else if (type === "content_block_delta") {
-        const delta = (event as any).delta;
-        if (delta?.type === "text_delta") {
-          yield { delta: delta.text ?? "", toolCalls: [] };
-        } else if (delta?.type === "input_json_delta" && pendingTool !== null) {
-          pendingTool.argsRaw += delta.partial_json ?? "";
-        }
-      } else if (type === "content_block_stop" && pendingTool !== null) {
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(pendingTool.argsRaw);
-        } catch {
-          /* leave empty */
-        }
-        yield {
-          delta: "",
-          toolCalls: [{ id: pendingTool.id, name: pendingTool.name, args }],
-        };
-        pendingTool = null;
       }
+    } catch (error) {
+      throw providerAPIErrorFromUnknown("anthropic", error);
     }
   }
 }

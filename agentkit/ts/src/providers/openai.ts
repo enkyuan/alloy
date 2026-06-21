@@ -16,6 +16,7 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "./base";
+import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
 import type { ToolSpec } from "../tools/registry";
 
 export interface OpenAIProviderOptions {
@@ -57,6 +58,9 @@ export class OpenAIProvider implements ModelProvider {
   private client: any = null;
 
   constructor(opts: OpenAIProviderOptions) {
+    if (!opts.apiKey?.trim()) {
+      throw new ProviderConfigError("OpenAI API key is not configured.", { service: "openai" });
+    }
     this.opts = {
       model: "gpt-4o",
       baseURL: "",
@@ -69,11 +73,19 @@ export class OpenAIProvider implements ModelProvider {
   private async getClient(): Promise<any> {
     if (this.client !== null) return this.client;
     // Dynamic import so the package is optional at bundle time.
-    const { default: OpenAI } = await import("openai");
-    this.client = new OpenAI({
-      apiKey: this.opts.apiKey,
-      ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
-    });
+    try {
+      const { default: OpenAI } = await import("openai");
+      this.client = new OpenAI({
+        apiKey: this.opts.apiKey,
+        ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
+      });
+    } catch (error) {
+      if (error instanceof ProviderError) throw error;
+      throw new ProviderConfigError("OpenAI provider requires the openai package.", {
+        service: "openai",
+        cause: error,
+      });
+    }
     return this.client;
   }
 
@@ -105,13 +117,17 @@ export class OpenAIProvider implements ModelProvider {
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
-    const response = await client.chat.completions.create(params);
-    const choice = response.choices[0];
-    const message = choice.message;
-    return {
-      content: message.content ?? "",
-      toolCalls: parseToolCalls(message.tool_calls ?? []),
-    };
+    try {
+      const response = await client.chat.completions.create(params);
+      const choice = response.choices[0];
+      const message = choice.message;
+      return {
+        content: message.content ?? "",
+        toolCalls: parseToolCalls(message.tool_calls ?? []),
+      };
+    } catch (error) {
+      throw providerAPIErrorFromUnknown("openai", error);
+    }
   }
 
   async *generateStream(
@@ -130,46 +146,50 @@ export class OpenAIProvider implements ModelProvider {
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
-    const stream = await client.chat.completions.create(params);
+    try {
+      const stream = await client.chat.completions.create(params);
 
-    // Accumulate partial tool call args across chunks.
-    const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
+      // Accumulate partial tool call args across chunks.
+      const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
 
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta;
-      if (!delta) continue;
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
 
-      const text = delta.content ?? "";
-      const incomingCalls: ToolCall[] = [];
+        const text = delta.content ?? "";
+        const incomingCalls: ToolCall[] = [];
 
-      for (const tc of delta.tool_calls ?? []) {
-        const idx: number = tc.index ?? 0;
-        if (!pendingCalls.has(idx)) {
-          pendingCalls.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", argsRaw: "" });
-        }
-        const entry = pendingCalls.get(idx)!;
-        entry.argsRaw += tc.function?.arguments ?? "";
-        if (tc.id) entry.id = tc.id;
-        if (tc.function?.name) entry.name = tc.function.name;
-      }
-
-      // Flush completed tool calls when a finish_reason is present.
-      if (chunk.choices[0]?.finish_reason === "tool_calls") {
-        for (const entry of pendingCalls.values()) {
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(entry.argsRaw);
-          } catch {
-            /* leave empty */
+        for (const tc of delta.tool_calls ?? []) {
+          const idx: number = tc.index ?? 0;
+          if (!pendingCalls.has(idx)) {
+            pendingCalls.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", argsRaw: "" });
           }
-          incomingCalls.push({ id: entry.id, name: entry.name, args });
+          const entry = pendingCalls.get(idx)!;
+          entry.argsRaw += tc.function?.arguments ?? "";
+          if (tc.id) entry.id = tc.id;
+          if (tc.function?.name) entry.name = tc.function.name;
         }
-        pendingCalls.clear();
-      }
 
-      if (text || incomingCalls.length > 0) {
-        yield { delta: text, toolCalls: incomingCalls };
+        // Flush completed tool calls when a finish_reason is present.
+        if (chunk.choices[0]?.finish_reason === "tool_calls") {
+          for (const entry of pendingCalls.values()) {
+            let args: Record<string, unknown> = {};
+            try {
+              args = JSON.parse(entry.argsRaw);
+            } catch {
+              /* leave empty */
+            }
+            incomingCalls.push({ id: entry.id, name: entry.name, args });
+          }
+          pendingCalls.clear();
+        }
+
+        if (text || incomingCalls.length > 0) {
+          yield { delta: text, toolCalls: incomingCalls };
+        }
       }
+    } catch (error) {
+      throw providerAPIErrorFromUnknown("openai", error);
     }
   }
 }

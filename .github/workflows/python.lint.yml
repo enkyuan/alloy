@@ -30,7 +30,10 @@ jobs:
           working-directory: agentkit/sdk
 
       - name: Type check
-        run: poetry run pyrefly check .
+        run: poetry run pyrefly check
+
+      - name: Lint
+        run: poetry run ruff check agentkit tests
 
   serve:
     name: agentkit/serve
@@ -45,5 +48,5 @@ jobs:
         with:
           working-directory: agentkit/serve
 
-      - name: Type check
-        run: poetry run pyrefly check .
+      - name: Lint
+        run: poetry run ruff check agentkit_serve tests alembic

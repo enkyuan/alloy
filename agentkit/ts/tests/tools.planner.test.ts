@@ -52,6 +52,33 @@ describe("ToolPlanner", () => {
     expect(started?.tool_call_id).toBeTruthy();
   });
 
+  it("includes catalog name metadata when available", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const specs = new Map([
+      [
+        "weather_getWeather",
+        {
+          name: "weather_getWeather",
+          catalogName: "weather.getWeather",
+          description: "weather",
+          parameters: {},
+        },
+      ],
+    ]);
+
+    const planner = new ToolPlanner({ executor, specs });
+    await planner.executeScatterGather(
+      "sess-catalog",
+      [{ id: "cat-1", name: "weather_getWeather", arguments: {} }],
+      async (e) => {
+        emitted.push(e);
+      },
+    );
+
+    expect(emitted.every((e) => e.metadata.catalog_name === "weather.getWeather")).toBe(true);
+  });
+
   it("approval approved proceeds to execution", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
@@ -144,6 +171,68 @@ describe("ToolPlanner", () => {
 
     expect(executor).toHaveBeenCalledOnce();
     expect(emitted.map((e) => e.type)).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
+
+  it("allow-list accepts catalog name aliases", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const policy = new ToolPolicy({ allowed: new Set(["weather.getWeather"]) });
+    const specs = new Map([
+      [
+        "weather_getWeather",
+        {
+          name: "weather_getWeather",
+          catalogName: "weather.getWeather",
+          description: "weather",
+          parameters: {},
+        },
+      ],
+    ]);
+    const planner = new ToolPlanner({ executor, policy, specs });
+
+    await planner.executeScatterGather(
+      "sess-allow-catalog",
+      [{ id: "catalog-allow", name: "weather_getWeather", arguments: {} }],
+      async (e) => {
+        emitted.push(e);
+      },
+    );
+
+    expect(executor).toHaveBeenCalledOnce();
+    expect(emitted.map((e) => e.type)).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
+
+  it("deny-list blocks catalog name aliases", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const policy = new ToolPolicy({ denied: new Set(["weather.getWeather"]) });
+    const specs = new Map([
+      [
+        "weather_getWeather",
+        {
+          name: "weather_getWeather",
+          catalogName: "weather.getWeather",
+          description: "weather",
+          parameters: {},
+        },
+      ],
+    ]);
+    const planner = new ToolPlanner({ executor, policy, specs });
+
+    const results = await planner.executeScatterGather(
+      "sess-deny-catalog",
+      [{ id: "catalog-deny", name: "weather_getWeather", arguments: {} }],
+      async (e) => {
+        emitted.push(e);
+      },
+    );
+
+    expect(executor).not.toHaveBeenCalled();
+    expect(emitted.map((e) => e.type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(results[0]).toHaveProperty("error", "Tool not permitted: weather_getWeather");
   });
 
   it("unclassified risk skips approval gate", async () => {

@@ -41,8 +41,44 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Quickstart smoke
+        run: bun run test:quickstart
+
       - name: Test
         run: bun run test
+
+  agentkit-ts-install-smoke:
+    name: agentkit/ts install smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: agentkit/ts
+
+      - name: Build package
+        run: bun run build
+
+      - name: Pack tarball
+        run: npm pack
+
+      - name: Install tarball in clean temp project
+        run: |
+          TARBALL=$(ls "$GITHUB_WORKSPACE"/agentkit/ts/agentkit-sdk-*.tgz | head -1)
+          mkdir /tmp/agentkit-smoke
+          cp "$GITHUB_WORKSPACE/agentkit/ts/scripts/smoke-install.mts" /tmp/agentkit-smoke/smoke-install.mts
+          cd /tmp/agentkit-smoke
+          npm init -y --quiet
+          npm install --quiet "$TARBALL" zod
+          npx --yes tsx ./smoke-install.mts
 
   auth:
     name: agentpay/auth

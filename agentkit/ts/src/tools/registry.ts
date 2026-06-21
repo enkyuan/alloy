@@ -8,6 +8,9 @@ import { z } from "zod";
 /** A JSON Schema object describing a tool's parameters. */
 export type JSONSchema = Record<string, unknown>;
 
+/** Parameter schema accepted at tool authoring boundaries. */
+export type ToolParameters = JSONSchema | z.ZodType;
+
 /** Risk level for a tool, used by ToolPolicy to gate execution. */
 export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
 
@@ -16,6 +19,7 @@ export interface ToolSpec {
   name: string;
   description: string;
   parameters: JSONSchema;
+  catalogName?: string;
   tags?: string[];
   enabled?: boolean;
   /** Risk classification for policy enforcement and approval routing.
@@ -42,7 +46,7 @@ export type ToolHandler = (
 /** Metadata attached to a handler by `tool(meta, fn)`. */
 export interface ToolMeta {
   description: string;
-  parameters: JSONSchema;
+  parameters: ToolParameters;
   risk?: ToolSpec["risk"];
   tags?: string[];
   enabled?: boolean;
@@ -57,6 +61,30 @@ export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
 const toolSpecs = new Map<string, ToolSpec>();
 const toolHandlers = new Map<string, ToolHandler>();
 
+export function providerSafeToolName(name: string): string {
+  return name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+}
+
+function isZodSchema(parameters: ToolParameters): parameters is z.ZodType {
+  return typeof parameters === "object" && parameters !== null && "_zod" in parameters;
+}
+
+function schemaParameters(schema: z.ZodType): JSONSchema {
+  const json = z.toJSONSchema(schema) as {
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
+  return {
+    type: "object",
+    properties: json.properties ?? {},
+    required: json.required ?? [],
+  };
+}
+
+export function toolParametersToJSONSchema(parameters: ToolParameters): JSONSchema {
+  return isZodSchema(parameters) ? schemaParameters(parameters) : parameters;
+}
+
 function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
   const meta = (handler as TaggedHandler)[TOOL_META];
   if (!meta) {
@@ -67,7 +95,7 @@ function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
   return {
     name,
     description: meta.description,
-    parameters: meta.parameters,
+    parameters: toolParametersToJSONSchema(meta.parameters),
     ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
     ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
     ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
@@ -114,18 +142,10 @@ export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
  * Python `tool_spec_from_model`).
  */
 export function toolSpecFromSchema(name: string, description: string, schema: z.ZodType): ToolSpec {
-  const json = z.toJSONSchema(schema) as {
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
   return {
     name,
     description,
-    parameters: {
-      type: "object",
-      properties: json.properties ?? {},
-      required: json.required ?? [],
-    },
+    parameters: schemaParameters(schema),
   };
 }
 

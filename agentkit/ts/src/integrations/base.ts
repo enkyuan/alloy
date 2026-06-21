@@ -3,7 +3,12 @@
  * Mirrors `agentkit.runtime.integrations.base.Integration`.
  */
 import type { ToolHandler, ToolSpec } from "../tools/registry";
-import { TOOL_META, ToolRegistry } from "../tools/registry";
+import {
+  TOOL_META,
+  ToolRegistry,
+  providerSafeToolName,
+  toolParametersToJSONSchema,
+} from "../tools/registry";
 import type { TaggedHandler, ToolMeta } from "../tools/registry";
 
 /**
@@ -44,7 +49,7 @@ export abstract class Integration {
         const spec: ToolSpec = {
           name: key,
           description: meta.description,
-          parameters: meta.parameters,
+          parameters: toolParametersToJSONSchema(meta.parameters),
           ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
           ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
           ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
@@ -58,7 +63,8 @@ export abstract class Integration {
   /** Register all tools into the given registry, namespace-prefixed. */
   register(registry: ToolRegistry): void {
     for (const [spec, handler] of this.tools()) {
-      registry.register({ ...spec, name: `${this.namespace}.${spec.name}` }, handler);
+      const catalogName = `${this.namespace}.${spec.name}`;
+      registry.register({ ...spec, name: providerSafeToolName(catalogName), catalogName }, handler);
     }
   }
 }

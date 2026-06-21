@@ -5,30 +5,41 @@ the pieces you need and compose them. The core is infra-free (no database,
 server, or environment configured). It mirrors the runtime core of the Python
 `agentkit` SDK.
 
-> **Status:** beta candidate. Event-sourced building blocks, tool registry,
-> `ToolPlanner` / `ToolPolicy`, `AgentBuilder`, OpenAI and Anthropic providers,
-> and the agent runtime are implemented and CI-tested. RAG, voice, Redis
-> realtime, and CLI are not yet ported from Python.
+> **Status:** beta candidate for the core embedded loop. Event-sourced building
+> blocks, tool registry, `ToolPlanner` / `ToolPolicy`, `AgentBuilder`, OpenAI
+> and Anthropic providers, and the agent runtime are implemented and CI-tested.
+> RAG, voice, Redis realtime, and CLI are not yet ported from Python.
+
+See [**AgentKit MVP**](../MVP.md) for the full five-step developer path and scope
+definition.
 
 ## Install
 
 ```bash
-npm install @agentkit/sdk zod
-# or: bun add @agentkit/sdk zod
+npm install @agentkit/sdk zod openai        # OpenAI
+# or
+npm install @agentkit/sdk zod @anthropic-ai/sdk  # Anthropic
+# or: bun add @agentkit/sdk zod openai
 ```
 
-`zod` is a peer dependency (Zod 4). Node 22+.
+`zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
+are optional peers — install only the one you use. Node 22+.
 
-## Quick start (AgentBuilder)
+## Quick start
 
-The recommended path registers tools in a scoped registry via integrations:
+Set an API key, then build an agent with `AgentBuilder`:
+
+```bash
+export OPENAI_API_KEY=sk-...
+# or: export ANTHROPIC_API_KEY=sk-ant-...
+```
 
 ```ts
 import {
   AgentBuilder,
   EventBus,
   InMemoryEventStore,
-  MockProvider,
+  OpenAIProvider,
   Integration,
   tool,
   AgentKitEvent,
@@ -36,31 +47,40 @@ import {
 } from "@agentkit/sdk";
 import { z } from "zod";
 
-class PingIntegration extends Integration {
-  register(registry) {
-    registry.register(
-      "ping",
-      tool(
-        {
-          description: "Respond with pong",
-          parameters: { type: "object", properties: {} },
-        },
-        async () => ({ pong: true }),
-      ),
-    );
-  }
+class WeatherIntegration extends Integration {
+  readonly namespace = "weather";
+
+  readonly getWeather = tool(
+    {
+      description: "Return weather for a city.",
+      parameters: z.object({ city: z.string() }),
+      risk: "read",
+    },
+    async (_ctx, args) => ({ city: args.city, tempF: 68 }),
+  );
 }
 
 const store = new InMemoryEventStore();
 const bus = new EventBus();
 const runtime = new AgentBuilder()
-  .provider(new MockProvider())
-  .integration(new PingIntegration())
+  .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
+  .integration(new WeatherIntegration())
+  .systemPrompt("You are a weather assistant.")
   .build({ bus, store });
 
-await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }));
-await runtime.send("s1", "ping");
+await store.append(
+  AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
+);
+await runtime.send("s1", "Weather in Seattle?");
+
+const events = await store.getEvents("s1");
+for (const e of events) {
+  console.log(e.type, "content" in e ? e.content : "delta" in e ? e.delta : "");
+}
 ```
+
+Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
+`ANTHROPIC_API_KEY`) to use Anthropic.
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
@@ -81,21 +101,6 @@ registerTool(
 const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
 ```
 
-## Run an agent
-
-`AgentRuntime` is the provider-agnostic ReAct loop: replay session state, call a
-`ModelProvider`, execute tool calls via `ToolPlanner`, loop until done.
-
-```ts
-import { AgentRuntime, EventBus, InMemoryEventStore, MockProvider } from "@agentkit/sdk";
-
-const store = new InMemoryEventStore();
-const bus = new EventBus();
-const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
-
-await runtime.send("s1", "hi");
-```
-
 ## What's exported
 
 | Export | What it is |
@@ -106,7 +111,7 @@ await runtime.send("s1", "hi");
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
 | `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
-| `MockProvider`, `OpenAIProvider`, `AnthropicProvider` | LLM providers |
+| `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
 | `Integration`, `tool` | Integration helper for scoped tools |
 
@@ -119,35 +124,54 @@ shared with the Python SDK.
 | --- | --- | --- |
 | Event-sourced runtime | Yes | Yes |
 | Tool registry + planner + policy | Yes | Yes |
-| AgentBuilder + integrations | Yes | Yes |
+| `AgentBuilder` + integrations | Yes | Yes |
 | OpenAI / Anthropic providers | Yes | Yes |
-| Mock provider | Yes | Yes |
 | Kimi / Gemini providers | Yes | No |
-| Document RAG / vector store | Yes | No |
-| Tool retriever | Yes | No |
-| Text modality adapter | Yes | No |
-| Voice / TTS | Yes | No |
-| Redis realtime bus | Yes | No (in-memory only) |
-| CLI | Yes | No |
+| Document RAG / vector store | Yes (non-MVP) | No |
+| Tool retriever | Yes (non-MVP) | No |
+| Text modality adapter | Yes (non-MVP) | No |
+| Voice / TTS | Yes (non-MVP) | No |
+| Redis realtime bus | Yes (non-MVP) | No (in-memory only) |
+| CLI scaffold | Yes | No |
+
+## Testing without API keys
+
+Unit and integration tests mock the provider HTTP client — no keys needed for
+the default test suite:
+
+```bash
+bun run test
+```
+
+Live provider tests are opt-in and skip automatically when keys are absent:
+
+```bash
+OPENAI_API_KEY=... bun run test:integration
+ANTHROPIC_API_KEY=... bun run test:integration
+```
+
+`MockProvider` is a deterministic stub that exercises the full tool loop. It is
+available from `@agentkit/sdk/testing` for unit tests, not from the main package
+entrypoint used to build real agents.
+
+```ts
+import { MockProvider } from "@agentkit/sdk/testing";
+```
 
 ## Development
 
 ```bash
 cd agentkit/ts
-npm install
-npm run typecheck
-npm run test
-npm run build
-```
-
-Optional live provider tests (require API keys):
-
-```bash
-npm run test:integration
+bun install
+bun run typecheck
+bun run format:check
+bun run test
+bun run build
 ```
 
 ## Relation to the Python SDK
 
-This package ports the **runtime core** of the Python `agentkit` SDK. The Python
-bus can be Redis-backed for multi-process deployments; the TS `EventBus` is
-in-memory until a server runtime exists.
+This package ports the **runtime core** of the Python `agentkit` SDK: events,
+sessions, tools, providers, and the ReAct loop. Python's Redis realtime bus,
+RAG, text/voice modalities, and CLI are not yet ported. The Python bus can be
+Redis-backed for multi-process deployments; the TS `EventBus` is in-memory only.

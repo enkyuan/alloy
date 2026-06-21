@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ class ToolSpec:
     name: str
     description: str
     parameters: Dict[str, Any]
+    catalog_name: Optional[str] = None
     tags: tuple[str, ...] = ()
     enabled: bool = True
     # Risk classification for policy enforcement and approval routing.
@@ -41,6 +43,12 @@ class ToolContext:
 
 _TOOL_SPECS: Dict[str, ToolSpec] = {}
 _TOOL_HANDLERS: Dict[str, ToolHandler] = {}
+
+
+def provider_safe_tool_name(name: str) -> str:
+    """Return a provider-safe tool name using only letters, digits, "_" and "-"."""
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
+    return safe or "tool"
 
 
 def register_tool(spec: ToolSpec):
@@ -75,6 +83,12 @@ def list_tool_specs(
 ) -> List[ToolSpec]:
     """Return registered tool specs, optionally filtered by tags or enabled status."""
     return _filter_specs(list(_TOOL_SPECS.values()), tags, enabled_only)
+
+
+def clear_tools() -> None:
+    """Clear the module-level tool registry. Primarily for tests."""
+    _TOOL_SPECS.clear()
+    _TOOL_HANDLERS.clear()
 
 
 def tool_spec_from_model(
@@ -161,3 +175,10 @@ class ToolRegistry:
             raise ValueError(f"Unknown tool: {tool_name}")
         ctx = ToolContext(user_id=user_id, db=db)
         return await handler(ctx, tool_args)
+
+
+RegisterTool = register_tool
+ListToolSpecs = list_tool_specs
+ToolSpecFromModel = tool_spec_from_model
+ExecuteTool = execute_tool
+ClearTools = clear_tools

@@ -29,6 +29,9 @@ jobs:
         with:
           working-directory: agentkit/sdk
 
+      - name: Run quickstart smoke
+        run: poetry run pytest tests/test_quickstart.py -q
+
       - name: Run non-network tests
         run: poetry run pytest tests/ -m "not integration" --cov=agentkit --cov-report=xml --cov-fail-under=35
 
@@ -38,6 +41,28 @@ jobs:
           name: coverage-sdk
           path: agentkit/sdk/coverage.xml
           retention-days: 7
+
+  sdk-install-smoke:
+    name: agentkit/sdk install smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentkit/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          working-directory: agentkit/sdk
+
+      - name: Build wheel
+        run: poetry build --format wheel
+
+      - name: Install wheel in clean venv
+        run: |
+          python -m venv /tmp/agentkit-smoke-venv
+          /tmp/agentkit-smoke-venv/bin/pip install --quiet dist/*.whl
+          /tmp/agentkit-smoke-venv/bin/python scripts/smoke_install.py
 
   serve:
     name: agentkit/serve

@@ -1,9 +1,9 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from agentkit.runtime.agents.cancellation import CancellationToken
 from agentkit.runtime.agents.context import ContextBuilder
-from agentkit.runtime.agents.planner import ToolPlanner
+from agentkit.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from agentkit.runtime.agents.prompts import SystemPrompt
 from agentkit.runtime.agents.state import SessionStateManager
 from agentkit.runtime.agents.strategy import AgentStrategy
@@ -22,12 +22,20 @@ from agentkit.runtime.providers.base import ModelProvider
 
 logger = logging.getLogger(__name__)
 
+ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
+
 
 class AgentRuntime:
     """A generic, provider-agnostic agent runtime.
 
     Consumes AgentKit events, maintains session state, calls an abstract ModelProvider,
     executes scatter-gather tool workflows via ToolPlanner.
+
+    ``planner`` is optional. When omitted, a default ``ToolPlanner`` is
+    constructed from ``tool_executor`` (falls back to the global
+    ``execute_tool`` registry), ``policy``, and ``approval_handler`` — the same
+    lazy-build pattern as the TypeScript ``AgentRuntime``. Pass an explicit
+    ``planner`` (e.g. from ``AgentBuilder``) to use a scoped registry instead.
     """
 
     def __init__(
@@ -35,17 +43,26 @@ class AgentRuntime:
         bus: EventBusProtocol,
         store: EventStore,
         provider: ModelProvider,
-        planner: ToolPlanner,
+        planner: Optional[ToolPlanner] = None,
         system_prompt: str = "You are a helpful assistant.",
         strategy: Optional[AgentStrategy] = None,
         tools: Optional[List[ToolSpec]] = None,
         rag: Optional[Any] = None,
         rag_top_k: int = 5,
+        # Optional wiring for the default planner (ignored when planner is given)
+        tool_executor: Optional[ToolExecutor] = None,
+        policy: Optional[Any] = None,
+        approval_handler: Optional[ApprovalHandler] = None,
+        user_id: str = "agent",
     ):
         self.bus = bus
         self.store = store
         self.provider = provider
-        self.planner = planner
+        self._explicit_planner = planner
+        self._tool_executor = tool_executor
+        self._policy = policy
+        self._approval_handler = approval_handler
+        self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         self.state_manager = SessionStateManager(store)
@@ -57,6 +74,36 @@ class AgentRuntime:
         # to retrieve relevant chunks which are prepended to the system prompt.
         self._rag = rag
         self._rag_top_k = rag_top_k
+
+    def _make_planner(self) -> ToolPlanner:
+        """Return the explicit planner, or build a default one from injected fields."""
+        if self._explicit_planner is not None:
+            return self._explicit_planner
+
+        # Lazy import to avoid a top-level circular dependency; execute_tool
+        # lives in the global tool registry.
+        from agentkit.runtime.tools.registry import execute_tool  # noqa: PLC0415
+
+        executor: ToolExecutor = self._tool_executor or (
+            lambda name, args: execute_tool(self._user_id, name, args)
+        )
+        specs = {spec.name: spec for spec in self.tools}
+        return ToolPlanner(
+            executor=executor,
+            policy=self._policy,
+            approval_handler=self._approval_handler,
+            specs=specs,
+        )
+
+    @property
+    def planner(self) -> ToolPlanner:
+        """Planner used for tool execution.
+
+        Kept as a read-only compatibility surface for callers/tests that inspect
+        builder wiring. Runtime execution still calls ``_make_planner`` so the
+        default planner sees the current tool specs.
+        """
+        return self._make_planner()
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -175,7 +222,7 @@ class AgentRuntime:
                 break
 
             # 6. Execute tools concurrently (Scatter-Gather)
-            await self.planner.execute_scatter_gather(
+            await self._make_planner().execute_scatter_gather(
                 session_id, tool_calls, self._emit
             )
 

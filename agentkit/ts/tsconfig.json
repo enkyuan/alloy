@@ -1,5 +1,5 @@
 {
-  "include": ["src", "tests"],
+  "include": ["src", "tests", "examples"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -7,6 +7,10 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@agentkit/sdk": ["./src/index.ts"]
+    },
     "declaration": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,

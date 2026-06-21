@@ -121,7 +121,7 @@ describe("tool registry", () => {
     const handler = tool(
       {
         description: "Ping the service",
-        parameters: { type: "object", properties: {} },
+        parameters: z.object({ message: z.string() }),
         risk: "read",
       },
       async (_ctx, _args) => ({ pong: true }),
@@ -135,6 +135,11 @@ describe("tool registry", () => {
       name: "ping",
       description: "Ping the service",
       risk: "read",
+    });
+    expect(specs[0]?.parameters).toEqual({
+      type: "object",
+      properties: { message: { type: "string" } },
+      required: ["message"],
     });
 
     const result = await executeTool("u", "ping", {});

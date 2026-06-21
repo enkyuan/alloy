@@ -19,19 +19,23 @@ from agentkit.core.errors import (
     service_error_to_http_status,
 )
 
+ClassifyHTTPError = classify_http_error
+ServiceErrorToDetail = service_error_to_detail
+ServiceErrorToHTTPStatus = service_error_to_http_status
+
 __all__ = [
-    "ServiceError",
-    "ServiceAuthError",
-    "ServiceRateLimitError",
-    "ServiceNetworkError",
-    "ServiceAPIError",
+    "ClassifyHTTPError",
     "ProviderError",
     "ProviderConfigError",
     "ProviderAPIError",
     "ProviderConnectionError",
-    "classify_http_error",
-    "service_error_to_http_status",
-    "service_error_to_detail",
+    "ServiceAPIError",
+    "ServiceAuthError",
+    "ServiceError",
+    "ServiceErrorToDetail",
+    "ServiceErrorToHTTPStatus",
+    "ServiceNetworkError",
+    "ServiceRateLimitError",
 ]
 
 

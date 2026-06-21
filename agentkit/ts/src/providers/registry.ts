@@ -3,13 +3,14 @@
  * Mirrors `agentkit.runtime.providers.registry`.
  */
 import type { ModelProvider } from "./base";
+import { ProviderConfigError } from "./errors";
 
 const providers = new Map<string, ModelProvider>();
 
 /** Register a provider under a name. Throws on duplicate. */
 export function registerProvider(name: string, provider: ModelProvider): void {
   if (providers.has(name)) {
-    throw new Error(`Provider already registered: ${name}`);
+    throw new ProviderConfigError(`Provider already registered: ${name}`);
   }
   providers.set(name, provider);
 }
@@ -18,7 +19,9 @@ export function registerProvider(name: string, provider: ModelProvider): void {
 export function getProvider(name: string): ModelProvider {
   const p = providers.get(name);
   if (p === undefined) {
-    throw new Error(`Unknown provider: ${name}. Register it with registerProvider() first.`);
+    throw new ProviderConfigError(
+      `Unknown provider: ${name}. Register it with registerProvider() first.`,
+    );
   }
   return p;
 }

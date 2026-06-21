@@ -26,6 +26,7 @@ export {
   type ToolContext,
   type ToolHandler,
   type JSONSchema,
+  type ToolParameters,
   type ListToolSpecsOptions,
   type ToolMeta,
   type TaggedHandler,
@@ -34,6 +35,8 @@ export {
   registerTool,
   listToolSpecs,
   toolSpecFromSchema,
+  providerSafeToolName,
+  toolParametersToJSONSchema,
   executeTool,
   clearTools,
 } from "./tools/registry";
@@ -62,11 +65,16 @@ export type {
   ProviderMessage,
   ToolCall,
 } from "./providers/base";
-export { MockProvider } from "./providers/mock";
 export { OpenAIProvider } from "./providers/openai";
 export type { OpenAIProviderOptions } from "./providers/openai";
 export { AnthropicProvider } from "./providers/anthropic";
 export type { AnthropicProviderOptions } from "./providers/anthropic";
+export {
+  ProviderAPIError,
+  ProviderConfigError,
+  ProviderConnectionError,
+  ProviderError,
+} from "./providers/errors";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
 
 // Integrations

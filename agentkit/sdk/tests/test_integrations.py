@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import pytest
 
-from agentkit.runtime.integrations import Integration, tool
+from agentkit.runtime.integrations import Integration, Tool
 from agentkit.runtime.tools.registry import (
     ToolContext,
     ToolHandler,
@@ -39,18 +39,19 @@ class MultiToolIntegration(Integration):
 # --- existing tests ---
 
 
-def test_namespace_prefixes_tool_names():
+def test_namespace_creates_provider_safe_tool_names():
     registry = ToolRegistry()
     FooIntegration().register(registry)
-    names = [s.name for s in registry.list_specs(enabled_only=False)]
-    assert names == ["foo.bar"]
+    specs = registry.list_specs(enabled_only=False)
+    assert [s.name for s in specs] == ["foo_bar"]
+    assert [s.catalog_name for s in specs] == ["foo.bar"]
 
 
 def test_multiple_tools_all_prefixed():
     registry = ToolRegistry()
     MultiToolIntegration().register(registry)
     names = sorted(s.name for s in registry.list_specs(enabled_only=False))
-    assert names == ["svc.alpha", "svc.beta"]
+    assert names == ["svc_alpha", "svc_beta"]
 
 
 def test_cannot_instantiate_without_namespace():
@@ -69,7 +70,7 @@ def test_tool_decorator_auto_registers():
     class ChargeIntegration(Integration):
         namespace = "stripe"
 
-        @tool(
+        @Tool(
             description="Retrieve a charge",
             parameters={"charge_id": {"type": "string"}},
             risk="read",
@@ -90,12 +91,12 @@ def test_tool_decorator_auto_registers():
 
 
 def test_tool_decorator_namespace_prefix():
-    """After register(), tool names are namespace-prefixed in the registry."""
+    """After register(), tool names are provider-safe and retain catalog names."""
 
     class PayIntegration(Integration):
         namespace = "pay"
 
-        @tool(
+        @Tool(
             description="Make a payment",
             parameters={},
             risk="financial",
@@ -105,8 +106,9 @@ def test_tool_decorator_namespace_prefix():
 
     registry = ToolRegistry()
     PayIntegration().register(registry)
-    names = [s.name for s in registry.list_specs(enabled_only=False)]
-    assert names == ["pay.make_payment"]
+    specs = registry.list_specs(enabled_only=False)
+    assert [s.name for s in specs] == ["pay_make_payment"]
+    assert [s.catalog_name for s in specs] == ["pay.make_payment"]
 
 
 def test_manual_tools_override_still_works():
@@ -123,4 +125,4 @@ def test_manual_tools_override_still_works():
     registry = ToolRegistry()
     ManualIntegration().register(registry)
     names = [s.name for s in registry.list_specs(enabled_only=False)]
-    assert names == ["manual.custom_op"]
+    assert names == ["manual_custom_op"]

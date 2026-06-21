@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { Integration, tool } from "../src/integrations/base";
 import { ToolRegistry } from "../src/tools/registry";
@@ -25,11 +26,12 @@ class MultiToolIntegration extends Integration {
 }
 
 describe("Integration", () => {
-  it("namespace prefixes tool names", () => {
+  it("namespace creates provider-safe tool names and preserves catalog names", () => {
     const registry = new ToolRegistry();
     new FooIntegration().register(registry);
-    const names = registry.listSpecs({ enabledOnly: false }).map((s) => s.name);
-    expect(names).toEqual(["foo.bar"]);
+    const specs = registry.listSpecs({ enabledOnly: false });
+    expect(specs.map((s) => s.name)).toEqual(["foo_bar"]);
+    expect(specs.map((s) => s.catalogName)).toEqual(["foo.bar"]);
   });
 
   it("multiple tools all prefixed", () => {
@@ -39,7 +41,7 @@ describe("Integration", () => {
       .listSpecs({ enabledOnly: false })
       .map((s) => s.name)
       .sort();
-    expect(names).toEqual(["svc.alpha", "svc.beta"]);
+    expect(names).toEqual(["svc_alpha", "svc_beta"]);
   });
 
   it("concrete implementation with namespace and tools works correctly", () => {
@@ -55,7 +57,8 @@ describe("Integration", () => {
     new FooIntegration().register(registry);
     const specs = registry.listSpecs({ enabledOnly: false });
     expect(specs).toHaveLength(1);
-    expect(specs[0]!.name).toBe("foo.bar");
+    expect(specs[0]!.name).toBe("foo_bar");
+    expect(specs[0]!.catalogName).toBe("foo.bar");
     expect(specs[0]!.description).toBe("A test tool");
   });
 
@@ -82,7 +85,11 @@ describe("Integration", () => {
       readonly namespace = "pay";
 
       readonly makePayment = tool(
-        { description: "Make a payment", parameters: {}, risk: "financial" },
+        {
+          description: "Make a payment",
+          parameters: z.object({ amount: z.number() }),
+          risk: "financial",
+        },
         async (_ctx, _args) => ({ paid: true }),
       );
     }
@@ -93,6 +100,11 @@ describe("Integration", () => {
     const [spec, handler] = pairs[0]!;
     expect(spec.name).toBe("makePayment");
     expect(spec.description).toBe("Make a payment");
+    expect(spec.parameters).toEqual({
+      type: "object",
+      properties: { amount: { type: "number" } },
+      required: ["amount"],
+    });
     expect(spec.risk).toBe("financial");
     expect(typeof handler).toBe("function");
   });
@@ -110,6 +122,6 @@ describe("Integration", () => {
     const registry = new ToolRegistry();
     new ManualIntegration().register(registry);
     const names = registry.listSpecs({ enabledOnly: false }).map((s) => s.name);
-    expect(names).toEqual(["manual.custom_op"]);
+    expect(names).toEqual(["manual_custom_op"]);
   });
 });

@@ -42,9 +42,25 @@ export class ToolPolicy {
     return this.allowed.has(toolName);
   }
 
+  isAllowedAny(toolNames: Iterable<string>): boolean {
+    const names = new Set(toolNames);
+    for (const name of names) {
+      if (this.denied.has(name)) return false;
+    }
+    if (this.allowed === undefined) return true;
+    for (const name of names) {
+      if (this.allowed.has(name)) return true;
+    }
+    return false;
+  }
+
   /** Throws `ToolPolicyViolation` if the tool is not allowed. */
   enforce(toolName: string): void {
     if (!this.isAllowed(toolName)) throw new ToolPolicyViolation(toolName);
+  }
+
+  enforceAny(toolName: string, aliases: Iterable<string> = []): void {
+    if (!this.isAllowedAny([toolName, ...aliases])) throw new ToolPolicyViolation(toolName);
   }
 
   /**

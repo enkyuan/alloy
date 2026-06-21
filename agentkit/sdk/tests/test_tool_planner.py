@@ -86,6 +86,28 @@ async def test_planner_generates_call_id_when_absent():
     assert started.tool_call_id
 
 
+@pytest.mark.asyncio
+async def test_planner_includes_catalog_name_metadata_when_available():
+    executor = AsyncMock(return_value={"ok": True})
+    specs = {
+        "weather_get_weather": ToolSpec(
+            name="weather_get_weather",
+            catalog_name="weather.get_weather",
+            description="d",
+            parameters={},
+        )
+    }
+    planner = ToolPlanner(executor=executor, specs=specs)
+
+    emitted, _ = await _collect(
+        planner,
+        "sess-catalog",
+        [{"id": "cat1", "name": "weather_get_weather", "arguments": {}}],
+    )
+
+    assert all(e.metadata == {"catalog_name": "weather.get_weather"} for e in emitted)
+
+
 # ---------------------------------------------------------------------------
 # Allow / deny policy
 # ---------------------------------------------------------------------------
@@ -121,6 +143,64 @@ async def test_planner_allow_list_permits_listed_tool():
 
     executor.assert_called_once()
     assert EventType.TOOL_CALL_COMPLETED in _types(emitted)
+
+
+@pytest.mark.asyncio
+async def test_planner_allow_list_accepts_catalog_name_alias():
+    executor = AsyncMock(return_value={"x": 1})
+    specs = {
+        "weather_get_weather": ToolSpec(
+            name="weather_get_weather",
+            catalog_name="weather.get_weather",
+            description="d",
+            parameters={},
+        )
+    }
+    planner = ToolPlanner(
+        executor=executor,
+        policy=ToolPolicy(allowed={"weather.get_weather"}),
+        specs=specs,
+    )
+
+    emitted, _ = await _collect(
+        planner,
+        "sess-allow-catalog",
+        [{"id": "ac1", "name": "weather_get_weather", "arguments": {}}],
+    )
+
+    executor.assert_called_once()
+    assert EventType.TOOL_CALL_COMPLETED in _types(emitted)
+
+
+@pytest.mark.asyncio
+async def test_planner_deny_list_blocks_catalog_name_alias():
+    executor = AsyncMock(return_value={})
+    specs = {
+        "weather_get_weather": ToolSpec(
+            name="weather_get_weather",
+            catalog_name="weather.get_weather",
+            description="d",
+            parameters={},
+        )
+    }
+    planner = ToolPlanner(
+        executor=executor,
+        policy=ToolPolicy(denied={"weather.get_weather"}),
+        specs=specs,
+    )
+
+    emitted, results = await _collect(
+        planner,
+        "sess-deny-catalog",
+        [{"id": "dc1", "name": "weather_get_weather", "arguments": {}}],
+    )
+
+    executor.assert_not_called()
+    assert _types(emitted) == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    assert "not permitted" in results[0]["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -190,6 +270,9 @@ async def test_planner_approval_rejected_skips_execution():
     executor.assert_not_called()
     types = _types(emitted)
     assert EventType.TOOL_APPROVAL_REJECTED in types
+    # TOOL_CALL_FAILED must follow so replay projects the outcome into history,
+    # preventing the agent from re-requesting the same tool until max_iterations.
+    assert EventType.TOOL_CALL_FAILED in types
     assert EventType.TOOL_CALL_STARTED not in types
     assert "error" in results[0]
 
@@ -210,7 +293,9 @@ async def test_planner_no_approval_handler_rejects_by_default():
     )
 
     executor.assert_not_called()
-    assert EventType.TOOL_APPROVAL_REJECTED in _types(emitted)
+    types = _types(emitted)
+    assert EventType.TOOL_APPROVAL_REJECTED in types
+    assert EventType.TOOL_CALL_FAILED in types
     assert "error" in results[0]
 
 

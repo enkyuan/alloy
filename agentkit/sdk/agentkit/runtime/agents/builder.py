@@ -6,7 +6,7 @@ from typing import Any, List, Optional
 
 from agentkit.infra.events.protocols import EventBusProtocol
 from agentkit.infra.events.store import EventStore
-from agentkit.runtime.agents.planner import ToolPlanner
+from agentkit.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from agentkit.runtime.agents.runtime import AgentRuntime
 from agentkit.runtime.agents.strategy import AgentStrategy
 from agentkit.runtime.providers.base import ModelProvider
@@ -27,6 +27,7 @@ class AgentBuilder:
             .provider(anthropic_provider)
             .integration(StripeIntegration(api_key=...))
             .policy(ToolPolicy(require_approval_for={"financial"}))
+            .approval_handler(my_approval_handler)
             .system_prompt("You are a payment assistant.")
             .build(bus=bus, store=store)
         )
@@ -36,6 +37,7 @@ class AgentBuilder:
         self._provider: Optional[ModelProvider] = None
         self._integrations: List[Any] = []  # List[Integration] — avoid circular import
         self._policy: Optional[ToolPolicy] = None
+        self._approval_handler: Optional[ApprovalHandler] = None
         self._system_prompt: str = "You are a helpful assistant."
         self._strategy: Optional[AgentStrategy] = None
 
@@ -50,6 +52,17 @@ class AgentBuilder:
 
     def policy(self, p: ToolPolicy) -> "AgentBuilder":
         self._policy = p
+        return self
+
+    def approval_handler(self, handler: ApprovalHandler) -> "AgentBuilder":
+        """Set an async approval handler for tools that require explicit approval.
+
+        The handler receives ``(tool_name, tool_args, risk)`` and returns
+        ``True`` to allow execution or ``False`` to reject it. When a policy
+        marks a tool as requiring approval and no handler is set, the tool is
+        rejected by default (fail-safe).
+        """
+        self._approval_handler = handler
         return self
 
     def system_prompt(self, prompt: str) -> "AgentBuilder":
@@ -80,6 +93,7 @@ class AgentBuilder:
         planner = ToolPlanner(
             executor=_executor,
             policy=self._policy,
+            approval_handler=self._approval_handler,
             specs=specs,
         )
 

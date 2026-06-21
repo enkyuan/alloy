@@ -184,3 +184,106 @@ async def test_builder_no_integrations_completes_without_tool_calls() -> None:
 
     assert EventType.AGENT_MESSAGE_COMPLETED in types
     assert EventType.TOOL_CALL_COMPLETED not in types
+
+
+# ---------------------------------------------------------------------------
+# Approval handler wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_builder_approval_handler_approves_tool() -> None:
+    """When approval_handler returns True the tool executes and completes."""
+    bus, store = _make_infra()
+    session_id = "s-builder-approval-approved"
+
+    async def _approve(name: str, args: dict, risk: str | None) -> bool:
+        return True
+
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider())
+        .integration(PingIntegration())
+        .policy(ToolPolicy(require_approval_for={"read"}))
+        .approval_handler(_approve)
+        .build(bus=bus, store=store)
+    )
+
+    await store.append(UserMessage(session_id=session_id, content="ping"))
+    await runtime.run_turn(session_id)
+
+    events = await store.get_events(session_id)
+    types = [e.type for e in events]
+
+    assert EventType.TOOL_APPROVAL_APPROVED in types
+    assert EventType.TOOL_CALL_COMPLETED in types
+
+
+@pytest.mark.asyncio
+async def test_builder_approval_handler_rejection_is_terminal() -> None:
+    """Rejected approval emits TOOL_CALL_FAILED so replay sees it and the loop stops."""
+    bus, store = _make_infra()
+    session_id = "s-builder-approval-rejected"
+
+    async def _reject(name: str, args: dict, risk: str | None) -> bool:
+        return False
+
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider())
+        .integration(PingIntegration())
+        .policy(ToolPolicy(require_approval_for={"read"}))
+        .approval_handler(_reject)
+        .build(bus=bus, store=store)
+    )
+
+    await store.append(UserMessage(session_id=session_id, content="ping"))
+    await runtime.run_turn(session_id)
+
+    events = await store.get_events(session_id)
+    types = [e.type for e in events]
+
+    assert EventType.TOOL_APPROVAL_REJECTED in types
+    assert EventType.TOOL_CALL_FAILED in types
+    assert EventType.TOOL_CALL_COMPLETED not in types
+
+
+# ---------------------------------------------------------------------------
+# Optional default planner on AgentRuntime
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_runtime_without_explicit_planner_completes_turn() -> None:
+    """AgentRuntime can be constructed without an explicit planner."""
+    from agentkit.runtime.agents.runtime import AgentRuntime
+    from agentkit.runtime.tools.registry import ToolSpec, clear_tools, register_tool
+
+    clear_tools()
+    spec = ToolSpec(name="noop", description="Does nothing.", parameters={})
+
+    @register_tool(spec)
+    async def _noop(ctx, args: dict) -> dict:
+        return {}
+
+    bus, store = _make_infra()
+    session_id = "s-runtime-no-planner"
+
+    # Construct without planner — should build one from global registry
+    from agentkit.runtime.tools.registry import list_tool_specs
+
+    runtime = AgentRuntime(
+        bus=bus,
+        store=store,
+        provider=MockProvider(),
+        tools=list_tool_specs(),
+    )
+
+    await store.append(UserMessage(session_id=session_id, content="go"))
+    await runtime.run_turn(session_id)
+
+    events = await store.get_events(session_id)
+    types = [e.type for e in events]
+
+    assert EventType.TOOL_CALL_COMPLETED in types
+    clear_tools()

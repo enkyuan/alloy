@@ -12,17 +12,19 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Protocol, Tuple
 
-from agentkit.runtime.tools._vector_math import cosine_similarity  # re-exported
+from agentkit.runtime.tools._vector_math import cosine_similarity
 from agentkit.runtime.tools.registry import list_tool_specs
 
 logger = logging.getLogger(__name__)
 
+CosineSimilarity = cosine_similarity
+
 __all__ = [
-    "cosine_similarity",
+    "CosineSimilarity",
     "Embedder",
     "EmbeddingCache",
+    "GetToolRetriever",
     "ToolRetriever",
-    "get_tool_retriever",
 ]
 
 
@@ -196,3 +198,6 @@ def get_tool_retriever() -> ToolRetriever:
     if _retriever is None:
         _retriever = ToolRetriever()
     return _retriever
+
+
+GetToolRetriever = get_tool_retriever

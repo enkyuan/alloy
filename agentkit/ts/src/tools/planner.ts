@@ -80,6 +80,8 @@ export class ToolPlanner {
     const callId = call.id ?? crypto.randomUUID();
     const spec = this.specs.get(toolName);
     const risk = spec?.risk;
+    const aliases = spec?.catalogName ? [spec.catalogName] : [];
+    const metadata = spec?.catalogName ? { catalog_name: spec.catalogName } : {};
 
     // 1. Announce intent
     await emit(
@@ -89,11 +91,12 @@ export class ToolPlanner {
         tool_name: toolName,
         tool_args: toolArgs,
         tool_call_id: callId,
+        metadata,
       }),
     );
 
     // 2. Allow/deny gate: policy violations fail before approval/execution.
-    if (this.policy !== undefined && !this.policy.isAllowed(toolName)) {
+    if (this.policy !== undefined && !this.policy.isAllowedAny([toolName, ...aliases])) {
       const errorMsg = `Tool not permitted: ${toolName}`;
       await emit(
         AgentKitEvent.parse({
@@ -102,6 +105,7 @@ export class ToolPlanner {
           tool_name: toolName,
           tool_call_id: callId,
           error: errorMsg,
+          metadata,
         }),
       );
       return { id: callId, name: toolName, error: errorMsg };
@@ -117,6 +121,7 @@ export class ToolPlanner {
           tool_call_id: callId,
           tool_args: toolArgs,
           risk: risk ?? null,
+          metadata,
         }),
       );
 
@@ -138,6 +143,7 @@ export class ToolPlanner {
             tool_name: toolName,
             tool_call_id: callId,
             reason,
+            metadata,
           }),
         );
         // Also emit TOOL_CALL_FAILED so replaySession projects this into
@@ -150,6 +156,7 @@ export class ToolPlanner {
             tool_name: toolName,
             tool_call_id: callId,
             error: errorMsg,
+            metadata,
           }),
         );
         return { id: callId, name: toolName, error: errorMsg };
@@ -161,6 +168,7 @@ export class ToolPlanner {
           session_id: sessionId,
           tool_name: toolName,
           tool_call_id: callId,
+          metadata,
         }),
       );
     }
@@ -172,6 +180,7 @@ export class ToolPlanner {
         session_id: sessionId,
         tool_name: toolName,
         tool_call_id: callId,
+        metadata,
       }),
     );
 
@@ -185,6 +194,7 @@ export class ToolPlanner {
           tool_name: toolName,
           tool_call_id: callId,
           result,
+          metadata,
         }),
       );
       return { id: callId, name: toolName, result };
@@ -197,6 +207,7 @@ export class ToolPlanner {
           tool_name: toolName,
           tool_call_id: callId,
           error: errorMsg,
+          metadata,
         }),
       );
       return { id: callId, name: toolName, error: errorMsg };
