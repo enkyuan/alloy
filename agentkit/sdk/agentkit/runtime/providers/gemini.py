@@ -18,7 +18,10 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
-from agentkit.runtime.providers._translate import format_messages_gemini
+from agentkit.runtime.providers._translate import (
+    format_messages_gemini,
+    split_system_for_gemini,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -174,9 +177,7 @@ class GeminiService:
 
         # Context Caching Heuristics
         active_contents = contents
-        cache_name = await self._get_active_cache(
-            system_instruction, contents, tools
-        )
+        cache_name = await self._get_active_cache(system_instruction, contents, tools)
         if cache_name:
             config["cached_content"] = cache_name
             # Only pass the un-cached remainder (last two messages) to the LLM
@@ -299,9 +300,14 @@ class GeminiProvider(ModelProvider):
 
         gemini_tools = to_gemini(tools) or None if tools else None
 
+        # Peel system messages out of the history; Gemini routes system text
+        # via the top-level system_instruction param.
+        inline_system, chat_messages = split_system_for_gemini(messages)
+        effective_system = system_instruction or inline_system
+
         response = await self.service.generate_chat_response(
-            messages=messages,
-            system_instruction=system_instruction,
+            messages=chat_messages,
+            system_instruction=effective_system,
             temperature=temperature,
             tools=gemini_tools,
         )
@@ -359,9 +365,12 @@ class GeminiProvider(ModelProvider):
         # surface tool calls.
         gemini_tools = to_gemini(tools) if tools else None
 
+        inline_system, chat_messages = split_system_for_gemini(messages)
+        effective_system = system_instruction or inline_system
+
         async for chunk in self.service.generate_chat_stream(
-            messages=messages,
-            system_instruction=system_instruction,
+            messages=chat_messages,
+            system_instruction=effective_system,
             temperature=temperature,
             tools=gemini_tools,
         ):

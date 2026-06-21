@@ -197,7 +197,9 @@ class AgentRuntime:
             tool_calls = []
 
             # 3. Stream from Provider
-            async for chunk in self.provider.generate_stream(messages, self._tool_payload):
+            async for chunk in self.provider.generate_stream(
+                messages, self._tool_payload
+            ):
                 if token.is_cancelled:
                     break
 

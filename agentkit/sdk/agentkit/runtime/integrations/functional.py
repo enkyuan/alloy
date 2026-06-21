@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import replace
-from typing import Any, Callable, Dict, Optional, Type, Union, get_type_hints
+from typing import Any, Callable, Dict, Optional, Type, Union, cast, get_type_hints
 
 from pydantic import BaseModel, Field, create_model
 
@@ -39,7 +39,9 @@ class BoundTool:
 
     __slots__ = ("spec", "handler", "namespace")
 
-    def __init__(self, spec: ToolSpec, handler: ToolHandler, namespace: str = "fn") -> None:
+    def __init__(
+        self, spec: ToolSpec, handler: ToolHandler, namespace: str = "fn"
+    ) -> None:
         self.spec = spec
         self.handler = handler
         self.namespace = namespace
@@ -122,13 +124,14 @@ def function_tool(
     """
 
     def make(fn: Callable[..., Any]) -> BoundTool:
+        params_schema: Dict[str, Any]
         if parameters is None:
             model = _model_from_signature(fn, f"{fn.__name__}__Args")
             params_schema = ToolSpecFromModel("_", "_", model).parameters
         elif isinstance(parameters, type) and issubclass(parameters, BaseModel):
             params_schema = ToolSpecFromModel("_", "_", parameters).parameters
         else:
-            params_schema = parameters
+            params_schema = cast(Dict[str, Any], parameters)
 
         spec = ToolSpec(
             name=fn.__name__,

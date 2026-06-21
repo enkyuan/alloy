@@ -6,7 +6,8 @@ from typing import Optional
 
 import pytest
 
-from agentkit import AgentBuilder, BoundTool, FunctionTool
+from agentkit.runtime.agents import AgentBuilder
+from agentkit.runtime.integrations import BoundTool, FunctionTool
 from agentkit.runtime.tools.registry import ToolRegistry
 from tests.helpers.mock_provider import MockProvider
 
@@ -45,6 +46,7 @@ def test_function_tool_with_explicit_description() -> None:
 
 def test_function_tool_rejects_unannotated_parameters() -> None:
     with pytest.raises(TypeError, match="annotat"):
+
         @FunctionTool
         async def bad(city) -> dict:  # type: ignore[no-untyped-def]
             return {}
@@ -65,17 +67,13 @@ async def test_function_tool_executes_through_agent_builder() -> None:
     async def echo(message: str) -> dict:
         return {"echoed": message}
 
-    runtime = (
-        AgentBuilder()
-        .provider(MockProvider())
-        .tool(echo)
-        .build()
-    )
+    runtime = AgentBuilder().provider(MockProvider()).tool(echo).build()
     await runtime.send("s1", "hello")
     events = await runtime.history("s1")
     types = [e.type for e in events]
 
     from agentkit.infra.events.types import EventType
+
     assert EventType.TOOL_CALL_COMPLETED in types
 
 

@@ -86,4 +86,8 @@ def _first_tool_call(tools: List[Dict[str, Any]]) -> Dict[str, Any]:
     spec = tools[0]
     name = spec.get("name", "unknown")
     parameters = spec.get("parameters") or {}
-    return {"id": "mock-call-1", "name": name, "arguments": _placeholder_args(parameters)}
+    return {
+        "id": "mock-call-1",
+        "name": name,
+        "arguments": _placeholder_args(parameters),
+    }

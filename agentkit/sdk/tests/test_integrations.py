@@ -122,7 +122,11 @@ def test_tool_decorator_accepts_pydantic_model():
     class WeatherIntegration(Integration):
         namespace = "weather"
 
-        @Tool(description="Return weather for a city.", parameters=WeatherArgs, risk="read")
+        @Tool(
+            description="Return weather for a city.",
+            parameters=WeatherArgs,
+            risk="read",
+        )
         async def get_weather(self, ctx: ToolContext, args: dict) -> dict:
             return {"city": args["city"]}
 

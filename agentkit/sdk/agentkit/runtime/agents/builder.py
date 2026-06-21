@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import List, Optional, Protocol, runtime_checkable
 
 from agentkit.infra.events.bus import InMemoryEventBus
 from agentkit.infra.events.protocols import EventBusProtocol
@@ -15,9 +15,17 @@ from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.tools.policies import ToolPolicy
 from agentkit.runtime.tools.registry import ToolRegistry
 
-if TYPE_CHECKING:
-    from agentkit.runtime.integrations.base import Integration
-    from agentkit.runtime.integrations.functional import BoundTool
+
+@runtime_checkable
+class Integrable(Protocol):
+    """Anything with a ``register(registry: ToolRegistry)`` method.
+
+    ``Integration`` subclasses satisfy this, as does ``BoundTool`` from
+    ``@FunctionTool``. Accepting the protocol means ``AgentBuilder`` doesn't
+    need to know about either concrete type.
+    """
+
+    def register(self, registry: ToolRegistry) -> None: ...
 
 
 class AgentBuilder:
@@ -41,7 +49,7 @@ class AgentBuilder:
 
     def __init__(self) -> None:
         self._provider: Optional[ModelProvider] = None
-        self._integrations: List["Integration"] = []
+        self._integrations: List[Integrable] = []
         self._policy: Optional[ToolPolicy] = None
         self._approval_handler: Optional[ApprovalHandler] = None
         self._system_prompt: str = "You are a helpful assistant."
@@ -51,14 +59,14 @@ class AgentBuilder:
         self._provider = p
         return self
 
-    def integration(self, i: "Integration") -> "AgentBuilder":
+    def integration(self, i: Integrable) -> "AgentBuilder":
         """Add an Integration. Accepts any object with a register(ToolRegistry) method."""
         self._integrations.append(i)
         return self
 
-    def tool(self, bound: "BoundTool") -> "AgentBuilder":
+    def tool(self, bound: Integrable) -> "AgentBuilder":
         """Add a function-level tool created by ``@FunctionTool``."""
-        self._integrations.append(bound)  # type: ignore[arg-type]
+        self._integrations.append(bound)
         return self
 
     def policy(self, p: ToolPolicy) -> "AgentBuilder":
