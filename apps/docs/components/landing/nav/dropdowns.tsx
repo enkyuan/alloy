@@ -27,7 +27,7 @@ export function ResourcesDropdown({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.12, ease: "easeOut" }}
-            className={`absolute top-full -right-px z-50 w-[480px] max-w-[calc(100vw-2rem)] border-x border-b ${dropdownBorderClass} bg-background shadow-2xl shadow-black/20 dark:shadow-black/60`}
+            className={`absolute top-[calc(100%-1px)] -right-px z-50 w-[480px] max-w-[calc(100vw-2rem)] border-x border-b ${dropdownBorderClass} bg-background shadow-2xl shadow-black/20 dark:shadow-black/60`}
           >
             <div className="grid grid-cols-2 divide-x divide-foreground/[0.06]">
               {featuredResources.map((r) => (
