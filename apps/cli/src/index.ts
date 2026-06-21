@@ -5,6 +5,7 @@ import { doctor } from "./commands/doctor.js";
 import { gen } from "./commands/gen.js";
 import { info } from "./commands/info.js";
 import { init } from "./commands/init.js";
+import { mcp } from "./commands/mcp.js";
 import { secret } from "./commands/secret.js";
 import { upgrade } from "./commands/upgrade.js";
 
@@ -23,6 +24,7 @@ async function main() {
     .addCommand(info)
     .addCommand(upgrade)
     .addCommand(doctor)
+    .addCommand(mcp)
     .version("0.0.1")
     .description("agentkit CLI")
     .action(() => program.help());
