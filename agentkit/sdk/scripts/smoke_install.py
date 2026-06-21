@@ -9,6 +9,7 @@ Run after installing the built wheel into a clean venv:
     pip install dist/*.whl
     python scripts/smoke_install.py
 """
+
 from __future__ import annotations
 
 import os
@@ -57,7 +58,9 @@ os.environ.pop("OPENAI_API_KEY", None)
 try:
     agentkit.GetProvider("openai")
     # If no error is raised, the provider may load lazily; attempt a generate call
-    print("  ok: GetProvider('openai') returned (key checked at instantiation/call time)")
+    print(
+        "  ok: GetProvider('openai') returned (key checked at instantiation/call time)"
+    )
 except Exception as e:
     error_text = str(e).lower()
     if "openai" in error_text or "api key" in error_text or "config" in error_text:

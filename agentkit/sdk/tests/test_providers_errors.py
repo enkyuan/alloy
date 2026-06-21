@@ -34,9 +34,7 @@ def test_classify_http_error(status: int, expected_type: type):
 
 def test_service_error_to_http_status_mapping():
     assert (
-        ServiceErrorToHTTPStatus(
-            ServiceAuthError(service="x", action="y", message="m")
-        )
+        ServiceErrorToHTTPStatus(ServiceAuthError(service="x", action="y", message="m"))
         == 401
     )
     assert (
@@ -52,9 +50,7 @@ def test_service_error_to_http_status_mapping():
         == 503
     )
     assert (
-        ServiceErrorToHTTPStatus(
-            ServiceAPIError(service="x", action="y", message="m")
-        )
+        ServiceErrorToHTTPStatus(ServiceAPIError(service="x", action="y", message="m"))
         == 502
     )
 

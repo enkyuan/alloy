@@ -48,7 +48,9 @@ async def test_quickstart_agent_builder_path() -> None:
         .build(bus=bus, store=store)
     )
 
-    await store.append(agentkit.UserMessage(session_id="s1", content="Weather in Seattle?"))
+    await store.append(
+        agentkit.UserMessage(session_id="s1", content="Weather in Seattle?")
+    )
     await runtime.run_turn("s1")
 
     events = await store.get_events("s1")
@@ -92,9 +94,7 @@ async def test_quickstart_send_convenience_method() -> None:
     store = agentkit.InMemoryEventStore()
 
     runtime = (
-        agentkit.AgentBuilder()
-        .provider(MockProvider())
-        .build(bus=bus, store=store)
+        agentkit.AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
     )
 
     # seed SESSION_CREATED so replay doesn't error on empty log
