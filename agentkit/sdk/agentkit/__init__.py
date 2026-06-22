@@ -18,33 +18,40 @@ from typing import Any
 __version__ = "0.1.0"
 
 # Public name -> module it lives in. Kept as a static map so that importing
-# the top-level package triggers no submodule side effects.
+# the top-level package triggers no submodule side effects. Entries are
+# grouped by category and sorted alphabetically inside each group.
 _LAZY: dict[str, str] = {
+    # --- Types: classes, dataclasses, protocols, errors ----------------------
     "AgentBuilder": "agentkit.runtime.agents",
     "AgentRuntime": "agentkit.runtime.agents",
     "CancellationToken": "agentkit.runtime.agents",
     "EventBus": "agentkit.infra.events",
     "EventStore": "agentkit.infra.events",
-    "function_tool": "agentkit.runtime.integrations",
-    "get_provider": "agentkit.runtime.providers",
     "InMemoryEventBus": "agentkit.infra.events",
     "InMemoryEventStore": "agentkit.infra.events",
     "Integration": "agentkit.runtime.integrations",
-    "list_tool_specs": "agentkit.runtime.tools.registry",
     "ModelProvider": "agentkit.runtime.providers",
     "ProviderAPIError": "agentkit.runtime.providers.errors",
     "ProviderConfigError": "agentkit.runtime.providers.errors",
     "ProviderError": "agentkit.runtime.providers.errors",
-    "register_provider": "agentkit.runtime.providers",
-    "register_tool": "agentkit.runtime.tools.registry",
+    # ReplaySession is actually a function; the CapWords spelling predates the
+    # PEP 8 cleanup and is kept here for back-compat. Rename to replay_session
+    # would be the consistent fix.
     "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",
     "SessionState": "agentkit.runtime.sessions",
-    "tool": "agentkit.runtime.integrations",
     "ToolContext": "agentkit.runtime.tools.registry",
     "ToolRegistry": "agentkit.runtime.tools.registry",
     "ToolSpec": "agentkit.runtime.tools.registry",
     "UserMessage": "agentkit.infra.events",
+
+    # --- Decorators & registration helpers (PEP 8 snake_case) ----------------
+    "function_tool": "agentkit.runtime.integrations",
+    "get_provider": "agentkit.runtime.providers",
+    "list_tool_specs": "agentkit.runtime.tools.registry",
+    "register_provider": "agentkit.runtime.providers",
+    "register_tool": "agentkit.runtime.tools.registry",
+    "tool": "agentkit.runtime.integrations",
 }
 
 __all__ = ["__version__", *sorted(_LAZY)]
