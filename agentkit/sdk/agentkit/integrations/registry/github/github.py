@@ -75,7 +75,9 @@ class GitHub(agentkit.Integration):
             "X-GitHub-Api-Version": "2022-11-28",
         }
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(f"{GITHUB_API}{path}", headers=headers, params=params)
+            resp = await client.get(
+                f"{GITHUB_API}{path}", headers=headers, params=params
+            )
             resp.raise_for_status()
             return resp.json()
 
@@ -106,7 +108,9 @@ class GitHub(agentkit.Integration):
             "state": args.get("state", "open"),
             "per_page": min(int(args.get("per_page", 20)), 100),
         }
-        data = await self._get(f"/repos/{args['owner']}/{args['repo']}/issues", params=params)
+        data = await self._get(
+            f"/repos/{args['owner']}/{args['repo']}/issues", params=params
+        )
         # Filter out pull requests; GitHub's /issues endpoint includes them.
         issues = [i for i in data if "pull_request" not in i]
         return {

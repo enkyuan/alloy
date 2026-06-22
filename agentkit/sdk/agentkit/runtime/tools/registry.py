@@ -181,5 +181,3 @@ async def execute_tool(
 ) -> Dict[str, Any]:
     """Execute a registered tool call against the process-default registry."""
     return await _default_registry.execute(user_id, tool_name, tool_args, db=db)
-
-

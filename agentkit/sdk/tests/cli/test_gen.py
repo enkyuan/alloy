@@ -55,7 +55,12 @@ TYPED_SPEC = {
                 "operationId": "getPet",
                 "summary": "fetch a pet",
                 "parameters": [
-                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                    },
                     {
                         "name": "limit",
                         "in": "query",

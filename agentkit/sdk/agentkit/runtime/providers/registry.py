@@ -33,5 +33,3 @@ def get_provider(name: str, **kwargs) -> ModelProvider:
     if provider_cls is None:
         raise ProviderConfigError(f"Provider '{name}' is not registered.")
     return provider_cls(**kwargs)
-
-

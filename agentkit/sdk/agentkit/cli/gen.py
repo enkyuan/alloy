@@ -178,18 +178,14 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
         has_body = op.method not in ("GET", "HEAD", "OPTIONS")
         if query_names:
             quoted = ", ".join('"' + q + '"' for q in query_names)
-            query_kwarg = (
-                f", params={{k: args[k] for k in ({quoted},) if k in args}}"
-            )
+            query_kwarg = f", params={{k: args[k] for k in ({quoted},) if k in args}}"
         else:
             query_kwarg = ""
         if has_body:
             # Body excludes path + query params; remaining keys form the JSON body.
             if body_names:
                 quoted_body = ", ".join('"' + n + '"' for n in body_names)
-                body_kwarg = (
-                    f", json={{k: v for k, v in args.items() if k not in ({quoted_body},)}}"
-                )
+                body_kwarg = f", json={{k: v for k, v in args.items() if k not in ({quoted_body},)}}"
             else:
                 body_kwarg = ", json=args"
         else:

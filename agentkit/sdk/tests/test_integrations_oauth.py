@@ -156,7 +156,10 @@ def test_tokens_persist_chmod_0600(tmp_path: Path) -> None:
     tokens_path = tmp_path / "tokens.json"
     client = _client(tmp_path, token_path=tokens_path)
     tok = _Tokens(
-        access_token="a", refresh_token="r", expires_at=time.time() + 3600, scopes=("s",)
+        access_token="a",
+        refresh_token="r",
+        expires_at=time.time() + 3600,
+        scopes=("s",),
     )
     client._save_tokens(tok)  # type: ignore[attr-defined]
     mode = tokens_path.stat().st_mode & 0o777

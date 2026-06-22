@@ -68,7 +68,9 @@ class Gmail(agentkit.Integration):
     async def _get(self, path: str, params: Optional[dict] = None) -> Any:
         headers = await self._oauth.authorized_headers()
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(f"{GMAIL_API}{path}", headers=headers, params=params)
+            resp = await client.get(
+                f"{GMAIL_API}{path}", headers=headers, params=params
+            )
             resp.raise_for_status()
             return resp.json()
 
@@ -100,9 +102,14 @@ class Gmail(agentkit.Integration):
     async def get_message(self, ctx: agentkit.ToolContext, args: dict) -> dict:
         data = await self._get(
             f"/users/me/messages/{args['message_id']}",
-            params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]},
+            params={
+                "format": "metadata",
+                "metadataHeaders": ["From", "To", "Subject", "Date"],
+            },
         )
-        headers = {h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])}
+        headers = {
+            h["name"]: h["value"] for h in data.get("payload", {}).get("headers", [])
+        }
         return {
             "id": data.get("id"),
             "thread_id": data.get("threadId"),

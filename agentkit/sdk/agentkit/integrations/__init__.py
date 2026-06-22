@@ -181,7 +181,9 @@ def install_integration(
     for rel in manifest.files:
         src = manifest.root / rel
         if not src.exists():
-            raise ManifestError(f"Manifest {manifest.path} references missing file {src}")
+            raise ManifestError(
+                f"Manifest {manifest.path} references missing file {src}"
+            )
         # Preserve any sub-directory structure declared in the manifest so an
         # integration can ship multiple files like ["foo.py", "lib/bar.py"].
         target = dest / rel

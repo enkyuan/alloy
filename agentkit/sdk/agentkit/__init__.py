@@ -41,7 +41,6 @@ _LAZY: dict[str, str] = {
     "ToolSpec": "agentkit.runtime.tools.registry",
     "UnknownToolError": "agentkit.runtime.tools.registry",
     "UserMessage": "agentkit.infra.events",
-
     # --- Decorators & registration helpers (PEP 8 snake_case) ----------------
     "function_tool": "agentkit.runtime.integrations",
     "get_provider": "agentkit.runtime.providers",

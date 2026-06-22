@@ -78,7 +78,9 @@ class GoogleCalendar(agentkit.Integration):
     async def _get(self, path: str, params: Optional[dict] = None) -> Any:
         headers = await self._oauth.authorized_headers()
         async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(f"{CALENDAR_API}{path}", headers=headers, params=params)
+            resp = await client.get(
+                f"{CALENDAR_API}{path}", headers=headers, params=params
+            )
             resp.raise_for_status()
             return resp.json()
 
