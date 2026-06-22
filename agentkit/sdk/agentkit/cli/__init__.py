@@ -1,7 +1,7 @@
 """agentkit CLI package."""
 
 from ._main import main
-from .init import init_project
+from .init import init_project  # noqa: F401  (re-exported for back-compat)
 from .templates import agent_template, env_template
 
 # Legacy constants (callers used the module-level strings before the refactor).

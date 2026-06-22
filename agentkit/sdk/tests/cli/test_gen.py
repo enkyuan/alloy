@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 
@@ -18,9 +17,12 @@ SPEC = {
 def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
     import ast
     from agentkit.cli import main
+
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
-    rc = main(["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "python"])
+    rc = main(
+        ["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "python"]
+    )
     assert rc == 0
     body = (tmp_path / "tools.py").read_text()
     assert "TOOLS" in body
@@ -30,6 +32,7 @@ def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
 
 def test_gen_ts_writes_index_ts(tmp_path: Path) -> None:
     from agentkit.cli import main
+
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
     rc = main(["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "ts"])

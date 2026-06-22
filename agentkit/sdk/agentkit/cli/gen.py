@@ -44,16 +44,20 @@ def parse_spec(spec: dict) -> list[ParsedOperation]:
             op = methods.get(method)
             if not op or not op.get("operationId"):
                 continue
-            ops.append(ParsedOperation(
-                operation_id=op["operationId"],
-                fn_name=to_snake_case(op["operationId"]),
-                method=method.upper(),
-                path=path,
-                summary=op.get("summary") or op.get("description") or op["operationId"],
-                tag=(op.get("tags") or [None])[0],
-                path_params=extract_path_params(path),
-                risk="read" if method == "get" else "write",
-            ))
+            ops.append(
+                ParsedOperation(
+                    operation_id=op["operationId"],
+                    fn_name=to_snake_case(op["operationId"]),
+                    method=method.upper(),
+                    path=path,
+                    summary=op.get("summary")
+                    or op.get("description")
+                    or op["operationId"],
+                    tag=(op.get("tags") or [None])[0],
+                    path_params=extract_path_params(path),
+                    risk="read" if method == "get" else "write",
+                )
+            )
     return ops
 
 
@@ -82,9 +86,13 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
     ]
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
-        props = ",\n            ".join(
-            f'"{p}": {{"type": "string", "description": "{p} path param"}}' for p in op.path_params
-        ) or ""
+        props = (
+            ",\n            ".join(
+                f'"{p}": {{"type": "string", "description": "{p} path param"}}'
+                for p in op.path_params
+            )
+            or ""
+        )
         if op.path_params:
             quoted = ", ".join('"' + p + '"' for p in op.path_params)
             required = f', "required": [{quoted}]'
@@ -97,7 +105,7 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
             f'        "parameters": {{\n'
             f'            "type": "object",\n'
             f'            "properties": {{{props}}}{required}\n'
-            f'        }},\n'
+            f"        }},\n"
             f'        "risk": "{op.risk}",\n'
             f"    }},"
         )
@@ -126,10 +134,13 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
     tools_entries: list[str] = []
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
-        props = ",\n".join(
-            f'        {p}: {{ type: "string", description: "{p} path param" }}'
-            for p in op.path_params
-        ) or "        // no path params"
+        props = (
+            ",\n".join(
+                f'        {p}: {{ type: "string", description: "{p} path param" }}'
+                for p in op.path_params
+            )
+            or "        // no path params"
+        )
         if op.path_params:
             quoted_ts = ", ".join('"' + p + '"' for p in op.path_params)
             required = f"\n      required: [{quoted_ts}],"
@@ -139,7 +150,7 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
         tools_entries.append(
             f"  {{\n"
             f'    name: "{name}",\n'
-            f'    description: {json.dumps(op.summary)},\n'
+            f"    description: {json.dumps(op.summary)},\n"
             f"    parameters: {{\n"
             f'      type: "object",\n'
             f"      properties: {{\n{props}\n      }},{required}\n"
@@ -159,7 +170,7 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
             f"  const url = new URL(`${{BASE_URL}}{url_path}`);\n"
             f"  const r = await fetch(url.toString(), {{\n"
             f'    method: "{op.method}",\n'
-            f'    headers: {{ Authorization: `Bearer ${{API_KEY}}`{ct} }},{body}\n'
+            f"    headers: {{ Authorization: `Bearer ${{API_KEY}}`{ct} }},{body}\n"
             f"  }});\n"
             f"  return r.json();\n"
             f"}}"
@@ -195,7 +206,9 @@ def _load_spec(path: Path) -> dict:
         try:
             import yaml  # type: ignore
         except ImportError as e:
-            raise SystemExit("YAML specs require PyYAML. pip install pyyaml or convert to JSON.") from e
+            raise SystemExit(
+                "YAML specs require PyYAML. pip install pyyaml or convert to JSON."
+            ) from e
         return yaml.safe_load(raw)
     try:
         return json.loads(raw)

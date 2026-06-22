@@ -71,7 +71,9 @@ def run(args: argparse.Namespace) -> int:
         return 0
     print("\nThe following packages can be upgraded:\n")
     for u in outdated:
-        print(f"  {color(u['name'], 'cyan')} {color(u['current'], 'gray')} → {color(u['latest'], 'green')}")
+        print(
+            f"  {color(u['name'], 'cyan')} {color(u['current'], 'gray')} → {color(u['latest'], 'green')}"
+        )
     if not args.yes:
         ans = input("\nUpgrade these packages? [Y/n] ").strip().lower()
         if ans and ans not in ("y", "yes"):

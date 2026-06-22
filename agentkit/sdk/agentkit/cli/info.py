@@ -25,7 +25,11 @@ def collect() -> dict:
             providers.append({"name": mod, "installed": True})
     return {
         "python": {"version": sys.version.split()[0], "executable": sys.executable},
-        "platform": {"system": _platform.system(), "machine": _platform.machine(), "release": _platform.release()},
+        "platform": {
+            "system": _platform.system(),
+            "machine": _platform.machine(),
+            "release": _platform.release(),
+        },
         "agentkit": {"version": get_version()},
         "providers": providers,
     }

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from agentkit.cli.init import init_project
 from agentkit.cli.templates import agent_template, env_template
@@ -29,6 +28,7 @@ def test_init_project_force_overwrites(tmp_path: Path) -> None:
 
 def test_agent_template_is_valid_python() -> None:
     import ast
+
     ast.parse(agent_template("openai"))
 
 

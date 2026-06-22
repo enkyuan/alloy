@@ -19,10 +19,15 @@ def _write(path: Path, body: str, *, force: bool) -> bool:
     return True
 
 
-def init_project(target: Path, *, provider: str = "openai", force: bool = False) -> list[Path]:
+def init_project(
+    target: Path, *, provider: str = "openai", force: bool = False
+) -> list[Path]:
     target.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for name, body in (("agent.py", agent_template(provider)), (".env.example", env_template(provider))):
+    for name, body in (
+        ("agent.py", agent_template(provider)),
+        (".env.example", env_template(provider)),
+    ):
         path = target / name
         if _write(path, body, force=force):
             written.append(path)
@@ -44,7 +49,12 @@ def run(args: argparse.Namespace) -> int:
     if provider is None and not args.yes:
         provider = _prompts.select(
             "Default LLM provider",
-            [("openai", "OpenAI"), ("anthropic", "Anthropic"), ("kimi", "Kimi"), ("gemini", "Gemini")],
+            [
+                ("openai", "OpenAI"),
+                ("anthropic", "Anthropic"),
+                ("kimi", "Kimi"),
+                ("gemini", "Gemini"),
+            ],
         )
     provider = provider or "openai"
     written = init_project(target, provider=provider, force=args.force)
