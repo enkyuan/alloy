@@ -5,6 +5,10 @@
  * event-sourced building blocks (events, bus, store, replay) and a tool
  * registry. Import what you need and compose it; nothing here requires a
  * database, server, or any environment configured.
+ *
+ * Implementation helpers (test resets, internal symbols, low-level Zod/JSON
+ * Schema converters, the planner's `EmitFn`/`buildMessages`) deliberately are
+ * not re-exported here; reach into the submodule path when you need them.
  */
 
 export const VERSION = "0.1.0";
@@ -16,7 +20,7 @@ export { EventBus } from "./events/bus";
 export { type EventStore, InMemoryEventStore } from "./events/store";
 
 // Sessions
-export { replaySession, ReplaySession, type SessionState, type Message } from "./sessions/replay";
+export { replaySession, type SessionState, type Message } from "./sessions/replay";
 export { SessionManager } from "./sessions/manager";
 export { type SessionRecord, type SessionStore, InMemorySessionStore } from "./sessions/store";
 
@@ -28,18 +32,11 @@ export {
   type JSONSchema,
   type ToolParameters,
   type ListToolSpecsOptions,
-  type ToolMeta,
-  type TaggedHandler,
-  TOOL_META,
   ToolRegistry,
   UnknownToolError,
   registerTool,
   listToolSpecs,
   toolSpecFromSchema,
-  providerSafeToolName,
-  toolParametersToJSONSchema,
-  executeTool,
-  clearTools,
 } from "./tools/registry";
 export {
   ToolPolicy,
@@ -54,7 +51,6 @@ export {
   type ToolCallResult,
   type ToolExecutor,
   type ApprovalHandler,
-  type EmitFn,
 } from "./tools/planner";
 
 // Providers
@@ -76,7 +72,7 @@ export {
   ProviderConnectionError,
   ProviderError,
 } from "./providers/errors";
-export { clearProviders, getProvider, registerProvider } from "./providers/registry";
+export { getProvider, registerProvider } from "./providers/registry";
 export {
   openai,
   anthropic,
@@ -105,7 +101,6 @@ export {
   type RunTurnOptions,
 } from "./runtime/runtime";
 export { CancellationToken } from "./runtime/cancellation";
-export { buildMessages } from "./runtime/context";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "./runtime/builder";
 export {
   generateText,

@@ -1,17 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import {
-  TOOL_META,
-  ToolPolicy,
-  ToolRegistry,
-  clearTools,
-  executeTool,
-  listToolSpecs,
-  registerTool,
-  toolSpecFromSchema,
-} from "../src/index";
-import { tool } from "../src/index";
+import { ToolPolicy, listToolSpecs, registerTool, tool, toolSpecFromSchema } from "../src/index";
+import { TOOL_META, ToolRegistry, clearTools, executeTool } from "../src/tools/registry";
 import { AgentRuntime } from "../src/runtime/runtime";
 import { MockProvider } from "../src/providers/mock";
 import { EventBus } from "../src/events/bus";

@@ -122,9 +122,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ```python
 import agentkit
-provider = agentkit.GetProvider("openai")   # reads OPENAI_API_KEY
+provider = agentkit.get_provider("openai")   # reads OPENAI_API_KEY
 # or
-provider = agentkit.GetProvider("anthropic")
+provider = agentkit.get_provider("anthropic")
 ```
 
 **TypeScript**

@@ -1,21 +1,36 @@
 export function tsAgentTemplate(provider: string): string {
-  return `import { AgentBuilder, InMemoryEventBus, InMemoryEventStore, GetProvider, UserMessage } from "@agentkit/sdk";
+  return `import {
+  AgentBuilder,
+  AgentKitEvent,
+  EventType,
+  InMemoryEventBus,
+  InMemoryEventStore,
+  getProvider,
+} from "@agentkit/sdk";
 
 async function main() {
   const bus = new InMemoryEventBus();
   const store = new InMemoryEventStore();
   const providerName = process.env.AGENTKIT_MODEL_PROVIDER ?? ${JSON.stringify(provider)};
   const runtime = new AgentBuilder()
-    .provider(GetProvider(providerName))
+    .provider(getProvider(providerName))
     .systemPrompt("You are a helpful assistant.")
     .build({ bus, store });
 
-  await store.append(new UserMessage({ sessionId: "s1", content: "Hello!" }));
-  await runtime.runTurn("s1");
-  for (const e of await store.getEvents("s1")) console.log(e.type, (e as any).content ?? (e as any).delta ?? "");
+  await store.append(
+    AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
+  );
+  await runtime.send("s1", "Hello!");
+
+  for (const e of await store.getEvents("s1")) {
+    console.log(e.type, (e as { content?: string; delta?: string }).content ?? (e as { delta?: string }).delta ?? "");
+  }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 `;
 }
 

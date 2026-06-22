@@ -7,15 +7,15 @@ Reach for the tool registry to expose functions your agent can call. The
 runtime sends the full spec list to the model each turn, dispatches whatever
 the model picks, and runs concurrent calls scatter-gather.
 
-The shortest path is `@FunctionTool` (Python) or `FunctionTool(...)` (TypeScript),
+The shortest path is `@function_tool` (Python) or `functionTool(...)` (TypeScript),
 which derives the spec from type hints / a Zod schema and the docstring.
 
 <Tabs items={["python", "typescript"]}>
   <Tab value="python">
     ```python
-    from agentkit.runtime.integrations import FunctionTool
+    from agentkit import function_tool
 
-    @FunctionTool
+    @function_tool
     async def get_weather(city: str) -> dict:
         """Look up the weather for a city."""
         return {"city": city, "tempF": 68}
@@ -24,10 +24,10 @@ which derives the spec from type hints / a Zod schema and the docstring.
   </Tab>
   <Tab value="typescript">
     ```ts
-    import { FunctionTool } from "@agentkit/sdk";
+    import { functionTool } from "@agentkit/sdk";
     import { z } from "zod";
 
-    const getWeather = FunctionTool(
+    const getWeather = functionTool(
       {
         name: "get_weather",
         description: "Look up the weather for a city.",
@@ -41,7 +41,7 @@ which derives the spec from type hints / a Zod schema and the docstring.
 </Tabs>
 
 Pass tools to the runtime via `AgentBuilder().tool(...)`. For a hand-written
-spec, use `ToolSpec` and `RegisterTool` (Python) or `registerTool` (TS).
+spec, use `ToolSpec` and `register_tool` (Python) or `registerTool` (TS).
 
 `ToolContext` carries `userId` / `user_id` and an optional `db` handle (`null`
 by default). Inject one when the tool needs persistence.
