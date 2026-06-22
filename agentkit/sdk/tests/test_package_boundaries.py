@@ -119,18 +119,14 @@ def test_runtime_tools_do_not_import_legacy_tool_definition() -> None:
     """runtime/tools/ must not depend on the legacy agentkit.types.tool module.
 
     The legacy ToolDefinition ABC lives in agentkit/types/tool.py. The current
-    runtime tool model uses agentkit.runtime.tools.registry.ToolSpec. The one
-    deliberate exception is system_tools.py, which is itself the legacy shim and
-    is documented as deprecated.
+    runtime tool model uses agentkit.runtime.tools.registry.ToolSpec. No file
+    under runtime/tools/ may still import the legacy ABC.
     """
     runtime_tools_dir = PACKAGE_ROOT / "runtime" / "tools"
-    allowed_exception = Path("agentkit/runtime/tools/system_tools.py")
     violations: list[str] = []
 
     for path in _python_files(runtime_tools_dir):
         rel = path.relative_to(SDK_ROOT)
-        if rel == allowed_exception:
-            continue
         if any(_matches(imp, "agentkit.types.tool") for imp in _imports(path)):
             violations.append(str(rel))
 

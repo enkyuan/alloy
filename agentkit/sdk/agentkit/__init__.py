@@ -33,7 +33,6 @@ _LAZY: dict[str, str] = {
     "RegisterProvider": "agentkit.runtime.providers",
     "RegisterTool": "agentkit.runtime.tools.registry",
     "ReplaySession": "agentkit.runtime.sessions",
-    "RequestPaymentTool": "agentkit.runtime.tools.payment",
     "SessionManager": "agentkit.runtime.sessions",
     "SessionState": "agentkit.runtime.sessions",
     "Tool": "agentkit.runtime.integrations",

@@ -27,6 +27,25 @@ Python SDK and the TypeScript port, so logs round-trip between them.
 
 See [reference service](/docs/reference-service) for the multi-process layout.
 
+## Composition
+
+agentkit's core is a set of primitives -- events, sessions, tools,
+providers, runtime. By design the core does not ship verticals (no
+built-in payment, calendar, or email tools), and it does not pick a
+vendor for you -- `GetProvider()` with no name returns an in-memory mock,
+not a third-party service.
+
+For v0.1.0 the Python SDK still bundles a few opinionated modules at the
+top level for convenience: `agentkit.cli` (project scaffolding),
+`agentkit.knowledge` (RAG building blocks), `agentkit.modalities.voice`
+(STT / TTS edges), and `agentkit.infra.observability` (metrics, tracing).
+These are slated to split into their own packages (`@agentkit/cli`,
+`@agentkit/knowledge`, etc.) in a future release. Treat them as optional
+add-ons today and avoid relying on their top-level imports if you want a
+smaller v1.0 upgrade path.
+
+The TypeScript SDK ships only the core primitives.
+
 ## Next
 
 - [Getting started](/docs/getting-started) -- install and run your first agent
