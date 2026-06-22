@@ -8,7 +8,7 @@ from agentkit.infra.realtime.redis import RedisKeys
 
 @pytest.fixture
 def mock_tool_specs():
-    with patch("agentkit_serve.server.v1.tools.ListToolSpecs") as mock:
+    with patch("agentkit_serve.server.v1.tools.list_tool_specs") as mock:
         # Mock ToolSpec object
         spec = MagicMock()
         spec.name = "test_tool"
