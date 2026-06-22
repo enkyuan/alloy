@@ -3,15 +3,66 @@ title: Events
 description: All agentkit session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
 ---
 
-You won't usually emit events yourself — the runtime does. Reach into the
-event log when you want to inspect, persist, or replay a session.
+Session state in agentkit is a deterministic projection of an append-only
+event log. The runtime appends events as you call `send`; `replaySession`
+reads them back into a usable `SessionState`.
 
-All session state is derived from an append-only event log. Events are
-discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
-`agent.message.completed`). The full list lives in the SDK source:
+You usually don't emit events yourself -- the runtime does. Reach into
+the log when you want to inspect, persist, or replay a session.
 
-- `agentkit/sdk/agentkit/infra/events/schemas.py` (Python)
-- `agentkit/ts/src/events/schemas.ts` (TypeScript)
+## Event types
 
-The event-type strings are the wire format and are identical across both
-SDKs, so a log written by one can be replayed by the other.
+The same strings are used over the wire by both SDKs. A log written by
+the Python SDK can be replayed by the TypeScript SDK and vice versa.
+
+| Type                         | Emitted by                        |
+| ---------------------------- | --------------------------------- |
+| `session.created`            | First event in a new session      |
+| `session.closed`             | Session was closed                |
+| `user.message`               | Caller (via `runtime.send`)       |
+| `user.audio.chunk`           | Audio input from user             |
+| `transcript.partial`         | Partial STT transcript available  |
+| `transcript.final`           | Final STT transcript completed    |
+| `memory.retrieval.started`   | RAG query execution began         |
+| `memory.retrieval.completed` | RAG query returned documents      |
+| `agent.reasoning.started`    | Model began reasoning             |
+| `agent.message.delta`        | Provider streaming a text chunk   |
+| `agent.message.completed`    | Provider finished a turn          |
+| `tool.call.requested`        | Model decided to call a tool      |
+| `tool.call.started`          | Tool handler execution began      |
+| `tool.call.completed`        | Tool handler returned a result    |
+| `tool.call.failed`           | Tool handler raised an error      |
+| `tool.approval.requested`    | Awaiting approval to execute tool |
+| `tool.approval.approved`     | User approved tool execution      |
+| `tool.approval.rejected`     | User rejected tool execution      |
+| `workflow.started`           | Multi-step workflow begun         |
+| `workflow.completed`         | Workflow finished successfully    |
+| `workflow.failed`            | Workflow encountered an error     |
+| `cancellation.requested`     | Session cancellation signaled     |
+| `cancellation.completed`     | Session cancellation finalized    |
+
+The canonical list is in the SDK source -- check there before relying on
+any event type:
+
+- Python: `agentkit/sdk/agentkit/infra/events/types.py`
+- TypeScript: `agentkit/ts/src/events/types.ts`
+
+## Reading the log
+
+```python
+# Python
+events = await runtime.history("session-1")
+for e in events:
+    print(e.type, getattr(e, "content", ""))
+```
+
+```ts
+// TypeScript
+const events = await runtime.history("session-1");
+for (const e of events) {
+  console.log(e.type, e.content ?? "");
+}
+```
+
+`replaySession` projects the log into a `SessionState` for you on every
+turn -- see [session state](/docs/concepts/session-state).
