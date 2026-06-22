@@ -1,20 +1,20 @@
 ---
 title: Reference Service
-description: agentkit-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice, and when to use it instead of embedding the SDK directly.
+description: agentkit-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice.
 ---
 
-`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes over Redis
-so heavy tool execution never stalls a real-time exchange.
+`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes over
+Redis so heavy tool execution never stalls a real-time exchange.
 
-| process      | role                                                      |
+| Process      | Role                                                      |
 | ------------ | --------------------------------------------------------- |
 | `api`        | FastAPI app: REST routes and STT WebSocket                |
 | `bus-worker` | reasoning loop: LLM calls, event bus, tool dispatch       |
 | `worker`     | async tool execution (TaskIQ), results back to bus-worker |
 
 Redis Streams provide durable at-least-once hand-off between processes. Redis
-Pub/Sub fans out agent responses to the connected client in real time.
+Pub/Sub fans agent responses out to the connected client in real time.
 
-Use `agentkit-serve` when you need multi-process durability and real-time
-voice. Embed `agentkit` directly when you want infra-free usage inside your own
-app.
+Reach for this when you need multi-process durability or real-time voice over
+a WebSocket. For in-process agents, embed the SDK directly — see the
+[index](/docs).

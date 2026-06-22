@@ -1,14 +1,22 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { LazyMotion, domAnimation, m } from "motion/react";
-import { RiArrowRightUpLongLine } from "@remixicon/react";
+import { RiStarFill } from "@remixicon/react";
 import { cn } from "@lib/utils";
 import { ChevronDownSmallIcon } from "@components/icons";
 import { AgentkitWordmark } from "@components/icons/logo";
-import { AgentPayLogo } from "@components/icons/agentpay";
+import { GitHubIcon } from "@components/docs/icons/ui";
 import { ResourcesDropdown } from "./dropdowns";
 import { navTabs } from "@lib/landing/nav-sections";
+
+const GITHUB_REPO = "enkyuan/alloy";
+
+function formatStars(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(n);
+}
 
 const STATE_ACTIVE = "text-foreground";
 const STATE_INACTIVE = "text-foreground/65 dark:text-foreground/50";
@@ -40,6 +48,27 @@ export function DesktopNavTabs({
   isActive,
   styles,
 }: DesktopNavTabsProps) {
+  const [stars, setStars] = useState<number | null>(null);
+
+  useEffect(() => {
+    const cached = sessionStorage.getItem("agentkit-gh-stars");
+    if (cached) {
+      setStars(Number(cached));
+      return;
+    }
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}`, {
+      headers: { Accept: "application/vnd.github+json" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { stargazers_count?: number } | null) => {
+        if (data?.stargazers_count !== undefined) {
+          sessionStorage.setItem("agentkit-gh-stars", String(data.stargazers_count));
+          setStars(data.stargazers_count);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <LazyMotion features={domAnimation}>
       <m.div
@@ -136,52 +165,46 @@ export function DesktopNavTabs({
           );
         })}
 
-        {/* AgentPay */}
+        {/* Examples */}
         <m.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2, delay: 0.2, ease: "easeOut" }}
           className="relative flex-1"
         >
-          <a
-            href=""
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            href="/docs/getting-started"
             className={`group/tab flex items-center justify-center gap-2 px-5 xl:px-4 py-3 h-full cursor-pointer border-l border-r ${styles.tabDividerClass} transition-colors duration-150 hover:bg-foreground/[0.03]`}
           >
             <span className="whitespace-nowrap font-mono text-xs uppercase tracking-wider text-foreground/65 dark:text-foreground/50 group-hover/tab:text-foreground/75 transition-colors duration-150">
-              Try AgentPay
+              Examples
             </span>
-            <span className="text-foreground/50 dark:text-foreground/35 group-hover/tab:text-foreground [&_svg]:size-3 transition-colors duration-150">
-              <AgentPayLogo />
-            </span>
-          </a>
+          </Link>
         </m.div>
 
-        {/* Sign In */}
+        {/* GitHub stars */}
         <m.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.2, delay: 0.24, ease: "easeOut" }}
           className="flex shrink-0 items-stretch"
         >
-          <m.a
-            href=""
+          <a
+            href={`https://github.com/${GITHUB_REPO}`}
             target="_blank"
             rel="noreferrer"
-            whileHover="hovered"
             className="flex items-center gap-2 px-5 py-3 cursor-pointer font-mono text-xs uppercase tracking-wider bg-foreground text-background transition-opacity duration-150 hover:opacity-90"
+            aria-label="Star agentkit on GitHub"
           >
-            <span>Sign-In</span>
-            <m.span
-              variants={{
-                hovered: { x: 1, y: -2, transition: { duration: 0.2, ease: "easeOut" } },
-              }}
-              className="flex items-center"
-            >
-              <RiArrowRightUpLongLine size={14} />
-            </m.span>
-          </m.a>
+            <GitHubIcon size={14} />
+            <span>Star on GitHub</span>
+            {stars !== null && (
+              <span className="flex items-center gap-1 text-background/70">
+                <RiStarFill size={11} />
+                <span className="tabular-nums">{formatStars(stars)}</span>
+              </span>
+            )}
+          </a>
         </m.div>
       </m.div>
     </LazyMotion>

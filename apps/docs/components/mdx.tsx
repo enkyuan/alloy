@@ -1,5 +1,7 @@
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
+import { Step, Steps } from "fumadocs-ui/components/steps";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
 import { Callout } from "@components/ui/callout";
 import { Card, Cards } from "@components/ui/card";
 import {
@@ -19,6 +21,10 @@ export function getMDXComponents(components?: MDXComponents) {
     Callout,
     Card,
     Cards,
+    Step,
+    Steps,
+    Tab,
+    Tabs,
     APIMethod,
     DatabaseTable,
     DividerText,

@@ -1,32 +1,34 @@
 ---
 title: agentkit
-description: agentkit is an embeddable, infra-free SDK for building agents in Python and TypeScript, with an event-sourced runtime, a tool registry, pluggable LLM providers, and STT/TTS voice modalities.
+description: agentkit is an embeddable SDK for building agents in Python and TypeScript. Event-sourced runtime, tool registry, pluggable providers, STT/TTS modalities. No database or server required.
 ---
 
-agentkit is an embeddable SDK for building agents: an event-sourced runtime, a
-tool registry, pluggable LLM providers, and STT/TTS modalities. The core is
-infra-free. No database or server is required to import and use it. Deploy it
-yourself, or run the reference service (`agentkit-serve`) when you need a
-production-grade multi-process setup.
-
-It powers agentpay's agent runtime, and can also be used standalone in any
-Python or TypeScript project.
+agentkit is an embeddable SDK for building agents. The core needs no database
+or server. Run `agentkit-serve` when you want multi-process durability and
+real-time voice.
 
 ## Packages
 
-| Package          | Path             | What It Is                                   |
+| Package          | Path             | What it is                                   |
 | ---------------- | ---------------- | -------------------------------------------- |
-| `agentkit`       | `agentkit/sdk`   | Python SDK: the core runtime, embed anywhere |
-| `agentkit-serve` | `agentkit/serve` | Python: FastAPI + workers reference service  |
+| `agentkit`       | `agentkit/sdk`   | Python SDK: core runtime, embed anywhere     |
+| `agentkit-serve` | `agentkit/serve` | Python: FastAPI + workers, reference service |
 | `@agentkit/sdk`  | `agentkit/ts`    | TypeScript port of the core runtime          |
 
-The concepts in these docs are stated language-neutrally. Code samples show
-Python and TypeScript where both exist. The wire format (event type strings,
-field names) is identical across the Python SDK and the TypeScript port, so
-events round-trip across both.
+The wire format (event-type strings, field names) is identical across the
+Python SDK and the TypeScript port, so logs round-trip between them.
 
-## When to Embed vs. Run the Service
+## Embed or serve?
 
-Embed `agentkit` directly for infra-free usage inside your own app. Run
-`agentkit-serve` when you need multi-process durability and real-time voice.
-See [the reference service](/docs/reference-service).
+| If you want…                                      | Use              |
+| ------------------------------------------------- | ---------------- |
+| In-process agent in your own app, no infra        | `agentkit`       |
+| Multi-process durability, real-time voice over WS | `agentkit-serve` |
+
+See [reference service](/docs/reference-service) for the multi-process layout.
+
+## Next
+
+- [Getting started](/docs/getting-started) — install and run your first agent
+- [Concepts](/docs/concepts/events) — events, session state, tools, providers
+- [Architecture](/docs/architecture) — the runtime loop

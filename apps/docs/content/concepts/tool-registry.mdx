@@ -1,30 +1,47 @@
 ---
 title: Tool Registry
-description: Register a tool as a spec plus a handler in Python or TypeScript; the runtime dispatches model-requested calls and runs multiple calls from one turn concurrently.
+description: Register a tool as a spec plus a handler. The runtime dispatches model-requested calls and runs multiple calls from one turn concurrently.
 ---
 
-Tools are registered with a spec (name, description, JSON-schema parameters) and
-a handler function. The runtime calls the LLM with the full tool-spec list. When
-the model requests a tool call, the registry dispatches it. Multiple tool calls
-from one LLM turn run concurrently (scatter-gather) and results are collected
-before the next loop iteration.
+Reach for the tool registry to expose functions your agent can call. The
+runtime sends the full spec list to the model each turn, dispatches whatever
+the model picks, and runs concurrent calls scatter-gather.
 
-```python
-# Python
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
-)
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
-    return {"tempF": 68}
-```
+The shortest path is `@FunctionTool` (Python) or `FunctionTool(...)` (TypeScript),
+which derives the spec from type hints / a Zod schema and the docstring.
 
-```ts
-// TypeScript
-registerTool(
-  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
-  async (ctx, args) => ({ tempF: 68 }),
-);
-```
+<Tabs items={["python", "typescript"]}>
+  <Tab value="python">
+    ```python
+    from agentkit.runtime.integrations import FunctionTool
+
+    @FunctionTool
+    async def get_weather(city: str) -> dict:
+        """Look up the weather for a city."""
+        return {"city": city, "tempF": 68}
+    ```
+
+  </Tab>
+  <Tab value="typescript">
+    ```ts
+    import { FunctionTool } from "@agentkit/sdk";
+    import { z } from "zod";
+
+    const getWeather = FunctionTool(
+      {
+        name: "get_weather",
+        description: "Look up the weather for a city.",
+        parameters: z.object({ city: z.string() }),
+      },
+      async ({ city }) => ({ city, tempF: 68 }),
+    );
+    ```
+
+  </Tab>
+</Tabs>
+
+Pass tools to the runtime via `AgentBuilder().tool(...)`. For a hand-written
+spec, use `ToolSpec` and `RegisterTool` (Python) or `registerTool` (TS).
 
 `ToolContext` carries `userId` / `user_id` and an optional `db` handle (`null`
 by default). Inject one when the tool needs persistence.
