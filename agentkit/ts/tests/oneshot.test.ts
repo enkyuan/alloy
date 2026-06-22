@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { generateText, streamText } from "../src/runtime/oneshot";
 import { MockProvider } from "../src/providers/mock";
-import { openai, anthropic, openrouter, kimi } from "../src/providers/factory";
+import { openai, anthropic, openrouter, kimi, gemini } from "../src/providers/factory";
 import { OpenAIProvider } from "../src/providers/openai";
 import { AnthropicProvider } from "../src/providers/anthropic";
 import type {
@@ -215,6 +215,62 @@ describe("kimi factory", () => {
     } finally {
       if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = prev;
+    }
+  });
+});
+
+describe("gemini factory", () => {
+  it("defaults to gemini-2.5-flash on the OpenAI-compatible endpoint", () => {
+    const prev = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "g-key";
+    try {
+      const p = gemini();
+      const opts = readOpts(p);
+      expect(opts.baseURL).toBe("https://generativelanguage.googleapis.com/v1beta/openai/");
+      expect(opts.model).toBe("gemini-2.5-flash");
+      expect(opts.apiKey).toBe("g-key");
+    } finally {
+      if (prev === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev;
+    }
+  });
+
+  it("accepts a model-string override", () => {
+    const prev = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "g-key";
+    try {
+      const p = gemini("gemini-2.5-pro");
+      expect(readOpts(p).model).toBe("gemini-2.5-pro");
+    } finally {
+      if (prev === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev;
+    }
+  });
+
+  it("falls back to GOOGLE_API_KEY when GEMINI_API_KEY is unset", () => {
+    const prevG = process.env.GEMINI_API_KEY;
+    const prevGoog = process.env.GOOGLE_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    process.env.GOOGLE_API_KEY = "google-key";
+    try {
+      const p = gemini("gemini-2.5-flash");
+      expect(readOpts(p).apiKey).toBe("google-key");
+    } finally {
+      if (prevG !== undefined) process.env.GEMINI_API_KEY = prevG;
+      if (prevGoog === undefined) delete process.env.GOOGLE_API_KEY;
+      else process.env.GOOGLE_API_KEY = prevGoog;
+    }
+  });
+
+  it("respects an explicit apiKey over the environment", () => {
+    const prev = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = "from-env";
+    try {
+      const p = gemini({ apiKey: "explicit", model: "gemini-2.5-flash" });
+      expect(readOpts(p).apiKey).toBe("explicit");
+    } finally {
+      if (prev === undefined) delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY = prev;
     }
   });
 });

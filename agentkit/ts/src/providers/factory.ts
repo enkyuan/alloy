@@ -16,6 +16,8 @@ import { AnthropicProvider, type AnthropicProviderOptions } from "./anthropic";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_KIMI_MODEL = "moonshotai/kimi-k2";
+const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 
 type ModelOrOptions<TOpts> = string | (Omit<TOpts, "apiKey"> & { apiKey?: string });
 
@@ -98,4 +100,38 @@ export function openrouter(arg?: string | OpenRouterFactoryOptions): OpenAIProvi
 export function kimi(arg?: string | OpenRouterFactoryOptions): OpenAIProvider {
   if (typeof arg === "string") return openrouter(arg);
   return openrouter({ model: DEFAULT_KIMI_MODEL, ...(arg ?? {}) });
+}
+
+/** Optional Gemini factory options. Mirrors the OpenAI/anthropic shape. */
+export interface GeminiFactoryOptions extends Omit<OpenAIProviderOptions, "apiKey" | "baseURL"> {
+  apiKey?: string;
+}
+
+/**
+ * Create a Gemini provider via Google's OpenAI-compatible endpoint
+ * (https://generativelanguage.googleapis.com/v1beta/openai/). Reads
+ * `GEMINI_API_KEY`, falling back to `GOOGLE_API_KEY`, when no `apiKey` is
+ * passed. Defaults to model `gemini-2.5-flash`.
+ *
+ *   const p = gemini();                        // gemini-2.5-flash
+ *   const p = gemini("gemini-2.5-pro");
+ *   const p = gemini({ model: "gemini-2.5-pro", maxTokens: 2048 });
+ *
+ * This factory speaks the OpenAI chat-completions wire format, which Google
+ * supports as a compatibility layer. Native Gemini features (context
+ * caching, safety-setting configuration, response schemas) are not exposed;
+ * for those, instantiate `@google/genai` directly and adapt the response to
+ * `ModelProvider`.
+ */
+export function gemini(arg?: string | GeminiFactoryOptions): OpenAIProvider {
+  const opts: GeminiFactoryOptions = typeof arg === "string" ? { model: arg } : (arg ?? {});
+  const apiKey = opts.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+  return new OpenAIProvider({
+    apiKey,
+    baseURL: GEMINI_OPENAI_BASE_URL,
+    model: opts.model ?? DEFAULT_GEMINI_MODEL,
+    temperature: opts.temperature,
+    maxTokens: opts.maxTokens,
+    defaultHeaders: opts.defaultHeaders,
+  });
 }

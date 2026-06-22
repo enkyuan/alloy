@@ -82,7 +82,9 @@ export {
   anthropic,
   openrouter,
   kimi,
+  gemini,
   type OpenRouterFactoryOptions,
+  type GeminiFactoryOptions,
 } from "./providers/factory";
 
 // Integrations
