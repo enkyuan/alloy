@@ -1,0 +1,76 @@
+---
+title: Troubleshooting
+description: Common errors when importing agentkit, running a provider, or installing the CLI -- and how to fix each one.
+---
+
+If you see one of these errors, try the matching fix below.
+
+## ModuleNotFoundError: No module named 'openai'
+
+You installed `agentkit` without the provider extra.
+
+```bash
+pip install "agentkit[openai]"        # or [anthropic] / [gemini] / [providers]
+```
+
+The same applies in TypeScript -- `@agentkit/sdk` lists `openai` and
+`@anthropic-ai/sdk` as optional peer deps. Install whichever you'll use:
+
+```bash
+bun add @agentkit/sdk openai
+```
+
+## ProviderConfigError: `<PROVIDER>_API_KEY` is required
+
+The provider client cannot find its key. Export it in your shell or put
+it in a `.env` file that your runtime loads.
+
+```bash
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+export KIMI_API_KEY=...
+```
+
+Run `agentkit doctor` to verify at least one provider key is present.
+
+## Peer dep version mismatch (TS)
+
+If `bun add @agentkit/sdk openai` warns about a peer-dep version
+conflict, you probably have an older `openai` installed elsewhere in the
+workspace. `@agentkit/sdk` accepts `openai >=4 <8` and
+`@anthropic-ai/sdk >=0.30 <2`. Upgrade the dep or pin one that fits the
+range.
+
+## Tool calls never fire
+
+Three usual causes, in order of likelihood:
+
+1. The tool was registered with `RegisterTool` / `registerTool` but not
+   passed to `AgentBuilder().tool(...)`. The runtime only sees tools
+   bound to it.
+2. The model wasn't given the spec. Check `agentkit info --json` for the
+   provider, and confirm your provider's API supports function calling.
+3. The model decided not to call the tool. Reduce ambiguity in the
+   tool's `description` and parameter docs.
+
+## Events log is empty after a turn
+
+`runtime.history(sessionId)` reads from the `EventStore` you passed (or
+the default `InMemoryEventStore`). If you instantiated a fresh store
+between the turn and the read, it will be empty. Reuse the store; or, to
+stream events as they happen, subscribe to the bus -- see
+[event bus](/docs/concepts/event-bus).
+
+## `import agentkit` is slow
+
+The Python SDK uses PEP 562 lazy loading. The top-level import is
+cheap; first attribute access triggers a submodule import. If a specific
+name is slow on first access, import it directly from its subpackage
+(e.g. `from agentkit.runtime.tools.registry import ToolSpec`).
+
+## agentkit CLI not on PATH after `pip install`
+
+Your shell hasn't picked up the new entrypoint. Restart the shell or
+run `hash -r` (bash/zsh). If the CLI is installed inside a virtualenv,
+activate the venv (`poetry shell` or `source .venv/bin/activate`)
+before running `agentkit`.
