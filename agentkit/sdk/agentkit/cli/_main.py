@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import doctor as _doctor
 from . import gen as _gen
+from . import info as _info
 from . import init as _init
+from . import secret as _secret
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -14,6 +17,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     _init.add_parser(sub)
     _gen.add_parser(sub)
+    _info.add_parser(sub)
+    _secret.add_parser(sub)
+    _doctor.add_parser(sub)
     return parser
 
 
