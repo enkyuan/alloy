@@ -6,8 +6,8 @@
 .
 ├── agentkit/
 │   ├── sdk/          # the `agentkit` SDK (Python)
-│   ├── serve/        # `agentkit-serve` — FastAPI + workers (path-depends on ../sdk)
-│   └── ts/           # `@agentkit/sdk` — TypeScript SDK
+│   ├── serve/        # `agentkit-serve` -- FastAPI + workers (path-depends on ../sdk)
+│   └── ts/           # `@agentkit/sdk` -- TypeScript SDK
 └── docker/           # Docker Compose (Postgres, Redis, Supabase)
 ```
 
@@ -60,10 +60,10 @@ Services use the `agentkit` Compose project name (`agentkit-sdk`, `agentkit-work
 ## Running Tests
 
 ```bash
-# Core SDK tests (from agentkit/sdk/ — no database needed)
+# Core SDK tests (from agentkit/sdk/ -- no database needed)
 cd agentkit/sdk && poetry run pytest tests/
 
-# Reference service tests (from agentkit/serve/ — DB tests need Postgres)
+# Reference service tests (from agentkit/serve/ -- DB tests need Postgres)
 cd agentkit/serve && poetry run pytest tests/
 ```
 

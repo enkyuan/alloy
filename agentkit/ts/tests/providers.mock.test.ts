@@ -79,4 +79,31 @@ describe("MockProvider", () => {
     const p: ModelProvider = new MockProvider();
     expect(p).toBeDefined();
   });
+
+  it("yields pre-baked deltas from streamChunks", async () => {
+    const provider = new MockProvider({ streamChunks: ["hel", "lo", " wor", "ld"] });
+    const seen: string[] = [];
+    for await (const c of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+      seen.push(c.delta);
+    }
+    expect(seen).toEqual(["hel", "lo", " wor", "ld"]);
+  });
+
+  it("non-streaming generate returns the joined chunks as content", async () => {
+    const provider = new MockProvider({ streamChunks: ["a", "b", "c"] });
+    const r = await provider.generate([{ role: "user", content: "hi" }], []);
+    expect(r.content).toBe("abc");
+  });
+
+  it("aborts mid-stream when the cancellation token is set", async () => {
+    const provider = new MockProvider({ streamChunks: ["one", "two", "three"] });
+    const token = { isCancelled: false };
+    const iter = provider.generateStream([{ role: "user", content: "hi" }], [], {
+      cancellationToken: token,
+    });
+    const first = await iter.next();
+    expect(first.value?.delta).toBe("one");
+    token.isCancelled = true;
+    await expect(iter.next()).rejects.toThrow(/Cancelled/);
+  });
 });

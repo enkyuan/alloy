@@ -20,7 +20,7 @@ async def main() -> None:
     provider_name = os.environ.get("AGENTKIT_MODEL_PROVIDER", {provider!r})
     runtime = (
         agentkit.AgentBuilder()
-        .provider(agentkit.GetProvider(provider_name))
+        .provider(agentkit.get_provider(provider_name))
         .system_prompt("You are a helpful assistant.")
         .build(bus=bus, store=store)
     )

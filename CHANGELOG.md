@@ -49,5 +49,5 @@ All notable changes to AgentKit are documented here.
 
 | Package | Status | Notes |
 |---|---|---|
-| `@agentkit/sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers, CI green. Deferred: RAG, voice, Redis, Kimi/Gemini, CLI. |
+| `@agentkit/sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers + OpenRouter/Kimi/Gemini factories (OpenAI-compatible), CI green. Deferred: RAG, voice, Redis, CLI. |
 | `agentkit` (Python) | Pre-beta | Suitable for internal embedded agents. Static checks pass on hardened paths. Multi-process platform (Redis, voice workers) not production-hardened. |

@@ -1,6 +1,6 @@
 import pytest
 
-from agentkit.infra.events.replay import ReplaySession
+from agentkit.infra.events.replay import replay_session
 from agentkit.infra.events.schemas import (
     AgentMessageCompleted,
     SessionClosed,
@@ -27,7 +27,7 @@ def test_replay_session_builds_message_history():
         ),
         SessionClosed(session_id="s1", timestamp=6.0),
     ]
-    state = ReplaySession(events)
+    state = replay_session(events)
     assert state.session_id == "s1"
     assert state.is_active is False
     assert len(state.messages) == 4
@@ -48,7 +48,7 @@ def test_replay_session_projects_failed_tool_call():
             timestamp=2.0,
         ),
     ]
-    state = ReplaySession(events)
+    state = replay_session(events)
     # The failure is recorded as a tool message carrying the error, so the loop
     # sees it instead of re-requesting the same tool.
     tool_messages = [m for m in state.messages if m["role"] == "tool"]
@@ -59,7 +59,7 @@ def test_replay_session_projects_failed_tool_call():
 
 def test_replay_session_empty_log_raises():
     with pytest.raises(ValueError, match="empty event log"):
-        ReplaySession([])
+        replay_session([])
 
 
 def test_replay_session_sorts_out_of_order_timestamps():
@@ -67,6 +67,6 @@ def test_replay_session_sorts_out_of_order_timestamps():
         UserMessage(session_id="s1", content="second", timestamp=2.0),
         UserMessage(session_id="s1", content="first", timestamp=1.0),
     ]
-    state = ReplaySession(events)
+    state = replay_session(events)
     assert state.messages[0]["content"] == "first"
     assert state.messages[1]["content"] == "second"

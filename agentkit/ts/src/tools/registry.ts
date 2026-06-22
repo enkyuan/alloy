@@ -24,7 +24,7 @@ export interface ToolSpec {
   enabled?: boolean;
   /** Risk classification for policy enforcement and approval routing.
    * undefined = unclassified, treated as "read" by default policies. */
-  risk?: "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
+  risk?: ToolRisk;
 }
 
 /**
@@ -47,7 +47,7 @@ export type ToolHandler = (
 export interface ToolMeta {
   description: string;
   parameters: ToolParameters;
-  risk?: ToolSpec["risk"];
+  risk?: ToolRisk;
   tags?: string[];
   enabled?: boolean;
 }
@@ -57,9 +57,6 @@ export const TOOL_META = Symbol("tool_meta");
 
 /** A ToolHandler that may carry attached ToolMeta (set by `tool()`). */
 export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
-
-const toolSpecs = new Map<string, ToolSpec>();
-const toolHandlers = new Map<string, ToolHandler>();
 
 export function providerSafeToolName(name: string): string {
   return name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
@@ -102,19 +99,6 @@ function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
   };
 }
 
-/** Register a tool handler. Accepts either a full ToolSpec + handler, or a
- * pre-tagged handler (from `tool(meta, fn)`) with just a name string. */
-export function registerTool(spec: ToolSpec, handler: ToolHandler): void;
-export function registerTool(name: string, handler: ToolHandler): void;
-export function registerTool(specOrName: ToolSpec | string, handler: ToolHandler): void {
-  const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
-  if (toolSpecs.has(spec.name)) {
-    throw new Error(`Tool already registered: ${spec.name}`);
-  }
-  toolSpecs.set(spec.name, spec);
-  toolHandlers.set(spec.name, handler);
-}
-
 export interface ListToolSpecsOptions {
   tags?: string[];
   enabledOnly?: boolean;
@@ -131,11 +115,6 @@ function filterSpecs(all: ToolSpec[], options: ListToolSpecsOptions): ToolSpec[]
   return specs;
 }
 
-/** Return registered tool specs, optionally filtered by tags or enabled status. */
-export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
-  return filterSpecs([...toolSpecs.values()], options);
-}
-
 /**
  * Build a tool spec from a Zod schema, reducing it to the
  * `{ type, properties, required }` shape the LLM tool API expects (mirrors the
@@ -149,32 +128,13 @@ export function toolSpecFromSchema(name: string, description: string, schema: z.
   };
 }
 
-/** Execute a registered tool call for a given user. Rejects on an unknown tool. */
-export async function executeTool(
-  userId: string,
-  toolName: string,
-  toolArgs: Record<string, unknown>,
-  db?: unknown,
-): Promise<Record<string, unknown>> {
-  const handler = toolHandlers.get(toolName);
-  if (handler === undefined) {
-    throw new Error(`Unknown tool: ${toolName}`);
-  }
-  return handler({ userId, db }, toolArgs);
-}
-
-/** Clear the registry. Primarily for tests. */
-export function clearTools(): void {
-  toolSpecs.clear();
-  toolHandlers.clear();
-}
-
 /**
  * Scoped tool registry for per-agent or per-tenant isolation.
  *
  * The module-level `registerTool`, `listToolSpecs`, and `executeTool`
- * functions share a single global registry suitable for simple setups.
- * Use `ToolRegistry` when you need multiple isolated registries.
+ * functions delegate to a single default `ToolRegistry` instance, which is
+ * sufficient for simple setups. Construct your own `ToolRegistry` when you
+ * need multiple isolated registries.
  *
  * @example
  * ```ts
@@ -215,7 +175,7 @@ export class ToolRegistry {
   ): Promise<Record<string, unknown>> {
     const handler = this.handlers.get(toolName);
     if (handler === undefined) {
-      throw new Error(`Unknown tool: ${toolName}`);
+      throw new UnknownToolError(toolName);
     }
     return handler({ userId, db }, toolArgs);
   }
@@ -224,4 +184,45 @@ export class ToolRegistry {
     this.specs.clear();
     this.handlers.clear();
   }
+}
+
+/** Thrown when a tool is requested by name but not registered. */
+export class UnknownToolError extends Error {
+  constructor(public readonly toolName: string) {
+    super(`Unknown tool: ${toolName}`);
+    this.name = "UnknownToolError";
+  }
+}
+
+/** Process-default registry that the module-level functions delegate to. */
+const defaultRegistry = new ToolRegistry();
+
+/** Register a tool handler on the process-default registry. Accepts either a
+ * full ToolSpec + handler, or a pre-tagged handler (from `tool(meta, fn)`)
+ * with just a name string. */
+export function registerTool(spec: ToolSpec, handler: ToolHandler): void;
+export function registerTool(name: string, handler: ToolHandler): void;
+export function registerTool(specOrName: ToolSpec | string, handler: ToolHandler): void {
+  const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
+  defaultRegistry.register(spec, handler);
+}
+
+/** Return registered tool specs from the process-default registry. */
+export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
+  return defaultRegistry.listSpecs(options);
+}
+
+/** Execute a registered tool call from the process-default registry. */
+export async function executeTool(
+  userId: string,
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  db?: unknown,
+): Promise<Record<string, unknown>> {
+  return defaultRegistry.execute(userId, toolName, toolArgs, db);
+}
+
+/** Clear the process-default registry. Primarily for tests. */
+export function clearTools(): void {
+  defaultRegistry.clear();
 }

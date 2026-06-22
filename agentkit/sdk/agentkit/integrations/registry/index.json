@@ -1,0 +1,9 @@
+{
+  "$schema": "./schema.json",
+  "version": "0.1.0",
+  "integrations": {
+    "gcal": "gcal/manifest.json",
+    "github": "github/manifest.json",
+    "gmail": "gmail/manifest.json"
+  }
+}

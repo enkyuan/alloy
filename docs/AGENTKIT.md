@@ -1,7 +1,7 @@
 # agentkit
 
 agentkit is an embeddable SDK for building agents: an event-sourced runtime,
-tool registry, and pluggable LLM/TTS providers. the core is infra-free — no
+tool registry, and pluggable LLM/TTS providers. the core is infra-free -- no
 database or server required to import and use it. deploy it yourself or run the
 reference service (`agentkit-serve`) when you need FastAPI, Redis/Postgres
 persistence, workers, or STT voice input.
@@ -62,18 +62,43 @@ edge and TTS at the output edge; text skips both.
 ### events
 
 all session state is derived from an append-only event log. events are
-discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
-`agent.message.completed`). the full list lives in the SDK source:
+discriminated by `type`. the string values below are the wire format and are
+identical across both SDKs.
 
-- `agentkit/sdk/agentkit/infra/events/schemas.py` (python)
-- `agentkit/ts/src/events/schemas.ts` (typescript)
+| group | type string | meaning |
+| --- | --- | --- |
+| session | `session.created` | a new session opened |
+| session | `session.closed` | session terminated |
+| user input | `user.message` | text turn from the user |
+| user input | `user.audio.chunk` | audio frame, voice modality only |
+| transcript | `transcript.partial` | interim STT result |
+| transcript | `transcript.final` | finalized user transcript, becomes a user message in replay |
+| memory | `memory.retrieval.started` | RAG lookup kicked off |
+| memory | `memory.retrieval.completed` | RAG returned chunks |
+| agent | `agent.reasoning.started` | runtime entered a turn |
+| agent | `agent.message.delta` | streaming token from the model |
+| agent | `agent.message.completed` | model finalized its text for the turn |
+| tool call | `tool.call.requested` | model asked for a tool call |
+| tool call | `tool.call.started` | runtime began executing |
+| tool call | `tool.call.completed` | tool returned a result |
+| tool call | `tool.call.failed` | tool raised, was denied, or had invalid args |
+| tool approval | `tool.approval.requested` | policy gate paused before execution |
+| tool approval | `tool.approval.approved` | approval handler said yes |
+| tool approval | `tool.approval.rejected` | approval handler said no |
+| workflow | `workflow.started` | long-running tool workflow began |
+| workflow | `workflow.completed` | workflow finished |
+| workflow | `workflow.failed` | workflow raised |
+| cancellation | `cancellation.requested` | caller asked the runtime to stop |
+| cancellation | `cancellation.completed` | runtime acknowledged and stopped |
 
-the event type string values are the wire format and are identical across both
-SDKs.
+the canonical sources are
+[`agentkit/sdk/agentkit/infra/events/types.py`](../agentkit/sdk/agentkit/infra/events/types.py)
+and [`agentkit/ts/src/events/types.ts`](../agentkit/ts/src/events/types.ts);
+the table above must match them byte-for-byte.
 
 ### session state
 
-`replaySession` (python: `ReplaySession`) takes the event log for a session and
+`replaySession` (python: `replay_session`) takes the event log for a session and
 projects it into a `SessionState`: `isActive`, and `messages` (the conversation
 history in `{role, content}` form that gets passed to the LLM).
 
@@ -155,6 +180,9 @@ voice modalities (STT, TTS) are not yet ported to TypeScript.
 
 ## further reading
 
+- [CLI.md](CLI.md) -- `agentkit` CLI subcommand reference.
+- [RUNTIME_API.md](RUNTIME_API.md) -- headline API surface for embedding.
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) -- common errors and fixes.
 - individual package READMEs: `agentkit/sdk/agentkit/README.md`,
-  `agentkit/serve/README.md`, `agentkit/ts/README.md`
-- agentpay (the product built on agentkit): [`docs/AGENTPAY.md`](AGENTPAY.md)
+  `agentkit/serve/README.md`, `agentkit/ts/README.md`.
+- agentpay (the product built on agentkit): [`docs/AGENTPAY.md`](AGENTPAY.md).

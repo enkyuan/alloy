@@ -5,6 +5,8 @@ from __future__ import annotations
 import agentkit
 
 
+# PEP 8 names: classes are CapWords, decorators / function helpers are
+# snake_case. There are no UpperCamel aliases for decorators or helpers.
 EXPECTED_PUBLIC = {
     "AgentBuilder",
     "AgentRuntime",
@@ -13,24 +15,25 @@ EXPECTED_PUBLIC = {
     "EventStore",
     "InMemoryEventBus",
     "InMemoryEventStore",
-    "UserMessage",
-    "FunctionTool",
     "Integration",
-    "Tool",
-    "ToolContext",
-    "ToolRegistry",
-    "RegisterTool",
-    "ListToolSpecs",
     "ModelProvider",
-    "GetProvider",
-    "RegisterProvider",
-    "ProviderError",
-    "ProviderConfigError",
     "ProviderAPIError",
-    "ReplaySession",
+    "ProviderConfigError",
+    "ProviderError",
+    "replay_session",
     "SessionManager",
     "SessionState",
+    "ToolContext",
+    "ToolRegistry",
     "ToolSpec",
+    "UnknownToolError",
+    "UserMessage",
+    "function_tool",
+    "get_provider",
+    "list_tool_specs",
+    "register_provider",
+    "register_tool",
+    "tool",
 }
 
 
@@ -62,9 +65,9 @@ def test_internal_names_still_importable_from_subpackages() -> None:
     )
     from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
     from agentkit.runtime.tools.registry import (
-        ClearTools,
-        ExecuteTool,
-        ToolSpecFromModel,
+        clear_tools,
+        execute_tool,
+        tool_spec_from_model,
     )
 
     for obj in (
@@ -74,9 +77,9 @@ def test_internal_names_still_importable_from_subpackages() -> None:
         InMemorySessionStore,
         SessionStore,
         SessionRecord,
-        ExecuteTool,
-        ClearTools,
-        ToolSpecFromModel,
+        execute_tool,
+        clear_tools,
+        tool_spec_from_model,
         ToolPolicy,
         ToolPolicyViolation,
         BoundTool,

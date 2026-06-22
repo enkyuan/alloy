@@ -8,7 +8,7 @@ infra-free (no database, Supabase, FastAPI, or web server required).
 > toolgen, OpenAI/Anthropic providers, and session replay) is suitable for
 > internal embedded agents. Multi-process platform features (Redis event
 > backbone, durable sessions, voice workers) are present but not
-> production-hardened — do not deploy the realtime/voice stack without
+> production-hardened -- do not deploy the realtime/voice stack without
 > additional load and durability testing.
 
 See [**AgentKit MVP**](../MVP.md) for the full five-step developer path and scope
@@ -49,7 +49,7 @@ import agentkit
 class WeatherIntegration(agentkit.Integration):
     namespace = "weather"
 
-    @agentkit.Tool(
+    @agentkit.tool(
         description="Return weather for a city.",
         parameters={
             "type": "object",
@@ -68,7 +68,7 @@ async def main():
 
     runtime = (
         agentkit.AgentBuilder()
-        .provider(agentkit.GetProvider("openai"))  # reads OPENAI_API_KEY
+        .provider(agentkit.get_provider("openai"))  # reads OPENAI_API_KEY
         .integration(WeatherIntegration())
         .system_prompt("You are a weather assistant.")
         .build(bus=bus, store=store)
@@ -86,7 +86,7 @@ asyncio.run(main())
 ```
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
-tools are both visible to the model and executable. Swap `.provider(agentkit.GetProvider("anthropic"))` to use Anthropic.
+tools are both visible to the model and executable. Swap `.provider(agentkit.get_provider("anthropic"))` to use Anthropic.
 
 ## CLI scaffold
 
@@ -104,11 +104,16 @@ with an env-driven provider (set `AGENTKIT_MODEL_PROVIDER` to `openai` or
 | --- | --- |
 | `AgentBuilder` | Fluent builder wiring provider + integrations + policy into `AgentRuntime` |
 | `AgentRuntime` | Provider-agnostic ReAct loop |
-| `ToolSpec`, `ToolRegistry`, `ToolPlanner`, `ToolPolicy` | Tool definition, registration, policy, and scatter-gather execution |
-| `InMemoryEventStore`, `InMemoryEventBus` | Infra-free event log and pub/sub |
-| `EventType`, `AgentKitEvent` | Event discriminants and typed event union |
-| `replaySession`, `SessionManager` | Session state projection and management |
-| `GetProvider`, `RegisterProvider` | Provider registry |
+| `ToolSpec`, `ToolRegistry`, `ToolContext` | Tool definition, scoped registry, and execution context |
+| `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
+| `Integration` | Namespace-scoped tool bundle base class |
+| `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |
+| `UserMessage` | Convenience constructor for the initial `user.message` event |
+| `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
+| `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
+| `ProviderMessage`, `ProviderToolSpec` | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `agentkit.runtime.providers.types`) |
+| `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
+| `UnknownToolError` | Raised when the model calls a tool name not in the registry |
 | `CancellationToken` | Cooperative cancellation across async boundaries |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format
@@ -122,7 +127,7 @@ shared with the TypeScript SDK.
 | Tool registry + planner + policy | Yes | Yes |
 | `AgentBuilder` + integrations | Yes | Yes |
 | OpenAI / Anthropic providers | Yes | Yes |
-| Kimi / Gemini providers | Yes | No |
+| OpenRouter / Kimi / Gemini providers | Yes (native) | Yes (via OpenAI-compatible factory) |
 | Document RAG / vector store | Yes (non-MVP) | No |
 | Tool retriever | Yes (non-MVP) | No |
 | Text modality adapter | Yes (non-MVP) | No |
@@ -163,7 +168,7 @@ poetry run pytest -m "not integration"
 
 `MockProvider` is a deterministic stub used in unit tests to exercise the full
 tool loop without network calls. It is not the recommended provider for building
-real agents — it produces fixed, non-intelligent responses.
+real agents -- it produces fixed, non-intelligent responses.
 
 ---
 
@@ -255,7 +260,7 @@ tool workers, Postgres) is in `agentkit-serve`.
 
 | Need | Use |
 |------|-----|
-| Single process, one agent | `InMemoryEventBus` — no Redis |
+| Single process, one agent | `InMemoryEventBus` -- no Redis |
 | Multiple processes sharing events | `agentkit[realtime]` + `EventBus` |
 | Full hosted platform (REST, voice, workers) | `agentkit-serve` |
 
@@ -263,7 +268,7 @@ tool workers, Postgres) is in `agentkit-serve`.
 
 ## Reference service architecture
 
-`agentkit-serve` is a deployable reference service — one way to run the SDK in
+`agentkit-serve` is a deployable reference service -- one way to run the SDK in
 production, not a requirement for using it. It runs as three processes over Redis:
 
 | Process | Responsibility |
@@ -291,7 +296,7 @@ production, not a requirement for using it. It runs as three processes over Redi
 ```
 
 FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
-nodes, and TaskIQ workers are **not** in the SDK — they live in the separate
+nodes, and TaskIQ workers are **not** in the SDK -- they live in the separate
 [`agentkit-serve`](../../serve/README.md) distribution.
 
 ## Module layout
@@ -338,5 +343,5 @@ See [`.env.example`](.env.example) for the full list.
 
 The repo ships **two distributions**: `agentkit` (this SDK) and
 [`agentkit-serve`](../../serve/README.md) (the reference FastAPI + workers
-service). The SDK has no dependency on the service — the boundary mirrors
+service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.

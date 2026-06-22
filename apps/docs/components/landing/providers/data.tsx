@@ -32,58 +32,48 @@ export const moreProviders = [
 ];
 
 export const providerSnippets: Record<string, string> = {
-  OpenAI: `import { AgentRuntime } from "@agentkit/sdk"
-import { OpenAIProvider } from "@agentkit/sdk/providers"
-import { InMemoryEventBus } from "@agentkit/sdk/events"
+  OpenAI: `import { AgentBuilder, EventBus, InMemoryEventStore, openai } from "@agentkit/sdk"
 
-const runtime = new AgentRuntime({
-  provider: new OpenAIProvider({
-    apiKey: process.env.OPENAI_API_KEY,
-    model: "gpt-4o",
-  }),
-  tools: registry.list(),
-  bus: new InMemoryEventBus(),
-})`,
-  OpenRouter: `provider: new OpenAIProvider({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: "https://openrouter.ai/api/v1",
-  model: "anthropic/claude-sonnet-4-5",
-})`,
-  Kimi: `provider: new KimiProvider({
-  apiKey: process.env.KIMI_API_KEY,
-})`,
-  Gemini: `provider: new GeminiProvider({
-  apiKey: process.env.GEMINI_API_KEY,
-})`,
-  Anthropic: `// roadmap: not yet shipped
-provider: new AnthropicProvider()`,
+const runtime = new AgentBuilder()
+  .provider(openai("gpt-4o"))
+  .build({ bus: new EventBus(), store: new InMemoryEventStore() })`,
+  OpenRouter: `import { openrouter } from "@agentkit/sdk"
+
+provider: openrouter("anthropic/claude-sonnet-4-5")`,
+  Kimi: `import { kimi } from "@agentkit/sdk"
+
+provider: kimi()`,
+  Gemini: `import { gemini } from "@agentkit/sdk"
+
+provider: gemini("gemini-2.5-flash")`,
+  Anthropic: `import { anthropic } from "@agentkit/sdk"
+
+provider: anthropic("claude-sonnet-4-6")`,
 };
 
-export const serverCodeTs = `import { EventType } from "@agentkit/sdk/events"
+export const serverCodeTs = `import { EventType } from "@agentkit/sdk"
 
 // Send a message and stream the response
 const session = crypto.randomUUID()
-await agent.runTurn(session)
+await runtime.send(session, "What's the weather in Tokyo?")
 
-for await (const event of agent.bus.subscribe(session)) {
+for await (const event of bus.subscribe(session)) {
   if (event.type === EventType.AGENT_MESSAGE_DELTA) {
     process.stdout.write(event.delta)
   }
-  if (event.type === EventType.AGENT_REASONING_COMPLETED) {
+  if (event.type === EventType.AGENT_MESSAGE_COMPLETED) {
     break
   }
 }`;
 
-export const serverCodePy = `from agentkit.runtime.events.types import AgentMessageDelta
-from agentkit.runtime.events.types import AgentReasoningCompleted
-import asyncio
+export const serverCodePy = `from agentkit.infra.events.types import EventType
 
 # Send a message and stream the response
 session_id = "s1"
-await agent.send(session_id, "What's the weather in Tokyo?")
+await runtime.run_turn(session_id)
 
-async for event in agent.bus.subscribe(session_id):
-    if isinstance(event, AgentMessageDelta):
+async for event in bus.subscribe(session_id):
+    if event.type == EventType.AGENT_MESSAGE_DELTA:
         print(event.delta, end="", flush=True)
-    if isinstance(event, AgentReasoningCompleted):
+    if event.type == EventType.AGENT_MESSAGE_COMPLETED:
         break`;

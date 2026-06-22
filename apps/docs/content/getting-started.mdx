@@ -49,15 +49,15 @@ tool wired in.
     ### Define a tool
 
     Tools are a spec (name, description, JSON-schema parameters) plus a
-    handler. The `@FunctionTool` decorator derives the spec from type hints
-    and the docstring.
+    handler. The `@function_tool` decorator (Python) / `functionTool(...)`
+    helper (TS) derives the spec from type hints and the docstring.
 
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```python
-        from agentkit.runtime.integrations import FunctionTool
+        from agentkit import function_tool
 
-        @FunctionTool
+        @function_tool
         async def get_weather(city: str) -> dict:
             """Look up the weather for a city."""
             return {"city": city, "tempF": 68}
@@ -65,10 +65,10 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { FunctionTool } from "@agentkit/sdk";
+        import { functionTool } from "@agentkit/sdk";
         import { z } from "zod";
 
-        const getWeather = FunctionTool(
+        const getWeather = functionTool(
           {
             name: "get_weather",
             description: "Look up the weather for a city.",
@@ -91,11 +91,11 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```python
-        from agentkit import AgentBuilder, GetProvider
+        from agentkit import AgentBuilder, get_provider
 
         runtime = (
             AgentBuilder()
-            .provider(GetProvider("openai"))
+            .provider(get_provider("openai"))
             .tool(get_weather)
             .system_prompt("You are a helpful assistant.")
             .build()
@@ -115,8 +115,9 @@ tool wired in.
       </Tab>
     </Tabs>
 
-    No DB. No server. The runtime holds an `InMemoryEventStore` and
-    `InMemoryEventBus` by default.
+    No DB. No server. The runtime holds an in-memory event store
+    (`InMemoryEventStore`) and bus (`InMemoryEventBus` in Python,
+    `EventBus` in TS) by default.
 
   </Step>
 

@@ -42,7 +42,25 @@ function placeholderArgs(spec: ToolSpec): Record<string, unknown> {
   return args;
 }
 
+/** Optional configuration for `MockProvider` to drive specific test scenarios. */
+export interface MockProviderOptions {
+  /**
+   * Pre-baked deltas to yield from `generateStream` instead of emitting the
+   * whole final text as a single chunk. Useful for testing consumers that
+   * react to partial output (token-by-token UIs, cancellation mid-stream).
+   * The deltas are concatenated to form the final text on the non-streaming
+   * `generate` path as well.
+   */
+  streamChunks?: readonly string[];
+}
+
 export class MockProvider implements ModelProvider {
+  private readonly streamChunks: readonly string[] | undefined;
+
+  constructor(options: MockProviderOptions = {}) {
+    this.streamChunks = options.streamChunks;
+  }
+
   async generate(
     messages: ProviderMessage[],
     tools: ToolSpec[],
@@ -56,7 +74,8 @@ export class MockProvider implements ModelProvider {
         toolCalls: [{ id: "mock-call-1", name: first.name, args: placeholderArgs(first) }],
       };
     }
-    return { content: FINAL_TEXT, toolCalls: [] };
+    const content = this.streamChunks ? this.streamChunks.join("") : FINAL_TEXT;
+    return { content, toolCalls: [] };
   }
 
   async *generateStream(
@@ -64,7 +83,22 @@ export class MockProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
-    const result = await this.generate(messages, tools, options);
-    yield { delta: result.content, toolCalls: result.toolCalls };
+    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    const first = tools[0];
+    if (first !== undefined && !hasToolResult(messages)) {
+      yield {
+        delta: "",
+        toolCalls: [{ id: "mock-call-1", name: first.name, args: placeholderArgs(first) }],
+      };
+      return;
+    }
+    if (this.streamChunks && this.streamChunks.length > 0) {
+      for (const delta of this.streamChunks) {
+        if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+        yield { delta, toolCalls: [] };
+      }
+      return;
+    }
+    yield { delta: FINAL_TEXT, toolCalls: [] };
   }
 }

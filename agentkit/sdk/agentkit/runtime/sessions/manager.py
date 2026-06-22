@@ -6,7 +6,7 @@ import logging
 from typing import Any, Optional
 
 from agentkit.infra.events.store import EventStore
-from agentkit.runtime.sessions.replay import ReplaySession
+from agentkit.runtime.sessions.replay import replay_session
 from agentkit.runtime.sessions.state import SessionState
 from agentkit.runtime.sessions.store import SessionRecord, SessionStore
 
@@ -34,7 +34,7 @@ class SessionManager:
             # via record_session before the first event was appended).  Return
             # a minimal empty state rather than raising.
             return SessionState(session_id=session_id)
-        return ReplaySession(events)
+        return replay_session(events)
 
     async def record_session(
         self, session_id: str, user_id: str, title: str = ""

@@ -32,11 +32,23 @@ logger = logging.getLogger(__name__)
 class OpenAIProvider(ModelProvider):
     """OpenAI chat-completions provider with streaming and tool calls."""
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> None:
+        """Construct an OpenAI provider.
+
+        Arguments take precedence over environment-derived settings. When an
+        argument is None, the value is read from ``Settings`` (env / .env).
+        This keeps explicit construction usable without depending on env.
+        """
         settings = get_settings()
-        self.api_key = settings.OPENAI_API_KEY
-        self.model_name = settings.OPENAI_MODEL
-        self.base_url = settings.OPENAI_BASE_URL
+        self.api_key = api_key if api_key is not None else settings.OPENAI_API_KEY
+        self.model_name = model if model is not None else settings.OPENAI_MODEL
+        self.base_url = base_url if base_url is not None else settings.OPENAI_BASE_URL
         self._client: Any = None
 
         if not self.api_key:

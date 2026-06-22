@@ -11,7 +11,7 @@ case of "I have one async function; expose it as a tool."
     runtime = AgentBuilder().provider(p).tool(get_weather).build()
 
 The handler's type hints are introspected to build a Pydantic model, which is
-then converted to JSON Schema the same way ``@Tool(parameters=Model)`` does.
+then converted to JSON Schema the same way ``@tool(parameters=Model)`` does.
 """
 
 from __future__ import annotations
@@ -23,11 +23,11 @@ from typing import Any, Callable, Dict, Optional, Type, Union, cast, get_type_hi
 from pydantic import BaseModel, Field, create_model
 
 from agentkit.runtime.tools.registry import (
-    ProviderSafeToolName,
     ToolHandler,
     ToolRegistry,
     ToolSpec,
-    ToolSpecFromModel,
+    provider_safe_tool_name,
+    tool_spec_from_model,
 )
 
 
@@ -50,7 +50,7 @@ class BoundTool:
         catalog_name = f"{self.namespace}.{self.spec.name}"
         prefixed = replace(
             self.spec,
-            name=ProviderSafeToolName(catalog_name),
+            name=provider_safe_tool_name(catalog_name),
             catalog_name=catalog_name,
         )
         registry.register(prefixed)(self.handler)
@@ -112,11 +112,11 @@ def function_tool(
 
     Usage::
 
-        @FunctionTool
+        @function_tool
         async def get_weather(city: str) -> dict:
             return {"city": city, "tempF": 68}
 
-        @FunctionTool(description="Look up weather.", risk="read")
+        @function_tool(description="Look up weather.", risk="read")
         async def get_weather(city: str) -> dict: ...
 
     When ``parameters`` is omitted, the schema is derived from the function's
@@ -127,9 +127,9 @@ def function_tool(
         params_schema: Dict[str, Any]
         if parameters is None:
             model = _model_from_signature(fn, f"{fn.__name__}__Args")
-            params_schema = ToolSpecFromModel("_", "_", model).parameters
+            params_schema = tool_spec_from_model("_", "_", model).parameters
         elif isinstance(parameters, type) and issubclass(parameters, BaseModel):
-            params_schema = ToolSpecFromModel("_", "_", parameters).parameters
+            params_schema = tool_spec_from_model("_", "_", parameters).parameters
         else:
             params_schema = cast(Dict[str, Any], parameters)
 

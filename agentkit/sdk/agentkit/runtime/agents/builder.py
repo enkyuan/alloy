@@ -21,7 +21,7 @@ class Integrable(Protocol):
     """Anything with a ``register(registry: ToolRegistry)`` method.
 
     ``Integration`` subclasses satisfy this, as does ``BoundTool`` from
-    ``@FunctionTool``. Accepting the protocol means ``AgentBuilder`` doesn't
+    ``@function_tool``. Accepting the protocol means ``AgentBuilder`` doesn't
     need to know about either concrete type.
     """
 
@@ -65,7 +65,7 @@ class AgentBuilder:
         return self
 
     def tool(self, bound: Integrable) -> "AgentBuilder":
-        """Add a function-level tool created by ``@FunctionTool``."""
+        """Add a function-level tool created by ``@function_tool``."""
         self._integrations.append(bound)
         return self
 

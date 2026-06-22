@@ -7,6 +7,7 @@
  * tool calls before yielding. Enable with
  * `registerProvider("anthropic", new AnthropicProvider(...))`.
  */
+import type Anthropic from "@anthropic-ai/sdk";
 import type {
   ModelProvider,
   ModelProviderOptions,
@@ -16,7 +17,13 @@ import type {
   ToolCall,
 } from "./base";
 import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
+import { parseToolArgsJSON } from "./_args";
 import type { ToolSpec } from "../tools/registry";
+
+type AnthropicMessageParam = Anthropic.Messages.MessageParam;
+type AnthropicTool = Anthropic.Messages.Tool;
+type AnthropicContentBlock = Anthropic.Messages.ContentBlock;
+type AnthropicStreamEvent = Anthropic.Messages.RawMessageStreamEvent;
 
 export interface AnthropicProviderOptions {
   apiKey: string;
@@ -25,21 +32,21 @@ export interface AnthropicProviderOptions {
   maxTokens?: number;
 }
 
-function toAnthropicTools(tools: ToolSpec[]) {
+function toAnthropicTools(tools: ToolSpec[]): AnthropicTool[] {
   return tools.map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: t.parameters,
+    input_schema: t.parameters as AnthropicTool["input_schema"],
   }));
 }
 
 /** Split system messages out; Anthropic takes system as a top-level string. */
 function splitMessages(messages: ProviderMessage[]): {
   system: string | undefined;
-  messages: any[];
+  messages: AnthropicMessageParam[];
 } {
   const systemParts: string[] = [];
-  const anthropicMessages: any[] = [];
+  const anthropicMessages: AnthropicMessageParam[] = [];
 
   for (const m of messages) {
     if (m.role === "system") {
@@ -67,16 +74,20 @@ function splitMessages(messages: ProviderMessage[]): {
   };
 }
 
-function parseContentBlocks(blocks: any[]): { content: string; toolCalls: ToolCall[] } {
+function parseContentBlocks(blocks: AnthropicContentBlock[] | undefined | null): {
+  content: string;
+  toolCalls: ToolCall[];
+} {
   let content = "";
   const toolCalls: ToolCall[] = [];
   for (const block of blocks ?? []) {
-    if (block.type === "text") content += block.text ?? "";
-    else if (block.type === "tool_use") {
+    if (block.type === "text") {
+      content += block.text;
+    } else if (block.type === "tool_use") {
       toolCalls.push({
-        id: block.id ?? "",
-        name: block.name ?? "",
-        args: block.input ?? {},
+        id: block.id,
+        name: block.name,
+        args: (block.input ?? {}) as Record<string, unknown>,
       });
     }
   }
@@ -85,7 +96,7 @@ function parseContentBlocks(blocks: any[]): { content: string; toolCalls: ToolCa
 
 export class AnthropicProvider implements ModelProvider {
   private readonly opts: Required<AnthropicProviderOptions>;
-  private client: any = null;
+  private client: Anthropic | null = null;
 
   constructor(opts: AnthropicProviderOptions) {
     if (!opts.apiKey?.trim()) {
@@ -101,11 +112,11 @@ export class AnthropicProvider implements ModelProvider {
     };
   }
 
-  private async getClient(): Promise<any> {
+  private async getClient(): Promise<Anthropic> {
     if (this.client !== null) return this.client;
     try {
-      const { default: Anthropic } = await import("@anthropic-ai/sdk");
-      this.client = new Anthropic({ apiKey: this.opts.apiKey });
+      const { default: AnthropicDefault } = await import("@anthropic-ai/sdk");
+      this.client = new AnthropicDefault({ apiKey: this.opts.apiKey });
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("Anthropic provider requires the @anthropic-ai/sdk package.", {
@@ -125,7 +136,7 @@ export class AnthropicProvider implements ModelProvider {
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
-    const params: any = {
+    const params: Anthropic.Messages.MessageCreateParamsNonStreaming = {
       model: this.opts.model,
       messages: anthropicMessages,
       temperature: options?.temperature ?? this.opts.temperature,
@@ -135,7 +146,9 @@ export class AnthropicProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
 
     try {
-      const response = await client.messages.create(params);
+      const response = await client.messages.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
       return parseContentBlocks(response.content);
     } catch (error) {
       throw providerAPIErrorFromUnknown("anthropic", error);
@@ -151,7 +164,7 @@ export class AnthropicProvider implements ModelProvider {
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
-    const params: any = {
+    const params: Anthropic.Messages.MessageStreamParams = {
       model: this.opts.model,
       messages: anthropicMessages,
       temperature: options?.temperature ?? this.opts.temperature,
@@ -165,34 +178,33 @@ export class AnthropicProvider implements ModelProvider {
     let pendingTool: { id: string; name: string; argsRaw: string } | null = null;
 
     try {
-      const stream = client.messages.stream(params);
+      const stream = client.messages.stream(params, {
+        signal: options?.cancellationToken?.signal,
+      });
 
-      for await (const event of stream) {
-        const type: string = (event as any).type;
-
-        if (type === "content_block_start") {
-          const block = (event as any).content_block;
-          if (block?.type === "tool_use") {
-            pendingTool = { id: block.id ?? "", name: block.name ?? "", argsRaw: "" };
+      for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
+        if (event.type === "content_block_start") {
+          const block = event.content_block;
+          if (block.type === "tool_use") {
+            pendingTool = { id: block.id, name: block.name, argsRaw: "" };
           }
-        } else if (type === "content_block_delta") {
-          const delta = (event as any).delta;
-          if (delta?.type === "text_delta") {
-            yield { delta: delta.text ?? "", toolCalls: [] };
-          } else if (delta?.type === "input_json_delta" && pendingTool !== null) {
+        } else if (event.type === "content_block_delta") {
+          const delta = event.delta;
+          if (delta.type === "text_delta") {
+            yield { delta: delta.text, toolCalls: [] };
+          } else if (delta.type === "input_json_delta" && pendingTool !== null) {
             pendingTool.argsRaw += delta.partial_json ?? "";
           }
-        } else if (type === "content_block_stop" && pendingTool !== null) {
-          let args: Record<string, unknown>;
-          try {
-            args = pendingTool.argsRaw === "" ? {} : JSON.parse(pendingTool.argsRaw);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            args = { __parse_error: `Anthropic tool args were not valid JSON: ${msg}` };
-          }
+        } else if (event.type === "content_block_stop" && pendingTool !== null) {
           yield {
             delta: "",
-            toolCalls: [{ id: pendingTool.id, name: pendingTool.name, args }],
+            toolCalls: [
+              {
+                id: pendingTool.id,
+                name: pendingTool.name,
+                args: parseToolArgsJSON(pendingTool.argsRaw, "Anthropic"),
+              },
+            ],
           };
           pendingTool = null;
         }

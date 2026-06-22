@@ -5,18 +5,18 @@ import {
   AgentBuilder,
   BoundTool,
   EventType,
-  FunctionTool,
+  functionTool,
   InMemoryEventStore,
   ToolRegistry,
 } from "../src";
 import { MockProvider } from "../src/testing";
 
-describe("FunctionTool", () => {
+describe("functionTool", () => {
   it("produces a BoundTool with the handler name", () => {
     async function getWeather({ city }: { city: string }): Promise<unknown> {
       return { city, tempF: 68 };
     }
-    const bound = FunctionTool(
+    const bound = functionTool(
       { description: "weather", parameters: z.object({ city: z.string() }) },
       getWeather,
     );
@@ -26,7 +26,7 @@ describe("FunctionTool", () => {
   });
 
   it("converts Zod schema to JSON Schema", () => {
-    const bound = FunctionTool(
+    const bound = functionTool(
       {
         name: "search",
         description: "search",
@@ -41,7 +41,7 @@ describe("FunctionTool", () => {
   });
 
   it("registers with namespace prefix", () => {
-    const bound = FunctionTool(
+    const bound = functionTool(
       { name: "ping", description: "ping", parameters: z.object({}) },
       async () => "pong",
     );
@@ -55,7 +55,7 @@ describe("FunctionTool", () => {
 
   it("executes end-to-end through AgentBuilder().tool()", async () => {
     const store = new InMemoryEventStore();
-    const echo = FunctionTool(
+    const echo = functionTool(
       {
         name: "echo",
         description: "echo",
@@ -71,7 +71,7 @@ describe("FunctionTool", () => {
   });
 
   it("forwards parsed args directly (no ctx parameter)", async () => {
-    const bound = FunctionTool(
+    const bound = functionTool(
       {
         name: "add",
         description: "add",

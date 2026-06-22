@@ -101,6 +101,7 @@ describe("OpenAIProvider.generate", () => {
                   tool_calls: [
                     {
                       id: "call-1",
+                      type: "function",
                       function: { name: "get_weather", arguments: '{"city":"Seattle"}' },
                     },
                   ],
@@ -133,7 +134,11 @@ describe("OpenAIProvider.generate", () => {
                 message: {
                   content: "",
                   tool_calls: [
-                    { id: "c1", function: { name: "bad_tool", arguments: "{not-json}" } },
+                    {
+                      id: "c1",
+                      type: "function",
+                      function: { name: "bad_tool", arguments: "{not-json}" },
+                    },
                   ],
                 },
               },

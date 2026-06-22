@@ -1,7 +1,7 @@
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from agentkit.infra.events.replay import ReplaySession
+from agentkit.infra.events.replay import replay_session
 from agentkit.infra.events.schemas import (
     AgentKitEvent,
     AgentMessageCompleted,
@@ -62,7 +62,7 @@ def test_session_replay():
     events[1].timestamp = 2.0
     events[2].timestamp = 3.0
 
-    state = ReplaySession(events)
+    state = replay_session(events)
 
     assert state.session_id == "sess-1"
     assert state.is_active is True

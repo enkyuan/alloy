@@ -34,11 +34,11 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
 <Tabs items={["python", "typescript"]}>
   <Tab value="python">
     ```python
-    from agentkit import AgentBuilder, GetProvider
+    from agentkit import AgentBuilder, get_provider
 
     runtime = (
         AgentBuilder()
-        .provider(GetProvider("openai"))
+        .provider(get_provider("openai"))
         .system_prompt("You are a helpful assistant.")
         .build()
     )

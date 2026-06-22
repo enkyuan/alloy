@@ -1,0 +1,121 @@
+"""Docs/SDK surface sync: every public name in ``agentkit.__all__`` should be
+mentioned in at least one user-facing doc.
+
+This catches drift when a public name is added/renamed/removed in the SDK
+without the docs being updated. The check is intentionally loose: we just
+look for the literal name anywhere in the doc text. It doesn't validate
+that the doc *explains* the name well, only that there's a reference the
+author can revisit when the name changes.
+
+Scope of "user-facing docs":
+- ``docs/AGENTKIT.md`` -- the shared concepts overview
+- ``agentkit/sdk/agentkit/README.md`` -- the python SDK README
+- ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
+
+Plan/spec files under ``docs/superpowers/`` are excluded -- those are
+point-in-time records.
+
+Names exempt from the check (rare; document each exemption):
+- ``EventStore`` / ``EventBus`` are referenced in the docs by their concrete
+  in-memory implementations (``InMemoryEventBus`` / ``InMemoryEventStore``)
+  so the abstract base classes aren't always spelled out; we still want them
+  mentioned, so they stay in the sync set.
+
+Add an entry to ``EXEMPT`` only when a name is genuinely an internal type
+not worth documenting (typically protocol subclasses or helper aliases).
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import agentkit
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+FUMADOCS_CONTENT = REPO_ROOT / "apps" / "docs" / "content"
+
+
+def _user_facing_docs() -> list[Path]:
+    paths: list[Path] = [
+        REPO_ROOT / "docs" / "AGENTKIT.md",
+        REPO_ROOT / "agentkit" / "sdk" / "agentkit" / "README.md",
+    ]
+    paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
+    return paths
+
+
+USER_FACING_DOCS = _user_facing_docs()
+
+# Names that are public but, by design, are not headlined in the prose. Keep
+# this set small. Every entry should be defensible in a code review.
+EXEMPT: set[str] = set()
+
+
+def _doc_haystack() -> str:
+    parts: list[str] = []
+    for path in USER_FACING_DOCS:
+        if not path.exists():
+            raise AssertionError(f"User-facing doc missing: {path}")
+        parts.append(path.read_text())
+    return "\n".join(parts)
+
+
+def test_every_public_name_is_referenced_in_user_facing_docs() -> None:
+    haystack = _doc_haystack()
+    missing: list[str] = []
+    for name in agentkit.__all__:
+        if name.startswith("_"):
+            continue
+        if name in EXEMPT:
+            continue
+        # Word-boundary match so e.g. "tool" doesn't trivially match inside
+        # "tool_spec". Acceptable false negatives are caught when reviewing
+        # the docs.
+        if not re.search(rf"\b{re.escape(name)}\b", haystack):
+            missing.append(name)
+    assert not missing, (
+        "Public names not referenced in any user-facing doc "
+        f"({len(USER_FACING_DOCS)} files scanned):\n  "
+        + "\n  ".join(missing)
+        + "\nAdd a reference, or add a justified entry to EXEMPT in this test."
+    )
+
+
+def test_docs_dont_reference_removed_uppercamel_aliases() -> None:
+    """Catches stale doc text referring to the dropped UpperCamel decorator
+    aliases (Tool, FunctionTool, RegisterTool, GetProvider, etc.)."""
+    removed_aliases = {
+        "ReplaySession",
+        # Decorator/helper aliases removed by the PEP 8 cleanup.
+        "RegisterTool",
+        "ListToolSpecs",
+        "GetProvider",
+        "RegisterProvider",
+    }
+    # Note: bare ``Tool`` and ``FunctionTool`` are too generic to grep
+    # safely; they collide with valid prose like "Tool registry" and
+    # "Function tool". The set above is the unambiguous removed names.
+    offenses: dict[str, list[str]] = {}
+    for path in USER_FACING_DOCS:
+        text = path.read_text()
+        for name in removed_aliases:
+            if re.search(rf"\b{re.escape(name)}\b", text):
+                offenses.setdefault(path.name, []).append(name)
+    assert not offenses, (
+        "Docs still reference removed UpperCamel aliases:\n  "
+        + "\n  ".join(f"{p}: {', '.join(names)}" for p, names in offenses.items())
+    )
+
+
+def test_no_em_dashes_in_user_facing_docs() -> None:
+    """Em-dashes are banned per the project writing-style memo. This guards
+    against them creeping back into the user-facing docs."""
+    offenders: dict[str, int] = {}
+    for path in USER_FACING_DOCS:
+        text = path.read_text()
+        count = text.count("—")  # em dash
+        if count:
+            offenders[str(path.relative_to(REPO_ROOT))] = count
+    assert not offenders, f"Em-dashes found: {offenders}. Replace with -- or a comma."

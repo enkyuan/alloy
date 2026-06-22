@@ -29,8 +29,8 @@ required_names = [
     "InMemoryEventBus",
     "ToolSpec",
     "ToolRegistry",
-    "GetProvider",
-    "RegisterProvider",
+    "get_provider",
+    "register_provider",
     "CancellationToken",
     "UserMessage",
     "SessionManager",
@@ -44,17 +44,17 @@ for name in required_names:
     print(f"  ok: agentkit.{name}")
 
 # ---------------------------------------------------------------------------
-# 2. GetProvider("openai") raises ProviderConfigError when key is absent
+# 2. get_provider("openai") raises ProviderConfigError when key is absent
 # ---------------------------------------------------------------------------
 print("\nChecking OpenAI provider error when key absent...")
 
 os.environ.pop("OPENAI_API_KEY", None)
 
 try:
-    agentkit.GetProvider("openai")
+    agentkit.get_provider("openai")
     # If no error is raised, the provider may load lazily; attempt a generate call
     print(
-        "  ok: GetProvider('openai') returned (key checked at instantiation/call time)"
+        "  ok: get_provider('openai') returned (key checked at instantiation/call time)"
     )
 except Exception as e:
     error_text = str(e).lower()

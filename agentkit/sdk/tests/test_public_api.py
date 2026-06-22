@@ -5,12 +5,13 @@ import agentkit
 
 
 def test_public_api_exports_stable_runtime_surface():
+    """The headline public surface is PEP 8: classes are CapWords, decorators
+    and registration helpers are snake_case."""
     expected = {
+        # Classes
         "AgentBuilder",
         "AgentRuntime",
         "CancellationToken",
-        "FunctionTool",
-        "GetProvider",
         "InMemoryEventBus",
         "InMemoryEventStore",
         "Integration",
@@ -18,31 +19,56 @@ def test_public_api_exports_stable_runtime_surface():
         "ProviderAPIError",
         "ProviderConfigError",
         "ProviderError",
-        "RegisterProvider",
-        "RegisterTool",
         "SessionManager",
-        "Tool",
         "ToolContext",
         "ToolRegistry",
         "ToolSpec",
-    }
-
-    assert expected.issubset(set(agentkit.__all__))
-
-
-def test_public_api_uses_camel_case_for_top_level_helpers():
-    snake_case_helpers = {
-        "clear_tools",
-        "execute_tool",
+        "UnknownToolError",
+        # Decorators / function helpers
+        "function_tool",
         "get_provider",
         "list_tool_specs",
         "register_provider",
         "register_tool",
         "tool",
-        "tool_spec_from_model",
     }
 
-    assert snake_case_helpers.isdisjoint(set(agentkit.__all__))
+    assert expected.issubset(set(agentkit.__all__))
+
+
+def test_public_api_does_not_re_export_uppercamel_decorator_aliases():
+    """The legacy UpperCamel decorator/helper aliases are gone. Importing them
+    raises AttributeError."""
+    removed = {
+        "Tool",
+        "FunctionTool",
+        "RegisterTool",
+        "ListToolSpecs",
+        "GetProvider",
+        "RegisterProvider",
+    }
+    assert removed.isdisjoint(set(agentkit.__all__))
+    for name in removed:
+        try:
+            getattr(agentkit, name)
+        except AttributeError:
+            continue
+        else:
+            raise AssertionError(f"agentkit.{name} should no longer resolve")
+
+
+def test_public_api_keeps_low_level_verbs_hidden_from_top_level():
+    """Stay conservative: low-level registry verbs that aren't headline DX
+    (execute_tool, clear_tools, tool_spec_from_model) stay accessible via
+    their submodule rather than the top-level alias."""
+    hidden_snake_case = {
+        "clear_tools",
+        "execute_tool",
+        "tool_spec_from_model",
+        "provider_safe_tool_name",
+    }
+
+    assert hidden_snake_case.isdisjoint(set(agentkit.__all__))
 
 
 def test_public_api_hides_non_mvp_extensions_from_top_level():
@@ -111,8 +137,31 @@ def test_public_api_does_not_export_snake_case_service_owned_names():
     assert service_owned.isdisjoint(set(agentkit.__all__))
 
 
-def test_sdk_package_exports_do_not_advertise_snake_case_names():
+def test_sdk_package_exports_only_advertise_pep8_names_in_all():
+    """Subpackage __all__ entries follow PEP 8: classes/types are CapWords,
+    functions and decorators are snake_case. No mixed convention.
+
+    The codebase originally pinned UpperCamel for decorators too. That
+    policy was lifted in favor of PEP 8 across the board, so any __all__
+    entry that is snake_case must be a function/decorator (no leading
+    capital) and any CapWords entry must NOT be a known decorator/helper
+    alias name."""
     package_root = Path(agentkit.__file__).parent
+
+    # Names that were UpperCamel decorator/helper aliases. If any subpackage
+    # __all__ still lists them, the rename is incomplete.
+    forbidden_uppercamel_aliases = {
+        "Tool",
+        "FunctionTool",
+        "RegisterTool",
+        "ListToolSpecs",
+        "GetProvider",
+        "RegisterProvider",
+        "ExecuteTool",
+        "ClearTools",
+        "ToolSpecFromModel",
+        "ProviderSafeToolName",
+    }
 
     offenders: dict[str, list[str]] = {}
     for path in sorted(package_root.rglob("*.py")):
@@ -133,12 +182,8 @@ def test_sdk_package_exports_do_not_advertise_snake_case_names():
                 for item in node.value.elts
                 if isinstance(item, ast.Constant) and isinstance(item.value, str)
             ]
-            snake_case_names = [
-                name
-                for name in names
-                if "_" in name and not (name.startswith("__") and name.endswith("__"))
-            ]
-            if snake_case_names:
-                offenders[str(path.relative_to(package_root))] = snake_case_names
+            bad = [n for n in names if n in forbidden_uppercamel_aliases]
+            if bad:
+                offenders[str(path.relative_to(package_root))] = bad
 
-    assert offenders == {}
+    assert offenders == {}, offenders

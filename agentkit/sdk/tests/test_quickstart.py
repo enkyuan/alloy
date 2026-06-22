@@ -21,7 +21,7 @@ from tests.helpers.mock_provider import MockProvider
 class WeatherIntegration(agentkit.Integration):
     namespace = "weather"
 
-    @agentkit.Tool(
+    @agentkit.tool(
         description="Return weather for a city.",
         parameters={
             "type": "object",

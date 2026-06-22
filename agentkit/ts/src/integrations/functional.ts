@@ -1,12 +1,12 @@
 /**
- * Function-level `FunctionTool` for one-off tools without an `Integration` subclass.
+ * Function-level `functionTool` for one-off tools without an `Integration` subclass.
  * Mirrors `agentkit.runtime.integrations.functional`.
  *
  * The class-based `Integration` path remains the right shape for namespaced,
  * multi-tool bundles. This module adds a lightweight alternative for the common
  * case of "I have one async function; expose it as a tool."
  *
- *   const getWeather = FunctionTool(
+ *   const getWeather = functionTool(
  *     { description: "Return weather.", parameters: z.object({ city: z.string() }) },
  *     async ({ city }) => ({ city, tempF: 68 }),
  *   );
@@ -26,7 +26,7 @@ import {
 
 type ArgsOf<P> = P extends z.ZodType ? z.infer<P> : Record<string, unknown>;
 
-/** Signature accepted by `FunctionTool`. The handler receives parsed arguments
+/** Signature accepted by `functionTool`. The handler receives parsed arguments
  * (typed via Zod inference) directly — no `ctx` parameter. The return value is
  * normalised to an object (primitives become `{ result: <value> }`) before
  * being emitted as the tool result. */
@@ -62,7 +62,7 @@ export interface FunctionToolMeta<P> extends Omit<ToolMeta, "parameters"> {
  * Build a single tool from a meta + handler pair. The handler receives parsed
  * arguments (typed via Zod inference) directly.
  */
-export function FunctionTool<P extends z.ZodType | Record<string, unknown>>(
+export function functionTool<P extends z.ZodType | Record<string, unknown>>(
   meta: FunctionToolMeta<P>,
   handler: FunctionToolHandler<P>,
 ): BoundTool {

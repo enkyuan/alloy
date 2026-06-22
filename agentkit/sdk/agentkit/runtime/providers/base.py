@@ -1,10 +1,41 @@
-from typing import Any, AsyncGenerator, Dict, List, Optional, Protocol
+from typing import Any, AsyncGenerator, Dict, List, Optional, Protocol, TYPE_CHECKING
 
-from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from agentkit.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    ProviderMessage,
+    ProviderToolSpec,
+)
+
+if TYPE_CHECKING:
+    from agentkit.runtime.agents.cancellation import CancellationToken
+
+
+# Re-export the neutral payload shapes here so callers can write
+# ``from agentkit.runtime.providers.base import ProviderMessage``. The
+# Protocol signature stays on ``List[Dict[str, Any]]`` because the runtime
+# and the existing concrete providers operate on plain dicts; the TypedDicts
+# are documentation + opt-in typing for callers who want it.
+__all__ = ["ModelProvider", "ProviderMessage", "ProviderToolSpec"]
 
 
 class ModelProvider(Protocol):
-    """Abstract interface for LLM providers (e.g. Gemini, OpenAI, Kimi)."""
+    """Abstract interface for LLM providers (e.g. Gemini, OpenAI, Kimi).
+
+    Implementations translate the neutral message + tool payload to their
+    own API at the boundary; the runtime never imports provider-specific
+    types.
+
+    The runtime sends plain ``dict`` messages and tool specs that conform
+    to :class:`ProviderMessage` and :class:`ProviderToolSpec` (see
+    ``agentkit.runtime.providers.types``). Callers that want compile-time
+    checking can construct those TypedDicts; the Protocol stays loose so
+    duck-typed dicts flow through without ceremony.
+
+    ``cancellation_token`` is structurally typed: any object with an
+    ``is_cancelled`` boolean attribute is accepted, but the canonical type
+    is ``agentkit.runtime.agents.cancellation.CancellationToken``.
+    """
 
     async def generate(
         self,
@@ -14,7 +45,7 @@ class ModelProvider(Protocol):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
-        cancellation_token: Optional[Any] = None,
+        cancellation_token: Optional["CancellationToken"] = None,
     ) -> GenerateResponse:
         """Generate a complete response."""
         ...
@@ -26,8 +57,11 @@ class ModelProvider(Protocol):
         system_instruction: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        cancellation_token: Optional[Any] = None,
+        cancellation_token: Optional["CancellationToken"] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         """Stream a response back given a set of messages and tools."""
+        # The `...` + dummy `yield` are how Protocols declare an async-generator
+        # return shape to the type checker without committing to a body. The
+        # yield is unreachable at runtime.
         ...
         yield ModelResponseChunk()

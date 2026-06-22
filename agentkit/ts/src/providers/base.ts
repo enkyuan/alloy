@@ -36,12 +36,19 @@ export interface ModelResponse {
   toolCalls: ToolCall[];
 }
 
-/** Per-call options that callers may override from the constructor defaults. */
+/**
+ * Per-call options that callers may override from the constructor defaults.
+ *
+ * `cancellationToken` is structurally typed: any object with an
+ * `isCancelled` boolean is accepted. Pass a full `CancellationToken`
+ * (which also carries an `AbortSignal` under `.signal`) to let the
+ * provider abort the underlying HTTP call, not just poll out at the next
+ * yield point.
+ */
 export interface ModelProviderOptions {
   temperature?: number;
   maxTokens?: number;
-  /** Providers should check `.isCancelled` before / between network round trips. */
-  cancellationToken?: { isCancelled: boolean };
+  cancellationToken?: { isCancelled: boolean; signal?: AbortSignal };
 }
 
 /** Common interface every LLM provider implements. */

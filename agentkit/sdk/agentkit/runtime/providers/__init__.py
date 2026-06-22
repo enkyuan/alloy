@@ -2,12 +2,12 @@
 
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.registry import (
-    GetProvider,
-    RegisterProvider,
+    get_provider,
+    register_provider,
 )
 
 __all__ = [
-    "GetProvider",
     "ModelProvider",
-    "RegisterProvider",
+    "get_provider",
+    "register_provider",
 ]

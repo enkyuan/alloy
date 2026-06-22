@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from agentkit.runtime.providers.registry import register_provider
-from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from agentkit.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+)
 
 
 def _tool_already_called(messages: List[Dict[str, Any]]) -> bool:

@@ -23,7 +23,7 @@ npm install @agentkit/sdk zod @anthropic-ai/sdk  # Anthropic
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
-are optional peers — install only the one you use. Node 22+.
+are optional peers -- install only the one you use. Node 22+.
 
 ## Quick start
 
@@ -90,7 +90,7 @@ tools are both visible to the model and executable.
 For simple setups you can use the process-level registry:
 
 ```ts
-import { registerTool, toolSpecFromSchema, executeTool } from "@agentkit/sdk";
+import { executeTool, registerTool, toolSpecFromSchema } from "@agentkit/sdk";
 import { z } from "zod";
 
 registerTool(
@@ -109,7 +109,7 @@ const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
 | `EventStore`, `InMemoryEventStore` | Append-only event log |
 | `EventBus` | In-memory pub/sub per session |
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
-| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool` | Tool registry (global + scoped) |
+| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
@@ -136,7 +136,7 @@ shared with the Python SDK.
 
 ## Testing without API keys
 
-Unit and integration tests mock the provider HTTP client — no keys needed for
+Unit and integration tests mock the provider HTTP client -- no keys needed for
 the default test suite:
 
 ```bash

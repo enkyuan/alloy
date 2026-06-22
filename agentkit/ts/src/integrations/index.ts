@@ -1,7 +1,7 @@
 export { Integration, tool } from "./base";
 export {
   BoundTool,
-  FunctionTool,
+  functionTool,
   type FunctionToolHandler,
   type FunctionToolMeta,
 } from "./functional";

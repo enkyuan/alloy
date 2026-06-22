@@ -54,7 +54,7 @@ def format_messages_openai(
     results to their originating calls.
 
     This function uses the ``tool_call_id`` field added to tool messages by
-    ``ReplaySession`` so that both the assistant request and the tool response
+    ``replay_session`` so that both the assistant request and the tool response
     are properly correlated in multi-turn conversations.
     """
     formatted: List[Dict[str, Any]] = []

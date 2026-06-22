@@ -113,6 +113,3 @@ function stringifyResult(result: unknown): string {
   }
   return String(result);
 }
-
-/** Alias matching the Python public name `ReplaySession`. */
-export const ReplaySession = replaySession;

@@ -8,6 +8,7 @@
  * The openai package is a peer/optional dep — it is imported lazily so the SDK
  * tree-shakes it out when unused.
  */
+import type OpenAI from "openai";
 import type {
   ModelProvider,
   ModelProviderOptions,
@@ -17,7 +18,12 @@ import type {
   ToolCall,
 } from "./base";
 import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
+import { parseToolArgsJSON } from "./_args";
 import type { ToolSpec } from "../tools/registry";
+
+type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
+type ChatToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
 
 export interface OpenAIProviderOptions {
   apiKey: string;
@@ -25,9 +31,13 @@ export interface OpenAIProviderOptions {
   baseURL?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Extra HTTP headers to send with every request. Used by OpenAI-compatible
+   * gateways (OpenRouter, Together, Groq) to attach attribution or routing
+   * metadata. Ignored when the value is empty. */
+  defaultHeaders?: Record<string, string>;
 }
 
-function toOpenAITools(tools: ToolSpec[]) {
+function toOpenAITools(tools: ToolSpec[]): ChatTool[] {
   return tools.map((t) => ({
     type: "function" as const,
     function: {
@@ -38,50 +48,64 @@ function toOpenAITools(tools: ToolSpec[]) {
   }));
 }
 
-function parseToolCallArgs(raw: unknown): Record<string, unknown> {
-  if (raw === undefined || raw === null) return {};
-  if (typeof raw !== "string") return raw as Record<string, unknown>;
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { __parse_error: `OpenAI tool args were not valid JSON: ${msg}` };
-  }
+function parseToolCalls(raw: ChatToolCall[] | undefined | null): ToolCall[] {
+  return (raw ?? []).map((tc) => {
+    if (tc.type !== "function") {
+      return { id: tc.id ?? "", name: "", args: {} };
+    }
+    const argsRaw = tc.function?.arguments;
+    return {
+      id: tc.id ?? "",
+      name: tc.function?.name ?? "",
+      // The OpenAI SDK types arguments as `string`; treat non-strings as
+      // already-parsed for forward-compat with mocked SDK shapes.
+      args:
+        typeof argsRaw === "string"
+          ? parseToolArgsJSON(argsRaw, "OpenAI")
+          : ((argsRaw ?? {}) as Record<string, unknown>),
+    };
+  });
 }
 
-function parseToolCalls(raw: unknown[]): ToolCall[] {
-  return raw.map((tc: any) => ({
-    id: tc.id ?? "",
-    name: tc.function?.name ?? "",
-    args: parseToolCallArgs(tc.function?.arguments),
-  }));
+interface ResolvedOpenAIOptions {
+  apiKey: string;
+  model: string;
+  baseURL: string;
+  temperature: number;
+  maxTokens: number;
+  defaultHeaders: Record<string, string> | undefined;
 }
 
 export class OpenAIProvider implements ModelProvider {
-  private readonly opts: Required<OpenAIProviderOptions>;
-  private client: any = null;
+  private readonly opts: ResolvedOpenAIOptions;
+  private client: OpenAI | null = null;
 
   constructor(opts: OpenAIProviderOptions) {
     if (!opts.apiKey?.trim()) {
       throw new ProviderConfigError("OpenAI API key is not configured.", { service: "openai" });
     }
     this.opts = {
-      model: "gpt-4o",
-      baseURL: "",
-      temperature: 0.7,
-      maxTokens: 4096,
-      ...opts,
+      apiKey: opts.apiKey,
+      model: opts.model ?? "gpt-4o",
+      baseURL: opts.baseURL ?? "",
+      temperature: opts.temperature ?? 0.7,
+      maxTokens: opts.maxTokens ?? 4096,
+      defaultHeaders:
+        opts.defaultHeaders && Object.keys(opts.defaultHeaders).length > 0
+          ? opts.defaultHeaders
+          : undefined,
     };
   }
 
-  private async getClient(): Promise<any> {
+  private async getClient(): Promise<OpenAI> {
     if (this.client !== null) return this.client;
     // Dynamic import so the package is optional at bundle time.
     try {
-      const { default: OpenAI } = await import("openai");
-      this.client = new OpenAI({
+      const { default: OpenAIDefault } = await import("openai");
+      this.client = new OpenAIDefault({
         apiKey: this.opts.apiKey,
         ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
+        ...(this.opts.defaultHeaders ? { defaultHeaders: this.opts.defaultHeaders } : {}),
       });
     } catch (error) {
       if (error instanceof ProviderError) throw error;
@@ -93,11 +117,11 @@ export class OpenAIProvider implements ModelProvider {
     return this.client;
   }
 
-  private buildMessages(messages: ProviderMessage[]): any[] {
-    return messages.map((m) => {
+  private buildMessages(messages: ProviderMessage[]): ChatMessage[] {
+    return messages.map<ChatMessage>((m) => {
       if (m.role === "tool") {
         return {
-          role: "tool" as const,
+          role: "tool",
           content: m.content,
           tool_call_id: m.tool_call_id ?? "",
         };
@@ -113,7 +137,7 @@ export class OpenAIProvider implements ModelProvider {
   ): Promise<ModelResponse> {
     if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
-    const params: any = {
+    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: this.opts.model,
       messages: this.buildMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
@@ -122,12 +146,17 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const response = await client.chat.completions.create(params);
+      const response = await client.chat.completions.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
       const choice = response.choices[0];
+      if (!choice) {
+        return { content: "", toolCalls: [] };
+      }
       const message = choice.message;
       return {
         content: message.content ?? "",
-        toolCalls: parseToolCalls(message.tool_calls ?? []),
+        toolCalls: parseToolCalls(message.tool_calls),
       };
     } catch (error) {
       throw providerAPIErrorFromUnknown("openai", error);
@@ -141,7 +170,7 @@ export class OpenAIProvider implements ModelProvider {
   ): AsyncGenerator<ModelResponseChunk> {
     if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
     const client = await this.getClient();
-    const params: any = {
+    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: this.opts.model,
       messages: this.buildMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
@@ -151,7 +180,9 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const stream = await client.chat.completions.create(params);
+      const stream = await client.chat.completions.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
 
       // Accumulate partial tool call args across chunks.
       const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
@@ -180,7 +211,7 @@ export class OpenAIProvider implements ModelProvider {
             incomingCalls.push({
               id: entry.id,
               name: entry.name,
-              args: parseToolCallArgs(entry.argsRaw),
+              args: parseToolArgsJSON(entry.argsRaw, "OpenAI"),
             });
           }
           pendingCalls.clear();
