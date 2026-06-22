@@ -14,19 +14,18 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```bash
-        cd agentkit/sdk && poetry install
+        pip install "agentkit[openai]"
         ```
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun install
-        # the package is @agentkit/sdk
+        bun add @agentkit/sdk openai
         ```
       </Tab>
     </Tabs>
 
-    The core has no required runtime dependencies beyond Python or Node. A
-    provider (OpenAI, Anthropic, etc.) is the only thing you need a key for.
+    These pull the SDK plus one provider client. For other providers or
+    optional extras, see [install](/docs/install).
 
   </Step>
 

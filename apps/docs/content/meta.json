@@ -1,4 +1,13 @@
 {
   "title": "agentkit",
-  "pages": ["index", "getting-started", "concepts", "architecture", "reference-service"]
+  "pages": [
+    "index",
+    "install",
+    "getting-started",
+    "cli",
+    "concepts",
+    "architecture",
+    "reference-service",
+    "troubleshooting"
+  ]
 }
