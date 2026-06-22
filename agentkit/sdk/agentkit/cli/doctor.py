@@ -37,7 +37,7 @@ def run(args: argparse.Namespace) -> int:
         print(_json.dumps(out, indent=2))
     else:
         for c in out["checks"]:
-            mark = color("v", "green") if c["ok"] else color("x", "red")
+            mark = color("✓", "green") if c["ok"] else color("✗", "red")
             detail = color(f" ({c['detail']})", "gray") if c.get("detail") else ""
             print(f"{mark} {c['name']}{detail}")
     return 1 if out["failed"] else 0
