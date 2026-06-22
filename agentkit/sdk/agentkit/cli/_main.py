@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import gen as _gen
 from . import init as _init
 
 
@@ -12,6 +13,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentkit", description="agentkit CLI")
     sub = parser.add_subparsers(dest="command", required=True)
     _init.add_parser(sub)
+    _gen.add_parser(sub)
     return parser
 
 
