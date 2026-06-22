@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { generateText, streamText } from "../src/runtime/oneshot";
 import { MockProvider } from "../src/providers/mock";
-import { openai, anthropic } from "../src/providers/factory";
+import { openai, anthropic, openrouter, kimi } from "../src/providers/factory";
 import { OpenAIProvider } from "../src/providers/openai";
 import { AnthropicProvider } from "../src/providers/anthropic";
 import type {
@@ -124,6 +124,97 @@ describe("provider factories", () => {
       expect(() => openai("gpt-4o")).toThrow(/not configured/i);
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
+    }
+  });
+});
+
+type ResolvedOpts = {
+  apiKey: string;
+  model: string;
+  baseURL: string;
+  defaultHeaders: Record<string, string> | undefined;
+};
+
+function readOpts(p: OpenAIProvider): ResolvedOpts {
+  return (p as unknown as { opts: ResolvedOpts }).opts;
+}
+
+describe("openrouter factory", () => {
+  it("points at the OpenRouter base URL and accepts a model string", () => {
+    const prev = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-key";
+    try {
+      const p = openrouter("meta-llama/llama-3.1-70b-instruct");
+      expect(p).toBeInstanceOf(OpenAIProvider);
+      const opts = readOpts(p);
+      expect(opts.baseURL).toBe("https://openrouter.ai/api/v1");
+      expect(opts.model).toBe("meta-llama/llama-3.1-70b-instruct");
+      expect(opts.apiKey).toBe("or-key");
+    } finally {
+      if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = prev;
+    }
+  });
+
+  it("falls back to OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
+    const prevOR = process.env.OPENROUTER_API_KEY;
+    const prevOA = process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.OPENAI_API_KEY = "fallback-key";
+    try {
+      const p = openrouter("anthropic/claude-3.5-sonnet");
+      expect(readOpts(p).apiKey).toBe("fallback-key");
+    } finally {
+      if (prevOR !== undefined) process.env.OPENROUTER_API_KEY = prevOR;
+      if (prevOA === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = prevOA;
+    }
+  });
+
+  it("attaches HTTP-Referer and X-Title headers when provided", () => {
+    const prev = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-key";
+    try {
+      const p = openrouter({
+        model: "openai/gpt-4o",
+        httpReferer: "https://example.com",
+        appTitle: "My Agent",
+      });
+      const headers = readOpts(p).defaultHeaders;
+      expect(headers).toBeDefined();
+      expect(headers!["HTTP-Referer"]).toBe("https://example.com");
+      expect(headers!["X-Title"]).toBe("My Agent");
+    } finally {
+      if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = prev;
+    }
+  });
+});
+
+describe("kimi factory", () => {
+  it("defaults to the Moonshot Kimi model on OpenRouter", () => {
+    const prev = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-key";
+    try {
+      const p = kimi();
+      const opts = readOpts(p);
+      expect(opts.baseURL).toBe("https://openrouter.ai/api/v1");
+      expect(opts.model).toMatch(/^moonshotai\/kimi/);
+    } finally {
+      if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = prev;
+    }
+  });
+
+  it("accepts a model-string override", () => {
+    const prev = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = "or-key";
+    try {
+      const p = kimi("moonshotai/kimi-k2.6");
+      expect(readOpts(p).model).toBe("moonshotai/kimi-k2.6");
+    } finally {
+      if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = prev;
     }
   });
 });

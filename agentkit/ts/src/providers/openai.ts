@@ -25,6 +25,10 @@ export interface OpenAIProviderOptions {
   baseURL?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Extra HTTP headers to send with every request. Used by OpenAI-compatible
+   * gateways (OpenRouter, Together, Groq) to attach attribution or routing
+   * metadata. Ignored when the value is empty. */
+  defaultHeaders?: Record<string, string>;
 }
 
 function toOpenAITools(tools: ToolSpec[]) {
@@ -57,8 +61,17 @@ function parseToolCalls(raw: unknown[]): ToolCall[] {
   }));
 }
 
+interface ResolvedOpenAIOptions {
+  apiKey: string;
+  model: string;
+  baseURL: string;
+  temperature: number;
+  maxTokens: number;
+  defaultHeaders: Record<string, string> | undefined;
+}
+
 export class OpenAIProvider implements ModelProvider {
-  private readonly opts: Required<OpenAIProviderOptions>;
+  private readonly opts: ResolvedOpenAIOptions;
   private client: any = null;
 
   constructor(opts: OpenAIProviderOptions) {
@@ -66,11 +79,15 @@ export class OpenAIProvider implements ModelProvider {
       throw new ProviderConfigError("OpenAI API key is not configured.", { service: "openai" });
     }
     this.opts = {
-      model: "gpt-4o",
-      baseURL: "",
-      temperature: 0.7,
-      maxTokens: 4096,
-      ...opts,
+      apiKey: opts.apiKey,
+      model: opts.model ?? "gpt-4o",
+      baseURL: opts.baseURL ?? "",
+      temperature: opts.temperature ?? 0.7,
+      maxTokens: opts.maxTokens ?? 4096,
+      defaultHeaders:
+        opts.defaultHeaders && Object.keys(opts.defaultHeaders).length > 0
+          ? opts.defaultHeaders
+          : undefined,
     };
   }
 
@@ -82,6 +99,7 @@ export class OpenAIProvider implements ModelProvider {
       this.client = new OpenAI({
         apiKey: this.opts.apiKey,
         ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
+        ...(this.opts.defaultHeaders ? { defaultHeaders: this.opts.defaultHeaders } : {}),
       });
     } catch (error) {
       if (error instanceof ProviderError) throw error;

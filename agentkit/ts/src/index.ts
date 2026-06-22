@@ -77,7 +77,13 @@ export {
   ProviderError,
 } from "./providers/errors";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
-export { openai, anthropic } from "./providers/factory";
+export {
+  openai,
+  anthropic,
+  openrouter,
+  kimi,
+  type OpenRouterFactoryOptions,
+} from "./providers/factory";
 
 // Integrations
 export {
