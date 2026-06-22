@@ -51,25 +51,35 @@ def test_each_public_name_resolves() -> None:
 
 def test_internal_names_still_importable_from_subpackages() -> None:
     # Things removed from the top-level lazy map must still be importable
-    # from their canonical subpackage.
+    # from their canonical subpackage. Each name is asserted to silence
+    # F401 (unused-import) and prove the import resolved.
     from agentkit.runtime.agents import AgentStrategy
-    from agentkit.runtime.agents.planner import ToolPlanner, ToolExecutor
+    from agentkit.runtime.agents.planner import ToolExecutor, ToolPlanner
+    from agentkit.runtime.integrations import BoundTool
     from agentkit.runtime.sessions.store import (
+        InMemorySessionStore,
+        SessionRecord,
+        SessionStore,
+    )
+    from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+    from agentkit.runtime.tools.registry import (
+        ClearTools,
+        ExecuteTool,
+        ToolSpecFromModel,
+    )
+
+    for obj in (
+        AgentStrategy,
+        ToolPlanner,
+        ToolExecutor,
         InMemorySessionStore,
         SessionStore,
         SessionRecord,
-    )
-    from agentkit.runtime.tools.registry import (
         ExecuteTool,
         ClearTools,
         ToolSpecFromModel,
-    )
-    from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
-    from agentkit.runtime.integrations import BoundTool
-
-    # Trivial assertions just to suppress unused-import linters and prove the
-    # imports executed.
-    assert callable(ToolPlanner) or ToolPlanner is not None
-    assert SessionStore is not None
-    assert ToolPolicy is not None
-    assert BoundTool is not None
+        ToolPolicy,
+        ToolPolicyViolation,
+        BoundTool,
+    ):
+        assert obj is not None
