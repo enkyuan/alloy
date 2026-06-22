@@ -18,6 +18,7 @@ import type {
   ToolCall,
 } from "./base";
 import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
+import { parseToolArgsJSON } from "./_args";
 import type { ToolSpec } from "../tools/registry";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
@@ -47,26 +48,23 @@ function toOpenAITools(tools: ToolSpec[]): ChatTool[] {
   }));
 }
 
-function parseToolCallArgs(raw: unknown): Record<string, unknown> {
-  if (raw === undefined || raw === null) return {};
-  if (typeof raw !== "string") return raw as Record<string, unknown>;
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { __parse_error: `OpenAI tool args were not valid JSON: ${msg}` };
-  }
-}
-
 function parseToolCalls(raw: ChatToolCall[] | undefined | null): ToolCall[] {
-  return (raw ?? []).map((tc) => ({
-    id: tc.id ?? "",
-    name: tc.type === "function" ? (tc.function?.name ?? "") : "",
-    args:
-      tc.type === "function"
-        ? parseToolCallArgs(tc.function?.arguments)
-        : ({} as Record<string, unknown>),
-  }));
+  return (raw ?? []).map((tc) => {
+    if (tc.type !== "function") {
+      return { id: tc.id ?? "", name: "", args: {} };
+    }
+    const argsRaw = tc.function?.arguments;
+    return {
+      id: tc.id ?? "",
+      name: tc.function?.name ?? "",
+      // The OpenAI SDK types arguments as `string`; treat non-strings as
+      // already-parsed for forward-compat with mocked SDK shapes.
+      args:
+        typeof argsRaw === "string"
+          ? parseToolArgsJSON(argsRaw, "OpenAI")
+          : ((argsRaw ?? {}) as Record<string, unknown>),
+    };
+  });
 }
 
 interface ResolvedOpenAIOptions {
@@ -213,7 +211,7 @@ export class OpenAIProvider implements ModelProvider {
             incomingCalls.push({
               id: entry.id,
               name: entry.name,
-              args: parseToolCallArgs(entry.argsRaw),
+              args: parseToolArgsJSON(entry.argsRaw, "OpenAI"),
             });
           }
           pendingCalls.clear();

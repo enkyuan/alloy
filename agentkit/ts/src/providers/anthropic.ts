@@ -17,6 +17,7 @@ import type {
   ToolCall,
 } from "./base";
 import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
+import { parseToolArgsJSON } from "./_args";
 import type { ToolSpec } from "../tools/registry";
 
 type AnthropicMessageParam = Anthropic.Messages.MessageParam;
@@ -195,16 +196,15 @@ export class AnthropicProvider implements ModelProvider {
             pendingTool.argsRaw += delta.partial_json ?? "";
           }
         } else if (event.type === "content_block_stop" && pendingTool !== null) {
-          let args: Record<string, unknown>;
-          try {
-            args = pendingTool.argsRaw === "" ? {} : JSON.parse(pendingTool.argsRaw);
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            args = { __parse_error: `Anthropic tool args were not valid JSON: ${msg}` };
-          }
           yield {
             delta: "",
-            toolCalls: [{ id: pendingTool.id, name: pendingTool.name, args }],
+            toolCalls: [
+              {
+                id: pendingTool.id,
+                name: pendingTool.name,
+                args: parseToolArgsJSON(pendingTool.argsRaw, "Anthropic"),
+              },
+            ],
           };
           pendingTool = null;
         }
