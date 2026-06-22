@@ -9,6 +9,7 @@ include = [
     { path = "agentkit/py.typed", format = ["sdist", "wheel"] },
     { path = "agentkit/integrations/registry/**/*.json", format = ["sdist", "wheel"] },
     { path = "agentkit/integrations/registry/**/*.py", format = ["sdist", "wheel"] },
+    { path = "agentkit/integrations/registry/**/*.md", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

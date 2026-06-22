@@ -75,9 +75,12 @@ After install, the CLI prints any setup steps (env var to set, OAuth
 scopes, optional `pip install` extras). Currently shipping:
 
 - `github` -- read repos, issues, PRs via a personal access token.
+- `gmail` -- read-only Gmail access via OAuth 2.0 (gmail.readonly).
+- `gcal` -- read-only Google Calendar via OAuth 2.0 (calendar.readonly).
 
-OAuth-backed integrations (`gmail`, `gcal`) are planned in a follow-on
-slice.
+The Google integrations bundle a `SETUP.md` walking through the
+one-time Google Cloud Console step. Both share the same OAuth client
+credentials (`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`).
 
 ## list-integrations
 

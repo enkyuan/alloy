@@ -1,0 +1,17 @@
+{
+  "name": "gcal",
+  "version": "0.1.0",
+  "namespace": "gcal",
+  "description": "Read-only Google Calendar access via OAuth 2.0.",
+  "auth": {
+    "kind": "oauth",
+    "scopes": ["https://www.googleapis.com/auth/calendar.readonly"],
+    "docs": "See SETUP.md for the Google Cloud OAuth client setup."
+  },
+  "files": ["gcal.py", "SETUP.md"],
+  "tools": [
+    {"name": "list_events", "description": "List calendar events in a time window.", "risk": "read"},
+    {"name": "get_event", "description": "Fetch a single calendar event by id.", "risk": "read"}
+  ],
+  "extras": []
+}

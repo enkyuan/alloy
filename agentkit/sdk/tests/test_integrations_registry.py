@@ -16,9 +16,23 @@ from agentkit.integrations import (
 )
 
 
-def test_list_integrations_includes_github() -> None:
+def test_list_integrations_includes_known_names() -> None:
     names = list_integrations()
-    assert "github" in names
+    assert {"github", "gmail", "gcal"} <= set(names)
+
+
+def test_gmail_manifest_declares_oauth_and_readonly_scope() -> None:
+    m = load_manifest("gmail")
+    assert m.auth.kind == "oauth"
+    assert m.auth.scopes == ("https://www.googleapis.com/auth/gmail.readonly",)
+    assert {t.name for t in m.tools} == {"list_messages", "get_message"}
+
+
+def test_gcal_manifest_declares_oauth_and_readonly_scope() -> None:
+    m = load_manifest("gcal")
+    assert m.auth.kind == "oauth"
+    assert m.auth.scopes == ("https://www.googleapis.com/auth/calendar.readonly",)
+    assert {t.name for t in m.tools} == {"list_events", "get_event"}
 
 
 def test_load_manifest_returns_parsed_manifest() -> None:
