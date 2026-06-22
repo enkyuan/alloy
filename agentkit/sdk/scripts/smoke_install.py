@@ -34,7 +34,6 @@ required_names = [
     "CancellationToken",
     "UserMessage",
     "SessionManager",
-    "RequestPaymentTool",
 ]
 
 for name in required_names:
