@@ -127,7 +127,7 @@ shared with the TypeScript SDK.
 | Tool registry + planner + policy | Yes | Yes |
 | `AgentBuilder` + integrations | Yes | Yes |
 | OpenAI / Anthropic providers | Yes | Yes |
-| Kimi / Gemini providers | Yes | No |
+| OpenRouter / Kimi / Gemini providers | Yes (native) | Yes (via OpenAI-compatible factory) |
 | Document RAG / vector store | Yes (non-MVP) | No |
 | Tool retriever | Yes (non-MVP) | No |
 | Text modality adapter | Yes (non-MVP) | No |
