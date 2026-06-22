@@ -4,7 +4,7 @@
   "description": "The CLI for agentkit",
   "license": "MIT",
   "bin": {
-    "agentkit": "./dist/index.mjs"
+    "agentkit": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -13,7 +13,7 @@
   "publishConfig": {
     "access": "public",
     "executableFiles": [
-      "./dist/index.mjs"
+      "./dist/index.js"
     ]
   },
   "scripts": {

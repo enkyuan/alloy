@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
 import { copyToClipboard } from "../utils/clipboard.js";
+import { redact } from "../utils/redact.js";
 import { readNearestPackageJson } from "../utils/package-info.js";
 import { detectPackageManager } from "../utils/package-manager.js";
 
@@ -58,7 +59,8 @@ export const info = new Command("info")
       agentkit: { packages: pickByPrefix(pkg, AGENTKIT_PREFIX) },
       providers: pickDeps(pkg, PROVIDER_KEYS),
     };
-    const text = opts.json ? JSON.stringify(data, null, 2) : formatText(data);
+    const safe = redact(data) as typeof data;
+    const text = opts.json ? JSON.stringify(safe, null, 2) : formatText(safe);
     console.log(text);
     if (opts.copy) {
       const ok = await copyToClipboard(text);
