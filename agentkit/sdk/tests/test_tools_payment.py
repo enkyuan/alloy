@@ -1,4 +1,5 @@
 """Tests for the agentpay bridge tool."""
+
 from __future__ import annotations
 
 import json
@@ -31,11 +32,16 @@ async def test_request_payment_posts_to_sessions_endpoint() -> None:
     transport = httpx.MockTransport(transport_handler)
     client = httpx.AsyncClient(transport=transport)
     try:
-        _spec, handler = RequestPaymentTool(base_url="https://api.example.com", client=client)
+        _spec, handler = RequestPaymentTool(
+            base_url="https://api.example.com", client=client
+        )
         result = await handler(ctx=None, args={"amount": 1500, "description": "Coffee"})
         assert result == {"checkoutUrl": "https://pay/abc"}
         assert calls == [
-            ("https://api.example.com/v1/sessions", {"amount": 1500, "description": "Coffee"}),
+            (
+                "https://api.example.com/v1/sessions",
+                {"amount": 1500, "description": "Coffee"},
+            ),
         ]
     finally:
         await client.aclose()

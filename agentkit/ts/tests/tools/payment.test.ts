@@ -7,9 +7,9 @@ describe("requestPayment", () => {
     expect(spec.name).toBe("request_payment");
     const params = spec.parameters as Record<string, unknown>;
     expect(params.required).toEqual(["amount", "description"]);
-    const props = params.properties as Record<string, { type: string }>;
-    expect(props.amount.type).toBe("integer");
-    expect(props.description.type).toBe("string");
+    const props = params.properties as Record<string, { type: string } | undefined>;
+    expect(props.amount?.type).toBe("integer");
+    expect(props.description?.type).toBe("string");
   });
 
   it("posts to <baseUrl>/v1/sessions with the args as JSON", async () => {

@@ -42,7 +42,7 @@ export function requestPayment(opts: RequestPaymentOptions): RequestPaymentTool 
     if (!r.ok) {
       throw new Error(`agentpay POST /v1/sessions failed: ${r.status} ${r.statusText}`);
     }
-    return r.json();
+    return (await r.json()) as Record<string, unknown>;
   };
 
   return { spec, handler };

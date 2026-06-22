@@ -4,6 +4,7 @@ Returns a (ToolSpec, handler) pair. The handler POSTs the args to
 ``<base_url>/v1/sessions`` and returns the parsed JSON. Pass a custom httpx
 client in tests; in production a fresh AsyncClient is created per call.
 """
+
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
