@@ -27,6 +27,7 @@ EXPECTED_PUBLIC = {
     "ProviderConfigError",
     "ProviderAPIError",
     "ReplaySession",
+    "RequestPaymentTool",
     "SessionManager",
     "SessionState",
     "ToolSpec",
