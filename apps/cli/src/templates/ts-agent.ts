@@ -1,5 +1,24 @@
+// Maps the --provider CLI choice to the TS SDK factory function name.
+// All four are zero-arg ready (each reads the appropriate API key from
+// the env), so the generated agent just imports and calls one of them.
+const TS_FACTORIES = {
+  openai: "openai",
+  anthropic: "anthropic",
+  kimi: "kimi",
+  gemini: "gemini",
+} as const;
+
+type TsProvider = keyof typeof TS_FACTORIES;
+
+function resolveFactory(provider: string): string {
+  if (provider in TS_FACTORIES) return TS_FACTORIES[provider as TsProvider];
+  throw new Error(
+    `Unknown provider '${provider}'. Supported: ${Object.keys(TS_FACTORIES).join(", ")}.`,
+  );
+}
+
 export function tsAgentTemplate(provider: string): string {
-  const factoryName = provider === "anthropic" ? "anthropic" : "openai";
+  const factoryName = resolveFactory(provider);
   return `import {
   AgentBuilder,
   AgentKitEvent,

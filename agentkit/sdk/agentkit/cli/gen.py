@@ -58,28 +58,41 @@ def _extract_param_type(param: dict) -> str:
     return "string"
 
 
-def _parse_parameters(op: dict, path: str) -> list[ParamInfo]:
+def _parse_parameters(
+    op: dict, path: str, path_item_params: list | None = None
+) -> list[ParamInfo]:
     """Pull path and query parameters with their declared types out of an op.
 
     Body params are intentionally ignored here: we forward the whole arg dict
     as the JSON body for non-GET methods, so the model already supplies them
     via the same ``args`` object.
+
+    OpenAPI lets the path item (``methods``) declare ``parameters`` shared by
+    every operation under that path, inherited by each verb. The merge rule
+    from the spec: operation-level parameters override path-item-level
+    parameters on the same ``(name, in)`` key. We process path-item params
+    first so the op-level pass overwrites them.
     """
     by_name: dict[str, ParamInfo] = {}
-    for p in op.get("parameters") or []:
-        if not isinstance(p, dict):
-            continue
-        name = p.get("name")
-        loc = p.get("in")
-        if not isinstance(name, str) or loc not in ("path", "query"):
-            continue
-        by_name[name] = ParamInfo(
-            name=name,
-            location=loc,
-            type=_extract_param_type(p),
-            required=bool(p.get("required", loc == "path")),
-            description=str(p.get("description") or f"{name} {loc} param"),
-        )
+    sources: list[list] = []
+    if path_item_params:
+        sources.append(path_item_params)
+    sources.append(op.get("parameters") or [])
+    for params in sources:
+        for p in params:
+            if not isinstance(p, dict):
+                continue
+            name = p.get("name")
+            loc = p.get("in")
+            if not isinstance(name, str) or loc not in ("path", "query"):
+                continue
+            by_name[name] = ParamInfo(
+                name=name,
+                location=loc,
+                type=_extract_param_type(p),
+                required=bool(p.get("required", loc == "path")),
+                description=str(p.get("description") or f"{name} {loc} param"),
+            )
     # Path tokens not listed explicitly under `parameters` still need to ship.
     for raw_name in extract_path_params(path):
         if raw_name not in by_name:
@@ -98,11 +111,15 @@ def parse_spec(spec: dict) -> list[ParsedOperation]:
     for path, methods in (spec.get("paths") or {}).items():
         if not isinstance(methods, dict):
             continue
+        # Path-item-level parameters apply to every operation under this path
+        # (OpenAPI 3 Path Item Object); they're merged in with op-level
+        # parameters winning on conflict. See `_parse_parameters`.
+        path_item_params = methods.get("parameters") or []
         for method in HTTP_METHODS:
             op = methods.get(method)
             if not op or not op.get("operationId"):
                 continue
-            params = _parse_parameters(op, path)
+            params = _parse_parameters(op, path, path_item_params)
             ops.append(
                 ParsedOperation(
                     operation_id=op["operationId"],

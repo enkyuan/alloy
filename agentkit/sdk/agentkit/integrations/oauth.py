@@ -309,7 +309,11 @@ def _capture_auth_code(
     # Block until the handler runs (the server thread services one request).
     thread.join(timeout=300)
     if thread.is_alive():
-        httpd.shutdown()
+        # The server thread is parked inside ``handle_request`` waiting on the
+        # accept socket. ``shutdown()`` is for stopping a ``serve_forever``
+        # loop and would hang here; closing the socket forcibly unblocks the
+        # ``select``/``accept`` so the thread can exit.
+        httpd.server_close()
         raise OAuthError("OAuth consent timed out after 5 minutes.")
 
     if "error" in received:

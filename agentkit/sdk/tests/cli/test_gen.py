@@ -107,3 +107,65 @@ def test_gen_ts_emits_searchparams_and_excludes_body_for_get(tmp_path: Path) -> 
     assert 'url.searchParams.set("limit"' in body or "url.searchParams.set(q" in body
     # GET has no body, so no JSON.stringify call should be emitted.
     assert "JSON.stringify" not in body
+
+
+# Per the OpenAPI 3 spec, parameters declared on the Path Item Object apply to
+# every operation under that path. Make sure path-item-level params and
+# op-level params are merged, with op-level winning on (name, in) collision.
+PATH_LEVEL_SPEC = {
+    "info": {"title": "Pet API"},
+    "servers": [{"url": "https://api.example.com"}],
+    "paths": {
+        "/pets/{id}": {
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "integer"},
+                    "description": "pet identifier",
+                },
+                {
+                    "name": "fields",
+                    "in": "query",
+                    "required": False,
+                    "schema": {"type": "string"},
+                },
+            ],
+            "get": {
+                "operationId": "getPet",
+                "summary": "fetch a pet",
+                # Op-level overrides the path-level schema (string vs integer).
+                "parameters": [
+                    {
+                        "name": "fields",
+                        "in": "query",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": "comma-separated field list",
+                    }
+                ],
+            },
+        }
+    },
+}
+
+
+def test_gen_merges_path_item_level_parameters(tmp_path: Path) -> None:
+    from agentkit.cli import main
+
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(PATH_LEVEL_SPEC))
+    rc = main(
+        ["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "python"]
+    )
+    assert rc == 0
+    body = (tmp_path / "tools.py").read_text()
+    # Path-item-level path param 'id' must reach the tool schema with its
+    # declared integer type, not the fallback string default.
+    assert '"id": {"type": "integer"' in body
+    # Op-level override on 'fields' wins -> still string and now required.
+    assert '"fields": {"type": "string"' in body
+    assert (
+        '"required": ["fields", "id"]' in body or '"required": ["id", "fields"]' in body
+    )

@@ -26,6 +26,42 @@ describe("init command", () => {
     expect(agent).toMatch(/\.provider\(openai\(\)\)/);
   });
 
+  it("ts --provider kimi wires the kimi() factory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
+    await init.parseAsync([
+      "node",
+      "agentkit",
+      "--cwd",
+      dir,
+      "--lang",
+      "ts",
+      "--provider",
+      "kimi",
+      "--yes",
+    ]);
+    const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
+    expect(agent).toMatch(/\bkimi\b/);
+    expect(agent).toMatch(/\.provider\(kimi\(\)\)/);
+    expect(agent).not.toMatch(/\.provider\(openai\(\)\)/);
+  });
+
+  it("ts --provider gemini wires the gemini() factory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
+    await init.parseAsync([
+      "node",
+      "agentkit",
+      "--cwd",
+      dir,
+      "--lang",
+      "ts",
+      "--provider",
+      "gemini",
+      "--yes",
+    ]);
+    const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
+    expect(agent).toMatch(/\.provider\(gemini\(\)\)/);
+  });
+
   it("python non-interactive scaffolds agent.py and .env.example", async () => {
     const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
     await init.parseAsync([
