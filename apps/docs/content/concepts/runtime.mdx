@@ -1,0 +1,65 @@
+---
+title: Runtime
+description: AgentBuilder configures the runtime; AgentRuntime.send appends a user message and runs one turn; AgentRuntime.history reads back the event log.
+---
+
+`AgentRuntime` is the loop that takes a user message, calls the LLM,
+dispatches tool calls scatter-gather, and projects the resulting events
+into session state. You build one with `AgentBuilder`.
+
+## AgentBuilder
+
+| Method                       | Description                                                                                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.provider(p)`               | Sets the LLM provider (required).                                                                                                             |
+| `.tool(t)`                   | Adds one tool. Call multiple times for multiple tools.                                                                                        |
+| `.integration(i)`            | Adds an `Integration` that registers a bundle of tools.                                                                                       |
+| `.system_prompt(s)` (Python) | Sets the system prompt. `.systemPrompt(s)` in TypeScript.                                                                                     |
+| `.strategy(s)`               | Overrides loop strategy (e.g. max iterations).                                                                                                |
+| `.policy(p)`                 | Attaches a `ToolPolicy` for risk-based approval.                                                                                              |
+| `.build(bus?, store?)`       | Builds the runtime. `bus` and `store` are optional keyword/option args, not separate fluent calls; both default to in-memory implementations. |
+
+## AgentRuntime
+
+| Method                   | Returns                                            | Description                                                                |
+| ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------- |
+| `send(session_id, text)` | `None` / `Promise<void>`                           | Appends a `USER_MESSAGE` event and runs one turn (may include tool loops). |
+| `history(session_id)`    | `list[AgentKitEvent]` / `Promise<AgentKitEvent[]>` | All events appended to this session, in order.                             |
+
+In Python, methods are snake_case (`send`, `history`) and async. In
+TypeScript they are camelCase (`send`, `history`) and return Promises.
+
+## Example
+
+<Tabs items={["python", "typescript"]}>
+  <Tab value="python">
+    ```python
+    from agentkit import AgentBuilder, GetProvider
+
+    runtime = (
+        AgentBuilder()
+        .provider(GetProvider("openai"))
+        .system_prompt("You are a helpful assistant.")
+        .build()
+    )
+    await runtime.send("s1", "Hello")
+    events = await runtime.history("s1")
+    ```
+
+  </Tab>
+  <Tab value="typescript">
+    ```ts
+    import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
+
+    const runtime = new AgentBuilder()
+      .provider(new OpenAIProvider())
+      .systemPrompt("You are a helpful assistant.")
+      .build();
+    await runtime.send("s1", "Hello");
+    const events = await runtime.history("s1");
+    ```
+
+  </Tab>
+</Tabs>
+
+See [event bus](/docs/concepts/event-bus) for the underlying mechanism.
