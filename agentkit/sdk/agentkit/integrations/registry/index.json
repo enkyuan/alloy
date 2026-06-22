@@ -1,0 +1,7 @@
+{
+  "$schema": "./schema.json",
+  "version": "0.1.0",
+  "integrations": {
+    "github": "github/manifest.json"
+  }
+}

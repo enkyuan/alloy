@@ -7,6 +7,8 @@ run `agentkit --help` for the current command list. Subcommands below.
 | --- | --- |
 | [`init`](#init) | scaffold a new agent project |
 | [`gen`](#gen) | generate tool stubs from an OpenAPI spec |
+| [`add`](#add) | install an integration (shadcn-style copy) |
+| [`list-integrations`](#list-integrations) | enumerate integrations available via `add` |
 | [`info`](#info) | print environment + config diagnostics |
 | [`secret`](#secret) | mint a random 32-byte hex secret |
 | [`doctor`](#doctor) | check the environment for common setup issues |
@@ -50,6 +52,41 @@ boolean / number when the spec declares it), excludes them from the JSON body
 on non-GET methods, and emits an async HTTP handler per operation. Only
 operations with an `operationId` are picked up. Bearer auth is assumed; the
 env var name is derived from the spec title.
+
+## add
+
+Install an integration into your project. The CLI copies the
+integration's source files out of the registry bundled with the SDK,
+shadcn-style, so you own the copies and can edit them freely.
+
+```bash
+agentkit add github                       # writes ./integrations/github.py
+agentkit add github --out ./custom/path   # custom destination
+agentkit add github --force               # overwrite existing files
+```
+
+| flag | default | meaning |
+| --- | --- | --- |
+| `name` (positional) | required | integration name; see `agentkit list-integrations` |
+| `--out` | `./integrations` | destination directory |
+| `--force` | off | overwrite existing files |
+
+After install, the CLI prints any setup steps (env var to set, OAuth
+scopes, optional `pip install` extras). Currently shipping:
+
+- `github` -- read repos, issues, PRs via a personal access token.
+
+OAuth-backed integrations (`gmail`, `gcal`) are planned in a follow-on
+slice.
+
+## list-integrations
+
+Enumerate everything `agentkit add` can install.
+
+```bash
+agentkit list-integrations            # human-readable
+agentkit list-integrations --json     # machine-readable
+```
 
 ## info
 
