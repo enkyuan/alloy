@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     TTS_MODEL: str = ""
 
     # Agent Provider Config
-    AGENTKIT_MODEL_PROVIDER: str = "kimi"
+    AGENTKIT_MODEL_PROVIDER: str = "mock"
 
     # OpenRouter / Kimi
     OPENROUTER_API_KEY: Optional[str] = None
