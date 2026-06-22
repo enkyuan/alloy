@@ -46,7 +46,7 @@ export function useNav(pathname: string): UseNavResult {
       : isPricingPage || isResourcePage
         ? "w-[30%]"
         : "w-[40%]",
-    navBottomBorderClass: isNarrowLeft ? "border-foreground/5" : "",
+    navBottomBorderClass: isNarrowLeft ? "border-foreground/5" : "border-foreground/[0.04]",
     tabDividerClass: isNarrowLeft ? "border-foreground/4" : "border-foreground/[0.06]",
     activeTabBorderClass: isNarrowLeft ? "border-b-foreground/50" : "border-b-foreground/60",
     dropdownBorderClass: isNarrowLeft ? "border-foreground/6" : "border-foreground/[0.08]",
