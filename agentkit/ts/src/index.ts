@@ -40,8 +40,6 @@ export {
   executeTool,
   clearTools,
 } from "./tools/registry";
-export { requestPayment } from "./tools/payment";
-export type { RequestPaymentOptions, RequestPaymentTool } from "./tools/payment";
 export {
   ToolPolicy,
   ToolPolicyViolation,
