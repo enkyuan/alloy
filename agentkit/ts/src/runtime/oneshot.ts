@@ -36,21 +36,42 @@ export async function generateText(options: GenerateTextOptions): Promise<ModelR
 }
 
 export interface StreamTextResult {
-  /** Async-iterable of text deltas as they arrive from the provider. */
+  /**
+   * Async-iterable of text deltas as they arrive from the provider.
+   *
+   * IMPORTANT: this stream drives the rest of the result. The `text` and
+   * `toolCalls` promises only resolve after `textStream` has been iterated
+   * to completion. If you `await` `text` without iterating `textStream`
+   * first (or alongside, via two parallel consumers), it will hang forever.
+   *
+   * To skip streaming entirely and just collect the full response, use
+   * `generateText` instead.
+   */
   textStream: AsyncIterable<string>;
-  /** Resolves to the concatenated text once the stream completes. */
+  /**
+   * Resolves to the concatenated text once `textStream` finishes.
+   *
+   * Hangs if `textStream` is never iterated. See the note on `textStream`.
+   */
   text: Promise<string>;
-  /** Resolves to the tool calls the model emitted, if any. */
+  /**
+   * Resolves to the tool calls the model emitted, if any.
+   *
+   * Hangs if `textStream` is never iterated. See the note on `textStream`.
+   */
   toolCalls: Promise<ModelResponse["toolCalls"]>;
 }
 
 /**
- * Stream a single provider call. Iterate `textStream` for tokens; await
- * `text` for the full response after streaming finishes.
+ * Stream a single provider call. Iterate `textStream` for tokens; the
+ * `text` and `toolCalls` promises resolve only after that iteration
+ * completes - awaiting them without iterating `textStream` hangs.
  *
  *   const { textStream, text } = streamText({ provider: openai("gpt-4o"), messages });
  *   for await (const chunk of textStream) process.stdout.write(chunk);
  *   console.log("\nfinal:", await text);
+ *
+ * For a non-streaming one-shot, use `generateText`.
  */
 export function streamText(options: GenerateTextOptions): StreamTextResult {
   const { provider, messages, tools, ...providerOptions } = options;

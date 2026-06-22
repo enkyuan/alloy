@@ -30,19 +30,31 @@ def test_public_api_exports_stable_runtime_surface():
     assert expected.issubset(set(agentkit.__all__))
 
 
-def test_public_api_uses_camel_case_for_top_level_helpers():
-    snake_case_helpers = {
-        "clear_tools",
-        "execute_tool",
-        "get_provider",
+def test_public_api_exports_pep8_decorator_aliases():
+    """Decorators and registration helpers ship under their PEP 8 snake_case
+    names alongside the legacy UpperCamel aliases."""
+    pep8_aliases = {
+        "tool",
+        "function_tool",
+        "register_tool",
         "list_tool_specs",
         "register_provider",
-        "register_tool",
-        "tool",
+        "get_provider",
+    }
+    assert pep8_aliases.issubset(set(agentkit.__all__))
+
+
+def test_public_api_keeps_camel_case_for_non_helper_extras_hidden():
+    """Stay conservative: low-level registry verbs that aren't headline DX
+    (execute_tool, clear_tools, tool_spec_from_model) stay accessible via
+    their submodule rather than the top-level alias."""
+    hidden_snake_case = {
+        "clear_tools",
+        "execute_tool",
         "tool_spec_from_model",
     }
 
-    assert snake_case_helpers.isdisjoint(set(agentkit.__all__))
+    assert hidden_snake_case.isdisjoint(set(agentkit.__all__))
 
 
 def test_public_api_hides_non_mvp_extensions_from_top_level():
