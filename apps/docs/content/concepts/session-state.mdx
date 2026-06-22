@@ -9,7 +9,7 @@ log.
 
 `replaySession` (Python: `ReplaySession`) takes the event log for a session
 and projects it into a `SessionState`: `isActive` (Python: `is_active`) and
-`messages` — the conversation history in `{ role, content }` form passed to
+`messages`, the conversation history in `{ role, content }` form passed to
 the LLM.
 
 State is a pure projection of the log, so replay is deterministic: the same

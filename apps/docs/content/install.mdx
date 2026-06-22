@@ -1,0 +1,67 @@
+---
+title: Install
+description: Install agentkit in Python or TypeScript, pick the provider extras you need, and learn the v0.x compatibility policy.
+---
+
+agentkit ships as two SDKs that share the same wire format. Install one
+per app; pick provider extras as needed. v0.x is alpha and minor versions
+may break the public surface - pin exact versions in production until 1.0.
+
+## Python
+
+```bash
+pip install "agentkit[openai]"          # one provider
+pip install "agentkit[openai,anthropic]" # multiple
+pip install "agentkit[providers]"        # all three: openai, anthropic, gemini
+```
+
+The base install has no provider deps. `agentkit[openai]` adds the `openai`
+client, `agentkit[anthropic]` adds `anthropic`, `agentkit[gemini]` adds
+`google-genai`. The default Python provider is `kimi` (OpenRouter); it
+needs no extra package because it speaks the OpenAI chat-completions wire
+format. Set `KIMI_API_KEY` to use it.
+
+Optional extras:
+
+| Extra          | Adds                                    |
+| -------------- | --------------------------------------- |
+| `openai`       | `openai`                                |
+| `anthropic`    | `anthropic`                             |
+| `gemini`       | `google-genai`                          |
+| `providers`    | all of the above                        |
+| `realtime`     | `redis` (for `agentkit-serve`)          |
+| `google-tools` | Google API clients (for tool sandboxes) |
+| `dev-ui`       | `rich` (for prettier CLI output)        |
+
+## TypeScript
+
+```bash
+bun add @agentkit/sdk openai
+bun add @agentkit/sdk @anthropic-ai/sdk
+```
+
+`@agentkit/sdk` lists `openai` and `@anthropic-ai/sdk` as optional peer
+dependencies. Install whichever you'll register as a provider. `zod` is
+already a runtime dep of `@agentkit/sdk`.
+
+## CLI
+
+The `agentkit` CLI is a separate package with the same UX in both
+languages.
+
+```bash
+pip install agentkit       # Python: brings `agentkit init/gen/...`
+bun add -D @agentkit/cli   # TypeScript: brings the same CLI surface plus `mcp`
+```
+
+See [CLI](/docs/cli) for the full command list.
+
+## Version policy
+
+| Range   | Behavior                                                |
+| ------- | ------------------------------------------------------- |
+| `0.x.y` | alpha. Minor bumps may rename or remove public names.   |
+| `>=1.0` | semver. Public surface is stable across minor versions. |
+
+Pin exact versions in lockfiles until 1.0 lands. The events wire format
+(field names + type strings) is stable across SDKs in 0.x.

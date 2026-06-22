@@ -43,7 +43,7 @@ function _VersionSwitcher({ className }: { className?: string }) {
     router.push(targetHref);
   }
 
-  const _displayLabel = currentVersion.label;
+  const displayLabel = currentVersion.label;
 
   return (
     <LazyMotion features={domAnimation}>
@@ -52,11 +52,11 @@ function _VersionSwitcher({ className }: { className?: string }) {
           type="button"
           onClick={() => setOpen((v) => !v)}
           onMouseEnter={() => {
-            clearTimeout(timeout.current);
+            clearTimeout(_timeout.current);
             setOpen(true);
           }}
           onMouseLeave={() => {
-            timeout.current = setTimeout(() => setOpen(false), 150);
+            _timeout.current = setTimeout(() => setOpen(false), 150);
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 h-full transition-colors duration-150 hover:bg-foreground/[0.04]"
         >
@@ -85,10 +85,10 @@ function _VersionSwitcher({ className }: { className?: string }) {
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12, ease: "easeOut" }}
               onMouseEnter={() => {
-                clearTimeout(timeout.current);
+                clearTimeout(_timeout.current);
               }}
               onMouseLeave={() => {
-                timeout.current = setTimeout(() => setOpen(false), 150);
+                _timeout.current = setTimeout(() => setOpen(false), 150);
               }}
               className="absolute top-full right-0 z-50 min-w-[160px] border border-foreground/[0.08] bg-background shadow-2xl shadow-black/20 dark:shadow-black/60 py-1"
             >

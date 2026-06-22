@@ -196,6 +196,6 @@ export function GenerateAppleJwt() {
 
 // ─── Features (placeholder) ─────────────────────────────────────────────────
 
-export function Features({ _stars }: { stars?: string | null }) {
+export function Features({ stars }: { stars?: string | null }) {
   return null;
 }

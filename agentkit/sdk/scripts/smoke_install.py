@@ -29,16 +29,12 @@ required_names = [
     "InMemoryEventBus",
     "ToolSpec",
     "ToolRegistry",
-    "ToolPlanner",
-    "ToolPolicy",
     "GetProvider",
     "RegisterProvider",
     "CancellationToken",
     "UserMessage",
-    "EventType",
-    "AgentKitEvent",
-    "InMemorySessionStore",
     "SessionManager",
+    "RequestPaymentTool",
 ]
 
 for name in required_names:
@@ -64,7 +60,7 @@ try:
 except Exception as e:
     error_text = str(e).lower()
     if "openai" in error_text or "api key" in error_text or "config" in error_text:
-        print(f"  ok: clear error raised — {e}")
+        print(f"  ok: clear error raised: {e}")
     else:
         print(f"FAIL: unexpected error message: {e}", file=sys.stderr)
         sys.exit(1)

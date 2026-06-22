@@ -5,6 +5,7 @@ description = "An embeddable SDK for building agentic platforms (text + voice)."
 authors = ["enkyuan <yuan.enkng@gmail.com>"]
 readme = "agentkit/README.md"
 packages = [{ include = "agentkit" }]
+include = [{ path = "agentkit/py.typed", format = ["sdist", "wheel"] }]
 
 [tool.poetry.dependencies]
 python = "^3.11"

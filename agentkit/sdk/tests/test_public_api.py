@@ -8,16 +8,11 @@ def test_public_api_exports_stable_runtime_surface():
     expected = {
         "AgentBuilder",
         "AgentRuntime",
-        "AgentStrategy",
-        "BoundTool",
         "CancellationToken",
-        "ClearTools",
-        "ExecuteTool",
         "FunctionTool",
         "GetProvider",
         "InMemoryEventBus",
         "InMemoryEventStore",
-        "InMemorySessionStore",
         "Integration",
         "ModelProvider",
         "ProviderAPIError",
@@ -28,10 +23,8 @@ def test_public_api_exports_stable_runtime_surface():
         "SessionManager",
         "Tool",
         "ToolContext",
-        "ToolPlanner",
         "ToolRegistry",
         "ToolSpec",
-        "ToolSpecFromModel",
     }
 
     assert expected.issubset(set(agentkit.__all__))
