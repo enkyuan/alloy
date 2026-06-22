@@ -52,7 +52,7 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
     import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
 
     const runtime = new AgentBuilder()
-      .provider(new OpenAIProvider())
+      .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
       .systemPrompt("You are a helpful assistant.")
       .build();
     await runtime.send("s1", "Hello");

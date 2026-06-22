@@ -107,7 +107,7 @@ tool wired in.
         import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
 
         const runtime = new AgentBuilder()
-          .provider(new OpenAIProvider())
+          .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
           .tool(getWeather)
           .systemPrompt("You are a helpful assistant.")
           .build();
