@@ -1,9 +1,22 @@
 from typing import Any, AsyncGenerator, Dict, List, Optional, Protocol, TYPE_CHECKING
 
-from agentkit.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from agentkit.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    ProviderMessage,
+    ProviderToolSpec,
+)
 
 if TYPE_CHECKING:
     from agentkit.runtime.agents.cancellation import CancellationToken
+
+
+# Re-export the neutral payload shapes here so callers can write
+# ``from agentkit.runtime.providers.base import ProviderMessage``. The
+# Protocol signature stays on ``List[Dict[str, Any]]`` because the runtime
+# and the existing concrete providers operate on plain dicts; the TypedDicts
+# are documentation + opt-in typing for callers who want it.
+__all__ = ["ModelProvider", "ProviderMessage", "ProviderToolSpec"]
 
 
 class ModelProvider(Protocol):
@@ -11,7 +24,15 @@ class ModelProvider(Protocol):
 
     Implementations translate the neutral message + tool payload to their
     own API at the boundary; the runtime never imports provider-specific
-    types. ``cancellation_token`` is structurally typed: any object with an
+    types.
+
+    The runtime sends plain ``dict`` messages and tool specs that conform
+    to :class:`ProviderMessage` and :class:`ProviderToolSpec` (see
+    ``agentkit.runtime.providers.types``). Callers that want compile-time
+    checking can construct those TypedDicts; the Protocol stays loose so
+    duck-typed dicts flow through without ceremony.
+
+    ``cancellation_token`` is structurally typed: any object with an
     ``is_cancelled`` boolean attribute is accepted, but the canonical type
     is ``agentkit.runtime.agents.cancellation.CancellationToken``.
     """

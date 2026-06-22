@@ -111,6 +111,7 @@ with an env-driven provider (set `AGENTKIT_MODEL_PROVIDER` to `openai` or
 | `UserMessage` | Convenience constructor for the initial `user.message` event |
 | `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
 | `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
+| `ProviderMessage`, `ProviderToolSpec` | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `agentkit.runtime.providers.types`) |
 | `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
 | `UnknownToolError` | Raised when the model calls a tool name not in the registry |
 | `CancellationToken` | Cooperative cancellation across async boundaries |

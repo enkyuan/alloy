@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 
@@ -32,7 +32,7 @@ class MockProvider(ModelProvider):
     async def generate(
         self,
         messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]] | None = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         system_instruction: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
@@ -44,7 +44,7 @@ class MockProvider(ModelProvider):
     async def generate_stream(
         self,
         messages: List[Dict[str, Any]],
-        tools: List[Dict[str, Any]] | None = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         system_instruction: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
@@ -180,7 +180,7 @@ async def test_agent_runtime_cancellation():
         async def generate(
             self,
             messages: List[Dict[str, Any]],
-            tools: List[Dict[str, Any]] | None = None,
+            tools: Optional[List[Dict[str, Any]]] = None,
             system_instruction: str | None = None,
             temperature: float = 0.7,
             max_tokens: int | None = None,
@@ -192,7 +192,7 @@ async def test_agent_runtime_cancellation():
         async def generate_stream(
             self,
             messages: List[Dict[str, Any]],
-            tools: List[Dict[str, Any]] | None = None,
+            tools: Optional[List[Dict[str, Any]]] = None,
             system_instruction: str | None = None,
             temperature: float = 0.7,
             max_tokens: int | None = None,
