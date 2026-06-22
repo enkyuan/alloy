@@ -41,27 +41,10 @@ class ToolContext:
     db: Optional[Any] = None
 
 
-_TOOL_SPECS: Dict[str, ToolSpec] = {}
-_TOOL_HANDLERS: Dict[str, ToolHandler] = {}
-
-
 def provider_safe_tool_name(name: str) -> str:
     """Return a provider-safe tool name using only letters, digits, "_" and "-"."""
     safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
     return safe or "tool"
-
-
-def register_tool(spec: ToolSpec):
-    """Decorator to register a tool handler."""
-
-    def wrapper(func: ToolHandler) -> ToolHandler:
-        if spec.name in _TOOL_SPECS:
-            raise ValueError(f"Tool already registered: {spec.name}")
-        _TOOL_SPECS[spec.name] = spec
-        _TOOL_HANDLERS[spec.name] = func
-        return func
-
-    return wrapper
 
 
 def _filter_specs(
@@ -77,20 +60,6 @@ def _filter_specs(
     return specs
 
 
-def list_tool_specs(
-    tags: Optional[List[str]] = None,
-    enabled_only: bool = True,
-) -> List[ToolSpec]:
-    """Return registered tool specs, optionally filtered by tags or enabled status."""
-    return _filter_specs(list(_TOOL_SPECS.values()), tags, enabled_only)
-
-
-def clear_tools() -> None:
-    """Clear the module-level tool registry. Primarily for tests."""
-    _TOOL_SPECS.clear()
-    _TOOL_HANDLERS.clear()
-
-
 def tool_spec_from_model(
     name: str, description: str, model: Type[BaseModel]
 ) -> ToolSpec:
@@ -104,28 +73,22 @@ def tool_spec_from_model(
     return ToolSpec(name=name, description=description, parameters=parameters)
 
 
-async def execute_tool(
-    user_id: str,
-    tool_name: str,
-    tool_args: Dict[str, Any],
-    db: Optional[Any] = None,
-) -> Dict[str, Any]:
-    """Execute a registered tool call for a given user."""
-    handler = _TOOL_HANDLERS.get(tool_name)
-    if handler is None:
-        raise ValueError(f"Unknown tool: {tool_name}")
+class UnknownToolError(ValueError):
+    """Raised when a tool is requested by name but not registered."""
 
-    ctx = ToolContext(user_id=user_id, db=db)
-    return await handler(ctx, tool_args)
+    def __init__(self, tool_name: str) -> None:
+        super().__init__(f"Unknown tool: {tool_name}")
+        self.tool_name = tool_name
 
 
 class ToolRegistry:
     """Scoped tool registry for per-agent or per-tenant isolation.
 
     The module-level ``register_tool``, ``list_tool_specs``, and ``execute_tool``
-    functions share a single global registry suitable for simple single-agent
-    setups. Use ``ToolRegistry`` when you need multiple isolated registries or
-    want to pass a registry explicitly to ``AgentRuntime``.
+    functions delegate to a single process-default registry, sufficient for
+    simple single-agent setups. Construct your own ``ToolRegistry`` when you
+    need multiple isolated registries or want to pass one explicitly to
+    ``AgentRuntime``.
 
     Example::
 
@@ -172,9 +135,52 @@ class ToolRegistry:
         """Execute a tool registered on this registry instance."""
         handler = self._handlers.get(tool_name)
         if handler is None:
-            raise ValueError(f"Unknown tool: {tool_name}")
+            raise UnknownToolError(tool_name)
         ctx = ToolContext(user_id=user_id, db=db)
         return await handler(ctx, tool_args)
+
+    def clear(self) -> None:
+        """Clear this registry. Primarily for tests."""
+        self._specs.clear()
+        self._handlers.clear()
+
+
+# Process-default registry that the module-level functions delegate to.
+_default_registry = ToolRegistry()
+
+# Back-compat: tests that need to inject specs without going through the
+# decorator (e.g. retriever fixtures, custom enable/disable scenarios) reach
+# into these dicts. They are the default registry's private storage.
+_TOOL_SPECS: Dict[str, ToolSpec] = _default_registry._specs
+_TOOL_HANDLERS: Dict[str, ToolHandler] = _default_registry._handlers
+
+
+def register_tool(spec: ToolSpec):
+    """Decorator to register a tool handler on the process-default registry."""
+    return _default_registry.register(spec)
+
+
+def list_tool_specs(
+    tags: Optional[List[str]] = None,
+    enabled_only: bool = True,
+) -> List[ToolSpec]:
+    """Return registered tool specs from the process-default registry."""
+    return _default_registry.list_specs(tags=tags, enabled_only=enabled_only)
+
+
+def clear_tools() -> None:
+    """Clear the process-default registry. Primarily for tests."""
+    _default_registry.clear()
+
+
+async def execute_tool(
+    user_id: str,
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    db: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """Execute a registered tool call against the process-default registry."""
+    return await _default_registry.execute(user_id, tool_name, tool_args, db=db)
 
 
 RegisterTool = register_tool

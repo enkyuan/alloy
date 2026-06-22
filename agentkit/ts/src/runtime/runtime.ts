@@ -80,14 +80,17 @@ export class AgentRuntime {
   private readonly bus: EventBus;
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
-  private readonly _tools: ToolSpec[] | undefined;
-  private readonly explicitPlanner: ToolPlanner | undefined;
+  private readonly fixedTools: ToolSpec[] | undefined;
   private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly userId: string;
-  /** Cached planner when tools are known up front. `undefined` means rebuild per turn. */
-  private readonly cachedPlanner: ToolPlanner | undefined;
+  /**
+   * Resolved planner: explicit if caller provided one, cached when the tool
+   * set is fixed at construction, `null` when the runtime must rebuild a
+   * planner per turn from the dynamic global registry.
+   */
+  private readonly planner: ToolPlanner | null;
 
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
@@ -95,20 +98,21 @@ export class AgentRuntime {
     this.bus = options.bus;
     this.systemPrompt = options.systemPrompt;
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
-    this._tools = options.tools;
+    this.fixedTools = options.tools;
     this.userId = options.userId ?? "agent";
     this.policy = options.policy;
     this.approvalHandler = options.approvalHandler;
     this.toolExecutor =
       options.toolExecutor ??
       ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
-    this.explicitPlanner = options.planner;
-    // Cache the planner when the tool set is fixed at construction time.
-    // If `options.tools` is omitted, we fall through to `listToolSpecs()`
-    // each turn so dynamic registry mutations remain visible.
-    this.cachedPlanner =
-      this.explicitPlanner ??
-      (this._tools !== undefined ? this.buildPlanner(this._tools) : undefined);
+    // Planner resolution:
+    //  1. Explicit planner wins.
+    //  2. Otherwise, if tools are fixed at construction time, build once.
+    //  3. Otherwise rebuild per turn so dynamic global-registry mutations
+    //     remain visible (signalled by `null`).
+    this.planner =
+      options.planner ??
+      (this.fixedTools !== undefined ? this.buildPlanner(this.fixedTools) : null);
   }
 
   private buildPlanner(tools: ToolSpec[]): ToolPlanner {
@@ -120,8 +124,8 @@ export class AgentRuntime {
     });
   }
 
-  private makePlanner(tools: ToolSpec[]): ToolPlanner {
-    return this.cachedPlanner ?? this.buildPlanner(tools);
+  private resolvePlanner(tools: ToolSpec[]): ToolPlanner {
+    return this.planner ?? this.buildPlanner(tools);
   }
 
   /**
@@ -166,7 +170,7 @@ export class AgentRuntime {
 
     await emit({ type: EventType.AGENT_REASONING_STARTED });
 
-    const tools = this._tools ?? listToolSpecs();
+    const tools = this.fixedTools ?? listToolSpecs();
 
     for (let i = 0; i < this.maxToolIterations; i++) {
       token.throwIfCancelled();
@@ -202,7 +206,7 @@ export class AgentRuntime {
         break;
       }
 
-      await this.makePlanner(tools).executeScatterGather(
+      await this.resolvePlanner(tools).executeScatterGather(
         sessionId,
         toolCalls.map((tc) => ({
           id: tc.id,

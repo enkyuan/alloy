@@ -32,6 +32,7 @@ export {
   type TaggedHandler,
   TOOL_META,
   ToolRegistry,
+  UnknownToolError,
   registerTool,
   listToolSpecs,
   toolSpecFromSchema,
@@ -76,6 +77,7 @@ export {
   ProviderError,
 } from "./providers/errors";
 export { clearProviders, getProvider, registerProvider } from "./providers/registry";
+export { openai, anthropic } from "./providers/factory";
 
 // Integrations
 export {
@@ -97,3 +99,9 @@ export {
 export { CancellationToken } from "./runtime/cancellation";
 export { buildMessages } from "./runtime/context";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "./runtime/builder";
+export {
+  generateText,
+  streamText,
+  type GenerateTextOptions,
+  type StreamTextResult,
+} from "./runtime/oneshot";

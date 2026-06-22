@@ -23,6 +23,20 @@ def extract_path_params(path: str) -> list[str]:
     return re.findall(r"\{([^}]+)\}", path)
 
 
+_JSON_PRIMITIVE_TYPES = {"string", "integer", "number", "boolean"}
+
+
+@dataclass
+class ParamInfo:
+    """A typed parameter on a parsed OpenAPI operation."""
+
+    name: str
+    location: str  # "path" | "query"
+    type: str  # one of _JSON_PRIMITIVE_TYPES
+    required: bool
+    description: str
+
+
 @dataclass
 class ParsedOperation:
     operation_id: str
@@ -32,7 +46,51 @@ class ParsedOperation:
     summary: str
     tag: str | None
     path_params: list[str]
+    params: list[ParamInfo]
     risk: str
+
+
+def _extract_param_type(param: dict) -> str:
+    schema = param.get("schema") or {}
+    typ = schema.get("type")
+    if isinstance(typ, str) and typ in _JSON_PRIMITIVE_TYPES:
+        return typ
+    return "string"
+
+
+def _parse_parameters(op: dict, path: str) -> list[ParamInfo]:
+    """Pull path and query parameters with their declared types out of an op.
+
+    Body params are intentionally ignored here: we forward the whole arg dict
+    as the JSON body for non-GET methods, so the model already supplies them
+    via the same ``args`` object.
+    """
+    by_name: dict[str, ParamInfo] = {}
+    for p in op.get("parameters") or []:
+        if not isinstance(p, dict):
+            continue
+        name = p.get("name")
+        loc = p.get("in")
+        if not isinstance(name, str) or loc not in ("path", "query"):
+            continue
+        by_name[name] = ParamInfo(
+            name=name,
+            location=loc,
+            type=_extract_param_type(p),
+            required=bool(p.get("required", loc == "path")),
+            description=str(p.get("description") or f"{name} {loc} param"),
+        )
+    # Path tokens not listed explicitly under `parameters` still need to ship.
+    for raw_name in extract_path_params(path):
+        if raw_name not in by_name:
+            by_name[raw_name] = ParamInfo(
+                name=raw_name,
+                location="path",
+                type="string",
+                required=True,
+                description=f"{raw_name} path param",
+            )
+    return list(by_name.values())
 
 
 def parse_spec(spec: dict) -> list[ParsedOperation]:
@@ -44,6 +102,7 @@ def parse_spec(spec: dict) -> list[ParsedOperation]:
             op = methods.get(method)
             if not op or not op.get("operationId"):
                 continue
+            params = _parse_parameters(op, path)
             ops.append(
                 ParsedOperation(
                     operation_id=op["operationId"],
@@ -54,7 +113,8 @@ def parse_spec(spec: dict) -> list[ParsedOperation]:
                     or op.get("description")
                     or op["operationId"],
                     tag=(op.get("tags") or [None])[0],
-                    path_params=extract_path_params(path),
+                    path_params=[p.name for p in params if p.location == "path"],
+                    params=params,
                     risk="read" if method == "get" else "write",
                 )
             )
@@ -86,15 +146,14 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
     ]
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
-        props = (
-            ",\n            ".join(
-                f'"{p}": {{"type": "string", "description": "{p} path param"}}'
-                for p in op.path_params
-            )
-            or ""
-        )
-        if op.path_params:
-            quoted = ", ".join('"' + p + '"' for p in op.path_params)
+        prop_lines = [
+            f'"{p.name}": {{"type": "{p.type}", "description": {json.dumps(p.description)}}}'
+            for p in op.params
+        ]
+        props = ", ".join(prop_lines)
+        required_names = [p.name for p in op.params if p.required]
+        if required_names:
+            quoted = ", ".join('"' + p + '"' for p in required_names)
             required = f', "required": [{quoted}]'
         else:
             required = ""
@@ -113,15 +172,33 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
     lines.append("")
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
-        # path with {x} -> {args["x"]} style for str.format-like substitution
         url_path = re.sub(r"\{([^}]+)\}", r"{args['\1']}", op.path)
+        query_names = [p.name for p in op.params if p.location == "query"]
+        body_names = {p.name for p in op.params}
         has_body = op.method not in ("GET", "HEAD", "OPTIONS")
-        body_kwarg = ", json=args" if has_body else ""
+        if query_names:
+            quoted = ", ".join('"' + q + '"' for q in query_names)
+            query_kwarg = (
+                f", params={{k: args[k] for k in ({quoted},) if k in args}}"
+            )
+        else:
+            query_kwarg = ""
+        if has_body:
+            # Body excludes path + query params; remaining keys form the JSON body.
+            if body_names:
+                quoted_body = ", ".join('"' + n + '"' for n in body_names)
+                body_kwarg = (
+                    f", json={{k: v for k, v in args.items() if k not in ({quoted_body},)}}"
+                )
+            else:
+                body_kwarg = ", json=args"
+        else:
+            body_kwarg = ""
         lines.append(
             f"async def {name}(args: dict) -> dict:\n"
             f'    url = f"{{BASE_URL}}{url_path}"\n'
             f"    async with httpx.AsyncClient() as c:\n"
-            f'        r = await c.request("{op.method}", url, headers={{"Authorization": f"Bearer {{API_KEY}}"}}{body_kwarg})\n'
+            f'        r = await c.request("{op.method}", url, headers={{"Authorization": f"Bearer {{API_KEY}}"}}{query_kwarg}{body_kwarg})\n'
             f"        return r.json()\n"
         )
     return "\n".join(lines)
@@ -134,15 +211,14 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
     tools_entries: list[str] = []
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
-        props = (
-            ",\n".join(
-                f'        {p}: {{ type: "string", description: "{p} path param" }}'
-                for p in op.path_params
-            )
-            or "        // no path params"
-        )
-        if op.path_params:
-            quoted_ts = ", ".join('"' + p + '"' for p in op.path_params)
+        prop_lines = [
+            f'        {p.name}: {{ type: "{p.type}", description: {json.dumps(p.description)} }}'
+            for p in op.params
+        ]
+        props = ",\n".join(prop_lines) or "        // no params"
+        required_names = [p.name for p in op.params if p.required]
+        if required_names:
+            quoted_ts = ", ".join('"' + p + '"' for p in required_names)
             required = f"\n      required: [{quoted_ts}],"
         else:
             required = ""
@@ -162,12 +238,43 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
         url_path = re.sub(r"\{([^}]+)\}", r"${args.\1}", op.path)
+        query_names = [p.name for p in op.params if p.location == "query"]
+        body_names = {p.name for p in op.params}
         has_body = op.method not in ("GET", "HEAD", "OPTIONS")
-        body = "\n    body: JSON.stringify(args)," if has_body else ""
-        ct = ', "Content-Type": "application/json"' if has_body else ""
+        if query_names:
+            quoted_q = ", ".join('"' + q + '"' for q in query_names)
+            query_block = (
+                "  for (const q of ["
+                + quoted_q
+                + "]) {\n"
+                + "    if (q in args) url.searchParams.set(q, String((args as Record<string, unknown>)[q]));\n"
+                + "  }\n"
+            )
+        else:
+            query_block = ""
+        if has_body:
+            if body_names:
+                quoted_b = ", ".join('"' + n + '"' for n in body_names)
+                body_construct = (
+                    "  const bodyKeys = new Set([" + quoted_b + "]);\n"
+                    "  const body = Object.fromEntries(\n"
+                    "    Object.entries(args).filter(([k]) => !bodyKeys.has(k)),\n"
+                    "  );\n"
+                )
+                body = "\n    body: JSON.stringify(body),"
+            else:
+                body_construct = ""
+                body = "\n    body: JSON.stringify(args),"
+            ct = ', "Content-Type": "application/json"'
+        else:
+            body_construct = ""
+            body = ""
+            ct = ""
         handlers.append(
             f"export async function {name}(args: Record<string, unknown>): Promise<unknown> {{\n"
             f"  const url = new URL(`${{BASE_URL}}{url_path}`);\n"
+            f"{query_block}"
+            f"{body_construct}"
             f"  const r = await fetch(url.toString(), {{\n"
             f'    method: "{op.method}",\n'
             f"    headers: {{ Authorization: `Bearer ${{API_KEY}}`{ct} }},{body}\n"

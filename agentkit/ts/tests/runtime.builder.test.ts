@@ -77,8 +77,8 @@ describe("AgentBuilder", () => {
       .integration(new PingIntegration())
       .build({ bus, store });
     expect(runtime).toBeInstanceOf(AgentRuntime);
-    // Access the private _tools field via casting to verify the tool was registered.
-    const tools = (runtime as unknown as { _tools: ToolSpec[] | undefined })._tools;
+    // Access the private fixedTools field via casting to verify the tool was registered.
+    const tools = (runtime as unknown as { fixedTools: ToolSpec[] | undefined }).fixedTools;
     expect(tools).toBeDefined();
     expect(tools!.some((t) => t.name === "ping")).toBe(true);
   });
