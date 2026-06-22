@@ -10,6 +10,7 @@ from . import gen as _gen
 from . import info as _info
 from . import init as _init
 from . import secret as _secret
+from . import upgrade as _upgrade
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -20,6 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _info.add_parser(sub)
     _secret.add_parser(sub)
     _doctor.add_parser(sub)
+    _upgrade.add_parser(sub)
     return parser
 
 
