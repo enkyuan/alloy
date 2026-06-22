@@ -1,4 +1,4 @@
-from agentkit.infra.events.replay import ReplaySession, SessionState
+from agentkit.infra.events.replay import replay_session, SessionState
 from agentkit.infra.events.store import EventStore
 
 
@@ -13,4 +13,4 @@ class SessionStateManager:
         events = await self.store.get_events(session_id)
         if not events:
             return SessionState(session_id=session_id)
-        return ReplaySession(events)
+        return replay_session(events)

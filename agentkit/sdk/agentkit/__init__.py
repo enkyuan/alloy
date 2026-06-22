@@ -34,10 +34,6 @@ _LAZY: dict[str, str] = {
     "ProviderAPIError": "agentkit.runtime.providers.errors",
     "ProviderConfigError": "agentkit.runtime.providers.errors",
     "ProviderError": "agentkit.runtime.providers.errors",
-    # ReplaySession is actually a function; the CapWords spelling predates the
-    # PEP 8 cleanup and is kept here for back-compat. Rename to replay_session
-    # would be the consistent fix.
-    "ReplaySession": "agentkit.runtime.sessions",
     "SessionManager": "agentkit.runtime.sessions",
     "SessionState": "agentkit.runtime.sessions",
     "ToolContext": "agentkit.runtime.tools.registry",
@@ -51,6 +47,7 @@ _LAZY: dict[str, str] = {
     "list_tool_specs": "agentkit.runtime.tools.registry",
     "register_provider": "agentkit.runtime.providers",
     "register_tool": "agentkit.runtime.tools.registry",
+    "replay_session": "agentkit.runtime.sessions",
     "tool": "agentkit.runtime.integrations",
 }
 

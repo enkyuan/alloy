@@ -1,5 +1,5 @@
 """Replay session state from AgentKit events."""
 
-from agentkit.infra.events.replay import ReplaySession
+from agentkit.infra.events.replay import replay_session
 
-__all__ = ["ReplaySession"]
+__all__ = ["replay_session"]

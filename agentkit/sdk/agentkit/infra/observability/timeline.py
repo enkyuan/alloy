@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from agentkit.infra.events.replay import ReplaySession, SessionState
+from agentkit.infra.events.replay import replay_session, SessionState
 from agentkit.infra.events.schemas import AgentKitEvent
 
-__all__ = ["EventTimeline", "ReplaySession", "SessionState"]
+__all__ = ["EventTimeline", "replay_session", "SessionState"]
 
 
 class EventTimeline:
@@ -22,4 +22,4 @@ class EventTimeline:
     def to_session_state(self) -> SessionState:
         if not self.events:
             raise ValueError("Cannot build session state from empty timeline")
-        return ReplaySession(self.events)
+        return replay_session(self.events)

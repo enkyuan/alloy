@@ -254,13 +254,13 @@ async def test_agent_runtime_send_publishes_user_message_to_bus():
 
 @pytest.mark.asyncio
 async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
-    """ReplaySession must include tool_call_id on tool messages.
+    """replay_session must include tool_call_id on tool messages.
 
     This is the regression test for the multi-turn tool loop bug: without
     tool_call_id the second provider request is structurally broken for
     OpenAI/Anthropic (they require matching IDs on tool results).
     """
-    from agentkit.infra.events.replay import ReplaySession
+    from agentkit.infra.events.replay import replay_session
     from agentkit.infra.events.schemas import (
         ToolCallCompleted,
         ToolCallRequested,
@@ -296,7 +296,7 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     )
 
     events = await store.get_events(session_id)
-    state = ReplaySession(events)
+    state = replay_session(events)
 
     tool_msgs = [m for m in state.messages if m["role"] == "tool"]
     assert len(tool_msgs) == 1
@@ -308,7 +308,7 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
 @pytest.mark.asyncio
 async def test_tool_call_id_preserved_on_failed_tool_replay():
     """TOOL_CALL_FAILED events must also carry tool_call_id through replay."""
-    from agentkit.infra.events.replay import ReplaySession
+    from agentkit.infra.events.replay import replay_session
     from agentkit.infra.events.schemas import (
         ToolCallFailed,
         ToolCallRequested,
@@ -338,7 +338,7 @@ async def test_tool_call_id_preserved_on_failed_tool_replay():
     )
 
     events = await store.get_events(session_id)
-    state = ReplaySession(events)
+    state = replay_session(events)
 
     tool_msgs = [m for m in state.messages if m["role"] == "tool"]
     assert len(tool_msgs) == 1

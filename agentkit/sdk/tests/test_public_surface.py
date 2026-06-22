@@ -20,7 +20,7 @@ EXPECTED_PUBLIC = {
     "ProviderAPIError",
     "ProviderConfigError",
     "ProviderError",
-    "ReplaySession",
+    "replay_session",
     "SessionManager",
     "SessionState",
     "ToolContext",

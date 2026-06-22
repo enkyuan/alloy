@@ -16,7 +16,7 @@ class SessionState:
     messages: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def ReplaySession(events: Sequence[AgentKitEvent]) -> SessionState:
+def replay_session(events: Sequence[AgentKitEvent]) -> SessionState:
     """Reconstruct session state by replaying a sequence of events.
 
     The append-only event log is the source of truth. Events from

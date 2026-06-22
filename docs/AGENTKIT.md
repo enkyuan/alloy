@@ -73,7 +73,7 @@ SDKs.
 
 ### session state
 
-`replaySession` (python: `ReplaySession`) takes the event log for a session and
+`replaySession` (python: `replay_session`) takes the event log for a session and
 projects it into a `SessionState`: `isActive`, and `messages` (the conversation
 history in `{role, content}` form that gets passed to the LLM).
 
