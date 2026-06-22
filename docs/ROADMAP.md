@@ -173,8 +173,12 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ## Developer experience
 
-### 29. agentkit CLI / scaffold `init` (PARTIAL)
-- `agentkit/sdk/agentkit/cli.py` — `agentkit init [path]` writes a minimal Python `agent.py` and `.env.example`.
-- Remaining: TS scaffold and framework-specific route templates.
-- Until this lands, the landing-page CLI tab shows the real install command, and the MCP tab (`npx agentkit mcp`) is likewise aspirational.
-- The CLI tab currently shows a single `pip install agentkit` command. Once the CLI ships, it should show two tabs: Python (`pip install agentkit` / `agentkit init`) and TypeScript (`bun add @agentkit/sdk` / `npx agentkit init`). Update `hero-readme.tsx` `InstallBlock` at that point.
+### 29. agentkit CLI / scaffold (DONE)
+
+Both `@agentkit/cli` (TypeScript) and `agentkit` (Python) ship the same surface:
+`init`, `gen`, `info`, `secret`, `upgrade`, `doctor`. The TS CLI additionally
+ships `mcp` for registering an agentkit MCP server with the user's AI tool.
+
+- TS: `bun add -D @agentkit/cli` -> `npx agentkit init --lang ts|python --provider openai|anthropic|kimi|gemini`
+- Python: `pip install agentkit` -> `agentkit init --provider openai`
+- Landing-page CLI tab: now safe to show both `agentkit init` flows.
