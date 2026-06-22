@@ -45,7 +45,7 @@ range.
 
 Three usual causes, in order of likelihood:
 
-1. The tool was registered with `RegisterTool` / `registerTool` but not
+1. The tool was registered with `register_tool` / `registerTool` but not
    passed to `AgentBuilder().tool(...)`. The runtime only sees tools
    bound to it.
 2. The model wasn't given the spec. Check `agentkit info --json` for the

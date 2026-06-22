@@ -10,6 +10,7 @@ author can revisit when the name changes.
 Scope of "user-facing docs":
 - ``docs/AGENTKIT.md`` -- the shared concepts overview
 - ``agentkit/sdk/agentkit/README.md`` -- the python SDK README
+- ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
 
 Plan/spec files under ``docs/superpowers/`` are excluded -- those are
 point-in-time records.
@@ -33,10 +34,19 @@ import agentkit
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-USER_FACING_DOCS = [
-    REPO_ROOT / "docs" / "AGENTKIT.md",
-    REPO_ROOT / "agentkit" / "sdk" / "agentkit" / "README.md",
-]
+FUMADOCS_CONTENT = REPO_ROOT / "apps" / "docs" / "content"
+
+
+def _user_facing_docs() -> list[Path]:
+    paths: list[Path] = [
+        REPO_ROOT / "docs" / "AGENTKIT.md",
+        REPO_ROOT / "agentkit" / "sdk" / "agentkit" / "README.md",
+    ]
+    paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
+    return paths
+
+
+USER_FACING_DOCS = _user_facing_docs()
 
 # Names that are public but, by design, are not headlined in the prose. Keep
 # this set small. Every entry should be defensible in a code review.
@@ -67,7 +77,7 @@ def test_every_public_name_is_referenced_in_user_facing_docs() -> None:
             missing.append(name)
     assert not missing, (
         "Public names not referenced in any user-facing doc "
-        f"({', '.join(sorted(USER_FACING_DOCS[i].name for i in range(len(USER_FACING_DOCS))))}):\n  "
+        f"({len(USER_FACING_DOCS)} files scanned):\n  "
         + "\n  ".join(missing)
         + "\nAdd a reference, or add a justified entry to EXEMPT in this test."
     )
