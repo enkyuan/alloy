@@ -49,7 +49,7 @@ import agentkit
 class WeatherIntegration(agentkit.Integration):
     namespace = "weather"
 
-    @agentkit.Tool(
+    @agentkit.tool(
         description="Return weather for a city.",
         parameters={
             "type": "object",
@@ -68,7 +68,7 @@ async def main():
 
     runtime = (
         agentkit.AgentBuilder()
-        .provider(agentkit.GetProvider("openai"))  # reads OPENAI_API_KEY
+        .provider(agentkit.get_provider("openai"))  # reads OPENAI_API_KEY
         .integration(WeatherIntegration())
         .system_prompt("You are a weather assistant.")
         .build(bus=bus, store=store)
@@ -86,7 +86,7 @@ asyncio.run(main())
 ```
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
-tools are both visible to the model and executable. Swap `.provider(agentkit.GetProvider("anthropic"))` to use Anthropic.
+tools are both visible to the model and executable. Swap `.provider(agentkit.get_provider("anthropic"))` to use Anthropic.
 
 ## CLI scaffold
 
@@ -108,7 +108,7 @@ with an env-driven provider (set `AGENTKIT_MODEL_PROVIDER` to `openai` or
 | `InMemoryEventStore`, `InMemoryEventBus` | Infra-free event log and pub/sub |
 | `EventType`, `AgentKitEvent` | Event discriminants and typed event union |
 | `replaySession`, `SessionManager` | Session state projection and management |
-| `GetProvider`, `RegisterProvider` | Provider registry |
+| `get_provider`, `register_provider` | Provider registry |
 | `CancellationToken` | Cooperative cancellation across async boundaries |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format

@@ -9,11 +9,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 from pydantic import BaseModel
 
 from agentkit.runtime.tools.registry import (
-    ProviderSafeToolName,
     ToolHandler,
     ToolRegistry,
     ToolSpec,
-    ToolSpecFromModel,
+    provider_safe_tool_name,
+    tool_spec_from_model,
 )
 
 
@@ -31,7 +31,7 @@ def tool(
     subclass; the model is converted to JSON Schema at registration time.
     """
     if isinstance(parameters, type) and issubclass(parameters, BaseModel):
-        parameters_schema = ToolSpecFromModel("_", "_", parameters).parameters
+        parameters_schema = tool_spec_from_model("_", "_", parameters).parameters
     else:
         parameters_schema = parameters
 
@@ -46,9 +46,6 @@ def tool(
         return fn
 
     return decorator
-
-
-Tool = tool
 
 
 class Integration(abc.ABC):
@@ -100,7 +97,7 @@ class Integration(abc.ABC):
             catalog_name = f"{self.namespace}.{spec.name}"
             prefixed = replace(
                 spec,
-                name=ProviderSafeToolName(catalog_name),
+                name=provider_safe_tool_name(catalog_name),
                 catalog_name=catalog_name,
             )
             registry.register(prefixed)(handler)

@@ -88,7 +88,7 @@ export {
 // Integrations
 export {
   BoundTool,
-  FunctionTool,
+  functionTool,
   type FunctionToolHandler,
   type FunctionToolMeta,
   Integration,

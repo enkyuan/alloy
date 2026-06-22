@@ -183,9 +183,3 @@ async def execute_tool(
     return await _default_registry.execute(user_id, tool_name, tool_args, db=db)
 
 
-RegisterTool = register_tool
-ListToolSpecs = list_tool_specs
-ToolSpecFromModel = tool_spec_from_model
-ExecuteTool = execute_tool
-ClearTools = clear_tools
-ProviderSafeToolName = provider_safe_tool_name

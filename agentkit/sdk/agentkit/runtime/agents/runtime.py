@@ -92,12 +92,12 @@ class AgentRuntime:
         if self._explicit_planner is not None:
             return self._explicit_planner
 
-        # Lazy import to avoid a top-level circular dependency; ExecuteTool
+        # Lazy import to avoid a top-level circular dependency; execute_tool
         # lives in the global tool registry.
-        from agentkit.runtime.tools.registry import ExecuteTool  # noqa: PLC0415
+        from agentkit.runtime.tools.registry import execute_tool  # noqa: PLC0415
 
         executor: ToolExecutor = self._tool_executor or (
-            lambda name, args: ExecuteTool(self._user_id, name, args)
+            lambda name, args: execute_tool(self._user_id, name, args)
         )
         specs = {spec.name: spec for spec in self.tools}
         return ToolPlanner(

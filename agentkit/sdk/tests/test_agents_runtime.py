@@ -164,10 +164,10 @@ async def test_agent_runtime_no_tools_runs_clean():
 @pytest.mark.asyncio
 async def test_get_provider_mock_is_public_zero_setup_provider():
     """The mock provider is public so quickstarts and tests run with no API key."""
-    from agentkit.runtime.providers import GetProvider
+    from agentkit.runtime.providers import get_provider
     from agentkit.runtime.providers.mock import MockProvider
 
-    assert isinstance(GetProvider("mock"), MockProvider)
+    assert isinstance(get_provider("mock"), MockProvider)
 
 
 @pytest.mark.asyncio

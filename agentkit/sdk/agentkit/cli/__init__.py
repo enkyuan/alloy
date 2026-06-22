@@ -8,6 +8,7 @@ from .templates import agent_template, env_template
 AGENT_TEMPLATE = agent_template("openai")
 ENV_TEMPLATE = env_template("openai")
 
-# __all__ restricted to non-underscore names to satisfy the project-wide
-# no-snake-case-in-__all__ policy; all names remain importable by name.
+# Public CLI entry point. ``init_project``, ``agent_template``, and
+# ``env_template`` remain importable via attribute lookup; they are not
+# elevated to ``__all__`` because they are internal helpers.
 __all__ = ["main"]

@@ -3,7 +3,7 @@ from typing import List, Tuple
 import pytest
 from pydantic import BaseModel, Field
 
-from agentkit.runtime.integrations import Integration, Tool
+from agentkit.runtime.integrations import Integration, tool
 from agentkit.runtime.tools.registry import (
     ToolContext,
     ToolHandler,
@@ -71,7 +71,7 @@ def test_tool_decorator_auto_registers():
     class ChargeIntegration(Integration):
         namespace = "stripe"
 
-        @Tool(
+        @tool(
             description="Retrieve a charge",
             parameters={"charge_id": {"type": "string"}},
             risk="read",
@@ -97,7 +97,7 @@ def test_tool_decorator_namespace_prefix():
     class PayIntegration(Integration):
         namespace = "pay"
 
-        @Tool(
+        @tool(
             description="Make a payment",
             parameters={},
             risk="financial",
@@ -113,7 +113,7 @@ def test_tool_decorator_namespace_prefix():
 
 
 def test_tool_decorator_accepts_pydantic_model():
-    """@Tool(parameters=<BaseModel>) converts to JSON Schema at registration."""
+    """@tool(parameters=<BaseModel>) converts to JSON Schema at registration."""
 
     class WeatherArgs(BaseModel):
         city: str = Field(description="City name")
@@ -122,7 +122,7 @@ def test_tool_decorator_accepts_pydantic_model():
     class WeatherIntegration(Integration):
         namespace = "weather"
 
-        @Tool(
+        @tool(
             description="Return weather for a city.",
             parameters=WeatherArgs,
             risk="read",
@@ -140,7 +140,7 @@ def test_tool_decorator_accepts_pydantic_model():
 
 def test_tool_decorator_rejects_missing_parameters():
     with pytest.raises(TypeError):
-        Tool(description="bad")  # type: ignore[call-arg]
+        tool(description="bad")  # type: ignore[call-arg]
 
 
 def test_manual_tools_override_still_works():

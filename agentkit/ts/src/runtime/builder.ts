@@ -41,7 +41,7 @@ export class AgentBuilder {
     return this;
   }
 
-  /** Add a function-level tool created by `FunctionTool({...}, handler)`. */
+  /** Add a function-level tool created by `functionTool({...}, handler)`. */
   tool(bound: Integrable): this {
     this._integrations.push(bound);
     return this;

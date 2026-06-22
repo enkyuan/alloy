@@ -5,6 +5,8 @@ from __future__ import annotations
 import agentkit
 
 
+# PEP 8 names: classes are CapWords, decorators / function helpers are
+# snake_case. There are no UpperCamel aliases for decorators or helpers.
 EXPECTED_PUBLIC = {
     "AgentBuilder",
     "AgentRuntime",
@@ -13,33 +15,24 @@ EXPECTED_PUBLIC = {
     "EventStore",
     "InMemoryEventBus",
     "InMemoryEventStore",
-    "UserMessage",
-    # Decorators / helpers: ship under both UpperCamel (legacy) and snake_case
-    # (PEP 8). The snake_case spellings are the headline DX names; the
-    # UpperCamel aliases are retained for back-compat.
-    "FunctionTool",
-    "function_tool",
     "Integration",
-    "Tool",
-    "tool",
-    "ToolContext",
-    "ToolRegistry",
-    "RegisterTool",
-    "register_tool",
-    "ListToolSpecs",
-    "list_tool_specs",
     "ModelProvider",
-    "GetProvider",
-    "get_provider",
-    "RegisterProvider",
-    "register_provider",
-    "ProviderError",
-    "ProviderConfigError",
     "ProviderAPIError",
+    "ProviderConfigError",
+    "ProviderError",
     "ReplaySession",
     "SessionManager",
     "SessionState",
+    "ToolContext",
+    "ToolRegistry",
     "ToolSpec",
+    "UserMessage",
+    "function_tool",
+    "get_provider",
+    "list_tool_specs",
+    "register_provider",
+    "register_tool",
+    "tool",
 }
 
 
@@ -71,9 +64,9 @@ def test_internal_names_still_importable_from_subpackages() -> None:
     )
     from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
     from agentkit.runtime.tools.registry import (
-        ClearTools,
-        ExecuteTool,
-        ToolSpecFromModel,
+        clear_tools,
+        execute_tool,
+        tool_spec_from_model,
     )
 
     for obj in (
@@ -83,9 +76,9 @@ def test_internal_names_still_importable_from_subpackages() -> None:
         InMemorySessionStore,
         SessionStore,
         SessionRecord,
-        ExecuteTool,
-        ClearTools,
-        ToolSpecFromModel,
+        execute_tool,
+        clear_tools,
+        tool_spec_from_model,
         ToolPolicy,
         ToolPolicyViolation,
         BoundTool,

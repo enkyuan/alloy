@@ -35,5 +35,3 @@ def get_provider(name: str, **kwargs) -> ModelProvider:
     return provider_cls(**kwargs)
 
 
-RegisterProvider = register_provider
-GetProvider = get_provider
