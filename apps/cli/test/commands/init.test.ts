@@ -22,7 +22,8 @@ describe("init command", () => {
     expect(existsSync(join(dir, ".env.example"))).toBe(true);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
     expect(agent).toMatch(/@agentkit\/sdk/);
-    expect(agent).toMatch(/AGENTKIT_MODEL_PROVIDER/);
+    // Provider is wired at scaffold time via a factory call, not a runtime env switch.
+    expect(agent).toMatch(/\.provider\(openai\(\)\)/);
   });
 
   it("python non-interactive scaffolds agent.py and .env.example", async () => {
