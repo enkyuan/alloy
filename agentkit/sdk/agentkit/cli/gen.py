@@ -85,10 +85,11 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
         props = ",\n            ".join(
             f'"{p}": {{"type": "string", "description": "{p} path param"}}' for p in op.path_params
         ) or ""
-        required = (
-            f', "required": [{", ".join(f"\"{p}\"" for p in op.path_params)}]'
-            if op.path_params else ""
-        )
+        if op.path_params:
+            quoted = ", ".join('"' + p + '"' for p in op.path_params)
+            required = f', "required": [{quoted}]'
+        else:
+            required = ""
         lines.append(
             f"    {{\n"
             f'        "name": "{name}",\n'
@@ -129,10 +130,11 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
             f'        {p}: {{ type: "string", description: "{p} path param" }}'
             for p in op.path_params
         ) or "        // no path params"
-        required = (
-            f"\n      required: [{', '.join(f'\"{p}\"' for p in op.path_params)}],"
-            if op.path_params else ""
-        )
+        if op.path_params:
+            quoted_ts = ", ".join('"' + p + '"' for p in op.path_params)
+            required = f"\n      required: [{quoted_ts}],"
+        else:
+            required = ""
         tag = f'\n    tags: ["{op.tag}"],' if op.tag else ""
         tools_entries.append(
             f"  {{\n"

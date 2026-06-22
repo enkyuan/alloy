@@ -121,7 +121,7 @@ function generateToolsArray(ops: ParsedOperation[], prefix: string): string {
 
     return `  {
     name: "${name}",
-    description: "${op.summary.replace(/"/g, '\\"')}",
+    description: ${JSON.stringify(op.summary)},
     parameters: {
       type: "object",
       properties: {
@@ -193,7 +193,7 @@ function generatePythonFile(spec: OpenApiSpec, ops: ParsedOperation[], prefix: s
           : "";
       return `    {
         "name": "${name}",
-        "description": "${op.summary.replace(/"/g, '\\"')}",
+        "description": ${JSON.stringify(op.summary)},
         "parameters": {
             "type": "object",
             "properties": {
