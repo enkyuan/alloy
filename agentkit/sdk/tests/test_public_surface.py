@@ -61,9 +61,11 @@ def test_internal_names_still_importable_from_subpackages() -> None:
         ToolSpecFromModel,
     )
     from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+    from agentkit.runtime.integrations import BoundTool
 
     # Trivial assertions just to suppress unused-import linters and prove the
     # imports executed.
     assert callable(ToolPlanner) or ToolPlanner is not None
     assert SessionStore is not None
     assert ToolPolicy is not None
+    assert BoundTool is not None
