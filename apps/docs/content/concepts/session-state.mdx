@@ -7,7 +7,7 @@ The runtime calls `replaySession` for you on every turn. Call it directly when
 you want to inspect a session's current state or rebuild state from a stored
 log.
 
-`replaySession` (Python: `ReplaySession`) takes the event log for a session
+`replaySession` (Python: `replay_session`) takes the event log for a session
 and projects it into a `SessionState`: `isActive` (Python: `is_active`) and
 `messages`, the conversation history in `{ role, content }` form passed to
 the LLM.

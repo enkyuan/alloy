@@ -37,6 +37,7 @@ export {
   registerTool,
   listToolSpecs,
   toolSpecFromSchema,
+  executeTool,
 } from "./tools/registry";
 export {
   ToolPolicy,

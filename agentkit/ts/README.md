@@ -90,7 +90,7 @@ tools are both visible to the model and executable.
 For simple setups you can use the process-level registry:
 
 ```ts
-import { registerTool, toolSpecFromSchema, executeTool } from "@agentkit/sdk";
+import { executeTool, registerTool, toolSpecFromSchema } from "@agentkit/sdk";
 import { z } from "zod";
 
 registerTool(
@@ -109,7 +109,7 @@ const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
 | `EventStore`, `InMemoryEventStore` | Append-only event log |
 | `EventBus` | In-memory pub/sub per session |
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
-| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool` | Tool registry (global + scoped) |
+| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |

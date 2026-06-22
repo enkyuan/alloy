@@ -2,14 +2,14 @@ export function tsAgentTemplate(provider: string): string {
   return `import {
   AgentBuilder,
   AgentKitEvent,
+  EventBus,
   EventType,
-  InMemoryEventBus,
   InMemoryEventStore,
   getProvider,
 } from "@agentkit/sdk";
 
 async function main() {
-  const bus = new InMemoryEventBus();
+  const bus = new EventBus();
   const store = new InMemoryEventStore();
   const providerName = process.env.AGENTKIT_MODEL_PROVIDER ?? ${JSON.stringify(provider)};
   const runtime = new AgentBuilder()
