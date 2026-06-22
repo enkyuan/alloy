@@ -145,7 +145,9 @@ export class AnthropicProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
 
     try {
-      const response = await client.messages.create(params);
+      const response = await client.messages.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
       return parseContentBlocks(response.content);
     } catch (error) {
       throw providerAPIErrorFromUnknown("anthropic", error);
@@ -175,7 +177,9 @@ export class AnthropicProvider implements ModelProvider {
     let pendingTool: { id: string; name: string; argsRaw: string } | null = null;
 
     try {
-      const stream = client.messages.stream(params);
+      const stream = client.messages.stream(params, {
+        signal: options?.cancellationToken?.signal,
+      });
 
       for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
         if (event.type === "content_block_start") {

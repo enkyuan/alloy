@@ -148,7 +148,9 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const response = await client.chat.completions.create(params);
+      const response = await client.chat.completions.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
       const choice = response.choices[0];
       if (!choice) {
         return { content: "", toolCalls: [] };
@@ -180,7 +182,9 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const stream = await client.chat.completions.create(params);
+      const stream = await client.chat.completions.create(params, {
+        signal: options?.cancellationToken?.signal,
+      });
 
       // Accumulate partial tool call args across chunks.
       const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
