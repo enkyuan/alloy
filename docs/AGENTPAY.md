@@ -1,6 +1,6 @@
 # agentpay
 
-agentpay lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account — agentpay never holds money.
+agentpay lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account -- agentpay never holds money.
 
 the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md) for how the runtime works.
 
@@ -102,7 +102,7 @@ all routes under `/v1/` require a `bearer` jwt signed with `jwt_secret`. the tok
 | stripe | `card_on_file`, `one_time_link` |
 | square | `card_on_file`, `one_time_link` |
 
-natural.co removed — stripe is the primary provider at launch. square retained for merchants who need it.
+natural.co removed -- stripe is the primary provider at launch. square retained for merchants who need it.
 
 ### webhook events
 
@@ -173,7 +173,7 @@ all routes under `/v1/` (except auth) require a bearer jwt with `sub` (consumer 
 | `consumers` | consumer identity + stripe_customer_id |
 | `consumer_transactions` | append-only ledger with plain-language labels |
 
-`plain_label` is a human-readable string written server-side at settlement time. format: `"Agent at {merchant_name} {action} - ${amount}"`. the consumer app reads and displays it directly — no client-side formatting.
+`plain_label` is a human-readable string written server-side at settlement time. format: `"Agent at {merchant_name} {action} - ${amount}"`. the consumer app reads and displays it directly -- no client-side formatting.
 
 **environment variables:**
 
@@ -188,7 +188,7 @@ all routes under `/v1/` (except auth) require a bearer jwt with `sub` (consumer 
 
 ## web/
 
-studio — the merchant-facing dashboard for managing agents, wallets, payment configs, and webhook registrations.
+studio -- the merchant-facing dashboard for managing agents, wallets, payment configs, and webhook registrations.
 
 **stack:** react 19, typescript, vite, tanstack router + query + form, tailwind css v4, shadcn/ui, better-auth, zod.
 
@@ -236,7 +236,7 @@ ios app for consumers to manage their wallet and view transaction history.
 | screen | description |
 | ------ | ----------- |
 | wallet | payment method status, add/remove via stripe payment element |
-| transactions | paginated list — amount, merchant, status |
+| transactions | paginated list -- amount, merchant, status |
 | activity | plain-language feed of agent actions |
 
 payment method management is fully delegated to stripe's hosted ui (payment element / stripe link). no card numbers touch the app or the consumer service.

@@ -23,7 +23,7 @@ npm install @agentkit/sdk zod @anthropic-ai/sdk  # Anthropic
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
-are optional peers — install only the one you use. Node 22+.
+are optional peers -- install only the one you use. Node 22+.
 
 ## Quick start
 
@@ -136,7 +136,7 @@ shared with the Python SDK.
 
 ## Testing without API keys
 
-Unit and integration tests mock the provider HTTP client — no keys needed for
+Unit and integration tests mock the provider HTTP client -- no keys needed for
 the default test suite:
 
 ```bash
