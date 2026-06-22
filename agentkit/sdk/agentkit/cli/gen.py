@@ -1,4 +1,4 @@
-"""`agentkit gen` — generate tool stubs from an OpenAPI spec."""
+"""`agentkit gen` - generate tool stubs from an OpenAPI spec."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
         props = ",\n            ".join(
             f'"{p}": {{"type": "string", "description": "{p} path param"}}' for p in op.path_params
-        ) or "# no path params"
+        ) or ""
         required = (
             f', "required": [{", ".join(f"\"{p}\"" for p in op.path_params)}]'
             if op.path_params else ""
@@ -105,7 +105,7 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
     for op in ops:
         name = f"{prefix}_{op.fn_name}" if prefix else op.fn_name
         # path with {x} -> {args["x"]} style for str.format-like substitution
-        url_path = re.sub(r"\{([^}]+)\}", r'{args["\1"]}', op.path)
+        url_path = re.sub(r"\{([^}]+)\}", r"{args['\1']}", op.path)
         has_body = op.method not in ("GET", "HEAD", "OPTIONS")
         body_kwarg = ", json=args" if has_body else ""
         lines.append(
@@ -191,7 +191,7 @@ def _load_spec(path: Path) -> dict:
         try:
             import yaml  # type: ignore
         except ImportError as e:
-            raise SystemExit("YAML specs require PyYAML — pip install pyyaml or convert to JSON.") from e
+            raise SystemExit("YAML specs require PyYAML. pip install pyyaml or convert to JSON.") from e
         return yaml.safe_load(raw)
     try:
         return json.loads(raw)

@@ -16,6 +16,7 @@ SPEC = {
 
 
 def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
+    import ast
     from agentkit.cli import main
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
@@ -24,6 +25,7 @@ def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
     body = (tmp_path / "tools.py").read_text()
     assert "TOOLS" in body
     assert "async def get_pet" in body
+    ast.parse(body)
 
 
 def test_gen_ts_writes_index_ts(tmp_path: Path) -> None:
