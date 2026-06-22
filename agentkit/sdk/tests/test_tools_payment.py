@@ -35,7 +35,7 @@ async def test_request_payment_posts_to_sessions_endpoint() -> None:
         _spec, handler = RequestPaymentTool(
             base_url="https://api.example.com", client=client
         )
-        result = await handler(ctx=None, args={"amount": 1500, "description": "Coffee"})
+        result = await handler(None, {"amount": 1500, "description": "Coffee"})
         assert result == {"checkoutUrl": "https://pay/abc"}
         assert calls == [
             (
@@ -61,7 +61,7 @@ async def test_request_payment_sends_authorization_header() -> None:
         _spec, handler = RequestPaymentTool(
             base_url="https://x", api_key="sk-test", client=client
         )
-        await handler(ctx=None, args={"amount": 1, "description": "x"})
+        await handler(None, {"amount": 1, "description": "x"})
         assert captured["authorization"] == "Bearer sk-test"
     finally:
         await client.aclose()
@@ -77,6 +77,6 @@ async def test_request_payment_raises_on_non_2xx() -> None:
     try:
         _spec, handler = RequestPaymentTool(base_url="https://x", client=client)
         with pytest.raises(RuntimeError, match="502"):
-            await handler(ctx=None, args={"amount": 1, "description": "x"})
+            await handler(None, {"amount": 1, "description": "x"})
     finally:
         await client.aclose()
