@@ -112,6 +112,7 @@ with an env-driven provider (set `AGENTKIT_MODEL_PROVIDER` to `openai` or
 | `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
 | `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
 | `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
+| `UnknownToolError` | Raised when the model calls a tool name not in the registry |
 | `CancellationToken` | Cooperative cancellation across async boundaries |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format

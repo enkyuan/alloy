@@ -23,6 +23,7 @@ def test_public_api_exports_stable_runtime_surface():
         "ToolContext",
         "ToolRegistry",
         "ToolSpec",
+        "UnknownToolError",
         # Decorators / function helpers
         "function_tool",
         "get_provider",

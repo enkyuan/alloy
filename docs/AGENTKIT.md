@@ -180,6 +180,9 @@ voice modalities (STT, TTS) are not yet ported to TypeScript.
 
 ## further reading
 
+- [CLI.md](CLI.md) -- `agentkit` CLI subcommand reference.
+- [RUNTIME_API.md](RUNTIME_API.md) -- headline API surface for embedding.
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) -- common errors and fixes.
 - individual package READMEs: `agentkit/sdk/agentkit/README.md`,
-  `agentkit/serve/README.md`, `agentkit/ts/README.md`
-- agentpay (the product built on agentkit): [`docs/AGENTPAY.md`](AGENTPAY.md)
+  `agentkit/serve/README.md`, `agentkit/ts/README.md`.
+- agentpay (the product built on agentkit): [`docs/AGENTPAY.md`](AGENTPAY.md).

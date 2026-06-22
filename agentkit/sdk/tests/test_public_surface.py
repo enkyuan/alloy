@@ -26,6 +26,7 @@ EXPECTED_PUBLIC = {
     "ToolContext",
     "ToolRegistry",
     "ToolSpec",
+    "UnknownToolError",
     "UserMessage",
     "function_tool",
     "get_provider",
