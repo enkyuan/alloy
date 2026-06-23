@@ -5,10 +5,12 @@
 ```
 .
 ├── agentkit/
-│   ├── sdk/          # the `agentkit` SDK (Python)
-│   ├── serve/        # `agentkit-serve` -- FastAPI + workers (path-depends on ../sdk)
-│   └── ts/           # `@agentkit/sdk` -- TypeScript SDK
-└── docker/           # Docker Compose (Postgres, Redis, Supabase)
+│   ├── sdk/             # the `agentkit` SDK (Python)
+│   ├── serve/           # `agentkit-serve` -- FastAPI + workers (path-depends on ../sdk)
+│   └── ts/              # `@agentkit/sdk` -- TypeScript SDK
+└── docker/
+    ├── agentkit/        # Postgres, Redis, Supabase for agentkit-serve
+    └── agentpay/        # docker stack for the agentpay product
 ```
 
 ## FastAPI Backend Setup
@@ -27,7 +29,7 @@ poetry install
 ### 2. Set up environment
 
 ```bash
-cp ../docker/.env.example .env
+cp ../../docker/agentkit/.env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
@@ -50,8 +52,8 @@ API docs: `http://localhost:8080/api/v1/docs`
 From the repository root:
 
 ```bash
-cd docker
-cp .env.example .env   # if present; configure credentials
+cd docker/agentkit
+cp .env.example .env   # configure credentials
 docker compose up -d
 ```
 
@@ -70,8 +72,8 @@ cd agentkit/serve && poetry run pytest tests/
 ## Quick Start
 
 ```bash
-# Terminal 1: infrastructure + API (from docker/)
-cd docker && docker compose up -d
+# Terminal 1: infrastructure + API (from docker/agentkit/)
+cd docker/agentkit && docker compose up -d
 
 # Terminal 2: API server (from agentkit/serve/)
 cd agentkit/serve && poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080

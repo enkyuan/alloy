@@ -112,12 +112,22 @@ before the next loop iteration.
 
 ```python
 # python
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+import agentkit
+
+@agentkit.function_tool(description="Look up weather.")
+async def get_weather(city: str) -> dict:
+    return {"city": city, "tempF": 68}
+
+runtime = (
+    agentkit.AgentBuilder()
+    .provider(agentkit.get_provider("mock"))  # swap for "openai", "anthropic", etc.
+    .tool(get_weather)
+    .build(bus=agentkit.InMemoryEventBus(), store=agentkit.InMemoryEventStore())
 )
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
-    return {"tempF": 68}
 ```
+
+See [RUNTIME_API.md](RUNTIME_API.md#tools) for richer schemas
+(`parameters=MyModel`) and `Integration` bundles.
 
 ```ts
 // typescript

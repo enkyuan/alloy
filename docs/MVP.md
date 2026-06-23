@@ -261,13 +261,13 @@ Events are written in chronological order. Key types to look for:
 
 | Event type | Meaning |
 |------------|---------|
-| `USER_MESSAGE` | The message you sent |
-| `AGENT_MESSAGE_DELTA` | Streaming text chunk from the model |
-| `AGENT_MESSAGE_COMPLETED` | Full model response text |
-| `TOOL_CALL_REQUESTED` | Model requested a tool |
-| `TOOL_CALL_STARTED` | Execution began |
-| `TOOL_CALL_COMPLETED` | Tool returned a result |
-| `TOOL_CALL_FAILED` | Tool raised an error |
+| `user.message` | The message you sent |
+| `agent.message.delta` | Streaming text chunk from the model |
+| `agent.message.completed` | Full model response text |
+| `tool.call.requested` | Model requested a tool |
+| `tool.call.started` | Execution began |
+| `tool.call.completed` | Tool returned a result |
+| `tool.call.failed` | Tool raised an error |
 
 ---
 
