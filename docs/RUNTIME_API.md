@@ -31,7 +31,7 @@ runtime = (
 | --- | --- |
 | `.provider(provider)` | required; a `ModelProvider` instance |
 | `.integration(integration)` | adds a namespaced `Integration` bundle (chainable) |
-| `.tool(bound_tool)` | adds a single `BoundTool` from `@function_tool` (chainable) |
+| `.tool(t)` | adds a single `@function_tool`-decorated tool (chainable) |
 | `.policy(policy)` | attaches a `ToolPolicy` for allow/deny + approval gating |
 | `.approval_handler(handler)` | wires the policy's approval callback |
 | `.system_prompt(text)` | overrides the default system prompt |
@@ -62,7 +62,29 @@ mid-turn.
 
 ## Tools
 
-The PEP 8 decorator surface, shortest path:
+Two decorator paths. Use `@function_tool` for a single function,
+`@tool` for namespaced bundles of related methods.
+
+### Single function: `@function_tool`
+
+```python
+import agentkit
+
+provider = agentkit.get_provider("openai")
+
+@agentkit.function_tool(description="Look up weather for a city.", risk="read")
+async def get_weather(city: str) -> dict:
+    return {"city": city, "tempF": 68}
+
+runtime = agentkit.AgentBuilder().provider(provider).tool(get_weather).build(
+    bus=agentkit.InMemoryEventBus(), store=agentkit.InMemoryEventStore(),
+)
+```
+
+Note: `register_tool` writes to a process-global `ToolRegistry`;
+`AgentBuilder` builds a private one. The two don't share state.
+
+### Namespaced bundle: `Integration` + `@tool`
 
 ```python
 import agentkit
@@ -71,28 +93,38 @@ from pydantic import BaseModel
 class GetWeather(BaseModel):
     city: str
 
-@agentkit.tool(
-    description="Look up weather for a city.",
-    parameters=GetWeather,
-    risk="read",
-)
-async def get_weather(self, ctx: agentkit.ToolContext, args: dict) -> dict:
-    return {"city": args["city"], "tempF": 68}
-```
+class WeatherIntegration(agentkit.Integration):
+    @property
+    def namespace(self) -> str:
+        return "weather"
 
-`@agentkit.tool` decorates methods on an `Integration` subclass.
-`@agentkit.function_tool` wraps a bare async function as a registrable
-`BoundTool` you pass to `AgentBuilder().tool(...)`.
+    @agentkit.tool(description="Look up weather.", parameters=GetWeather, risk="read")
+    async def get_weather(self, ctx: agentkit.ToolContext, args: dict) -> dict:
+        return {"city": args["city"], "tempF": 68}
+
+runtime = (
+    agentkit.AgentBuilder()
+    .provider(agentkit.get_provider("openai"))
+    .integration(WeatherIntegration())
+    .build(bus=agentkit.InMemoryEventBus(), store=agentkit.InMemoryEventStore())
+)
+```
 
 | call | shape |
 | --- | --- |
-| `agentkit.tool(*, description, parameters, risk=None, tags=(), enabled=True)` | decorator for Integration methods |
-| `agentkit.function_tool(fn)` or `agentkit.function_tool(...)` | wrap a single async function |
+| `agentkit.function_tool(fn)` or `agentkit.function_tool(*, description, parameters=None, risk=None, ...)` | wrap a single async function; schema derived from type hints when `parameters` is omitted |
+| `agentkit.tool(*, description, parameters, risk=None, tags=(), enabled=True)` | decorate a method on an `Integration` subclass |
 | `agentkit.register_tool(spec)(handler)` | register against the process-default `ToolRegistry` |
 | `agentkit.list_tool_specs(tags=None, enabled_only=True)` | enumerate registered specs |
 
 `parameters` accepts either a JSON Schema dict or a Pydantic `BaseModel`
 subclass; the model is converted to JSON Schema at registration time.
+
+Built-in integrations:
+
+- `from agentkit.integrations.registry.github.github import GitHub`
+- `from agentkit.integrations.registry.gmail.gmail import Gmail`
+- `from agentkit.integrations.registry.gcal.gcal import GoogleCalendar`
 
 ## Providers
 

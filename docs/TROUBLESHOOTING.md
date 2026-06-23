@@ -9,10 +9,17 @@ shortest path to a fix.
 ProviderConfigError: OpenAI API key is not configured. Set OPENAI_API_KEY.
 ```
 
-Set `OPENAI_API_KEY` in the environment (or pass `api_key=` directly to
-`OpenAIProvider`). The other providers have parallel checks for
-`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
-`KIMI_API_KEY`. Run `agentkit info` to see what's currently set.
+Set `OPENAI_API_KEY` in the environment, or pass the key inline:
+`agentkit.get_provider("openai", api_key="sk-...")`. The other providers
+have parallel checks:
+
+- `anthropic` -> `ANTHROPIC_API_KEY` (raises `ProviderConfigError`)
+- `kimi` -> reads `OPENROUTER_API_KEY` first, then falls back to
+  `KIMI_API_KEY`; the error message asks for `OPENROUTER_API_KEY`
+- `gemini` -> `GEMINI_API_KEY` (raises plain `ValueError`, not
+  `ProviderConfigError`)
+
+Run `agentkit info` to see what's currently set.
 
 ## "OpenAI provider requires the openai package"
 
@@ -52,12 +59,15 @@ The model called a tool name the registry doesn't know. Usually one of:
 
 ## "Invalid tool arguments"
 
+The runtime emits a `tool.call.failed` event with an `error` field like:
+
 ```
-ToolCallFailed: Invalid tool arguments: missing required argument: 'city'
+Invalid tool arguments: missing required argument: 'city'
 ```
 
-The model produced args that fail the JSON Schema gate in `ToolPlanner`.
-Either:
+This is an event on the bus, not a raised exception. (Internally: event
+class `ToolCallFailed`, enum `EventType.TOOL_CALL_FAILED`.) The model
+produced args that fail the JSON Schema gate in `ToolPlanner`. Either:
 
 - The schema is wrong (missing a property in `parameters.properties` or
   too aggressive a `required` list). Pydantic models tend to get this
@@ -65,9 +75,9 @@ Either:
 - The model is genuinely bad at this tool's schema. Tighten the
   description, drop optional fields, or pre-fill defaults in the handler.
 
-The runtime emits `TOOL_CALL_FAILED` with the validation message; the
-model sees it in the next turn and usually self-corrects. If you'd
-rather fail loudly, subscribe to the bus and abort on the first failure.
+The model sees the `tool.call.failed` event in the next turn and usually
+self-corrects. If you'd rather fail loudly, subscribe to the bus and
+abort on the first failure.
 
 ## "ProviderAPIError: <upstream>"
 
