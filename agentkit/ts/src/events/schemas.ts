@@ -9,11 +9,12 @@
  */
 import { z } from "zod";
 
+import { defaultUuid } from "../internal/uuid";
 import { EventType } from "./types";
 
 /** Fields shared by every event. No provider- or voice-specific fields here. */
 const baseShape = {
-  id: z.string().default(() => crypto.randomUUID()),
+  id: z.string().default(() => defaultUuid()),
   version: z.string().default("1.0"),
   timestamp: z.number().default(() => Date.now() / 1000),
   session_id: z.string(),
