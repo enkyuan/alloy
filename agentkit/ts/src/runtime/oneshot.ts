@@ -39,33 +39,22 @@ export interface StreamTextResult {
   /**
    * Async-iterable of text deltas as they arrive from the provider.
    *
-   * IMPORTANT: this stream drives the rest of the result. The `text` and
-   * `toolCalls` promises only resolve after `textStream` has been iterated
-   * to completion. If you `await` `text` without iterating `textStream`
-   * first (or alongside, via two parallel consumers), it will hang forever.
-   *
-   * To skip streaming entirely and just collect the full response, use
-   * `generateText` instead.
+   * Each of `textStream`, `text`, and `toolCalls` is independently
+   * consumable; awaiting any one of them does not require iterating
+   * any of the others. All three reject if the source stream errors.
    */
   textStream: AsyncIterable<string>;
-  /**
-   * Resolves to the concatenated text once `textStream` finishes.
-   *
-   * Hangs if `textStream` is never iterated. See the note on `textStream`.
-   */
+  /** Resolves to the concatenated text once the source stream finishes. */
   text: Promise<string>;
-  /**
-   * Resolves to the tool calls the model emitted, if any.
-   *
-   * Hangs if `textStream` is never iterated. See the note on `textStream`.
-   */
+  /** Resolves to the tool calls the model emitted, if any. */
   toolCalls: Promise<ModelResponse["toolCalls"]>;
 }
 
 /**
- * Stream a single provider call. Iterate `textStream` for tokens; the
- * `text` and `toolCalls` promises resolve only after that iteration
- * completes - awaiting them without iterating `textStream` hangs.
+ * Stream a single provider call. All three result handles
+ * (`textStream`, `text`, `toolCalls`) are independent: the source stream
+ * is drained eagerly in the background so awaiting any one of them is
+ * sufficient. All three reject if the source errors.
  *
  *   const { textStream, text } = streamText({ provider: openai("gpt-4o"), messages });
  *   for await (const chunk of textStream) process.stdout.write(chunk);
@@ -77,38 +66,87 @@ export function streamText(options: GenerateTextOptions): StreamTextResult {
   const { provider, messages, tools, ...providerOptions } = options;
   const source = provider.generateStream(messages, tools ?? [], providerOptions);
 
-  let resolveText: (s: string) => void;
-  let resolveCalls: (c: ModelResponse["toolCalls"]) => void;
-  let rejectAll: (err: unknown) => void;
+  let resolveText!: (s: string) => void;
+  let rejectText!: (err: unknown) => void;
+  let resolveCalls!: (c: ModelResponse["toolCalls"]) => void;
+  let rejectCalls!: (err: unknown) => void;
   const text = new Promise<string>((res, rej) => {
     resolveText = res;
-    rejectAll = rej;
+    rejectText = rej;
   });
-  const toolCalls = new Promise<ModelResponse["toolCalls"]>((res) => {
+  const toolCalls = new Promise<ModelResponse["toolCalls"]>((res, rej) => {
     resolveCalls = res;
+    rejectCalls = rej;
   });
 
-  async function* textStream(): AsyncGenerator<string> {
-    const collected: string[] = [];
-    const calls: ModelResponse["toolCalls"] = [];
+  // Single source of truth: drain appends every delta to `collected` and
+  // resolves the current `advance` promise (if any) so awaiting iterators
+  // wake up. Iterators read from `collected[cursor]`; they do NOT consume
+  // it, so multiple iterators can each replay independently.
+  const collected: string[] = [];
+  const calls: ModelResponse["toolCalls"] = [];
+  let drained = false;
+  let drainError: unknown = null;
+  let advance: Promise<void> = new Promise(() => {});
+  let signalAdvance: () => void = () => {};
+  const renewAdvance = () => {
+    advance = new Promise<void>((res) => {
+      signalAdvance = res;
+    });
+  };
+  renewAdvance();
+
+  async function drain(): Promise<void> {
     try {
       for await (const chunk of source) {
         if (chunk.delta) {
           collected.push(chunk.delta);
-          yield chunk.delta;
+          const signal = signalAdvance;
+          renewAdvance();
+          signal();
         }
         if (chunk.toolCalls?.length) {
           calls.push(...chunk.toolCalls);
         }
       }
+      drained = true;
       resolveText(collected.join(""));
       resolveCalls(calls);
+      signalAdvance();
     } catch (err) {
-      rejectAll(err);
-      resolveCalls(calls);
-      throw err;
+      drained = true;
+      drainError = err;
+      rejectText(err);
+      rejectCalls(err);
+      signalAdvance();
     }
   }
 
-  return { textStream: textStream(), text, toolCalls };
+  // Start draining immediately. Attach noop catches so awaiting only one
+  // of `text` / `toolCalls` (or none, in the iterate-only case) does NOT
+  // trigger Node's unhandled-rejection warning. Rejections are still
+  // delivered to whichever handles the caller awaits.
+  void drain();
+  text.catch(() => {});
+  toolCalls.catch(() => {});
+
+  const textStream: AsyncIterable<string> = {
+    [Symbol.asyncIterator](): AsyncIterator<string> {
+      let cursor = 0;
+      return {
+        async next(): Promise<IteratorResult<string>> {
+          while (cursor >= collected.length && !drained) {
+            await advance;
+          }
+          if (cursor < collected.length) {
+            return { value: collected[cursor++], done: false };
+          }
+          if (drainError) throw drainError;
+          return { value: undefined as unknown as string, done: true };
+        },
+      };
+    },
+  };
+
+  return { textStream, text, toolCalls };
 }
