@@ -139,14 +139,38 @@ class OpenAIProvider(ModelProvider):
     def _finalize_stream_tool_calls(
         pending: Dict[int, Dict[str, str]],
     ) -> List[Dict[str, Any]]:
+        """Build the neutral tool-call payload from the streamed accumulator.
+
+        When the model's tool-arg JSON does not parse, we do two things:
+
+        - log a truncated snapshot of the raw input plus the exception at
+          WARNING (the logger is the privileged sink),
+        - return ``{"__parse_error": str(exc)}`` so the planner fails the
+          call closed via the existing sentinel in ``planner.py``.
+
+        The raw text is not copied into the event payload because events are
+        persisted, replayed, and surfaced to UI, and the stream can contain
+        whatever the model echoed back. ``str(exc)`` from ``JSONDecodeError``
+        carries only line/column context, not a slice of the payload.
+        """
         calls: List[Dict[str, Any]] = []
         for _, item in sorted(pending.items()):
             if not item["name"]:
                 continue
+            raw = item["arguments"] or "{}"
             try:
-                args = json.loads(item["arguments"] or "{}")
-            except (json.JSONDecodeError, TypeError):
-                args = {}
+                args: Dict[str, Any] = json.loads(raw)
+            except (json.JSONDecodeError, TypeError) as exc:
+                raw_snippet = raw if len(raw) <= 200 else raw[:200] + "..."
+                logger.warning(
+                    "OpenAI streaming tool_call arguments failed to parse "
+                    "for tool=%s id=%s raw=%r: %s",
+                    item["name"],
+                    item["id"] or "<unknown>",
+                    raw_snippet,
+                    exc,
+                )
+                args = {"__parse_error": str(exc)}
             calls.append(
                 {
                     "id": item["id"] or None,
