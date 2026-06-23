@@ -8,6 +8,7 @@ default provider; this is opt-in via ``AGENTKIT_MODEL_PROVIDER=openai``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from importlib import import_module
@@ -27,6 +28,25 @@ from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.tools.payload import to_openai
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_cancelled(token: Optional[Any]) -> None:
+    """Raise CancelledError if ``token`` reports cancellation.
+
+    Prefers the token's own ``raise_if_cancelled()`` method (the SDK's
+    :class:`agentkit.runtime.agents.cancellation.CancellationToken` exposes
+    this and raises its own :class:`CancelledError` subclass for
+    discoverability). Falls back to the duck-typed ``is_cancelled``
+    attribute so callers can pass any compatible token.
+    """
+    if token is None:
+        return
+    raise_if = getattr(token, "raise_if_cancelled", None)
+    if callable(raise_if):
+        raise_if()
+        return
+    if getattr(token, "is_cancelled", False):
+        raise asyncio.CancelledError()
 
 
 class OpenAIProvider(ModelProvider):
@@ -202,6 +222,8 @@ class OpenAIProvider(ModelProvider):
         if response_format:
             kwargs["response_format"] = response_format
 
+        _raise_if_cancelled(cancellation_token)
+
         try:
             response = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001 - surface as a provider error
@@ -237,6 +259,14 @@ class OpenAIProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
+        """Stream chat completions, yielding text deltas and tool calls.
+
+        Cancellation is checked before the request and before each chunk is
+        consumed. A set token raises :class:`asyncio.CancelledError` so the
+        caller can distinguish cancellation from a normal end-of-stream. The
+        post-loop tool-call finalization is intentionally skipped on
+        cancellation; partially-accumulated tool calls are discarded.
+        """
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
             "messages": self._build_messages(messages, system_instruction),
@@ -248,6 +278,8 @@ class OpenAIProvider(ModelProvider):
         if tools:
             kwargs["tools"] = to_openai(tools)
 
+        _raise_if_cancelled(cancellation_token)
+
         try:
             stream = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001
@@ -257,10 +289,7 @@ class OpenAIProvider(ModelProvider):
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
         async for chunk in stream:
-            if cancellation_token and getattr(
-                cancellation_token, "is_cancelled", False
-            ):
-                break
+            _raise_if_cancelled(cancellation_token)
 
             if not chunk.choices:
                 continue
