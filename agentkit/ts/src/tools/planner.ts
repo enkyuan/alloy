@@ -4,6 +4,7 @@
  */
 import { AgentKitEvent } from "../events/schemas";
 import { EventType } from "../events/types";
+import { defaultUuid } from "../internal/uuid";
 import type { ToolSpec } from "./registry";
 import type { ToolPolicy } from "./policy";
 
@@ -86,6 +87,11 @@ export interface ToolPlannerOptions {
   policy?: ToolPolicy;
   approvalHandler?: ApprovalHandler;
   specs?: Map<string, ToolSpec>;
+  /**
+   * Override the call-id generator. Defaults to `globalThis.crypto.randomUUID`
+   * with a `Math.random` fallback for runtimes without Web Crypto.
+   */
+  uuid?: () => string;
 }
 
 export class ToolPlanner {
@@ -93,12 +99,14 @@ export class ToolPlanner {
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: ApprovalHandler | undefined;
   private readonly specs: Map<string, ToolSpec>;
+  private readonly uuid: () => string;
 
   constructor(opts: ToolPlannerOptions) {
     this.executor = opts.executor;
     this.policy = opts.policy;
     this.approvalHandler = opts.approvalHandler;
     this.specs = opts.specs ?? new Map();
+    this.uuid = opts.uuid ?? defaultUuid;
   }
 
   /**
@@ -131,7 +139,7 @@ export class ToolPlanner {
   ): Promise<ToolCallResult> {
     const toolName = call.name;
     const toolArgs = call.arguments;
-    const callId = call.id ?? crypto.randomUUID();
+    const callId = call.id ?? this.uuid();
     const spec = this.specs.get(toolName);
     const risk = spec?.risk;
     const catalogName = spec?.catalogName;
