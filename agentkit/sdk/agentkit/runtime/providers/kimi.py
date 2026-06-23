@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 
 from agentkit.core.config import get_settings
+from agentkit.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
 from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.providers.base import ModelProvider
 from agentkit.runtime.providers.errors import ProviderAPIError, ProviderConfigError
@@ -157,6 +158,8 @@ class KimiProvider(ModelProvider):
             stream=False,
         )
 
+        _raise_if_cancelled(cancellation_token)
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 self.base_url,
@@ -233,6 +236,8 @@ class KimiProvider(ModelProvider):
             messages, tools, system_instruction, temperature, max_tokens, stream=True
         )
 
+        _raise_if_cancelled(cancellation_token)
+
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",
@@ -250,12 +255,7 @@ class KimiProvider(ModelProvider):
                 pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
                 async for line in response.aiter_lines():
-                    if (
-                        cancellation_token
-                        and hasattr(cancellation_token, "is_cancelled")
-                        and cancellation_token.is_cancelled
-                    ):
-                        break
+                    _raise_if_cancelled(cancellation_token)
 
                     line = line.strip()
                     if not line or line == "data: [DONE]":

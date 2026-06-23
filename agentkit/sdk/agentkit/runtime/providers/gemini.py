@@ -18,6 +18,7 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
+from agentkit.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
 from agentkit.runtime.providers._translate import (
     format_messages_gemini,
     split_system_for_gemini,
@@ -305,6 +306,8 @@ class GeminiProvider(ModelProvider):
         inline_system, chat_messages = split_system_for_gemini(messages)
         effective_system = system_instruction or inline_system
 
+        _raise_if_cancelled(cancellation_token)
+
         response = await self.service.generate_chat_response(
             messages=chat_messages,
             system_instruction=effective_system,
@@ -368,16 +371,15 @@ class GeminiProvider(ModelProvider):
         inline_system, chat_messages = split_system_for_gemini(messages)
         effective_system = system_instruction or inline_system
 
+        _raise_if_cancelled(cancellation_token)
+
         async for chunk in self.service.generate_chat_stream(
             messages=chat_messages,
             system_instruction=effective_system,
             temperature=temperature,
             tools=gemini_tools,
         ):
-            if cancellation_token and getattr(
-                cancellation_token, "is_cancelled", False
-            ):
-                break
+            _raise_if_cancelled(cancellation_token)
 
             # `chunk.text` is a property that can raise when the chunk's parts
             # are function calls rather than text, so access it defensively.

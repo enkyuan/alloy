@@ -200,6 +200,10 @@ async def test_agent_runtime_cancellation():
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             yield ModelResponseChunk(delta="Start")
             await asyncio.sleep(0.1)  # Simulate slow generation
+            if cancellation_token and getattr(
+                cancellation_token, "is_cancelled", False
+            ):
+                raise asyncio.CancelledError()
             yield ModelResponseChunk(delta="Finish")
 
     provider = SlowMockProvider()
@@ -227,6 +231,123 @@ async def test_agent_runtime_cancellation():
 
     # AgentMessageCompleted should NOT be there because it was interrupted
     assert EventType.AGENT_MESSAGE_COMPLETED not in types
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_emits_cancellation_when_provider_raises_mid_stream():
+    """When the provider raises asyncio.CancelledError mid-stream because the
+    token was set, the runtime must catch it and emit CancellationCompleted so
+    observers see the canonical terminal event. Without the try/except in
+    run_turn the exception would escape and observers would never get notified.
+    """
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+    planner = ToolPlanner(executor=mock_executor)
+
+    captured_token: Dict[str, Any] = {}
+
+    class RaisingProvider(ModelProvider):
+        async def generate(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            response_format: Dict[str, Any] | None = None,
+            cancellation_token: Any | None = None,
+        ) -> GenerateResponse:
+            return GenerateResponse(text="")
+
+        async def generate_stream(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            cancellation_token: Any | None = None,
+        ) -> AsyncGenerator[ModelResponseChunk, None]:
+            # The runtime must thread the token through; assert it did.
+            assert cancellation_token is not None
+            captured_token["t"] = cancellation_token
+            yield ModelResponseChunk(delta="partial")
+            # Mimic the real provider path: token flips during streaming,
+            # the provider observes it on its next check, and raises.
+            cancellation_token.cancel()
+            raise asyncio.CancelledError()
+
+    provider = RaisingProvider()
+    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+
+    await store.append(UserMessage(session_id="cancel-mid", content="go"))
+
+    token = CancellationToken()
+    # run_turn must not propagate CancelledError out.
+    await runtime.run_turn("cancel-mid", cancellation_token=token)
+
+    events = await store.get_events("cancel-mid")
+    types = [e.type for e in events]
+
+    assert EventType.AGENT_REASONING_STARTED in types
+    assert EventType.AGENT_MESSAGE_DELTA in types  # partial chunk made it through
+    assert EventType.CANCELLATION_COMPLETED in types
+    assert EventType.AGENT_MESSAGE_COMPLETED not in types
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_reraises_when_cancel_is_external():
+    """If CancelledError is raised but the runtime's own token is NOT set,
+    the cancel came from outside (e.g. parent task cancellation). The
+    runtime must re-raise so structured concurrency stays intact, rather
+    than miscategorize the external cancel as a user-requested one.
+    """
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+    planner = ToolPlanner(executor=mock_executor)
+
+    class ExternallyCancelledProvider(ModelProvider):
+        async def generate(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            response_format: Dict[str, Any] | None = None,
+            cancellation_token: Any | None = None,
+        ) -> GenerateResponse:
+            return GenerateResponse(text="")
+
+        async def generate_stream(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            cancellation_token: Any | None = None,
+        ) -> AsyncGenerator[ModelResponseChunk, None]:
+            yield ModelResponseChunk(delta="x")
+            # Simulate an external (parent-task) cancellation: CancelledError
+            # raised but the runtime's own token was never set.
+            raise asyncio.CancelledError()
+
+    provider = ExternallyCancelledProvider()
+    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+
+    await store.append(UserMessage(session_id="ext-cancel", content="go"))
+
+    token = CancellationToken()
+    with pytest.raises(asyncio.CancelledError):
+        await runtime.run_turn("ext-cancel", cancellation_token=token)
+
+    events = await store.get_events("ext-cancel")
+    types = [e.type for e in events]
+    # The partial delta was emitted before the raise, but the canonical
+    # CancellationCompleted event must NOT appear because cancellation was
+    # not our own.
+    assert EventType.CANCELLATION_COMPLETED not in types
 
 
 @pytest.mark.asyncio

@@ -8,7 +8,6 @@ default provider; this is opt-in via ``AGENTKIT_MODEL_PROVIDER=openai``.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from importlib import import_module
@@ -24,29 +23,11 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
+from agentkit.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
 from agentkit.runtime.providers._translate import format_messages_openai
 from agentkit.runtime.tools.payload import to_openai
 
 logger = logging.getLogger(__name__)
-
-
-def _raise_if_cancelled(token: Optional[Any]) -> None:
-    """Raise CancelledError if ``token`` reports cancellation.
-
-    Prefers the token's own ``raise_if_cancelled()`` method (the SDK's
-    :class:`agentkit.runtime.agents.cancellation.CancellationToken` exposes
-    this and raises its own :class:`CancelledError` subclass for
-    discoverability). Falls back to the duck-typed ``is_cancelled``
-    attribute so callers can pass any compatible token.
-    """
-    if token is None:
-        return
-    raise_if = getattr(token, "raise_if_cancelled", None)
-    if callable(raise_if):
-        raise_if()
-        return
-    if getattr(token, "is_cancelled", False):
-        raise asyncio.CancelledError()
 
 
 class OpenAIProvider(ModelProvider):

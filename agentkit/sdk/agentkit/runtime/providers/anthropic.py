@@ -7,6 +7,7 @@ to Anthropic's ``input_schema`` format via ``to_anthropic``. Enable with
 
 from __future__ import annotations
 
+import json
 import logging
 from importlib import import_module
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
@@ -21,6 +22,7 @@ from agentkit.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
+from agentkit.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
 from agentkit.runtime.providers._translate import format_messages_anthropic
 from agentkit.runtime.tools.payload import to_anthropic
 
@@ -106,6 +108,40 @@ class AnthropicProvider(ModelProvider):
 
         return "".join(text_parts), tool_calls
 
+    @staticmethod
+    def _parse_tool_args(raw: str, name: str, tool_id: Optional[str]) -> Dict[str, Any]:
+        """Parse a streamed tool_use ``input_json`` payload.
+
+        When the model's tool-arg JSON does not parse, we do two things:
+
+        - log a truncated snapshot of the raw input plus the exception at
+          WARNING (the logger is the privileged sink),
+        - return ``{"__parse_error": str(exc)}`` so the planner fails the
+          call closed via the existing sentinel in ``planner.py``.
+
+        The raw text is not copied into the event payload because events are
+        persisted, replayed, and surfaced to UI, and the stream can contain
+        whatever the model echoed back. ``str(exc)`` from ``JSONDecodeError``
+        carries only line/column context, not a slice of the payload.
+        """
+        payload = raw or "{}"
+        try:
+            parsed = json.loads(payload)
+        except (json.JSONDecodeError, TypeError) as exc:
+            raw_snippet = raw if len(raw) <= 200 else raw[:200] + "..."
+            logger.warning(
+                "Anthropic streaming tool_use input failed to parse "
+                "for tool=%s id=%s raw=%r: %s",
+                name,
+                tool_id or "<unknown>",
+                raw_snippet,
+                exc,
+            )
+            return {"__parse_error": str(exc)}
+        if not isinstance(parsed, dict):
+            return {"__parse_error": "tool arguments must decode to an object"}
+        return parsed
+
     async def generate(
         self,
         messages: List[Dict[str, Any]],
@@ -128,6 +164,8 @@ class AnthropicProvider(ModelProvider):
             kwargs["system"] = system
         if tools:
             kwargs["tools"] = to_anthropic(tools)
+
+        _raise_if_cancelled(cancellation_token)
 
         try:
             response = await self.client.messages.create(**kwargs)
@@ -178,6 +216,8 @@ class AnthropicProvider(ModelProvider):
         if tools:
             kwargs["tools"] = to_anthropic(tools)
 
+        _raise_if_cancelled(cancellation_token)
+
         try:
             stream = self.client.messages.stream(**kwargs)
         except Exception as e:  # noqa: BLE001
@@ -190,10 +230,7 @@ class AnthropicProvider(ModelProvider):
 
         async with stream as s:
             async for event in s:
-                if cancellation_token and getattr(
-                    cancellation_token, "is_cancelled", False
-                ):
-                    break
+                _raise_if_cancelled(cancellation_token)
 
                 event_type = getattr(event, "type", None)
 
@@ -219,12 +256,11 @@ class AnthropicProvider(ModelProvider):
                         ) + getattr(delta, "partial_json", "")
 
                 elif event_type == "content_block_stop" and pending_tool:
-                    import json
-
-                    try:
-                        args = json.loads(pending_tool.get("arguments_raw", "{}"))
-                    except (json.JSONDecodeError, TypeError):
-                        args = {}
+                    args = self._parse_tool_args(
+                        raw=pending_tool.get("arguments_raw", ""),
+                        name=pending_tool.get("name") or "",
+                        tool_id=pending_tool.get("id"),
+                    )
                     yield ModelResponseChunk(
                         delta="",
                         tool_calls=cast(

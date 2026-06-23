@@ -133,16 +133,22 @@ async def test_stream_surfaces_tool_calls():
 
 @pytest.mark.asyncio
 async def test_stream_respects_cancellation():
+    """A pre-cancelled token must raise CancelledError, not silently exit.
+
+    The previous silent ``break`` returned an empty list which was
+    indistinguishable from a clean end-of-stream; callers now get a
+    CancelledError so cancellation is observable.
+    """
+    import asyncio
+
     class Token:
         is_cancelled = True
 
     service = FakeGeminiService([_text_chunk("never")])
     provider = _provider_with(service)
 
-    collected = [
-        chunk
-        async for chunk in provider.generate_stream(
+    with pytest.raises(asyncio.CancelledError):
+        async for _ in provider.generate_stream(
             messages=[{"role": "user", "content": "hi"}], cancellation_token=Token()
-        )
-    ]
-    assert collected == []
+        ):
+            pass

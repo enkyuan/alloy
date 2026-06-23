@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -196,24 +197,34 @@ class AgentRuntime:
             full_response = ""
             tool_calls = []
 
-            # 3. Stream from Provider
-            async for chunk in self.provider.generate_stream(
-                messages, self._tool_payload
-            ):
-                if token.is_cancelled:
-                    break
+            # 3. Stream from Provider. The provider raises asyncio.CancelledError
+            # when the token flips mid-stream; we catch it here so the canonical
+            # CancellationCompleted event still reaches observers. Re-raise if
+            # the cancel came from outside our token (e.g. parent task cancel)
+            # so structured concurrency stays intact.
+            try:
+                async for chunk in self.provider.generate_stream(
+                    messages, self._tool_payload, cancellation_token=token
+                ):
+                    if chunk.delta:
+                        full_response += chunk.delta
+                        await self._emit(
+                            AgentMessageDelta(session_id=session_id, delta=chunk.delta)
+                        )
 
-                if chunk.delta:
-                    full_response += chunk.delta
-                    await self._emit(
-                        AgentMessageDelta(session_id=session_id, delta=chunk.delta)
-                    )
-
-                if chunk.tool_calls:
-                    tool_calls.extend(chunk.tool_calls)
-
-            if token.is_cancelled:
-                await self._emit(CancellationCompleted(session_id=session_id))
+                    if chunk.tool_calls:
+                        tool_calls.extend(chunk.tool_calls)
+            except asyncio.CancelledError:
+                if not token.is_cancelled:
+                    # Cancellation came from outside our token (parent task).
+                    # Re-raise so the caller observes structured cancellation.
+                    raise
+                # Shield the terminal emit: if a parent task is also being
+                # cancelled, we still want CancellationCompleted to reach
+                # observers before unwinding.
+                await asyncio.shield(
+                    self._emit(CancellationCompleted(session_id=session_id))
+                )
                 return
 
             # 4. Finalize text message
