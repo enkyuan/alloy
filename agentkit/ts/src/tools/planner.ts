@@ -12,7 +12,7 @@ const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
   array: Array.isArray,
   string: (v) => typeof v === "string",
   integer: (v) => typeof v === "number" && Number.isInteger(v),
-  number: (v) => typeof v === "number",
+  number: (v) => typeof v === "number" && Number.isFinite(v),
   boolean: (v) => typeof v === "boolean",
   null: (v) => v === null,
 };
@@ -37,7 +37,12 @@ function validateArgs(spec: ToolSpec, args: Record<string, unknown>): string | n
     if (!expected) continue;
     const check = JSON_TYPE_CHECK[expected];
     if (check && !check(args[key])) {
-      return `argument '${key}': expected ${expected}, got ${typeof args[key]}`;
+      const value = args[key];
+      const isNumeric = expected === "number" || expected === "integer";
+      const got =
+        typeof value === "number" && !Number.isFinite(value) ? "non-finite number" : typeof value;
+      const want = isNumeric ? `finite ${expected}` : expected;
+      return `argument '${key}': expected ${want}, got ${got}`;
     }
   }
   return null;
