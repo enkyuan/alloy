@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reorganize the monorepo so all agentpay services live under `agentpay/`, all agentkit SDK packages live under `agentkit/`, and `apps/` holds only the web frontend — making the boundary between the two products structurally visible and scaling cleanly to future Go microservices.
+**Goal:** Reorganize the monorepo so all agentpay services live under `agentpay/`, all kaji SDK packages live under `kaji/`, and `apps/` holds only the web frontend — making the boundary between the two products structurally visible and scaling cleanly to future Go microservices.
 
-**Architecture:** `agentpay/` contains every deployed agentpay service (`api`, `consumer`, `auth`) regardless of language. `agentkit/` replaces `packages/` for all SDK packages (`sdk`, `serve`, `ts`). `apps/` narrows to `web` only. `docker/` is untouched — `docker/agentpay/` and `docker/agentkit/` stay where they are, with compose context paths updated. `apps/docker/` (empty stubs) is deleted.
+**Architecture:** `agentpay/` contains every deployed agentpay service (`api`, `consumer`, `auth`) regardless of language. `kaji/` replaces `packages/` for all SDK packages (`sdk`, `serve`, `ts`). `apps/` narrows to `web` only. `docker/` is untouched — `docker/agentpay/` and `docker/kaji/` stay where they are, with compose context paths updated. `apps/docker/` (empty stubs) is deleted.
 
 **Tech Stack:** Go 1.25 (go.mod module renames + internal import path sed), Bun/Turbo (workspace globs in package.json), GitHub Actions (working-directory + paths triggers), Python Poetry (path dep `../sdk` stays valid after parallel rename).
 
@@ -17,9 +17,9 @@
 | `apps/api/` | `agentpay/api/` | move + module rename |
 | `apps/consumer/` | `agentpay/consumer/` | move + module rename |
 | `apps/auth/` | `agentpay/auth/` | move |
-| `packages/sdk/` | `agentkit/sdk/` | move |
-| `packages/serve/` | `agentkit/serve/` | move + path dep update |
-| `packages/ts/` | `agentkit/ts/` | move |
+| `packages/sdk/` | `kaji/sdk/` | move |
+| `packages/serve/` | `kaji/serve/` | move + path dep update |
+| `packages/ts/` | `kaji/ts/` | move |
 | `apps/web/` | `apps/web/` | unchanged |
 | `apps/docker/` | *(deleted)* | empty stubs |
 | `docker/agentpay/docker-compose.yml` | same | context path update |
@@ -74,28 +74,28 @@ git commit -m "refactor: move agentpay services into agentpay/"
 
 ---
 
-## Task 2: Move agentkit SDK packages
+## Task 2: Move kaji SDK packages
 
-Move all SDK packages from `packages/` into a new `agentkit/` top-level directory.
+Move all SDK packages from `packages/` into a new `kaji/` top-level directory.
 
 **Files:**
-- Move: `packages/sdk/` → `agentkit/sdk/`
-- Move: `packages/serve/` → `agentkit/serve/`
-- Move: `packages/ts/` → `agentkit/ts/`
+- Move: `packages/sdk/` → `kaji/sdk/`
+- Move: `packages/serve/` → `kaji/serve/`
+- Move: `packages/ts/` → `kaji/ts/`
 
-- [ ] **Step 1: Create agentkit/ and move packages**
+- [ ] **Step 1: Create kaji/ and move packages**
 
 ```bash
-mkdir -p agentkit
-git mv packages/sdk agentkit/sdk
-git mv packages/serve agentkit/serve
-git mv packages/ts agentkit/ts
+mkdir -p kaji
+git mv packages/sdk kaji/sdk
+git mv packages/serve kaji/serve
+git mv packages/ts kaji/ts
 ```
 
 - [ ] **Step 2: Verify**
 
 ```bash
-ls agentkit/
+ls kaji/
 # Expected: sdk  serve  ts
 ls packages/
 # Expected: (empty or gone)
@@ -111,8 +111,8 @@ rmdir packages 2>/dev/null || true
 - [ ] **Step 4: Commit**
 
 ```bash
-git add agentkit/ packages/
-git commit -m "refactor: move agentkit SDK packages into agentkit/"
+git add kaji/ packages/
+git commit -m "refactor: move kaji SDK packages into kaji/"
 ```
 
 ---
@@ -215,52 +215,52 @@ git commit -m "refactor(consumer): update Go module path to agentpay/consumer"
 
 ---
 
-## Task 5: Update the Poetry path dependency in agentkit/serve
+## Task 5: Update the Poetry path dependency in kaji/serve
 
-`agentkit/serve` depends on `agentkit/sdk` via a relative path dep. The relative path `../sdk` is still valid after both moved into `agentkit/` together — but double-check and update if needed.
+`kaji/serve` depends on `kaji/sdk` via a relative path dep. The relative path `../sdk` is still valid after both moved into `kaji/` together — but double-check and update if needed.
 
 **Files:**
-- Verify/modify: `agentkit/serve/pyproject.toml`
+- Verify/modify: `kaji/serve/pyproject.toml`
 
 - [ ] **Step 1: Check the current path dep**
 
 ```bash
-grep -A2 "agentkit" agentkit/serve/pyproject.toml
-# Should show: agentkit = { path = "../sdk", develop = true }
+grep -A2 "kaji" kaji/serve/pyproject.toml
+# Should show: kaji = { path = "../sdk", develop = true }
 ```
 
 - [ ] **Step 2: Confirm the relative path is still correct**
 
 ```bash
-ls agentkit/sdk/
-# Expected: the sdk package is at agentkit/sdk/ → ../sdk from agentkit/serve/ is correct
+ls kaji/sdk/
+# Expected: the sdk package is at kaji/sdk/ → ../sdk from kaji/serve/ is correct
 ```
 
 If the grep in Step 1 shows a path other than `../sdk` (e.g., `../../packages/sdk`), update it:
 
 ```bash
-sed -i '' 's|path = "../../packages/sdk"|path = "../sdk"|g' agentkit/serve/pyproject.toml
+sed -i '' 's|path = "../../packages/sdk"|path = "../sdk"|g' kaji/serve/pyproject.toml
 ```
 
 - [ ] **Step 3: Verify Poetry can resolve the dep**
 
 ```bash
-cd agentkit/serve && poetry check && cd ../..
+cd kaji/serve && poetry check && cd ../..
 # Expected: All checks passed.
 ```
 
 - [ ] **Step 4: Commit (only if a change was needed)**
 
 ```bash
-git add agentkit/serve/pyproject.toml
-git commit -m "refactor(serve): update sdk path dep to agentkit/sdk"
+git add kaji/serve/pyproject.toml
+git commit -m "refactor(serve): update sdk path dep to kaji/sdk"
 ```
 
 ---
 
 ## Task 6: Update root package.json workspaces
 
-The Bun workspace glob currently lists `"packages/*"` and `"apps/*"`. Update to `"agentpay/*"`, `"agentkit/*"`, and `"apps/*"`.
+The Bun workspace glob currently lists `"packages/*"` and `"apps/*"`. Update to `"agentpay/*"`, `"kaji/*"`, and `"apps/*"`.
 
 **Files:**
 - Modify: `package.json`
@@ -278,7 +278,7 @@ to:
 ```json
 "workspaces": [
   "agentpay/*",
-  "agentkit/*",
+  "kaji/*",
   "apps/*"
 ]
 ```
@@ -295,7 +295,7 @@ bun run build --dry-run 2>/dev/null || true
 
 ```bash
 git add package.json bun.lock
-git commit -m "refactor: update workspace globs for agentpay/ and agentkit/ dirs"
+git commit -m "refactor: update workspace globs for agentpay/ and kaji/ dirs"
 ```
 
 ---
@@ -356,9 +356,9 @@ In the `on.push.paths` and `on.pull_request.paths` sections, change:
 ```
 to:
 ```yaml
-- "agentkit/sdk/**"
-- "agentkit/serve/**"
-- "agentkit/ts/**"
+- "kaji/sdk/**"
+- "kaji/serve/**"
+- "kaji/ts/**"
 - "agentpay/api/**"
 ```
 
@@ -370,7 +370,7 @@ working-directory: packages/sdk
 ```
 to:
 ```yaml
-working-directory: agentkit/sdk
+working-directory: kaji/sdk
 ```
 
 And update the Poetry cache key hash path:
@@ -379,7 +379,7 @@ key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('packages/sdk/poetry.lock'
 ```
 to:
 ```yaml
-key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/sdk/poetry.lock') }}
+key: poetry-sdk-${{ runner.os }}-py3.11-${{ hashFiles('kaji/sdk/poetry.lock') }}
 ```
 
 - [ ] **Step 3: Update working-directory for serve job**
@@ -390,7 +390,7 @@ working-directory: packages/serve
 ```
 to:
 ```yaml
-working-directory: agentkit/serve
+working-directory: kaji/serve
 ```
 
 And update the cache key:
@@ -399,7 +399,7 @@ key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('packages/serve/poetry.l
 ```
 to:
 ```yaml
-key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('agentkit/serve/poetry.lock') }}
+key: poetry-serve-${{ runner.os }}-py3.11-${{ hashFiles('kaji/serve/poetry.lock') }}
 ```
 
 - [ ] **Step 4: Update working-directory for ts-sdk job**
@@ -410,7 +410,7 @@ working-directory: packages/ts
 ```
 to:
 ```yaml
-working-directory: agentkit/ts
+working-directory: kaji/ts
 ```
 
 - [ ] **Step 5: Update working-directory and go-version-file for api job**
@@ -464,21 +464,21 @@ cd agentpay/consumer && go vet ./... && cd ../..
 - [ ] **Step 2: Verify Python SDK tests still run**
 
 ```bash
-cd agentkit/sdk && poetry install --no-interaction --sync && poetry run pytest tests/ -q && cd ../..
+cd kaji/sdk && poetry install --no-interaction --sync && poetry run pytest tests/ -q && cd ../..
 # Expected: tests pass (same count as before)
 ```
 
-- [ ] **Step 3: Verify agentkit/serve resolves its SDK path dep**
+- [ ] **Step 3: Verify kaji/serve resolves its SDK path dep**
 
 ```bash
-cd agentkit/serve && poetry install --no-interaction --sync && cd ../..
+cd kaji/serve && poetry install --no-interaction --sync && cd ../..
 # Expected: no resolution errors
 ```
 
 - [ ] **Step 4: Verify TypeScript SDK builds**
 
 ```bash
-cd agentkit/ts && bun install && bun run typecheck && bun run build && cd ../..
+cd kaji/ts && bun install && bun run typecheck && bun run build && cd ../..
 # Expected: no errors
 ```
 
@@ -499,7 +499,7 @@ grep -r "apps/api\|apps/consumer\|apps/auth\|packages/sdk\|packages/serve\|packa
 git add -A
 git status
 # Review — should be clean or only docs/
-git commit -m "chore: monorepo restructure complete — agentpay/ agentkit/ apps/" \
+git commit -m "chore: monorepo restructure complete — agentpay/ kaji/ apps/" \
   --allow-empty-message 2>/dev/null || \
-git commit -m "chore: monorepo restructure complete — agentpay/ agentkit/ apps/"
+git commit -m "chore: monorepo restructure complete — agentpay/ kaji/ apps/"
 ```

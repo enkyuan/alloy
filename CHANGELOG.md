@@ -1,10 +1,10 @@
 # Changelog
 
-All notable changes to AgentKit are documented here.
+All notable changes to Kaji are documented here.
 
 ## [Unreleased] — SDK Remediation Pass
 
-### TypeScript SDK (`agentkit/ts`) — Beta Candidate
+### TypeScript SDK (`kaji/ts`) — Beta Candidate
 
 #### Breaking fixes
 - **`AgentBuilder` now wires a scoped `ToolPlanner`** so tools registered via `.integration()` are both visible to the model and executable. Previously, `AgentBuilder` registered tools in a local `ToolRegistry` but `AgentRuntime` fell back to the global `executeTool`, causing "Unknown tool" errors for builder-only integrations.
@@ -23,15 +23,15 @@ All notable changes to AgentKit are documented here.
 - `ToolRegistry` doc example updated to show `ToolPlanner` as the correct usage pattern.
 
 #### CI
-- Added `.github/workflows/ts-sdk.yml`: uses `oven-sh/setup-bun`, runs `bun install`, `typecheck`, and `test` on every push/PR to `agentkit/ts/**`.
+- Added `.github/workflows/ts-sdk.yml`: uses `oven-sh/setup-bun`, runs `bun install`, `typecheck`, and `test` on every push/PR to `kaji/ts/**`.
 
 ---
 
-### Python SDK (`agentkit/sdk`) — Pre-Beta
+### Python SDK (`kaji/sdk`) — Pre-Beta
 
 #### Fixes
-- `agentkit/core/config.py`: Added `overload` stubs for the PEP 562 `settings` lazy attribute so type checkers resolve `from agentkit.core.config import settings` as `Settings` rather than `Any`.
-- `agentkit/infra/realtime/redis.py`: Replaced the module-level `import redis.asyncio as redis` with a lazy `_get_redis_module()` helper, guarded behind a try/except with a clear `ImportError` message. This prevents import-time failures when the optional `realtime` extra is not installed.
+- `kaji/core/config.py`: Added `overload` stubs for the PEP 562 `settings` lazy attribute so type checkers resolve `from kaji.core.config import settings` as `Settings` rather than `Any`.
+- `kaji/infra/realtime/redis.py`: Replaced the module-level `import redis.asyncio as redis` with a lazy `_get_redis_module()` helper, guarded behind a try/except with a clear `ImportError` message. This prevents import-time failures when the optional `realtime` extra is not installed.
 - `redis.py` `close_redis_client` return type annotated as `-> None`; uses `.aclose()` (redis-py 4+ API) consistently.
 
 #### New tests
@@ -41,7 +41,7 @@ All notable changes to AgentKit are documented here.
 - `tests/test_infra_redis.py`: Tests for `RedisKeys` versioned naming scheme, `RedisConfig` constants, `get_redis_client` singleton with fakeredis patching, missing-redis error handling, and `close_redis_client` singleton reset.
 
 #### CI
-- Added `.github/workflows/sdk-tests.yml`: uses `snok/install-poetry`, runs `poetry install`, `pyrefly check`, and `pytest -q` on every push/PR to `agentkit/sdk/**`.
+- Added `.github/workflows/sdk-tests.yml`: uses `snok/install-poetry`, runs `poetry install`, `pyrefly check`, and `pytest -q` on every push/PR to `kaji/sdk/**`.
 
 ---
 
@@ -49,5 +49,5 @@ All notable changes to AgentKit are documented here.
 
 | Package | Status | Notes |
 |---|---|---|
-| `@agentkit/sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers + OpenRouter/Kimi/Gemini factories (OpenAI-compatible), CI green. Deferred: RAG, voice, Redis, CLI. |
-| `agentkit` (Python) | Pre-beta | Suitable for internal embedded agents. Static checks pass on hardened paths. Multi-process platform (Redis, voice workers) not production-hardened. |
+| `@kaji/sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers + OpenRouter/Kimi/Gemini factories (OpenAI-compatible), CI green. Deferred: RAG, voice, Redis, CLI. |
+| `kaji` (Python) | Pre-beta | Suitable for internal embedded agents. Static checks pass on hardened paths. Multi-process platform (Redis, voice workers) not production-hardened. |

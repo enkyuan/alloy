@@ -1,46 +1,46 @@
 ---
-title: agentkit
-description: agentkit is an embeddable SDK for building agents in Python and TypeScript. Event-sourced runtime, tool registry, pluggable providers, STT/TTS modalities. No database or server required.
+title: kaji
+description: kaji is an embeddable SDK for building agents in Python and TypeScript. Event-sourced runtime, tool registry, pluggable providers, STT/TTS modalities. No database or server required.
 ---
 
-agentkit is an embeddable SDK for building agents. The core needs no database
-or server. Run `agentkit-serve` when you want multi-process durability and
+kaji is an embeddable SDK for building agents. The core needs no database
+or server. Run `kaji-serve` when you want multi-process durability and
 real-time voice.
 
 ## Packages
 
-| Package          | Path             | What it is                                   |
-| ---------------- | ---------------- | -------------------------------------------- |
-| `agentkit`       | `agentkit/sdk`   | Python SDK: core runtime, embed anywhere     |
-| `agentkit-serve` | `agentkit/serve` | Python: FastAPI + workers, reference service |
-| `@agentkit/sdk`  | `agentkit/ts`    | TypeScript port of the core runtime          |
+| Package      | Path         | What it is                                   |
+| ------------ | ------------ | -------------------------------------------- |
+| `kaji`       | `kaji/sdk`   | Python SDK: core runtime, embed anywhere     |
+| `kaji-serve` | `kaji/serve` | Python: FastAPI + workers, reference service |
+| `@kaji/sdk`  | `kaji/ts`    | TypeScript port of the core runtime          |
 
 The wire format (event-type strings, field names) is identical across the
 Python SDK and the TypeScript port, so logs round-trip between them.
 
 ## Embed or serve?
 
-| If you want…                                      | Use              |
-| ------------------------------------------------- | ---------------- |
-| In-process agent in your own app, no infra        | `agentkit`       |
-| Multi-process durability, real-time voice over WS | `agentkit-serve` |
+| If you want…                                      | Use          |
+| ------------------------------------------------- | ------------ |
+| In-process agent in your own app, no infra        | `kaji`       |
+| Multi-process durability, real-time voice over WS | `kaji-serve` |
 
 See [reference service](/docs/reference-service) for the multi-process layout.
 
 ## Composition
 
-agentkit's core is a set of primitives -- events, sessions, tools,
+kaji's core is a set of primitives -- events, sessions, tools,
 providers, runtime. By design the core does not ship verticals (no
 built-in payment, calendar, or email tools), and it does not pick a
 vendor for you -- `get_provider()` with no name returns an in-memory mock,
 not a third-party service.
 
 For v0.1.0 the Python SDK still bundles a few opinionated modules at the
-top level for convenience: `agentkit.cli` (project scaffolding),
-`agentkit.knowledge` (RAG building blocks), `agentkit.modalities.voice`
-(STT / TTS edges), and `agentkit.infra.observability` (metrics, tracing).
-These are slated to split into their own packages (`@agentkit/cli`,
-`@agentkit/knowledge`, etc.) in a future release. Treat them as optional
+top level for convenience: `kaji.cli` (project scaffolding),
+`kaji.knowledge` (RAG building blocks), `kaji.modalities.voice`
+(STT / TTS edges), and `kaji.infra.observability` (metrics, tracing).
+These are slated to split into their own packages (`@kaji/cli`,
+`@kaji/knowledge`, etc.) in a future release. Treat them as optional
 add-ons today and avoid relying on their top-level imports if you want a
 smaller v1.0 upgrade path.
 

@@ -23,10 +23,10 @@ three layers, two backends, two frontends.
 │  agents · wallets · payment configs · webhook registry  │
 │  payment sessions · webhook delivery · ledger           │
 └────────┬───────────────────────────┬────────────────────┘
-         │ Stripe API                │ agentkit AgentRuntime
+         │ Stripe API                │ kaji AgentRuntime
          ▼                           ▼
 ┌──────────────┐           ┌─────────────────────────────┐
-│  Stripe      │           │  agentkit tool loop         │
+│  Stripe      │           │  kaji tool loop         │
 │  settlement  │           │  any modality (chat/voice/  │
 │  customer    │           │  SMS via Twilio, Vapi, etc.) │
 │  vault       │           │  request_payment tool       │
@@ -47,7 +47,7 @@ three layers, two backends, two frontends.
 
 **key decisions:**
 - agentpay owns the tool surface and payment session lifecycle, not any modality
-- voice/SMS is the merchant's choice — they point Twilio/Vapi/Bland at an agentkit endpoint
+- voice/SMS is the merchant's choice — they point Twilio/Vapi/Bland at an kaji endpoint
 - stripe holds all sensitive payment data; agentpay stores only `stripe_customer_id`
 - the ledger is append-only postgres rows — plain-language labels written at settlement time
 - the consumer app is a read surface: wallet status + transaction feed, nothing writable except payment method setup
@@ -62,15 +62,15 @@ agentpay does not own STT/TTS. the agent loop is:
 merchant embed (JS widget or webhook endpoint)
     │
     ▼
-agentkit AgentRuntime (tool-using loop, provider-neutral)
+kaji AgentRuntime (tool-using loop, provider-neutral)
     │  registered tool: request_payment(amount, description)
     ▼
 POST /v1/sessions  →  @agentpay/api
 ```
 
 merchants choose their modality:
-- **chat widget** — embed the JS snippet, agentkit handles the conversation in-browser
-- **voice/SMS** — merchant points Twilio/Vapi flow at a webhook endpoint; agentkit handles tool calls over that channel
+- **chat widget** — embed the JS snippet, kaji handles the conversation in-browser
+- **voice/SMS** — merchant points Twilio/Vapi flow at a webhook endpoint; kaji handles tool calls over that channel
 
 both paths hit the same agentpay API surface.
 
@@ -79,7 +79,7 @@ both paths hit the same agentpay API surface.
 ## payment flow
 
 ```
-agentkit calls request_payment tool
+kaji calls request_payment tool
     │
     ▼
 POST /v1/sessions  →  creates Stripe PaymentIntent
@@ -239,12 +239,12 @@ the following can reduce delivery latency to sub-second when needed:
 
 ---
 
-## agentkit integration
+## kaji integration
 
 the `request_payment` tool is registered with `AgentRuntime` at agent startup:
 
 ```go
-// tool spec surfaced to agentkit
+// tool spec surfaced to kaji
 {
   "name": "request_payment",
   "description": "Request payment from the customer for a product or service",
@@ -255,7 +255,7 @@ the `request_payment` tool is registered with `AgentRuntime` at agent startup:
 }
 ```
 
-when the agent calls the tool, agentkit executes it by hitting `POST /v1/sessions` on the agentpay API. the tool returns a checkout URL or status that the agent can relay to the customer.
+when the agent calls the tool, kaji executes it by hitting `POST /v1/sessions` on the agentpay API. the tool returns a checkout URL or status that the agent can relay to the customer.
 
 ---
 

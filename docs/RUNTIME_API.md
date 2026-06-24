@@ -1,10 +1,10 @@
 # Runtime API reference
 
-The headline API surface for embedding `agentkit` in your own app. For the
-shared concepts and architecture, see [AGENTKIT.md](AGENTKIT.md).
+The headline API surface for embedding `kaji` in your own app. For the
+shared concepts and architecture, see [KAJI.md](KAJI.md).
 
 This page focuses on the Python SDK. The TypeScript SDK
-(`@agentkit/sdk`) ships an equivalent surface with the same wire format;
+(`@kaji/sdk`) ships an equivalent surface with the same wire format;
 its differences are noted inline.
 
 ## Building an agent
@@ -14,15 +14,15 @@ integrations, an optional policy, and a system prompt into an
 `AgentRuntime`.
 
 ```python
-import agentkit
+import kaji
 
 runtime = (
-    agentkit.AgentBuilder()
-    .provider(agentkit.get_provider("openai"))
+    kaji.AgentBuilder()
+    .provider(kaji.get_provider("openai"))
     .system_prompt("You are a helpful assistant.")
     .build(
-        bus=agentkit.InMemoryEventBus(),
-        store=agentkit.InMemoryEventStore(),
+        bus=kaji.InMemoryEventBus(),
+        store=kaji.InMemoryEventStore(),
     )
 )
 ```
@@ -68,16 +68,16 @@ Two decorator paths. Use `@function_tool` for a single function,
 ### Single function: `@function_tool`
 
 ```python
-import agentkit
+import kaji
 
-provider = agentkit.get_provider("openai")
+provider = kaji.get_provider("openai")
 
-@agentkit.function_tool(description="Look up weather for a city.", risk="read")
+@kaji.function_tool(description="Look up weather for a city.", risk="read")
 async def get_weather(city: str) -> dict:
     return {"city": city, "tempF": 68}
 
-runtime = agentkit.AgentBuilder().provider(provider).tool(get_weather).build(
-    bus=agentkit.InMemoryEventBus(), store=agentkit.InMemoryEventStore(),
+runtime = kaji.AgentBuilder().provider(provider).tool(get_weather).build(
+    bus=kaji.InMemoryEventBus(), store=kaji.InMemoryEventStore(),
 )
 ```
 
@@ -87,62 +87,62 @@ Note: `register_tool` writes to a process-global `ToolRegistry`;
 ### Namespaced bundle: `Integration` + `@tool`
 
 ```python
-import agentkit
+import kaji
 from pydantic import BaseModel
 
 class GetWeather(BaseModel):
     city: str
 
-class WeatherIntegration(agentkit.Integration):
+class WeatherIntegration(kaji.Integration):
     @property
     def namespace(self) -> str:
         return "weather"
 
-    @agentkit.tool(description="Look up weather.", parameters=GetWeather, risk="read")
-    async def get_weather(self, ctx: agentkit.ToolContext, args: dict) -> dict:
+    @kaji.tool(description="Look up weather.", parameters=GetWeather, risk="read")
+    async def get_weather(self, ctx: kaji.ToolContext, args: dict) -> dict:
         return {"city": args["city"], "tempF": 68}
 
 runtime = (
-    agentkit.AgentBuilder()
-    .provider(agentkit.get_provider("openai"))
+    kaji.AgentBuilder()
+    .provider(kaji.get_provider("openai"))
     .integration(WeatherIntegration())
-    .build(bus=agentkit.InMemoryEventBus(), store=agentkit.InMemoryEventStore())
+    .build(bus=kaji.InMemoryEventBus(), store=kaji.InMemoryEventStore())
 )
 ```
 
 | call | shape |
 | --- | --- |
-| `agentkit.function_tool(fn)` or `agentkit.function_tool(*, description, parameters=None, risk=None, ...)` | wrap a single async function; schema derived from type hints when `parameters` is omitted |
-| `agentkit.tool(*, description, parameters, risk=None, tags=(), enabled=True)` | decorate a method on an `Integration` subclass |
-| `agentkit.register_tool(spec)(handler)` | register against the process-default `ToolRegistry` |
-| `agentkit.list_tool_specs(tags=None, enabled_only=True)` | enumerate registered specs |
+| `kaji.function_tool(fn)` or `kaji.function_tool(*, description, parameters=None, risk=None, ...)` | wrap a single async function; schema derived from type hints when `parameters` is omitted |
+| `kaji.tool(*, description, parameters, risk=None, tags=(), enabled=True)` | decorate a method on an `Integration` subclass |
+| `kaji.register_tool(spec)(handler)` | register against the process-default `ToolRegistry` |
+| `kaji.list_tool_specs(tags=None, enabled_only=True)` | enumerate registered specs |
 
 `parameters` accepts either a JSON Schema dict or a Pydantic `BaseModel`
 subclass; the model is converted to JSON Schema at registration time.
 
 Built-in integrations:
 
-- `from agentkit.integrations.registry.github.github import GitHub`
-- `from agentkit.integrations.registry.gmail.gmail import Gmail`
-- `from agentkit.integrations.registry.gcal.gcal import GoogleCalendar`
+- `from kaji.integrations.registry.github.github import GitHub`
+- `from kaji.integrations.registry.gmail.gmail import Gmail`
+- `from kaji.integrations.registry.gcal.gcal import GoogleCalendar`
 
 ## Providers
 
 ```python
-provider = agentkit.get_provider("openai")    # reads OPENAI_API_KEY
-provider = agentkit.get_provider("anthropic") # reads ANTHROPIC_API_KEY
-provider = agentkit.get_provider("kimi")      # reads OPENROUTER_API_KEY
-provider = agentkit.get_provider("gemini")    # reads GEMINI_API_KEY
-provider = agentkit.get_provider("mock")      # deterministic, no key
+provider = kaji.get_provider("openai")    # reads OPENAI_API_KEY
+provider = kaji.get_provider("anthropic") # reads ANTHROPIC_API_KEY
+provider = kaji.get_provider("kimi")      # reads OPENROUTER_API_KEY
+provider = kaji.get_provider("gemini")    # reads GEMINI_API_KEY
+provider = kaji.get_provider("mock")      # deterministic, no key
 ```
 
 Register a custom provider:
 
 ```python
-agentkit.register_provider("my-provider", MyProvider)
+kaji.register_provider("my-provider", MyProvider)
 ```
 
-A provider implements the `agentkit.ModelProvider` Protocol with two
+A provider implements the `kaji.ModelProvider` Protocol with two
 async methods (`generate`, `generate_stream`) and yields
 `ModelResponseChunk` from the stream. Errors raise
 `ProviderError` / `ProviderConfigError` / `ProviderAPIError` so callers
@@ -159,7 +159,7 @@ callers who don't need the full event-sourced runtime.
 `EventStore`. To project current state from a log:
 
 ```python
-state = agentkit.replay_session(events)
+state = kaji.replay_session(events)
 state.is_active     # bool
 state.messages      # [{"role": "user" | "assistant" | "tool", "content": ...}, ...]
 ```
@@ -168,7 +168,7 @@ state.messages      # [{"role": "user" | "assistant" | "tool", "content": ...}, 
 metadata (titles, user_id, list_active) on top of the raw event store.
 
 For the wire format and the full discriminator list, see the events
-table in [AGENTKIT.md](AGENTKIT.md#events).
+table in [KAJI.md](KAJI.md#events).
 
 ## Subscribing to events
 
@@ -176,7 +176,7 @@ The `EventBus` fans out events to subscribers per session. Useful for
 streaming a UI:
 
 ```python
-bus = agentkit.InMemoryEventBus()
+bus = kaji.InMemoryEventBus()
 async for event in bus.subscribe("s1"):
     if event.type == "agent.message.delta":
         ui.append(event.delta)

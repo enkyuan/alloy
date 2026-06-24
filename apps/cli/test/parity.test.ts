@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = resolve(__dirname, "..", "dist", "index.js");
-const sdkPath = resolve(__dirname, "..", "..", "..", "agentkit", "sdk");
+const sdkPath = resolve(__dirname, "..", "..", "..", "kaji", "sdk");
 
 function hasPoetry(): boolean {
   try {
@@ -22,7 +22,7 @@ const canRun = existsSync(distPath) && hasPoetry();
 describe.skipIf(!canRun)("CLI parity", () => {
   it("ts and python share the same subcommands (mcp is ts-only)", () => {
     const ts = execFileSync("node", [distPath, "--help"], { encoding: "utf-8" });
-    const py = execFileSync("poetry", ["run", "agentkit", "--help"], {
+    const py = execFileSync("poetry", ["run", "kaji", "--help"], {
       cwd: sdkPath,
       encoding: "utf-8",
     });

@@ -1,9 +1,10 @@
 {
-  "name": "agentkit",
+  "name": "kaji",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE",
   "workspaces": [
-    "agentpay/*",
-    "agentkit/*",
+    "ryo/*",
+    "kaji/*",
     "apps/*",
     "packages/*"
   ],
@@ -16,10 +17,10 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "husky",
-    "docker:up": "docker compose -f docker/agentpay/docker-compose.yml up -d",
-    "docker:down": "docker compose -f docker/agentpay/docker-compose.yml down",
-    "docker:destroy": "docker compose -f docker/agentpay/docker-compose.yml down -v --remove-orphans",
-    "docker:logs": "docker compose -f docker/agentpay/docker-compose.yml logs -f"
+    "docker:up": "docker compose -f docker/ryo/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/ryo/docker-compose.yml down",
+    "docker:destroy": "docker compose -f docker/ryo/docker-compose.yml down -v --remove-orphans",
+    "docker:logs": "docker compose -f docker/ryo/docker-compose.yml logs -f"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

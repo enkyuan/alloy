@@ -24,8 +24,8 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
     ...(pkg?.dependencies as Record<string, string> | undefined),
     ...(pkg?.devDependencies as Record<string, string> | undefined),
   };
-  const hasAgentkit = Object.keys(all ?? {}).some((k) => k.startsWith("@agentkit/"));
-  checks.push({ name: "@agentkit/* installed", ok: hasAgentkit });
+  const hasAgentkit = Object.keys(all ?? {}).some((k) => k.startsWith("@kaji/"));
+  checks.push({ name: "@kaji/* installed", ok: hasAgentkit });
   const providerKeys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "KIMI_API_KEY"];
   const hasProvider = providerKeys.some((k) => (o.env[k] ?? "").length > 0);
   checks.push({ name: "provider key", ok: hasProvider, detail: providerKeys.join(" | ") });
@@ -36,7 +36,7 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
 }
 
 export const doctor = new Command("doctor")
-  .description("check the environment for common agentkit issues")
+  .description("check the environment for common kaji issues")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("--json", "output as JSON")
   .action((opts: { cwd: string; json?: boolean }) => {

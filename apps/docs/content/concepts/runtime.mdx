@@ -21,10 +21,10 @@ into session state. You build one with `AgentBuilder`.
 
 ## AgentRuntime
 
-| Method                   | Returns                                            | Description                                                                |
-| ------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------- |
-| `send(session_id, text)` | `None` / `Promise<void>`                           | Appends a `USER_MESSAGE` event and runs one turn (may include tool loops). |
-| `history(session_id)`    | `list[AgentKitEvent]` / `Promise<AgentKitEvent[]>` | All events appended to this session, in order.                             |
+| Method                   | Returns                                    | Description                                                                |
+| ------------------------ | ------------------------------------------ | -------------------------------------------------------------------------- |
+| `send(session_id, text)` | `None` / `Promise<void>`                   | Appends a `USER_MESSAGE` event and runs one turn (may include tool loops). |
+| `history(session_id)`    | `list[KajiEvent]` / `Promise<KajiEvent[]>` | All events appended to this session, in order.                             |
 
 In Python, methods are snake_case (`send`, `history`) and async. In
 TypeScript they are camelCase (`send`, `history`) and return Promises.
@@ -34,7 +34,7 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
 <Tabs items={["python", "typescript"]}>
   <Tab value="python">
     ```python
-    from agentkit import AgentBuilder, get_provider
+    from kaji import AgentBuilder, get_provider
 
     runtime = (
         AgentBuilder()
@@ -49,7 +49,7 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
   </Tab>
   <Tab value="typescript">
     ```ts
-    import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
+    import { AgentBuilder, OpenAIProvider } from "@kaji/sdk";
 
     const runtime = new AgentBuilder()
       .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))

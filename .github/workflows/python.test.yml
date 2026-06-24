@@ -4,68 +4,68 @@ on:
   push:
     branches: [main]
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.test.yml"
   pull_request:
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.test.yml"
 
 jobs:
   sdk:
-    name: agentkit/sdk
+    name: kaji/sdk
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
 
       - name: Run quickstart smoke
         run: poetry run pytest tests/test_quickstart.py -q
 
       - name: Run non-network tests
-        run: poetry run pytest tests/ -m "not integration" --cov=agentkit --cov-report=xml --cov-fail-under=35
+        run: poetry run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-sdk
-          path: agentkit/sdk/coverage.xml
+          path: kaji/sdk/coverage.xml
           retention-days: 7
 
   sdk-install-smoke:
-    name: agentkit/sdk install smoke
+    name: kaji/sdk install smoke
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
 
       - name: Build wheel
         run: poetry build --format wheel
 
       - name: Install wheel in clean venv
         run: |
-          python -m venv /tmp/agentkit-smoke-venv
-          /tmp/agentkit-smoke-venv/bin/pip install --quiet dist/*.whl
-          /tmp/agentkit-smoke-venv/bin/python scripts/smoke_install.py
+          python -m venv /tmp/kaji-smoke-venv
+          /tmp/kaji-smoke-venv/bin/pip install --quiet dist/*.whl
+          /tmp/kaji-smoke-venv/bin/python scripts/smoke_install.py
 
   serve:
-    name: agentkit/serve
+    name: kaji/serve
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -89,22 +89,22 @@ jobs:
       POSTGRES_DB: postgres
     defaults:
       run:
-        working-directory: agentkit/serve
+        working-directory: kaji/serve
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/serve
+          working-directory: kaji/serve
 
       - name: Run tests
-        run: poetry run pytest tests/ --cov=agentkit_serve --cov-report=xml --cov-fail-under=35
+        run: poetry run pytest tests/ --cov=kaji_serve --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-serve
-          path: agentkit/serve/coverage.xml
+          path: kaji/serve/coverage.xml
           retention-days: 7
 
   live-openai:
@@ -114,13 +114,13 @@ jobs:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
           install-args: "--no-interaction --sync -E openai"
 
       - name: Run OpenAI integration smoke
@@ -133,13 +133,13 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
           install-args: "--no-interaction --sync -E anthropic"
 
       - name: Run Anthropic integration smoke

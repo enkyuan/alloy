@@ -18,7 +18,7 @@ Do not write hollow unit tests. After each change, run the relevant gate and com
 
 ## Package-manager rule (read second)
 
-USE BUN for everything. `bun add geist`, `bun install`, `bun --filter @agentkit/docs <script>`. Never npm/yarn/pnpm. `bun.lock` is gitignored in this repo by design (do not force-add it).
+USE BUN for everything. `bun add geist`, `bun install`, `bun --filter @kaji/docs <script>`. Never npm/yarn/pnpm. `bun.lock` is gitignored in this repo by design (do not force-add it).
 
 ## Verified facts (no need to re-discover)
 
@@ -60,7 +60,7 @@ Untouched: `meta.json` files (nav order/titles stay), `source.config.ts`, app ro
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun add geist --filter @agentkit/docs
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun add geist --filter @kaji/docs
 ```
 If `--filter` with `bun add` is not supported by this bun version, instead run from the workspace dir:
 ```bash
@@ -98,7 +98,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build
 ```
 Expected: `Exited with code 0`. This is the baseline; if it fails BEFORE any change, stop and report — something is wrong with the environment, not the restyle.
 
@@ -174,7 +174,7 @@ This makes both Tailwind's `font-sans` utility (used on `<body>`) and fumadocs-u
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build
 ```
 Expected: `Exited with code 0`.
 
@@ -190,7 +190,7 @@ and use `className={`${geistSans.variable} ${geistMono.variable}`}`. The global.
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs typecheck
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs typecheck
 ```
 Expected: no type errors.
 
@@ -214,7 +214,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 **Files:**
 - Modify: `apps/docs/content/docs/index.mdx`
 
-Casing rules: Title Case the `title:` and headings; sentence-case the prose; rich `description:`. PRESERVE verbatim: `agentkit`, `agentkit-serve`, `@agentkit/sdk`, code identifiers, env vars, anything in code/tables. No em-dashes.
+Casing rules: Title Case the `title:` and headings; sentence-case the prose; rich `description:`. PRESERVE verbatim: `kaji`, `kaji-serve`, `@kaji/sdk`, code identifiers, env vars, anything in code/tables. No em-dashes.
 
 - [ ] **Step 1: Replace the file with the polished version**
 
@@ -222,14 +222,14 @@ Write `apps/docs/content/docs/index.mdx`:
 
 ```mdx
 ---
-title: agentkit
-description: agentkit is an embeddable, infra-free SDK for building agents in Python and TypeScript, with an event-sourced runtime, a tool registry, pluggable LLM providers, and STT/TTS voice modalities.
+title: kaji
+description: kaji is an embeddable, infra-free SDK for building agents in Python and TypeScript, with an event-sourced runtime, a tool registry, pluggable LLM providers, and STT/TTS voice modalities.
 ---
 
-agentkit is an embeddable SDK for building agents: an event-sourced runtime, a
+kaji is an embeddable SDK for building agents: an event-sourced runtime, a
 tool registry, pluggable LLM providers, and STT/TTS modalities. The core is
 infra-free. No database or server is required to import and use it. Deploy it
-yourself, or run the reference service (`agentkit-serve`) when you need a
+yourself, or run the reference service (`kaji-serve`) when you need a
 production-grade multi-process setup.
 
 It powers agentpay's agent runtime, and can also be used standalone in any
@@ -239,9 +239,9 @@ Python or TypeScript project.
 
 | package | path | what it is |
 | ---------------- | ---------------- | --------------------------------------------- |
-| `agentkit` | `agentkit/sdk` | Python SDK: the core runtime, embed anywhere |
-| `agentkit-serve` | `agentkit/serve` | Python: FastAPI + workers reference service |
-| `@agentkit/sdk` | `agentkit/ts` | TypeScript port of the core runtime |
+| `kaji` | `kaji/sdk` | Python SDK: the core runtime, embed anywhere |
+| `kaji-serve` | `kaji/serve` | Python: FastAPI + workers reference service |
+| `@kaji/sdk` | `kaji/ts` | TypeScript port of the core runtime |
 
 The concepts in these docs are stated language-neutrally. Code samples show
 Python and TypeScript where both exist. The wire format (event type strings,
@@ -250,14 +250,14 @@ events round-trip across both.
 
 ## When to Embed vs. Run the Service
 
-Embed `agentkit` directly for infra-free usage inside your own app. Run
-`agentkit-serve` when you need multi-process durability and real-time voice.
+Embed `kaji` directly for infra-free usage inside your own app. Run
+`kaji-serve` when you need multi-process durability and real-time voice.
 See [the reference service](/docs/reference-service).
 ```
 
 - [ ] **Step 2: Build gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build`
 Expected: `Exited with code 0`.
 
 - [ ] **Step 3: Commit**
@@ -288,7 +288,7 @@ Write `apps/docs/content/docs/getting-started.mdx`:
 ````mdx
 ---
 title: Getting Started
-description: Install the agentkit SDK in Python or TypeScript and register your first tool, with the tool spec, handler signature, and ToolContext explained.
+description: Install the kaji SDK in Python or TypeScript and register your first tool, with the tool spec, handler signature, and ToolContext explained.
 ---
 
 ## Installation
@@ -296,10 +296,10 @@ description: Install the agentkit SDK in Python or TypeScript and register your 
 ```bash
 # TypeScript (from the monorepo JS workspace)
 bun install
-# the package is @agentkit/sdk
+# the package is @kaji/sdk
 
 # Python
-cd agentkit/sdk && poetry install
+cd kaji/sdk && poetry install
 ```
 
 ## Register a Tool
@@ -311,10 +311,10 @@ run concurrently, and results are collected before the next loop iteration.
 
 ```python
 # Python
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+@kaji.register_tool(
+    kaji.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
 )
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
+async def get_weather(ctx: kaji.ToolContext, args: dict) -> dict:
     return {"tempF": 68}
 ```
 
@@ -387,10 +387,10 @@ Write `apps/docs/content/docs/reference-service.mdx`:
 ```mdx
 ---
 title: Reference Service
-description: agentkit-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice, and when to use it instead of embedding the SDK directly.
+description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice, and when to use it instead of embedding the SDK directly.
 ---
 
-`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes over Redis
+`kaji-serve` (`kaji/serve`) wraps the SDK as three processes over Redis
 so heavy tool execution never stalls a real-time exchange.
 
 | process | role |
@@ -402,14 +402,14 @@ so heavy tool execution never stalls a real-time exchange.
 Redis Streams provide durable at-least-once hand-off between processes. Redis
 Pub/Sub fans out agent responses to the connected client in real time.
 
-Use `agentkit-serve` when you need multi-process durability and real-time
-voice. Embed `agentkit` directly when you want infra-free usage inside your own
+Use `kaji-serve` when you need multi-process durability and real-time
+voice. Embed `kaji` directly when you want infra-free usage inside your own
 app.
 ```
 
 - [ ] **Step 4: Build gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build`
 Expected: `Exited with code 0`.
 
 - [ ] **Step 5: Commit**
@@ -440,15 +440,15 @@ Same casing rules. Note: the meta.json titles ("Events", "Session state", etc.) 
 ```mdx
 ---
 title: Events
-description: All agentkit session state derives from an append-only event log of typed events, with wire-format type strings that are identical across the Python and TypeScript SDKs.
+description: All kaji session state derives from an append-only event log of typed events, with wire-format type strings that are identical across the Python and TypeScript SDKs.
 ---
 
 All session state is derived from an append-only event log. Events are
 discriminated by `type` (e.g. `user.message`, `tool.call.completed`,
 `agent.message.completed`). The full list lives in the SDK source:
 
-- `agentkit/sdk/agentkit/infra/events/schemas.py` (Python)
-- `agentkit/ts/src/events/schemas.ts` (TypeScript)
+- `kaji/sdk/kaji/infra/events/schemas.py` (Python)
+- `kaji/ts/src/events/schemas.ts` (TypeScript)
 
 The event-type string values are the wire format and are identical across both
 SDKs, so an event log written by one can be replayed by the other.
@@ -487,10 +487,10 @@ before the next loop iteration.
 
 ```python
 # Python
-@agentkit.register_tool(
-    agentkit.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
+@kaji.register_tool(
+    kaji.tool_spec_from_model("get_weather", "Look up weather", GetWeather)
 )
-async def get_weather(ctx: agentkit.ToolContext, args: dict) -> dict:
+async def get_weather(ctx: kaji.ToolContext, args: dict) -> dict:
     return {"tempF": 68}
 ```
 
@@ -511,12 +511,12 @@ default. Inject one when the tool needs persistence).
 ```mdx
 ---
 title: Event Bus
-description: The event bus fans events out to per-session subscribers, with an in-memory default in both SDKs and a Redis Stream-backed bus in agentkit-serve for cross-process durability.
+description: The event bus fans events out to per-session subscribers, with an in-memory default in both SDKs and a Redis Stream-backed bus in kaji-serve for cross-process durability.
 ---
 
 The event bus fans out events to subscribers per session. In the Python SDK the
 default implementation is in-memory (`InMemoryEventBus`). A Redis Stream-backed
-bus is used in `agentkit-serve` for cross-process durability. The TypeScript SDK
+bus is used in `kaji-serve` for cross-process durability. The TypeScript SDK
 ships an in-memory bus, which is sufficient for an embedded SDK.
 ```
 
@@ -530,7 +530,7 @@ description: LLM, TTS, and STT providers implement common interfaces selected by
 
 LLM providers implement a common interface. The Python SDK ships `kimi`
 (OpenRouter/Kimi, the default), `gemini`, `openai`, and `mock` (for tests),
-selected via `AGENTKIT_MODEL_PROVIDER`. Adding a provider means implementing the
+selected via `KAJI_MODEL_PROVIDER`. Adding a provider means implementing the
 `ModelProvider` protocol and registering it.
 
 TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
@@ -543,7 +543,7 @@ imports provider-specific types.
 
 - [ ] **Step 6: Build gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build`
 Expected: `Exited with code 0`.
 
 - [ ] **Step 7: Commit**
@@ -567,8 +567,8 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 Run:
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-bun --filter @agentkit/docs format
-bunx turbo run build typecheck lint format:check --filter=@agentkit/docs
+bun --filter @kaji/docs format
+bunx turbo run build typecheck lint format:check --filter=@kaji/docs
 ```
 Expected: all tasks successful. lint 0 warnings/0 errors. (`format` writes; `format:check` then passes.)
 
@@ -586,7 +586,7 @@ Expected: exit 0, "Compiled successfully". (Proves no styling/content file was l
 
 - [ ] **Step 3: Start dev server**
 
-Run (background): `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs dev`
+Run (background): `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs dev`
 Note the actual port from output (3000, or next free port).
 
 - [ ] **Step 4: Dogfood with the gstack /browse skill**
@@ -612,7 +612,7 @@ Summarize: gate results (actual output), clean-build exit code, what the dogfood
 
 **Spec coverage:**
 - Styling: black theme (Task 3 step 1) ✓; Geist fonts via geist package + bun (Tasks 1, 3) ✓; font-var wiring (Task 3 step 3) ✓.
-- Content: Title Case + sentence case + rich descriptions across all 9 pages (Tasks 4, 5, 6) ✓; preserve agentkit/identifiers/env vars (casing rules repeated per task, and the rewritten text keeps them verbatim) ✓; gemini entry kept (Task 6 step 5) ✓; no em-dashes (checked in drafted text) ✓; meta.json untouched ✓.
+- Content: Title Case + sentence case + rich descriptions across all 9 pages (Tasks 4, 5, 6) ✓; preserve kaji/identifiers/env vars (casing rules repeated per task, and the rewritten text keeps them verbatim) ✓; gemini entry kept (Task 6 step 5) ✓; no em-dashes (checked in drafted text) ✓; meta.json untouched ✓.
 - Non-goals respected: no framework change, no marketing/blog, no Typesense, no custom MDX components, no landing animations, no restructure. Nothing in the plan adds them ✓.
 - bun-only (Task 1 + package rule) ✓. Branch feat/docs (already on it) ✓. Separate styling/content commits ✓.
 - Verification: build/typecheck/lint/format + clean-clone + /browse dogfood (Task 7) ✓.

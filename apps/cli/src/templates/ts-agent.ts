@@ -21,12 +21,12 @@ export function tsAgentTemplate(provider: string): string {
   const factoryName = resolveFactory(provider);
   return `import {
   AgentBuilder,
-  AgentKitEvent,
+  KajiEvent,
   EventBus,
   EventType,
   InMemoryEventStore,
   ${factoryName},
-} from "@agentkit/sdk";
+} from "@kaji/sdk";
 
 async function main() {
   const bus = new EventBus();
@@ -37,7 +37,7 @@ async function main() {
     .systemPrompt("You are a helpful assistant.")
     .build({ bus, store });
 
-  const sessionCreated = AgentKitEvent.parse({
+  const sessionCreated = KajiEvent.parse({
     type: EventType.SESSION_CREATED,
     session_id: "s1",
   });
@@ -60,8 +60,8 @@ main().catch((e) => {
 }
 
 export function tsEnvTemplate(provider: string): string {
-  return `# agentkit
-AGENTKIT_MODEL_PROVIDER=${provider}
+  return `# kaji
+KAJI_MODEL_PROVIDER=${provider}
 
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...

@@ -1,8 +1,8 @@
-# AgentKit TS Agent Runtime Implementation Plan
+# Kaji TS Agent Runtime Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Port the Python `AgentRuntime` ReAct loop to TypeScript, giving `@agentkit/sdk` a full tool-using agent that runs with no external services, validated by a sample app in `demos/`.
+**Goal:** Port the Python `AgentRuntime` ReAct loop to TypeScript, giving `@kaji/sdk` a full tool-using agent that runs with no external services, validated by a sample app in `demos/`.
 
 **Architecture:** Settle the `publish` sync/async question first (it stays sync — no change needed), then build the provider layer (interface + mock + OpenAI), then the agent runtime (`runTurn`: replay → call provider → emit events → execute tools → loop), then wire the tool registry into the loop. A minimal demo script in `demos/ts-agent/` validates the full loop end-to-end.
 
@@ -45,7 +45,7 @@ Edit `packages/ts/src/events/bus.ts`. Replace:
 
 ```ts
   /** Publish an event to every subscriber of its session. */
-  publish(event: AgentKitEvent): void {
+  publish(event: KajiEvent): void {
 ```
 
 with:
@@ -60,7 +60,7 @@ with:
    * there too. Keeping this sync avoids an unnecessary async boundary and
    * makes the TS runtime port straightforward.
    */
-  publish(event: AgentKitEvent): void {
+  publish(event: KajiEvent): void {
 ```
 
 - [ ] **Step 2: Run existing tests to confirm nothing changed**
@@ -123,7 +123,7 @@ Expected: FAIL — `Cannot find module '../src/providers/base'`
 ```ts
 /**
  * Provider interface for LLM backends, mirroring
- * `agentkit.runtime.providers.base.ModelProvider`.
+ * `kaji.runtime.providers.base.ModelProvider`.
  *
  * Each provider translates the neutral message + tool format to its own
  * API at its boundary. The runtime never imports provider-specific types.
@@ -269,7 +269,7 @@ Expected: FAIL — `Cannot find module '../src/providers/registry'`
 ```ts
 /**
  * Provider registry: a process-level map from name to `ModelProvider`.
- * Mirrors `agentkit.runtime.providers.registry`.
+ * Mirrors `kaji.runtime.providers.registry`.
  */
 import type { ModelProvider } from "./base";
 
@@ -320,7 +320,7 @@ git commit -m "feat(ts): add provider registry"
 **Files:**
 - Create: `packages/ts/src/providers/mock.ts`
 
-The mock provider mirrors `agentkit.runtime.providers.mock`: on the first call it requests the first available tool; after a tool result is in history it replies with a fixed text response. This drives the full tool loop without a network call.
+The mock provider mirrors `kaji.runtime.providers.mock`: on the first call it requests the first available tool; after a tool result is in history it replies with a fixed text response. This drives the full tool loop without a network call.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -400,7 +400,7 @@ Expected: FAIL — `Cannot find module '../src/providers/mock'`
 
 ```ts
 /**
- * Mock LLM provider for tests, mirroring `agentkit.runtime.providers.mock`.
+ * Mock LLM provider for tests, mirroring `kaji.runtime.providers.mock`.
  *
  * Behaviour:
  * - If tools are available and no tool result is yet in history: call the
@@ -603,7 +603,7 @@ Expected: FAIL — `Cannot find module '../src/providers/openai'`
 
 ```ts
 /**
- * OpenAI LLM provider, mirroring `agentkit.runtime.providers.openai`.
+ * OpenAI LLM provider, mirroring `kaji.runtime.providers.openai`.
  * Translates the neutral message/tool format to OpenAI's chat completions API.
  */
 import OpenAI from "openai";
@@ -837,7 +837,7 @@ Expected: FAIL — `Cannot find module '../src/runtime/cancellation'`
 ```ts
 /**
  * Cancellation token for the agent runtime loop, mirroring
- * `agentkit.runtime.agents.runtime.CancellationToken`.
+ * `kaji.runtime.agents.runtime.CancellationToken`.
  */
 export class CancellationToken {
   private _cancelled = false;
@@ -863,7 +863,7 @@ export class CancellationToken {
 ```ts
 /**
  * Builds the provider message list from replayed session state.
- * Mirrors `agentkit.runtime.agents.runtime` message construction.
+ * Mirrors `kaji.runtime.agents.runtime` message construction.
  */
 import type { Message } from "../sessions/replay";
 import type { ProviderMessage } from "../providers/base";
@@ -933,7 +933,7 @@ import { AgentRuntime } from "../src/runtime/runtime";
 import { MockProvider } from "../src/providers/mock";
 import { InMemoryEventStore } from "../src/events/store";
 import { EventBus } from "../src/events/bus";
-import { AgentKitEvent, EventType } from "../src/index";
+import { KajiEvent, EventType } from "../src/index";
 import { clearTools, registerTool, toolSpecFromSchema } from "../src/tools/registry";
 import { afterEach } from "vitest";
 import { z } from "zod";
@@ -953,10 +953,10 @@ describe("AgentRuntime.runTurn", () => {
 
   async function seedSession(store: InMemoryEventStore, sessionId: string) {
     await store.append(
-      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
     );
     await store.append(
-      AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: sessionId, content: "hello" }),
+      KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: sessionId, content: "hello" }),
     );
   }
 
@@ -965,7 +965,7 @@ describe("AgentRuntime.runTurn", () => {
     const sessionId = "s-no-tools";
     await seedSession(store, sessionId);
 
-    const emitted: AgentKitEvent[] = [];
+    const emitted: KajiEvent[] = [];
     const sub = bus.subscribe(sessionId);
     const collectPromise = (async () => {
       for await (const event of sub) {
@@ -990,7 +990,7 @@ describe("AgentRuntime.runTurn", () => {
       async (_ctx, _args) => ({ tempF: 68 }),
     );
 
-    const emitted: AgentKitEvent[] = [];
+    const emitted: KajiEvent[] = [];
     const sub = bus.subscribe(sessionId);
     const collectPromise = (async () => {
       for await (const event of sub) {
@@ -1022,7 +1022,7 @@ describe("AgentRuntime.runTurn", () => {
       async () => { throw new Error("tool error"); },
     );
 
-    const emitted: AgentKitEvent[] = [];
+    const emitted: KajiEvent[] = [];
     const sub = bus.subscribe(sessionId);
     const collectPromise = (async () => {
       for await (const event of sub) {
@@ -1063,7 +1063,7 @@ Expected: FAIL — `Cannot find module '../src/runtime/runtime'`
 ```ts
 /**
  * Agent runtime: the ReAct tool-using loop, mirroring
- * `agentkit.runtime.agents.runtime.AgentRuntime`.
+ * `kaji.runtime.agents.runtime.AgentRuntime`.
  *
  * Each `runTurn` call:
  * 1. Replays session state from the event store
@@ -1074,7 +1074,7 @@ Expected: FAIL — `Cannot find module '../src/runtime/runtime'`
  * 6. Loops until the provider returns no tool calls
  * 7. Emits AgentMessageCompleted with the final text
  */
-import { AgentKitEvent, EventType } from "../events/schemas";
+import { KajiEvent, EventType } from "../events/schemas";
 import type { EventStore } from "../events/store";
 import { EventBus } from "../events/bus";
 import { replaySession } from "../sessions/replay";
@@ -1116,8 +1116,8 @@ export class AgentRuntime {
     const token = options.cancellationToken ?? new CancellationToken();
     token.throwIfCancelled();
 
-    const emit = async (input: Parameters<typeof AgentKitEvent.parse>[0]) => {
-      const event = AgentKitEvent.parse({ ...input, session_id: sessionId });
+    const emit = async (input: Parameters<typeof KajiEvent.parse>[0]) => {
+      const event = KajiEvent.parse({ ...input, session_id: sessionId });
       await this.store.append(event);
       this.bus.publish(event);
     };
@@ -1230,9 +1230,9 @@ Replace the existing content with:
 
 ```ts
 /**
- * AgentKit: build agents in TypeScript.
+ * Kaji: build agents in TypeScript.
  *
- * Infra-free core, mirroring the Python `agentkit` SDK's public surface:
+ * Infra-free core, mirroring the Python `kaji` SDK's public surface:
  * event-sourced building blocks (events, bus, store, replay), tool registry,
  * provider layer, and agent runtime. Nothing here requires a database, server,
  * or any environment configured.
@@ -1243,8 +1243,8 @@ export const VERSION = "0.1.0";
 // Events
 export { EventType } from "./events/types";
 export {
-  AgentKitEvent,
-  type AgentKitEventInput,
+  KajiEvent,
+  type KajiEventInput,
   type BaseEvent,
 } from "./events/schemas";
 export { EventBus } from "./events/bus";
@@ -1329,7 +1329,7 @@ A minimal script that registers a tool, runs one turn with the mock provider, an
     "start": "bun run index.ts"
   },
   "dependencies": {
-    "@agentkit/sdk": "workspace:*",
+    "@kaji/sdk": "workspace:*",
     "zod": "^4.3.6"
   }
 }
@@ -1346,7 +1346,7 @@ A minimal script that registers a tool, runs one turn with the mock provider, an
  * No API key or external services needed.
  */
 import {
-  AgentKitEvent,
+  KajiEvent,
   AgentRuntime,
   EventBus,
   EventType,
@@ -1354,7 +1354,7 @@ import {
   MockProvider,
   registerTool,
   toolSpecFromSchema,
-} from "@agentkit/sdk";
+} from "@kaji/sdk";
 import { z } from "zod";
 
 // 1. Set up infra-free building blocks
@@ -1379,10 +1379,10 @@ registerTool(
 // 3. Seed a session
 const sessionId = `demo-${Date.now()}`;
 await store.append(
-  AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+  KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
 );
 await store.append(
-  AgentKitEvent.parse({
+  KajiEvent.parse({
     type: EventType.USER_MESSAGE,
     session_id: sessionId,
     content: "What is the weather in Seattle?",

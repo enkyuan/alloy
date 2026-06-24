@@ -6,10 +6,10 @@ import { runChecks } from "../../src/commands/doctor.js";
 
 describe("doctor.runChecks", () => {
   it("flags missing provider env", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-doc-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { "@agentkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@kaji/sdk": "0.1.0" } }),
     );
     const out = runChecks({ cwd: dir, env: {}, nodeVersion: "v22.0.0" });
     expect(out.failed).toBe(true);
@@ -17,10 +17,10 @@ describe("doctor.runChecks", () => {
   });
 
   it("passes when sdk and provider key are present", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-doc-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { "@agentkit/sdk": "0.1.0" } }),
+      JSON.stringify({ dependencies: { "@kaji/sdk": "0.1.0" } }),
     );
     const out = runChecks({ cwd: dir, env: { OPENAI_API_KEY: "sk" }, nodeVersion: "v22.0.0" });
     expect(out.failed).toBe(false);

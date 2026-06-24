@@ -14,12 +14,12 @@ process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
 async function main() {
-  const program = new Command("agentkit");
+  const program = new Command("kaji");
   const pkg = readNearestPackageJson(new URL("..", import.meta.url).pathname);
   const version = (pkg?.version as string | undefined) ?? "0.1.0";
 
   program
-    .description("agentkit CLI")
+    .description("kaji CLI")
     .version(version)
     .addCommand(init)
     .addCommand(gen)

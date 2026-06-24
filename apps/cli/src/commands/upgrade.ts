@@ -16,7 +16,7 @@ export interface OutdatedEntry {
   depType: "prod" | "dev";
 }
 
-const PREFIX = "@agentkit/";
+const PREFIX = "@kaji/";
 
 export async function findOutdated(
   cwd: string,
@@ -65,7 +65,7 @@ async function run(cmd: string[], cwd: string): Promise<void> {
 }
 
 export const upgrade = new Command("upgrade")
-  .description("upgrade @agentkit/* packages to latest")
+  .description("upgrade @kaji/* packages to latest")
   .option("-c, --cwd <cwd>", "working directory", process.cwd())
   .option("-y, --yes", "skip confirmation", false)
   .action(async (opts: { cwd: string; yes: boolean }) => {
@@ -74,7 +74,7 @@ export const upgrade = new Command("upgrade")
     const outdated = await findOutdated(cwd);
     sp.stop();
     if (outdated.length === 0) {
-      console.log("All agentkit packages are up to date.");
+      console.log("All kaji packages are up to date.");
       return;
     }
     console.log(`\nThe following packages can be upgraded:\n`);

@@ -10,10 +10,10 @@ import {
 } from "@components/docs/icons/editors";
 
 const mcpCommands = [
-  { name: "Cursor", command: "npx agentkit mcp --cursor" },
-  { name: "Claude Code", command: "npx agentkit mcp --claude-code" },
-  { name: "Open Code", command: "npx agentkit mcp --open-code" },
-  { name: "Manual", command: "npx agentkit mcp --manual" },
+  { name: "Cursor", command: "npx kaji mcp --cursor" },
+  { name: "Claude Code", command: "npx kaji mcp --claude-code" },
+  { name: "Open Code", command: "npx kaji mcp --open-code" },
+  { name: "Manual", command: "npx kaji mcp --manual" },
 ];
 
 type Props = {

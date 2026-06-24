@@ -1,0 +1,12 @@
+{
+  "name": "@ryo/api",
+  "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "echo 'API runs in Docker — use: docker compose -f docker/ryo/docker-compose.yml up -d api'",
+    "build": "go build -o bin/api ./cmd/api/main.go",
+    "lint": "echo 'go lint runs in CI'",
+    "clean": "rm -rf bin"
+  }
+}

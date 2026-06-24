@@ -33,7 +33,7 @@ export function HeroTitle() {
               />
             </svg>
             <span className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-100 font-light">
-              Introducing <span className="font-normal">| agentkit</span>
+              Introducing <span className="font-normal">| kaji</span>
             </span>
             <svg
               xmlns="http://www.w3.org/2000/svg"

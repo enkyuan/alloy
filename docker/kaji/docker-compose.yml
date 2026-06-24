@@ -1,0 +1,386 @@
+# Kaji Application - Unified Docker Compose Configuration
+#
+# Usage:
+#   Start all services:    docker compose up -d
+#   Stop all services:     docker compose down
+#   Destroy everything:    docker compose down -v --remove-orphans
+#   View logs:             docker compose logs -f [service_name]
+#
+# Services:
+#   - Kaji SDK (FastAPI)
+#   - Redis (Caching, Sessions, Streams, TaskIQ)
+#   - Supabase Stack (Auth, Database, Storage, etc.)
+
+name: kaji
+
+networks:
+  kaji_network:
+    name: kaji-network
+    driver: bridge
+
+services:
+  # ============================================================================
+  # Kaji Application Services
+  # ============================================================================
+
+  redis:
+    container_name: redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - kaji_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  api:
+    container_name: kaji-sdk
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8080}:8080"
+    networks:
+      - kaji_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+
+      # TaskIQ
+      TASKIQ_BROKER: redis
+      TASKIQ_RESULT_BACKEND: redis
+
+      # Supabase
+      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+
+      # Token encryption (falls back to JWT_SECRET if not set)
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+
+      # Application
+      DEBUG: ${DEBUG:-false}
+      API_V1_PREFIX: /api/v1
+      PROJECT_NAME: Kaji SDK
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:5173}
+
+      # Python logging
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Soniox
+      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
+
+      # Gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+
+      # Agent pipeline
+      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
+      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # Mount source code for development (comment out for production)
+      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
+      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+
+  worker:
+    container_name: kaji-worker
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    healthcheck:
+      test:
+        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - kaji_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+
+      # TaskIQ
+      TASKIQ_BROKER: redis
+      TASKIQ_RESULT_BACKEND: redis
+
+      # Supabase
+      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+
+      # Soniox
+      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
+
+      # Gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+
+      # Application
+      DEBUG: ${DEBUG:-false}
+      PROJECT_NAME: Kaji Worker
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+    command:
+      [
+        "taskiq",
+        "worker",
+        "kaji_serve.workers.broker:broker",
+        "kaji_serve.workers.tasks.tools",
+      ]
+    volumes:
+      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
+      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+
+  bus-worker:
+    container_name: kaji-bus-worker
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    healthcheck:
+      test:
+        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - kaji_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Redis
+      REDIS_URL: ${REDIS_URL}
+
+      # TaskIQ
+      TASKIQ_BROKER: redis
+      TASKIQ_RESULT_BACKEND: redis
+
+      # Supabase
+      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+
+      # Soniox
+      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
+
+      # Gemini
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
+
+      # Agent pipeline
+      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
+      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
+
+      # Application
+      DEBUG: ${DEBUG:-false}
+      PROJECT_NAME: Kaji Bus Worker
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+    command: ["python", "-m", "kaji_serve.workers.main"]
+    volumes:
+      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
+      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+
+  # ============================================================================
+  # Supabase Services
+  # ============================================================================
+
+  kong:
+    container_name: supabase-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - kaji_network
+    ports:
+      - ${KONG_HTTP_PORT}:8000/tcp
+      - ${KONG_HTTPS_PORT}:8443/tcp
+    depends_on:
+      auth:
+        condition: service_started
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./supabase/volumes/api/kong.yml:/home/kong/temp.yml:ro,z
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
+
+  auth:
+    container_name: supabase-auth
+    image: supabase/gotrue:v2.172.1
+    networks:
+      - kaji_network
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:9999/health",
+        ]
+      timeout: 5s
+      interval: 5s
+      retries: 3
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL}
+
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+
+      GOTRUE_SITE_URL: ${SITE_URL}
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
+      GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
+
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: ${ENABLE_EMAIL_SIGNUP}
+      GOTRUE_MAILER_AUTOCONFIRM: ${ENABLE_EMAIL_AUTOCONFIRM}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${SMTP_ADMIN_EMAIL}
+      GOTRUE_SMTP_HOST: ${SMTP_HOST}
+      GOTRUE_SMTP_PORT: ${SMTP_PORT}
+      GOTRUE_SMTP_USER: ${SMTP_USER}
+      GOTRUE_SMTP_PASS: ${SMTP_PASS}
+      GOTRUE_SMTP_SENDER_NAME: ${SMTP_SENDER_NAME}
+      GOTRUE_MAILER_URLPATHS_INVITE: ${MAILER_URLPATHS_INVITE}
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: ${MAILER_URLPATHS_CONFIRMATION}
+      GOTRUE_MAILER_URLPATHS_RECOVERY: ${MAILER_URLPATHS_RECOVERY}
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: ${MAILER_URLPATHS_EMAIL_CHANGE}
+
+      GOTRUE_EXTERNAL_PHONE_ENABLED: ${ENABLE_PHONE_SIGNUP}
+      GOTRUE_SMS_AUTOCONFIRM: ${ENABLE_PHONE_AUTOCONFIRM}
+
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: ${ENABLE_GOOGLE_OAUTH}
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
+      GOTRUE_EXTERNAL_GOOGLE_SKIP_NONCE_CHECK: ${GOOGLE_SKIP_NONCE_CHECK}
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: ${ENABLE_ANONYMOUS_USERS}
+
+  # PostgREST image has no shell; use service_started, not service_healthy.
+  db:
+    container_name: supabase-db
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    networks:
+      - kaji_network
+    volumes:
+      # Only the init scripts GoTrue (auth) needs to boot against Postgres.
+      # The realtime/analytics/storage/pooler/functions scripts were dropped
+      # with their services.
+      - ./supabase/volumes/db/roles.sql:/docker-entrypoint-initdb.d/init-scripts/99-roles.sql:Z
+      - ./supabase/volumes/db/jwt.sql:/docker-entrypoint-initdb.d/init-scripts/99-jwt.sql:Z
+      - ./supabase/volumes/db/init/data.sql:/docker-entrypoint-initdb.d/init-scripts/01-data.sql:Z
+      - ./supabase/volumes/db/data:/var/lib/postgresql/data:Z
+      - db-config:/etc/postgresql-custom
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      POSTGRES_HOST: /var/run/postgresql
+      PGPORT: ${POSTGRES_PORT}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: ${JWT_EXPIRY}
+    command: [
+        "postgres",
+        "-c",
+        "config_file=/etc/postgresql/postgresql.conf",
+        "-c",
+        "log_min_messages=fatal", # prevents Realtime polling queries from appearing in logs
+      ]
+
+volumes:
+  db-config:
+  redis-data:
+    driver: local

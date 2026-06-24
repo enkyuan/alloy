@@ -1,10 +1,10 @@
 {
-  "name": "@agentkit/cli",
+  "name": "@kaji/cli",
   "version": "0.1.0",
-  "description": "The CLI for agentkit",
-  "license": "MIT",
+  "description": "The CLI for kaji",
+  "license": "SEE LICENSE IN ../../LICENSE",
   "bin": {
-    "agentkit": "./dist/index.js"
+    "kaji": "./dist/index.js"
   },
   "files": [
     "dist"
@@ -37,7 +37,7 @@
     "yocto-spinner": "^1.2.0"
   },
   "devDependencies": {
-    "@agentkit/shared": "workspace:*",
+    "@kaji/shared": "workspace:*",
     "@types/node": "^25.9.1",
     "@types/semver": "^7.7.1",
     "oxfmt": "^0.41.0",

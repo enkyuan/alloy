@@ -7,9 +7,9 @@ orders, answer questions, and collect payments. a merchant configures an agent
 via the studio web app; the agent embeds on their site or phone system and
 handles the full customer interaction, including payment.
 
-**agentkit** is the embeddable sdk that powers agentpay's agent runtime: an
+**kaji** is the embeddable sdk that powers agentpay's agent runtime: an
 event-sourced agent loop, toolgen, pluggable llm providers, and optional voice
-edges through `agentkit-serve`. agentkit can also be used standalone in any
+edges through `kaji-serve`. kaji can also be used standalone in any
 python or typescript project.
 
 ## repository layout
@@ -20,16 +20,16 @@ python or typescript project.
 | [`agentpay/consumer`](agentpay/consumer) | agentpay | consumer identity, wallet, transaction history | go, postgresql |
 | [`agentpay/auth`](agentpay/auth) | agentpay | auth service (better-auth + jwt) | bun, typescript |
 | [`apps/web`](apps/web) | agentpay | studio: configure agents, connect payment providers | react, tanstack router, shadcn |
-| [`agentkit/sdk`](agentkit/sdk) | agentkit | `agentkit`: agent runtime, toolgen, providers | python 3.11 |
-| [`agentkit/serve`](agentkit/serve) | agentkit | `agentkit-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
-| [`agentkit/ts`](agentkit/ts) | agentkit | `@agentkit/sdk`: typescript runtime port | typescript |
+| [`kaji/sdk`](kaji/sdk) | kaji | `kaji`: agent runtime, toolgen, providers | python 3.11 |
+| [`kaji/serve`](kaji/serve) | kaji | `kaji-serve`: fastapi server + workers | python 3.11, fastapi, taskiq |
+| [`kaji/ts`](kaji/ts) | kaji | `@kaji/sdk`: typescript runtime port | typescript |
 
 each package has its own readme with setup instructions and architecture details.
 
 ## architecture
 
-agentpay is built on agentkit. the go api configures and spawns agents; the
-agentkit runtime handles the actual llm loop, tool execution, and voice
+agentpay is built on kaji. the go api configures and spawns agents; the
+kaji runtime handles the actual llm loop, tool execution, and voice
 modalities. payment collection is a tool the agent calls.
 
 ```
@@ -49,7 +49,7 @@ modalities. payment collection is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  agentkit runtime        │   agentkit/sdk + agentkit/serve
+   │  kaji runtime        │   kaji/sdk + kaji/serve
    │  llm loop · toolgen      │   serve adds fastapi, redis, postgres, voice
    └──────────────────────────┘
 ```
@@ -60,7 +60,7 @@ modalities. payment collection is a tool the agent calls.
 python 3.11+ and [poetry](https://python-poetry.org/); docker (postgres + redis).
 
 ```bash
-# js/ts workspace (studio + agentkit/ts)
+# js/ts workspace (studio + kaji/ts)
 bun install
 
 # go api
@@ -72,10 +72,14 @@ go run ./cmd/api/main.go
 # studio
 bun --filter @agentpay/web dev
 
-# agentkit python sdk
-cd agentkit/sdk && poetry install && poetry run pytest
+# kaji python sdk
+cd kaji/sdk && poetry install && poetry run pytest
 ```
 
 see [`docs/AGENTPAY.md`](docs/AGENTPAY.md) for the full agentpay setup, routes, and environment variables.
-see [`docs/AGENTKIT.md`](docs/AGENTKIT.md) for agentkit concepts, architecture, and package overview.
-see [`agentkit/MVP.md`](agentkit/MVP.md) for the five-step agentkit developer path (install → configure provider → register tools → run agent → inspect events).
+see [`docs/KAJI.md`](docs/KAJI.md) for kaji concepts, architecture, and package overview.
+see [`kaji/MVP.md`](kaji/MVP.md) for the five-step kaji developer path (install → configure provider → register tools → run agent → inspect events).
+
+## license
+
+source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). the source is public and contributions are welcome, but commercial use and redistribution are not permitted. this is not an OSI-approved open-source license.

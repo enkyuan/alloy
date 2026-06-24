@@ -1,6 +1,6 @@
 ---
 title: Event Bus
-description: The event bus fans events out to per-session subscribers. In-memory by default in both SDKs; Redis Streams in agentkit-serve for cross-process durability.
+description: The event bus fans events out to per-session subscribers. In-memory by default in both SDKs; Redis Streams in kaji-serve for cross-process durability.
 ---
 
 Subscribe to the bus when you want to stream events as they happen -- e.g.
@@ -8,5 +8,5 @@ push agent deltas to a UI, or tee them into your own log.
 
 The default implementation is in-memory (`InMemoryEventBus` in Python,
 `EventBus` in TS), sufficient for embedded single-process agents.
-`agentkit-serve` swaps in a Redis Stream-backed bus for cross-process
+`kaji-serve` swaps in a Redis Stream-backed bus for cross-process
 durability.

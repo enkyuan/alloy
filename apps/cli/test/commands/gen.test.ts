@@ -15,29 +15,20 @@ const spec = JSON.stringify({
 
 describe("gen command", () => {
   it("generates TypeScript tools", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-gen-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-gen-"));
     const specPath = join(dir, "spec.json");
     writeFileSync(specPath, spec);
-    await gen.parseAsync(["node", "agentkit", "--spec", specPath, "--out", dir, "--lang", "ts"]);
+    await gen.parseAsync(["node", "kaji", "--spec", specPath, "--out", dir, "--lang", "ts"]);
     const out = readFileSync(join(dir, "index.ts"), "utf-8");
     expect(out).toMatch(/export const tools/);
     expect(out).toMatch(/get_pet/);
   });
 
   it("generates Python tools", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-gen-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-gen-"));
     const specPath = join(dir, "spec.json");
     writeFileSync(specPath, spec);
-    await gen.parseAsync([
-      "node",
-      "agentkit",
-      "--spec",
-      specPath,
-      "--out",
-      dir,
-      "--lang",
-      "python",
-    ]);
+    await gen.parseAsync(["node", "kaji", "--spec", specPath, "--out", dir, "--lang", "python"]);
     const out = readFileSync(join(dir, "tools.py"), "utf-8");
     expect(out).toMatch(/TOOLS\s*=/);
     expect(out).toMatch(/async def get_pet/);

@@ -1,4 +1,4 @@
-// agentkit capabilities and extension points, grouped by area.
+// kaji capabilities and extension points, grouped by area.
 export const plugins = [
   { name: "OpenAI", category: "provider" },
   { name: "Kimi", category: "provider" },

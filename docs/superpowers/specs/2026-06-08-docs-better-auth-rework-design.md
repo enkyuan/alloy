@@ -16,7 +16,7 @@ Scope decisions (from brainstorming):
   rebuild a fully custom sidebar with `enabled:false`.
 - Tokens: full shadcn token set (colors, charts, sidebar tokens, radius,
   spacing, shadows) via `@theme inline`, layered onto `black.css`.
-- Components: write ORIGINAL agentkit components, using better-auth's structure
+- Components: write ORIGINAL kaji components, using better-auth's structure
   only as reference.
 
 ## IP / licensing boundary (important)
@@ -25,7 +25,7 @@ better-auth is MIT-licensed. This rework ADAPTS design-token *values* (color,
 radius, spacing, shadow numbers — factual design configuration) and layout
 *structure/config*. It does NOT copy better-auth's component source files
 (`custom-sidebar.tsx`, `docs-sidebar.tsx`, `features.tsx`, etc.) verbatim. All
-React components are written fresh for agentkit. The better-auth checkout stays
+React components are written fresh for kaji. The better-auth checkout stays
 a read-only /tmp reference; nothing of theirs is committed verbatim.
 
 ## context / current state
@@ -52,7 +52,7 @@ and a subtle grid/noise textured background.
   components.
 - A full shadcn token layer is available so components use `bg-card`,
   `border-border`, `rounded-md`, etc.
-- A real (small) agentkit home page replaces "Hello World".
+- A real (small) kaji home page replaces "Hello World".
 - No framework change, no AI chat, no Typesense, no Framer Motion, no marketing
   pages beyond the single home page. Stays on Next.js + fumadocs.
 
@@ -144,8 +144,8 @@ forcing it into existing content pages.
 
 ### 5. Home page — `apps/docs/app/(home)/page.tsx`
 
-Replace "Hello World" with a small, original agentkit front door: a hero line
-(what agentkit is), a couple of feature cards using the new card component, and a
+Replace "Hello World" with a small, original kaji front door: a hero line
+(what kaji is), a couple of feature cards using the new card component, and a
 clear CTA to `/docs`. Token-driven styling. NOT a full marketing landing.
 
 ### 6. New component files (original)
@@ -155,7 +155,7 @@ clear CTA to `/docs`. Token-driven styling. NOT a full marketing landing.
 
 ## prose / brand
 
-Brand `agentkit` stays lowercase. No em-dashes in any prose added (home page
+Brand `kaji` stays lowercase. No em-dashes in any prose added (home page
 copy). Terse, technical.
 
 ## branch / process
@@ -169,9 +169,9 @@ copy). Terse, technical.
 
 ## verification
 
-1. `bun --filter @agentkit/docs build` passes (all pages compile).
-2. `bun --filter @agentkit/docs typecheck` passes.
-3. `turbo run lint --filter=@agentkit/docs` and `format:check` do not regress.
+1. `bun --filter @kaji/docs build` passes (all pages compile).
+2. `bun --filter @kaji/docs typecheck` passes.
+3. `turbo run lint --filter=@kaji/docs` and `format:check` do not regress.
 4. Clean-clone build: `git archive HEAD apps/docs | tar -x` into a temp dir,
    `bun install && bun run build` -> exit 0 (catch untracked files, esp. new
    components/ files and any lib/ files vs the Python lib/ gitignore rule).

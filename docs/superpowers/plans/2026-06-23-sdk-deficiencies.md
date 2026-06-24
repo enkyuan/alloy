@@ -1,10 +1,10 @@
-# AgentKit SDK Deficiencies Implementation Plan
+# Kaji SDK Deficiencies Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the concrete gaps surfaced by the 2026-06-23 review of `agentkit/sdk`: first-class OpenRouter provider, fixed OpenRouter header on Kimi, constructor parity across providers, removal of serve-only fields from SDK `Settings`, deletion of the empty STT subpackage, unification of the Gemini `Service`/`Provider` split, slimmer `AgentRuntime.__init__`, and a richer `TextSession` (streaming, ergonomic accessors, system-prompt and tool wiring) so the text modality reaches the same bar voice already has.
+**Goal:** Close the concrete gaps surfaced by the 2026-06-23 review of `kaji/sdk`: first-class OpenRouter provider, fixed OpenRouter header on Kimi, constructor parity across providers, removal of serve-only fields from SDK `Settings`, deletion of the empty STT subpackage, unification of the Gemini `Service`/`Provider` split, slimmer `AgentRuntime.__init__`, and a richer `TextSession` (streaming, ergonomic accessors, system-prompt and tool wiring) so the text modality reaches the same bar voice already has.
 
-**Architecture:** Each task touches one cohesive slice — a provider file, the settings module, a modality adapter — and lands with its own failing test, implementation, passing test, commit. The neutral `ProviderMessage` / `ProviderToolSpec` / `to_openai|to_anthropic|to_gemini` boundary at `agentkit/runtime/tools/payload.py` stays the single source of truth for tool format translation; provider classes change only at their own seam. The `TextSession` surface is extended without breaking its current `send()` signature — new methods are additive — so existing callers (`agentkit-serve`, demos) keep working through the upgrade.
+**Architecture:** Each task touches one cohesive slice — a provider file, the settings module, a modality adapter — and lands with its own failing test, implementation, passing test, commit. The neutral `ProviderMessage` / `ProviderToolSpec` / `to_openai|to_anthropic|to_gemini` boundary at `kaji/runtime/tools/payload.py` stays the single source of truth for tool format translation; provider classes change only at their own seam. The `TextSession` surface is extended without breaking its current `send()` signature — new methods are additive — so existing callers (`kaji-serve`, demos) keep working through the upgrade.
 
 **Tech Stack:** Python 3.11, Poetry, Pydantic v2, `pydantic-settings`, `httpx`, `pytest`, `pytest-asyncio`, optional provider SDKs (`openai`, `anthropic`, `google-genai`).
 
@@ -12,8 +12,8 @@
 
 - **Pre-1.0, no back-compat shims unless explicitly requested.** Rename and remove cleanly; the user instruction "No back-compat without explicit ask" applies to every task. Do not add legacy aliases, deprecation warnings, or transitional re-exports.
 - **No em-dashes, no slop, terse technical sentences** in any docstring, comment, README, or CHANGELOG line touched by this plan.
-- **Lazy imports preserved.** `import agentkit` must continue to work with zero environment configured and zero optional dependencies installed; no task may add a top-level import of `openai`, `anthropic`, `google.genai`, or `redis` to a module reachable from `agentkit/__init__.py`'s `_LAZY` map.
-- **Tests use `pytest-asyncio` in auto mode** (already configured at `agentkit/sdk/pytest.ini`); coroutine tests use `async def` with no decorator.
+- **Lazy imports preserved.** `import kaji` must continue to work with zero environment configured and zero optional dependencies installed; no task may add a top-level import of `openai`, `anthropic`, `google.genai`, or `redis` to a module reachable from `kaji/__init__.py`'s `_LAZY` map.
+- **Tests use `pytest-asyncio` in auto mode** (already configured at `kaji/sdk/pytest.ini`); coroutine tests use `async def` with no decorator.
 - **All provider classes must register themselves at import time** via `register_provider("name", Cls)` at the bottom of their module, matching the existing pattern in `openai.py:256`, `anthropic.py:244`, `kimi.py:291`, `gemini.py:400`.
 - **Each task ends with a single commit** scoped to that task; no batching across tasks.
 
@@ -23,33 +23,33 @@
 
 Files this plan creates or modifies:
 
-- Create `agentkit/sdk/agentkit/runtime/providers/openrouter.py` — first-class OpenRouter provider that subclasses or composes the OpenAI client with the right base URL and headers.
-- Modify `agentkit/sdk/agentkit/runtime/providers/kimi.py` — drop OpenRouter dual-mode, keep Cloudflare-only and Moonshot-native modes, fix `X-OpenRouter-Title` to `X-Title` (only relevant if the header survives the split; with OpenRouter peeled off it does not).
-- Modify `agentkit/sdk/agentkit/runtime/providers/registry.py` — register `openrouter` in `_BUILTINS`.
-- Modify `agentkit/sdk/agentkit/runtime/providers/anthropic.py:33` and `agentkit/sdk/agentkit/runtime/providers/gemini.py:282` — accept `api_key`, `model`, `base_url` kwargs for parity with OpenAI.
-- Modify `agentkit/sdk/agentkit/runtime/providers/gemini.py` — collapse `GeminiService` (line 29) into `GeminiProvider` (line 282) so there is one class.
-- Modify `agentkit/sdk/agentkit/core/config.py` — split `Settings` into `SDKSettings` (provider keys, model defaults, TTS, retention) and `ServeSettings` (DATABASE_URL, SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX). The SDK exports only `SDKSettings`.
-- Delete `agentkit/sdk/agentkit/modalities/voice/stt/` — empty directory.
-- Modify `agentkit/sdk/agentkit/runtime/agents/runtime.py:41-108` — remove the dual `planner` vs `tool_executor+policy+approval_handler` constructor paths; require a planner, expose a `build_planner()` static helper for the lazy path.
-- Modify `agentkit/sdk/agentkit/modalities/text/adapter.py` — add `system_prompt`, `tools`, and `provider` kwargs to `TextModalityAdapter.__init__`; add `TextSession.stream()`, `TextSession.reply_text()`, `TextSession.last_tool_calls()`; expose multimodal content via a `TextContent` union type.
-- Modify `agentkit/sdk/agentkit/runtime/providers/base.py:42-49` — tighten the Protocol to use `List[ProviderMessage]` and `List[ProviderToolSpec]` instead of `List[Dict[str, Any]]`.
-- Modify `agentkit/sdk/agentkit/runtime/providers/types.py` — add `ProviderToolCall` TypedDict and use it in `ModelResponseChunk.tool_calls` and `GenerateResponse.tool_calls`.
-- Create / modify test files under `agentkit/sdk/tests/` per task.
-- Modify `agentkit/sdk/agentkit/README.md` and `docs/MVP.md` — document the new provider, the slimmer settings, the richer `TextSession`.
+- Create `kaji/sdk/kaji/runtime/providers/openrouter.py` — first-class OpenRouter provider that subclasses or composes the OpenAI client with the right base URL and headers.
+- Modify `kaji/sdk/kaji/runtime/providers/kimi.py` — drop OpenRouter dual-mode, keep Cloudflare-only and Moonshot-native modes, fix `X-OpenRouter-Title` to `X-Title` (only relevant if the header survives the split; with OpenRouter peeled off it does not).
+- Modify `kaji/sdk/kaji/runtime/providers/registry.py` — register `openrouter` in `_BUILTINS`.
+- Modify `kaji/sdk/kaji/runtime/providers/anthropic.py:33` and `kaji/sdk/kaji/runtime/providers/gemini.py:282` — accept `api_key`, `model`, `base_url` kwargs for parity with OpenAI.
+- Modify `kaji/sdk/kaji/runtime/providers/gemini.py` — collapse `GeminiService` (line 29) into `GeminiProvider` (line 282) so there is one class.
+- Modify `kaji/sdk/kaji/core/config.py` — split `Settings` into `SDKSettings` (provider keys, model defaults, TTS, retention) and `ServeSettings` (DATABASE_URL, SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX). The SDK exports only `SDKSettings`.
+- Delete `kaji/sdk/kaji/modalities/voice/stt/` — empty directory.
+- Modify `kaji/sdk/kaji/runtime/agents/runtime.py:41-108` — remove the dual `planner` vs `tool_executor+policy+approval_handler` constructor paths; require a planner, expose a `build_planner()` static helper for the lazy path.
+- Modify `kaji/sdk/kaji/modalities/text/adapter.py` — add `system_prompt`, `tools`, and `provider` kwargs to `TextModalityAdapter.__init__`; add `TextSession.stream()`, `TextSession.reply_text()`, `TextSession.last_tool_calls()`; expose multimodal content via a `TextContent` union type.
+- Modify `kaji/sdk/kaji/runtime/providers/base.py:42-49` — tighten the Protocol to use `List[ProviderMessage]` and `List[ProviderToolSpec]` instead of `List[Dict[str, Any]]`.
+- Modify `kaji/sdk/kaji/runtime/providers/types.py` — add `ProviderToolCall` TypedDict and use it in `ModelResponseChunk.tool_calls` and `GenerateResponse.tool_calls`.
+- Create / modify test files under `kaji/sdk/tests/` per task.
+- Modify `kaji/sdk/kaji/README.md` and `docs/MVP.md` — document the new provider, the slimmer settings, the richer `TextSession`.
 
 ---
 
 ## Task 1: First-class OpenRouter provider
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/runtime/providers/openrouter.py`
-- Modify: `agentkit/sdk/agentkit/runtime/providers/registry.py:8-14`
-- Modify: `agentkit/sdk/agentkit/core/config.py:56-59`
-- Modify: `agentkit/sdk/pyproject.toml:36-48`
-- Test: `agentkit/sdk/tests/test_providers_openrouter.py`
+- Create: `kaji/sdk/kaji/runtime/providers/openrouter.py`
+- Modify: `kaji/sdk/kaji/runtime/providers/registry.py:8-14`
+- Modify: `kaji/sdk/kaji/core/config.py:56-59`
+- Modify: `kaji/sdk/pyproject.toml:36-48`
+- Test: `kaji/sdk/tests/test_providers_openrouter.py`
 
 **Interfaces:**
-- Consumes: `OpenAIProvider` from `agentkit.runtime.providers.openai`, `register_provider` from `agentkit.runtime.providers.registry`, `get_settings()` from `agentkit.core.config`.
+- Consumes: `OpenAIProvider` from `kaji.runtime.providers.openai`, `register_provider` from `kaji.runtime.providers.registry`, `get_settings()` from `kaji.core.config`.
 - Produces: `OpenRouterProvider(api_key: Optional[str], model: Optional[str], base_url: Optional[str], http_referer: Optional[str], app_title: Optional[str])`. Registers under the name `"openrouter"`. The provider returns `ModelMetadata(provider_name="openrouter", model_name=<model>)`.
 
 OpenRouter is an OpenAI-compatible API. Today it lives inside `KimiProvider` as a default base URL and gets the wrong header name (`X-OpenRouter-Title` instead of OpenRouter's documented `X-Title`). This task gives it a first-class provider class that piggybacks on `OpenAIProvider` so we do not duplicate the streaming / tool-call accumulator code.
@@ -57,12 +57,12 @@ OpenRouter is an OpenAI-compatible API. Today it lives inside `KimiProvider` as 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# agentkit/sdk/tests/test_providers_openrouter.py
+# kaji/sdk/tests/test_providers_openrouter.py
 import pytest
 
-from agentkit.runtime.providers.errors import ProviderConfigError
-from agentkit.runtime.providers.openrouter import OpenRouterProvider
-from agentkit.runtime.providers.registry import get_provider
+from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.providers.openrouter import OpenRouterProvider
+from kaji.runtime.providers.registry import get_provider
 
 
 def test_openrouter_registered():
@@ -87,11 +87,11 @@ def test_openrouter_sets_x_title_header():
     provider = OpenRouterProvider(
         api_key="or-test",
         model="openai/gpt-4o-mini",
-        app_title="agentkit-test",
+        app_title="kaji-test",
         http_referer="https://example.com",
     )
     headers = provider._extra_headers()
-    assert headers["X-Title"] == "agentkit-test"
+    assert headers["X-Title"] == "kaji-test"
     assert headers["HTTP-Referer"] == "https://example.com"
 
 
@@ -103,16 +103,16 @@ def test_openrouter_missing_key_raises():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers_openrouter.py -v
 ```
 
-Expected: FAIL with `ModuleNotFoundError: agentkit.runtime.providers.openrouter`.
+Expected: FAIL with `ModuleNotFoundError: kaji.runtime.providers.openrouter`.
 
 - [ ] **Step 3: Write the provider**
 
 ```python
-# agentkit/sdk/agentkit/runtime/providers/openrouter.py
+# kaji/sdk/kaji/runtime/providers/openrouter.py
 """OpenRouter provider.
 
 OpenRouter exposes an OpenAI-compatible chat-completions endpoint. We extend
@@ -121,7 +121,7 @@ formatting logic is shared. The only differences are: default base URL,
 optional `HTTP-Referer` + `X-Title` attribution headers (per OpenRouter docs),
 and the metadata stamp.
 
-Enable with ``AGENTKIT_MODEL_PROVIDER=openrouter`` and an
+Enable with ``KAJI_MODEL_PROVIDER=openrouter`` and an
 ``OPENROUTER_API_KEY``.
 """
 
@@ -130,11 +130,11 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any, Dict, Optional
 
-from agentkit.core.config import get_settings
-from agentkit.runtime.providers.errors import ProviderConfigError
-from agentkit.runtime.providers.openai import OpenAIProvider
-from agentkit.runtime.providers.registry import register_provider
-from agentkit.runtime.providers.types import ModelMetadata
+from kaji.core.config import get_settings
+from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.providers.openai import OpenAIProvider
+from kaji.runtime.providers.registry import register_provider
+from kaji.runtime.providers.types import ModelMetadata
 
 
 _DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
@@ -198,7 +198,7 @@ class OpenRouterProvider(OpenAIProvider):
                 AsyncOpenAI = import_module("openai").AsyncOpenAI
             except ImportError as error:
                 raise ProviderConfigError(
-                    "OpenRouter provider requires openai. Install agentkit[openai]."
+                    "OpenRouter provider requires openai. Install kaji[openai]."
                 ) from error
             extra = self._extra_headers()
             self._client = AsyncOpenAI(
@@ -214,22 +214,22 @@ register_provider("openrouter", OpenRouterProvider)
 
 - [ ] **Step 4: Register in `_BUILTINS`**
 
-Edit `agentkit/sdk/agentkit/runtime/providers/registry.py:8-14`:
+Edit `kaji/sdk/kaji/runtime/providers/registry.py:8-14`:
 
 ```python
 _BUILTINS: Dict[str, tuple[str, str]] = {
-    "anthropic": ("agentkit.runtime.providers.anthropic", "AnthropicProvider"),
-    "gemini": ("agentkit.runtime.providers.gemini", "GeminiProvider"),
-    "kimi": ("agentkit.runtime.providers.kimi", "KimiProvider"),
-    "mock": ("agentkit.runtime.providers.mock", "MockProvider"),
-    "openai": ("agentkit.runtime.providers.openai", "OpenAIProvider"),
-    "openrouter": ("agentkit.runtime.providers.openrouter", "OpenRouterProvider"),
+    "anthropic": ("kaji.runtime.providers.anthropic", "AnthropicProvider"),
+    "gemini": ("kaji.runtime.providers.gemini", "GeminiProvider"),
+    "kimi": ("kaji.runtime.providers.kimi", "KimiProvider"),
+    "mock": ("kaji.runtime.providers.mock", "MockProvider"),
+    "openai": ("kaji.runtime.providers.openai", "OpenAIProvider"),
+    "openrouter": ("kaji.runtime.providers.openrouter", "OpenRouterProvider"),
 }
 ```
 
 - [ ] **Step 5: Add `OPENROUTER_MODEL` to settings**
 
-Edit `agentkit/sdk/agentkit/core/config.py:56-59` so the block reads:
+Edit `kaji/sdk/kaji/core/config.py:56-59` so the block reads:
 
 ```python
 # OpenRouter (OpenAI-compatible aggregator)
@@ -242,7 +242,7 @@ OPENROUTER_APP_TITLE: Optional[str] = None
 
 - [ ] **Step 6: Add `openrouter` extra in pyproject**
 
-Edit `agentkit/sdk/pyproject.toml:36-48` to add an extra (OpenRouter needs the same `openai` SDK):
+Edit `kaji/sdk/pyproject.toml:36-48` to add an extra (OpenRouter needs the same `openai` SDK):
 
 ```toml
 openrouter = ["openai"]
@@ -253,7 +253,7 @@ Place it alphabetically between `openai` and `providers`.
 - [ ] **Step 7: Run the test to verify it passes**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers_openrouter.py -v
 ```
 
@@ -262,11 +262,11 @@ Expected: 3 passed.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/providers/openrouter.py \
-        agentkit/sdk/agentkit/runtime/providers/registry.py \
-        agentkit/sdk/agentkit/core/config.py \
-        agentkit/sdk/pyproject.toml \
-        agentkit/sdk/tests/test_providers_openrouter.py
+git add kaji/sdk/kaji/runtime/providers/openrouter.py \
+        kaji/sdk/kaji/runtime/providers/registry.py \
+        kaji/sdk/kaji/core/config.py \
+        kaji/sdk/pyproject.toml \
+        kaji/sdk/tests/test_providers_openrouter.py
 git commit -m "feat(sdk): first-class OpenRouter provider with correct X-Title header"
 ```
 
@@ -275,8 +275,8 @@ git commit -m "feat(sdk): first-class OpenRouter provider with correct X-Title h
 ## Task 2: Strip OpenRouter wiring out of KimiProvider
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/providers/kimi.py:22-62`
-- Test: `agentkit/sdk/tests/test_providers.py`
+- Modify: `kaji/sdk/kaji/runtime/providers/kimi.py:22-62`
+- Test: `kaji/sdk/tests/test_providers.py`
 
 **Interfaces:**
 - Consumes: `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` are no longer read by `KimiProvider`. Callers who wanted Kimi-via-OpenRouter now do `get_provider("openrouter", model="moonshotai/kimi-k2.6")` instead.
@@ -287,11 +287,11 @@ KimiProvider currently does three things: Cloudflare Workers, Moonshot, *and* Op
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# Append to agentkit/sdk/tests/test_providers.py
+# Append to kaji/sdk/tests/test_providers.py
 import pytest
 
-from agentkit.runtime.providers.errors import ProviderConfigError
-from agentkit.runtime.providers.kimi import KimiProvider
+from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.providers.kimi import KimiProvider
 
 
 def test_kimi_no_longer_reads_openrouter_key(monkeypatch):
@@ -300,7 +300,7 @@ def test_kimi_no_longer_reads_openrouter_key(monkeypatch):
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-test")
     # Clear the lru_cache on get_settings if needed:
-    from agentkit.core.config import get_settings
+    from kaji.core.config import get_settings
     get_settings.cache_clear()  # type: ignore[attr-defined]
     with pytest.raises(ProviderConfigError):
         KimiProvider()
@@ -310,7 +310,7 @@ def test_kimi_defaults_to_moonshot_base(monkeypatch):
     monkeypatch.setenv("KIMI_API_KEY", "kimi-test")
     monkeypatch.delenv("KIMI_BASE_URL", raising=False)
     monkeypatch.delenv("CLOUDFLARE_API_TOKEN", raising=False)
-    from agentkit.core.config import get_settings
+    from kaji.core.config import get_settings
     get_settings.cache_clear()  # type: ignore[attr-defined]
     provider = KimiProvider()
     assert provider.base_url == "https://api.moonshot.cn/v1/chat/completions"
@@ -319,7 +319,7 @@ def test_kimi_defaults_to_moonshot_base(monkeypatch):
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers.py::test_kimi_no_longer_reads_openrouter_key tests/test_providers.py::test_kimi_defaults_to_moonshot_base -v
 ```
 
@@ -327,7 +327,7 @@ Expected: FAIL — first test passes (Kimi previously errored only if neither ke
 
 - [ ] **Step 3: Rewrite `KimiProvider.__init__`**
 
-Replace `agentkit/sdk/agentkit/runtime/providers/kimi.py:22-62` (the constructor and `_get_headers`) with:
+Replace `kaji/sdk/kaji/runtime/providers/kimi.py:22-62` (the constructor and `_get_headers`) with:
 
 ```python
 class KimiProvider(ModelProvider):
@@ -378,7 +378,7 @@ class KimiProvider(ModelProvider):
 - [ ] **Step 4: Run the new tests to verify they pass**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers.py -v
 ```
 
@@ -387,7 +387,7 @@ Expected: existing tests still pass; new tests pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/providers/kimi.py agentkit/sdk/tests/test_providers.py
+git add kaji/sdk/kaji/runtime/providers/kimi.py kaji/sdk/tests/test_providers.py
 git commit -m "refactor(sdk): peel OpenRouter out of KimiProvider, default to Moonshot"
 ```
 
@@ -396,9 +396,9 @@ git commit -m "refactor(sdk): peel OpenRouter out of KimiProvider, default to Mo
 ## Task 3: Constructor parity across providers
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/providers/anthropic.py:33-43`
-- Modify: `agentkit/sdk/agentkit/runtime/providers/gemini.py:34-55` and `:282`+
-- Test: `agentkit/sdk/tests/test_providers_anthropic.py`, `agentkit/sdk/tests/test_providers.py`
+- Modify: `kaji/sdk/kaji/runtime/providers/anthropic.py:33-43`
+- Modify: `kaji/sdk/kaji/runtime/providers/gemini.py:34-55` and `:282`+
+- Test: `kaji/sdk/tests/test_providers_anthropic.py`, `kaji/sdk/tests/test_providers.py`
 
 **Interfaces:**
 - Produces: every provider accepts the same shape `(*, api_key: Optional[str] = None, model: Optional[str] = None, base_url: Optional[str] = None)`. None means "read from settings". Gemini also accepts `model: Optional[str]`.
@@ -408,25 +408,25 @@ Anthropic and Gemini currently ignore their constructor arguments and read env o
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# Append to agentkit/sdk/tests/test_providers_anthropic.py
+# Append to kaji/sdk/tests/test_providers_anthropic.py
 def test_anthropic_constructor_overrides_env(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
-    from agentkit.core.config import get_settings
+    from kaji.core.config import get_settings
     get_settings.cache_clear()  # type: ignore[attr-defined]
-    from agentkit.runtime.providers.anthropic import AnthropicProvider
+    from kaji.runtime.providers.anthropic import AnthropicProvider
     provider = AnthropicProvider(api_key="explicit", model="claude-opus-4-7")
     assert provider.api_key == "explicit"
     assert provider.model_name == "claude-opus-4-7"
 ```
 
 ```python
-# Append to agentkit/sdk/tests/test_providers.py
+# Append to kaji/sdk/tests/test_providers.py
 def test_gemini_constructor_overrides_env(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "from-env")
-    from agentkit.core.config import get_settings
+    from kaji.core.config import get_settings
     get_settings.cache_clear()  # type: ignore[attr-defined]
     pytest.importorskip("google.genai")
-    from agentkit.runtime.providers.gemini import GeminiProvider
+    from kaji.runtime.providers.gemini import GeminiProvider
     provider = GeminiProvider(api_key="explicit", model="gemini-3-flash-preview")
     assert provider.api_key == "explicit"
     assert provider.model_name == "gemini-3-flash-preview"
@@ -435,7 +435,7 @@ def test_gemini_constructor_overrides_env(monkeypatch):
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers_anthropic.py::test_anthropic_constructor_overrides_env tests/test_providers.py::test_gemini_constructor_overrides_env -v
 ```
 
@@ -443,7 +443,7 @@ Expected: both FAIL — Anthropic ignores `api_key`, Gemini ignores both.
 
 - [ ] **Step 3: Update Anthropic constructor**
 
-Edit `agentkit/sdk/agentkit/runtime/providers/anthropic.py:33-43` to:
+Edit `kaji/sdk/kaji/runtime/providers/anthropic.py:33-43` to:
 
 ```python
     def __init__(
@@ -474,7 +474,7 @@ This is folded into Task 4 (single Gemini class). Track the constructor-parity t
 - [ ] **Step 5: Run Anthropic test to verify pass**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers_anthropic.py -v
 ```
 
@@ -483,8 +483,8 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/providers/anthropic.py \
-        agentkit/sdk/tests/test_providers_anthropic.py
+git add kaji/sdk/kaji/runtime/providers/anthropic.py \
+        kaji/sdk/tests/test_providers_anthropic.py
 git commit -m "feat(sdk): AnthropicProvider accepts api_key/model/base_url kwargs"
 ```
 
@@ -493,8 +493,8 @@ git commit -m "feat(sdk): AnthropicProvider accepts api_key/model/base_url kwarg
 ## Task 4: Collapse `GeminiService` into `GeminiProvider`
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/providers/gemini.py` (whole file: drop `GeminiService` class at line 29, fold its methods into `GeminiProvider` at line 282)
-- Test: `agentkit/sdk/tests/test_providers.py`, `agentkit/sdk/tests/test_providers_gemini_stream.py`
+- Modify: `kaji/sdk/kaji/runtime/providers/gemini.py` (whole file: drop `GeminiService` class at line 29, fold its methods into `GeminiProvider` at line 282)
+- Test: `kaji/sdk/tests/test_providers.py`, `kaji/sdk/tests/test_providers_gemini_stream.py`
 
 **Interfaces:**
 - Consumes: `google.genai` SDK (already optional), `format_messages_gemini`, `split_system_for_gemini`, `to_gemini`.
@@ -505,20 +505,20 @@ The current file has two classes: `GeminiService` (implementation since the earl
 - [ ] **Step 1: Verify `GeminiService` is not imported anywhere except `gemini.py`**
 
 ```bash
-cd agentkit/sdk
-grep -rn "GeminiService" agentkit/ tests/
+cd kaji/sdk
+grep -rn "GeminiService" kaji/ tests/
 ```
 
-Expected: only matches in `agentkit/runtime/providers/gemini.py` itself. If a test imports it, update the test in the same task.
+Expected: only matches in `kaji/runtime/providers/gemini.py` itself. If a test imports it, update the test in the same task.
 
 - [ ] **Step 2: Write the failing test**
 
 ```python
-# Append to agentkit/sdk/tests/test_providers.py
+# Append to kaji/sdk/tests/test_providers.py
 def test_gemini_service_class_removed():
     """GeminiService was an internal implementation class; the public class
     is GeminiProvider. The split was confusing and is removed."""
-    from agentkit.runtime.providers import gemini as gemini_mod
+    from kaji.runtime.providers import gemini as gemini_mod
     assert not hasattr(gemini_mod, "GeminiService")
     assert hasattr(gemini_mod, "GeminiProvider")
 ```
@@ -526,7 +526,7 @@ def test_gemini_service_class_removed():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers.py::test_gemini_service_class_removed -v
 ```
 
@@ -560,7 +560,7 @@ class GeminiProvider(ModelProvider):
             genai = import_module("google.genai")
         except ImportError as error:
             raise ProviderConfigError(
-                "Gemini provider requires google-genai. Install agentkit[gemini]."
+                "Gemini provider requires google-genai. Install kaji[gemini]."
             ) from error
         client_kwargs: Dict[str, Any] = {"api_key": self.api_key}
         if base_url is not None:
@@ -573,7 +573,7 @@ References to `self.service.generate_chat_response(...)` in `generate()` (around
 - [ ] **Step 5: Run all Gemini tests to verify pass**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers.py tests/test_providers_gemini_stream.py tests/test_providers.py::test_gemini_constructor_overrides_env -v
 ```
 
@@ -582,7 +582,7 @@ Expected: all pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/providers/gemini.py agentkit/sdk/tests/test_providers.py
+git add kaji/sdk/kaji/runtime/providers/gemini.py kaji/sdk/tests/test_providers.py
 git commit -m "refactor(sdk): collapse GeminiService into GeminiProvider"
 ```
 
@@ -591,28 +591,28 @@ git commit -m "refactor(sdk): collapse GeminiService into GeminiProvider"
 ## Task 5: Split `Settings` into `SDKSettings` and `ServeSettings`
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/core/config.py` (whole file)
-- Modify: `agentkit/serve/agentkit_serve/...` — wherever `Settings` is imported from `agentkit.core.config`, switch to `from agentkit.core.config import SDKSettings` and import `ServeSettings` from a new `agentkit_serve.config` module.
-- Create: `agentkit/serve/agentkit_serve/config.py` (or augment the existing one) — `ServeSettings` for DATABASE_URL, SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX.
-- Test: `agentkit/sdk/tests/test_public_surface.py`, new `agentkit/sdk/tests/test_config_split.py`
+- Modify: `kaji/sdk/kaji/core/config.py` (whole file)
+- Modify: `kaji/serve/kaji_serve/...` — wherever `Settings` is imported from `kaji.core.config`, switch to `from kaji.core.config import SDKSettings` and import `ServeSettings` from a new `kaji_serve.config` module.
+- Create: `kaji/serve/kaji_serve/config.py` (or augment the existing one) — `ServeSettings` for DATABASE_URL, SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX.
+- Test: `kaji/sdk/tests/test_public_surface.py`, new `kaji/sdk/tests/test_config_split.py`
 
 **Interfaces:**
 - Consumes: `pydantic_settings.BaseSettings`.
-- Produces: `agentkit.core.config.SDKSettings` (only SDK-relevant fields), `agentkit.core.config.get_settings() -> SDKSettings`. Old name `Settings` is removed (pre-1.0, no shim).
+- Produces: `kaji.core.config.SDKSettings` (only SDK-relevant fields), `kaji.core.config.get_settings() -> SDKSettings`. Old name `Settings` is removed (pre-1.0, no shim).
 
 The SDK's `Settings` class currently has 30+ fields, half of which are serve-only (DATABASE_URL, SUPABASE_*, JWT_*, CORS_*). Move them out so the SDK config schema is small and obviously SDK-shaped.
 
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# agentkit/sdk/tests/test_config_split.py
+# kaji/sdk/tests/test_config_split.py
 import pytest
 
 
 def test_sdk_settings_has_only_sdk_fields():
     """The SDK config schema must not include serve-only fields. This
     guards against accidental coupling re-creep."""
-    from agentkit.core.config import SDKSettings
+    from kaji.core.config import SDKSettings
     fields = set(SDKSettings.model_fields.keys())
 
     forbidden = {
@@ -636,12 +636,12 @@ def test_sdk_settings_has_only_sdk_fields():
 
 def test_settings_alias_removed():
     """Old name `Settings` is gone (pre-1.0, no shim)."""
-    from agentkit.core import config
+    from kaji.core import config
     assert not hasattr(config, "Settings")
 
 
 def test_get_settings_returns_sdk_settings():
-    from agentkit.core.config import get_settings, SDKSettings
+    from kaji.core.config import get_settings, SDKSettings
     get_settings.cache_clear()  # type: ignore[attr-defined]
     assert isinstance(get_settings(), SDKSettings)
 ```
@@ -649,19 +649,19 @@ def test_get_settings_returns_sdk_settings():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_config_split.py -v
 ```
 
 Expected: FAIL — `SDKSettings` does not exist.
 
-- [ ] **Step 3: Rewrite `agentkit/sdk/agentkit/core/config.py`**
+- [ ] **Step 3: Rewrite `kaji/sdk/kaji/core/config.py`**
 
 ```python
 """Application configuration for the SDK.
 
 Only SDK-relevant fields live here. Serve-stack fields (DATABASE_URL,
-SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX) live in `agentkit_serve.config`.
+SUPABASE_*, JWT_*, CORS_*, API_V1_PREFIX) live in `kaji_serve.config`.
 """
 
 from __future__ import annotations
@@ -676,7 +676,7 @@ class SDKSettings(BaseSettings):
     """SDK-only settings: provider keys, model defaults, TTS, retention."""
 
     # Active provider
-    AGENTKIT_MODEL_PROVIDER: str = "mock"
+    KAJI_MODEL_PROVIDER: str = "mock"
 
     # OpenAI
     OPENAI_API_KEY: Optional[str] = None
@@ -732,12 +732,12 @@ def get_settings() -> SDKSettings:
     return SDKSettings()
 ```
 
-- [ ] **Step 4: Move serve fields into `agentkit_serve.config`**
+- [ ] **Step 4: Move serve fields into `kaji_serve.config`**
 
-In the serve package (`agentkit/serve/agentkit_serve/config.py`), define `ServeSettings` extending `SDKSettings`:
+In the serve package (`kaji/serve/kaji_serve/config.py`), define `ServeSettings` extending `SDKSettings`:
 
 ```python
-from agentkit.core.config import SDKSettings
+from kaji.core.config import SDKSettings
 from pydantic_settings import SettingsConfigDict
 from typing import Optional
 
@@ -755,7 +755,7 @@ class ServeSettings(SDKSettings):
     TOKEN_ENCRYPTION_KEY: Optional[str] = None
     CORS_ALLOW_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
     API_V1_PREFIX: str = "/api/v1"
-    PROJECT_NAME: str = "AgentKit Serve"
+    PROJECT_NAME: str = "Kaji Serve"
 
     @property
     def cors_allow_origins(self) -> list[str]:
@@ -769,12 +769,12 @@ class ServeSettings(SDKSettings):
             self.SUPABASE_SERVICE_ROLE_KEY = self.SUPABASE_SERVICE_KEY
 ```
 
-Then in any serve module that currently does `from agentkit.core.config import Settings, get_settings`, switch to `from agentkit_serve.config import ServeSettings, get_serve_settings` (define `get_serve_settings` analogously with `lru_cache`).
+Then in any serve module that currently does `from kaji.core.config import Settings, get_settings`, switch to `from kaji_serve.config import ServeSettings, get_serve_settings` (define `get_serve_settings` analogously with `lru_cache`).
 
 - [ ] **Step 5: Run config + public-surface + full SDK tests**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_config_split.py tests/test_public_surface.py tests/ -x
 ```
 
@@ -783,7 +783,7 @@ Expected: pass.
 - [ ] **Step 6: Run the serve test suite if touchable**
 
 ```bash
-cd agentkit/serve
+cd kaji/serve
 poetry run pytest -x
 ```
 
@@ -792,10 +792,10 @@ Expected: pass.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/core/config.py \
-        agentkit/serve/agentkit_serve/config.py \
-        agentkit/sdk/tests/test_config_split.py \
-        agentkit/serve/...  # any serve modules updated
+git add kaji/sdk/kaji/core/config.py \
+        kaji/serve/kaji_serve/config.py \
+        kaji/sdk/tests/test_config_split.py \
+        kaji/serve/...  # any serve modules updated
 git commit -m "refactor(sdk,serve): split Settings into SDKSettings + ServeSettings"
 ```
 
@@ -804,8 +804,8 @@ git commit -m "refactor(sdk,serve): split Settings into SDKSettings + ServeSetti
 ## Task 6: Delete the empty `modalities/voice/stt/` subpackage
 
 **Files:**
-- Delete: `agentkit/sdk/agentkit/modalities/voice/stt/` (directory)
-- Test: `agentkit/sdk/tests/test_package_boundaries.py`
+- Delete: `kaji/sdk/kaji/modalities/voice/stt/` (directory)
+- Test: `kaji/sdk/tests/test_package_boundaries.py`
 
 **Interfaces:** none changed; STT subpackage had no public symbols.
 
@@ -814,28 +814,28 @@ The directory contains only `__pycache__`. It misleads readers into thinking STT
 - [ ] **Step 1: Confirm the directory is empty of source**
 
 ```bash
-cd agentkit/sdk
-find agentkit/modalities/voice/stt -type f \! -path '*/__pycache__/*'
+cd kaji/sdk
+find kaji/modalities/voice/stt -type f \! -path '*/__pycache__/*'
 ```
 
 Expected: no output.
 
 - [ ] **Step 2: Add a guard test**
 
-Append to `agentkit/sdk/tests/test_package_boundaries.py`:
+Append to `kaji/sdk/tests/test_package_boundaries.py`:
 
 ```python
 def test_stt_subpackage_absent():
     """STT is not implemented; the directory must not exist as a stub."""
     import importlib
     with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("agentkit.modalities.voice.stt")
+        importlib.import_module("kaji.modalities.voice.stt")
 ```
 
 - [ ] **Step 3: Run the new test to verify it fails**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_package_boundaries.py::test_stt_subpackage_absent -v
 ```
 
@@ -844,14 +844,14 @@ Expected: FAIL (directory still importable as namespace package or via `__pycach
 - [ ] **Step 4: Delete the directory**
 
 ```bash
-cd agentkit/sdk
-rm -rf agentkit/modalities/voice/stt
+cd kaji/sdk
+rm -rf kaji/modalities/voice/stt
 ```
 
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_package_boundaries.py -v
 ```
 
@@ -860,7 +860,7 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add -A agentkit/sdk/agentkit/modalities/voice/stt agentkit/sdk/tests/test_package_boundaries.py
+git add -A kaji/sdk/kaji/modalities/voice/stt kaji/sdk/tests/test_package_boundaries.py
 git commit -m "chore(sdk): remove empty stt subpackage"
 ```
 
@@ -869,10 +869,10 @@ git commit -m "chore(sdk): remove empty stt subpackage"
 ## Task 7: Slim `AgentRuntime.__init__` to a single wiring path
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/agents/runtime.py:41-108`
-- Modify: `agentkit/sdk/agentkit/runtime/agents/builder.py` (where `AgentRuntime(...)` is constructed)
-- Modify: `agentkit/sdk/agentkit/modalities/text/adapter.py:79-89` (`_default_runtime`)
-- Test: `agentkit/sdk/tests/test_agents_runtime.py`
+- Modify: `kaji/sdk/kaji/runtime/agents/runtime.py:41-108`
+- Modify: `kaji/sdk/kaji/runtime/agents/builder.py` (where `AgentRuntime(...)` is constructed)
+- Modify: `kaji/sdk/kaji/modalities/text/adapter.py:79-89` (`_default_runtime`)
+- Test: `kaji/sdk/tests/test_agents_runtime.py`
 
 **Interfaces:**
 - Consumes: `ToolPlanner`, `EventBusProtocol`, `EventStore`, `ModelProvider`, `AgentStrategy`, `SystemPrompt`.
@@ -883,11 +883,11 @@ The current constructor has two paths (explicit planner vs lazy-build from execu
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# Append to agentkit/sdk/tests/test_agents_runtime.py
+# Append to kaji/sdk/tests/test_agents_runtime.py
 def test_runtime_requires_planner():
     """AgentRuntime no longer accepts tool_executor/policy/approval_handler."""
     import inspect
-    from agentkit.runtime.agents.runtime import AgentRuntime
+    from kaji.runtime.agents.runtime import AgentRuntime
     sig = inspect.signature(AgentRuntime.__init__)
     params = set(sig.parameters.keys())
     assert "planner" in params
@@ -898,14 +898,14 @@ def test_runtime_requires_planner():
 
 
 def test_build_planner_helper_exists():
-    from agentkit.runtime.agents.runtime import AgentRuntime
+    from kaji.runtime.agents.runtime import AgentRuntime
     assert callable(getattr(AgentRuntime, "build_planner", None))
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_agents_runtime.py::test_runtime_requires_planner tests/test_agents_runtime.py::test_build_planner_helper_exists -v
 ```
 
@@ -962,7 +962,7 @@ Replace lines 41-108 with:
         The default executor delegates to the global tool registry's
         ``execute_tool``. Pass ``tool_executor`` to use a scoped registry.
         """
-        from agentkit.runtime.tools.registry import execute_tool
+        from kaji.runtime.tools.registry import execute_tool
 
         executor: ToolExecutor = tool_executor or (
             lambda name, args: execute_tool(user_id, name, args)
@@ -980,9 +980,9 @@ Delete the old `_build_planner` method.
 
 - [ ] **Step 4: Update `AgentBuilder` and `_default_runtime`**
 
-In `agentkit/sdk/agentkit/runtime/agents/builder.py`, replace any `AgentRuntime(... tool_executor=..., policy=..., approval_handler=...)` with explicit `planner=AgentRuntime.build_planner(tools=..., tool_executor=..., policy=..., approval_handler=...)`.
+In `kaji/sdk/kaji/runtime/agents/builder.py`, replace any `AgentRuntime(... tool_executor=..., policy=..., approval_handler=...)` with explicit `planner=AgentRuntime.build_planner(tools=..., tool_executor=..., policy=..., approval_handler=...)`.
 
-In `agentkit/sdk/agentkit/modalities/text/adapter.py:79-89`, replace `_default_runtime` body:
+In `kaji/sdk/kaji/modalities/text/adapter.py:79-89`, replace `_default_runtime` body:
 
 ```python
 def _default_runtime(store: EventStore) -> AgentRuntime:
@@ -1003,7 +1003,7 @@ async def _default_missing_executor(name: str, args: dict[str, Any]) -> dict[str
 - [ ] **Step 5: Run full runtime suite to verify pass**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_agents_runtime.py tests/test_agents_builder.py tests/test_modalities_text.py -v
 ```
 
@@ -1012,10 +1012,10 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/agents/runtime.py \
-        agentkit/sdk/agentkit/runtime/agents/builder.py \
-        agentkit/sdk/agentkit/modalities/text/adapter.py \
-        agentkit/sdk/tests/test_agents_runtime.py
+git add kaji/sdk/kaji/runtime/agents/runtime.py \
+        kaji/sdk/kaji/runtime/agents/builder.py \
+        kaji/sdk/kaji/modalities/text/adapter.py \
+        kaji/sdk/tests/test_agents_runtime.py
 git commit -m "refactor(sdk): single wiring path for AgentRuntime, expose build_planner helper"
 ```
 
@@ -1024,14 +1024,14 @@ git commit -m "refactor(sdk): single wiring path for AgentRuntime, expose build_
 ## Task 8: Richer `TextSession` — streaming, reply_text, last_tool_calls, system prompt + tools at adapter level
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/modalities/text/adapter.py` (whole file)
-- Test: `agentkit/sdk/tests/test_modalities_text.py`
+- Modify: `kaji/sdk/kaji/modalities/text/adapter.py` (whole file)
+- Test: `kaji/sdk/tests/test_modalities_text.py`
 
 **Interfaces:**
-- Consumes: `AgentMessageDelta`, `AgentMessageCompleted`, `ToolCallCompleted`, `ToolCallFailed` from `agentkit.infra.events.schemas`; `EventBusProtocol`; `InMemoryEventBus`.
+- Consumes: `AgentMessageDelta`, `AgentMessageCompleted`, `ToolCallCompleted`, `ToolCallFailed` from `kaji.infra.events.schemas`; `EventBusProtocol`; `InMemoryEventBus`.
 - Produces:
   - `TextModalityAdapter(__init__(self, *, provider=None, tools=None, system_prompt="You are a helpful assistant.", runtime=None, store=None))`.
-  - `TextSession.send(content: str) -> list[AgentKitEvent]` (unchanged signature).
+  - `TextSession.send(content: str) -> list[KajiEvent]` (unchanged signature).
   - `TextSession.reply_text(content: str) -> str` — returns the concatenated `AgentMessageCompleted.content` for the turn, raising if no completion was emitted.
   - `TextSession.stream(content: str) -> AsyncIterator[str]` — async-yields each `AgentMessageDelta.delta` as it lands, by subscribing to the bus for this session before sending.
   - `TextSession.last_tool_calls() -> list[ToolCallCompleted]` — filter of the event log.
@@ -1041,10 +1041,10 @@ Text modality currently only exposes `send()` returning raw events. Power users 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-# Append to agentkit/sdk/tests/test_modalities_text.py
+# Append to kaji/sdk/tests/test_modalities_text.py
 import pytest
 
-from agentkit.modalities.text.adapter import TextModalityAdapter
+from kaji.modalities.text.adapter import TextModalityAdapter
 
 
 @pytest.mark.asyncio
@@ -1089,7 +1089,7 @@ async def test_last_tool_calls_filter():
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_modalities_text.py -v -k "adapter_accepts_provider_tools_system_prompt or reply_text or stream_yields or last_tool_calls"
 ```
 
@@ -1097,20 +1097,20 @@ Expected: FAIL.
 
 - [ ] **Step 3: Extend `TextModalityAdapter` and `TextSession`**
 
-Add to `agentkit/sdk/agentkit/modalities/text/adapter.py`:
+Add to `kaji/sdk/kaji/modalities/text/adapter.py`:
 
 ```python
 from typing import AsyncIterator, List
 
-from agentkit.infra.events.bus import InMemoryEventBus
-from agentkit.infra.events.schemas import (
-    AgentKitEvent,
+from kaji.infra.events.bus import InMemoryEventBus
+from kaji.infra.events.schemas import (
+    KajiEvent,
     AgentMessageCompleted,
     AgentMessageDelta,
     ToolCallCompleted,
 )
-from agentkit.runtime.providers.base import ModelProvider
-from agentkit.runtime.tools.registry import ToolSpec
+from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.tools.registry import ToolSpec
 
 
 @dataclass
@@ -1121,14 +1121,14 @@ class TextSession:
     bus: EventBusProtocol
     _sent: int = field(default=0, init=False)
 
-    async def send(self, content: str) -> list[AgentKitEvent]:
+    async def send(self, content: str) -> list[KajiEvent]:
         if not content.strip():
             raise ValueError("content must not be empty")
         await self.runtime.send(self.config.session_id, content)
         self._sent += 1
         return await self.events()
 
-    async def events(self) -> list[AgentKitEvent]:
+    async def events(self) -> list[KajiEvent]:
         return await self.store.get_events(self.config.session_id)
 
     async def reply_text(self, content: str) -> str:
@@ -1149,7 +1149,7 @@ class TextSession:
         import asyncio
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-        async def handler(event: AgentKitEvent) -> None:
+        async def handler(event: KajiEvent) -> None:
             if (
                 isinstance(event, AgentMessageDelta)
                 and event.session_id == self.config.session_id
@@ -1226,12 +1226,12 @@ class TextModalityAdapter:
         )
 ```
 
-Note: `EventBus.subscribe` must return an `unsubscribe` coroutine. If `InMemoryEventBus.subscribe` does not match this signature today, update it as part of this task; check `agentkit/sdk/agentkit/infra/events/bus.py` for the existing shape and adapt the handler API to whatever it currently provides (sync teardown is fine — adjust the `await unsubscribe()` line accordingly).
+Note: `EventBus.subscribe` must return an `unsubscribe` coroutine. If `InMemoryEventBus.subscribe` does not match this signature today, update it as part of this task; check `kaji/sdk/kaji/infra/events/bus.py` for the existing shape and adapt the handler API to whatever it currently provides (sync teardown is fine — adjust the `await unsubscribe()` line accordingly).
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_modalities_text.py -v
 ```
 
@@ -1240,7 +1240,7 @@ Expected: pass.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/modalities/text/adapter.py agentkit/sdk/tests/test_modalities_text.py
+git add kaji/sdk/kaji/modalities/text/adapter.py kaji/sdk/tests/test_modalities_text.py
 git commit -m "feat(sdk): TextSession.stream/reply_text/last_tool_calls + adapter knobs"
 ```
 
@@ -1249,9 +1249,9 @@ git commit -m "feat(sdk): TextSession.stream/reply_text/last_tool_calls + adapte
 ## Task 9: Tighten provider Protocol with neutral TypedDicts
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/providers/base.py:22-67`
-- Modify: `agentkit/sdk/agentkit/runtime/providers/types.py` (add `ProviderToolCall`)
-- Test: `agentkit/sdk/tests/test_providers_translate.py`
+- Modify: `kaji/sdk/kaji/runtime/providers/base.py:22-67`
+- Modify: `kaji/sdk/kaji/runtime/providers/types.py` (add `ProviderToolCall`)
+- Test: `kaji/sdk/tests/test_providers_translate.py`
 
 **Interfaces:**
 - Produces: `ProviderToolCall = TypedDict("ProviderToolCall", {"id": Optional[str], "name": str, "arguments": Dict[str, Any]})`. `ModelProvider.generate` signature becomes `List[ProviderMessage]`, `Optional[List[ProviderToolSpec]]`, return `GenerateResponse`. `GenerateResponse.tool_calls` and `ModelResponseChunk.tool_calls` become `List[ProviderToolCall]`.
@@ -1261,12 +1261,12 @@ The Protocol currently uses `List[Dict[str, Any]]`. The neutral TypedDicts alrea
 - [ ] **Step 1: Write the failing test**
 
 ```python
-# Append to agentkit/sdk/tests/test_providers_translate.py
+# Append to kaji/sdk/tests/test_providers_translate.py
 def test_provider_protocol_uses_typed_dicts():
     """ModelProvider.generate signature must reference ProviderMessage and
     ProviderToolSpec rather than plain dict aliases."""
     import inspect
-    from agentkit.runtime.providers.base import ModelProvider
+    from kaji.runtime.providers.base import ModelProvider
     sig = inspect.signature(ModelProvider.generate)
     messages_annotation = sig.parameters["messages"].annotation
     tools_annotation = sig.parameters["tools"].annotation
@@ -1276,7 +1276,7 @@ def test_provider_protocol_uses_typed_dicts():
 
 
 def test_provider_tool_call_typed_dict_exported():
-    from agentkit.runtime.providers.types import ProviderToolCall
+    from kaji.runtime.providers.types import ProviderToolCall
     # TypedDict: instantiate as a dict and check the keys
     sample: ProviderToolCall = {"id": "tc_1", "name": "ping", "arguments": {}}
     assert sample["name"] == "ping"
@@ -1285,7 +1285,7 @@ def test_provider_tool_call_typed_dict_exported():
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_providers_translate.py -v -k "typed_dict"
 ```
 
@@ -1293,7 +1293,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Update `types.py`**
 
-Append to `agentkit/sdk/agentkit/runtime/providers/types.py`:
+Append to `kaji/sdk/kaji/runtime/providers/types.py`:
 
 ```python
 class ProviderToolCall(TypedDict, total=False):
@@ -1325,12 +1325,12 @@ Note: Pydantic v2 accepts `TypedDict` as a field type via `Annotated`. If raw as
 
 - [ ] **Step 4: Update `base.py`**
 
-Replace `agentkit/sdk/agentkit/runtime/providers/base.py:40-67` to use the TypedDicts in `messages: List[ProviderMessage]` and `tools: Optional[List[ProviderToolSpec]]`.
+Replace `kaji/sdk/kaji/runtime/providers/base.py:40-67` to use the TypedDicts in `messages: List[ProviderMessage]` and `tools: Optional[List[ProviderToolSpec]]`.
 
 - [ ] **Step 5: Run the test suite to verify nothing regressed**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest -x
 ```
 
@@ -1339,9 +1339,9 @@ Expected: pass.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/providers/base.py \
-        agentkit/sdk/agentkit/runtime/providers/types.py \
-        agentkit/sdk/tests/test_providers_translate.py
+git add kaji/sdk/kaji/runtime/providers/base.py \
+        kaji/sdk/kaji/runtime/providers/types.py \
+        kaji/sdk/tests/test_providers_translate.py
 git commit -m "feat(sdk): typed Protocol with ProviderMessage/ToolSpec/ToolCall"
 ```
 
@@ -1350,9 +1350,9 @@ git commit -m "feat(sdk): typed Protocol with ProviderMessage/ToolSpec/ToolCall"
 ## Task 10: Documentation + CHANGELOG
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/README.md`
+- Modify: `kaji/sdk/kaji/README.md`
 - Modify: `docs/MVP.md`
-- Modify: `agentkit/sdk/CHANGELOG.md`
+- Modify: `kaji/sdk/CHANGELOG.md`
 
 **Interfaces:** docs only.
 
@@ -1360,7 +1360,7 @@ Surface all the user-visible changes: OpenRouter, slimmer settings, TextSession'
 
 - [ ] **Step 1: Edit README**
 
-In `agentkit/sdk/agentkit/README.md` (after the existing "Install" / "Quick start" sections), add an "Providers" section that lists all five (OpenAI, Anthropic, Gemini, Kimi, OpenRouter) with a one-line install + env-var snippet each. Replace any reference to OpenRouter-via-Kimi with the new `openrouter` provider.
+In `kaji/sdk/kaji/README.md` (after the existing "Install" / "Quick start" sections), add an "Providers" section that lists all five (OpenAI, Anthropic, Gemini, Kimi, OpenRouter) with a one-line install + env-var snippet each. Replace any reference to OpenRouter-via-Kimi with the new `openrouter` provider.
 
 In the "Quick start" code block, show passing `system_prompt=` and `tools=` to `TextModalityAdapter(...)` instead of constructing `AgentRuntime` manually.
 
@@ -1387,7 +1387,7 @@ Prepend a `## 0.2.0` entry under `## Unreleased`:
 
 ### Changed
 - `Settings` is split into `SDKSettings` (this package) and `ServeSettings`
-  (in `agentkit-serve`). The SDK no longer carries DATABASE_URL,
+  (in `kaji-serve`). The SDK no longer carries DATABASE_URL,
   SUPABASE_*, JWT_*, CORS_*, or API_V1_PREFIX.
 - `KimiProvider` no longer reads OpenRouter envs. Default base URL is
   Moonshot, not OpenRouter. Use `OpenRouterProvider` for OpenRouter.
@@ -1397,18 +1397,18 @@ Prepend a `## 0.2.0` entry under `## Unreleased`:
 
 ### Removed
 - `GeminiService` class (folded into `GeminiProvider`).
-- Empty `agentkit.modalities.voice.stt` subpackage.
+- Empty `kaji.modalities.voice.stt` subpackage.
 - `Settings` class (replaced by `SDKSettings`).
 ```
 
 - [ ] **Step 4: Bump version**
 
-In `agentkit/sdk/pyproject.toml:3` and `agentkit/sdk/agentkit/__init__.py:18`: set `0.2.0`.
+In `kaji/sdk/pyproject.toml:3` and `kaji/sdk/kaji/__init__.py:18`: set `0.2.0`.
 
 - [ ] **Step 5: Run docs-sync test**
 
 ```bash
-cd agentkit/sdk
+cd kaji/sdk
 poetry run pytest tests/test_docs_sync.py -v
 ```
 
@@ -1417,11 +1417,11 @@ Expected: pass (docs-sync checks references; the test may need updates if it sca
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/README.md \
+git add kaji/sdk/kaji/README.md \
         docs/MVP.md \
-        agentkit/sdk/CHANGELOG.md \
-        agentkit/sdk/pyproject.toml \
-        agentkit/sdk/agentkit/__init__.py
+        kaji/sdk/CHANGELOG.md \
+        kaji/sdk/pyproject.toml \
+        kaji/sdk/kaji/__init__.py
 git commit -m "docs(sdk): document OpenRouter + TextSession + settings split for 0.2.0"
 ```
 
@@ -1465,7 +1465,7 @@ Which approach?
 ### Architecture findings
 
 **A1 (P1, confidence 9/10) — Task ordering creates a settings-rename collision.**
-Task 1 step 5 modifies `agentkit/sdk/agentkit/core/config.py:56-59` to add `OPENROUTER_MODEL` to the `Settings` class. Task 5 then deletes the entire `Settings` class and replaces it with `SDKSettings`. If both tasks land in order, the OpenRouter field must survive the rename, which Task 5 step 3 does include in the new `SDKSettings` body. The risk is real but already mitigated: the plan's Self-Review section calls out this ordering note. Recommendation: leave the ordering as-is; add a one-line assertion to Task 5 step 5 to read `assert "OPENROUTER_MODEL" in SDKSettings.model_fields` so a reordering during execution is loudly caught.
+Task 1 step 5 modifies `kaji/sdk/kaji/core/config.py:56-59` to add `OPENROUTER_MODEL` to the `Settings` class. Task 5 then deletes the entire `Settings` class and replaces it with `SDKSettings`. If both tasks land in order, the OpenRouter field must survive the rename, which Task 5 step 3 does include in the new `SDKSettings` body. The risk is real but already mitigated: the plan's Self-Review section calls out this ordering note. Recommendation: leave the ordering as-is; add a one-line assertion to Task 5 step 5 to read `assert "OPENROUTER_MODEL" in SDKSettings.model_fields` so a reordering during execution is loudly caught.
 
 **A2 (P1, confidence 8/10) — `get_settings()` mutability is preserved.**
 Both old and new config use `@lru_cache(maxsize=1)` on `get_settings()`, which means tests that monkeypatch envs must call `get_settings.cache_clear()` between asserts. The plan's tests (Task 2 step 1, Task 3 step 1) do this correctly, but Task 5 step 5 runs the full SDK suite under one process — if any earlier test left a populated cache, the split-config test will see stale fields. Recommendation: add a `pytest` autouse fixture in `tests/conftest.py` that clears `get_settings.cache_clear()` before each test. The plan does not include this; it should.
@@ -1479,7 +1479,7 @@ Task 8 step 3 subscribes to the bus, fires `runtime.send(...)` as a task, and yi
 Fix: wrap `send_task` in a `try/finally` that puts a sentinel on error, listen for `CancellationCompleted` and `AgentMessageCompleted`, and accumulate until `send_task.done()` rather than first-completion.
 
 **A4 (P2, confidence 7/10) — `InMemoryEventBus.subscribe` contract is assumed.**
-Task 8 step 3 calls `await self.bus.subscribe(handler)` and `await unsubscribe()`. The plan notes "check the existing shape" in passing, but does not commit to a signature. The actual `InMemoryEventBus` (per the project memory `p0-agent-loop-public.md`) was added as part of P0 — its subscribe contract should be pinned in this task or fixed in a sub-task. Add: Task 8 step 0 should grep `agentkit/sdk/agentkit/infra/events/bus.py` and document the existing subscribe signature in the task body before writing the test.
+Task 8 step 3 calls `await self.bus.subscribe(handler)` and `await unsubscribe()`. The plan notes "check the existing shape" in passing, but does not commit to a signature. The actual `InMemoryEventBus` (per the project memory `p0-agent-loop-public.md`) was added as part of P0 — its subscribe contract should be pinned in this task or fixed in a sub-task. Add: Task 8 step 0 should grep `kaji/sdk/kaji/infra/events/bus.py` and document the existing subscribe signature in the task body before writing the test.
 
 **A5 (P2, confidence 7/10) — OpenRouter inherits OpenAI's `_build_messages` but not its constructor positional shape.**
 `OpenRouterProvider` extends `OpenAIProvider` and calls `super().__init__(api_key=..., model=..., base_url=...)`. `OpenAIProvider.__init__` (openai.py:35-41) accepts those exact keyword names, so the call works. However, `OpenAIProvider` also caches `self._client = None` then lazily builds the client in the `client` property — `OpenRouterProvider` overrides the property to pass `default_headers`, but never resets `self._client = None` after the parent constructor sets it. The parent already sets it to None so this is fine, but the override skips calling the parent's lazy-build entirely. Confirm: the override's behavior is correct only if the parent's `client` property never ran before the override is hit. Recommendation: in `OpenRouterProvider.__init__`, explicitly assign `self._client = None` after `super().__init__()` to make the contract obvious.
@@ -1507,10 +1507,10 @@ Task 1 verifies registration and headers but does not exercise the actual chat-c
 The test (Task 8 step 1) calls `await session.send("hi")` against the mock provider, then asserts `isinstance(calls, list)`. The mock provider does not emit tool calls, so the list is always empty — the assertion is vacuous. Either use a fake provider that returns a tool call, or split into two tests: one asserting the empty case, one with a provider stub that returns a `tool_calls` chunk so the filter actually filters.
 
 **T3 (P2, confidence 8/10) — Task 5 lacks a backward-compat verification on serve.**
-The plan says "Run the serve test suite if touchable" (Task 5 step 6). Touchable means the serve venv is configured and `ServeSettings` is created and consumed end-to-end. The memory `serve-pytest-asyncio-auto.md` notes serve's local venv is unrunnable. Concrete consequence: serve breakage will only surface in CI. Recommendation: add a smoke-import test inside the SDK suite that does `from agentkit_serve.config import ServeSettings; ServeSettings()` and asserts the migrated fields exist (guarded by `pytest.importorskip("agentkit_serve")` so the SDK suite passes when serve is not installed).
+The plan says "Run the serve test suite if touchable" (Task 5 step 6). Touchable means the serve venv is configured and `ServeSettings` is created and consumed end-to-end. The memory `serve-pytest-asyncio-auto.md` notes serve's local venv is unrunnable. Concrete consequence: serve breakage will only surface in CI. Recommendation: add a smoke-import test inside the SDK suite that does `from kaji_serve.config import ServeSettings; ServeSettings()` and asserts the migrated fields exist (guarded by `pytest.importorskip("kaji_serve")` so the SDK suite passes when serve is not installed).
 
 **T4 (P2, confidence 7/10) — No test guards the lazy-import contract.**
-`agentkit/__init__.py:23-52` is a PEP-562 lazy map. Tasks 1, 3, 4 add new provider classes and constructor kwargs; none of them touch the lazy map (correctly — providers are accessed via `get_provider`, not top-level imports). But it would be cheap to add a single test: `import sys; import agentkit; assert "openai" not in sys.modules and "anthropic" not in sys.modules and "google.genai" not in sys.modules`. The plan does not include this; recommend adding it to Task 9 (typing changes are the natural home).
+`kaji/__init__.py:23-52` is a PEP-562 lazy map. Tasks 1, 3, 4 add new provider classes and constructor kwargs; none of them touch the lazy map (correctly — providers are accessed via `get_provider`, not top-level imports). But it would be cheap to add a single test: `import sys; import kaji; assert "openai" not in sys.modules and "anthropic" not in sys.modules and "google.genai" not in sys.modules`. The plan does not include this; recommend adding it to Task 9 (typing changes are the natural home).
 
 ### Performance findings
 
@@ -1527,11 +1527,11 @@ With a high-volume model and slow consumer, deltas accumulate in memory unbounde
 
 ### What already exists
 
-- Neutral tool-format translation (`to_openai`, `to_anthropic`, `to_gemini` in `agentkit/runtime/tools/payload.py`) — reused unchanged by the new provider.
+- Neutral tool-format translation (`to_openai`, `to_anthropic`, `to_gemini` in `kaji/runtime/tools/payload.py`) — reused unchanged by the new provider.
 - `OpenAIProvider.client` lazy-import pattern — Task 1 extends it.
 - `register_provider` + `_BUILTINS` lazy-registry — Task 1 plugs into it.
 - `AgentMessageDelta` / `AgentMessageCompleted` event schemas — Task 8 reuses them rather than introducing a new streaming protocol.
-- `pytest_asyncio` auto mode — already configured at `agentkit/sdk/pytest.ini`; Task 8 leans on it without re-stating.
+- `pytest_asyncio` auto mode — already configured at `kaji/sdk/pytest.ini`; Task 8 leans on it without re-stating.
 
 ### Failure modes per new codepath
 
@@ -1594,9 +1594,9 @@ PR-A can ship immediately and unblock OpenRouter use. PR-B + PR-C can land in ei
 ### Strategic gaps
 
 **S1 — The plan treats OpenRouter as a five-minute add-on, but OpenRouter is increasingly the "first model people try."**
-With OpenRouter as a first-class provider, AgentKit gains access to 200+ models behind one API key. That changes the README's positioning — "AgentKit works with OpenAI, Anthropic, Gemini, Kimi" understates it. After this PR you can say "AgentKit works with any model OpenRouter supports, plus first-class OpenAI/Anthropic/Gemini." Task 10's README edit should lean into this.
+With OpenRouter as a first-class provider, Kaji gains access to 200+ models behind one API key. That changes the README's positioning — "Kaji works with OpenAI, Anthropic, Gemini, Kimi" understates it. After this PR you can say "Kaji works with any model OpenRouter supports, plus first-class OpenAI/Anthropic/Gemini." Task 10's README edit should lean into this.
 
-**S2 — The plan removes serve fields from SDK config but does not address whether `agentkit-serve`'s `Settings` is itself well-shaped.**
+**S2 — The plan removes serve fields from SDK config but does not address whether `kaji-serve`'s `Settings` is itself well-shaped.**
 Once `ServeSettings` is split out, the natural next question is whether the serve config is also overstuffed. Out of scope here, but flag for follow-up.
 
 **S3 — `TextSession.stream()` is the first streaming surface in the SDK that callers can consume directly.**
@@ -1606,7 +1606,7 @@ Today voice is streamy via its own event registry; text is not. Once `stream()` 
 The CHANGELOG covers this, but no migration helper exists. Acceptable at pre-1.0 — but worth a one-paragraph "Migration from 0.1" section in the README rather than only in CHANGELOG.
 
 **S5 — Distribution architecture: the SDK is shipped via Poetry → PyPI.**
-The plan does not touch `agentkit/sdk/CHANGELOG.md` until Task 10, and there is no mention of when/how 0.2.0 actually gets published. If 0.2.0 lands on PyPI, what is the release procedure? `poetry publish`? GitHub Actions? Add a one-line note to Task 10 step 4 about how the release is cut.
+The plan does not touch `kaji/sdk/CHANGELOG.md` until Task 10, and there is no mention of when/how 0.2.0 actually gets published. If 0.2.0 lands on PyPI, what is the release procedure? `poetry publish`? GitHub Actions? Add a one-line note to Task 10 step 4 about how the release is cut.
 
 ### Boring-by-default check
 
@@ -1660,7 +1660,7 @@ Engineering lens and CEO lens agree on: the plan is solid, three concrete fixes 
 - [ ] **R4 (P2, CC: ~2min)** — Add assertion to Task 5 step 5 that `OPENROUTER_MODEL` survives the rename. Source: A1.
 - [ ] **R5 (P2, CC: ~3min)** — Pin `InMemoryEventBus.subscribe` signature in Task 8 step 0. Source: A4.
 - [ ] **R6 (P2, CC: ~5min)** — Add a network-mock test for `OpenRouterProvider.generate`. Source: T1.
-- [ ] **R7 (P2, CC: ~3min)** — Add `pytest.importorskip("agentkit_serve")` smoke test for `ServeSettings` to the SDK suite. Source: T3.
+- [ ] **R7 (P2, CC: ~3min)** — Add `pytest.importorskip("kaji_serve")` smoke test for `ServeSettings` to the SDK suite. Source: T3.
 - [ ] **R8 (P2, CC: ~2min)** — Add a lazy-import contract test to Task 9. Source: T4.
 - [ ] **R9 (P3, CC: ~1min)** — Bound `TextSession.stream()` queue at 1024. Source: P1.
 - [ ] **R10 (P3, CC: ~5min)** — Task 10 step 4: name the release procedure. Source: S5.

@@ -1,7 +1,7 @@
-# AgentKit MVP
+# Kaji MVP
 
-This document defines the MVP scope for the AgentKit SDKs. It is focused on the
-Python (`agentkit`) and TypeScript (`@agentkit/sdk`) packages; `agentkit-serve`
+This document defines the MVP scope for the Kaji SDKs. It is focused on the
+Python (`kaji`) and TypeScript (`@kaji/sdk`) packages; `kaji-serve`
 is treated as out of scope for the SDK production-readiness path.
 
 Both SDKs target the same five-step developer path:
@@ -14,7 +14,7 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Install the package** (`pip install agentkit` or `npm install @agentkit/sdk zod`)
+1. **Install the package** (`pip install kaji` or `npm install @kaji/sdk zod`)
 2. **Install your provider SDK** (OpenAI or Anthropic; see below)
 3. **Set an API key** (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
 
@@ -34,7 +34,7 @@ your image size reflects only what you use.
 | Anthropic provider | Yes | Yes |
 | Event store + bus (in-memory) | Yes | Yes |
 | Session replay (`replaySession`) | Yes | Yes |
-| `agentkit init` CLI scaffold | Yes | Not planned |
+| `kaji init` CLI scaffold | Yes | Not planned |
 | `CancellationToken` | Yes | Yes |
 
 ---
@@ -47,23 +47,24 @@ integration catalog contract.
 
 | Area | Python SDK | TypeScript SDK | MVP status |
 |------|------------|----------------|------------|
-| Embedded ReAct runtime | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`. | Same shape as Python. | Keep and harden. |
-| Custom tools | Works through `ToolRegistry`; `Integration` + `Tool` are available from top-level `agentkit`. | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters. | MVP path implemented. |
-| Provider setup | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`. | OpenAI/Anthropic lazy-load peer deps, but mostly surface raw `Error`/SDK errors. | TS needs typed errors. |
-| First-party integrations | No Gmail/Spotify-style catalog. | No Gmail/Spotify-style catalog. | Major gap. |
-| Event inspection | Store-backed event log is the source of truth. | Store-backed event log is the source of truth. | Keep as MVP contract. |
-| Quickstart protection | Covered by SDK tests. | Covered by `bun run test:quickstart` and regular Vitest discovery. | MVP path implemented. |
-| Public surface | Broad; includes non-MVP RAG/text/TTS/realtime exports. | Narrower; mostly runtime/tools/providers/events. | Python surface should be clarified. |
+| Embedded ReAct runtime | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`. | Same shape as Python. | Implemented. |
+| Custom tools | Works through `ToolRegistry`; `Integration` + `Tool` are exported from top-level `kaji`. | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters. | Implemented. |
+| Provider setup | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`. | OpenAI/Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented. |
+| Provider-safe tool names | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`. | Implemented. |
+| First-party integration catalog | `kaji add` vendors GitHub/Gmail/GCal source into the user's tree. | No catalog yet. | Python partial; TS gap. |
+| Event inspection | Store-backed event log is the source of truth. | Store-backed event log is the source of truth. | Implemented. |
+| Quickstart protection | `tests/test_quickstart.py` + `tests/test_public_api.py`. | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`. | Implemented. |
+| Public surface | Top-level `kaji` advertises only the MVP runtime; non-MVP features (RAG, text/voice modalities) live under submodules. | Top-level entry is MVP-only; `MockProvider` moved to `@kaji/sdk/testing`. | Implemented. |
 
 The practical readiness judgement:
 
-- Python is close for embedded custom-tool agents, assuming developers write
-  their own integrations and use OpenAI/Anthropic.
-- TypeScript has the same runtime shape, but its documented integration
-  ergonomics and provider error handling need to be fixed before the package can
-  be considered ready for external developer MVP use.
-- Neither SDK yet satisfies "install AgentKit and use Gmail/Spotify/etc.
-  integrations out of the box"; that requires the integration catalog plan below.
+- Both SDKs satisfy the five-step embedded-agent path with OpenAI/Anthropic
+  and developer-authored tools.
+- Provider error contracts, tool-name safety, and the public surface are
+  aligned across Python and TypeScript.
+- The remaining gap is the first-party integration catalog contract: Python
+  ships three CLI-vendored integrations but no shared manifest/auth/credential
+  shape, and TypeScript has no catalog at all. See Plan 3 below.
 
 ---
 
@@ -80,7 +81,7 @@ to build a working embedded agent and are not part of the getting-started path:
 | Text modality adapter | Python only |
 | Voice / TTS adapters | Python only (not hardened) |
 | Redis realtime bus | Python only (not hardened) |
-| `agentkit-serve` (FastAPI + workers) | Python only (not hardened) |
+| `kaji-serve` (FastAPI + workers) | Python only (not hardened) |
 | Durable event/session stores | Neither; bring your own |
 | Observability / token metrics | Post-MVP |
 
@@ -97,17 +98,17 @@ README for details.
 **Python**
 
 ```bash
-pip install 'agentkit[openai]'     # OpenAI
+pip install 'kaji[openai]'     # OpenAI
 # or
-pip install 'agentkit[anthropic]'  # Anthropic
+pip install 'kaji[anthropic]'  # Anthropic
 ```
 
 **TypeScript**
 
 ```bash
-npm install @agentkit/sdk zod openai        # OpenAI
+npm install @kaji/sdk zod openai        # OpenAI
 # or
-npm install @agentkit/sdk zod @anthropic-ai/sdk  # Anthropic
+npm install @kaji/sdk zod @anthropic-ai/sdk  # Anthropic
 ```
 
 ### Step 2 - Configure provider
@@ -121,10 +122,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```python
-import agentkit
-provider = agentkit.get_provider("openai")   # reads OPENAI_API_KEY
+import kaji
+provider = kaji.get_provider("openai")   # reads OPENAI_API_KEY
 # or
-provider = agentkit.get_provider("anthropic")
+provider = kaji.get_provider("anthropic")
 ```
 
 **TypeScript**
@@ -136,10 +137,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
-import { OpenAIProvider } from "@agentkit/sdk";
+import { OpenAIProvider } from "@kaji/sdk";
 const provider = new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! });
 // or
-import { AnthropicProvider } from "@agentkit/sdk";
+import { AnthropicProvider } from "@kaji/sdk";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
 
@@ -148,7 +149,7 @@ const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! 
 **Python**
 
 ```python
-from agentkit import Integration, Tool, ToolContext
+from kaji import Integration, Tool, ToolContext
 
 class WeatherIntegration(Integration):
     namespace = "weather"
@@ -169,7 +170,7 @@ class WeatherIntegration(Integration):
 **TypeScript**
 
 ```ts
-import { Integration, tool } from "@agentkit/sdk";
+import { Integration, tool } from "@kaji/sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -192,7 +193,7 @@ class WeatherIntegration extends Integration {
 
 ```python
 import asyncio
-from agentkit import AgentBuilder, InMemoryEventBus, InMemoryEventStore, UserMessage
+from kaji import AgentBuilder, InMemoryEventBus, InMemoryEventStore, UserMessage
 
 async def main():
     bus = InMemoryEventBus()
@@ -219,9 +220,9 @@ import {
   AgentBuilder,
   InMemoryEventStore,
   EventBus,
-  AgentKitEvent,
+  KajiEvent,
   EventType,
-} from "@agentkit/sdk";
+} from "@kaji/sdk";
 
 const store = new InMemoryEventStore();
 const bus = new EventBus();
@@ -233,7 +234,7 @@ const runtime = new AgentBuilder()
   .build({ bus, store });
 
 await store.append(
-  AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
+  KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
 );
 await runtime.send("s1", "Weather in Seattle?");
 ```
@@ -276,7 +277,7 @@ Events are written in chronological order. Key types to look for:
 The in-memory stores lose state on process restart. To persist:
 
 - Drop in your own `EventStore` implementation (any async append + getEvents backend works)
-- For a full platform with Postgres, Redis, and workers, see `agentkit-serve`
+- For a full platform with Postgres, Redis, and workers, see `kaji-serve`
 
 ---
 
@@ -294,20 +295,20 @@ fixed and does not reflect real LLM outputs.
 
 | Package | Checks |
 |---------|--------|
-| `agentkit/sdk` | pyrefly (type check), ruff (lint), pytest (unit + quickstart) |
-| `agentkit/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
-| `agentkit/serve` | ruff (lint), pytest (unit); no pyrefly until typing debt is addressed |
+| `kaji/sdk` | pyrefly (type check), ruff (lint), pytest (unit + quickstart) |
+| `kaji/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
+| `kaji/serve` | ruff (lint), pytest (unit); no pyrefly until typing debt is addressed |
 
 Install smoke jobs for both SDK packages validate that the published wheel /
 tarball exports resolve correctly and provider errors are clear.
 
 ---
 
-## When to use Redis vs agentkit-serve
+## When to use Redis vs kaji-serve
 
 - **Single-process app, only one agent runtime:** in-memory bus and store. No Redis needed.
-- **Multiple processes that need to share events:** add `pip install 'agentkit[realtime]'` and swap `InMemoryEventBus` for `EventBus` (Redis-backed). Still no `agentkit-serve` required.
-- **Full hosted platform (REST API, voice WebSocket, async tool workers):** install `agentkit-serve`. It wires the SDK + Redis + Postgres + TaskIQ into a deployable reference service.
+- **Multiple processes that need to share events:** add `pip install 'kaji[realtime]'` and swap `InMemoryEventBus` for `EventBus` (Redis-backed). Still no `kaji-serve` required.
+- **Full hosted platform (REST API, voice WebSocket, async tool workers):** install `kaji-serve`. It wires the SDK + Redis + Postgres + TaskIQ into a deployable reference service.
 
 ---
 
@@ -326,15 +327,15 @@ AgentBuilder
 
 Current code paths:
 
-- Python: `agentkit/sdk/agentkit/runtime/agents/builder.py` creates a scoped
+- Python: `kaji/sdk/kaji/runtime/agents/builder.py` creates a scoped
   registry, registers each integration, builds a planner, and passes
   `registry.list_specs()` into `AgentRuntime`.
-- Python: `agentkit/sdk/agentkit/runtime/agents/runtime.py` emits user,
+- Python: `kaji/sdk/kaji/runtime/agents/runtime.py` emits user,
   reasoning, message, cancellation, and tool events through `_emit()`, which
   appends to the store and publishes on the bus.
-- TypeScript: `agentkit/ts/src/runtime/builder.ts` mirrors the Python builder
+- TypeScript: `kaji/ts/src/runtime/builder.ts` mirrors the Python builder
   by creating a scoped `ToolRegistry`, `ToolPlanner`, and runtime.
-- TypeScript: `agentkit/ts/src/runtime/runtime.ts` appends `USER_MESSAGE` in
+- TypeScript: `kaji/ts/src/runtime/runtime.ts` appends `USER_MESSAGE` in
   `send()`, replays state in `runTurn()`, streams the provider, emits message
   events, and executes tool calls through `ToolPlanner`.
 
@@ -346,7 +347,11 @@ catalog packaging.
 
 ## Hardening plans
 
-### Plan 1 - Make integration authoring one obvious path
+Status summary: Plans 1, 2, 4, 5, 6 are implemented and are kept here as a
+record of the contract each one fixes. Plan 3 (first-party integration
+catalog) is the only outstanding item.
+
+### Plan 1 - Make integration authoring one obvious path (implemented)
 
 Today there are two styles:
 
@@ -361,7 +366,7 @@ scraper-backed integrations.
 Target Python shape:
 
 ```python
-from agentkit import Integration, Tool, ToolContext
+from kaji import Integration, Tool, ToolContext
 
 class WeatherIntegration(Integration):
     @property
@@ -383,8 +388,8 @@ class WeatherIntegration(Integration):
 
 Implemented Python changes:
 
-- Export `Tool` from `agentkit/__init__.py` next to `Integration`.
-- Add a quickstart test that imports only from `agentkit` and uses the snippet
+- Export `Tool` from `kaji/__init__.py` next to `Integration`.
+- Add a quickstart test that imports only from `kaji` and uses the snippet
   above.
 - Keep `ToolRegistry` as the runtime primitive; do not move tool execution into
   service-style modules.
@@ -392,7 +397,7 @@ Implemented Python changes:
 Target TypeScript shape:
 
 ```ts
-import { Integration, tool } from "@agentkit/sdk";
+import { Integration, tool } from "@kaji/sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -416,7 +421,7 @@ Implemented TypeScript changes:
 - Add `examples/**/*.test.ts` to `vitest.config.ts`.
 - Ensure the example typechecks under the package `tsconfig`.
 
-### Plan 2 - Separate catalog namespace from provider tool name
+### Plan 2 - Separate catalog namespace from provider tool name (implemented)
 
 The integration base currently prefixes names as `{namespace}.{tool_name}`.
 That is useful for humans, policy, and catalog discovery, but provider tool-name
@@ -455,7 +460,7 @@ Current behavior:
 - Tool policies accept either the safe provider name or the catalog name, with
   deny rules taking precedence.
 
-### Plan 3 - Define the first-party integration catalog contract
+### Plan 3 - Define the first-party integration catalog contract (open)
 
 The production developer goal includes integrations such as Gmail and Spotify.
 The current SDKs only provide a registry abstraction; they do not provide a
@@ -488,10 +493,10 @@ Implementation order:
 4. Only then add scraper-backed fallbacks, with clear risk and rate-limit
    behavior.
 
-### Plan 4 - Normalize provider errors across SDKs
+### Plan 4 - Normalize provider errors across SDKs (implemented)
 
 Python already has provider-specific error classes in
-`agentkit.runtime.providers.errors`. TypeScript should get the same public
+`kaji.runtime.providers.errors`. TypeScript should get the same public
 contract so missing packages, missing keys, provider API failures, and
 cancellation are distinguishable.
 
@@ -516,30 +521,30 @@ Required TypeScript changes:
 - Keep cancellation as a runtime cancellation error, not a provider config or
   provider API error.
 
-### Plan 5 - Tighten the public MVP surface
+### Plan 5 - Tighten the public MVP surface (implemented)
 
 Python exports several non-MVP features from the top-level package: text
 modality, TTS, tool retrieval, and document RAG. These can remain implemented,
 but the public getting-started surface should make the MVP path obvious.
 
 Status: implemented for the package entrypoints. The Python top-level
-`agentkit` namespace now advertises the MVP runtime, providers, events,
+`kaji` namespace now advertises the MVP runtime, providers, events,
 sessions, tools, and integration helpers. Non-MVP extensions remain importable
-from their owning submodules, such as `agentkit.knowledge` and
-`agentkit.modalities.text`. The TypeScript main entrypoint no longer exports
-the deterministic test provider; tests import it from `@agentkit/sdk/testing`.
+from their owning submodules, such as `kaji.knowledge` and
+`kaji.modalities.text`. The TypeScript main entrypoint no longer exports
+the deterministic test provider; tests import it from `@kaji/sdk/testing`.
 
 Required changes:
 
 - Keep top-level exports for stable MVP names: events, builder/runtime,
   providers, integrations, tools, sessions, policies, and cancellation.
 - Move non-MVP features in docs to explicit subpackage imports.
-- Use `@agentkit/sdk/testing` for TypeScript test-only helpers such as
+- Use `@kaji/sdk/testing` for TypeScript test-only helpers such as
   `MockProvider`.
 - Add `test_public_api.py` assertions for the names that must stay available in
   the five-step path.
 
-### Plan 6 - Make CI prove the first-run experience
+### Plan 6 - Make CI prove the first-run experience (implemented)
 
 The SDKs should not be considered MVP-ready unless CI runs the exact first-run
 path without API keys.
@@ -549,7 +554,7 @@ Required checks:
 ```bash
 # Python SDK
 poetry run pyrefly check
-poetry run ruff check agentkit tests
+poetry run ruff check kaji tests
 poetry run pytest tests/test_quickstart.py tests/test_public_api.py -q
 
 # TypeScript SDK

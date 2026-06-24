@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Apply better-auth's complete design-token set to `apps/docs`, enrich the layout chrome (nav, density, textured background), add original agentkit UI/MDX components, and replace the placeholder home page.
+**Goal:** Apply better-auth's complete design-token set to `apps/docs`, enrich the layout chrome (nav, density, textured background), add original kaji UI/MDX components, and replace the placeholder home page.
 
 **Architecture:** Layer a full shadcn-style token set (light `:root` + `.dark` + `@theme inline`) onto the existing `black.css` fumadocs theme, tune `DocsLayout` config for density, and add original React components. No framework change, no custom-sidebar rebuild, no AI-chat/Typesense/Framer.
 
@@ -14,11 +14,11 @@ Styling + components, no app logic. "Tests" are build / typecheck / lint / forma
 
 ## Rules (read second)
 
-- USE BUN for any package op (`bun --filter @agentkit/docs <script>`). No new deps planned; if one is truly needed, prefer existing `clsx`/`tailwind-merge` (check first), add via `bun add` only if required. Never npm.
+- USE BUN for any package op (`bun --filter @kaji/docs <script>`). No new deps planned; if one is truly needed, prefer existing `clsx`/`tailwind-merge` (check first), add via `bun add` only if required. Never npm.
 - A safety hook blocks standalone `rm -rf`; not needed here.
-- The token VALUES below are CSS design configuration adapted from the MIT-licensed better-auth project. All React COMPONENTS are written fresh for agentkit — do NOT copy better-auth component source.
+- The token VALUES below are CSS design configuration adapted from the MIT-licensed better-auth project. All React COMPONENTS are written fresh for kaji — do NOT copy better-auth component source.
 - Branch is `feat/docs-restyle-2` (already created, spec committed there). Stay on it.
-- Brand `agentkit` stays lowercase. No em-dashes in added prose.
+- Brand `kaji` stays lowercase. No em-dashes in added prose.
 
 ## Verified current state
 
@@ -43,7 +43,7 @@ html > body[data-scroll-locked] {
 }
 ```
 
-`apps/docs/lib/shared.ts` exports `appName = "agentkit"`, `docsRoute`, `gitConfig = { user: "enkyuan", repo: "alloy", branch: "main" }`.
+`apps/docs/lib/shared.ts` exports `appName = "kaji"`, `docsRoute`, `gitConfig = { user: "enkyuan", repo: "alloy", branch: "main" }`.
 
 `apps/docs/lib/layout.shared.tsx` `baseOptions()` returns `{ nav: { title: appName }, githubUrl }`.
 
@@ -261,12 +261,12 @@ html > body[data-scroll-locked] {
 
 - [ ] **Step 2: Build gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build`
 Expected: `Exited with code 0`. Capture output. If Tailwind v4 errors on the `@theme inline` nested `@keyframes`, move the two `@keyframes` blocks OUT of `@theme inline` to top-level (keep the `--animate-*` lines inside) and rebuild.
 
 - [ ] **Step 3: Typecheck gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs typecheck`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs typecheck`
 Expected: exit 0.
 
 - [ ] **Step 4: Commit**
@@ -376,7 +376,7 @@ export function baseOptions(): BaseLayoutProps {
 
 Run:
 ```bash
-bun --filter @agentkit/docs build && bun --filter @agentkit/docs typecheck
+bun --filter @kaji/docs build && bun --filter @kaji/docs typecheck
 ```
 Expected: both exit 0.
 
@@ -423,7 +423,7 @@ Note: keep fumadocs' sidebar (do NOT set `sidebar.enabled: false`). The `--fd-na
 
 - [ ] **Step 2: Build gate**
 
-Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build`
+Run: `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build`
 Expected: exit 0. If `containerProps` is not a valid prop on this `DocsLayout` version, remove it and instead add the `bg-grid-texture` class via the body in `app/layout.tsx`; rebuild. Report which path was used.
 
 - [ ] **Step 3: Commit**
@@ -536,7 +536,7 @@ declare global {
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build && bun --filter @agentkit/docs typecheck
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build && bun --filter @kaji/docs typecheck
 ```
 Expected: both exit 0. (Content does not yet use these; they are available for the home page in Task 6 and future content. fumadocs allows registering unused MDX components.)
 
@@ -559,7 +559,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 **Files:**
 - Modify: `apps/docs/app/(home)/page.tsx`
 
-- [ ] **Step 1: Replace Hello World with an agentkit front door**
+- [ ] **Step 1: Replace Hello World with an kaji front door**
 
 Write `apps/docs/app/(home)/page.tsx`:
 
@@ -571,7 +571,7 @@ export default function HomePage() {
   return (
     <main className="bg-grid-texture flex flex-1 flex-col items-center justify-center px-4 py-20 text-center">
       <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-        agentkit
+        kaji
       </h1>
       <p className="mt-4 max-w-xl text-muted-foreground">
         An embeddable, infra-free SDK for building agents in Python and
@@ -615,7 +615,7 @@ export default function HomePage() {
 
 Run:
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs build && bun --filter @agentkit/docs typecheck
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs build && bun --filter @kaji/docs typecheck
 ```
 Expected: both exit 0.
 
@@ -624,7 +624,7 @@ Expected: both exit 0.
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
 git add "apps/docs/app/(home)/page.tsx"
-git commit -m "feat(docs): real agentkit home page
+git commit -m "feat(docs): real kaji home page
 
 Replace Hello World with a token-driven hero + feature cards and CTAs
 to the docs. No marketing chrome.
@@ -643,8 +643,8 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 Run:
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-bun --filter @agentkit/docs format
-bunx turbo run build typecheck lint format:check --filter=@agentkit/docs
+bun --filter @kaji/docs format
+bunx turbo run build typecheck lint format:check --filter=@kaji/docs
 ```
 Expected: all 4 tasks successful, lint 0 warnings/0 errors.
 
@@ -662,14 +662,14 @@ Expected: exit 0, "Compiled successfully". This catches any untracked new file (
 
 - [ ] **Step 3: Start dev server**
 
-Run (background): `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @agentkit/docs dev`
+Run (background): `cd /Users/Enkang.Yuan1/Desktop/Projects/alloy && bun --filter @kaji/docs dev`
 Note the actual port.
 
 - [ ] **Step 4: Dogfood with the gstack /browse skill (light + dark)**
 
 Per `CLAUDE.md`, use `/browse` (never chrome MCP directly). Against the running URL:
 - Load `/` (home): confirm the new hero, CTAs, and feature cards render with crisp `0.2rem` corners and the subtle grid texture.
-- Load `/docs`: confirm enriched nav (brand mark + "agentkit" + Docs link + GitHub + search + theme toggle), the 56px nav height, denser layout, grid texture, crisp corners on code blocks/cards.
+- Load `/docs`: confirm enriched nav (brand mark + "kaji" + Docs link + GitHub + search + theme toggle), the 56px nav height, denser layout, grid texture, crisp corners on code blocks/cards.
 - Toggle dark mode: confirm tokens resolve in both themes and there is NO two-toned clash between the shadcn tokens and `black.css` (background/foreground stay consistent). If clash: adjust the `:root`/`.dark` `--background`/`--foreground` to match black.css's fd tokens, rebuild, recheck.
 - Verify a token utility actually applies: `$B js "getComputedStyle(document.querySelector('a[href=\"/docs\"]')||document.body).borderRadius"` or screenshot a card and confirm square-ish corners.
 - Open `/docs/concepts/tool-registry`: code blocks still render, sidebar still works.

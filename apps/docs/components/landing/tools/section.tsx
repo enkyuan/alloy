@@ -13,7 +13,7 @@ export function ToolsSection() {
     { id: "ts" as const, label: "TypeScript", filename: "tools.ts" },
   ];
 
-  const pySnippet = `from agentkit import register_tool, tool_spec_from_model
+  const pySnippet = `from kaji import register_tool, tool_spec_from_model
 
 class WeatherArgs(BaseModel):
     city: str
@@ -24,7 +24,7 @@ class WeatherArgs(BaseModel):
 async def get_weather(ctx, args):
     return await fetch_weather(args["city"])`;
 
-  const tsSnippet = `import { registerTool, toolSpecFromSchema } from "@agentkit/sdk"
+  const tsSnippet = `import { registerTool, toolSpecFromSchema } from "@kaji/sdk"
 import { z } from "zod"
 
 registerTool(

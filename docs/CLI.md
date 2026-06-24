@@ -1,7 +1,7 @@
-# agentkit CLI
+# kaji CLI
 
-The `agentkit` CLI ships with the Python SDK. After `pip install agentkit`,
-run `agentkit --help` for the current command list. Subcommands below.
+The `kaji` CLI ships with the Python SDK. After `pip install kaji`,
+run `kaji --help` for the current command list. Subcommands below.
 
 | command | what it does |
 | --- | --- |
@@ -12,14 +12,14 @@ run `agentkit --help` for the current command list. Subcommands below.
 | [`info`](#info) | print environment + config diagnostics |
 | [`secret`](#secret) | mint a random 32-byte hex secret |
 | [`doctor`](#doctor) | check the environment for common setup issues |
-| [`upgrade`](#upgrade) | upgrade installed agentkit packages |
+| [`upgrade`](#upgrade) | upgrade installed kaji packages |
 
 ## init
 
 Scaffold `agent.py` and `.env.example` in a target directory.
 
 ```bash
-agentkit init ./my-agent --provider openai
+kaji init ./my-agent --provider openai
 ```
 
 | flag | default | meaning |
@@ -30,14 +30,14 @@ agentkit init ./my-agent --provider openai
 | `--yes` | off | non-interactive; use defaults |
 
 The scaffold wires `AgentBuilder` to an env-driven provider; set
-`AGENTKIT_MODEL_PROVIDER` plus the matching `*_API_KEY` to run it.
+`KAJI_MODEL_PROVIDER` plus the matching `*_API_KEY` to run it.
 
 ## gen
 
 Read an OpenAPI 3 spec and emit a tool module the runtime can register.
 
 ```bash
-agentkit gen --spec petstore.json --out ./tools --lang python --prefix pet
+kaji gen --spec petstore.json --out ./tools --lang python --prefix pet
 ```
 
 | flag | required | meaning |
@@ -60,14 +60,14 @@ integration's source files out of the registry bundled with the SDK,
 shadcn-style, so you own the copies and can edit them freely.
 
 ```bash
-agentkit add github                       # writes ./integrations/github.py
-agentkit add github --out ./custom/path   # custom destination
-agentkit add github --force               # overwrite existing files
+kaji add github                       # writes ./integrations/github.py
+kaji add github --out ./custom/path   # custom destination
+kaji add github --force               # overwrite existing files
 ```
 
 | flag | default | meaning |
 | --- | --- | --- |
-| `name` (positional) | required | integration name; see `agentkit list-integrations` |
+| `name` (positional) | required | integration name; see `kaji list-integrations` |
 | `--out` | `./integrations` | destination directory |
 | `--force` | off | overwrite existing files |
 
@@ -84,61 +84,61 @@ credentials (`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`).
 
 ## list-integrations
 
-Enumerate everything `agentkit add` can install.
+Enumerate everything `kaji add` can install.
 
 ```bash
-agentkit list-integrations            # human-readable
-agentkit list-integrations --json     # machine-readable
+kaji list-integrations            # human-readable
+kaji list-integrations --json     # machine-readable
 ```
 
 ## info
 
-Print Python / agentkit / provider config diagnostics. Useful when filing
+Print Python / kaji / provider config diagnostics. Useful when filing
 issues.
 
 ```bash
-agentkit info             # human-readable
-agentkit info --json      # machine-readable
+kaji info             # human-readable
+kaji info --json      # machine-readable
 ```
 
 ## secret
 
-Mint a hex secret suitable for `AGENTKIT_SECRET` or any 32-byte signing key.
+Mint a hex secret suitable for `KAJI_SECRET` or any 32-byte signing key.
 
 ```bash
-agentkit secret                       # prints "AGENTKIT_SECRET=<hex>"
-agentkit secret --name JWT_SECRET     # different env var name
-agentkit secret --json                # {"name": "AGENTKIT_SECRET", "value": "<hex>"}
+kaji secret                       # prints "KAJI_SECRET=<hex>"
+kaji secret --name JWT_SECRET     # different env var name
+kaji secret --json                # {"name": "KAJI_SECRET", "value": "<hex>"}
 ```
 
 ## doctor
 
-Runs a fixed checklist: Python version, installed agentkit packages,
+Runs a fixed checklist: Python version, installed kaji packages,
 provider env vars, write permissions on the working directory. Exits
 non-zero if any check fails; prints a one-line remedy for each issue.
 
 ```bash
-agentkit doctor              # human-readable
-agentkit doctor --json       # machine-readable
+kaji doctor              # human-readable
+kaji doctor --json       # machine-readable
 ```
 
 ## upgrade
 
-Pip-upgrade installed agentkit packages. Prompts by default; pass `--yes`
+Pip-upgrade installed kaji packages. Prompts by default; pass `--yes`
 to run unattended.
 
 ```bash
-agentkit upgrade --yes
+kaji upgrade --yes
 ```
 
 ## TS CLI parity
 
-The TypeScript SDK ships a parallel `agentkit` CLI (see `agentkit/ts`); its
+The TypeScript SDK ships a parallel `kaji` CLI (see `kaji/ts`); its
 commands mirror the Python ones (`init`, `gen`, `info`, `doctor`,
 `upgrade`). When in doubt the Python CLI is the reference implementation.
 
 ## See also
 
-- [AGENTKIT.md](AGENTKIT.md) for the shared concepts overview.
+- [KAJI.md](KAJI.md) for the shared concepts overview.
 - [RUNTIME_API.md](RUNTIME_API.md) for the runtime API reference.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common errors and fixes.

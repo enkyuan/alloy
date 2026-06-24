@@ -1,7 +1,8 @@
 {
-  "name": "@agentkit/shared",
+  "name": "@kaji/shared",
   "version": "0.0.0",
   "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
   "exports": {
     "./tsconfig/base": "./tsconfig/base.json",
     "./tsconfig/react": "./tsconfig/react.json",

@@ -26,45 +26,45 @@
     "clean": {
       "cache": false
     },
-    "@agentpay/api#build": {
+    "@ryo/api#build": {
       "dependsOn": [],
       "outputs": ["bin/**"],
       "cache": true
     },
-    "@agentpay/api#dev": {
+    "@ryo/api#dev": {
       "cache": false,
       "persistent": false
     },
-    "@agentpay/api#lint": {
+    "@ryo/api#lint": {
       "cache": true
     },
-    "@agentpay/auth#build": {
+    "@ryo/auth#build": {
       "dependsOn": [],
       "outputs": ["dist/**"],
       "cache": true
     },
-    "@agentpay/auth#dev": {
+    "@ryo/auth#dev": {
       "cache": false,
       "persistent": true
     },
-    "@agentpay/auth#lint": {
+    "@ryo/auth#lint": {
       "cache": true
     },
-    "@agentkit/docs#build": {
+    "@kaji/docs#build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**"],
       "cache": true
     },
-    "@agentkit/docs#dev": {
+    "@kaji/docs#dev": {
       "cache": false,
       "persistent": true
     },
-    "@agentkit/cli#build": {
+    "@kaji/cli#build": {
       "dependsOn": [],
       "outputs": ["dist/**"],
       "cache": true
     },
-    "@agentkit/cli#dev": {
+    "@kaji/cli#dev": {
       "cache": false,
       "persistent": false
     }

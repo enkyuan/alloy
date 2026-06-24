@@ -1,27 +1,27 @@
-# agentkit CLI (TypeScript + Python) Implementation Plan
+# kaji CLI (TypeScript + Python) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a polished agentkit CLI for both TypeScript (`apps/cli`, published as `@agentkit/cli`) and Python (`agentkit/sdk/agentkit/cli.py`, console_script `agentkit`) that mirrors the best-of-better-auth DX: interactive `init`, environment-aware `info`, `secret`, `upgrade`, MCP/skill setup, and an OpenAPI `gen` flow. Both CLIs ship with the same UX vocabulary so a user moving between languages is never surprised.
+**Goal:** Build a polished kaji CLI for both TypeScript (`apps/cli`, published as `@kaji/cli`) and Python (`kaji/sdk/kaji/cli.py`, console_script `kaji`) that mirrors the best-of-better-auth DX: interactive `init`, environment-aware `info`, `secret`, `upgrade`, MCP/skill setup, and an OpenAPI `gen` flow. Both CLIs ship with the same UX vocabulary so a user moving between languages is never surprised.
 
 **Architecture:**
 - TS CLI: keep `commander` + `@clack/prompts` + `chalk` (already in use). Split commands into focused files under `apps/cli/src/commands/`. Add `apps/cli/src/utils/` with `package-info`, `package-manager`, `latest-version`, `redact`, `clipboard`, and `mcp-paths` helpers ported from better-auth (trimmed). Add vitest harness so CLI logic is unit-tested.
-- Python CLI: keep `argparse` (stdlib — agentkit SDK is meant to be infra-free, so no new heavy deps). Add a thin `prompts` helper using stdlib `input()` + a tiny TTY select using arrow keys via `termios` (fall back to numeric input when non-TTY). Add `agentkit/cli/` subpackage with one file per command, mirroring the TS layout one-to-one.
+- Python CLI: keep `argparse` (stdlib — kaji SDK is meant to be infra-free, so no new heavy deps). Add a thin `prompts` helper using stdlib `input()` + a tiny TTY select using arrow keys via `termios` (fall back to numeric input when non-TTY). Add `kaji/cli/` subpackage with one file per command, mirroring the TS layout one-to-one.
 - Shared command surface: `init`, `gen`, `info`, `secret`, `upgrade`, `mcp` (TS only — Python ships its own MCP doc), `doctor` (replacing better-auth's verbose info dump with a focused environment check). The Python CLI omits `mcp` and substitutes a `migrate`-equivalent no-op for now (no DB in SDK).
 
 **Tech Stack:**
 - TS: TypeScript 6, `commander@14`, `@clack/prompts@0.11`, `chalk@5`, `yocto-spinner` (port from better-auth — small), `dotenv@17`, `semver@7`, `prompts@2.4` (legacy fallback only where multiselect needed), tsdown, vitest.
-- Python: Python 3.11+, stdlib only (argparse, pathlib, urllib, json, shutil, sys, os). Optional `rich` import gated behind `agentkit[dev-ui]` — used only for pretty `info` output if present.
+- Python: Python 3.11+, stdlib only (argparse, pathlib, urllib, json, shutil, sys, os). Optional `rich` import gated behind `kaji[dev-ui]` — used only for pretty `info` output if present.
 
 ## Global Constraints
 
-- TypeScript CLI binary: `bin: agentkit` → `dist/index.mjs`. Format: ESM-only. Node `>=22`.
-- Python CLI entry point: `[tool.poetry.scripts] agentkit = "agentkit.cli:main"`. Must stay importable with zero optional deps installed.
+- TypeScript CLI binary: `bin: kaji` → `dist/index.mjs`. Format: ESM-only. Node `>=22`.
+- Python CLI entry point: `[tool.poetry.scripts] kaji = "kaji.cli:main"`. Must stay importable with zero optional deps installed.
 - DRY across languages: same command names, same flag names (`--cwd`, `--yes`, `--force`, `--json`), same exit codes (0 = ok, 1 = handled error, 2 = usage), same prompt copy where it appears in both.
 - No em-dashes in any user-facing copy or docs (project rule).
 - Use bun for all TS package ops (`bun add`, `bun install --filter`). Never npm/yarn/pnpm.
 - Branch name: `feat/cli-ts-py` (do not commit to main).
-- TS sources live under `apps/cli/src/`; Python sources live under `agentkit/sdk/agentkit/cli/`.
+- TS sources live under `apps/cli/src/`; Python sources live under `kaji/sdk/kaji/cli/`.
 - Tests required for every command (vitest for TS, pytest for Python). No command lands without at least one happy-path test and one error-path test.
 
 ---
@@ -62,33 +62,33 @@
 **Modify:**
 - `apps/cli/package.json` — add `semver`, `yocto-spinner`, `vitest`, `@types/semver` devDep; bump version to `0.1.0`; add `test`, `coverage` scripts.
 
-### Python (`agentkit/sdk/agentkit`)
+### Python (`kaji/sdk/kaji`)
 
 **Create:**
-- `agentkit/sdk/agentkit/cli/__init__.py` (new — re-export `main`)
-- `agentkit/sdk/agentkit/cli/_main.py` (new — argparse wiring)
-- `agentkit/sdk/agentkit/cli/_prompts.py` (new — stdlib prompt helpers)
-- `agentkit/sdk/agentkit/cli/_style.py` (new — ANSI color helpers, no deps)
-- `agentkit/sdk/agentkit/cli/_pkg.py` (new — package metadata + version)
-- `agentkit/sdk/agentkit/cli/init.py` (new — replaces logic from existing `cli.py`)
-- `agentkit/sdk/agentkit/cli/gen.py` (new — OpenAPI → Python tool stubs)
-- `agentkit/sdk/agentkit/cli/info.py` (new)
-- `agentkit/sdk/agentkit/cli/secret.py` (new)
-- `agentkit/sdk/agentkit/cli/upgrade.py` (new — uses `pip index versions` or PyPI JSON API)
-- `agentkit/sdk/agentkit/cli/doctor.py` (new)
-- `agentkit/sdk/agentkit/cli/templates.py` (new — string templates for `init`)
-- `agentkit/sdk/tests/cli/test_main.py` (new)
-- `agentkit/sdk/tests/cli/test_init.py` (modify: move from current `test_cli.py`)
-- `agentkit/sdk/tests/cli/test_gen.py` (new)
-- `agentkit/sdk/tests/cli/test_info.py` (new)
-- `agentkit/sdk/tests/cli/test_secret.py` (new)
-- `agentkit/sdk/tests/cli/test_upgrade.py` (new)
-- `agentkit/sdk/tests/cli/test_doctor.py` (new)
-- `agentkit/sdk/tests/cli/test_prompts.py` (new)
+- `kaji/sdk/kaji/cli/__init__.py` (new — re-export `main`)
+- `kaji/sdk/kaji/cli/_main.py` (new — argparse wiring)
+- `kaji/sdk/kaji/cli/_prompts.py` (new — stdlib prompt helpers)
+- `kaji/sdk/kaji/cli/_style.py` (new — ANSI color helpers, no deps)
+- `kaji/sdk/kaji/cli/_pkg.py` (new — package metadata + version)
+- `kaji/sdk/kaji/cli/init.py` (new — replaces logic from existing `cli.py`)
+- `kaji/sdk/kaji/cli/gen.py` (new — OpenAPI → Python tool stubs)
+- `kaji/sdk/kaji/cli/info.py` (new)
+- `kaji/sdk/kaji/cli/secret.py` (new)
+- `kaji/sdk/kaji/cli/upgrade.py` (new — uses `pip index versions` or PyPI JSON API)
+- `kaji/sdk/kaji/cli/doctor.py` (new)
+- `kaji/sdk/kaji/cli/templates.py` (new — string templates for `init`)
+- `kaji/sdk/tests/cli/test_main.py` (new)
+- `kaji/sdk/tests/cli/test_init.py` (modify: move from current `test_cli.py`)
+- `kaji/sdk/tests/cli/test_gen.py` (new)
+- `kaji/sdk/tests/cli/test_info.py` (new)
+- `kaji/sdk/tests/cli/test_secret.py` (new)
+- `kaji/sdk/tests/cli/test_upgrade.py` (new)
+- `kaji/sdk/tests/cli/test_doctor.py` (new)
+- `kaji/sdk/tests/cli/test_prompts.py` (new)
 
 **Modify:**
-- `agentkit/sdk/agentkit/cli.py` — convert to a one-line re-export shim: `from .cli._main import main` so the existing `pyproject` script entry keeps working. Remove templates from here (they move to `cli/templates.py`).
-- `agentkit/sdk/tests/test_cli.py` — delete (covered by new `tests/cli/` suite).
+- `kaji/sdk/kaji/cli.py` — convert to a one-line re-export shim: `from .cli._main import main` so the existing `pyproject` script entry keeps working. Remove templates from here (they move to `cli/templates.py`).
+- `kaji/sdk/tests/test_cli.py` — delete (covered by new `tests/cli/` suite).
 
 ---
 
@@ -117,8 +117,8 @@
 
 Run:
 ```bash
-bun add --filter @agentkit/cli semver yocto-spinner
-bun add --filter @agentkit/cli -D vitest @types/semver
+bun add --filter @kaji/cli semver yocto-spinner
+bun add --filter @kaji/cli -D vitest @types/semver
 ```
 
 Then write `apps/cli/vitest.config.ts`:
@@ -172,7 +172,7 @@ describe("redact", () => {
 
 - [ ] **Step 3: Run test to confirm failure**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: FAIL — `Cannot find module '.../utils/redact.js'`.
 
 - [ ] **Step 4: Implement `redact.ts`**
@@ -296,7 +296,7 @@ export function copyToClipboard(text: string): boolean {
 
 - [ ] **Step 6: Run tests, then commit**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS (3 redact tests).
 
 ```bash
@@ -345,7 +345,7 @@ describe("parseYaml", () => {
 
 - [ ] **Step 2: Run test to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/utils/yaml.test.ts`
+Run: `bun --filter @kaji/cli test test/utils/yaml.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Extract `parseYaml` from `gen.ts` into `utils/yaml.ts`**
@@ -354,7 +354,7 @@ Move the `parseYaml` function (lines 48–235 of current `gen.ts`) verbatim into
 
 - [ ] **Step 4: Run tests and ensure no regressions**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS (5 tests total).
 
 - [ ] **Step 5: Commit**
@@ -375,7 +375,7 @@ git commit -m "refactor(cli): extract YAML parser to utils"
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `export const secret: Command` — generates a 32-byte hex secret and prints a `.env`-ready line. Flag `--name <NAME>` (default `AGENTKIT_SECRET`) controls the env var name. `--json` prints `{ "name": "...", "value": "..." }`.
+- Produces: `export const secret: Command` — generates a 32-byte hex secret and prints a `.env`-ready line. Flag `--name <NAME>` (default `KAJI_SECRET`) controls the env var name. `--json` prints `{ "name": "...", "value": "..." }`.
 
 - [ ] **Step 1: Write failing test**
 
@@ -391,12 +391,12 @@ describe("secret command", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      await secret.parseAsync(["node", "agentkit"]);
+      await secret.parseAsync(["node", "kaji"]);
     } finally {
       console.log = orig;
     }
     const joined = logs.join("\n");
-    expect(joined).toMatch(/AGENTKIT_SECRET=[0-9a-f]{64}/);
+    expect(joined).toMatch(/KAJI_SECRET=[0-9a-f]{64}/);
   });
 
   it("supports --json", async () => {
@@ -404,12 +404,12 @@ describe("secret command", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      await secret.parseAsync(["node", "agentkit", "--json"]);
+      await secret.parseAsync(["node", "kaji", "--json"]);
     } finally {
       console.log = orig;
     }
     const json = JSON.parse(logs.join(""));
-    expect(json.name).toBe("AGENTKIT_SECRET");
+    expect(json.name).toBe("KAJI_SECRET");
     expect(json.value).toMatch(/^[0-9a-f]{64}$/);
   });
 });
@@ -417,7 +417,7 @@ describe("secret command", () => {
 
 - [ ] **Step 2: Run test to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/secret.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/secret.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `secret.ts`**
@@ -431,7 +431,7 @@ import { Command } from "commander";
 
 export const secret = new Command("secret")
   .description("generate a random 32-byte hex secret")
-  .option("--name <name>", "env var name", "AGENTKIT_SECRET")
+  .option("--name <name>", "env var name", "KAJI_SECRET")
   .option("--json", "print as JSON")
   .action((opts: { name: string; json?: boolean }) => {
     const value = Crypto.randomBytes(32).toString("hex");
@@ -440,7 +440,7 @@ export const secret = new Command("secret")
       return;
     }
     console.log(`\nAdd the following to your .env file:`);
-    console.log(`${chalk.gray("# agentkit secret")}\n${chalk.green(`${opts.name}=${value}`)}\n`);
+    console.log(`${chalk.gray("# kaji secret")}\n${chalk.green(`${opts.name}=${value}`)}\n`);
   });
 ```
 
@@ -448,7 +448,7 @@ Wire it in `apps/cli/src/index.ts` by adding `.addCommand(secret)` between `init
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -469,7 +469,7 @@ git commit -m "feat(cli): add secret command"
 
 **Interfaces:**
 - Consumes: `readNearestPackageJson`, `detectPackageManager`, `redact`, `copyToClipboard` (Task 1).
-- Produces: `export const info: Command`. Flags: `--cwd <dir>`, `-j, --json`, `-c, --copy`. Output sections: system, node, package manager, frameworks (next/react/vue/svelte/express/hono), agentkit packages installed, providers (openai/anthropic/google-genai) presence.
+- Produces: `export const info: Command`. Flags: `--cwd <dir>`, `-j, --json`, `-c, --copy`. Output sections: system, node, package manager, frameworks (next/react/vue/svelte/express/hono), kaji packages installed, providers (openai/anthropic/google-genai) presence.
 
 - [ ] **Step 1: Write failing test**
 
@@ -483,22 +483,22 @@ import { describe, expect, it } from "vitest";
 import { info } from "../../src/commands/info.js";
 
 function tempProject(pkg: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), "agentkit-info-"));
+  const dir = mkdtempSync(join(tmpdir(), "kaji-info-"));
   writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
   return dir;
 }
 
 describe("info command", () => {
-  it("emits json with detected frameworks and agentkit packages", async () => {
+  it("emits json with detected frameworks and kaji packages", async () => {
     const dir = tempProject({
       name: "x",
-      dependencies: { next: "15.0.0", "@agentkit/sdk": "0.1.0", openai: "6.0.0" },
+      dependencies: { next: "15.0.0", "@kaji/sdk": "0.1.0", openai: "6.0.0" },
     });
     const logs: string[] = [];
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      await info.parseAsync(["node", "agentkit", "--cwd", dir, "--json"]);
+      await info.parseAsync(["node", "kaji", "--cwd", dir, "--json"]);
     } finally {
       console.log = orig;
     }
@@ -506,8 +506,8 @@ describe("info command", () => {
     expect(out.frameworks).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "next", version: "15.0.0" }),
     ]));
-    expect(out.agentkit.packages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "@agentkit/sdk", version: "0.1.0" }),
+    expect(out.kaji.packages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "@kaji/sdk", version: "0.1.0" }),
     ]));
     expect(out.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "openai", version: "6.0.0" }),
@@ -518,7 +518,7 @@ describe("info command", () => {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/info.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/info.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `info.ts`**
@@ -535,7 +535,7 @@ import { detectPackageManager } from "../utils/package-manager.js";
 import { copyToClipboard } from "../utils/clipboard.js";
 
 const FRAMEWORK_KEYS = ["next", "react", "vue", "nuxt", "svelte", "@sveltejs/kit", "astro", "hono", "express", "fastify", "solid-js"];
-const AGENTKIT_PREFIX = "@agentkit/";
+const KAJI_PREFIX = "@kaji/";
 const PROVIDER_KEYS = ["openai", "@anthropic-ai/sdk", "@google/genai", "google-genai"];
 
 function pickDeps(pkg: Record<string, unknown> | null, keys: string[]) {
@@ -551,7 +551,7 @@ function pickByPrefix(pkg: Record<string, unknown> | null, prefix: string) {
 }
 
 export const info = new Command("info")
-  .description("display environment and agentkit configuration")
+  .description("display environment and kaji configuration")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("-j, --json", "output as JSON")
   .option("-c, --copy", "copy output to clipboard")
@@ -563,7 +563,7 @@ export const info = new Command("info")
       node: { version: process.version, env: process.env.NODE_ENV ?? "development" },
       packageManager: detectPackageManager(cwd),
       frameworks: pickDeps(pkg, FRAMEWORK_KEYS),
-      agentkit: { packages: pickByPrefix(pkg, AGENTKIT_PREFIX) },
+      kaji: { packages: pickByPrefix(pkg, KAJI_PREFIX) },
       providers: pickDeps(pkg, PROVIDER_KEYS),
     };
     const text = opts.json ? JSON.stringify(data, null, 2) : formatText(data);
@@ -576,13 +576,13 @@ export const info = new Command("info")
 
 function formatText(d: ReturnType<typeof Object>): string {
   const lines: string[] = [];
-  lines.push(chalk.bold("agentkit info"));
+  lines.push(chalk.bold("kaji info"));
   lines.push(chalk.gray("=".repeat(40)));
   lines.push(`${chalk.cyan("platform")}: ${(d as any).system.platform} ${(d as any).system.arch}`);
   lines.push(`${chalk.cyan("node")}: ${(d as any).node.version}`);
   lines.push(`${chalk.cyan("package manager")}: ${(d as any).packageManager}`);
   if ((d as any).frameworks.length) lines.push(`${chalk.cyan("frameworks")}: ${(d as any).frameworks.map((f: any) => `${f.name}@${f.version}`).join(", ")}`);
-  if ((d as any).agentkit.packages.length) lines.push(`${chalk.cyan("agentkit")}: ${(d as any).agentkit.packages.map((f: any) => `${f.name}@${f.version}`).join(", ")}`);
+  if ((d as any).kaji.packages.length) lines.push(`${chalk.cyan("kaji")}: ${(d as any).kaji.packages.map((f: any) => `${f.name}@${f.version}`).join(", ")}`);
   if ((d as any).providers.length) lines.push(`${chalk.cyan("providers")}: ${(d as any).providers.map((f: any) => `${f.name}@${f.version}`).join(", ")}`);
   return lines.join("\n");
 }
@@ -592,7 +592,7 @@ Wire in `index.ts` with `.addCommand(info)`.
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -613,7 +613,7 @@ git commit -m "feat(cli): add info command"
 
 **Interfaces:**
 - Consumes: `readNearestPackageJson`, `detectPackageManager`, `fetchLatestVersion` (Task 1), `semver`.
-- Produces: `export const upgrade: Command`. Flags: `-c, --cwd`, `-y, --yes`. Detects all `@agentkit/*` packages in `dependencies`/`devDependencies`, queries npm for the latest version, prints a diff, and runs the package manager's add command for each outdated package.
+- Produces: `export const upgrade: Command`. Flags: `-c, --cwd`, `-y, --yes`. Detects all `@kaji/*` packages in `dependencies`/`devDependencies`, queries npm for the latest version, prints a diff, and runs the package manager's add command for each outdated package.
 
 - [ ] **Step 1: Write failing test**
 
@@ -628,20 +628,20 @@ import { findOutdated } from "../../src/commands/upgrade.js";
 
 describe("upgrade.findOutdated", () => {
   it("returns packages where current < latest", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-up-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-up-"));
     writeFileSync(join(dir, "package.json"), JSON.stringify({
-      dependencies: { "@agentkit/sdk": "0.1.0", "@agentkit/cli": "0.1.0", "other": "1.0.0" },
+      dependencies: { "@kaji/sdk": "0.1.0", "@kaji/cli": "0.1.0", "other": "1.0.0" },
     }));
-    const fakeFetch = vi.fn(async (name: string) => name === "@agentkit/sdk" ? "0.2.0" : "0.1.0");
+    const fakeFetch = vi.fn(async (name: string) => name === "@kaji/sdk" ? "0.2.0" : "0.1.0");
     const out = await findOutdated(dir, fakeFetch);
-    expect(out).toEqual([{ name: "@agentkit/sdk", current: "0.1.0", latest: "0.2.0", depType: "prod" }]);
+    expect(out).toEqual([{ name: "@kaji/sdk", current: "0.1.0", latest: "0.2.0", depType: "prod" }]);
   });
 });
 ```
 
 - [ ] **Step 2: Run test to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/upgrade.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/upgrade.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `upgrade.ts`**
@@ -667,7 +667,7 @@ export interface OutdatedEntry {
   depType: "prod" | "dev";
 }
 
-const PREFIX = "@agentkit/";
+const PREFIX = "@kaji/";
 
 export async function findOutdated(
   cwd: string,
@@ -714,7 +714,7 @@ async function run(cmd: string[], cwd: string): Promise<void> {
 }
 
 export const upgrade = new Command("upgrade")
-  .description("upgrade @agentkit/* packages to latest")
+  .description("upgrade @kaji/* packages to latest")
   .option("-c, --cwd <cwd>", "working directory", process.cwd())
   .option("-y, --yes", "skip confirmation", false)
   .action(async (opts: { cwd: string; yes: boolean }) => {
@@ -723,7 +723,7 @@ export const upgrade = new Command("upgrade")
     const outdated = await findOutdated(cwd);
     sp.stop();
     if (outdated.length === 0) {
-      console.log("All agentkit packages are up to date.");
+      console.log("All kaji packages are up to date.");
       return;
     }
     console.log(`\nThe following packages can be upgraded:\n`);
@@ -747,20 +747,20 @@ export const upgrade = new Command("upgrade")
   });
 ```
 
-You will need to `bun add --filter @agentkit/cli prompts` and `@types/prompts` if not already pulled in by `@clack/prompts`. (`@clack/prompts` ships its own prompt UI; `prompts` is only used here to match better-auth's confirm semantics inside non-clack flows — feel free to swap to `@clack/prompts` `confirm` instead and drop the dep.)
+You will need to `bun add --filter @kaji/cli prompts` and `@types/prompts` if not already pulled in by `@clack/prompts`. (`@clack/prompts` ships its own prompt UI; `prompts` is only used here to match better-auth's confirm semantics inside non-clack flows — feel free to swap to `@clack/prompts` `confirm` instead and drop the dep.)
 
 Wire in `index.ts` with `.addCommand(upgrade)`.
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS (only `findOutdated` covered — the action body is covered manually).
 
 - [ ] **Step 5: Manual smoke**
 
 ```bash
 cd /tmp && mkdir up-test && cd up-test
-echo '{"dependencies":{"@agentkit/sdk":"0.0.1"}}' > package.json
+echo '{"dependencies":{"@kaji/sdk":"0.0.1"}}' > package.json
 node /Users/Enkang.Yuan1/Desktop/Projects/alloy/apps/cli/dist/index.mjs upgrade -y
 ```
 
@@ -786,7 +786,7 @@ git commit -m "feat(cli): add upgrade command"
 **Interfaces:**
 - Consumes: nothing (writes templates).
 - Produces: `export const init: Command`. Flags: `--cwd <dir>`, `--lang <ts|python>`, `--provider <openai|anthropic|kimi|gemini>`, `--force`, `--yes`. When invoked without flags it runs interactive `@clack/prompts`. With flags it runs non-interactive. Writes:
-  - TS: `agent.ts`, `.env.example`, optionally adds `@agentkit/sdk` to `package.json` (does not run install — prints the install command).
+  - TS: `agent.ts`, `.env.example`, optionally adds `@kaji/sdk` to `package.json` (does not run install — prints the install command).
   - Python: `agent.py`, `.env.example`.
 
 - [ ] **Step 1: Write failing test for non-interactive flow**
@@ -802,26 +802,26 @@ import { init } from "../../src/commands/init.js";
 
 describe("init command", () => {
   it("ts non-interactive scaffolds agent.ts and .env.example", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
-    await init.parseAsync(["node", "agentkit", "--cwd", dir, "--lang", "ts", "--provider", "openai", "--yes"]);
+    const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
+    await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "ts", "--provider", "openai", "--yes"]);
     expect(existsSync(join(dir, "agent.ts"))).toBe(true);
     expect(existsSync(join(dir, ".env.example"))).toBe(true);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
-    expect(agent).toMatch(/@agentkit\/sdk/);
-    expect(agent).toMatch(/AGENTKIT_MODEL_PROVIDER/);
+    expect(agent).toMatch(/@kaji\/sdk/);
+    expect(agent).toMatch(/KAJI_MODEL_PROVIDER/);
   });
 
   it("python non-interactive scaffolds agent.py and .env.example", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
-    await init.parseAsync(["node", "agentkit", "--cwd", dir, "--lang", "python", "--provider", "openai", "--yes"]);
+    const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
+    await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "python", "--provider", "openai", "--yes"]);
     expect(existsSync(join(dir, "agent.py"))).toBe(true);
   });
 
   it("refuses to overwrite without --force", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-init-"));
-    await init.parseAsync(["node", "agentkit", "--cwd", dir, "--lang", "ts", "--provider", "openai", "--yes"]);
+    const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
+    await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "ts", "--provider", "openai", "--yes"]);
     const first = readFileSync(join(dir, "agent.ts"), "utf-8");
-    await init.parseAsync(["node", "agentkit", "--cwd", dir, "--lang", "ts", "--provider", "anthropic", "--yes"]);
+    await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "ts", "--provider", "anthropic", "--yes"]);
     expect(readFileSync(join(dir, "agent.ts"), "utf-8")).toBe(first);
   });
 });
@@ -829,7 +829,7 @@ describe("init command", () => {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/init.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/init.test.ts`
 Expected: FAIL — the existing stub does not accept `--cwd`/`--lang`/`--provider`/`--yes`/`--force`.
 
 - [ ] **Step 3: Implement templates**
@@ -838,12 +838,12 @@ Create `apps/cli/src/templates/ts-agent.ts`:
 
 ```ts
 export function tsAgentTemplate(provider: string): string {
-  return `import { AgentBuilder, InMemoryEventBus, InMemoryEventStore, GetProvider, UserMessage } from "@agentkit/sdk";
+  return `import { AgentBuilder, InMemoryEventBus, InMemoryEventStore, GetProvider, UserMessage } from "@kaji/sdk";
 
 async function main() {
   const bus = new InMemoryEventBus();
   const store = new InMemoryEventStore();
-  const providerName = process.env.AGENTKIT_MODEL_PROVIDER ?? ${JSON.stringify(provider)};
+  const providerName = process.env.KAJI_MODEL_PROVIDER ?? ${JSON.stringify(provider)};
   const runtime = new AgentBuilder()
     .provider(GetProvider(providerName))
     .systemPrompt("You are a helpful assistant.")
@@ -859,8 +859,8 @@ main().catch((e) => { console.error(e); process.exit(1); });
 }
 
 export function tsEnvTemplate(provider: string): string {
-  return `# agentkit
-AGENTKIT_MODEL_PROVIDER=${provider}
+  return `# kaji
+KAJI_MODEL_PROVIDER=${provider}
 
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
@@ -874,27 +874,27 @@ Create `apps/cli/src/templates/py-agent.ts`:
 
 ```ts
 export function pyAgentTemplate(provider: string): string {
-  return `"""Minimal agentkit scaffold."""
+  return `"""Minimal kaji scaffold."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 
-import agentkit
+import kaji
 
 
 async def main() -> None:
-    bus = agentkit.InMemoryEventBus()
-    store = agentkit.InMemoryEventStore()
-    provider_name = os.environ.get("AGENTKIT_MODEL_PROVIDER", ${JSON.stringify(provider)})
+    bus = kaji.InMemoryEventBus()
+    store = kaji.InMemoryEventStore()
+    provider_name = os.environ.get("KAJI_MODEL_PROVIDER", ${JSON.stringify(provider)})
     runtime = (
-        agentkit.AgentBuilder()
-        .provider(agentkit.GetProvider(provider_name))
+        kaji.AgentBuilder()
+        .provider(kaji.GetProvider(provider_name))
         .system_prompt("You are a helpful assistant.")
         .build(bus=bus, store=store)
     )
-    await store.append(agentkit.UserMessage(session_id="s1", content="Hello!"))
+    await store.append(kaji.UserMessage(session_id="s1", content="Hello!"))
     await runtime.run_turn("s1")
     for e in await store.get_events("s1"):
         print(e.type, getattr(e, "content", getattr(e, "delta", "")))
@@ -906,8 +906,8 @@ if __name__ == "__main__":
 }
 
 export function pyEnvTemplate(provider: string): string {
-  return `# agentkit
-AGENTKIT_MODEL_PROVIDER=${provider}
+  return `# kaji
+KAJI_MODEL_PROVIDER=${provider}
 
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
@@ -941,7 +941,7 @@ function writeFile(target: string, body: string, force: boolean): boolean {
 }
 
 async function interactive(): Promise<{ lang: Lang; provider: Provider }> {
-  p.intro(chalk.bold("agentkit init"));
+  p.intro(chalk.bold("kaji init"));
   const opts = await p.group(
     {
       lang: () => p.select({
@@ -967,7 +967,7 @@ async function interactive(): Promise<{ lang: Lang; provider: Provider }> {
 }
 
 export const init = new Command("init")
-  .description("scaffold a new agentkit project")
+  .description("scaffold a new kaji project")
   .option("--cwd <cwd>", "target directory", process.cwd())
   .option("--lang <lang>", "ts|python")
   .option("--provider <provider>", "openai|anthropic|kimi|gemini")
@@ -1008,7 +1008,7 @@ export const init = new Command("init")
 
 - [ ] **Step 5: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1052,20 +1052,20 @@ const spec = JSON.stringify({
 
 describe("gen command", () => {
   it("generates TypeScript tools", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-gen-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-gen-"));
     const specPath = join(dir, "spec.json");
     writeFileSync(specPath, spec);
-    await gen.parseAsync(["node", "agentkit", "--spec", specPath, "--out", dir, "--lang", "ts"]);
+    await gen.parseAsync(["node", "kaji", "--spec", specPath, "--out", dir, "--lang", "ts"]);
     const out = readFileSync(join(dir, "index.ts"), "utf-8");
     expect(out).toMatch(/export const tools/);
     expect(out).toMatch(/get_pet/);
   });
 
   it("generates Python tools", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-gen-"));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-gen-"));
     const specPath = join(dir, "spec.json");
     writeFileSync(specPath, spec);
-    await gen.parseAsync(["node", "agentkit", "--spec", specPath, "--out", dir, "--lang", "python"]);
+    await gen.parseAsync(["node", "kaji", "--spec", specPath, "--out", dir, "--lang", "python"]);
     const out = readFileSync(join(dir, "tools.py"), "utf-8");
     expect(out).toMatch(/TOOLS\s*=/);
     expect(out).toMatch(/async def get_pet/);
@@ -1075,7 +1075,7 @@ describe("gen command", () => {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/gen.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/gen.test.ts`
 Expected: FAIL — the second case fails because `--lang python` is unknown.
 
 - [ ] **Step 3: Add `--lang` and Python emitter to `gen.ts`**
@@ -1083,7 +1083,7 @@ Expected: FAIL — the second case fails because `--lang python` is unknown.
 In `apps/cli/src/commands/gen.ts`, after the `--prefix` option add `.option("--lang <lang>", "ts|python", "ts")`. Add a `generatePythonFile(spec, ops, prefix)` function alongside the existing `generateFile` (rename the latter to `generateTsFile`). The Python file emits:
 
 ```text
-# Auto-generated by agentkit gen. Do not edit.
+# Auto-generated by kaji gen. Do not edit.
 import os
 import httpx
 
@@ -1111,7 +1111,7 @@ const code = opts.lang === "python" ? generatePythonFile(spec, ops, opts.prefix)
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1134,7 +1134,7 @@ git commit -m "feat(cli): gen emits python or typescript"
 - Consumes: `readNearestPackageJson` (Task 1).
 - Produces: `export const doctor: Command`. Flags: `--cwd`, `--json`. Returns exit code 1 if any check fails. Checks:
   - Node version >= 22
-  - At least one of `@agentkit/sdk`/`@agentkit/cli` in package.json
+  - At least one of `@kaji/sdk`/`@kaji/cli` in package.json
   - At least one provider key set in `process.env` (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `KIMI_API_KEY`)
   - `.env.example` exists in cwd (warn, not fail)
 
@@ -1151,16 +1151,16 @@ import { runChecks } from "../../src/commands/doctor.js";
 
 describe("doctor.runChecks", () => {
   it("flags missing provider env", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-doc-"));
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { "@agentkit/sdk": "0.1.0" } }));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { "@kaji/sdk": "0.1.0" } }));
     const out = runChecks({ cwd: dir, env: {}, nodeVersion: "v22.0.0" });
     expect(out.failed).toBe(true);
     expect(out.checks.find((c) => c.name === "provider key")?.ok).toBe(false);
   });
 
   it("passes when sdk and provider key are present", () => {
-    const dir = mkdtempSync(join(tmpdir(), "agentkit-doc-"));
-    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { "@agentkit/sdk": "0.1.0" } }));
+    const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { "@kaji/sdk": "0.1.0" } }));
     const out = runChecks({ cwd: dir, env: { OPENAI_API_KEY: "sk" }, nodeVersion: "v22.0.0" });
     expect(out.failed).toBe(false);
   });
@@ -1169,7 +1169,7 @@ describe("doctor.runChecks", () => {
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `bun --filter @agentkit/cli test test/commands/doctor.test.ts`
+Run: `bun --filter @kaji/cli test test/commands/doctor.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement `doctor.ts`**
@@ -1192,8 +1192,8 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
   checks.push({ name: "node >= 22", ok: major >= 22, detail: o.nodeVersion });
   const pkg = readNearestPackageJson(o.cwd);
   const all = { ...(pkg?.dependencies as Record<string, string> | undefined), ...(pkg?.devDependencies as Record<string, string> | undefined) };
-  const hasAgentkit = Object.keys(all ?? {}).some((k) => k.startsWith("@agentkit/"));
-  checks.push({ name: "@agentkit/* installed", ok: hasAgentkit });
+  const hasAgentkit = Object.keys(all ?? {}).some((k) => k.startsWith("@kaji/"));
+  checks.push({ name: "@kaji/* installed", ok: hasAgentkit });
   const providerKeys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "KIMI_API_KEY"];
   const hasProvider = providerKeys.some((k) => (o.env[k] ?? "").length > 0);
   checks.push({ name: "provider key", ok: hasProvider, detail: providerKeys.join(" | ") });
@@ -1204,7 +1204,7 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
 }
 
 export const doctor = new Command("doctor")
-  .description("check the environment for common agentkit issues")
+  .description("check the environment for common kaji issues")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("--json", "output as JSON")
   .action((opts: { cwd: string; json?: boolean }) => {
@@ -1225,7 +1225,7 @@ Wire in `index.ts`.
 
 - [ ] **Step 4: Run tests**
 
-Run: `bun --filter @agentkit/cli test`
+Run: `bun --filter @kaji/cli test`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1249,7 +1249,7 @@ git commit -m "feat(cli): add doctor command"
 - Produces: `export const mcp: Command`. Prompts:
   - Tool: cursor / claude-code / claude-desktop / windsurf / vscode / other
   - Scope: project / global (only where relevant)
-  - Writes the chosen MCP config file (creating `.cursor/mcp.json` etc.) with an `agentkit` entry that runs `npx -y @agentkit/cli mcp-server` (the actual server is not part of this plan; the entry is forward-compatible).
+  - Writes the chosen MCP config file (creating `.cursor/mcp.json` etc.) with an `kaji` entry that runs `npx -y @kaji/cli mcp-server` (the actual server is not part of this plan; the entry is forward-compatible).
 
 - [ ] **Step 1: Implement `mcp-paths.ts`**
 
@@ -1258,18 +1258,18 @@ Port lines 683–718 of `better-auth/packages/cli/src/commands/ai.ts` verbatim i
 - [ ] **Step 2: Implement `mcp.ts`**
 
 Port the `setupMcp`, `setupClaudeCode`, `writeMcpConfigInteractive`, `writeMcpConfig`, `showJsonConfig`, `displayPath` functions from better-auth's `ai.ts` into `apps/cli/src/commands/mcp.ts`. Replace:
-  - `AGENT_CLI_PKG` → `@agentkit/cli`
-  - Entry name `"agent-auth"` → `"agentkit"`
-  - All copy referencing "Agent Auth" → "agentkit"
-  - Drop the skills install + the registry-URL prompt (agentkit doesn't ship a registry yet)
+  - `AGENT_CLI_PKG` → `@kaji/cli`
+  - Entry name `"agent-auth"` → `"kaji"`
+  - All copy referencing "Agent Auth" → "kaji"
+  - Drop the skills install + the registry-URL prompt (kaji doesn't ship a registry yet)
 Export as `export const mcp: Command`.
 
 Wire in `index.ts` with `.addCommand(mcp)`.
 
 - [ ] **Step 3: Manual smoke**
 
-Run: `bun --filter @agentkit/cli build && node apps/cli/dist/index.mjs mcp`
-Walk through cursor → project. Verify `.cursor/mcp.json` now contains the `agentkit` entry. (Delete the file after.)
+Run: `bun --filter @kaji/cli build && node apps/cli/dist/index.mjs mcp`
+Walk through cursor → project. Verify `.cursor/mcp.json` now contains the `kaji` entry. (Delete the file after.)
 
 - [ ] **Step 4: Commit**
 
@@ -1291,7 +1291,7 @@ git commit -m "feat(cli): add mcp setup command"
 
 **Interfaces:**
 - Consumes: every command from Tasks 3–9.
-- Produces: published CLI binary `agentkit` with `--help` showing `init | gen | info | secret | upgrade | doctor | mcp`.
+- Produces: published CLI binary `kaji` with `--help` showing `init | gen | info | secret | upgrade | doctor | mcp`.
 
 - [ ] **Step 1: Final `index.ts`**
 
@@ -1314,12 +1314,12 @@ process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
 async function main() {
-  const program = new Command("agentkit");
+  const program = new Command("kaji");
   const pkg = readNearestPackageJson(new URL("..", import.meta.url).pathname);
   const version = (pkg?.version as string | undefined) ?? "0.1.0";
 
   program
-    .description("agentkit CLI")
+    .description("kaji CLI")
     .version(version)
     .addCommand(init)
     .addCommand(gen)
@@ -1343,34 +1343,34 @@ In `apps/cli/package.json`, set `"version": "0.1.0"`.
 Create or replace `apps/cli/README.md`:
 
 ```markdown
-# @agentkit/cli
+# @kaji/cli
 
-CLI for agentkit. Works with TypeScript and Python projects.
+CLI for kaji. Works with TypeScript and Python projects.
 
 ## Install
 
 ```bash
-bun add -D @agentkit/cli
+bun add -D @kaji/cli
 # or
-npx @agentkit/cli --help
+npx @kaji/cli --help
 ```
 
 ## Commands
 
-- `agentkit init` — scaffold a new agent (`--lang ts|python`, `--provider openai|anthropic|kimi|gemini`)
-- `agentkit gen --spec <path> --out <dir>` — generate tool stubs from an OpenAPI spec (`--lang ts|python`)
-- `agentkit info` — show environment + installed agentkit packages
-- `agentkit doctor` — check the environment for common issues
-- `agentkit secret` — generate a random 32-byte hex secret
-- `agentkit upgrade` — upgrade installed `@agentkit/*` packages
-- `agentkit mcp` — register agentkit MCP server with your AI tool
+- `kaji init` — scaffold a new agent (`--lang ts|python`, `--provider openai|anthropic|kimi|gemini`)
+- `kaji gen --spec <path> --out <dir>` — generate tool stubs from an OpenAPI spec (`--lang ts|python`)
+- `kaji info` — show environment + installed kaji packages
+- `kaji doctor` — check the environment for common issues
+- `kaji secret` — generate a random 32-byte hex secret
+- `kaji upgrade` — upgrade installed `@kaji/*` packages
+- `kaji mcp` — register kaji MCP server with your AI tool
 
 Run any command with `--help` for full flags.
 ```
 
 - [ ] **Step 3: Build + run smoke**
 
-Run: `bun --filter @agentkit/cli build && node apps/cli/dist/index.mjs --help`
+Run: `bun --filter @kaji/cli build && node apps/cli/dist/index.mjs --help`
 Expected: lists all seven commands.
 
 - [ ] **Step 4: Commit**
@@ -1385,33 +1385,33 @@ git commit -m "feat(cli): wire all commands + bump to 0.1.0"
 ### Task 11: Python — restructure into `cli/` subpackage
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/cli/__init__.py`
-- Create: `agentkit/sdk/agentkit/cli/_main.py`
-- Create: `agentkit/sdk/agentkit/cli/_prompts.py`
-- Create: `agentkit/sdk/agentkit/cli/_style.py`
-- Create: `agentkit/sdk/agentkit/cli/_pkg.py`
-- Create: `agentkit/sdk/agentkit/cli/init.py`
-- Create: `agentkit/sdk/agentkit/cli/templates.py`
-- Modify: `agentkit/sdk/agentkit/cli.py` (becomes a shim)
-- Create: `agentkit/sdk/tests/cli/__init__.py`
-- Create: `agentkit/sdk/tests/cli/test_main.py`
-- Create: `agentkit/sdk/tests/cli/test_init.py`
-- Delete: `agentkit/sdk/tests/test_cli.py`
+- Create: `kaji/sdk/kaji/cli/__init__.py`
+- Create: `kaji/sdk/kaji/cli/_main.py`
+- Create: `kaji/sdk/kaji/cli/_prompts.py`
+- Create: `kaji/sdk/kaji/cli/_style.py`
+- Create: `kaji/sdk/kaji/cli/_pkg.py`
+- Create: `kaji/sdk/kaji/cli/init.py`
+- Create: `kaji/sdk/kaji/cli/templates.py`
+- Modify: `kaji/sdk/kaji/cli.py` (becomes a shim)
+- Create: `kaji/sdk/tests/cli/__init__.py`
+- Create: `kaji/sdk/tests/cli/test_main.py`
+- Create: `kaji/sdk/tests/cli/test_init.py`
+- Delete: `kaji/sdk/tests/test_cli.py`
 
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `agentkit.cli.main(argv: list[str] | None = None) -> int`
-  - `agentkit.cli.init.init_project(target: Path, *, force: bool = False) -> list[Path]`
-  - `agentkit.cli.templates.agent_template(provider: str) -> str`
-  - `agentkit.cli.templates.env_template(provider: str) -> str`
-  - `agentkit.cli._prompts.select(message: str, options: list[tuple[str, str]]) -> str`
-  - `agentkit.cli._prompts.confirm(message: str, default: bool = True) -> bool`
-  - `agentkit.cli._style.color(text: str, code: str) -> str`
+  - `kaji.cli.main(argv: list[str] | None = None) -> int`
+  - `kaji.cli.init.init_project(target: Path, *, force: bool = False) -> list[Path]`
+  - `kaji.cli.templates.agent_template(provider: str) -> str`
+  - `kaji.cli.templates.env_template(provider: str) -> str`
+  - `kaji.cli._prompts.select(message: str, options: list[tuple[str, str]]) -> str`
+  - `kaji.cli._prompts.confirm(message: str, default: bool = True) -> bool`
+  - `kaji.cli._style.color(text: str, code: str) -> str`
 
 - [ ] **Step 1: Write failing test**
 
-Create `agentkit/sdk/tests/cli/__init__.py` (empty) and `agentkit/sdk/tests/cli/test_main.py`:
+Create `kaji/sdk/tests/cli/__init__.py` (empty) and `kaji/sdk/tests/cli/test_main.py`:
 
 ```python
 from __future__ import annotations
@@ -1425,12 +1425,12 @@ import pytest
 
 
 def test_main_callable_from_top_level() -> None:
-    mod = importlib.import_module("agentkit.cli")
+    mod = importlib.import_module("kaji.cli")
     assert callable(mod.main)
 
 
 def test_init_subcommand_writes_files(tmp_path: Path) -> None:
-    from agentkit.cli import main
+    from kaji.cli import main
     rc = main(["init", str(tmp_path), "--provider", "openai", "--yes"])
     assert rc == 0
     assert (tmp_path / "agent.py").exists()
@@ -1438,13 +1438,13 @@ def test_init_subcommand_writes_files(tmp_path: Path) -> None:
 
 
 def test_unknown_command_returns_2(tmp_path: Path) -> None:
-    from agentkit.cli import main
+    from kaji.cli import main
     with pytest.raises(SystemExit) as e:
         main(["nope"])
     assert e.value.code == 2
 ```
 
-Create `agentkit/sdk/tests/cli/test_init.py`:
+Create `kaji/sdk/tests/cli/test_init.py`:
 
 ```python
 from __future__ import annotations
@@ -1453,8 +1453,8 @@ from pathlib import Path
 
 import pytest
 
-from agentkit.cli.init import init_project
-from agentkit.cli.templates import agent_template, env_template
+from kaji.cli.init import init_project
+from kaji.cli.templates import agent_template, env_template
 
 
 def test_init_project_creates_files(tmp_path: Path) -> None:
@@ -1483,18 +1483,18 @@ def test_agent_template_is_valid_python() -> None:
 
 def test_env_template_mentions_provider() -> None:
     env = env_template("anthropic")
-    assert "AGENTKIT_MODEL_PROVIDER=anthropic" in env
+    assert "KAJI_MODEL_PROVIDER=anthropic" in env
     assert "ANTHROPIC_API_KEY" in env
 ```
 
 - [ ] **Step 2: Run tests to confirm failure**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v`
-Expected: collection error / import error — `agentkit.cli.init` does not exist.
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v`
+Expected: collection error / import error — `kaji.cli.init` does not exist.
 
 - [ ] **Step 3: Implement style + prompts + pkg helpers**
 
-Create `agentkit/sdk/agentkit/cli/_style.py`:
+Create `kaji/sdk/kaji/cli/_style.py`:
 
 ```python
 """Minimal ANSI styling with TTY detection."""
@@ -1525,7 +1525,7 @@ def color(text: str, *codes: str) -> str:
     return f"{prefix}{text}{_CODES['reset']}"
 ```
 
-Create `agentkit/sdk/agentkit/cli/_prompts.py`:
+Create `kaji/sdk/kaji/cli/_prompts.py`:
 
 ```python
 """Stdlib-only interactive prompts.
@@ -1571,10 +1571,10 @@ def text(message: str, default: str | None = None) -> str:
     return raw or (default or "")
 ```
 
-Create `agentkit/sdk/agentkit/cli/_pkg.py`:
+Create `kaji/sdk/kaji/cli/_pkg.py`:
 
 ```python
-"""Read agentkit package metadata."""
+"""Read kaji package metadata."""
 
 from __future__ import annotations
 
@@ -1583,43 +1583,43 @@ from importlib.metadata import PackageNotFoundError, version as _version
 
 def get_version() -> str:
     try:
-        return _version("agentkit")
+        return _version("kaji")
     except PackageNotFoundError:
         return "0.0.0"
 ```
 
 - [ ] **Step 4: Implement templates + init**
 
-Create `agentkit/sdk/agentkit/cli/templates.py`:
+Create `kaji/sdk/kaji/cli/templates.py`:
 
 ```python
-"""Template strings for `agentkit init`."""
+"""Template strings for `kaji init`."""
 
 from __future__ import annotations
 
 
 def agent_template(provider: str) -> str:
-    return f'''"""Minimal agentkit scaffold — generated by `agentkit init`."""
+    return f'''"""Minimal kaji scaffold — generated by `kaji init`."""
 
 from __future__ import annotations
 
 import asyncio
 import os
 
-import agentkit
+import kaji
 
 
 async def main() -> None:
-    bus = agentkit.InMemoryEventBus()
-    store = agentkit.InMemoryEventStore()
-    provider_name = os.environ.get("AGENTKIT_MODEL_PROVIDER", {provider!r})
+    bus = kaji.InMemoryEventBus()
+    store = kaji.InMemoryEventStore()
+    provider_name = os.environ.get("KAJI_MODEL_PROVIDER", {provider!r})
     runtime = (
-        agentkit.AgentBuilder()
-        .provider(agentkit.GetProvider(provider_name))
+        kaji.AgentBuilder()
+        .provider(kaji.GetProvider(provider_name))
         .system_prompt("You are a helpful assistant.")
         .build(bus=bus, store=store)
     )
-    await store.append(agentkit.UserMessage(session_id="s1", content="Hello!"))
+    await store.append(kaji.UserMessage(session_id="s1", content="Hello!"))
     await runtime.run_turn("s1")
     for e in await store.get_events("s1"):
         print(e.type, getattr(e, "content", getattr(e, "delta", "")))
@@ -1631,8 +1631,8 @@ if __name__ == "__main__":
 
 
 def env_template(provider: str) -> str:
-    return f"""# agentkit
-AGENTKIT_MODEL_PROVIDER={provider}
+    return f"""# kaji
+KAJI_MODEL_PROVIDER={provider}
 
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
@@ -1641,10 +1641,10 @@ AGENTKIT_MODEL_PROVIDER={provider}
 """
 ```
 
-Create `agentkit/sdk/agentkit/cli/init.py`:
+Create `kaji/sdk/kaji/cli/init.py`:
 
 ```python
-"""`agentkit init` — scaffold a new project."""
+"""`kaji init` — scaffold a new project."""
 
 from __future__ import annotations
 
@@ -1676,7 +1676,7 @@ def init_project(target: Path, *, provider: str = "openai", force: bool = False)
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("init", help="scaffold a new agentkit project")
+    p = sub.add_parser("init", help="scaffold a new kaji project")
     p.add_argument("path", nargs="?", default=".")
     p.add_argument("--provider", choices=PROVIDERS, default=None)
     p.add_argument("--force", action="store_true")
@@ -1704,17 +1704,17 @@ def run(args: argparse.Namespace) -> int:
 
 - [ ] **Step 5: Implement `_main.py` + `__init__.py`**
 
-Create `agentkit/sdk/agentkit/cli/__init__.py`:
+Create `kaji/sdk/kaji/cli/__init__.py`:
 
 ```python
-"""agentkit CLI package."""
+"""kaji CLI package."""
 
 from ._main import main
 
 __all__ = ["main"]
 ```
 
-Create `agentkit/sdk/agentkit/cli/_main.py`:
+Create `kaji/sdk/kaji/cli/_main.py`:
 
 ```python
 """argparse entry point."""
@@ -1728,7 +1728,7 @@ from . import init as _init
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agentkit", description="agentkit CLI")
+    parser = argparse.ArgumentParser(prog="kaji", description="kaji CLI")
     sub = parser.add_subparsers(dest="command", required=True)
     _init.add_parser(sub)
     return parser
@@ -1746,10 +1746,10 @@ if __name__ == "__main__":  # pragma: no cover
 
 - [ ] **Step 6: Shim the old `cli.py`**
 
-Replace `agentkit/sdk/agentkit/cli.py` with:
+Replace `kaji/sdk/kaji/cli.py` with:
 
 ```python
-"""Backwards-compatible shim. Real implementation lives in `agentkit.cli` package."""
+"""Backwards-compatible shim. Real implementation lives in `kaji.cli` package."""
 
 from .cli._main import main
 from .cli.init import init_project
@@ -1762,10 +1762,10 @@ ENV_TEMPLATE = ENV_TEMPLATE_FN("openai")
 __all__ = ["main", "init_project", "AGENT_TEMPLATE", "ENV_TEMPLATE"]
 ```
 
-Wait — this is a name collision: `agentkit/cli.py` (module) and `agentkit/cli/` (package) cannot coexist in the same parent. Resolution: **delete `cli.py` outright**, since the package `cli/` with an `__init__.py` exposing `main`, `init_project`, etc. covers every existing public name. Update the shim approach: instead of `cli.py`, put the backwards-compat re-exports inside `cli/__init__.py`:
+Wait — this is a name collision: `kaji/cli.py` (module) and `kaji/cli/` (package) cannot coexist in the same parent. Resolution: **delete `cli.py` outright**, since the package `cli/` with an `__init__.py` exposing `main`, `init_project`, etc. covers every existing public name. Update the shim approach: instead of `cli.py`, put the backwards-compat re-exports inside `cli/__init__.py`:
 
 ```python
-"""agentkit CLI package."""
+"""kaji CLI package."""
 
 from ._main import main
 from .init import init_project
@@ -1778,23 +1778,23 @@ ENV_TEMPLATE = env_template("openai")
 __all__ = ["main", "init_project", "agent_template", "env_template", "AGENT_TEMPLATE", "ENV_TEMPLATE"]
 ```
 
-Then `git rm agentkit/sdk/agentkit/cli.py`.
+Then `git rm kaji/sdk/kaji/cli.py`.
 
 - [ ] **Step 7: Delete the old test file**
 
 ```bash
-git rm agentkit/sdk/tests/test_cli.py
+git rm kaji/sdk/tests/test_cli.py
 ```
 
 - [ ] **Step 8: Run tests**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v`
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v`
 Expected: PASS — all 8 tests green.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add agentkit/sdk/
+git add kaji/sdk/
 git commit -m "refactor(py-cli): split into cli/ subpackage + add init parser"
 ```
 
@@ -1803,9 +1803,9 @@ git commit -m "refactor(py-cli): split into cli/ subpackage + add init parser"
 ### Task 12: Python — `gen` command
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/cli/gen.py`
-- Create: `agentkit/sdk/tests/cli/test_gen.py`
-- Modify: `agentkit/sdk/agentkit/cli/_main.py`
+- Create: `kaji/sdk/kaji/cli/gen.py`
+- Create: `kaji/sdk/tests/cli/test_gen.py`
+- Modify: `kaji/sdk/kaji/cli/_main.py`
 
 **Interfaces:**
 - Consumes: nothing (uses stdlib `json`, `yaml` is optional — fall back to JSON-only when PyYAML missing).
@@ -1816,7 +1816,7 @@ git commit -m "refactor(py-cli): split into cli/ subpackage + add init parser"
 
 - [ ] **Step 1: Write failing test**
 
-Create `agentkit/sdk/tests/cli/test_gen.py`:
+Create `kaji/sdk/tests/cli/test_gen.py`:
 
 ```python
 from __future__ import annotations
@@ -1837,7 +1837,7 @@ SPEC = {
 
 
 def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
-    from agentkit.cli import main
+    from kaji.cli import main
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
     rc = main(["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "python"])
@@ -1848,7 +1848,7 @@ def test_gen_python_writes_tools_module(tmp_path: Path) -> None:
 
 
 def test_gen_ts_writes_index_ts(tmp_path: Path) -> None:
-    from agentkit.cli import main
+    from kaji.cli import main
     spec_path = tmp_path / "spec.json"
     spec_path.write_text(json.dumps(SPEC))
     rc = main(["gen", "--spec", str(spec_path), "--out", str(tmp_path), "--lang", "ts"])
@@ -1860,12 +1860,12 @@ def test_gen_ts_writes_index_ts(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli/test_gen.py -v`
-Expected: collection failure — `agentkit.cli.gen` does not exist.
+Run: `cd kaji/sdk && poetry run pytest tests/cli/test_gen.py -v`
+Expected: collection failure — `kaji.cli.gen` does not exist.
 
 - [ ] **Step 3: Implement `gen.py`**
 
-Create `agentkit/sdk/agentkit/cli/gen.py`. Mirror the TS `gen.ts` parser and emitters; the Python file should:
+Create `kaji/sdk/kaji/cli/gen.py`. Mirror the TS `gen.ts` parser and emitters; the Python file should:
 - Use stdlib `json` for `.json` specs.
 - Try `yaml.safe_load` only if `yaml` is importable, otherwise raise a clear error: `"YAML specs require PyYAML — pip install pyyaml or convert to JSON."`
 - Reuse the same `to_snake_case` / `extract_path_params` logic (port from TS).
@@ -1874,7 +1874,7 @@ Create `agentkit/sdk/agentkit/cli/gen.py`. Mirror the TS `gen.ts` parser and emi
 Full implementation:
 
 ```python
-"""`agentkit gen` — generate tool stubs from an OpenAPI spec."""
+"""`kaji gen` — generate tool stubs from an OpenAPI spec."""
 
 from __future__ import annotations
 
@@ -1947,7 +1947,7 @@ def generate_python_file(spec: dict, ops: list[ParsedOperation], prefix: str) ->
     base = _infer_base_url(spec)
     env = _infer_env_var(spec)
     lines = [
-        "# Auto-generated by agentkit gen. Do not edit.",
+        "# Auto-generated by kaji gen. Do not edit.",
         "import os",
         "import httpx",
         "",
@@ -2039,8 +2039,8 @@ def generate_ts_file(spec: dict, ops: list[ParsedOperation], prefix: str) -> str
             f"}}"
         )
     return (
-        "// Auto-generated by agentkit gen. Do not edit.\n"
-        'import type { ToolSpec } from "@agentkit/sdk";\n\n'
+        "// Auto-generated by kaji gen. Do not edit.\n"
+        'import type { ToolSpec } from "@kaji/sdk";\n\n'
         f'// Auth: set {env} in your environment\n'
         f'const BASE_URL = "{base}";\n'
         f'const API_KEY = process.env.{env} ?? "";\n\n'
@@ -2099,7 +2099,7 @@ def run(args: argparse.Namespace) -> int:
 
 - [ ] **Step 4: Wire into `_main.py`**
 
-Edit `agentkit/sdk/agentkit/cli/_main.py` — add to imports and parser:
+Edit `kaji/sdk/kaji/cli/_main.py` — add to imports and parser:
 
 ```python
 from . import gen as _gen
@@ -2110,13 +2110,13 @@ _gen.add_parser(sub)
 
 - [ ] **Step 5: Run tests**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v`
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/
+git add kaji/sdk/
 git commit -m "feat(py-cli): add gen command (python + ts output)"
 ```
 
@@ -2125,63 +2125,63 @@ git commit -m "feat(py-cli): add gen command (python + ts output)"
 ### Task 13: Python — `info`, `secret`, `doctor`
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/cli/info.py`
-- Create: `agentkit/sdk/agentkit/cli/secret.py`
-- Create: `agentkit/sdk/agentkit/cli/doctor.py`
-- Create: `agentkit/sdk/tests/cli/test_info.py`
-- Create: `agentkit/sdk/tests/cli/test_secret.py`
-- Create: `agentkit/sdk/tests/cli/test_doctor.py`
-- Modify: `agentkit/sdk/agentkit/cli/_main.py`
+- Create: `kaji/sdk/kaji/cli/info.py`
+- Create: `kaji/sdk/kaji/cli/secret.py`
+- Create: `kaji/sdk/kaji/cli/doctor.py`
+- Create: `kaji/sdk/tests/cli/test_info.py`
+- Create: `kaji/sdk/tests/cli/test_secret.py`
+- Create: `kaji/sdk/tests/cli/test_doctor.py`
+- Modify: `kaji/sdk/kaji/cli/_main.py`
 
 **Interfaces:**
 - Consumes: `_pkg.get_version` (Task 11), `_style.color`.
 - Produces:
-  - `info.collect() -> dict` — returns `{ "python": {...}, "platform": {...}, "agentkit": {...}, "providers": [...] }`
+  - `info.collect() -> dict` — returns `{ "python": {...}, "platform": {...}, "kaji": {...}, "providers": [...] }`
   - `info.add_parser(sub)` with flags `--json`
   - `secret.add_parser(sub)` with flags `--name`, `--json`
   - `doctor.run_checks(env, python_version) -> dict` — same shape as TS
 
 - [ ] **Step 1: Write failing tests**
 
-Create `agentkit/sdk/tests/cli/test_secret.py`:
+Create `kaji/sdk/tests/cli/test_secret.py`:
 
 ```python
 import json
 import re
 
-from agentkit.cli import main
+from kaji.cli import main
 
 
 def test_secret_default(capsys) -> None:
     rc = main(["secret"])
     assert rc == 0
     out = capsys.readouterr().out
-    assert re.search(r"AGENTKIT_SECRET=[0-9a-f]{64}", out)
+    assert re.search(r"KAJI_SECRET=[0-9a-f]{64}", out)
 
 
 def test_secret_json(capsys) -> None:
     rc = main(["secret", "--json"])
     assert rc == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["name"] == "AGENTKIT_SECRET"
+    assert data["name"] == "KAJI_SECRET"
     assert re.fullmatch(r"[0-9a-f]{64}", data["value"])
 ```
 
-Create `agentkit/sdk/tests/cli/test_info.py`:
+Create `kaji/sdk/tests/cli/test_info.py`:
 
 ```python
 import importlib
 import json
 
-from agentkit.cli import main
-from agentkit.cli.info import collect
+from kaji.cli import main
+from kaji.cli.info import collect
 
 
 def test_collect_returns_known_sections() -> None:
     out = collect()
     assert "python" in out
     assert "platform" in out
-    assert "agentkit" in out
+    assert "kaji" in out
     assert "providers" in out
 
 
@@ -2192,31 +2192,31 @@ def test_info_json(capsys) -> None:
     assert "python" in data
 ```
 
-Create `agentkit/sdk/tests/cli/test_doctor.py`:
+Create `kaji/sdk/tests/cli/test_doctor.py`:
 
 ```python
-from agentkit.cli.doctor import run_checks
+from kaji.cli.doctor import run_checks
 
 
 def test_doctor_fails_without_provider_key() -> None:
-    out = run_checks(env={}, python_version="3.11.0", agentkit_version="0.1.0")
+    out = run_checks(env={}, python_version="3.11.0", kaji_version="0.1.0")
     assert out["failed"] is True
 
 
 def test_doctor_passes_with_minimum_setup() -> None:
-    out = run_checks(env={"OPENAI_API_KEY": "sk"}, python_version="3.11.0", agentkit_version="0.1.0")
+    out = run_checks(env={"OPENAI_API_KEY": "sk"}, python_version="3.11.0", kaji_version="0.1.0")
     assert out["failed"] is False
 ```
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v -k "secret or info or doctor"`
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v -k "secret or info or doctor"`
 Expected: collection errors — modules missing.
 
 - [ ] **Step 3: Implement `secret.py`**
 
 ```python
-"""`agentkit secret` — generate a random hex secret."""
+"""`kaji secret` — generate a random hex secret."""
 
 from __future__ import annotations
 
@@ -2229,7 +2229,7 @@ from ._style import color
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("secret", help="generate a random 32-byte hex secret")
-    p.add_argument("--name", default="AGENTKIT_SECRET")
+    p.add_argument("--name", default="KAJI_SECRET")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run)
 
@@ -2240,7 +2240,7 @@ def run(args: argparse.Namespace) -> int:
         print(json.dumps({"name": args.name, "value": value}))
         return 0
     print("\nAdd the following to your .env file:")
-    print(color("# agentkit secret", "gray"))
+    print(color("# kaji secret", "gray"))
     print(color(f"{args.name}={value}\n", "green"))
     return 0
 ```
@@ -2248,7 +2248,7 @@ def run(args: argparse.Namespace) -> int:
 - [ ] **Step 4: Implement `info.py`**
 
 ```python
-"""`agentkit info` — environment + installed providers."""
+"""`kaji info` — environment + installed providers."""
 
 from __future__ import annotations
 
@@ -2276,13 +2276,13 @@ def collect() -> dict:
     return {
         "python": {"version": sys.version.split()[0], "executable": sys.executable},
         "platform": {"system": _platform.system(), "machine": _platform.machine(), "release": _platform.release()},
-        "agentkit": {"version": get_version()},
+        "kaji": {"version": get_version()},
         "providers": providers,
     }
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("info", help="display environment and agentkit configuration")
+    p = sub.add_parser("info", help="display environment and kaji configuration")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run)
 
@@ -2292,10 +2292,10 @@ def run(args: argparse.Namespace) -> int:
     if args.json:
         print(_json.dumps(data, indent=2))
         return 0
-    print(f"agentkit info\n{'=' * 40}")
+    print(f"kaji info\n{'=' * 40}")
     print(f"python:   {data['python']['version']} ({data['python']['executable']})")
     print(f"platform: {data['platform']['system']} {data['platform']['machine']}")
-    print(f"agentkit: {data['agentkit']['version']}")
+    print(f"kaji: {data['kaji']['version']}")
     if data["providers"]:
         names = ", ".join(p["name"] for p in data["providers"])
         print(f"providers: {names}")
@@ -2307,7 +2307,7 @@ def run(args: argparse.Namespace) -> int:
 - [ ] **Step 5: Implement `doctor.py`**
 
 ```python
-"""`agentkit doctor` — environment sanity checks."""
+"""`kaji doctor` — environment sanity checks."""
 
 from __future__ import annotations
 
@@ -2322,11 +2322,11 @@ from ._style import color
 PROVIDER_KEYS = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "KIMI_API_KEY")
 
 
-def run_checks(env: dict, python_version: str, agentkit_version: str) -> dict:
+def run_checks(env: dict, python_version: str, kaji_version: str) -> dict:
     checks = []
     major, minor = (int(x) for x in python_version.split(".")[:2])
     checks.append({"name": "python >= 3.11", "ok": (major, minor) >= (3, 11), "detail": python_version})
-    checks.append({"name": "agentkit installed", "ok": agentkit_version != "0.0.0", "detail": agentkit_version})
+    checks.append({"name": "kaji installed", "ok": kaji_version != "0.0.0", "detail": kaji_version})
     has_provider = any((env.get(k) or "") for k in PROVIDER_KEYS)
     checks.append({"name": "provider key", "ok": has_provider, "detail": " | ".join(PROVIDER_KEYS)})
     failed = any(not c["ok"] for c in checks)
@@ -2334,14 +2334,14 @@ def run_checks(env: dict, python_version: str, agentkit_version: str) -> dict:
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("doctor", help="check the environment for common agentkit issues")
+    p = sub.add_parser("doctor", help="check the environment for common kaji issues")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> int:
     py = ".".join(str(v) for v in sys.version_info[:3])
-    out = run_checks(env=dict(os.environ), python_version=py, agentkit_version=get_version())
+    out = run_checks(env=dict(os.environ), python_version=py, kaji_version=get_version())
     if args.json:
         print(_json.dumps(out, indent=2))
     else:
@@ -2369,13 +2369,13 @@ _doctor.add_parser(sub)
 
 - [ ] **Step 7: Run tests**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v`
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v`
 Expected: PASS (all suites).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add agentkit/sdk/
+git add kaji/sdk/
 git commit -m "feat(py-cli): add info, secret, doctor commands"
 ```
 
@@ -2384,9 +2384,9 @@ git commit -m "feat(py-cli): add info, secret, doctor commands"
 ### Task 14: Python — `upgrade` command
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/cli/upgrade.py`
-- Create: `agentkit/sdk/tests/cli/test_upgrade.py`
-- Modify: `agentkit/sdk/agentkit/cli/_main.py`
+- Create: `kaji/sdk/kaji/cli/upgrade.py`
+- Create: `kaji/sdk/tests/cli/test_upgrade.py`
+- Modify: `kaji/sdk/kaji/cli/_main.py`
 
 **Interfaces:**
 - Consumes: nothing (stdlib `urllib.request`, `json`).
@@ -2397,35 +2397,35 @@ git commit -m "feat(py-cli): add info, secret, doctor commands"
 
 - [ ] **Step 1: Write failing test**
 
-Create `agentkit/sdk/tests/cli/test_upgrade.py`:
+Create `kaji/sdk/tests/cli/test_upgrade.py`:
 
 ```python
-from agentkit.cli.upgrade import find_outdated
+from kaji.cli.upgrade import find_outdated
 
 
 def test_find_outdated_returns_only_upgradable() -> None:
-    installed = {"agentkit": "0.1.0", "agentkit-serve": "0.1.0"}
+    installed = {"kaji": "0.1.0", "kaji-serve": "0.1.0"}
     def fake(name: str) -> str | None:
-        return {"agentkit": "0.2.0", "agentkit-serve": "0.1.0"}.get(name)
+        return {"kaji": "0.2.0", "kaji-serve": "0.1.0"}.get(name)
     out = find_outdated(installed, fake)
-    assert out == [{"name": "agentkit", "current": "0.1.0", "latest": "0.2.0"}]
+    assert out == [{"name": "kaji", "current": "0.1.0", "latest": "0.2.0"}]
 
 
 def test_find_outdated_skips_unknown_latest() -> None:
-    installed = {"agentkit": "0.1.0"}
+    installed = {"kaji": "0.1.0"}
     out = find_outdated(installed, lambda _: None)
     assert out == []
 ```
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli/test_upgrade.py -v`
+Run: `cd kaji/sdk && poetry run pytest tests/cli/test_upgrade.py -v`
 Expected: collection error — module missing.
 
 - [ ] **Step 3: Implement `upgrade.py`**
 
 ```python
-"""`agentkit upgrade` — bring installed agentkit packages up to date."""
+"""`kaji upgrade` — bring installed kaji packages up to date."""
 
 from __future__ import annotations
 
@@ -2461,11 +2461,11 @@ def fetch_latest_pypi(name: str, opener=urllib.request.urlopen) -> str | None:
         return None
 
 
-def list_installed_agentkit() -> dict[str, str]:
+def list_installed_kaji() -> dict[str, str]:
     out: dict[str, str] = {}
     for d in distributions():
         name = d.metadata["Name"] or ""
-        if name == "agentkit" or name.startswith("agentkit-"):
+        if name == "kaji" or name.startswith("kaji-"):
             out[name] = d.version
     return out
 
@@ -2482,19 +2482,19 @@ def find_outdated(installed: dict[str, str], fetcher=fetch_latest_pypi) -> list[
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser("upgrade", help="upgrade agentkit packages")
+    p = sub.add_parser("upgrade", help="upgrade kaji packages")
     p.add_argument("--yes", action="store_true")
     p.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> int:
-    installed = list_installed_agentkit()
+    installed = list_installed_kaji()
     if not installed:
-        print("No agentkit packages found in this environment.")
+        print("No kaji packages found in this environment.")
         return 0
     outdated = find_outdated(installed)
     if not outdated:
-        print("All agentkit packages are up to date.")
+        print("All kaji packages are up to date.")
         return 0
     print("\nThe following packages can be upgraded:\n")
     for u in outdated:
@@ -2515,13 +2515,13 @@ Add: `from . import upgrade as _upgrade` then `_upgrade.add_parser(sub)`.
 
 - [ ] **Step 5: Run tests**
 
-Run: `cd agentkit/sdk && poetry run pytest tests/cli -v`
+Run: `cd kaji/sdk && poetry run pytest tests/cli -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/
+git add kaji/sdk/
 git commit -m "feat(py-cli): add upgrade command"
 ```
 
@@ -2550,9 +2550,9 @@ function tsHelp(): string {
 }
 
 function pyHelp(): string {
-  // Project layout: agentkit poetry venv from monorepo root.
-  return execFileSync("poetry", ["run", "agentkit", "--help"], {
-    cwd: "../../agentkit/sdk",
+  // Project layout: kaji poetry venv from monorepo root.
+  return execFileSync("poetry", ["run", "kaji", "--help"], {
+    cwd: "../../kaji/sdk",
     encoding: "utf-8",
   });
 }
@@ -2574,27 +2574,27 @@ describe("CLI parity", () => {
 - [ ] **Step 2: Build both CLIs and run the parity test**
 
 ```bash
-bun --filter @agentkit/cli build
-cd agentkit/sdk && poetry install --no-root && cd ../..
-bun --filter @agentkit/cli test test/parity.test.ts
+bun --filter @kaji/cli build
+cd kaji/sdk && poetry install --no-root && cd ../..
+bun --filter @kaji/cli test test/parity.test.ts
 ```
 
 Expected: PASS.
 
 - [ ] **Step 3: Update ROADMAP**
 
-In `docs/ROADMAP.md`, replace the existing `### 29. agentkit CLI / scaffold init (PARTIAL)` block with:
+In `docs/ROADMAP.md`, replace the existing `### 29. kaji CLI / scaffold init (PARTIAL)` block with:
 
 ```markdown
-### 29. agentkit CLI / scaffold (DONE)
+### 29. kaji CLI / scaffold (DONE)
 
-Both `@agentkit/cli` (TypeScript) and `agentkit` (Python) ship the same surface:
+Both `@kaji/cli` (TypeScript) and `kaji` (Python) ship the same surface:
 `init`, `gen`, `info`, `secret`, `upgrade`, `doctor`. The TS CLI additionally
-ships `mcp` for registering an agentkit MCP server with the user's AI tool.
+ships `mcp` for registering an kaji MCP server with the user's AI tool.
 
-- TS: `bun add -D @agentkit/cli` → `npx agentkit init --lang ts|python --provider openai|anthropic|kimi|gemini`
-- Python: `pip install agentkit` → `agentkit init --provider openai`
-- Landing-page CLI tab: now safe to show both `agentkit init` flows.
+- TS: `bun add -D @kaji/cli` → `npx kaji init --lang ts|python --provider openai|anthropic|kimi|gemini`
+- Python: `pip install kaji` → `kaji init --provider openai`
+- Landing-page CLI tab: now safe to show both `kaji init` flows.
 ```
 
 - [ ] **Step 4: Final commit**
@@ -2618,8 +2618,8 @@ git commit -m "test(cli): parity test + roadmap update"
 Invoke the `review` skill against `feat/cli-ts-py` vs `main`. Address any findings in-place. Re-run all tests.
 
 ```bash
-bun --filter @agentkit/cli test
-cd agentkit/sdk && poetry run pytest tests/cli && cd ../..
+bun --filter @kaji/cli test
+cd kaji/sdk && poetry run pytest tests/cli && cd ../..
 ```
 
 - [ ] **Step 2: Run ast-grep structural sweep**
@@ -2642,16 +2642,16 @@ git push -u origin feat/cli-ts-py
 ```bash
 gh pr create --title "feat(cli): TS + Python CLI parity" --body "$(cat <<'EOF'
 ## Summary
-- Wire @agentkit/cli (TS) with init, gen, info, secret, upgrade, doctor, mcp
-- Restructure agentkit Python CLI into cli/ subpackage with init, gen, info, secret, upgrade, doctor
+- Wire @kaji/cli (TS) with init, gen, info, secret, upgrade, doctor, mcp
+- Restructure kaji Python CLI into cli/ subpackage with init, gen, info, secret, upgrade, doctor
 - Parity test ensures both CLIs expose the same top-level commands
 
 ## Test plan
-- [ ] bun --filter @agentkit/cli test
-- [ ] cd agentkit/sdk && poetry run pytest tests/cli
-- [ ] Manual: agentkit init --lang ts --provider openai
-- [ ] Manual: agentkit init --provider openai (python)
-- [ ] Manual: agentkit gen --spec spec.json --out out --lang python
+- [ ] bun --filter @kaji/cli test
+- [ ] cd kaji/sdk && poetry run pytest tests/cli
+- [ ] Manual: kaji init --lang ts --provider openai
+- [ ] Manual: kaji init --provider openai (python)
+- [ ] Manual: kaji gen --spec spec.json --out out --lang python
 EOF
 )"
 ```
@@ -2685,7 +2685,7 @@ No drift detected.
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-21-agentkit-cli-ts-py.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-21-kaji-cli-ts-py.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — Dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. **Inline Execution** — Execute tasks in this session using `executing-plans`, batch execution with checkpoints.

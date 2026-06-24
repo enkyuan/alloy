@@ -10,9 +10,9 @@ Two deliverables:
 - **Part A — Docs migration.** Migrate the better-auth docs app's design system
   (tokens, full `globals.css`, fonts, UI component library, MDX component specs,
   docs layout + custom sidebar) and a rebranded landing page into alloy's
-  `apps/docs`, 1:1, branded to agentkit using the `shape-40.svg` logo.
+  `apps/docs`, 1:1, branded to kaji using the `shape-40.svg` logo.
 - **Part B — SDK gap review.** A written gap analysis of the TypeScript SDK
-  (`agentkit/ts`) vs the Python SDK (`agentkit/sdk/agentkit`), excluding serve,
+  (`kaji/ts`) vs the Python SDK (`kaji/sdk/kaji`), excluding serve,
   plus a prioritized plan to close the top gaps. No SDK code changes in this pass.
 
 ## Source / target
@@ -22,7 +22,7 @@ Two deliverables:
 | Docs app | `/Users/Enkang.Yuan1/Desktop/Projects/better-auth/docs` | `apps/docs` |
 | Framework | fumadocs 16.7.9 + Tailwind 4 + Next 16.2.6 | fumadocs 16.9.3 + Tailwind 4 + Next 16.2.7 |
 | Styling source of truth | `app/globals.css` (954 lines) | `app/global.css` (184 lines) |
-| Logo | 3D logo images + marks | `shape-40.svg` (agentkit mark) |
+| Logo | 3D logo images + marks | `shape-40.svg` (kaji mark) |
 
 Both are fumadocs + Tailwind 4 apps, so the design layer is portable. alloy keeps
 its own working content pipeline (`collections/server`, `source.config.ts`,
@@ -34,13 +34,13 @@ not the content/MDX wiring.
 - **Scope:** design system + landing (not the full marketing site: no
   blog/pricing/products/enterprise/legal).
 - **Dependencies:** match better-auth exactly (full radix/cva/framer/etc. set).
-- **Landing:** same structure, rebranded to agentkit; placeholder data where
-  agentkit specifics are unknown.
+- **Landing:** same structure, rebranded to kaji; placeholder data where
+  kaji specifics are unknown.
 - **Sidebar:** literal 1:1 — copy `sidebar-content.tsx` + custom `docs-sidebar.tsx`,
-  hand-author an agentkit nav tree mirroring `content/docs`, disable fumadocs'
+  hand-author an kaji nav tree mirroring `content/docs`, disable fumadocs'
   built-in DocsLayout sidebar.
 - **Favicon:** remove text-based favicon/icon generation; user supplies favicon
-  images manually. Keep `%s | agentkit` title metadata.
+  images manually. Keep `%s | kaji` title metadata.
 - **SDK:** report + propose plan, no code changes.
 - **Execution:** spec → plan → phased execution with browse QA checkpoints.
 
@@ -100,12 +100,12 @@ table, tabs, textarea, tooltip, use-copy-button.
   registration (merge into the returned map alongside fumadocs defaults), keeping
   alloy's `collections/server` + `source.config.ts` pipeline untouched.
 - Auth-specific components (`GenerateSecret`, `GenerateAppleJwt`, `AddToCursor`)
-  are ported for 1:1 fidelity but won't be referenced by agentkit content; that's
+  are ported for 1:1 fidelity but won't be referenced by kaji content; that's
   acceptable.
 
 ### A5. Docs layout + custom sidebar (literal 1:1)
 
-- Copy `components/sidebar-content.tsx` and author an **agentkit nav tree**
+- Copy `components/sidebar-content.tsx` and author an **kaji nav tree**
   mirroring `content/docs`: index, getting-started, architecture,
   reference-service, and the `concepts/` group (events, session-state,
   tool-registry, event-bus, providers). Assign lucide icons per section.
@@ -130,18 +130,18 @@ table, tabs, textarea, tooltip, use-copy-button.
 - Replace alloy's `app/(home)/page.tsx` "Hello World" with the ported hero.
   Decide: keep the `(home)` route group or move to `app/page.tsx` (better-auth
   uses `app/page.tsx`). Recommend `app/page.tsx` for 1:1; remove `(home)`.
-- Rebrand all copy: "Better Auth" → "agentkit"; hero tagline → agentkit
+- Rebrand all copy: "Better Auth" → "kaji"; hero tagline → kaji
   positioning ("Embeddable SDK for building agents…"); footer "© 2026 Better
-  Auth Inc." → agentkit; links → alloy GitHub + `/docs`.
+  Auth Inc." → kaji; links → alloy GitHub + `/docs`.
 - **Live-data caveat (explicit):** `hero-readme.tsx` (2190 lines) and
   `trusted-by.tsx` embed better-auth npm download charts, GitHub contributor
-  avatars, and partner logos. For visual 1:1: port the layout, wire agentkit's
+  avatars, and partner logos. For visual 1:1: port the layout, wire kaji's
   GitHub repo where applicable, and use static/placeholder data for npm-downloads
   chart and the partner marquee. These are visually identical but not live.
 
 ### A7. Logo / favicon
 
-- Save `shape-40.svg` as the agentkit mark (e.g. `components/icons.tsx`
+- Save `shape-40.svg` as the kaji mark (e.g. `components/icons.tsx`
   `AgentkitMark`, or `public/logo.svg`). The mark uses `#FF6E3C` fills; provide a
   `currentColor` variant for nav/theming where better-auth used `currentColor`,
   and the brand-orange variant for the hero.
@@ -187,7 +187,7 @@ a prioritized closure plan. No code changes to either SDK in this pass.
 
 ### B2. Findings (from triage — to be written up)
 
-Surface mapping done. TS (`agentkit/ts/src`) mirrors the Python event-sourced core
+Surface mapping done. TS (`kaji/ts/src`) mirrors the Python event-sourced core
 (events, store, bus, replay, tools, runtime loop, mock provider, cancellation) but:
 
 **Missing in TS:** real LLM providers (openai/kimi/gemini), voice/STT/TTS

@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
     paths:
-      - "agentkit/ts/**"
-      - "agentpay/auth/**"
+      - "kaji/ts/**"
+      - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
       - "package.json"
@@ -13,8 +13,8 @@ on:
       - ".github/workflows/ts.format.yml"
   pull_request:
     paths:
-      - "agentkit/ts/**"
-      - "agentpay/auth/**"
+      - "kaji/ts/**"
+      - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
       - "package.json"
@@ -22,34 +22,34 @@ on:
       - ".github/workflows/ts.format.yml"
 
 jobs:
-  agentkit-ts:
-    name: agentkit/ts
+  kaji-ts:
+    name: kaji/ts
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/ts
+        working-directory: kaji/ts
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: agentkit/ts
+          working-directory: kaji/ts
 
       - name: Check formatting
         run: bun run format:check
 
   auth:
-    name: agentpay/auth
+    name: ryo/auth
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentpay/auth
+        working-directory: ryo/auth
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: agentpay/auth
+          working-directory: ryo/auth
 
       - name: Check formatting
         run: bun run format:check
