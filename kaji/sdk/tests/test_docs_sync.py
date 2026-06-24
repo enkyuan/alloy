@@ -8,8 +8,8 @@ that the doc *explains* the name well, only that there's a reference the
 author can revisit when the name changes.
 
 Scope of "user-facing docs":
-- ``docs/KAJI.md`` -- the shared concepts overview
-- ``kaji/sdk/kaji/README.md`` -- the python SDK README
+- ``kaji/README.md`` -- the shared concepts overview
+- ``kaji/sdk/README.md`` -- the python SDK README
 - ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
 
 Plan/spec files under ``docs/superpowers/`` are excluded -- those are
@@ -39,8 +39,8 @@ FUMADOCS_CONTENT = REPO_ROOT / "apps" / "docs" / "content"
 
 def _user_facing_docs() -> list[Path]:
     paths: list[Path] = [
-        REPO_ROOT / "docs" / "KAJI.md",
-        REPO_ROOT / "kaji" / "sdk" / "kaji" / "README.md",
+        REPO_ROOT / "kaji" / "README.md",
+        REPO_ROOT / "kaji" / "sdk" / "README.md",
     ]
     paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
     return paths
