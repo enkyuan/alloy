@@ -166,3 +166,199 @@ def test_tokens_persist_chmod_0600(tmp_path: Path) -> None:
     # Best-effort permission setting; on platforms where chmod is a noop
     # this assertion would be too strict, but darwin / linux honor it.
     assert mode == 0o600
+
+
+# ---------------------------------------------------------------------------
+# TokenStorage protocol + backends
+# ---------------------------------------------------------------------------
+
+
+def test_file_token_storage_roundtrips(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    storage = FileTokenStorage(tmp_path / "tokens.json")
+    payload = {
+        "access_token": "a",
+        "refresh_token": "r",
+        "expires_at": 1.0,
+        "scopes": ["s"],
+    }
+    storage.save(payload)
+    assert storage.load() == payload
+
+
+def test_file_token_storage_returns_none_when_missing(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    storage = FileTokenStorage(tmp_path / "does_not_exist.json")
+    assert storage.load() is None
+
+
+def test_file_token_storage_writes_chmod_0600(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    path = tmp_path / "tokens.json"
+    storage = FileTokenStorage(path)
+    storage.save({"access_token": "a"})
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_keyring_token_storage_uses_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agentkit.integrations.oauth import KeyringTokenStorage
+
+    fake_store: dict[tuple[str, str], str] = {}
+
+    class FakeKeyring:
+        @staticmethod
+        def set_password(service: str, account: str, secret: str) -> None:
+            fake_store[(service, account)] = secret
+
+        @staticmethod
+        def get_password(service: str, account: str):
+            return fake_store.get((service, account))
+
+    monkeypatch.setattr(
+        "agentkit.integrations.oauth.keyring", FakeKeyring, raising=False
+    )
+
+    storage = KeyringTokenStorage(service_name="agentkit-test", account="gmail")
+    payload = {"access_token": "a", "refresh_token": "r", "expires_at": 1.0}
+    storage.save(payload)
+    assert storage.load() == payload
+
+
+def test_keyring_token_storage_returns_none_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentkit.integrations.oauth import KeyringTokenStorage
+
+    class FakeKeyring:
+        @staticmethod
+        def get_password(_service: str, _account: str):
+            return None
+
+    monkeypatch.setattr(
+        "agentkit.integrations.oauth.keyring", FakeKeyring, raising=False
+    )
+
+    storage = KeyringTokenStorage(service_name="agentkit-test", account="gmail")
+    assert storage.load() is None
+
+
+def test_keyring_token_storage_raises_clear_error_without_keyring(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentkit.integrations.oauth import KeyringTokenStorage
+
+    monkeypatch.setattr("agentkit.integrations.oauth.keyring", None, raising=False)
+    storage = KeyringTokenStorage(service_name="agentkit-test", account="gmail")
+    # Assert the exact install instruction so a refactor that shortens the
+    # message degrades the test, not the user's stderr.
+    msg_re = r"pip install 'agentkit\[oauth-keyring\]'"
+    with pytest.raises(OAuthError, match=msg_re):
+        storage.save({"a": 1})
+    with pytest.raises(OAuthError, match=msg_re):
+        storage.load()
+
+
+def test_keyring_token_storage_returns_none_on_corrupt_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A corrupt keyring entry triggers re-consent, matching the file
+    backend's behaviour. Without the fix, json.JSONDecodeError escaped
+    the storage and crashed ensure_authorized()."""
+    from agentkit.integrations.oauth import KeyringTokenStorage
+
+    class CorruptKeyring:
+        @staticmethod
+        def get_password(_service: str, _account: str):
+            return "{not json"
+
+    monkeypatch.setattr(
+        "agentkit.integrations.oauth.keyring", CorruptKeyring, raising=False
+    )
+
+    storage = KeyringTokenStorage(service_name="agentkit-test", account="gmail")
+    assert storage.load() is None
+
+
+def test_client_accepts_custom_token_storage(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    storage = FileTokenStorage(tmp_path / "tok.json")
+    client = GoogleOAuthClient(
+        client_id="id",
+        client_secret="sec",
+        scopes=["https://www.googleapis.com/auth/gmail.readonly"],
+        token_path=tmp_path / "ignored.json",
+        token_storage=storage,
+    )
+    assert client._token_storage is storage  # type: ignore[attr-defined]
+
+
+def test_client_defaults_to_file_token_storage(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    client = _client(tmp_path)
+    assert isinstance(client._token_storage, FileTokenStorage)  # type: ignore[attr-defined]
+
+
+def test_client_requires_token_path_or_token_storage() -> None:
+    """Omitting both backends is a config error: the helper has nowhere to
+    persist tokens and would re-prompt on every call."""
+    with pytest.raises(OAuthError, match=r"token_path.*token_storage"):
+        GoogleOAuthClient(
+            client_id="id",
+            client_secret="sec",
+            scopes=["s"],
+        )
+
+
+def test_client_accepts_token_storage_without_token_path(tmp_path: Path) -> None:
+    """token_path is no longer required when an explicit token_storage is
+    provided. The client should construct cleanly and route through the
+    given storage."""
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    storage = FileTokenStorage(tmp_path / "via_storage.json")
+    client = GoogleOAuthClient(
+        client_id="id",
+        client_secret="sec",
+        scopes=["s"],
+        token_storage=storage,
+    )
+    assert client.token_path is None
+    assert client._token_storage is storage  # type: ignore[attr-defined]
+
+
+def test_token_storage_protocol_is_runtime_checkable(tmp_path: Path) -> None:
+    from agentkit.integrations.oauth import FileTokenStorage, TokenStorage
+
+    assert isinstance(FileTokenStorage(tmp_path / "x.json"), TokenStorage)
+
+
+def test_client_round_trips_through_custom_storage(tmp_path: Path) -> None:
+    """The client's _load_tokens / _save_tokens go through storage, not the
+    legacy file path, when a token_storage is provided."""
+    from agentkit.integrations.oauth import FileTokenStorage
+
+    storage_path = tmp_path / "via_storage.json"
+    storage = FileTokenStorage(storage_path)
+    client = GoogleOAuthClient(
+        client_id="id",
+        client_secret="sec",
+        scopes=["s"],
+        token_path=tmp_path / "legacy_path_should_not_be_used.json",
+        token_storage=storage,
+    )
+    tok = _Tokens(
+        access_token="a",
+        refresh_token="r",
+        expires_at=time.time() + 3600,
+        scopes=("s",),
+    )
+    client._save_tokens(tok)  # type: ignore[attr-defined]
+    assert storage_path.exists()
+    assert not (tmp_path / "legacy_path_should_not_be_used.json").exists()
+    loaded = client._load_tokens()  # type: ignore[attr-defined]
+    assert loaded is not None and loaded.access_token == "a"

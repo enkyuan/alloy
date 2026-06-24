@@ -32,12 +32,21 @@ import urllib.parse
 import webbrowser
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Protocol, runtime_checkable
 
 import httpx
 
 
 logger = logging.getLogger(__name__)
+
+
+# Optional dependency: import only fails if the user requested the
+# ``oauth-keyring`` extra. ``KeyringTokenStorage`` surfaces a clear error if
+# called without it installed.
+try:
+    import keyring  # type: ignore
+except ImportError:  # pragma: no cover - exercised via monkeypatch
+    keyring = None  # type: ignore[assignment]
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -50,6 +59,90 @@ _REFRESH_BUFFER_SECONDS = 60
 class OAuthError(RuntimeError):
     """Raised when the OAuth flow fails (missing creds, refresh failure,
     user denied consent, etc.)."""
+
+
+@runtime_checkable
+class TokenStorage(Protocol):
+    """Persist OAuth tokens. Implementations round-trip a JSON-serialisable
+    dict produced by :meth:`_Tokens.to_dict`."""
+
+    def load(self) -> Optional[dict[str, Any]]: ...
+    def save(self, data: dict[str, Any]) -> None: ...
+
+
+class FileTokenStorage:
+    """Tokens stored as JSON at a user-controlled path, chmod 0600.
+
+    Default backend. Suitable for single-user developer machines. On shared
+    hosts prefer :class:`KeyringTokenStorage`.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path).expanduser()
+
+    def load(self) -> Optional[dict[str, Any]]:
+        if not self.path.exists():
+            return None
+        try:
+            return json.loads(self.path.read_text())
+        except (json.JSONDecodeError, ValueError) as exc:
+            logger.warning("Failed to load tokens from %s: %s", self.path, exc)
+            return None
+
+    def save(self, data: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(data, indent=2))
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            pass
+
+
+class KeyringTokenStorage:
+    """Tokens stored in the OS keyring (Keychain, libsecret, Credential Manager).
+
+    Requires the optional ``keyring`` extra:
+
+        pip install 'agentkit[oauth-keyring]'
+
+    Recommended over :class:`FileTokenStorage` on shared machines. Stores
+    the token dict as a single JSON string. The full Google OAuth payload
+    is well under 1KB; cross-platform keyring backends cap secrets in the
+    hundreds of KB, which leaves plenty of headroom.
+    """
+
+    def __init__(self, *, service_name: str, account: str) -> None:
+        self.service_name = service_name
+        self.account = account
+
+    def _require_keyring(self) -> None:
+        if keyring is None:
+            raise OAuthError(
+                "KeyringTokenStorage requires the 'keyring' package. "
+                "Install with: pip install 'agentkit[oauth-keyring]'"
+            )
+
+    def load(self) -> Optional[dict[str, Any]]:
+        self._require_keyring()
+        secret = keyring.get_password(self.service_name, self.account)
+        if secret is None:
+            return None
+        try:
+            return json.loads(secret)
+        except (json.JSONDecodeError, ValueError) as exc:
+            # Symmetric with FileTokenStorage: a corrupt entry should
+            # trigger a clean re-consent, not crash the caller.
+            logger.warning(
+                "Failed to parse tokens from keyring entry %s/%s: %s",
+                self.service_name,
+                self.account,
+                exc,
+            )
+            return None
+
+    def save(self, data: dict[str, Any]) -> None:
+        self._require_keyring()
+        keyring.set_password(self.service_name, self.account, json.dumps(data))
 
 
 @dataclass
@@ -84,8 +177,13 @@ class GoogleOAuthClient:
     shows them this list. Use the most restrictive scope possible
     (e.g. ``gmail.readonly`` rather than ``gmail.modify``).
 
-    ``token_path`` is where refresh + access tokens are persisted. Treat
-    the file like a secret: do not check it in.
+    ``token_path`` is where refresh + access tokens are persisted by the
+    default :class:`FileTokenStorage`. Treat the file like a secret; do not
+    check it in. May be omitted when ``token_storage`` is supplied.
+
+    ``token_storage`` overrides the default file backend; pass
+    :class:`KeyringTokenStorage` or any object satisfying
+    :class:`TokenStorage` to plug in a different secret store.
 
     ``callback_port`` is the localhost port the helper listens on while
     capturing the auth code. Defaults to 0 (OS picks a free port).
@@ -97,23 +195,38 @@ class GoogleOAuthClient:
         client_id: str,
         client_secret: str,
         scopes: list[str] | tuple[str, ...],
-        token_path: str | Path,
+        token_path: Optional[str | Path] = None,
         callback_port: int = 0,
         open_browser: bool = True,
+        token_storage: Optional[TokenStorage] = None,
     ) -> None:
         if not client_id or not client_secret:
             raise OAuthError(
                 "GoogleOAuthClient requires client_id and client_secret. "
                 "See the integration's SETUP.md for the Google Cloud step."
             )
+        if token_path is None and token_storage is None:
+            raise OAuthError(
+                "GoogleOAuthClient requires either token_path (default file "
+                "backend) or token_storage (custom backend)."
+            )
         self.client_id = client_id
         self.client_secret = client_secret
         self.scopes = tuple(scopes)
-        self.token_path = Path(token_path).expanduser()
+        self.token_path = (
+            Path(token_path).expanduser() if token_path is not None else None
+        )
         self.callback_port = callback_port
         self.open_browser = open_browser
         self._tokens: Optional[_Tokens] = None
         self._http: Optional[httpx.AsyncClient] = None
+        # Explicit token_storage wins; otherwise default to the file backend
+        # at token_path.
+        if token_storage is not None:
+            self._token_storage: TokenStorage = token_storage
+        else:
+            assert self.token_path is not None  # validated above
+            self._token_storage = FileTokenStorage(self.token_path)
 
     # ------------------------------------------------------------------
     # Public API
@@ -151,23 +264,17 @@ class GoogleOAuthClient:
         return tokens.expires_at - time.time() < _REFRESH_BUFFER_SECONDS
 
     def _load_tokens(self) -> Optional[_Tokens]:
-        if not self.token_path.exists():
+        data = self._token_storage.load()
+        if data is None:
             return None
         try:
-            data = json.loads(self.token_path.read_text())
             return _Tokens.from_dict(data)
-        except (json.JSONDecodeError, KeyError, ValueError) as e:
-            logger.warning("Failed to load tokens from %s: %s", self.token_path, e)
+        except (KeyError, ValueError) as e:
+            logger.warning("Failed to parse loaded tokens: %s", e)
             return None
 
     def _save_tokens(self, tokens: _Tokens) -> None:
-        self.token_path.parent.mkdir(parents=True, exist_ok=True)
-        self.token_path.write_text(json.dumps(tokens.to_dict(), indent=2))
-        # Best-effort chmod 0600 so the file isn't world-readable.
-        try:
-            self.token_path.chmod(0o600)
-        except OSError:
-            pass
+        self._token_storage.save(tokens.to_dict())
 
     async def _run_installed_flow(self) -> _Tokens:
         """Run the localhost-callback consent flow."""
