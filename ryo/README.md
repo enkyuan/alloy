@@ -20,11 +20,7 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
                         │  calls request_payment tool
                         ▼
    ┌──────────────────────────────────────────────────┐
-<<<<<<<< HEAD:ryo/README.md
    │  @ryo/api  (merchant plane)                      │
-========
-   │  @ryo/api  (merchant plane)                 │
->>>>>>>> origin/main:docs/RYO.md
    │  creates payment session + Stripe PaymentIntent  │
    │  writes ledger row, fires payment.initiated      │
    └────────────────────┬─────────────────────────────┘
@@ -38,11 +34,7 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
                         │  Stripe webhook callback
                         ▼
    ┌───────────────────────────────────────────────┐
-<<<<<<<< HEAD:ryo/README.md
    │  @ryo/api                                     │
-========
-   │  @ryo/api                                │
->>>>>>>> origin/main:docs/RYO.md
    │  updates ledger · fires merchant webhook      │
    │  writes consumer transaction row              │
    └───────────┬────────────────────┬──────────────┘
@@ -53,11 +45,7 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
          push event             transaction feed
 ```
 
-<<<<<<<< HEAD:ryo/README.md
 ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at a kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
-========
-ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
->>>>>>>> origin/main:docs/RYO.md
 
 ---
 
