@@ -34,7 +34,7 @@ class AgentRuntime:
 
     ``planner`` is optional. When omitted, a default ``ToolPlanner`` is
     constructed from ``tool_executor`` (falls back to the global
-    ``execute_tool`` registry), ``policy``, and ``approval_handler`` — the same
+    ``execute_tool`` registry), ``policy``, and ``approval_handler``, the same
     lazy-build pattern as the TypeScript ``AgentRuntime``. Pass an explicit
     ``planner`` (e.g. from ``AgentBuilder``) to use a scoped registry instead.
     """
@@ -59,10 +59,6 @@ class AgentRuntime:
         self.bus = bus
         self.store = store
         self.provider = provider
-        self._explicit_planner = planner
-        self._tool_executor = tool_executor
-        self._policy = policy
-        self._approval_handler = approval_handler
         self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
@@ -86,32 +82,42 @@ class AgentRuntime:
         # to retrieve relevant chunks which are prepended to the system prompt.
         self._rag = rag
         self._rag_top_k = rag_top_k
-        self._planner = self._build_planner()
+        # Single source of truth: an explicit planner wins; otherwise we build
+        # one from tool_executor / policy / approval_handler. Plain attribute
+        # so callers can swap it post-construction (tests do this).
+        self.planner: ToolPlanner = (
+            planner
+            if planner is not None
+            else self._build_planner(
+                tool_executor=tool_executor,
+                policy=policy,
+                approval_handler=approval_handler,
+            )
+        )
 
-    def _build_planner(self) -> ToolPlanner:
-        """Construct the planner used for tool execution."""
-        if self._explicit_planner is not None:
-            return self._explicit_planner
-
+    def _build_planner(
+        self,
+        *,
+        tool_executor: Optional[ToolExecutor],
+        policy: Optional[Any],
+        approval_handler: Optional[ApprovalHandler],
+    ) -> ToolPlanner:
+        """Construct the default planner. Called only when no explicit
+        planner was passed to ``__init__``."""
         # Lazy import to avoid a top-level circular dependency; execute_tool
         # lives in the global tool registry.
         from agentkit.runtime.tools.registry import execute_tool  # noqa: PLC0415
 
-        executor: ToolExecutor = self._tool_executor or (
+        executor: ToolExecutor = tool_executor or (
             lambda name, args: execute_tool(self._user_id, name, args)
         )
         specs = {spec.name: spec for spec in self.tools}
         return ToolPlanner(
             executor=executor,
-            policy=self._policy,
-            approval_handler=self._approval_handler,
+            policy=policy,
+            approval_handler=approval_handler,
             specs=specs,
         )
-
-    @property
-    def planner(self) -> ToolPlanner:
-        """Planner used for tool execution."""
-        return self._planner
 
     async def _emit(self, event: AgentKitEvent) -> None:
         """Commit an event to the source of truth and broadcast it."""
@@ -238,7 +244,7 @@ class AgentRuntime:
                 break
 
             # 6. Execute tools concurrently (Scatter-Gather)
-            await self._planner.execute_scatter_gather(
+            await self.planner.execute_scatter_gather(
                 session_id, tool_calls, self._emit
             )
 

@@ -465,3 +465,67 @@ async def test_tool_call_id_preserved_on_failed_tool_replay():
     assert len(tool_msgs) == 1
     assert tool_msgs[0]["tool_call_id"] == "call-xyz"
     assert "Error:" in tool_msgs[0]["content"]
+
+
+# ---------------------------------------------------------------------------
+# Planner-attribute collapse (Task 9)
+# ---------------------------------------------------------------------------
+
+
+def test_explicit_planner_lives_on_self_planner():
+    """When an explicit planner is passed, runtime.planner returns it without
+    rebuilding. Same identity, plain attribute access."""
+    explicit = ToolPlanner(executor=mock_executor)
+    runtime = AgentRuntime(
+        bus=MockEventBus(),
+        store=InMemoryEventStore(),
+        provider=MockProvider(),
+        planner=explicit,
+    )
+    assert runtime.planner is explicit
+
+
+def test_default_planner_lives_on_self_planner():
+    """When no planner is given, runtime.planner is the lazily-built default."""
+    runtime = AgentRuntime(
+        bus=MockEventBus(),
+        store=InMemoryEventStore(),
+        provider=MockProvider(),
+        tool_executor=mock_executor,
+    )
+    assert isinstance(runtime.planner, ToolPlanner)
+    # Plain attribute, not a @property: assignment must work (regression
+    # guard for the prior @property-shaped surface).
+    new_planner = ToolPlanner(executor=mock_executor)
+    runtime.planner = new_planner
+    assert runtime.planner is new_planner
+
+
+def test_planner_attribute_is_plain_not_property():
+    """`AgentRuntime.planner` must be an instance attribute, not a property.
+    The earlier surface had `@property def planner` AND `self._planner =
+    ...`, which raised AttributeError if anything tried `self.planner = x`.
+    """
+    runtime = AgentRuntime(
+        bus=MockEventBus(),
+        store=InMemoryEventStore(),
+        provider=MockProvider(),
+        tool_executor=mock_executor,
+    )
+    # The class itself must not define `planner` as a property/descriptor.
+    assert "planner" not in vars(AgentRuntime)
+    # And the instance must carry it.
+    assert "planner" in vars(runtime)
+
+
+def test_underscore_planner_attrs_are_gone():
+    """No leftover `_planner` or `_explicit_planner` book-keeping attributes
+    after the collapse; the source of truth is `self.planner` only."""
+    runtime = AgentRuntime(
+        bus=MockEventBus(),
+        store=InMemoryEventStore(),
+        provider=MockProvider(),
+        tool_executor=mock_executor,
+    )
+    assert not hasattr(runtime, "_planner")
+    assert not hasattr(runtime, "_explicit_planner")
