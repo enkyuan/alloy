@@ -9,6 +9,7 @@ import type { ToolPolicy } from "../tools/policy";
 import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
 import { ToolRegistry } from "../tools/registry";
 import { EventBus } from "../events/bus";
+import type { EventBusProtocol } from "../events/protocols";
 import { InMemoryEventStore, type EventStore } from "../events/store";
 
 /** Anything with a register(registry: ToolRegistry) method. */
@@ -17,8 +18,8 @@ export interface Integrable {
 }
 
 export interface AgentBuilderBuildOptions {
-  /** Defaults to a fresh `EventBus` instance. */
-  bus?: EventBus;
+  /** Defaults to a fresh `EventBus` instance. Any `EventBusProtocol` works. */
+  bus?: EventBusProtocol;
   /** Defaults to a fresh `InMemoryEventStore` instance. */
   store?: EventStore;
 }

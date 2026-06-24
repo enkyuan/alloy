@@ -17,6 +17,7 @@ export const VERSION = "0.1.0";
 export { EventType } from "./events/types";
 export { AgentKitEvent, type AgentKitEventInput, type BaseEvent } from "./events/schemas";
 export { EventBus } from "./events/bus";
+export { type EventBusProtocol } from "./events/protocols";
 export { type EventStore, InMemoryEventStore } from "./events/store";
 
 // Sessions

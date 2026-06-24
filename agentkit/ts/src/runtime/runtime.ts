@@ -6,7 +6,7 @@
  * events -> execute tool calls concurrently (scatter-gather) -> loop until the
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
-import { EventBus } from "../events/bus";
+import type { EventBusProtocol } from "../events/protocols";
 import { AgentKitEvent, type AgentKitEventInput } from "../events/schemas";
 import { EventType } from "../events/types";
 import type { EventStore } from "../events/store";
@@ -27,7 +27,7 @@ export interface AgentStrategy {
 export interface AgentRuntimeOptions {
   provider: ModelProvider;
   store: EventStore;
-  bus: EventBus;
+  bus: EventBusProtocol;
   systemPrompt?: string;
   strategy?: AgentStrategy;
   /**
@@ -77,7 +77,7 @@ type EventInputWithoutSession<T = AgentKitEventInput> = T extends unknown
 export class AgentRuntime {
   private readonly provider: ModelProvider;
   private readonly store: EventStore;
-  private readonly bus: EventBus;
+  private readonly bus: EventBusProtocol;
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly fixedTools: ToolSpec[] | undefined;

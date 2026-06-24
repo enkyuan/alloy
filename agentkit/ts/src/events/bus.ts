@@ -6,6 +6,7 @@
  * The Redis-backed bus (durable, cross-process) is deferred until there is a
  * server runtime in TS; for an embedded SDK this in-memory fan-out is enough.
  */
+import type { EventBusProtocol } from "./protocols";
 import type { AgentKitEvent } from "./schemas";
 
 /** A queue that bridges synchronous `publish` to an async iterator. */
@@ -62,7 +63,7 @@ class Subscription implements AsyncIterableIterator<AgentKitEvent> {
   }
 }
 
-export class EventBus {
+export class EventBus implements EventBusProtocol {
   private readonly subscribers = new Map<string, Set<Subscription>>();
 
   /**
