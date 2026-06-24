@@ -120,17 +120,11 @@ runtime = (
 `parameters` accepts either a JSON Schema dict or a Pydantic `BaseModel`
 subclass; the model is converted to JSON Schema at registration time.
 
-Built-in integrations are vendored into your project via the CLI rather
-than imported from the SDK directly. Run `kaji add <name>` (see
-[CLI.md](CLI.md)) to copy the integration source into your tree, then
-import from your local path:
+Built-in integrations:
 
-- `kaji add github` -> `from integrations.github import GitHub`
-- `kaji add gmail` -> `from integrations.gmail import Gmail`
-- `kaji add gcal` -> `from integrations.gcal import GoogleCalendar`
-
-The catalog itself lives at `kaji.integrations.registry.*`, but
-those modules are not part of the SDK's public import surface.
+- `from kaji.integrations.registry.github.github import GitHub`
+- `from kaji.integrations.registry.gmail.gmail import Gmail`
+- `from kaji.integrations.registry.gcal.gcal import GoogleCalendar`
 
 ## Providers
 
