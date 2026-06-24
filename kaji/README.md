@@ -26,7 +26,7 @@ the shared concepts across all three.
 
 ```
    ┌────────────────────────────────────────────────────┐
-   │  your app  (or ryo/api)                       │
+   │  your app  (or ryo/api)                            │
    │                                                    │
    │  session manager   tool registry   model provider  │
    └────────────────────────┬───────────────────────────┘

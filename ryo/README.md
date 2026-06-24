@@ -9,7 +9,7 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
 **the payment flow** (what happens when a customer interacts with an agent):
 
 ```
-      customer types / speaks (any channel)
+            customer types / speaks (any channel)
                         │
                         ▼
    ┌───────────────────────────────────────────────┐
