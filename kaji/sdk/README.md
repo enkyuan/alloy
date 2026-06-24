@@ -337,7 +337,7 @@ configuration is needed to `import kaji`.
 | `DATABASE_URL` | kaji-serve only | Postgres connection |
 | `SUPABASE_ANON_KEY` | kaji-serve only | Supabase auth |
 
-See [`.env.example`](kaji/.env.example) for the full list.
+See [`.env.example`](.env.example) for the full list.
 
 ## Project layout notes
 
