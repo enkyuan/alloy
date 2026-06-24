@@ -1,9 +1,9 @@
-# agentpay system design
+# ryo system design
 _2026-06-04_
 
 ## overview
 
-agentpay lets merchants deploy ai agents that handle transactions via any modality (chat widget, voice via Twilio/Vapi, SMS). consumers interact with those agents, and agentpay handles the payment session, ledger, and event delivery. stripe settles money directly to the merchant's connected account — agentpay never holds funds.
+ryo lets merchants deploy ai agents that handle transactions via any modality (chat widget, voice via Twilio/Vapi, SMS). consumers interact with those agents, and ryo handles the payment session, ledger, and event delivery. stripe settles money directly to the merchant's connected account — ryo never holds funds.
 
 ---
 
@@ -19,7 +19,7 @@ three layers, two backends, two frontends.
                      │ REST + JWT
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  @agentpay/api  (Go, port 8090)  — merchant plane       │
+│  @ryo/api  (Go, port 8090)  — merchant plane       │
 │  agents · wallets · payment configs · webhook registry  │
 │  payment sessions · webhook delivery · ledger           │
 └────────┬───────────────────────────┬────────────────────┘
@@ -39,16 +39,16 @@ three layers, two backends, two frontends.
                      │ REST + JWT
                      ▼
 ┌─────────────────────────────────────────────────────────┐
-│  @agentpay/consumer  (Go, port 8091)  — consumer plane  │
+│  @ryo/consumer  (Go, port 8091)  — consumer plane  │
 │  consumer identity · Stripe customer delegation         │
 │  transaction history · plain-language activity feed     │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **key decisions:**
-- agentpay owns the tool surface and payment session lifecycle, not any modality
+- ryo owns the tool surface and payment session lifecycle, not any modality
 - voice/SMS is the merchant's choice — they point Twilio/Vapi/Bland at an kaji endpoint
-- stripe holds all sensitive payment data; agentpay stores only `stripe_customer_id`
+- stripe holds all sensitive payment data; ryo stores only `stripe_customer_id`
 - the ledger is append-only postgres rows — plain-language labels written at settlement time
 - the consumer app is a read surface: wallet status + transaction feed, nothing writable except payment method setup
 
@@ -56,7 +56,7 @@ three layers, two backends, two frontends.
 
 ## modality
 
-agentpay does not own STT/TTS. the agent loop is:
+ryo does not own STT/TTS. the agent loop is:
 
 ```
 merchant embed (JS widget or webhook endpoint)
@@ -65,14 +65,14 @@ merchant embed (JS widget or webhook endpoint)
 kaji AgentRuntime (tool-using loop, provider-neutral)
     │  registered tool: request_payment(amount, description)
     ▼
-POST /v1/sessions  →  @agentpay/api
+POST /v1/sessions  →  @ryo/api
 ```
 
 merchants choose their modality:
 - **chat widget** — embed the JS snippet, kaji handles the conversation in-browser
 - **voice/SMS** — merchant points Twilio/Vapi flow at a webhook endpoint; kaji handles tool calls over that channel
 
-both paths hit the same agentpay API surface.
+both paths hit the same ryo API surface.
 
 ---
 
@@ -90,7 +90,7 @@ Stripe hosted checkout / Payment Element
     │  consumer authenticates via Stripe Link
     │  stripe_customer_id created or reused
     ▼
-Stripe webhook → POST /stripe/webhook  →  @agentpay/api
+Stripe webhook → POST /stripe/webhook  →  @ryo/api
     │  payment.succeeded / payment.failed
     │  updates ledger row status
     │  writes to consumer_transactions
@@ -100,13 +100,13 @@ merchant backend receives signed push event
 consumer app reads updated transaction feed
 ```
 
-no money touches agentpay. stripe settles directly to the merchant's connected account.
+no money touches ryo. stripe settles directly to the merchant's connected account.
 
 ---
 
 ## data model
 
-### additions to @agentpay/api (existing schema)
+### additions to @ryo/api (existing schema)
 
 ```sql
 -- agents
@@ -146,7 +146,7 @@ CREATE INDEX idx_webhook_deliveries_pending
   WHERE status = 'pending';
 ```
 
-### @agentpay/consumer (new schema)
+### @ryo/consumer (new schema)
 
 ```sql
 CREATE TABLE consumers (
@@ -175,7 +175,7 @@ CREATE INDEX idx_consumer_transactions_consumer
 
 ---
 
-## @agentpay/consumer routes
+## @ryo/consumer routes
 
 | method | path | description |
 |--------|------|-------------|
@@ -196,7 +196,7 @@ auth uses the same JWT pattern as the existing auth service (HS256, `sub` + `rol
 
 ```
 POST /v1/webhooks
-{ "url": "https://merchant.com/hooks/agentpay", "events": ["payment.completed", "payment.failed"] }
+{ "url": "https://merchant.com/hooks/ryo", "events": ["payment.completed", "payment.failed"] }
 ```
 
 secret is generated server-side, returned once on creation, never again.
@@ -255,7 +255,7 @@ the `request_payment` tool is registered with `AgentRuntime` at agent startup:
 }
 ```
 
-when the agent calls the tool, kaji executes it by hitting `POST /v1/sessions` on the agentpay API. the tool returns a checkout URL or status that the agent can relay to the customer.
+when the agent calls the tool, kaji executes it by hitting `POST /v1/sessions` on the ryo API. the tool returns a checkout URL or status that the agent can relay to the customer.
 
 ---
 
@@ -275,7 +275,7 @@ auth: email + password, JWT issued by consumer service. stripe payment method ma
 
 ## open questions / deferred
 
-- merchant connected account onboarding: using Stripe Connect Standard so agentpay owns the UI and submits KYB/KYC fields to Stripe via API. needs a dedicated spec before implementation.
+- merchant connected account onboarding: using Stripe Connect Standard so ryo owns the UI and submits KYB/KYC fields to Stripe via API. needs a dedicated spec before implementation.
 - rate limiting on webhook delivery: not scoped here, add before public launch.
 
 ## decided

@@ -1,7 +1,7 @@
 # Web login route + TanStack file-based routing
 
 Date: 2026-06-01
-Package: `apps/web` (`@agentpay/web`)
+Package: `apps/web` (`@ryo/web`)
 
 ## Goal
 

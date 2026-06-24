@@ -1,6 +1,6 @@
 # Roadmap
 
-What remains before kaji and agentpay are production-ready. Items are ordered by leverage and grouped into shared timeline blocks -- kaji SDK work and agentpay product work are interleaved because agentpay depends on kaji capabilities landing first.
+What remains before kaji and ryo are production-ready. Items are ordered by leverage and grouped into shared timeline blocks -- kaji SDK work and ryo product work are interleaved because ryo depends on kaji capabilities landing first.
 
 Status legend: **DONE** / **PARTIAL** / **MISSING** reflects current state, not the issue itself.
 
@@ -27,7 +27,7 @@ Completed 2026-05-31. `import kaji` -> run an agent -> call a tool works end-to-
 
 ---
 
-## P1 -- Providers + agentpay scaffold
+## P1 -- Providers + ryo scaffold
 
 ### 4. OpenAI LLM provider (DONE)
 - `kaji/sdk/kaji/runtime/providers/openai.py` -- `generate` + `generate_stream` with tool calls via async openai SDK. Kimi stays default.
@@ -49,8 +49,8 @@ Completed 2026-05-31. `import kaji` -> run an agent -> call a tool works end-to-
 ### 7b. Fix Kimi tool translation (DONE)
 - `kaji/sdk/kaji/runtime/providers/kimi.py` -- translates via `to_openai` at the boundary.
 
-### 8. agentpay API scaffold (MISSING)
-The `agentpay/api` service has handlers and store stubs but no wired payment session lifecycle, no Stripe integration, and no webhook delivery.
+### 8. ryo API scaffold (MISSING)
+The `ryo/api` service has handlers and store stubs but no wired payment session lifecycle, no Stripe integration, and no webhook delivery.
 - Wire `POST /v1/sessions` -- create Stripe PaymentIntent, write ledger row, fire `payment.initiated` webhook delivery row.
 - Add `POST /stripe/webhook` handler -- verify Stripe signature, handle `payment_intent.succeeded` / `payment_intent.payment_failed`, update ledger, write consumer transaction row, fire merchant webhook.
 - Add `POST /v1/webhooks`, `GET /v1/webhooks`, `DELETE /v1/webhooks/{id}` routes and store.
@@ -58,9 +58,9 @@ The `agentpay/api` service has handlers and store stubs but no wired payment ses
 - Add `embed_type` column to `agents`, `channel` + `plain_summary` to `sessions`.
 - Env vars: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`.
 
-### 9. agentpay consumer service (MISSING)
-New Go service at `agentpay/consumer`, port 8091.
-- Scaffold: chi router, pgx/v5, goose migrations, slog -- mirror `agentpay/api` structure.
+### 9. ryo consumer service (MISSING)
+New Go service at `ryo/consumer`, port 8091.
+- Scaffold: chi router, pgx/v5, goose migrations, slog -- mirror `ryo/api` structure.
 - Migrations: `consumers`, `consumer_transactions` tables.
 - Routes: `POST /v1/auth/signup`, `POST /v1/auth/login`, `GET /v1/wallet`, `POST /v1/wallet/setup`, `GET /v1/transactions`, `GET /v1/activity`.
 - JWT pattern: HS256, `sub` + `role: consumer` claims, issued by this service only.
@@ -68,7 +68,7 @@ New Go service at `agentpay/consumer`, port 8091.
 
 ---
 
-## P2 -- Decouple building blocks + agentpay tool integration
+## P2 -- Decouple building blocks + ryo tool integration
 
 ### 10. Decouple `ToolRetriever` from Gemini + Redis (DONE)
 - `kaji/sdk/kaji/runtime/tools/retriever.py` -- pluggable `Embedder` + `EmbeddingCache` protocols. Defaults infra-free.
@@ -85,10 +85,10 @@ New Go service at `agentpay/consumer`, port 8091.
 - Tests: `kaji/sdk/tests/test_events_replay.py`.
 
 ### 12. `request_payment` kaji tool (MISSING)
-The bridge between kaji and agentpay. Registers with `AgentRuntime`; when called, hits `POST /v1/sessions` on `@agentpay/api` and returns a checkout URL to the agent.
+The bridge between kaji and ryo. Registers with `AgentRuntime`; when called, hits `POST /v1/sessions` on `@ryo/api` and returns a checkout URL to the agent.
 - Tool spec: `{name: "request_payment", parameters: {amount: integer (cents), description: string}}`.
-- Implementation in `kaji/sdk/kaji/tools/payment.py` (or equivalent) -- thin HTTP call to agentpay API, configurable base URL via env.
-- Needs `@agentpay/api` session endpoint (item 8) live first.
+- Implementation in `kaji/sdk/kaji/tools/payment.py` (or equivalent) -- thin HTTP call to ryo API, configurable base URL via env.
+- Needs `@ryo/api` session endpoint (item 8) live first.
 
 ---
 
@@ -109,12 +109,12 @@ The bridge between kaji and agentpay. Registers with `AgentRuntime`; when called
 - `kaji/serve/kaji_serve/server/session_store.py` -- `PostgresSessionStore` implements the same protocol over the existing `Conversation` table.
 - Auto-recording from inside `AgentRuntime` is not wired (the runtime has no `user_id`); callers record via `SessionManager.record_session` or service routes.
 
-### 17. agentpay merchant studio -- webhooks UI (MISSING)
+### 17. ryo merchant studio -- webhooks UI (MISSING)
 Studio (`apps/web`) has no webhook management screens.
 - Add `/webhooks` route: register a URL, select events, view delivery history, inspect dead deliveries.
 - Feeds from `GET /v1/webhooks` and delivery log in `webhook_deliveries`.
 
-### 18. agentpay iOS consumer app (MISSING)
+### 18. ryo iOS consumer app (MISSING)
 Deferred until the consumer service API and studio web app are stable.
 Swift/SwiftUI app, iOS-first.
 - Three screens: wallet (Stripe Payment Element), transactions (paginated), activity (plain-language feed).
@@ -123,7 +123,7 @@ Swift/SwiftUI app, iOS-first.
 - Reads `GET /v1/transactions` and `GET /v1/activity` from consumer service.
 - Blocked on items 9 and 17.
 
-### 19. agentpay merchant onboarding -- Stripe Connect (MISSING)
+### 19. ryo merchant onboarding -- Stripe Connect (MISSING)
 Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, submits KYB/KYC fields to Stripe via API.
 - Needs a dedicated spec before implementation. Deferred from the current design.
 

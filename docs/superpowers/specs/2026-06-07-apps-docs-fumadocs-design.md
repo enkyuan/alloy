@@ -9,10 +9,10 @@ Stand up a Fumadocs documentation site at `apps/docs`, scoped to the kaji
 SDK and written language-agnostically (concepts first, Python/TypeScript code as
 illustration). Seed initial content from the existing `docs/KAJI.md`. Wire
 the app into the existing Bun + Turbo monorepo so it behaves like the other
-workspaces (`@agentpay/web`, `@kaji/sdk`).
+workspaces (`@ryo/web`, `@kaji/sdk`).
 
 This is a documentation *site* for external developers consuming kaji
-standalone. It is not agentpay product docs, and it does not replace the loose
+standalone. It is not ryo product docs, and it does not replace the loose
 markdown under `docs/`.
 
 ## goals
@@ -26,7 +26,7 @@ markdown under `docs/`.
 
 ## non-goals (YAGNI)
 
-- No agentpay documentation.
+- No ryo documentation.
 - No search backend beyond Fumadocs' built-in default (Orama). No Algolia.
 - No deploy configuration (Vercel etc.). Local `dev` / `build` only.
 - Do not move, edit, or delete the existing `docs/*.md` files. The site *seeds
@@ -142,7 +142,7 @@ or `/review` pass happens only if explicitly requested.
 ## components / boundaries
 
 - `apps/docs` is a self-contained workspace. It has no code dependency on
-  `@kaji/sdk`, `@agentpay/*`, or the Python packages. Its only coupling to
+  `@kaji/sdk`, `@ryo/*`, or the Python packages. Its only coupling to
   the repo is: the `apps/*` workspace glob, root Turbo tasks, and the root
   formatter config it opts into.
 - Content (MDX) is data, isolated under the content root. Swapping or extending

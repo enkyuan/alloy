@@ -1,4 +1,4 @@
-# agentpay Consumer Service Implementation Plan
+# ryo Consumer Service Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Go 1.25, chi v5, pgx/v5, goose migrations, `github.com/stripe/stripe-go/v82`, `golang-jwt/jwt/v5`, `golang.org/x/crypto/bcrypt`.
 
-**Dependency:** Requires Plan 1 (agentpay API extensions) to be deployed — the `apps/api` Stripe webhook handler writes consumer transaction rows by calling this service's internal endpoint.
+**Dependency:** Requires Plan 1 (ryo API extensions) to be deployed — the `apps/api` Stripe webhook handler writes consumer transaction rows by calling this service's internal endpoint.
 
 ---
 
@@ -1057,7 +1057,7 @@ git commit -m "feat(consumer): wallet handler — status + Stripe SetupIntent"
 Create `apps/consumer/internal/internal/handler.go`:
 
 ```go
-// Package internal exposes an endpoint called only by @agentpay/api (not
+// Package internal exposes an endpoint called only by @ryo/api (not
 // consumers). It is secured by a shared internal secret rather than a consumer JWT.
 package internal
 
@@ -1129,7 +1129,7 @@ func (h *handler) writeTransaction(w http.ResponseWriter, r *http.Request) {
 		MerchantID:  req.MerchantID,
 		CreatedAt:   time.Now().UTC(),
 	}
-	// Note: ConsumerID here is set to the consumer's agentpay ID, which the
+	// Note: ConsumerID here is set to the consumer's ryo ID, which the
 	// caller (apps/api) must resolve from stripe_customer_id before calling.
 	// The API looks up the consumer service's GET /internal/consumers?stripe_id=...
 	// endpoint (add that lookup in apps/api's Stripe webhook handler).
@@ -1318,7 +1318,7 @@ func envOr(key, fallback string) string {
 Create `apps/consumer/.env.example`:
 
 ```
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/agentpay_consumer
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/ryo_consumer
 JWT_SECRET=change-me
 STRIPE_SECRET_KEY=sk_test_...
 INTERNAL_SECRET=change-me-internal

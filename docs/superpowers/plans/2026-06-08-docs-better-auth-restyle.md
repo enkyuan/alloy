@@ -232,7 +232,7 @@ infra-free. No database or server is required to import and use it. Deploy it
 yourself, or run the reference service (`kaji-serve`) when you need a
 production-grade multi-process setup.
 
-It powers agentpay's agent runtime, and can also be used standalone in any
+It powers ryo's agent runtime, and can also be used standalone in any
 Python or TypeScript project.
 
 ## Packages
@@ -349,7 +349,7 @@ description: How the modality-agnostic ReAct runtime loop projects session state
 
 ```
    ┌────────────────────────────────────────────────────┐
-   │  your app  (or agentpay/api)                       │
+   │  your app  (or ryo/api)                       │
    │  session manager   tool registry   model provider  │
    └────────────────────────┬───────────────────────────┘
                             ▼
