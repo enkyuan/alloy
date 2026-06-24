@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import abc
+import logging
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union, cast
 
@@ -15,6 +16,16 @@ from agentkit.runtime.tools.registry import (
     provider_safe_tool_name,
     tool_spec_from_model,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_on_sanitize(original: str, sanitized: str) -> None:
+    logger.warning(
+        "tool name %r sanitized to %r for provider compatibility",
+        original,
+        sanitized,
+    )
 
 
 def tool(
@@ -97,7 +108,7 @@ class Integration(abc.ABC):
             catalog_name = f"{self.namespace}.{spec.name}"
             prefixed = replace(
                 spec,
-                name=provider_safe_tool_name(catalog_name),
+                name=provider_safe_tool_name(catalog_name, on_mutate=_warn_on_sanitize),
                 catalog_name=catalog_name,
             )
             registry.register(prefixed)(handler)

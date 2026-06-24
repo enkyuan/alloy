@@ -64,7 +64,20 @@ export abstract class Integration {
   register(registry: ToolRegistry): void {
     for (const [spec, handler] of this.tools()) {
       const catalogName = `${this.namespace}.${spec.name}`;
-      registry.register({ ...spec, name: providerSafeToolName(catalogName), catalogName }, handler);
+      registry.register(
+        {
+          ...spec,
+          name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
+          catalogName,
+        },
+        handler,
+      );
     }
   }
+}
+
+function warnOnSanitize(original: string, sanitized: string): void {
+  console.warn(
+    `[agentkit] tool name ${JSON.stringify(original)} sanitized to ${JSON.stringify(sanitized)} for provider compatibility`,
+  );
 }

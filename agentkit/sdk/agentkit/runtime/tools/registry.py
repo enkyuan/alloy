@@ -41,10 +41,24 @@ class ToolContext:
     db: Optional[Any] = None
 
 
-def provider_safe_tool_name(name: str) -> str:
-    """Return a provider-safe tool name using only letters, digits, "_" and "-"."""
-    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
-    return safe or "tool"
+def provider_safe_tool_name(
+    name: str,
+    *,
+    on_mutate: Optional[Callable[[str, str], None]] = None,
+) -> str:
+    """Return a provider-safe tool name using only letters, digits, ``_`` and ``-``.
+
+    If ``on_mutate`` is given and the name was changed, the callback fires once
+    with ``(original, sanitized)``. Without a callback the sanitizer has no
+    side effects (no log, no global state); every registered tool runs through
+    it, so a default warn-on-mutation would emit one stderr line per sanitized
+    name on every startup. Callers (the integration base classes) thread an
+    explicit callback in to surface the mutation through their own logger.
+    """
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "tool"
+    if safe != name and on_mutate is not None:
+        on_mutate(name, safe)
+    return safe
 
 
 def _filter_specs(

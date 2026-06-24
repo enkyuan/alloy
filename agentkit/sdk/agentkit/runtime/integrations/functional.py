@@ -17,6 +17,7 @@ then converted to JSON Schema the same way ``@tool(parameters=Model)`` does.
 from __future__ import annotations
 
 import inspect
+import logging
 from dataclasses import replace
 from typing import Any, Callable, Dict, Optional, Type, Union, cast, get_type_hints
 
@@ -29,6 +30,16 @@ from agentkit.runtime.tools.registry import (
     provider_safe_tool_name,
     tool_spec_from_model,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _warn_on_sanitize(original: str, sanitized: str) -> None:
+    logger.warning(
+        "tool name %r sanitized to %r for provider compatibility",
+        original,
+        sanitized,
+    )
 
 
 class BoundTool:
@@ -50,7 +61,7 @@ class BoundTool:
         catalog_name = f"{self.namespace}.{self.spec.name}"
         prefixed = replace(
             self.spec,
-            name=provider_safe_tool_name(catalog_name),
+            name=provider_safe_tool_name(catalog_name, on_mutate=_warn_on_sanitize),
             catalog_name=catalog_name,
         )
         registry.register(prefixed)(self.handler)

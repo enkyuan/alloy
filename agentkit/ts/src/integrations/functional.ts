@@ -43,10 +43,20 @@ export class BoundTool {
   register(registry: ToolRegistry): void {
     const catalogName = `${this.namespace}.${this.spec.name}`;
     registry.register(
-      { ...this.spec, name: providerSafeToolName(catalogName), catalogName },
+      {
+        ...this.spec,
+        name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
+        catalogName,
+      },
       this.handler,
     );
   }
+}
+
+function warnOnSanitize(original: string, sanitized: string): void {
+  console.warn(
+    `[agentkit] tool name ${JSON.stringify(original)} sanitized to ${JSON.stringify(sanitized)} for provider compatibility`,
+  );
 }
 
 export interface FunctionToolMeta<P> extends Omit<ToolMeta, "parameters"> {

@@ -58,8 +58,22 @@ export const TOOL_META = Symbol("tool_meta");
 /** A ToolHandler that may carry attached ToolMeta (set by `tool()`). */
 export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
 
-export function providerSafeToolName(name: string): string {
-  return name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+export interface ProviderSafeToolNameOptions {
+  /**
+   * Called once with `(original, sanitized)` when the name was changed.
+   * Not invoked when the input is already provider-safe. With no callback,
+   * the sanitizer has no side effects (no log, no global state), so
+   * registering many tools at startup stays quiet by default.
+   */
+  onMutate?: (original: string, sanitized: string) => void;
+}
+
+export function providerSafeToolName(name: string, opts: ProviderSafeToolNameOptions = {}): string {
+  const safe = name.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+  if (safe !== name && opts.onMutate) {
+    opts.onMutate(name, safe);
+  }
+  return safe;
 }
 
 function isZodSchema(parameters: ToolParameters): parameters is z.ZodType {
