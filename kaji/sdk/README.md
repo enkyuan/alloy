@@ -1,4 +1,4 @@
-# Kaji
+# kaji
 
 `kaji` is an embeddable SDK for building agents into your own platform:
 import the pieces you need and compose them. The core is dependency-injected and
@@ -11,7 +11,7 @@ infra-free (no database, Supabase, FastAPI, or web server required).
 > production-hardened -- do not deploy the realtime/voice stack without
 > additional load and durability testing.
 
-See [**Kaji MVP**](../MVP.md) for the full five-step developer path and scope
+See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
 definition.
 
 ## Install
@@ -144,7 +144,7 @@ cd kaji/sdk
 poetry install
 poetry run pytest tests/          # no API keys required
 poetry run pyrefly check          # static type check
-poetry run ruff check kaji    # lint
+poetry run ruff check kaji        # lint
 ```
 
 Live provider tests are opt-in:
@@ -156,7 +156,7 @@ ANTHROPIC_API_KEY=... poetry run pytest -m integration tests/integration/test_an
 
 The SDK test suite needs no environment. The service tests under
 `kaji/serve/tests/` cover the FastAPI app and workers; those need Postgres
-(see `kaji/serve/README.md`).
+(see [`kaji/serve/README.md`](../serve/README.md)).
 
 ## Testing without API keys
 
@@ -297,7 +297,7 @@ production, not a requirement for using it. It runs as three processes over Redi
 
 FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
 nodes, and TaskIQ workers are **not** in the SDK -- they live in the separate
-[`kaji-serve`](../../serve/README.md) distribution.
+[`kaji-serve`](../serve/README.md) distribution.
 
 ## Module layout
 
@@ -337,11 +337,11 @@ configuration is needed to `import kaji`.
 | `DATABASE_URL` | kaji-serve only | Postgres connection |
 | `SUPABASE_ANON_KEY` | kaji-serve only | Supabase auth |
 
-See [`.env.example`](.env.example) for the full list.
+See [`.env.example`](kaji/.env.example) for the full list.
 
 ## Project layout notes
 
 The repo ships **two distributions**: `kaji` (this SDK) and
-[`kaji-serve`](../../serve/README.md) (the reference FastAPI + workers
+[`kaji-serve`](../serve/README.md) (the reference FastAPI + workers
 service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.

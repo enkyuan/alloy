@@ -41,7 +41,7 @@ modalities. payment collection is a tool the agent calls.
                │  rest  /v1/agents  /v1/payments  /v1/wallets
                ▼
    ┌──────────────────────────┐
-   │  @ryo/api  (go)     │   chi router, pgx, jwt auth
+   │  @ryo/api  (go)          │   chi router, pgx, jwt auth
    │  agent · wallet ·        │
    │  payment_config ·        │
    │  session crud            │
@@ -49,7 +49,7 @@ modalities. payment collection is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  kaji runtime        │   kaji/sdk + kaji/serve
+   │  kaji runtime            │   kaji/sdk + kaji/serve
    │  llm loop · toolgen      │   serve adds fastapi, redis, postgres, voice
    └──────────────────────────┘
 ```
@@ -76,9 +76,9 @@ bun --filter @ryo/web dev
 cd kaji/sdk && poetry install && poetry run pytest
 ```
 
-see [`docs/RYO.md`](docs/RYO.md) for the full ryo setup, routes, and environment variables.
-see [`docs/KAJI.md`](docs/KAJI.md) for kaji concepts, architecture, and package overview.
-see [`kaji/MVP.md`](kaji/MVP.md) for the five-step kaji developer path (install → configure provider → register tools → run agent → inspect events).
+see [`ryo/README.md`](ryo/README.md) for the full ryo setup, routes, and environment variables.
+see [`kaji/README.md`](kaji/README.md) for kaji concepts, architecture, and package overview.
+see [`docs/MVP.md`](docs/MVP.md) for the five-step kaji developer path (install → configure provider → register tools → run agent → inspect events).
 
 ## license
 

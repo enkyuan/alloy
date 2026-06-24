@@ -2,25 +2,25 @@
 
 ryo lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account -- ryo never holds money.
 
-the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the runtime works.
+the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md) for how the runtime works.
 
 ## what it does
 
 **the payment flow** (what happens when a customer interacts with an agent):
 
 ```
-   customer types or speaks (any channel)
-      │
-      ▼
+      customer types / speaks (any channel)
+                        │
+                        ▼
    ┌───────────────────────────────────────────────┐
    │  agent  (embedded on merchant site or app)    │
-   │  kaji AgentRuntime  (tool-using loop,     │
+   │  kaji AgentRuntime  (tool-using loop,         │
    │  any modality: chat widget, Twilio, Vapi, SMS)│
    └────────────────────┬──────────────────────────┘
                         │  calls request_payment tool
                         ▼
    ┌──────────────────────────────────────────────────┐
-   │  @ryo/api  (merchant plane)                 │
+   │  @ryo/api  (merchant plane)                      │
    │  creates payment session + Stripe PaymentIntent  │
    │  writes ledger row, fires payment.initiated      │
    └────────────────────┬─────────────────────────────┘
@@ -34,18 +34,18 @@ the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the
                         │  Stripe webhook callback
                         ▼
    ┌───────────────────────────────────────────────┐
-   │  @ryo/api                                │
+   │  @ryo/api                                     │
    │  updates ledger · fires merchant webhook      │
    │  writes consumer transaction row              │
-   └────────┬──────────────────────┬───────────────┘
-            │                      │
-            ▼                      ▼
-   merchant backend         consumer app
-   receives signed          sees updated
-   push event               transaction feed
+   └───────────┬────────────────────┬──────────────┘
+               │                    │
+               ▼                    ▼
+         merchant backend       consumer app
+         receives signed        sees updated
+         push event             transaction feed
 ```
 
-ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
+ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at a kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
 
 ---
 
@@ -102,7 +102,7 @@ all routes under `/v1/` require a `bearer` jwt signed with `jwt_secret`. the tok
 | stripe | `card_on_file`, `one_time_link` |
 | square | `card_on_file`, `one_time_link` |
 
-natural.co removed -- stripe is the primary provider at launch. square retained for merchants who need it.
+stripe is the primary provider at launch. square retained for merchants who need it.
 
 ### webhook events
 
@@ -114,7 +114,7 @@ natural.co removed -- stripe is the primary provider at launch. square retained 
 | `session.started` | agent session begins |
 | `session.ended` | agent session ends |
 
-each delivery is signed with `X-Agentpay-Signature: sha256=<hmac>`. retry schedule: immediate -> +30s -> +5min. dead after 3 failures. delivery latency is typically 1-3 seconds with the postgres-backed queue.
+each delivery is signed with `X-Ryo-Signature: sha256=<hmac>`. retry schedule: immediate -> +30s -> +5min. dead after 3 failures. delivery latency is typically 1-3 seconds with the postgres-backed queue.
 
 ### development
 

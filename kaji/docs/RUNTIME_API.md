@@ -1,7 +1,7 @@
 # Runtime API reference
 
 The headline API surface for embedding `kaji` in your own app. For the
-shared concepts and architecture, see [KAJI.md](KAJI.md).
+shared concepts and architecture, see [README.md](../README.md).
 
 This page focuses on the Python SDK. The TypeScript SDK
 (`@kaji/sdk`) ships an equivalent surface with the same wire format;
@@ -168,7 +168,7 @@ state.messages      # [{"role": "user" | "assistant" | "tool", "content": ...}, 
 metadata (titles, user_id, list_active) on top of the raw event store.
 
 For the wire format and the full discriminator list, see the events
-table in [KAJI.md](KAJI.md#events).
+table in [README.md](../README.md#events).
 
 ## Subscribing to events
 

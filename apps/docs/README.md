@@ -1,44 +1,46 @@
-# docs
+# @kaji/docs
 
-This is a Next.js application generated with
-[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
+public documentation site for kaji. built with [fumadocs](https://fumadocs.dev) on next.js.
 
-Run development server:
+## running locally
 
 ```bash
-# From the repo root
+# from repo root
 bun --filter @kaji/docs dev
-# Or from this directory
+
+# or from this directory
 bun dev
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+open [http://localhost:3000](http://localhost:3000).
 
-## Explore
+## structure
 
-In the project, you can see:
+| path                      | purpose                            |
+| ------------------------- | ---------------------------------- |
+| `app/(home)`              | landing page                       |
+| `app/docs`                | documentation layout and pages     |
+| `content/docs/`           | MDX source files for all doc pages |
+| `lib/source.ts`           | fumadocs content source adapter    |
+| `app/api/search/route.ts` | full-text search endpoint          |
 
-- `lib/source.ts`: Code for content source adapter, [`loader()`](https://fumadocs.dev/docs/headless/source-api) provides the interface to access your content.
-- `lib/layout.shared.tsx`: Shared options for layouts, optional but preferred to keep.
+## content
 
-| Route                     | Description                                            |
-| ------------------------- | ------------------------------------------------------ |
-| `app/(home)`              | The route group for your landing page and other pages. |
-| `app/docs`                | The documentation layout and pages.                    |
-| `app/api/search/route.ts` | The Route Handler for search.                          |
+documentation content lives in `content/docs/` as MDX files. the source
+config in `source.config.ts` controls frontmatter schema and page
+metadata. a CI test (`test/docs-sync`) checks that code examples in the
+docs match the shipped SDK surface.
 
-### Fumadocs MDX
+## development
 
-A `source.config.ts` config file has been included, you can customise different options like frontmatter schema.
+```bash
+bun run build      # production build
+bun run typecheck  # tsc --noemit
+bun run lint       # eslint
+```
 
-Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
+## further reading
 
-## Learn More
-
-To learn more about Next.js and Fumadocs, take a look at the following
-resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js
-  features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [Fumadocs](https://fumadocs.dev) - learn about Fumadocs
+- [`kaji/README.md`](../../kaji/README.md) -- kaji concepts and architecture
+- [`kaji/sdk/README.md`](../../kaji/sdk/README.md) -- Python SDK reference
+- [`kaji/ts/README.md`](../../kaji/ts/README.md) -- TypeScript SDK reference
