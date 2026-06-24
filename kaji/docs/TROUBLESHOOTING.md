@@ -120,4 +120,4 @@ been iterated to completion. Awaiting `text` without ever consuming
 
 - [CLI.md](CLI.md) for `kaji doctor` and `kaji info`.
 - [RUNTIME_API.md](RUNTIME_API.md) for the headline API surface.
-- [KAJI.md](KAJI.md) for the shared concepts overview.
+- [README.md](../README.md) for the shared concepts overview.

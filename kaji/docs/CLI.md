@@ -139,6 +139,6 @@ commands mirror the Python ones (`init`, `gen`, `info`, `doctor`,
 
 ## See also
 
-- [KAJI.md](KAJI.md) for the shared concepts overview.
+- [README.md](../README.md) for the shared concepts overview.
 - [RUNTIME_API.md](RUNTIME_API.md) for the runtime API reference.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common errors and fixes.

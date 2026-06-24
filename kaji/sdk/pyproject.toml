@@ -3,7 +3,7 @@ name = "kaji"
 version = "0.1.0"
 description = "An embeddable SDK for building agentic platforms (text + voice)."
 authors = ["enkyuan <yuan.enkng@gmail.com>"]
-readme = "kaji/README.md"
+readme = "README.md"
 packages = [{ include = "kaji" }]
 include = [
     { path = "kaji/py.typed", format = ["sdist", "wheel"] },

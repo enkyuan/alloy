@@ -92,8 +92,8 @@ identical across both SDKs.
 | cancellation | `cancellation.completed` | runtime acknowledged and stopped |
 
 the canonical sources are
-[`kaji/sdk/kaji/infra/events/types.py`](../kaji/sdk/kaji/infra/events/types.py)
-and [`kaji/ts/src/events/types.ts`](../kaji/ts/src/events/types.ts);
+[`kaji/sdk/kaji/infra/events/types.py`](sdk/kaji/infra/events/types.py)
+and [`kaji/ts/src/events/types.ts`](ts/src/events/types.ts);
 the table above must match them byte-for-byte.
 
 ### session state
@@ -126,7 +126,7 @@ runtime = (
 )
 ```
 
-See [RUNTIME_API.md](RUNTIME_API.md#tools) for richer schemas
+See [docs/RUNTIME_API.md](docs/RUNTIME_API.md#tools) for richer schemas
 (`parameters=MyModel`) and `Integration` bundles.
 
 ```ts
@@ -190,9 +190,9 @@ voice modalities (STT, TTS) are not yet ported to TypeScript.
 
 ## further reading
 
-- [CLI.md](CLI.md) -- `kaji` CLI subcommand reference.
-- [RUNTIME_API.md](RUNTIME_API.md) -- headline API surface for embedding.
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) -- common errors and fixes.
-- individual package READMEs: `kaji/sdk/kaji/README.md`,
-  `kaji/serve/README.md`, `kaji/ts/README.md`.
-- ryo (the product built on kaji): [`docs/RYO.md`](RYO.md).
+- [docs/CLI.md](docs/CLI.md) -- `kaji` CLI subcommand reference.
+- [docs/RUNTIME_API.md](docs/RUNTIME_API.md) -- headline API surface for embedding.
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) -- common errors and fixes.
+- individual package READMEs: [sdk/README.md](sdk/README.md),
+  [serve/README.md](serve/README.md), [ts/README.md](ts/README.md).
+- ryo (the product built on kaji): [`ryo/README.md`](../ryo/README.md).
