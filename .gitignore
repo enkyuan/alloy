@@ -76,8 +76,8 @@ docker/supabase/volumes/db/data/
 docker/supabase/volumes/storage/
 
 # ── Go binaries ──────────────────────────────────────────────────────────────
-agentpay/api/bin/
-agentpay/consumer/consumer
+ryo/api/bin/
+ryo/consumer/consumer
 
 # ── iOS / Xcode ──────────────────────────────────────────────────────────────
 apps/havenos/Config.xcconfig

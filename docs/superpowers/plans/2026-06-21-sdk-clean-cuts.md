@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove vertical / dead / opinionated modules from both kaji SDKs so the core ships only primitives. Specifically: drop `payment` (vertical -- agentpay), `system_tools` (legacy voice), `manifest.py` and `runner.py` (dead shims), and flip the Python default LLM provider from `kimi` to `mock` so the SDK does not silently route requests to OpenRouter.
+**Goal:** Remove vertical / dead / opinionated modules from both kaji SDKs so the core ships only primitives. Specifically: drop `payment` (vertical -- ryo), `system_tools` (legacy voice), `manifest.py` and `runner.py` (dead shims), and flip the Python default LLM provider from `kimi` to `mock` so the SDK does not silently route requests to OpenRouter.
 
 **Architecture:** Pure deletion + small consequential edits. No new code lands. Each cut is one file plus the lazy-map / surface-pin / smoke-test references that pointed at it. Tasks are sequenced so each leaves the test suites green; nothing runs in parallel because they all touch overlapping registries (`__init__.py`, `test_public_surface.py`, `smoke_install.py`).
 
@@ -232,7 +232,7 @@ Expected: 294 passed (298 baseline minus the 4 payment tests). If you see import
 grep -rn "payment" kaji/sdk/kaji/ tests/ --include="*.py" 2>&1 | grep -vE "__pycache__|payment_intent\.|\.py\.typed" | head
 ```
 
-Expected: only documentation strings (e.g., a docstring mentioning "no payment example here") or unrelated agentpay-string mentions. Anything that looks like a live import is a leak; remove it.
+Expected: only documentation strings (e.g., a docstring mentioning "no payment example here") or unrelated ryo-string mentions. Anything that looks like a live import is a leak; remove it.
 
 - [ ] **Step 10: Commit**
 
@@ -628,8 +628,8 @@ gh pr create --title "chore(sdk): drop verticals and dead modules from core" --b
 Removes modules that violated the SDK's stated goal of "primitives only,
 let the user decide what to build." Specifically:
 
-- TS + Py: drop the request_payment tool -- it bridges to agentpay, which
-  is a vertical. Belongs in @kaji/agentpay once that exists.
+- TS + Py: drop the request_payment tool -- it bridges to ryo, which
+  is a vertical. Belongs in @kaji/ryo once that exists.
 - Py: drop legacy system_tools.py -- documented as deprecated voice shim,
   no live consumers.
 - Py: drop manifest.py and runner.py -- dead pass-through shims, zero

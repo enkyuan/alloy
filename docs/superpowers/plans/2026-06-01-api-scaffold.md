@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Scaffold the `@agentpay/api` Go service with a real Postgres/Redis store layer, JWT auth middleware, database migrations, and all handler TODO stubs replaced with live queries.
+**Goal:** Scaffold the `@ryo/api` Go service with a real Postgres/Redis store layer, JWT auth middleware, database migrations, and all handler TODO stubs replaced with live queries.
 
 **Architecture:** A shared `internal/store` package initializes and holds the pgx pool and Redis client, injected into each handler domain via a `Store` struct. Auth middleware validates better-auth JWTs and injects `userID`/`orgID` into every request context. Goose handles SQL migrations in `migrations/`. Each handler package gets its own `store.go` with typed query functions, keeping SQL close to the domain it serves.
 
@@ -565,7 +565,7 @@ DROP TABLE sessions;
 ```bash
 # Start infra first if not running:
 # bun run docker:up
-cd apps/api && DATABASE_URL="postgres://agentpay:agentpay-app-dev@localhost:5433/agentpay?sslmode=disable" go run ./cmd/migrate up
+cd apps/api && DATABASE_URL="postgres://ryo:ryo-app-dev@localhost:5433/ryo?sslmode=disable" go run ./cmd/migrate up
 ```
 Expected: goose prints `OK   00001_users.sql` through `OK   00006_sessions.sql`.
 
@@ -897,7 +897,7 @@ func (h *handler) getEmbedSnippet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"snippet": `<script src="https://cdn.agentpay.dev/embed.js" data-agent="` + a.EmbedToken + `" async></script>`,
+		"snippet": `<script src="https://cdn.ryo.dev/embed.js" data-agent="` + a.EmbedToken + `" async></script>`,
 	})
 }
 
@@ -1545,14 +1545,14 @@ Expected: all containers healthy within ~30s.
 - [ ] **Step 2: Run migrations**
 
 ```bash
-cd apps/api && DATABASE_URL="postgres://agentpay:agentpay-app-dev@localhost:5433/agentpay?sslmode=disable" go run ./cmd/migrate up
+cd apps/api && DATABASE_URL="postgres://ryo:ryo-app-dev@localhost:5433/ryo?sslmode=disable" go run ./cmd/migrate up
 ```
 Expected: 6 migration files print `OK`.
 
 - [ ] **Step 3: Start the API**
 
 ```bash
-cd apps/api && DATABASE_URL="postgres://agentpay:agentpay-app-dev@localhost:5433/agentpay?sslmode=disable" \
+cd apps/api && DATABASE_URL="postgres://ryo:ryo-app-dev@localhost:5433/ryo?sslmode=disable" \
   REDIS_URL="redis://localhost:6380" \
   BETTER_AUTH_SECRET="dev-secret-change-in-prod" \
   go run ./cmd/api/main.go

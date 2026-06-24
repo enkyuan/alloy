@@ -1,14 +1,14 @@
-# agentpay `request_payment` Tool Implementation Plan
+# ryo `request_payment` Tool Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `request_payment` tool to the kaji Python SDK that calls `POST /v1/sessions` on `@agentpay/api` and returns a checkout URL to the agent.
+**Goal:** Add a `request_payment` tool to the kaji Python SDK that calls `POST /v1/sessions` on `@ryo/api` and returns a checkout URL to the agent.
 
 **Architecture:** The tool lives in `packages/sdk/kaji/tools/payment.py`. It registers itself with kaji's tool registry using the existing `register_tool` + `ToolSpec` pattern. Configuration (API base URL, API key) is read from env vars at call time. The tool is opt-in — nothing imports it by default; callers register it by importing the module.
 
 **Tech Stack:** Python 3.11+, `httpx` (already a SDK dep), `kaji.runtime.tools.registry`.
 
-**Dependency:** Requires Plan 1 (agentpay API extensions) deployed — the tool calls `POST /v1/sessions`.
+**Dependency:** Requires Plan 1 (ryo API extensions) deployed — the tool calls `POST /v1/sessions`.
 
 ---
 
@@ -61,7 +61,7 @@ git commit -m "feat(sdk): add kaji.tools package"
 Create `packages/sdk/tests/test_tools_payment.py`:
 
 ```python
-"""Tests for the request_payment agentpay tool."""
+"""Tests for the request_payment ryo tool."""
 
 import pytest
 import httpx
@@ -198,15 +198,15 @@ git commit -m "test(sdk): failing tests for request_payment tool"
 Create `packages/sdk/kaji/tools/payment.py`:
 
 ```python
-"""request_payment tool for agentpay.
+"""request_payment tool for ryo.
 
 Usage::
 
     from kaji.tools.payment import register_payment_tool
 
     register_payment_tool(
-        api_base_url=os.environ["AGENTPAY_API_URL"],
-        api_key=os.environ["AGENTPAY_API_KEY"],
+        api_base_url=os.environ["RYO_API_URL"],
+        api_key=os.environ["RYO_API_KEY"],
     )
 
 After calling ``register_payment_tool``, the ``request_payment`` tool is
@@ -231,16 +231,16 @@ def register_payment_tool(
     """Register the request_payment tool with the kaji registry.
 
     Args:
-        api_base_url: Base URL for @agentpay/api.
-                      Defaults to env var ``AGENTPAY_API_URL``.
+        api_base_url: Base URL for @ryo/api.
+                      Defaults to env var ``RYO_API_URL``.
         api_key:      Bearer token for the API.
-                      Defaults to env var ``AGENTPAY_API_KEY``.
+                      Defaults to env var ``RYO_API_KEY``.
 
     Raises:
         ValueError: If the tool is already registered.
     """
-    resolved_url = api_base_url or os.environ.get("AGENTPAY_API_URL", "http://localhost:8090")
-    resolved_key = api_key or os.environ.get("AGENTPAY_API_KEY", "")
+    resolved_url = api_base_url or os.environ.get("RYO_API_URL", "http://localhost:8090")
+    resolved_key = api_key or os.environ.get("RYO_API_KEY", "")
 
     spec = ToolSpec(
         name="request_payment",
@@ -253,7 +253,7 @@ def register_payment_tool(
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "The agentpay agent ID handling this session.",
+                    "description": "The ryo agent ID handling this session.",
                 },
                 "amount_cents": {
                     "type": "integer",
@@ -329,7 +329,7 @@ Expected: all 5 tests PASS.
 
 ```bash
 git add packages/sdk/kaji/tools/payment.py
-git commit -m "feat(sdk): request_payment agentpay tool"
+git commit -m "feat(sdk): request_payment ryo tool"
 ```
 
 ---

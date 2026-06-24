@@ -6,7 +6,7 @@ database or server required to import and use it. deploy it yourself or run the
 reference service (`kaji-serve`) when you need FastAPI, Redis/Postgres
 persistence, workers, or STT voice input.
 
-it is used by agentpay as the agent runtime layer. it can also be used
+it is used by ryo as the agent runtime layer. it can also be used
 standalone in any python or typescript project.
 
 ## packages
@@ -26,7 +26,7 @@ the shared concepts across all three.
 
 ```
    ┌────────────────────────────────────────────────────┐
-   │  your app  (or agentpay/api)                       │
+   │  your app  (or ryo/api)                       │
    │                                                    │
    │  session manager   tool registry   model provider  │
    └────────────────────────┬───────────────────────────┘
@@ -195,4 +195,4 @@ voice modalities (STT, TTS) are not yet ported to TypeScript.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) -- common errors and fixes.
 - individual package READMEs: `kaji/sdk/kaji/README.md`,
   `kaji/serve/README.md`, `kaji/ts/README.md`.
-- agentpay (the product built on kaji): [`docs/AGENTPAY.md`](AGENTPAY.md).
+- ryo (the product built on kaji): [`docs/RYO.md`](RYO.md).

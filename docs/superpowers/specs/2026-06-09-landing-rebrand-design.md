@@ -23,7 +23,7 @@ they imply.
 From `README.md` and `docs/ROADMAP.md`:
 
 - kaji = an **embeddable agent SDK** (Python `kaji` + TypeScript
-  `@kaji/sdk`), powering agentpay's runtime but usable standalone.
+  `@kaji/sdk`), powering ryo's runtime but usable standalone.
 - Real, shipped capabilities: event-sourced agent loop (`AgentRuntime`),
   tool registry + provider-neutral tool payloads, pluggable LLM providers
   (OpenAI, Kimi, Gemini — Anthropic is MISSING/roadmap), STT/TTS voice

@@ -1,6 +1,6 @@
-# agentpay
+# ryo
 
-agentpay lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account -- agentpay never holds money.
+ryo lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account -- ryo never holds money.
 
 the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the runtime works.
 
@@ -20,7 +20,7 @@ the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the
                         │  calls request_payment tool
                         ▼
    ┌──────────────────────────────────────────────────┐
-   │  @agentpay/api  (merchant plane)                 │
+   │  @ryo/api  (merchant plane)                 │
    │  creates payment session + Stripe PaymentIntent  │
    │  writes ledger row, fires payment.initiated      │
    └────────────────────┬─────────────────────────────┘
@@ -34,7 +34,7 @@ the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the
                         │  Stripe webhook callback
                         ▼
    ┌───────────────────────────────────────────────┐
-   │  @agentpay/api                                │
+   │  @ryo/api                                │
    │  updates ledger · fires merchant webhook      │
    │  writes consumer transaction row              │
    └────────┬──────────────────────┬───────────────┘
@@ -45,7 +45,7 @@ the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the
    push event               transaction feed
 ```
 
-agentpay does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an kaji endpoint. agentpay owns only the tool surface and payment session lifecycle.
+ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
 
 ---
 
@@ -214,8 +214,8 @@ bun dev   # default port 5173
 
 | variable | purpose |
 | -------- | ------- |
-| `vite_api_url` | base url for `@agentpay/api` |
-| `vite_auth_url` | base url for `@agentpay/auth` |
+| `vite_api_url` | base url for `@ryo/api` |
+| `vite_auth_url` | base url for `@ryo/auth` |
 
 ```bash
 bun run build      # production build

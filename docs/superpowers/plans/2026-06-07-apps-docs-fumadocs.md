@@ -4,7 +4,7 @@
 
 **Goal:** Stand up a Fumadocs (Next.js App Router) documentation site at `apps/docs` for the kaji SDK, seeded language-agnostically from `docs/KAJI.md`, wired into the Bun + Turbo monorepo as `@kaji/docs`.
 
-**Architecture:** Scaffold with the official `create-fumadocs-app` (the source of truth for the current known-good layout), then adapt package metadata, scripts, gitignore, and Turbo wiring to match sibling workspaces (`@agentpay/web`, `@kaji/sdk`). Replace the scaffold's sample content with ~9 MDX pages mapped from `docs/KAJI.md`. Verify by build + `tsc` + gstack `/browse` dogfood.
+**Architecture:** Scaffold with the official `create-fumadocs-app` (the source of truth for the current known-good layout), then adapt package metadata, scripts, gitignore, and Turbo wiring to match sibling workspaces (`@ryo/web`, `@kaji/sdk`). Replace the scaffold's sample content with ~9 MDX pages mapped from `docs/KAJI.md`. Verify by build + `tsc` + gstack `/browse` dogfood.
 
 **Tech Stack:** Next.js (App Router), `fumadocs-core` / `fumadocs-ui` / `fumadocs-mdx`, MDX, TypeScript, Bun 1.3, Turbo 2.x, oxfmt.
 
@@ -218,7 +218,7 @@ npm-debug.log*
 
 - [ ] **Step 3: Make Turbo aware of Next build output**
 
-Read root `turbo.json`. The shared `build` task currently has `outputs: ["dist/**", "bin/**", "src-tauri/target/**"]` — Next emits `.next/**`. Add a per-package override mirroring the existing `@agentpay/*#build` style so the docs build caches correctly without changing other packages.
+Read root `turbo.json`. The shared `build` task currently has `outputs: ["dist/**", "bin/**", "src-tauri/target/**"]` — Next emits `.next/**`. Add a per-package override mirroring the existing `@ryo/*#build` style so the docs build caches correctly without changing other packages.
 
 Modify `turbo.json` `tasks` object, add:
 ```jsonc
@@ -311,7 +311,7 @@ infra-free. no database or server is required to import and use it. deploy it
 yourself, or run the reference service (`kaji-serve`) when you need a
 production-grade multi-process setup.
 
-it powers agentpay's agent runtime, and can also be used standalone in any
+it powers ryo's agent runtime, and can also be used standalone in any
 Python or TypeScript project.
 
 ## packages
@@ -442,7 +442,7 @@ description: The modality-agnostic ReAct runtime loop and where voice attaches.
 
 ```
    ┌────────────────────────────────────────────────────┐
-   │  your app  (or agentpay/api)                       │
+   │  your app  (or ryo/api)                       │
    │  session manager   tool registry   model provider  │
    └────────────────────────┬───────────────────────────┘
                             ▼
@@ -789,7 +789,7 @@ Summarize: build/typecheck/lint results (with the actual command output), what t
 
 **Spec coverage** (checked each spec section against a task):
 
-- Scope = kaji SDK only, language-agnostic -> Tasks 4-9 content; no agentpay page. ✓
+- Scope = kaji SDK only, language-agnostic -> Tasks 4-9 content; no ryo page. ✓
 - Scaffold via create-fumadocs-app, adapt to conventions -> Tasks 1, 3. ✓
 - package name `@kaji/docs`, private, version 0.0.0, aligned scripts -> Task 3 step 1. ✓
 - gitignore `.next`/`.source` -> Task 3 step 2. ✓

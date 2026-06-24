@@ -1,4 +1,4 @@
-# agentpay iOS Consumer App Implementation Plan
+# ryo iOS Consumer App Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,19 +16,19 @@
 
 | file | action | responsibility |
 |------|--------|---------------|
-| `apps/ios/AgentPay.xcodeproj` | create | Xcode project |
-| `apps/ios/AgentPay/AgentPayApp.swift` | create | app entry point + root navigation |
-| `apps/ios/AgentPay/Networking/APIClient.swift` | create | typed HTTP client for consumer service |
-| `apps/ios/AgentPay/Networking/Models.swift` | create | Codable response types |
-| `apps/ios/AgentPay/Auth/AuthViewModel.swift` | create | login/signup state + Keychain token storage |
-| `apps/ios/AgentPay/Auth/LoginView.swift` | create | email + password form |
-| `apps/ios/AgentPay/Auth/SignupView.swift` | create | account creation form |
-| `apps/ios/AgentPay/Wallet/WalletViewModel.swift` | create | wallet status + SetupIntent fetch |
-| `apps/ios/AgentPay/Wallet/WalletView.swift` | create | wallet screen with Stripe Payment Element |
-| `apps/ios/AgentPay/Transactions/TransactionViewModel.swift` | create | paginated transaction list |
-| `apps/ios/AgentPay/Transactions/TransactionsView.swift` | create | transactions list screen |
-| `apps/ios/AgentPay/Activity/ActivityViewModel.swift` | create | activity feed list |
-| `apps/ios/AgentPay/Activity/ActivityView.swift` | create | plain-language feed screen |
+| `apps/ios/Ryo.xcodeproj` | create | Xcode project |
+| `apps/ios/Ryo/RyoApp.swift` | create | app entry point + root navigation |
+| `apps/ios/Ryo/Networking/APIClient.swift` | create | typed HTTP client for consumer service |
+| `apps/ios/Ryo/Networking/Models.swift` | create | Codable response types |
+| `apps/ios/Ryo/Auth/AuthViewModel.swift` | create | login/signup state + Keychain token storage |
+| `apps/ios/Ryo/Auth/LoginView.swift` | create | email + password form |
+| `apps/ios/Ryo/Auth/SignupView.swift` | create | account creation form |
+| `apps/ios/Ryo/Wallet/WalletViewModel.swift` | create | wallet status + SetupIntent fetch |
+| `apps/ios/Ryo/Wallet/WalletView.swift` | create | wallet screen with Stripe Payment Element |
+| `apps/ios/Ryo/Transactions/TransactionViewModel.swift` | create | paginated transaction list |
+| `apps/ios/Ryo/Transactions/TransactionsView.swift` | create | transactions list screen |
+| `apps/ios/Ryo/Activity/ActivityViewModel.swift` | create | activity feed list |
+| `apps/ios/Ryo/Activity/ActivityView.swift` | create | plain-language feed screen |
 
 ---
 
@@ -37,8 +37,8 @@
 - [ ] **Step 1: Create the Xcode project**
 
 In Xcode: File > New > Project > iOS > App
-- Product Name: `AgentPay`
-- Bundle Identifier: `dev.agentpay.consumer`
+- Product Name: `Ryo`
+- Bundle Identifier: `dev.ryo.consumer`
 - Interface: SwiftUI
 - Language: Swift
 - Save to: `apps/ios/`
@@ -52,7 +52,7 @@ In Xcode: File > Add Package Dependencies
 
 - [ ] **Step 3: Add a Config.plist for environment**
 
-Create `apps/ios/AgentPay/Config.plist`:
+Create `apps/ios/Ryo/Config.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -79,12 +79,12 @@ git commit -m "feat(ios): scaffold Xcode project + Stripe SDK"
 ## Task 2: Networking layer
 
 **Files:**
-- Create: `apps/ios/AgentPay/Networking/Models.swift`
-- Create: `apps/ios/AgentPay/Networking/APIClient.swift`
+- Create: `apps/ios/Ryo/Networking/Models.swift`
+- Create: `apps/ios/Ryo/Networking/APIClient.swift`
 
 - [ ] **Step 1: Write Models.swift**
 
-Create `apps/ios/AgentPay/Networking/Models.swift`:
+Create `apps/ios/Ryo/Networking/Models.swift`:
 
 ```swift
 import Foundation
@@ -181,7 +181,7 @@ struct APIError: Decodable, Error {
 
 - [ ] **Step 2: Write APIClient.swift**
 
-Create `apps/ios/AgentPay/Networking/APIClient.swift`:
+Create `apps/ios/Ryo/Networking/APIClient.swift`:
 
 ```swift
 import Foundation
@@ -271,7 +271,7 @@ Expected: no errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/ios/AgentPay/Networking/
+git add apps/ios/Ryo/Networking/
 git commit -m "feat(ios): networking layer — APIClient + Codable models"
 ```
 
@@ -280,11 +280,11 @@ git commit -m "feat(ios): networking layer — APIClient + Codable models"
 ## Task 3: Keychain helper + Auth state
 
 **Files:**
-- Create: `apps/ios/AgentPay/Auth/AuthViewModel.swift`
+- Create: `apps/ios/Ryo/Auth/AuthViewModel.swift`
 
 - [ ] **Step 1: Write AuthViewModel.swift**
 
-Create `apps/ios/AgentPay/Auth/AuthViewModel.swift`:
+Create `apps/ios/Ryo/Auth/AuthViewModel.swift`:
 
 ```swift
 import Foundation
@@ -298,7 +298,7 @@ final class AuthViewModel: ObservableObject {
 
     let api: APIClient
 
-    private static let tokenKey = "agentpay.consumer.token"
+    private static let tokenKey = "ryo.consumer.token"
 
     init(api: APIClient) {
         self.api = api
@@ -393,7 +393,7 @@ Expected: no errors.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add apps/ios/AgentPay/Auth/AuthViewModel.swift
+git add apps/ios/Ryo/Auth/AuthViewModel.swift
 git commit -m "feat(ios): AuthViewModel + Keychain token storage"
 ```
 
@@ -402,12 +402,12 @@ git commit -m "feat(ios): AuthViewModel + Keychain token storage"
 ## Task 4: Auth screens
 
 **Files:**
-- Create: `apps/ios/AgentPay/Auth/LoginView.swift`
-- Create: `apps/ios/AgentPay/Auth/SignupView.swift`
+- Create: `apps/ios/Ryo/Auth/LoginView.swift`
+- Create: `apps/ios/Ryo/Auth/SignupView.swift`
 
 - [ ] **Step 1: Write LoginView.swift**
 
-Create `apps/ios/AgentPay/Auth/LoginView.swift`:
+Create `apps/ios/Ryo/Auth/LoginView.swift`:
 
 ```swift
 import SwiftUI
@@ -421,7 +421,7 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("agentpay")
+                Text("ryo")
                     .font(.largeTitle.bold())
                     .padding(.bottom, 20)
 
@@ -465,7 +465,7 @@ struct LoginView: View {
 
 - [ ] **Step 2: Write SignupView.swift**
 
-Create `apps/ios/AgentPay/Auth/SignupView.swift`:
+Create `apps/ios/Ryo/Auth/SignupView.swift`:
 
 ```swift
 import SwiftUI
@@ -518,7 +518,7 @@ Expected: no errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/ios/AgentPay/Auth/
+git add apps/ios/Ryo/Auth/
 git commit -m "feat(ios): login + signup screens"
 ```
 
@@ -527,12 +527,12 @@ git commit -m "feat(ios): login + signup screens"
 ## Task 5: Wallet screen
 
 **Files:**
-- Create: `apps/ios/AgentPay/Wallet/WalletViewModel.swift`
-- Create: `apps/ios/AgentPay/Wallet/WalletView.swift`
+- Create: `apps/ios/Ryo/Wallet/WalletViewModel.swift`
+- Create: `apps/ios/Ryo/Wallet/WalletView.swift`
 
 - [ ] **Step 1: Write WalletViewModel.swift**
 
-Create `apps/ios/AgentPay/Wallet/WalletViewModel.swift`:
+Create `apps/ios/Ryo/Wallet/WalletViewModel.swift`:
 
 ```swift
 import Foundation
@@ -573,7 +573,7 @@ final class WalletViewModel: ObservableObject {
             let response = try await api.walletSetup()
             StripeAPI.defaultPublishableKey = stripePublishableKey
             var config = PaymentSheet.Configuration()
-            config.merchantDisplayName = "agentpay"
+            config.merchantDisplayName = "ryo"
             paymentSheet = PaymentSheet(setupIntentClientSecret: response.clientSecret, configuration: config)
         } catch let e as APIError {
             errorMessage = e.error
@@ -593,7 +593,7 @@ final class WalletViewModel: ObservableObject {
 
 - [ ] **Step 2: Write WalletView.swift**
 
-Create `apps/ios/AgentPay/Wallet/WalletView.swift`:
+Create `apps/ios/Ryo/Wallet/WalletView.swift`:
 
 ```swift
 import SwiftUI
@@ -665,7 +665,7 @@ Expected: no errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/ios/AgentPay/Wallet/
+git add apps/ios/Ryo/Wallet/
 git commit -m "feat(ios): wallet screen with Stripe Payment Element"
 ```
 
@@ -674,14 +674,14 @@ git commit -m "feat(ios): wallet screen with Stripe Payment Element"
 ## Task 6: Transactions + Activity screens
 
 **Files:**
-- Create: `apps/ios/AgentPay/Transactions/TransactionViewModel.swift`
-- Create: `apps/ios/AgentPay/Transactions/TransactionsView.swift`
-- Create: `apps/ios/AgentPay/Activity/ActivityViewModel.swift`
-- Create: `apps/ios/AgentPay/Activity/ActivityView.swift`
+- Create: `apps/ios/Ryo/Transactions/TransactionViewModel.swift`
+- Create: `apps/ios/Ryo/Transactions/TransactionsView.swift`
+- Create: `apps/ios/Ryo/Activity/ActivityViewModel.swift`
+- Create: `apps/ios/Ryo/Activity/ActivityView.swift`
 
 - [ ] **Step 1: Write TransactionViewModel.swift**
 
-Create `apps/ios/AgentPay/Transactions/TransactionViewModel.swift`:
+Create `apps/ios/Ryo/Transactions/TransactionViewModel.swift`:
 
 ```swift
 import Foundation
@@ -714,7 +714,7 @@ final class TransactionViewModel: ObservableObject {
 
 - [ ] **Step 2: Write TransactionsView.swift**
 
-Create `apps/ios/AgentPay/Transactions/TransactionsView.swift`:
+Create `apps/ios/Ryo/Transactions/TransactionsView.swift`:
 
 ```swift
 import SwiftUI
@@ -789,7 +789,7 @@ struct TransactionsView: View {
 
 - [ ] **Step 3: Write ActivityViewModel.swift**
 
-Create `apps/ios/AgentPay/Activity/ActivityViewModel.swift`:
+Create `apps/ios/Ryo/Activity/ActivityViewModel.swift`:
 
 ```swift
 import Foundation
@@ -822,7 +822,7 @@ final class ActivityViewModel: ObservableObject {
 
 - [ ] **Step 4: Write ActivityView.swift**
 
-Create `apps/ios/AgentPay/Activity/ActivityView.swift`:
+Create `apps/ios/Ryo/Activity/ActivityView.swift`:
 
 ```swift
 import SwiftUI
@@ -901,7 +901,7 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/ios/AgentPay/Transactions/ apps/ios/AgentPay/Activity/
+git add apps/ios/Ryo/Transactions/ apps/ios/Ryo/Activity/
 git commit -m "feat(ios): transactions + activity screens"
 ```
 
@@ -910,17 +910,17 @@ git commit -m "feat(ios): transactions + activity screens"
 ## Task 7: Root navigation + app entry point
 
 **Files:**
-- Modify: `apps/ios/AgentPay/AgentPayApp.swift`
+- Modify: `apps/ios/Ryo/RyoApp.swift`
 
-- [ ] **Step 1: Write AgentPayApp.swift**
+- [ ] **Step 1: Write RyoApp.swift**
 
-Replace the contents of `apps/ios/AgentPay/AgentPayApp.swift`:
+Replace the contents of `apps/ios/Ryo/RyoApp.swift`:
 
 ```swift
 import SwiftUI
 
 @main
-struct AgentPayApp: App {
+struct RyoApp: App {
     private let api: APIClient
     private let stripeKey: String
     @StateObject private var auth: AuthViewModel
@@ -971,7 +971,7 @@ Select any iPhone simulator. Expected: app launches, shows Login screen.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add apps/ios/AgentPay/AgentPayApp.swift
+git add apps/ios/Ryo/RyoApp.swift
 git commit -m "feat(ios): root navigation — tab view + auth gate"
 ```
 
@@ -987,7 +987,7 @@ In `turbo.json`, verify the `apps/ios` path is excluded (Xcode projects don't pa
 
 In Xcode: Product > Clean Build Folder (Shift+Cmd+K), then Cmd+B.
 
-Expected: 0 errors, 0 warnings related to agentpay code.
+Expected: 0 errors, 0 warnings related to ryo code.
 
 - [ ] **Step 3: Final commit**
 

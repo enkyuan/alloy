@@ -31,7 +31,7 @@
 - `kaji/ts/package.json` — relax `peerDependencies` ranges; the current `openai@^6.42.0` and `@anthropic-ai/sdk@^0.104.1` are too narrow.
 
 **Create:**
-- `kaji/ts/src/tools/payment.ts` — `requestPayment` factory returning a `ToolSpec` + handler that POSTs to an agentpay base URL. Infra-free, fetch-based, optional.
+- `kaji/ts/src/tools/payment.ts` — `requestPayment` factory returning a `ToolSpec` + handler that POSTs to an ryo base URL. Infra-free, fetch-based, optional.
 - `kaji/ts/tests/tools/payment.test.ts` — vitest covering the factory.
 
 ### Python SDK (`kaji/sdk/`)
@@ -416,7 +416,7 @@ git commit -m "refactor(py-sdk): slim public lazy map to v0.1.0 surface"
   - `requestPayment(options: { baseUrl: string; apiKey?: string; fetchImpl?: typeof fetch }): { spec: ToolSpec; handler: ToolHandler }`
   - The handler POSTs `{ amount, description, ... }` to `${baseUrl}/v1/sessions` with optional `Authorization: Bearer <apiKey>` and returns the parsed JSON.
 
-This is the agentpay/kaji bridge promised in Roadmap item 12, but infra-free: no Stripe SDK, no axios, just `fetch`. The agentpay API is still MISSING per the roadmap, so we ship the tool builder against the documented contract and the test mocks `fetch` rather than hitting a live service.
+This is the ryo/kaji bridge promised in Roadmap item 12, but infra-free: no Stripe SDK, no axios, just `fetch`. The ryo API is still MISSING per the roadmap, so we ship the tool builder against the documented contract and the test mocks `fetch` rather than hitting a live service.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -494,7 +494,7 @@ Create `kaji/ts/src/tools/payment.ts`:
 
 ```ts
 /**
- * requestPayment: a thin kaji -> agentpay bridge.
+ * requestPayment: a thin kaji -> ryo bridge.
  *
  * Posts to `${baseUrl}/v1/sessions` and returns the JSON payload. Pass a
  * custom fetchImpl in tests; in production it uses the global fetch.
@@ -515,7 +515,7 @@ export interface RequestPaymentTool {
 export function requestPayment(opts: RequestPaymentOptions): RequestPaymentTool {
   const spec: ToolSpec = {
     name: "request_payment",
-    description: "Request a payment via agentpay. Returns the checkout URL.",
+    description: "Request a payment via ryo. Returns the checkout URL.",
     parameters: {
       type: "object",
       properties: {
@@ -535,7 +535,7 @@ export function requestPayment(opts: RequestPaymentOptions): RequestPaymentTool 
     const url = `${opts.baseUrl.replace(/\/$/, "")}/v1/sessions`;
     const r = await fetchImpl(url, { method: "POST", headers, body: JSON.stringify(args) });
     if (!r.ok) {
-      throw new Error(`agentpay POST /v1/sessions failed: ${r.status} ${r.statusText}`);
+      throw new Error(`ryo POST /v1/sessions failed: ${r.status} ${r.statusText}`);
     }
     return r.json();
   };
@@ -565,7 +565,7 @@ Expected: 4/4 new tests pass; full suite still green.
 
 ```bash
 git add kaji/ts/src/tools/payment.ts kaji/ts/tests/tools/payment.test.ts kaji/ts/src/index.ts
-git commit -m "feat(ts-sdk): add requestPayment agentpay bridge tool"
+git commit -m "feat(ts-sdk): add requestPayment ryo bridge tool"
 ```
 
 ---
@@ -591,7 +591,7 @@ Parity with the TS implementation. `httpx` is already a hard SDK dep, so no new 
 Create `kaji/sdk/tests/test_tools_payment.py`:
 
 ```python
-"""Tests for the agentpay bridge tool."""
+"""Tests for the ryo bridge tool."""
 from __future__ import annotations
 
 import json
@@ -681,7 +681,7 @@ Expected: collection error — `kaji.runtime.tools.payment` does not exist.
 Create `kaji/sdk/kaji/runtime/tools/payment.py`:
 
 ```python
-"""`request_payment`: the agentpay bridge tool.
+"""`request_payment`: the ryo bridge tool.
 
 Returns a (ToolSpec, handler) pair. The handler POSTs the args to
 ``<base_url>/v1/sessions`` and returns the parsed JSON. Pass a custom httpx
@@ -705,12 +705,12 @@ def RequestPaymentTool(
     api_key: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> tuple[ToolSpec, PaymentHandler]:
-    """Build the agentpay bridge tool.
+    """Build the ryo bridge tool.
 
     Parameters
     ----------
     base_url:
-        Root URL of the agentpay API (no trailing slash required).
+        Root URL of the ryo API (no trailing slash required).
     api_key:
         Optional bearer token. When provided, sent as ``Authorization`` header.
     client:
@@ -721,7 +721,7 @@ def RequestPaymentTool(
 
     spec = ToolSpec(
         name="request_payment",
-        description="Request a payment via agentpay. Returns the checkout URL.",
+        description="Request a payment via ryo. Returns the checkout URL.",
         parameters={
             "type": "object",
             "properties": {
@@ -750,7 +750,7 @@ def RequestPaymentTool(
             r = await c.post(url, headers=headers, json=args)
             if r.status_code >= 400:
                 raise RuntimeError(
-                    f"agentpay POST /v1/sessions failed: {r.status_code} {r.reason_phrase}"
+                    f"ryo POST /v1/sessions failed: {r.status_code} {r.reason_phrase}"
                 )
             return r.json()
 
@@ -796,7 +796,7 @@ git add kaji/sdk/kaji/runtime/tools/payment.py \
         kaji/sdk/kaji/__init__.py \
         kaji/sdk/tests/test_tools_payment.py \
         kaji/sdk/tests/test_public_surface.py
-git commit -m "feat(py-sdk): add request_payment agentpay bridge tool"
+git commit -m "feat(py-sdk): add request_payment ryo bridge tool"
 ```
 
 ---
@@ -1584,7 +1584,7 @@ assessment. Voice modality work is excluded as requested.
 - TS: widen `openai`/`@anthropic-ai/sdk`/`zod` peer-dep ranges so consumers do not hit version warnings on newer SDK majors.
 - Py: ship `py.typed` so type-only consumers get the same DX as source readers.
 - Py: slim the top-level public lazy map to the 25 names a v0.1.0 user actually composes against. Internal names remain importable from their subpackages, and a regression test pins the surface.
-- Py + TS: add `request_payment` / `requestPayment` as opt-in tools that POST to agentpay's session endpoint (no Stripe SDK, fetch/httpx only).
+- Py + TS: add `request_payment` / `requestPayment` as opt-in tools that POST to ryo's session endpoint (no Stripe SDK, fetch/httpx only).
 
 ### Docs
 - Add `install`, `cli`, `troubleshooting` pages.

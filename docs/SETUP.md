@@ -10,7 +10,7 @@
 │   └── ts/              # `@kaji/sdk` -- TypeScript SDK
 └── docker/
     ├── kaji/        # Postgres, Redis, Supabase for kaji-serve
-    └── agentpay/        # docker stack for the agentpay product
+    └── ryo/        # docker stack for the ryo product
 ```
 
 ## FastAPI Backend Setup

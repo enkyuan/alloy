@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reorganize the monorepo so all agentpay services live under `agentpay/`, all kaji SDK packages live under `kaji/`, and `apps/` holds only the web frontend — making the boundary between the two products structurally visible and scaling cleanly to future Go microservices.
+**Goal:** Reorganize the monorepo so all ryo services live under `ryo/`, all kaji SDK packages live under `kaji/`, and `apps/` holds only the web frontend — making the boundary between the two products structurally visible and scaling cleanly to future Go microservices.
 
-**Architecture:** `agentpay/` contains every deployed agentpay service (`api`, `consumer`, `auth`) regardless of language. `kaji/` replaces `packages/` for all SDK packages (`sdk`, `serve`, `ts`). `apps/` narrows to `web` only. `docker/` is untouched — `docker/agentpay/` and `docker/kaji/` stay where they are, with compose context paths updated. `apps/docker/` (empty stubs) is deleted.
+**Architecture:** `ryo/` contains every deployed ryo service (`api`, `consumer`, `auth`) regardless of language. `kaji/` replaces `packages/` for all SDK packages (`sdk`, `serve`, `ts`). `apps/` narrows to `web` only. `docker/` is untouched — `docker/ryo/` and `docker/kaji/` stay where they are, with compose context paths updated. `apps/docker/` (empty stubs) is deleted.
 
 **Tech Stack:** Go 1.25 (go.mod module renames + internal import path sed), Bun/Turbo (workspace globs in package.json), GitHub Actions (working-directory + paths triggers), Python Poetry (path dep `../sdk` stays valid after parallel rename).
 
@@ -14,38 +14,38 @@
 
 | Old path | New path | Change type |
 |---|---|---|
-| `apps/api/` | `agentpay/api/` | move + module rename |
-| `apps/consumer/` | `agentpay/consumer/` | move + module rename |
-| `apps/auth/` | `agentpay/auth/` | move |
+| `apps/api/` | `ryo/api/` | move + module rename |
+| `apps/consumer/` | `ryo/consumer/` | move + module rename |
+| `apps/auth/` | `ryo/auth/` | move |
 | `packages/sdk/` | `kaji/sdk/` | move |
 | `packages/serve/` | `kaji/serve/` | move + path dep update |
 | `packages/ts/` | `kaji/ts/` | move |
 | `apps/web/` | `apps/web/` | unchanged |
 | `apps/docker/` | *(deleted)* | empty stubs |
-| `docker/agentpay/docker-compose.yml` | same | context path update |
+| `docker/ryo/docker-compose.yml` | same | context path update |
 | `package.json` | same | workspaces glob update |
 | `turbo.json` | same | no change needed (uses package names not paths) |
 | `.github/workflows/sdk-tests.yml` | same | working-directory + paths triggers |
 
 ---
 
-## Task 1: Move agentpay services
+## Task 1: Move ryo services
 
-Move the three deployed agentpay services into a new `agentpay/` top-level directory.
+Move the three deployed ryo services into a new `ryo/` top-level directory.
 
 **Files:**
-- Move: `apps/api/` → `agentpay/api/`
-- Move: `apps/consumer/` → `agentpay/consumer/`
-- Move: `apps/auth/` → `agentpay/auth/`
+- Move: `apps/api/` → `ryo/api/`
+- Move: `apps/consumer/` → `ryo/consumer/`
+- Move: `apps/auth/` → `ryo/auth/`
 - Delete: `apps/docker/` (empty)
 
-- [ ] **Step 1: Create the agentpay/ directory and move services**
+- [ ] **Step 1: Create the ryo/ directory and move services**
 
 ```bash
-mkdir -p agentpay
-git mv apps/api agentpay/api
-git mv apps/consumer agentpay/consumer
-git mv apps/auth agentpay/auth
+mkdir -p ryo
+git mv apps/api ryo/api
+git mv apps/consumer ryo/consumer
+git mv apps/auth ryo/auth
 ```
 
 - [ ] **Step 2: Delete the empty apps/docker stubs**
@@ -57,7 +57,7 @@ git rm -r apps/docker
 - [ ] **Step 3: Verify the moves**
 
 ```bash
-ls agentpay/
+ls ryo/
 # Expected: api  consumer  auth
 ls apps/
 # Expected: web  (apps/docker gone)
@@ -68,8 +68,8 @@ git status --short | head -30
 - [ ] **Step 4: Commit**
 
 ```bash
-git add agentpay/ apps/
-git commit -m "refactor: move agentpay services into agentpay/"
+git add ryo/ apps/
+git commit -m "refactor: move ryo services into ryo/"
 ```
 
 ---
@@ -117,100 +117,100 @@ git commit -m "refactor: move kaji SDK packages into kaji/"
 
 ---
 
-## Task 3: Update Go module names and internal imports for agentpay/api
+## Task 3: Update Go module names and internal imports for ryo/api
 
-The Go module `github.com/enkyuan/alloy/apps/api` is baked into `go.mod` and every `import` statement inside the package. Rename it to `github.com/enkyuan/alloy/agentpay/api`.
+The Go module `github.com/enkyuan/alloy/apps/api` is baked into `go.mod` and every `import` statement inside the package. Rename it to `github.com/enkyuan/alloy/ryo/api`.
 
 **Files:**
-- Modify: `agentpay/api/go.mod` (module declaration)
-- Modify: all `*.go` files under `agentpay/api/` (import paths)
+- Modify: `ryo/api/go.mod` (module declaration)
+- Modify: all `*.go` files under `ryo/api/` (import paths)
 
 - [ ] **Step 1: Update the module declaration**
 
-Edit `agentpay/api/go.mod` line 1 from:
+Edit `ryo/api/go.mod` line 1 from:
 ```
 module github.com/enkyuan/alloy/apps/api
 ```
 to:
 ```
-module github.com/enkyuan/alloy/agentpay/api
+module github.com/enkyuan/alloy/ryo/api
 ```
 
 - [ ] **Step 2: Update all internal import paths**
 
 ```bash
-find agentpay/api -name "*.go" -exec \
-  sed -i '' 's|github.com/enkyuan/alloy/apps/api|github.com/enkyuan/alloy/agentpay/api|g' {} +
+find ryo/api -name "*.go" -exec \
+  sed -i '' 's|github.com/enkyuan/alloy/apps/api|github.com/enkyuan/alloy/ryo/api|g' {} +
 ```
 
 - [ ] **Step 3: Verify no old paths remain**
 
 ```bash
-grep -r "enkyuan/alloy/apps/api" agentpay/api/
+grep -r "enkyuan/alloy/apps/api" ryo/api/
 # Expected: no output
 ```
 
 - [ ] **Step 4: Verify the module still compiles**
 
 ```bash
-cd agentpay/api && go build ./... && cd ../..
+cd ryo/api && go build ./... && cd ../..
 # Expected: no errors
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentpay/api/
-git commit -m "refactor(api): update Go module path to agentpay/api"
+git add ryo/api/
+git commit -m "refactor(api): update Go module path to ryo/api"
 ```
 
 ---
 
-## Task 4: Update Go module names and internal imports for agentpay/consumer
+## Task 4: Update Go module names and internal imports for ryo/consumer
 
 Same pattern as Task 3, for the consumer service.
 
 **Files:**
-- Modify: `agentpay/consumer/go.mod`
-- Modify: all `*.go` files under `agentpay/consumer/`
+- Modify: `ryo/consumer/go.mod`
+- Modify: all `*.go` files under `ryo/consumer/`
 
 - [ ] **Step 1: Update the module declaration**
 
-Edit `agentpay/consumer/go.mod` line 1 from:
+Edit `ryo/consumer/go.mod` line 1 from:
 ```
 module github.com/enkyuan/alloy/apps/consumer
 ```
 to:
 ```
-module github.com/enkyuan/alloy/agentpay/consumer
+module github.com/enkyuan/alloy/ryo/consumer
 ```
 
 - [ ] **Step 2: Update all internal import paths**
 
 ```bash
-find agentpay/consumer -name "*.go" -exec \
-  sed -i '' 's|github.com/enkyuan/alloy/apps/consumer|github.com/enkyuan/alloy/agentpay/consumer|g' {} +
+find ryo/consumer -name "*.go" -exec \
+  sed -i '' 's|github.com/enkyuan/alloy/apps/consumer|github.com/enkyuan/alloy/ryo/consumer|g' {} +
 ```
 
 - [ ] **Step 3: Verify no old paths remain**
 
 ```bash
-grep -r "enkyuan/alloy/apps/consumer" agentpay/consumer/
+grep -r "enkyuan/alloy/apps/consumer" ryo/consumer/
 # Expected: no output
 ```
 
 - [ ] **Step 4: Verify the module still compiles**
 
 ```bash
-cd agentpay/consumer && go build ./... && cd ../..
+cd ryo/consumer && go build ./... && cd ../..
 # Expected: no errors
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentpay/consumer/
-git commit -m "refactor(consumer): update Go module path to agentpay/consumer"
+git add ryo/consumer/
+git commit -m "refactor(consumer): update Go module path to ryo/consumer"
 ```
 
 ---
@@ -260,7 +260,7 @@ git commit -m "refactor(serve): update sdk path dep to kaji/sdk"
 
 ## Task 6: Update root package.json workspaces
 
-The Bun workspace glob currently lists `"packages/*"` and `"apps/*"`. Update to `"agentpay/*"`, `"kaji/*"`, and `"apps/*"`.
+The Bun workspace glob currently lists `"packages/*"` and `"apps/*"`. Update to `"ryo/*"`, `"kaji/*"`, and `"apps/*"`.
 
 **Files:**
 - Modify: `package.json`
@@ -277,7 +277,7 @@ Edit `package.json`. Change:
 to:
 ```json
 "workspaces": [
-  "agentpay/*",
+  "ryo/*",
   "kaji/*",
   "apps/*"
 ]
@@ -295,44 +295,44 @@ bun run build --dry-run 2>/dev/null || true
 
 ```bash
 git add package.json bun.lock
-git commit -m "refactor: update workspace globs for agentpay/ and kaji/ dirs"
+git commit -m "refactor: update workspace globs for ryo/ and kaji/ dirs"
 ```
 
 ---
 
-## Task 7: Update docker/agentpay compose context paths
+## Task 7: Update docker/ryo compose context paths
 
-The compose file at `docker/agentpay/docker-compose.yml` references `../../apps/api` for the API build context. Update it to `../../agentpay/api`.
+The compose file at `docker/ryo/docker-compose.yml` references `../../apps/api` for the API build context. Update it to `../../ryo/api`.
 
 **Files:**
-- Modify: `docker/agentpay/docker-compose.yml`
+- Modify: `docker/ryo/docker-compose.yml`
 
 - [ ] **Step 1: Update the build context and env_file paths**
 
 ```bash
 sed -i '' \
-  's|../../apps/api|../../agentpay/api|g' \
-  docker/agentpay/docker-compose.yml
+  's|../../apps/api|../../ryo/api|g' \
+  docker/ryo/docker-compose.yml
 ```
 
 - [ ] **Step 2: Verify the change**
 
 ```bash
-grep -n "agentpay/api\|apps/api" docker/agentpay/docker-compose.yml
-# Expected: only lines with ../../agentpay/api, none with ../../apps/api
+grep -n "ryo/api\|apps/api" docker/ryo/docker-compose.yml
+# Expected: only lines with ../../ryo/api, none with ../../apps/api
 ```
 
 - [ ] **Step 3: Verify the compose file is valid**
 
 ```bash
-docker compose -f docker/agentpay/docker-compose.yml config --quiet
+docker compose -f docker/ryo/docker-compose.yml config --quiet
 # Expected: no errors
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docker/agentpay/docker-compose.yml
+git add docker/ryo/docker-compose.yml
 git commit -m "refactor(docker): update compose context paths after service moves"
 ```
 
@@ -359,7 +359,7 @@ to:
 - "kaji/sdk/**"
 - "kaji/serve/**"
 - "kaji/ts/**"
-- "agentpay/api/**"
+- "ryo/api/**"
 ```
 
 - [ ] **Step 2: Update working-directory for sdk job**
@@ -421,7 +421,7 @@ working-directory: apps/api
 ```
 to:
 ```yaml
-working-directory: agentpay/api
+working-directory: ryo/api
 ```
 
 And update the go-version-file:
@@ -430,7 +430,7 @@ go-version-file: apps/api/go.mod
 ```
 to:
 ```yaml
-go-version-file: agentpay/api/go.mod
+go-version-file: ryo/api/go.mod
 ```
 
 - [ ] **Step 6: Verify no old paths remain in the workflow**
@@ -456,8 +456,8 @@ Verify that all moved pieces still build and resolve correctly.
 - [ ] **Step 1: Verify Go services build**
 
 ```bash
-cd agentpay/api && go vet ./... && cd ../..
-cd agentpay/consumer && go vet ./... && cd ../..
+cd ryo/api && go vet ./... && cd ../..
+cd ryo/consumer && go vet ./... && cd ../..
 # Expected: no errors from either
 ```
 
@@ -499,7 +499,7 @@ grep -r "apps/api\|apps/consumer\|apps/auth\|packages/sdk\|packages/serve\|packa
 git add -A
 git status
 # Review — should be clean or only docs/
-git commit -m "chore: monorepo restructure complete — agentpay/ kaji/ apps/" \
+git commit -m "chore: monorepo restructure complete — ryo/ kaji/ apps/" \
   --allow-empty-message 2>/dev/null || \
-git commit -m "chore: monorepo restructure complete — agentpay/ kaji/ apps/"
+git commit -m "chore: monorepo restructure complete — ryo/ kaji/ apps/"
 ```
