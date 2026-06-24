@@ -12,12 +12,13 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
             customer types / speaks (any channel)
                         │
                         ▼
-   ┌───────────────────────────────────────────────┐
-   │  agent  (embedded on merchant site or app)    │
-   │  kaji AgentRuntime  (tool-using loop,         │
-   │  any modality: chat widget, Twilio, Vapi, SMS)│
-   └────────────────────┬──────────────────────────┘
+   ┌─────────────────────────────────────────────────┐
+   │  agent  (embedded on merchant site or app)      │
+   │  kaji AgentRuntime  (tool-using loop,           │
+   │  any modality: chat widget, Twilio, Vapi, SMS)  │
+   └────────────────────┬────────────────────────────┘
                         │  calls request_payment tool
+                        │  (merchant jwt issued by @ryo/auth)
                         ▼
    ┌──────────────────────────────────────────────────┐
    │  @ryo/api  (merchant plane)                      │
@@ -35,14 +36,21 @@ the agent runtime is provided by kaji. see [`kaji/README.md`](../kaji/README.md)
                         ▼
    ┌───────────────────────────────────────────────┐
    │  @ryo/api                                     │
-   │  updates ledger · fires merchant webhook      │
-   │  writes consumer transaction row              │
+   │  updates ledger · fires payment.completed     │
+   │  /payment.failed to merchant webhooks         │
    └───────────┬────────────────────┬──────────────┘
-               │                    │
+               │                    │  settlement event
                ▼                    ▼
-         merchant backend       consumer app
-         receives signed        sees updated
-         push event             transaction feed
+         merchant backend     ┌──────────────────────┐
+         receives signed      │  @ryo/consumer       │
+         push event           │  writes consumer     │
+                              │  transaction row     │
+                              └──────────┬───────────┘
+                                         │
+                                         ▼
+                                   consumer app
+                                   reads transaction
+                                   + activity feed
 ```
 
 ryo does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at a kaji endpoint. ryo owns only the tool surface and payment session lifecycle.
