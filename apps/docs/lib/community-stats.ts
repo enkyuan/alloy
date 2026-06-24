@@ -12,7 +12,7 @@ export interface ContributorInfo {
   html_url: string;
 }
 
-// agentkit has no published npm package or large public repo yet, so the
+// kaji has no published npm package or large public repo yet, so the
 // landing renders static placeholder figures rather than live API fetches.
 // The shape mirrors what the hero readme consumes; swap in live fetches once
 // the package is published.

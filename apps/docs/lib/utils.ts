@@ -1,1 +1,1 @@
-export { cn, mergeRefs } from "@agentkit/ui";
+export { cn, mergeRefs } from "@kaji/ui";

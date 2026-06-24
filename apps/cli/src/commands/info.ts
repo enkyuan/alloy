@@ -20,7 +20,7 @@ const FRAMEWORK_KEYS = [
   "fastify",
   "solid-js",
 ];
-const AGENTKIT_PREFIX = "@agentkit/";
+const KAJI_PREFIX = "@kaji/";
 const PROVIDER_KEYS = ["openai", "@anthropic-ai/sdk", "@google/genai", "google-genai"];
 
 function pickDeps(pkg: Record<string, unknown> | null, keys: string[]) {
@@ -44,7 +44,7 @@ function pickByPrefix(pkg: Record<string, unknown> | null, prefix: string) {
 }
 
 export const info = new Command("info")
-  .description("display environment and agentkit configuration")
+  .description("display environment and kaji configuration")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("-j, --json", "output as JSON")
   .option("-c, --copy", "copy output to clipboard")
@@ -56,7 +56,7 @@ export const info = new Command("info")
       node: { version: process.version, env: process.env.NODE_ENV ?? "development" },
       packageManager: detectPackageManager(cwd),
       frameworks: pickDeps(pkg, FRAMEWORK_KEYS),
-      agentkit: { packages: pickByPrefix(pkg, AGENTKIT_PREFIX) },
+      kaji: { packages: pickByPrefix(pkg, KAJI_PREFIX) },
       providers: pickDeps(pkg, PROVIDER_KEYS),
     };
     const safe = redact(data) as typeof data;
@@ -74,7 +74,7 @@ export const info = new Command("info")
 
 function formatText(d: Record<string, unknown>): string {
   const lines: string[] = [];
-  lines.push(chalk.bold("agentkit info"));
+  lines.push(chalk.bold("kaji info"));
   lines.push(chalk.gray("=".repeat(40)));
   lines.push(`${chalk.cyan("platform")}: ${(d.system as any).platform} ${(d.system as any).arch}`);
   lines.push(`${chalk.cyan("node")}: ${(d.node as any).version}`);
@@ -84,10 +84,10 @@ function formatText(d: Record<string, unknown>): string {
     lines.push(
       `${chalk.cyan("frameworks")}: ${frameworks.map((f) => `${f.name}@${f.version}`).join(", ")}`,
     );
-  const agentkit = d.agentkit as { packages: Array<{ name: string; version: string }> };
-  if (agentkit.packages.length)
+  const kaji = d.kaji as { packages: Array<{ name: string; version: string }> };
+  if (kaji.packages.length)
     lines.push(
-      `${chalk.cyan("agentkit")}: ${agentkit.packages.map((f) => `${f.name}@${f.version}`).join(", ")}`,
+      `${chalk.cyan("kaji")}: ${kaji.packages.map((f) => `${f.name}@${f.version}`).join(", ")}`,
     );
   const providers = d.providers as Array<{ name: string; version: string }>;
   if (providers.length)

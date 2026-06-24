@@ -1,11 +1,11 @@
 ---
 title: CLI
-description: The agentkit CLI scaffolds projects, generates tool stubs from OpenAPI specs, and inspects your environment. Same commands in Python and TypeScript.
+description: The kaji CLI scaffolds projects, generates tool stubs from OpenAPI specs, and inspects your environment. Same commands in Python and TypeScript.
 ---
 
-The CLI ships in two parity packages: `agentkit` (Python, `pip install
-agentkit`) and `@agentkit/cli` (TypeScript, `bun add -D @agentkit/cli`).
-Run `agentkit --help` to see the live list.
+The CLI ships in two parity packages: `kaji` (Python, `pip install
+kaji`) and `@kaji/cli` (TypeScript, `bun add -D @kaji/cli`).
+Run `kaji --help` to see the live list.
 
 ## Commands
 
@@ -13,17 +13,17 @@ Run `agentkit --help` to see the live list.
 | --------- | --------------------------------------------------------- | ------ | --- |
 | `init`    | Scaffold a new project (`agent.ts`/`.py`, `.env.example`) | ✓      | ✓   |
 | `gen`     | Generate tool stubs from an OpenAPI spec                  | ✓      | ✓   |
-| `info`    | Show environment + installed agentkit packages            | ✓      | ✓   |
+| `info`    | Show environment + installed kaji packages                | ✓      | ✓   |
 | `secret`  | Generate a random 32-byte hex secret                      | ✓      | ✓   |
 | `doctor`  | Check the environment for common issues                   | ✓      | ✓   |
-| `upgrade` | Upgrade installed agentkit packages                       | ✓      | ✓   |
-| `mcp`     | Register the agentkit MCP server with an AI tool          | --     | ✓   |
+| `upgrade` | Upgrade installed kaji packages                           | ✓      | ✓   |
+| `mcp`     | Register the kaji MCP server with an AI tool              | --     | ✓   |
 
 ## init
 
 ```bash
-agentkit init . --provider openai --yes              # python: scaffolds agent.py
-agentkit init --lang ts --provider openai --yes      # ts: scaffolds agent.ts
+kaji init . --provider openai --yes              # python: scaffolds agent.py
+kaji init --lang ts --provider openai --yes      # ts: scaffolds agent.ts
 ```
 
 Writes `agent.{py,ts}` and `.env.example` with the provider you chose
@@ -32,8 +32,8 @@ pre-filled. `--force` overwrites; `--yes` skips the interactive prompts.
 ## gen
 
 ```bash
-agentkit gen --spec openapi.yaml --out tools/ --lang python
-agentkit gen --spec openapi.yaml --out tools/ --lang ts
+kaji gen --spec openapi.yaml --out tools/ --lang python
+kaji gen --spec openapi.yaml --out tools/ --lang ts
 ```
 
 Parses an OpenAPI 3.x spec and emits one tool spec + handler per
@@ -43,26 +43,26 @@ TypeScript emitter writes `index.ts` (using `fetch`).
 ## info / doctor
 
 ```bash
-agentkit info                # shows platform, node/python, packages, providers
-agentkit info --json         # machine-readable
-agentkit doctor              # exit 1 if anything is wrong
+kaji info                # shows platform, node/python, packages, providers
+kaji info --json         # machine-readable
+kaji doctor              # exit 1 if anything is wrong
 ```
 
 `doctor` returns a non-zero exit code if any hard check fails (Python >=3.11,
-Node >=22, agentkit installed, at least one provider key in env).
+Node >=22, kaji installed, at least one provider key in env).
 
 ## secret / upgrade
 
 ```bash
-agentkit secret              # prints AGENTKIT_SECRET=<64 hex chars>
-agentkit secret --json
-agentkit upgrade -y          # bumps @agentkit/* (TS) or agentkit/agentkit-* (PyPI)
+kaji secret              # prints KAJI_SECRET=<64 hex chars>
+kaji secret --json
+kaji upgrade -y          # bumps @kaji/* (TS) or kaji/kaji-* (PyPI)
 ```
 
 ## mcp (TypeScript only)
 
 ```bash
-agentkit mcp                 # interactive: pick tool (cursor/claude-code/...) and scope
+kaji mcp                 # interactive: pick tool (cursor/claude-code/...) and scope
 ```
 
 Writes the MCP server entry to the appropriate config file

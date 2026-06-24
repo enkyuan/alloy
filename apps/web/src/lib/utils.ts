@@ -1,1 +1,1 @@
-export { cn } from "@agentkit/ui";
+export { cn } from "@kaji/ui";

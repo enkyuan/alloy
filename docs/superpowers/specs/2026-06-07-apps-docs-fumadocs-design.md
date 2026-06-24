@@ -1,28 +1,28 @@
-# apps/docs — agentkit documentation site (Fumadocs)
+# apps/docs — kaji documentation site (Fumadocs)
 
 date: 2026-06-07
 status: approved
 
 ## summary
 
-Stand up a Fumadocs documentation site at `apps/docs`, scoped to the agentkit
+Stand up a Fumadocs documentation site at `apps/docs`, scoped to the kaji
 SDK and written language-agnostically (concepts first, Python/TypeScript code as
-illustration). Seed initial content from the existing `docs/AGENTKIT.md`. Wire
+illustration). Seed initial content from the existing `docs/KAJI.md`. Wire
 the app into the existing Bun + Turbo monorepo so it behaves like the other
-workspaces (`@agentpay/web`, `@agentkit/sdk`).
+workspaces (`@agentpay/web`, `@kaji/sdk`).
 
-This is a documentation *site* for external developers consuming agentkit
+This is a documentation *site* for external developers consuming kaji
 standalone. It is not agentpay product docs, and it does not replace the loose
 markdown under `docs/`.
 
 ## goals
 
 - A navigable, non-empty Fumadocs site that builds and runs locally.
-- Content grounded in what already exists (`docs/AGENTKIT.md`), not invented.
+- Content grounded in what already exists (`docs/KAJI.md`), not invented.
 - Repo-native: same package-name scheme, scripts, formatter, and Turbo wiring as
   sibling workspaces; one `bun install` at root pulls it in.
 - Concepts documented language-neutrally so they stay true while the Python SDK
-  and the TypeScript port (`@agentkit/sdk`) continue to diverge in maturity.
+  and the TypeScript port (`@kaji/sdk`) continue to diverge in maturity.
 
 ## non-goals (YAGNI)
 
@@ -30,7 +30,7 @@ markdown under `docs/`.
 - No search backend beyond Fumadocs' built-in default (Orama). No Algolia.
 - No deploy configuration (Vercel etc.). Local `dev` / `build` only.
 - Do not move, edit, or delete the existing `docs/*.md` files. The site *seeds
-  from* `docs/AGENTKIT.md`; the original stays in place untouched.
+  from* `docs/KAJI.md`; the original stays in place untouched.
 - No dual-language code-sample parity guarantee. Use a tabbed code block only
   where a sample genuinely exists for both languages; otherwise show one and
   state the concept neutrally.
@@ -46,7 +46,7 @@ Next.js + fumadocs wiring from memory.
 Adaptations after scaffolding:
 
 - `package.json`:
-  - `name` → `@agentkit/docs`
+  - `name` → `@kaji/docs`
   - `private: true`, `version: 0.0.0`
   - scripts aligned to sibling workspaces:
     - `dev` — next dev
@@ -60,7 +60,7 @@ Adaptations after scaffolding:
 - `.gitignore` (app-local): `.next/`, `.source/` (Fumadocs generated), `out/`,
   and standard Next artifacts.
 - `turbo.json` (root): add `.next/**` to the `build` task `outputs` if not
-  already covered, or a `@agentkit/docs#build` override mirroring the existing
+  already covered, or a `@kaji/docs#build` override mirroring the existing
   per-package override style. Keep `dev` non-cached + persistent (already the
   default `dev` task).
 - The app joins the root `apps/*` workspace glob automatically. After scaffold,
@@ -75,12 +75,12 @@ current Fumadocs "manual installation" docs. Prefer the scaffolder.
 
 ## content structure
 
-Seeded from `docs/AGENTKIT.md`. Layout under the Fumadocs content root
+Seeded from `docs/KAJI.md`. Layout under the Fumadocs content root
 (exact directory name follows whatever the scaffold uses, e.g.
 `content/docs/`):
 
 ```
-index.mdx              what agentkit is; infra-free core; embed vs serve
+index.mdx              what kaji is; infra-free core; embed vs serve
 getting-started.mdx    install (py + ts); minimal agent loop
 concepts/
   events.mdx           append-only event log; wire-format type strings
@@ -89,24 +89,24 @@ concepts/
   event-bus.mdx        per-session fan-out; in-memory vs Redis
   providers.mdx        ModelProvider / TTSProvider protocols; STT
 architecture.mdx       runtime (ReAct) loop diagram; modality edge diagram
-reference-service.mdx  agentkit-serve: api / bus-worker / worker over Redis
+reference-service.mdx  kaji-serve: api / bus-worker / worker over Redis
 meta.json              nav order for the above
 ```
 
-Content mapping from `docs/AGENTKIT.md`:
+Content mapping from `docs/KAJI.md`:
 
 - intro paragraph + "packages" table -> `index.mdx`
 - "architecture" (both ASCII diagrams) -> `architecture.mdx`
 - "core concepts" subsections -> one page each under `concepts/`
-- "the reference service (agentkit-serve)" -> `reference-service.mdx`
+- "the reference service (kaji-serve)" -> `reference-service.mdx`
 - "typescript SDK" notes folded into `index.mdx` / per-concept neutral phrasing,
   NOT a standalone "TS is missing X" page (that content goes stale fast)
 
 ### content correctness note
 
-`docs/AGENTKIT.md` line ~150 currently says the TypeScript reasoning loop and
+`docs/KAJI.md` line ~150 currently says the TypeScript reasoning loop and
 LLM providers are "not yet ported." Recent commits and the current branch
-(`feat/agentkit-rag-persistence-ts-runtime`, plus
+(`feat/kaji-rag-persistence-ts-runtime`, plus
 `feat(ts): add ModelProvider interface, registry, and MockProvider`) indicate
 the TS runtime/providers are now in progress. To avoid shipping a claim that is
 already stale, the site states concepts language-neutrally and does not assert a
@@ -115,22 +115,22 @@ fixed TS parity matrix. Do not copy the "not yet ported" sentence verbatim.
 ## prose style
 
 Terse, technical, no em-dashes, no marketing slop (per saved user preference).
-Lowercase headings are acceptable to match `docs/AGENTKIT.md` voice, but follow
+Lowercase headings are acceptable to match `docs/KAJI.md` voice, but follow
 whatever the scaffold's example pages establish if it conflicts; consistency
 within the site wins.
 
 ## branch / process
 
 - Do the work on a dedicated branch (e.g. `feat/apps-docs-fumadocs`), not the
-  current `feat/agentkit-rag-persistence-ts-runtime` branch and not `main`
+  current `feat/kaji-rag-persistence-ts-runtime` branch and not `main`
   (saved preference: never commit directly to main; always a named feat/ branch).
 - The spec commit and all implementation commits land on that branch.
 
 ## verification
 
 1. `bun install` at root succeeds with the new workspace present.
-2. `bun --filter @agentkit/docs dev` starts the dev server.
-3. `bun --filter @agentkit/docs build` (next build) passes.
+2. `bun --filter @kaji/docs dev` starts the dev server.
+3. `bun --filter @kaji/docs build` (next build) passes.
 4. `turbo run typecheck` and `turbo run lint` do not regress the workspace.
 5. Dogfood with the gstack `/browse` skill: load the running dev site, click
    through the nav, open `index`, one `concepts/*` page, and `architecture`;
@@ -142,12 +142,12 @@ or `/review` pass happens only if explicitly requested.
 ## components / boundaries
 
 - `apps/docs` is a self-contained workspace. It has no code dependency on
-  `@agentkit/sdk`, `@agentpay/*`, or the Python packages. Its only coupling to
+  `@kaji/sdk`, `@agentpay/*`, or the Python packages. Its only coupling to
   the repo is: the `apps/*` workspace glob, root Turbo tasks, and the root
   formatter config it opts into.
 - Content (MDX) is data, isolated under the content root. Swapping or extending
   pages does not touch app wiring.
-- Source of truth for concepts remains the SDK source and `docs/AGENTKIT.md`;
+- Source of truth for concepts remains the SDK source and `docs/KAJI.md`;
   this site is a presentation layer seeded from them, not a second authority.
 
 ## open risks

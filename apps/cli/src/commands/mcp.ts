@@ -15,7 +15,7 @@ interface McpEntry {
   args: string[];
 }
 
-const MCP_ARGS = ["-y", "@agentkit/cli", "mcp-server"];
+const MCP_ARGS = ["-y", "@kaji/cli", "mcp-server"];
 
 function cancelled(): never {
   p.cancel("Setup cancelled.");
@@ -30,7 +30,7 @@ function displayPath(filePath: string, scope: "project" | "global"): string {
 }
 
 function showJsonConfig(entry: McpEntry) {
-  const json = JSON.stringify({ mcpServers: { agentkit: entry } }, null, 2);
+  const json = JSON.stringify({ mcpServers: { kaji: entry } }, null, 2);
   console.log(chalk.bold.white("\nAdd to your MCP configuration:\n"));
   console.log(
     json
@@ -51,7 +51,7 @@ function writeMcpConfig(configPath: string, entry: McpEntry) {
     }
   }
   const servers = (config.mcpServers as Record<string, unknown> | undefined) ?? {};
-  servers["agentkit"] = entry;
+  servers["kaji"] = entry;
   config.mcpServers = servers;
 
   const dir = path.dirname(configPath);
@@ -113,7 +113,7 @@ async function setupClaudeCode(args: string[]) {
     "claude",
     "mcp",
     "add",
-    "agentkit",
+    "kaji",
     "--scope",
     scope as string,
     "--",
@@ -150,7 +150,7 @@ async function setupClaudeCode(args: string[]) {
 }
 
 async function mcpAction() {
-  p.intro(chalk.bold("agentkit mcp setup"));
+  p.intro(chalk.bold("kaji mcp setup"));
 
   const tool = await p.select<Tool>({
     message: "Which AI tool?",
@@ -222,5 +222,5 @@ async function mcpAction() {
 }
 
 export const mcp = new Command("mcp")
-  .description("register agentkit MCP server with your AI tool")
+  .description("register kaji MCP server with your AI tool")
   .action(mcpAction);

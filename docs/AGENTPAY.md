@@ -2,7 +2,7 @@
 
 agentpay lets businesses deploy ai agents that take orders, answer questions, and collect payments via any modality. merchants embed an agent on their platform; consumers pay through it using a saved payment method. stripe settles funds directly to the merchant's connected account -- agentpay never holds money.
 
-the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md) for how the runtime works.
+the agent runtime is provided by kaji. see [`docs/KAJI.md`](KAJI.md) for how the runtime works.
 
 ## what it does
 
@@ -14,7 +14,7 @@ the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md)
       ▼
    ┌───────────────────────────────────────────────┐
    │  agent  (embedded on merchant site or app)    │
-   │  agentkit AgentRuntime  (tool-using loop,     │
+   │  kaji AgentRuntime  (tool-using loop,     │
    │  any modality: chat widget, Twilio, Vapi, SMS)│
    └────────────────────┬──────────────────────────┘
                         │  calls request_payment tool
@@ -45,7 +45,7 @@ the agent runtime is provided by agentkit. see [`docs/AGENTKIT.md`](AGENTKIT.md)
    push event               transaction feed
 ```
 
-agentpay does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an agentkit endpoint. agentpay owns only the tool surface and payment session lifecycle.
+agentpay does not own any voice or STT/TTS infrastructure. merchants choose their modality (Twilio, Vapi, Bland, etc.) and point it at an kaji endpoint. agentpay owns only the tool surface and payment session lifecycle.
 
 ---
 
@@ -74,7 +74,7 @@ rest control plane for agents, wallets, payment configs, sessions, and webhooks.
 | get | `/v1/payments/{agent_id}` | get payment config |
 | patch | `/v1/payments/{id}` | update payment config |
 | get | `/v1/payments/providers` | list supported providers + fields |
-| post | `/v1/sessions` | create a payment session (called by agentkit tool) |
+| post | `/v1/sessions` | create a payment session (called by kaji tool) |
 | post | `/v1/webhooks` | register a merchant webhook url |
 | get | `/v1/webhooks` | list registered webhooks |
 | delete | `/v1/webhooks/{id}` | remove a webhook |

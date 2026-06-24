@@ -7,9 +7,9 @@ import { CopyIcon, CheckIcon, EyeIcon } from "@components/docs/icons/ui";
 import { McpDropdown } from "../install/mcp-dropdown";
 import { PromptDialog } from "../install/prompt-dialog";
 
-const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm package).
+const aiPromptText = `Set up an agent in my project using kaji (kaji npm package).
 
-1. Install agentkit.
+1. Install kaji.
 
 2. Create lib/agent.ts — instantiate the agent runtime with:
    - An LLM provider (OpenAI or Kimi)
@@ -20,7 +20,7 @@ const aiPromptText = `Set up an agent in my project using agentkit (agentkit npm
 
 4. Add the API route handler for my framework (e.g. app/api/agent/route.ts for Next.js App Router).
 
-5. Add AGENTKIT_API_KEY to my .env if it doesn't exist.
+5. Add KAJI_API_KEY to my .env if it doesn't exist.
 
 Refer to github.com/enkyuan/alloy for exact API and tool syntax.`;
 
@@ -130,13 +130,11 @@ export function InstallBlock() {
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">pip</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">
-                        install agentkit
-                      </span>
+                      <span className="text-neutral-700 dark:text-neutral-300">install kaji</span>
                     </code>
                     <button
                       type="button"
-                      onClick={() => copy("pip install agentkit")}
+                      onClick={() => copy("pip install kaji")}
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >
@@ -150,11 +148,11 @@ export function InstallBlock() {
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">agentkit init</span>
+                      <span className="text-neutral-700 dark:text-neutral-300">kaji init</span>
                     </code>
                     <button
                       type="button"
-                      onClick={() => copy("npx agentkit init")}
+                      onClick={() => copy("npx kaji init")}
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >
@@ -168,7 +166,7 @@ export function InstallBlock() {
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">agentkit mcp</span>
+                      <span className="text-neutral-700 dark:text-neutral-300">kaji mcp</span>
                     </code>
                     <McpDropdown
                       copied={copied}
@@ -183,11 +181,11 @@ export function InstallBlock() {
                 ) : (
                   <div className="bg-neutral-100/50 dark:bg-[#050505] px-5 py-4">
                     <p className="text-[13px] font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                      Set up an agent in my project using agentkit.
+                      Set up an agent in my project using kaji.
                     </p>
                     <div className="relative mt-1.5">
                       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 leading-relaxed line-clamp-2">
-                        Install agentkit. Create lib/agent.ts with the{" "}
+                        Install kaji. Create lib/agent.ts with the{" "}
                         <code className="text-neutral-500 dark:text-neutral-400">
                           agent runtime
                         </code>

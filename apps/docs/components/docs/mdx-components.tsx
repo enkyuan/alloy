@@ -36,11 +36,11 @@ export function GenerateSecret() {
         onClick={() => {
           const elements = document.querySelectorAll("pre code span.line span");
           for (let i = 0; i < elements.length; i++) {
-            if (elements[i].textContent === "AGENTKIT_SECRET=") {
-              elements[i].textContent = `AGENTKIT_SECRET=${generateRandomString(32)}`;
+            if (elements[i].textContent === "KAJI_SECRET=") {
+              elements[i].textContent = `KAJI_SECRET=${generateRandomString(32)}`;
               setGenerated(true);
               setTimeout(() => {
-                elements[i].textContent = "AGENTKIT_SECRET=";
+                elements[i].textContent = "KAJI_SECRET=";
                 setGenerated(false);
               }, 5000);
             }
@@ -142,12 +142,12 @@ export function AddToCursor() {
   return (
     <div className="w-max">
       <Link
-        href="cursor://anysphere.cursor-deeplink/mcp/install?name=agentkit&config=eyJ1cmwiOiJodHRwczovL21jcC5hZ2VudGtpdC5jb20vbWNwIn0="
+        href="cursor://anysphere.cursor-deeplink/mcp/install?name=kaji&config=eyJ1cmwiOiJodHRwczovL21jcC5hZ2VudGtpdC5jb20vbWNwIn0="
         className="dark:hidden"
       >
         <Image
           src="https://cursor.com/deeplink/mcp-install-dark.svg"
-          alt="Add agentkit MCP to Cursor"
+          alt="Add kaji MCP to Cursor"
           width={128}
           height={32}
           unoptimized
@@ -155,12 +155,12 @@ export function AddToCursor() {
       </Link>
 
       <Link
-        href="cursor://anysphere.cursor-deeplink/mcp/install?name=agentkit&config=eyJ1cmwiOiJodHRwczovL21jcC5hZ2VudGtpdC5jb20vbWNwIn0="
+        href="cursor://anysphere.cursor-deeplink/mcp/install?name=kaji&config=eyJ1cmwiOiJodHRwczovL21jcC5hZ2VudGtpdC5jb20vbWNwIn0="
         className="dark:block hidden"
       >
         <Image
           src="https://cursor.com/deeplink/mcp-install-light.svg"
-          alt="Add agentkit MCP to Cursor"
+          alt="Add kaji MCP to Cursor"
           width={128}
           height={32}
           unoptimized

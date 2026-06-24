@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "agentkit/ts/**"
+      - "kaji/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -13,7 +13,7 @@ on:
       - ".github/workflows/ts.test.yml"
   pull_request:
     paths:
-      - "agentkit/ts/**"
+      - "kaji/ts/**"
       - "agentpay/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -22,18 +22,18 @@ on:
       - ".github/workflows/ts.test.yml"
 
 jobs:
-  agentkit-ts:
-    name: agentkit/ts
+  kaji-ts:
+    name: kaji/ts
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/ts
+        working-directory: kaji/ts
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: agentkit/ts
+          working-directory: kaji/ts
 
       - name: Typecheck
         run: bun run typecheck
@@ -47,12 +47,12 @@ jobs:
       - name: Test
         run: bun run test
 
-  agentkit-ts-install-smoke:
-    name: agentkit/ts install smoke
+  kaji-ts-install-smoke:
+    name: kaji/ts install smoke
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/ts
+        working-directory: kaji/ts
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: agentkit/ts
+          working-directory: kaji/ts
 
       - name: Build package
         run: bun run build
@@ -72,10 +72,10 @@ jobs:
 
       - name: Install tarball in clean temp project
         run: |
-          TARBALL=$(ls "$GITHUB_WORKSPACE"/agentkit/ts/agentkit-sdk-*.tgz | head -1)
-          mkdir /tmp/agentkit-smoke
-          cp "$GITHUB_WORKSPACE/agentkit/ts/scripts/smoke-install.mts" /tmp/agentkit-smoke/smoke-install.mts
-          cd /tmp/agentkit-smoke
+          TARBALL=$(ls "$GITHUB_WORKSPACE"/kaji/ts/kaji-sdk-*.tgz | head -1)
+          mkdir /tmp/kaji-smoke
+          cp "$GITHUB_WORKSPACE/kaji/ts/scripts/smoke-install.mts" /tmp/kaji-smoke/smoke-install.mts
+          cd /tmp/kaji-smoke
           npm init -y --quiet
           npm install --quiet "$TARBALL" zod
           npx --yes tsx ./smoke-install.mts

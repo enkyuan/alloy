@@ -13,7 +13,7 @@ which derives the spec from type hints / a Zod schema and the docstring.
 <Tabs items={["python", "typescript"]}>
   <Tab value="python">
     ```python
-    from agentkit import function_tool
+    from kaji import function_tool
 
     @function_tool
     async def get_weather(city: str) -> dict:
@@ -24,7 +24,7 @@ which derives the spec from type hints / a Zod schema and the docstring.
   </Tab>
   <Tab value="typescript">
     ```ts
-    import { functionTool } from "@agentkit/sdk";
+    import { functionTool } from "@kaji/sdk";
     import { z } from "zod";
 
     const getWeather = functionTool(

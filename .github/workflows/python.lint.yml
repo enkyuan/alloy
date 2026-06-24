@@ -4,49 +4,49 @@ on:
   push:
     branches: [main]
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.lint.yml"
   pull_request:
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.lint.yml"
 
 jobs:
   sdk:
-    name: agentkit/sdk
+    name: kaji/sdk
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
 
       - name: Type check
         run: poetry run pyrefly check
 
       - name: Lint
-        run: poetry run ruff check agentkit tests
+        run: poetry run ruff check kaji tests
 
   serve:
-    name: agentkit/serve
+    name: kaji/serve
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/serve
+        working-directory: kaji/serve
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/serve
+          working-directory: kaji/serve
 
       - name: Lint
-        run: poetry run ruff check agentkit_serve tests alembic
+        run: poetry run ruff check kaji_serve tests alembic

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Address the non-voice engineering DX gaps identified in the SDK assessment (`@agentkit/sdk` TS parity, `agentkit` Python typing/import ergonomics) and the documentation gaps (CLI page, install commands, API reference, troubleshooting, reference-service runbook, events enum inlining).
+**Goal:** Address the non-voice engineering DX gaps identified in the SDK assessment (`@kaji/sdk` TS parity, `kaji` Python typing/import ergonomics) and the documentation gaps (CLI page, install commands, API reference, troubleshooting, reference-service runbook, events enum inlining).
 
 **Architecture:** Two work streams. (1) SDK DX: widen TS peer-dep ranges, add `py.typed`, port `request_payment` HTTP tool into both SDKs as an opt-in helper, slim Python public lazy map. (2) Docs: add CLI/troubleshooting/runtime-API/install pages, inline the event enum, register them in fumadocs `meta.json`. Tasks are mostly independent so subagents can run sequentially without cross-task locking.
 
@@ -11,40 +11,40 @@
 ## Global Constraints
 
 - **Branch:** all work on `feat/sdk-dx-and-docs` (new), never on `main`.
-- **No voice modality work** — the user explicitly excluded STT/TTS/barge-in/VAD. Do not touch `agentkit/sdk/agentkit/modalities/voice/**` or anything that loads it.
+- **No voice modality work** — the user explicitly excluded STT/TTS/barge-in/VAD. Do not touch `kaji/sdk/kaji/modalities/voice/**` or anything that loads it.
 - **No new heavy dependencies** anywhere. TS: only the `peerDependencies` already declared. Python: only the optional extras already declared (`anthropic`, `openai`, `gemini`, `realtime`, etc.) plus stdlib.
-- **TS sources:** `agentkit/ts/src/**`. TS tests: `agentkit/ts/tests/**`.
-- **Python SDK sources:** `agentkit/sdk/agentkit/**`. Python tests: `agentkit/sdk/tests/**`.
+- **TS sources:** `kaji/ts/src/**`. TS tests: `kaji/ts/tests/**`.
+- **Python SDK sources:** `kaji/sdk/kaji/**`. Python tests: `kaji/sdk/tests/**`.
 - **Docs:** `apps/docs/content/**` (fumadocs MDX). Sidebar order is controlled by `meta.json` files — every new page must be registered.
 - **No em-dashes** in any user-facing copy, docs, or template strings. Use `--` or `-` or a comma instead.
-- **DRY across CLIs:** the existing `agentkit` CLI shipped in PR #18 — refer to it from docs but do not duplicate its `--help` output verbatim into prose.
+- **DRY across CLIs:** the existing `kaji` CLI shipped in PR #18 — refer to it from docs but do not duplicate its `--help` output verbatim into prose.
 - **Tests required.** Each code task ends with TDD evidence (RED + GREEN). Doc-only tasks end with a lint/build pass.
-- **Bun for TS package ops.** Never `npm install` or `yarn install`. Use `bun --filter @agentkit/sdk` for SDK ops, `bun --filter @agentkit/cli` for CLI ops.
+- **Bun for TS package ops.** Never `npm install` or `yarn install`. Use `bun --filter @kaji/sdk` for SDK ops, `bun --filter @kaji/cli` for CLI ops.
 
 ---
 
 ## File Structure
 
-### TS SDK (`agentkit/ts/`)
+### TS SDK (`kaji/ts/`)
 
 **Modify:**
-- `agentkit/ts/package.json` — relax `peerDependencies` ranges; the current `openai@^6.42.0` and `@anthropic-ai/sdk@^0.104.1` are too narrow.
+- `kaji/ts/package.json` — relax `peerDependencies` ranges; the current `openai@^6.42.0` and `@anthropic-ai/sdk@^0.104.1` are too narrow.
 
 **Create:**
-- `agentkit/ts/src/tools/payment.ts` — `requestPayment` factory returning a `ToolSpec` + handler that POSTs to an agentpay base URL. Infra-free, fetch-based, optional.
-- `agentkit/ts/tests/tools/payment.test.ts` — vitest covering the factory.
+- `kaji/ts/src/tools/payment.ts` — `requestPayment` factory returning a `ToolSpec` + handler that POSTs to an agentpay base URL. Infra-free, fetch-based, optional.
+- `kaji/ts/tests/tools/payment.test.ts` — vitest covering the factory.
 
-### Python SDK (`agentkit/sdk/`)
+### Python SDK (`kaji/sdk/`)
 
 **Create:**
-- `agentkit/sdk/agentkit/py.typed` — PEP 561 marker (empty file).
-- `agentkit/sdk/agentkit/runtime/tools/payment.py` — `request_payment` builder, parallel to TS.
-- `agentkit/sdk/tests/test_tools_payment.py` — pytest covering the builder.
+- `kaji/sdk/kaji/py.typed` — PEP 561 marker (empty file).
+- `kaji/sdk/kaji/runtime/tools/payment.py` — `request_payment` builder, parallel to TS.
+- `kaji/sdk/tests/test_tools_payment.py` — pytest covering the builder.
 
 **Modify:**
-- `agentkit/sdk/pyproject.toml` — add `include = ["agentkit/py.typed"]` so the marker is shipped in the wheel.
-- `agentkit/sdk/agentkit/__init__.py` — lazy-export `RequestPaymentTool` / `request_payment_tool`.
-- `agentkit/sdk/agentkit/runtime/tools/__init__.py` — re-export the new builder.
+- `kaji/sdk/pyproject.toml` — add `include = ["kaji/py.typed"]` so the marker is shipped in the wheel.
+- `kaji/sdk/kaji/__init__.py` — lazy-export `RequestPaymentTool` / `request_payment_tool`.
+- `kaji/sdk/kaji/runtime/tools/__init__.py` — re-export the new builder.
 
 ### Docs (`apps/docs/content/`)
 
@@ -57,7 +57,7 @@
 **Modify:**
 - `apps/docs/content/concepts/events.mdx` — inline the event-type enum table.
 - `apps/docs/content/reference-service.mdx` — add real run commands.
-- `apps/docs/content/getting-started.mdx` — replace `cd agentkit/sdk && poetry install` with the published-package commands; cross-link CLI page.
+- `apps/docs/content/getting-started.mdx` — replace `cd kaji/sdk && poetry install` with the published-package commands; cross-link CLI page.
 - `apps/docs/content/meta.json` — register `install`, `cli`, `troubleshooting`.
 - `apps/docs/content/concepts/meta.json` — add `runtime`.
 
@@ -85,8 +85,8 @@ git push -u origin feat/sdk-dx-and-docs
 
 Run from repo root:
 ```bash
-bun --filter @agentkit/sdk test
-cd agentkit/sdk && poetry run pytest -q --ignore=tests/integration 2>&1 | tail -3
+bun --filter @kaji/sdk test
+cd kaji/sdk && poetry run pytest -q --ignore=tests/integration 2>&1 | tail -3
 ```
 Expected: TS SDK tests pass; Python `tests/` non-integration suite passes. If anything is red here, STOP and escalate — do not start tasks on a broken baseline.
 
@@ -95,7 +95,7 @@ Expected: TS SDK tests pass; Python `tests/` non-integration suite passes. If an
 ### Task 2: TS peer-dep range widening
 
 **Files:**
-- Modify: `agentkit/ts/package.json:38-50`
+- Modify: `kaji/ts/package.json:38-50`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -110,18 +110,18 @@ The current declaration:
 }
 ```
 
-The provider source files use only the public top-level types from each SDK (`OpenAI`, `Anthropic`). Verify by reading `agentkit/ts/src/providers/openai.ts` and `anthropic.ts` (lazy imports, no deep submodule paths). Widen ranges to accept any future major-compatible version the consumer pins. The pattern `>=X.Y <next-major+1` keeps the lower bound and removes the artificial upper.
+The provider source files use only the public top-level types from each SDK (`OpenAI`, `Anthropic`). Verify by reading `kaji/ts/src/providers/openai.ts` and `anthropic.ts` (lazy imports, no deep submodule paths). Widen ranges to accept any future major-compatible version the consumer pins. The pattern `>=X.Y <next-major+1` keeps the lower bound and removes the artificial upper.
 
 - [ ] **Step 1: Inspect the provider files to confirm no deep imports**
 
 ```bash
-grep -nE "from \"openai/|from \"@anthropic-ai/sdk/" agentkit/ts/src/providers/*.ts
+grep -nE "from \"openai/|from \"@anthropic-ai/sdk/" kaji/ts/src/providers/*.ts
 ```
 Expected: no matches. Only top-level imports are used.
 
 - [ ] **Step 2: Widen the ranges**
 
-Edit `agentkit/ts/package.json` so the `peerDependencies` block reads:
+Edit `kaji/ts/package.json` so the `peerDependencies` block reads:
 
 ```json
 "peerDependencies": {
@@ -141,15 +141,15 @@ Keep the same entries in `peerDependenciesMeta` (both optional).
 - [ ] **Step 3: Rebuild and re-run tests**
 
 ```bash
-bun --filter @agentkit/sdk build
-bun --filter @agentkit/sdk test
+bun --filter @kaji/sdk build
+bun --filter @kaji/sdk test
 ```
 Expected: build clean, all tests pass.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add agentkit/ts/package.json
+git add kaji/ts/package.json
 git commit -m "fix(ts-sdk): widen openai/anthropic/zod peer-dep ranges"
 ```
 
@@ -158,8 +158,8 @@ git commit -m "fix(ts-sdk): widen openai/anthropic/zod peer-dep ranges"
 ### Task 3: Python `py.typed` marker
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/py.typed` (empty)
-- Modify: `agentkit/sdk/pyproject.toml`
+- Create: `kaji/sdk/kaji/py.typed` (empty)
+- Modify: `kaji/sdk/pyproject.toml`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -168,22 +168,22 @@ git commit -m "fix(ts-sdk): widen openai/anthropic/zod peer-dep ranges"
 - [ ] **Step 1: Create the marker file**
 
 ```bash
-touch /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/sdk/agentkit/py.typed
+touch /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/sdk/kaji/py.typed
 ```
 
 - [ ] **Step 2: Tell poetry to include it in the wheel**
 
-In `agentkit/sdk/pyproject.toml`, in the `[tool.poetry]` block, change:
+In `kaji/sdk/pyproject.toml`, in the `[tool.poetry]` block, change:
 
 ```toml
-packages = [{ include = "agentkit" }]
+packages = [{ include = "kaji" }]
 ```
 
 to:
 
 ```toml
-packages = [{ include = "agentkit" }]
-include = [{ path = "agentkit/py.typed", format = ["sdist", "wheel"] }]
+packages = [{ include = "kaji" }]
+include = [{ path = "kaji/py.typed", format = ["sdist", "wheel"] }]
 ```
 
 (Append `include` immediately after `packages`. Do not collapse them onto one line.)
@@ -191,25 +191,25 @@ include = [{ path = "agentkit/py.typed", format = ["sdist", "wheel"] }]
 - [ ] **Step 3: Confirm poetry sees it**
 
 ```bash
-cd agentkit/sdk && poetry check && poetry build 2>&1 | tail -5
+cd kaji/sdk && poetry check && poetry build 2>&1 | tail -5
 ```
 Expected: `poetry check` returns "All set!", and the build output mentions the new file. After the build inspect:
 
 ```bash
-python -c "import zipfile; z=zipfile.ZipFile(sorted(__import__('pathlib').Path('agentkit/sdk/dist').glob('*.whl'))[-1]); print('\n'.join(n for n in z.namelist() if 'py.typed' in n))"
+python -c "import zipfile; z=zipfile.ZipFile(sorted(__import__('pathlib').Path('kaji/sdk/dist').glob('*.whl'))[-1]); print('\n'.join(n for n in z.namelist() if 'py.typed' in n))"
 ```
-Expected: prints `agentkit/py.typed`.
+Expected: prints `kaji/py.typed`.
 
 - [ ] **Step 4: Clean up the dist artifacts**
 
 ```bash
-rm -rf agentkit/sdk/dist
+rm -rf kaji/sdk/dist
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/py.typed agentkit/sdk/pyproject.toml
+git add kaji/sdk/kaji/py.typed kaji/sdk/pyproject.toml
 git commit -m "feat(py-sdk): ship py.typed for PEP 561 compliance"
 ```
 
@@ -218,13 +218,13 @@ git commit -m "feat(py-sdk): ship py.typed for PEP 561 compliance"
 ### Task 4: slim the Python public lazy map
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/__init__.py`
+- Modify: `kaji/sdk/kaji/__init__.py`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: a curated public surface where `import agentkit; agentkit.<TAB>` shows the names a first-time reader actually needs. Internal-only names remain importable from their subpackages but disappear from the top-level autocomplete.
+- Produces: a curated public surface where `import kaji; kaji.<TAB>` shows the names a first-time reader actually needs. Internal-only names remain importable from their subpackages but disappear from the top-level autocomplete.
 
-The current `_LAZY` map has ~30 entries. We trim it to the 18 a v0.1.0 user genuinely composes against. Anything still importable from `agentkit.runtime.*` etc. stays accessible — we are not deleting code, just narrowing what `agentkit.<TAB>` and `dir(agentkit)` surface.
+The current `_LAZY` map has ~30 entries. We trim it to the 18 a v0.1.0 user genuinely composes against. Anything still importable from `kaji.runtime.*` etc. stays accessible — we are not deleting code, just narrowing what `kaji.<TAB>` and `dir(kaji)` surface.
 
 Names to KEEP in `_LAZY` (the "what you compose with" surface):
 
@@ -256,12 +256,12 @@ SessionManager
 SessionState
 ```
 
-Names to REMOVE from `_LAZY` (still importable from `agentkit.runtime.*` but no longer top-level):
+Names to REMOVE from `_LAZY` (still importable from `kaji.runtime.*` but no longer top-level):
 - `AgentStrategy` (strategy hook, niche)
 - `ToolPlanner`, `ToolExecutor` (internal building blocks of `AgentRuntime`)
 - `EventBusProtocol` (protocol type, not used by app code)
 - `EventType` (use string literals or the schemas module)
-- `AgentKitEvent`, `BaseEvent` (read schemas directly if needed)
+- `KajiEvent`, `BaseEvent` (read schemas directly if needed)
 - `BoundTool` (internal)
 - `InMemorySessionStore`, `SessionStore`, `SessionRecord` (session backing detail)
 - `ToolSpecFromModel`, `ExecuteTool`, `ClearTools` (registry internals)
@@ -269,13 +269,13 @@ Names to REMOVE from `_LAZY` (still importable from `agentkit.runtime.*` but no 
 
 - [ ] **Step 1: Add the regression test FIRST**
 
-Create `agentkit/sdk/tests/test_public_surface.py`:
+Create `kaji/sdk/tests/test_public_surface.py`:
 
 ```python
-"""Pin the agentkit top-level public surface so additions are deliberate."""
+"""Pin the kaji top-level public surface so additions are deliberate."""
 from __future__ import annotations
 
-import agentkit
+import kaji
 
 
 EXPECTED_PUBLIC = {
@@ -308,7 +308,7 @@ EXPECTED_PUBLIC = {
 
 
 def test_public_surface_is_pinned() -> None:
-    public = {n for n in dir(agentkit) if not n.startswith("_") and n != "TYPE_CHECKING"}
+    public = {n for n in dir(kaji) if not n.startswith("_") and n != "TYPE_CHECKING"}
     # __version__ is the only non-LAZY exported name.
     public -= {"__version__"}
     assert public == EXPECTED_PUBLIC, sorted(public ^ EXPECTED_PUBLIC)
@@ -316,25 +316,25 @@ def test_public_surface_is_pinned() -> None:
 
 def test_each_public_name_resolves() -> None:
     for name in EXPECTED_PUBLIC:
-        getattr(agentkit, name)  # raises if the lazy module is broken
+        getattr(kaji, name)  # raises if the lazy module is broken
 
 
 def test_internal_names_still_importable_from_subpackages() -> None:
     # Things removed from the top-level lazy map must still be importable
     # from their canonical subpackage.
-    from agentkit.runtime.agents import AgentStrategy
-    from agentkit.runtime.agents.planner import ToolPlanner, ToolExecutor
-    from agentkit.runtime.sessions.store import (
+    from kaji.runtime.agents import AgentStrategy
+    from kaji.runtime.agents.planner import ToolPlanner, ToolExecutor
+    from kaji.runtime.sessions.store import (
         InMemorySessionStore,
         SessionStore,
         SessionRecord,
     )
-    from agentkit.runtime.tools.registry import (
+    from kaji.runtime.tools.registry import (
         ExecuteTool,
         ClearTools,
         ToolSpecFromModel,
     )
-    from agentkit.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+    from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 
     # Trivial assertions just to suppress unused-import linters and prove the
     # imports executed.
@@ -346,41 +346,41 @@ def test_internal_names_still_importable_from_subpackages() -> None:
 - [ ] **Step 2: Confirm the test fails against the current wide map**
 
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_public_surface.py -v
+cd kaji/sdk && poetry run pytest tests/test_public_surface.py -v
 ```
 Expected: `test_public_surface_is_pinned` FAILS because the current `_LAZY` has names we no longer want exposed.
 
 - [ ] **Step 3: Trim the lazy map**
 
-Edit `agentkit/sdk/agentkit/__init__.py`. Replace the `_LAZY` dict so it contains exactly these 25 entries (alphabetised by key):
+Edit `kaji/sdk/kaji/__init__.py`. Replace the `_LAZY` dict so it contains exactly these 25 entries (alphabetised by key):
 
 ```python
 _LAZY: dict[str, str] = {
-    "AgentBuilder": "agentkit.runtime.agents",
-    "AgentRuntime": "agentkit.runtime.agents",
-    "CancellationToken": "agentkit.runtime.agents",
-    "EventBus": "agentkit.infra.events",
-    "EventStore": "agentkit.infra.events",
-    "FunctionTool": "agentkit.runtime.integrations",
-    "GetProvider": "agentkit.runtime.providers",
-    "InMemoryEventBus": "agentkit.infra.events",
-    "InMemoryEventStore": "agentkit.infra.events",
-    "Integration": "agentkit.runtime.integrations",
-    "ListToolSpecs": "agentkit.runtime.tools.registry",
-    "ModelProvider": "agentkit.runtime.providers",
-    "ProviderAPIError": "agentkit.runtime.providers.errors",
-    "ProviderConfigError": "agentkit.runtime.providers.errors",
-    "ProviderError": "agentkit.runtime.providers.errors",
-    "RegisterProvider": "agentkit.runtime.providers",
-    "RegisterTool": "agentkit.runtime.tools.registry",
-    "ReplaySession": "agentkit.runtime.sessions",
-    "SessionManager": "agentkit.runtime.sessions",
-    "SessionState": "agentkit.runtime.sessions",
-    "Tool": "agentkit.runtime.integrations",
-    "ToolContext": "agentkit.runtime.tools.registry",
-    "ToolRegistry": "agentkit.runtime.tools.registry",
-    "ToolSpec": "agentkit.runtime.tools.registry",
-    "UserMessage": "agentkit.infra.events",
+    "AgentBuilder": "kaji.runtime.agents",
+    "AgentRuntime": "kaji.runtime.agents",
+    "CancellationToken": "kaji.runtime.agents",
+    "EventBus": "kaji.infra.events",
+    "EventStore": "kaji.infra.events",
+    "FunctionTool": "kaji.runtime.integrations",
+    "GetProvider": "kaji.runtime.providers",
+    "InMemoryEventBus": "kaji.infra.events",
+    "InMemoryEventStore": "kaji.infra.events",
+    "Integration": "kaji.runtime.integrations",
+    "ListToolSpecs": "kaji.runtime.tools.registry",
+    "ModelProvider": "kaji.runtime.providers",
+    "ProviderAPIError": "kaji.runtime.providers.errors",
+    "ProviderConfigError": "kaji.runtime.providers.errors",
+    "ProviderError": "kaji.runtime.providers.errors",
+    "RegisterProvider": "kaji.runtime.providers",
+    "RegisterTool": "kaji.runtime.tools.registry",
+    "ReplaySession": "kaji.runtime.sessions",
+    "SessionManager": "kaji.runtime.sessions",
+    "SessionState": "kaji.runtime.sessions",
+    "Tool": "kaji.runtime.integrations",
+    "ToolContext": "kaji.runtime.tools.registry",
+    "ToolRegistry": "kaji.runtime.tools.registry",
+    "ToolSpec": "kaji.runtime.tools.registry",
+    "UserMessage": "kaji.infra.events",
 }
 ```
 
@@ -389,7 +389,7 @@ Leave the rest of the file untouched (the `__getattr__`, `__dir__`, `__all__` li
 - [ ] **Step 4: Run the new regression test + the full Python suite**
 
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_public_surface.py -v
+cd kaji/sdk && poetry run pytest tests/test_public_surface.py -v
 poetry run pytest -q --ignore=tests/integration 2>&1 | tail -5
 ```
 Expected: `test_public_surface.py` 3/3 pass; full suite passes (or matches pre-task baseline — note the baseline pass count first).
@@ -397,7 +397,7 @@ Expected: `test_public_surface.py` 3/3 pass; full suite passes (or matches pre-t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/__init__.py agentkit/sdk/tests/test_public_surface.py
+git add kaji/sdk/kaji/__init__.py kaji/sdk/tests/test_public_surface.py
 git commit -m "refactor(py-sdk): slim public lazy map to v0.1.0 surface"
 ```
 
@@ -406,9 +406,9 @@ git commit -m "refactor(py-sdk): slim public lazy map to v0.1.0 surface"
 ### Task 5: TS `requestPayment` tool builder
 
 **Files:**
-- Create: `agentkit/ts/src/tools/payment.ts`
-- Create: `agentkit/ts/tests/tools/payment.test.ts`
-- Modify: `agentkit/ts/src/index.ts`
+- Create: `kaji/ts/src/tools/payment.ts`
+- Create: `kaji/ts/tests/tools/payment.test.ts`
+- Modify: `kaji/ts/src/index.ts`
 
 **Interfaces:**
 - Consumes: `ToolSpec`, `ToolHandler` from `../tools/registry`.
@@ -416,11 +416,11 @@ git commit -m "refactor(py-sdk): slim public lazy map to v0.1.0 surface"
   - `requestPayment(options: { baseUrl: string; apiKey?: string; fetchImpl?: typeof fetch }): { spec: ToolSpec; handler: ToolHandler }`
   - The handler POSTs `{ amount, description, ... }` to `${baseUrl}/v1/sessions` with optional `Authorization: Bearer <apiKey>` and returns the parsed JSON.
 
-This is the agentpay/agentkit bridge promised in Roadmap item 12, but infra-free: no Stripe SDK, no axios, just `fetch`. The agentpay API is still MISSING per the roadmap, so we ship the tool builder against the documented contract and the test mocks `fetch` rather than hitting a live service.
+This is the agentpay/kaji bridge promised in Roadmap item 12, but infra-free: no Stripe SDK, no axios, just `fetch`. The agentpay API is still MISSING per the roadmap, so we ship the tool builder against the documented contract and the test mocks `fetch` rather than hitting a live service.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `agentkit/ts/tests/tools/payment.test.ts`:
+Create `kaji/ts/tests/tools/payment.test.ts`:
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -484,17 +484,17 @@ describe("requestPayment", () => {
 - [ ] **Step 2: Run to confirm failure**
 
 ```bash
-bun --filter @agentkit/sdk test tests/tools/payment.test.ts
+bun --filter @kaji/sdk test tests/tools/payment.test.ts
 ```
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement the builder**
 
-Create `agentkit/ts/src/tools/payment.ts`:
+Create `kaji/ts/src/tools/payment.ts`:
 
 ```ts
 /**
- * requestPayment: a thin agentkit -> agentpay bridge.
+ * requestPayment: a thin kaji -> agentpay bridge.
  *
  * Posts to `${baseUrl}/v1/sessions` and returns the JSON payload. Pass a
  * custom fetchImpl in tests; in production it uses the global fetch.
@@ -546,7 +546,7 @@ export function requestPayment(opts: RequestPaymentOptions): RequestPaymentTool 
 
 - [ ] **Step 4: Export from the public index**
 
-In `agentkit/ts/src/index.ts`, append to the tools-export block (after the `executeTool, clearTools` line):
+In `kaji/ts/src/index.ts`, append to the tools-export block (after the `executeTool, clearTools` line):
 
 ```ts
 export { requestPayment } from "./tools/payment";
@@ -556,15 +556,15 @@ export type { RequestPaymentOptions, RequestPaymentTool } from "./tools/payment"
 - [ ] **Step 5: Run tests**
 
 ```bash
-bun --filter @agentkit/sdk test tests/tools/payment.test.ts
-bun --filter @agentkit/sdk test
+bun --filter @kaji/sdk test tests/tools/payment.test.ts
+bun --filter @kaji/sdk test
 ```
 Expected: 4/4 new tests pass; full suite still green.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/ts/src/tools/payment.ts agentkit/ts/tests/tools/payment.test.ts agentkit/ts/src/index.ts
+git add kaji/ts/src/tools/payment.ts kaji/ts/tests/tools/payment.test.ts kaji/ts/src/index.ts
 git commit -m "feat(ts-sdk): add requestPayment agentpay bridge tool"
 ```
 
@@ -573,13 +573,13 @@ git commit -m "feat(ts-sdk): add requestPayment agentpay bridge tool"
 ### Task 6: Python `request_payment` tool builder
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/runtime/tools/payment.py`
-- Create: `agentkit/sdk/tests/test_tools_payment.py`
-- Modify: `agentkit/sdk/agentkit/runtime/tools/__init__.py`
-- Modify: `agentkit/sdk/agentkit/__init__.py` (add to `_LAZY`)
+- Create: `kaji/sdk/kaji/runtime/tools/payment.py`
+- Create: `kaji/sdk/tests/test_tools_payment.py`
+- Modify: `kaji/sdk/kaji/runtime/tools/__init__.py`
+- Modify: `kaji/sdk/kaji/__init__.py` (add to `_LAZY`)
 
 **Interfaces:**
-- Consumes: `ToolSpec`, `ToolContext` from `agentkit.runtime.tools.registry`.
+- Consumes: `ToolSpec`, `ToolContext` from `kaji.runtime.tools.registry`.
 - Produces:
   - `RequestPaymentTool(base_url: str, api_key: str | None = None, client: httpx.AsyncClient | None = None) -> tuple[ToolSpec, Callable]`
   - Handler signature: `async def handler(ctx: ToolContext, args: dict) -> dict`.
@@ -588,7 +588,7 @@ Parity with the TS implementation. `httpx` is already a hard SDK dep, so no new 
 
 - [ ] **Step 1: Write the failing test**
 
-Create `agentkit/sdk/tests/test_tools_payment.py`:
+Create `kaji/sdk/tests/test_tools_payment.py`:
 
 ```python
 """Tests for the agentpay bridge tool."""
@@ -600,7 +600,7 @@ from typing import Any
 import httpx
 import pytest
 
-from agentkit.runtime.tools.payment import RequestPaymentTool
+from kaji.runtime.tools.payment import RequestPaymentTool
 
 
 @pytest.mark.asyncio
@@ -672,13 +672,13 @@ async def test_request_payment_raises_on_non_2xx() -> None:
 - [ ] **Step 2: Confirm failure**
 
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_tools_payment.py -v
+cd kaji/sdk && poetry run pytest tests/test_tools_payment.py -v
 ```
-Expected: collection error — `agentkit.runtime.tools.payment` does not exist.
+Expected: collection error — `kaji.runtime.tools.payment` does not exist.
 
 - [ ] **Step 3: Implement**
 
-Create `agentkit/sdk/agentkit/runtime/tools/payment.py`:
+Create `kaji/sdk/kaji/runtime/tools/payment.py`:
 
 ```python
 """`request_payment`: the agentpay bridge tool.
@@ -693,7 +693,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 
-from agentkit.runtime.tools.registry import ToolSpec
+from kaji.runtime.tools.registry import ToolSpec
 
 
 PaymentHandler = Callable[[Any, dict[str, Any]], Awaitable[Any]]
@@ -764,26 +764,26 @@ def RequestPaymentTool(
 
 - [ ] **Step 4: Re-export**
 
-In `agentkit/sdk/agentkit/runtime/tools/__init__.py`, append:
+In `kaji/sdk/kaji/runtime/tools/__init__.py`, append:
 
 ```python
-from agentkit.runtime.tools.payment import RequestPaymentTool  # noqa: F401
+from kaji.runtime.tools.payment import RequestPaymentTool  # noqa: F401
 ```
 
 (If the file already has an `__all__` list, also append `"RequestPaymentTool"` to it.)
 
-In `agentkit/sdk/agentkit/__init__.py`'s `_LAZY` map, add this entry (alphabetical position is between `ReplaySession` and `SessionManager`):
+In `kaji/sdk/kaji/__init__.py`'s `_LAZY` map, add this entry (alphabetical position is between `ReplaySession` and `SessionManager`):
 
 ```python
-    "RequestPaymentTool": "agentkit.runtime.tools.payment",
+    "RequestPaymentTool": "kaji.runtime.tools.payment",
 ```
 
-In `agentkit/sdk/tests/test_public_surface.py`, add `"RequestPaymentTool"` to `EXPECTED_PUBLIC` so the surface-pinning test stays accurate.
+In `kaji/sdk/tests/test_public_surface.py`, add `"RequestPaymentTool"` to `EXPECTED_PUBLIC` so the surface-pinning test stays accurate.
 
 - [ ] **Step 5: Run tests**
 
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_tools_payment.py tests/test_public_surface.py -v
+cd kaji/sdk && poetry run pytest tests/test_tools_payment.py tests/test_public_surface.py -v
 poetry run pytest -q --ignore=tests/integration 2>&1 | tail -5
 ```
 Expected: 4/4 new + 3/3 surface pinning pass; broader suite still green.
@@ -791,11 +791,11 @@ Expected: 4/4 new + 3/3 surface pinning pass; broader suite still green.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentkit/sdk/agentkit/runtime/tools/payment.py \
-        agentkit/sdk/agentkit/runtime/tools/__init__.py \
-        agentkit/sdk/agentkit/__init__.py \
-        agentkit/sdk/tests/test_tools_payment.py \
-        agentkit/sdk/tests/test_public_surface.py
+git add kaji/sdk/kaji/runtime/tools/payment.py \
+        kaji/sdk/kaji/runtime/tools/__init__.py \
+        kaji/sdk/kaji/__init__.py \
+        kaji/sdk/tests/test_tools_payment.py \
+        kaji/sdk/tests/test_public_surface.py
 git commit -m "feat(py-sdk): add request_payment agentpay bridge tool"
 ```
 
@@ -817,23 +817,23 @@ Create `apps/docs/content/install.mdx`:
 ````mdx
 ---
 title: Install
-description: Install agentkit in Python or TypeScript, pick the provider extras you need, and learn the v0.x compatibility policy.
+description: Install kaji in Python or TypeScript, pick the provider extras you need, and learn the v0.x compatibility policy.
 ---
 
-agentkit ships as two SDKs that share the same wire format. Install one
+kaji ships as two SDKs that share the same wire format. Install one
 per app; pick provider extras as needed. v0.x is alpha and minor versions
 may break the public surface — pin exact versions in production until 1.0.
 
 ## Python
 
 ```bash
-pip install "agentkit[openai]"          # one provider
-pip install "agentkit[openai,anthropic]" # multiple
-pip install "agentkit[providers]"        # all three: openai, anthropic, gemini
+pip install "kaji[openai]"          # one provider
+pip install "kaji[openai,anthropic]" # multiple
+pip install "kaji[providers]"        # all three: openai, anthropic, gemini
 ```
 
-The base install has no provider deps. `agentkit[openai]` adds the `openai`
-client, `agentkit[anthropic]` adds `anthropic`, `agentkit[gemini]` adds
+The base install has no provider deps. `kaji[openai]` adds the `openai`
+client, `kaji[anthropic]` adds `anthropic`, `kaji[gemini]` adds
 `google-genai`. The default Python provider is `kimi` (OpenRouter); it
 needs no extra package because it speaks the OpenAI chat-completions wire
 format. Set `KIMI_API_KEY` to use it.
@@ -846,29 +846,29 @@ Optional extras:
 | `anthropic`      | `anthropic`                              |
 | `gemini`         | `google-genai`                           |
 | `providers`      | all of the above                         |
-| `realtime`       | `redis` (for `agentkit-serve`)           |
+| `realtime`       | `redis` (for `kaji-serve`)           |
 | `google-tools`   | Google API clients (for tool sandboxes)  |
 | `dev-ui`         | `rich` (for prettier CLI output)         |
 
 ## TypeScript
 
 ```bash
-bun add @agentkit/sdk openai
-bun add @agentkit/sdk @anthropic-ai/sdk
+bun add @kaji/sdk openai
+bun add @kaji/sdk @anthropic-ai/sdk
 ```
 
-`@agentkit/sdk` lists `openai` and `@anthropic-ai/sdk` as optional peer
+`@kaji/sdk` lists `openai` and `@anthropic-ai/sdk` as optional peer
 dependencies. Install whichever you'll register as a provider. `zod` is
-already a runtime dep of `@agentkit/sdk`.
+already a runtime dep of `@kaji/sdk`.
 
 ## CLI
 
-The `agentkit` CLI is a separate package with the same UX in both
+The `kaji` CLI is a separate package with the same UX in both
 languages.
 
 ```bash
-pip install agentkit       # Python: brings `agentkit init/gen/...`
-bun add -D @agentkit/cli   # TypeScript: brings the same CLI surface plus `mcp`
+pip install kaji       # Python: brings `kaji init/gen/...`
+bun add -D @kaji/cli   # TypeScript: brings the same CLI surface plus `mcp`
 ```
 
 See [CLI](/docs/cli) for the full command list.
@@ -890,7 +890,7 @@ In `apps/docs/content/meta.json`, change:
 
 ```json
 {
-  "title": "agentkit",
+  "title": "kaji",
   "pages": ["index", "getting-started", "concepts", "architecture", "reference-service"]
 }
 ```
@@ -899,7 +899,7 @@ to:
 
 ```json
 {
-  "title": "agentkit",
+  "title": "kaji",
   "pages": ["index", "install", "getting-started", "cli", "concepts", "architecture", "reference-service", "troubleshooting"]
 }
 ```
@@ -917,12 +917,12 @@ In `apps/docs/content/getting-started.mdx`, replace the entire `### Install` ste
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```bash
-        pip install "agentkit[openai]"
+        pip install "kaji[openai]"
         ```
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun add @agentkit/sdk openai
+        bun add @kaji/sdk openai
         ```
       </Tab>
     </Tabs>
@@ -965,12 +965,12 @@ Create `apps/docs/content/cli.mdx`:
 ````mdx
 ---
 title: CLI
-description: The agentkit CLI scaffolds projects, generates tool stubs from OpenAPI specs, and inspects your environment. Same commands in Python and TypeScript.
+description: The kaji CLI scaffolds projects, generates tool stubs from OpenAPI specs, and inspects your environment. Same commands in Python and TypeScript.
 ---
 
-The CLI ships in two parity packages: `agentkit` (Python, `pip install
-agentkit`) and `@agentkit/cli` (TypeScript, `bun add -D @agentkit/cli`).
-Run `agentkit --help` to see the live list.
+The CLI ships in two parity packages: `kaji` (Python, `pip install
+kaji`) and `@kaji/cli` (TypeScript, `bun add -D @kaji/cli`).
+Run `kaji --help` to see the live list.
 
 ## Commands
 
@@ -978,17 +978,17 @@ Run `agentkit --help` to see the live list.
 | --------- | ------------------------------------------------------ | ------ | --- |
 | `init`    | Scaffold a new project (`agent.ts`/`.py`, `.env.example`) | ✓      | ✓   |
 | `gen`     | Generate tool stubs from an OpenAPI spec               | ✓      | ✓   |
-| `info`    | Show environment + installed agentkit packages         | ✓      | ✓   |
+| `info`    | Show environment + installed kaji packages         | ✓      | ✓   |
 | `secret`  | Generate a random 32-byte hex secret                   | ✓      | ✓   |
 | `doctor`  | Check the environment for common issues                | ✓      | ✓   |
-| `upgrade` | Upgrade installed agentkit packages                    | ✓      | ✓   |
-| `mcp`     | Register the agentkit MCP server with an AI tool       | --     | ✓   |
+| `upgrade` | Upgrade installed kaji packages                    | ✓      | ✓   |
+| `mcp`     | Register the kaji MCP server with an AI tool       | --     | ✓   |
 
 ## init
 
 ```bash
-agentkit init . --provider openai --yes              # python: scaffolds agent.py
-agentkit init --lang ts --provider openai --yes      # ts: scaffolds agent.ts
+kaji init . --provider openai --yes              # python: scaffolds agent.py
+kaji init --lang ts --provider openai --yes      # ts: scaffolds agent.ts
 ```
 
 Writes `agent.{py,ts}` and `.env.example` with the provider you chose
@@ -997,8 +997,8 @@ pre-filled. `--force` overwrites; `--yes` skips the interactive prompts.
 ## gen
 
 ```bash
-agentkit gen --spec openapi.yaml --out tools/ --lang python
-agentkit gen --spec openapi.yaml --out tools/ --lang ts
+kaji gen --spec openapi.yaml --out tools/ --lang python
+kaji gen --spec openapi.yaml --out tools/ --lang ts
 ```
 
 Parses an OpenAPI 3.x spec and emits one tool spec + handler per
@@ -1008,26 +1008,26 @@ TypeScript emitter writes `index.ts` (using `fetch`).
 ## info / doctor
 
 ```bash
-agentkit info                # shows platform, node/python, packages, providers
-agentkit info --json         # machine-readable
-agentkit doctor              # exit 1 if anything is wrong
+kaji info                # shows platform, node/python, packages, providers
+kaji info --json         # machine-readable
+kaji doctor              # exit 1 if anything is wrong
 ```
 
 `doctor` returns a non-zero exit code if any hard check fails (Python
->=3.11 / Node >=22, agentkit installed, at least one provider key in env).
+>=3.11 / Node >=22, kaji installed, at least one provider key in env).
 
 ## secret / upgrade
 
 ```bash
-agentkit secret              # prints AGENTKIT_SECRET=<64 hex chars>
-agentkit secret --json
-agentkit upgrade -y          # bumps @agentkit/* (TS) or agentkit/agentkit-* (PyPI)
+kaji secret              # prints KAJI_SECRET=<64 hex chars>
+kaji secret --json
+kaji upgrade -y          # bumps @kaji/* (TS) or kaji/kaji-* (PyPI)
 ```
 
 ## mcp (TypeScript only)
 
 ```bash
-agentkit mcp                 # interactive: pick tool (cursor/claude-code/...) and scope
+kaji mcp                 # interactive: pick tool (cursor/claude-code/...) and scope
 ```
 
 Writes the MCP server entry to the appropriate config file
@@ -1066,24 +1066,24 @@ Create `apps/docs/content/troubleshooting.mdx`:
 ````mdx
 ---
 title: Troubleshooting
-description: Common errors when importing agentkit, running a provider, or installing the CLI -- and how to fix each one.
+description: Common errors when importing kaji, running a provider, or installing the CLI -- and how to fix each one.
 ---
 
 If you see one of these errors, try the matching fix below.
 
 ## ModuleNotFoundError: No module named 'openai'
 
-You installed `agentkit` without the provider extra.
+You installed `kaji` without the provider extra.
 
 ```bash
-pip install "agentkit[openai]"        # or [anthropic] / [gemini] / [providers]
+pip install "kaji[openai]"        # or [anthropic] / [gemini] / [providers]
 ```
 
-The same applies in TypeScript -- `@agentkit/sdk` lists `openai` and
+The same applies in TypeScript -- `@kaji/sdk` lists `openai` and
 `@anthropic-ai/sdk` as optional peer deps. Install whichever you'll use:
 
 ```bash
-bun add @agentkit/sdk openai
+bun add @kaji/sdk openai
 ```
 
 ## ProviderConfigError: <PROVIDER>_API_KEY is required
@@ -1097,13 +1097,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export KIMI_API_KEY=...
 ```
 
-Run `agentkit doctor` to verify at least one provider key is present.
+Run `kaji doctor` to verify at least one provider key is present.
 
 ## Peer dep version mismatch (TS)
 
-If `bun add @agentkit/sdk openai` warns about a peer-dep version
+If `bun add @kaji/sdk openai` warns about a peer-dep version
 conflict, you probably have an older `openai` installed elsewhere in the
-workspace. `@agentkit/sdk` accepts `openai >=4 <8` and
+workspace. `@kaji/sdk` accepts `openai >=4 <8` and
 `@anthropic-ai/sdk >=0.30 <2`. Upgrade the dep or pin one that fits the
 range.
 
@@ -1114,7 +1114,7 @@ Three usual causes, in order of likelihood:
 1. The tool was registered with `RegisterTool` / `registerTool` but not
    passed to `AgentBuilder().tool(...)`. The runtime only sees tools
    bound to it.
-2. The model wasn't given the spec. Check `agentkit info --json` for the
+2. The model wasn't given the spec. Check `kaji info --json` for the
    provider, and confirm your provider's API supports function calling.
 3. The model decided not to call the tool. Reduce ambiguity in the
    tool's `description` and parameter docs.
@@ -1127,19 +1127,19 @@ between the turn and the read, it will be empty. Reuse the store; or, to
 stream events as they happen, subscribe to the bus -- see
 [event bus](/docs/concepts/event-bus).
 
-## `import agentkit` is slow
+## `import kaji` is slow
 
 The Python SDK uses PEP 562 lazy loading. The top-level import is
 cheap; first attribute access triggers a submodule import. If a specific
 name is slow on first access, import it directly from its subpackage
-(e.g. `from agentkit.runtime.tools.registry import ToolSpec`).
+(e.g. `from kaji.runtime.tools.registry import ToolSpec`).
 
-## agentkit CLI not on PATH after `pip install`
+## kaji CLI not on PATH after `pip install`
 
 Your shell hasn't picked up the new entrypoint. Restart the shell or
 run `hash -r` (bash/zsh). If the CLI is installed inside a virtualenv,
 activate the venv (`poetry shell` or `source .venv/bin/activate`)
-before running `agentkit`.
+before running `kaji`.
 ````
 
 - [ ] **Step 2: Build the docs**
@@ -1168,11 +1168,11 @@ git commit -m "docs: add troubleshooting page"
 - [ ] **Step 1: Read the source enum**
 
 Verify the Python event-type names by reading
-`agentkit/sdk/agentkit/infra/events/schemas.py` (the `class EventType(StrEnum)` block) and `agentkit/ts/src/events/types.ts` (the `enum EventType` block). They are identical strings; if they have diverged, surface that as a finding before continuing.
+`kaji/sdk/kaji/infra/events/schemas.py` (the `class EventType(StrEnum)` block) and `kaji/ts/src/events/types.ts` (the `enum EventType` block). They are identical strings; if they have diverged, surface that as a finding before continuing.
 
 ```bash
-grep -nE '"[a-z]+\.[a-z.]+"' agentkit/sdk/agentkit/infra/events/schemas.py | head -30
-grep -nE '"[a-z]+\.[a-z.]+"' agentkit/ts/src/events/types.ts | head -30
+grep -nE '"[a-z]+\.[a-z.]+"' kaji/sdk/kaji/infra/events/schemas.py | head -30
+grep -nE '"[a-z]+\.[a-z.]+"' kaji/ts/src/events/types.ts | head -30
 ```
 
 - [ ] **Step 2: Rewrite the events page**
@@ -1182,10 +1182,10 @@ Replace the entire contents of `apps/docs/content/concepts/events.mdx` with:
 ````mdx
 ---
 title: Events
-description: All agentkit session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
+description: All kaji session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
 ---
 
-Session state in agentkit is a deterministic projection of an append-only
+Session state in kaji is a deterministic projection of an append-only
 event log. The runtime appends events as you call `send`; `replaySession`
 reads them back into a usable `SessionState`.
 
@@ -1211,8 +1211,8 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 The canonical list is in the SDK source -- check there before relying on
 any event type:
 
-- Python: `agentkit/sdk/agentkit/infra/events/schemas.py`
-- TypeScript: `agentkit/ts/src/events/types.ts`
+- Python: `kaji/sdk/kaji/infra/events/schemas.py`
+- TypeScript: `kaji/ts/src/events/types.ts`
 
 ## Reading the log
 
@@ -1292,7 +1292,7 @@ into session state. You build one with `AgentBuilder`.
 | Method                            | Returns                       | Description                                                       |
 | --------------------------------- | ----------------------------- | ----------------------------------------------------------------- |
 | `send(session_id, text)`          | the final agent message       | Appends a `user.message` and runs one turn (may include tool loops). |
-| `history(session_id)`             | `list[AgentKitEvent]`         | All events appended to this session, in order.                    |
+| `history(session_id)`             | `list[KajiEvent]`         | All events appended to this session, in order.                    |
 | `subscribe(session_id)`           | async iterator of events      | Live event stream as they hit the bus.                            |
 | `replay(session_id)`              | `SessionState`                | Projection of the event log via `replaySession`.                  |
 
@@ -1306,7 +1306,7 @@ In Python, methods are snake_case (`send`, `history`, `subscribe`,
 <Tabs items={["python", "typescript"]}>
   <Tab value="python">
     ```python
-    from agentkit import AgentBuilder, GetProvider
+    from kaji import AgentBuilder, GetProvider
 
     runtime = (
         AgentBuilder()
@@ -1321,7 +1321,7 @@ In Python, methods are snake_case (`send`, `history`, `subscribe`,
   </Tab>
   <Tab value="typescript">
     ```ts
-    import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
+    import { AgentBuilder, OpenAIProvider } from "@kaji/sdk";
 
     const runtime = new AgentBuilder()
       .provider(new OpenAIProvider())
@@ -1394,8 +1394,8 @@ Expected: build succeeds.
 Cross-check the documented methods against the implementation:
 
 ```bash
-grep -nE "async def (send|history|subscribe|replay)\(" agentkit/sdk/agentkit/runtime/agents/runtime.py
-grep -nE "^  (send|history|subscribe|replay)\(" agentkit/ts/src/runtime/runtime.ts
+grep -nE "async def (send|history|subscribe|replay)\(" kaji/sdk/kaji/runtime/agents/runtime.py
+grep -nE "^  (send|history|subscribe|replay)\(" kaji/ts/src/runtime/runtime.ts
 ```
 
 If a documented method is missing from either runtime, **remove** it from the table -- do not invent code. The doc must match what ships.
@@ -1419,12 +1419,12 @@ git commit -m "docs: add concepts/runtime API reference"
 - [ ] **Step 1: Inspect the existing serve docker setup**
 
 ```bash
-ls /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/serve
+ls /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/serve
 ls /Users/Enkang.Yuan1/Desktop/Projects/alloy/docker 2>/dev/null || echo "no top-level docker dir"
-grep -lE "uvicorn|fastapi" /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/serve/agentkit_serve/*.py | head -3
+grep -lE "uvicorn|fastapi" /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/serve/kaji_serve/*.py | head -3
 ```
 
-You need to discover: which Python script launches each of the three processes (`api`, `bus-worker`, `worker`), and where the docker-compose file lives (project root `docker/` or under `agentkit/serve/`).
+You need to discover: which Python script launches each of the three processes (`api`, `bus-worker`, `worker`), and where the docker-compose file lives (project root `docker/` or under `kaji/serve/`).
 
 If you cannot find a runnable command for any one of the three processes, STOP and report it as DONE_WITH_CONCERNS rather than fabricating commands. The doc must reflect the actual runnable contract.
 
@@ -1435,10 +1435,10 @@ Replace `apps/docs/content/reference-service.mdx` with:
 ````mdx
 ---
 title: Reference Service
-description: agentkit-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice. This page shows how to run them.
+description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice. This page shows how to run them.
 ---
 
-`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes
+`kaji-serve` (`kaji/serve`) wraps the SDK as three processes
 over Redis so heavy tool execution never stalls a real-time exchange.
 
 | Process      | Role                                                      | Port |
@@ -1456,7 +1456,7 @@ time.
 The fastest path. Provides Redis automatically.
 
 ```bash
-cd agentkit/serve
+cd kaji/serve
 docker compose up
 ```
 
@@ -1472,22 +1472,22 @@ If you already have a Redis instance, you can start each process by hand
 in three separate terminals.
 
 ```bash
-cd agentkit/serve
+cd kaji/serve
 poetry install
 export REDIS_URL=redis://localhost:6379/0
 
 # Terminal 1: api
-poetry run uvicorn agentkit_serve.api.app:app --host 0.0.0.0 --port 8000
+poetry run uvicorn kaji_serve.api.app:app --host 0.0.0.0 --port 8000
 
 # Terminal 2: bus-worker
-poetry run python -m agentkit_serve.workers.bus
+poetry run python -m kaji_serve.workers.bus
 
 # Terminal 3: worker
-poetry run python -m agentkit_serve.workers.tools
+poetry run python -m kaji_serve.workers.tools
 ```
 
-If any of those module paths differ in your tree, run `agentkit doctor`
-inside `agentkit/serve` and follow the hints, then update the commands
+If any of those module paths differ in your tree, run `kaji doctor`
+inside `kaji/serve` and follow the hints, then update the commands
 above.
 
 ## When to use the reference service
@@ -1529,7 +1529,7 @@ git commit -m "docs: add runnable commands to reference-service page"
 - [ ] **Step 1: Em-dash scan**
 
 ```bash
-grep -rn '—' /Users/Enkang.Yuan1/Desktop/Projects/alloy/apps/docs/content/ /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/sdk/agentkit/runtime/tools/payment.py /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/ts/src/tools/payment.ts 2>&1 | grep -v '^Binary' || echo "no em-dashes"
+grep -rn '—' /Users/Enkang.Yuan1/Desktop/Projects/alloy/apps/docs/content/ /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/sdk/kaji/runtime/tools/payment.py /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/ts/src/tools/payment.ts 2>&1 | grep -v '^Binary' || echo "no em-dashes"
 ```
 Expected: `no em-dashes`. If anything matches, edit to replace `—` with `-`, `--`, or a comma.
 
@@ -1538,7 +1538,7 @@ Expected: `no em-dashes`. If anything matches, edit to replace `—` with `-`, `
 Run an ast-grep pattern that flags any direct `import 'openai'` or `import '@anthropic-ai/sdk'` at the top level of `payment.ts` (those would defeat the optional-peer-dep gating).
 
 ```bash
-cd /Users/Enkang.Yuan1/Desktop/Projects/alloy/agentkit/ts
+cd /Users/Enkang.Yuan1/Desktop/Projects/alloy/kaji/ts
 bun x ast-grep --pattern 'import $X from "openai"' --lang ts src/tools/payment.ts 2>&1 | head -5
 bun x ast-grep --pattern 'import $X from "@anthropic-ai/sdk"' --lang ts src/tools/payment.ts 2>&1 | head -5
 ```
@@ -1547,16 +1547,16 @@ Expected: both empty. If either matches, `payment.ts` is accidentally importing 
 If `ast-grep` is not installed, fall back to:
 
 ```bash
-grep -nE "from \"(openai|@anthropic-ai/sdk)\"" agentkit/ts/src/tools/payment.ts
+grep -nE "from \"(openai|@anthropic-ai/sdk)\"" kaji/ts/src/tools/payment.ts
 ```
 
 - [ ] **Step 3: Re-run all the test suites**
 
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-bun --filter @agentkit/sdk test 2>&1 | tail -5
-bun --filter @agentkit/cli test 2>&1 | tail -5
-cd agentkit/sdk && poetry run pytest -q --ignore=tests/integration 2>&1 | tail -5
+bun --filter @kaji/sdk test 2>&1 | tail -5
+bun --filter @kaji/cli test 2>&1 | tail -5
+cd kaji/sdk && poetry run pytest -q --ignore=tests/integration 2>&1 | tail -5
 ```
 Expected: every suite green.
 
@@ -1590,15 +1590,15 @@ assessment. Voice modality work is excluded as requested.
 - Add `install`, `cli`, `troubleshooting` pages.
 - Add `concepts/runtime` API reference.
 - Inline the event-type enum on `concepts/events`.
-- Replace the wrong `cd agentkit/sdk && poetry install` instructions in `getting-started` with the published-package commands.
+- Replace the wrong `cd kaji/sdk && poetry install` instructions in `getting-started` with the published-package commands.
 - Add real run commands to `reference-service`.
 
 ## Test plan
-- [ ] `bun --filter @agentkit/sdk test`
-- [ ] `bun --filter @agentkit/cli test`
-- [ ] `cd agentkit/sdk && poetry run pytest -q --ignore=tests/integration`
+- [ ] `bun --filter @kaji/sdk test`
+- [ ] `bun --filter @kaji/cli test`
+- [ ] `cd kaji/sdk && poetry run pytest -q --ignore=tests/integration`
 - [ ] `bun --filter docs build`
-- [ ] Manual: `pip install -e ./agentkit/sdk[openai]` from a fresh venv, then `python -c "from agentkit.runtime.tools.payment import RequestPaymentTool; print('ok')"`
+- [ ] Manual: `pip install -e ./kaji/sdk[openai]` from a fresh venv, then `python -c "from kaji.runtime.tools.payment import RequestPaymentTool; print('ok')"`
 EOF
 )"
 ```
@@ -1629,7 +1629,7 @@ Docs items from the assessment:
 
 | Assessment finding                                                  | Task |
 | ------------------------------------------------------------------- | ---- |
-| `cd agentkit/sdk && poetry install` install command is wrong        | 7    |
+| `cd kaji/sdk && poetry install` install command is wrong        | 7    |
 | No install/extras matrix or version policy                          | 7    |
 | No CLI page                                                         | 8    |
 | No troubleshooting page                                             | 9    |
@@ -1646,11 +1646,11 @@ Items intentionally NOT covered (out of scope per "excluding voice"):
 
 Items addressed in review tooling (Task 13): ast-grep on `payment.ts` (per the user request), em-dash sweep, full test re-run, docs build re-check.
 
-**Placeholder scan:** every task ships exact code, exact commands, and exact expected output. No "TODO", "implement later", "fill in details". The only conditional-on-discovery step is Task 12 Step 1 (find the actual run commands in `agentkit/serve`) -- and the plan explicitly says to escalate as DONE_WITH_CONCERNS rather than fabricate.
+**Placeholder scan:** every task ships exact code, exact commands, and exact expected output. No "TODO", "implement later", "fill in details". The only conditional-on-discovery step is Task 12 Step 1 (find the actual run commands in `kaji/serve`) -- and the plan explicitly says to escalate as DONE_WITH_CONCERNS rather than fabricate.
 
 **Type consistency:**
 - TS: `requestPayment` returns `{ spec: ToolSpec; handler: ToolHandler }`. Both types come from `./registry` and are already exported.
-- Python: `RequestPaymentTool` returns `tuple[ToolSpec, PaymentHandler]` where `PaymentHandler = Callable[[Any, dict[str, Any]], Awaitable[Any]]`. `ToolSpec` is the existing dataclass from `agentkit.runtime.tools.registry`.
+- Python: `RequestPaymentTool` returns `tuple[ToolSpec, PaymentHandler]` where `PaymentHandler = Callable[[Any, dict[str, Any]], Awaitable[Any]]`. `ToolSpec` is the existing dataclass from `kaji.runtime.tools.registry`.
 - Surface-pinning test in Task 4 includes `ToolSpec`; Task 6 adds `RequestPaymentTool` to both the lazy map AND the test's `EXPECTED_PUBLIC` set so the regression bar stays accurate.
 
 ## Execution Handoff

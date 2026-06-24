@@ -15,17 +15,17 @@ reading current source on `main`.
 
 **Python — OpenAI:**
 ```bash
-AGENTKIT_MODEL_PROVIDER=openai OPENAI_API_KEY=sk-... python -c "import agentkit"
+KAJI_MODEL_PROVIDER=openai OPENAI_API_KEY=sk-... python -c "import kaji"
 ```
 
 **Python — Kimi / OpenRouter:**
 ```bash
-OPENROUTER_API_KEY=sk-or-... python -c "import agentkit"  # provider defaults to kimi
+OPENROUTER_API_KEY=sk-or-... python -c "import kaji"  # provider defaults to kimi
 ```
 
 **Python — Gemini:**
 ```bash
-AGENTKIT_MODEL_PROVIDER=gemini GEMINI_API_KEY=... python -c "import agentkit"
+KAJI_MODEL_PROVIDER=gemini GEMINI_API_KEY=... python -c "import kaji"
 # Note: model hardcoded to gemini-2.5-flash regardless of GEMINI_MODEL config
 ```
 
@@ -36,7 +36,7 @@ AGENTKIT_MODEL_PROVIDER=gemini GEMINI_API_KEY=... python -c "import agentkit"
 
 ## 1. Provider status
 
-### Python (`agentkit/sdk`)
+### Python (`kaji/sdk`)
 
 | Provider | Status | Env vars | Notes |
 | --- | --- | --- | --- |
@@ -46,14 +46,14 @@ AGENTKIT_MODEL_PROVIDER=gemini GEMINI_API_KEY=... python -c "import agentkit"
 | `anthropic` | Missing | — | No implementation. Not in `pyproject.toml`. ~3h to add, same shape as `providers/openai.py`. |
 | `mock` | Works | none | Drives full tool loop with no network. All unit tests use it. |
 
-### TypeScript (`agentkit/ts`)
+### TypeScript (`kaji/ts`)
 
 **Updated 2026-06-11:** `OpenAIProvider` and `AnthropicProvider` now ship and
-are exported from the top-level `@agentkit/sdk` package. Both are optional-dep
+are exported from the top-level `@kaji/sdk` package. Both are optional-dep
 lazy-loaded (tree-shake safe). Quick start:
 
 ```ts
-import { OpenAIProvider, registerProvider, AgentRuntime } from "@agentkit/sdk";
+import { OpenAIProvider, registerProvider, AgentRuntime } from "@kaji/sdk";
 registerProvider("openai", new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY }));
 ```
 
@@ -135,7 +135,7 @@ returns `None`. The routing surface exists but is a stub.
 
 ---
 
-## 6. agentkit-serve gaps
+## 6. kaji-serve gaps
 
 | Item | Status | Notes |
 | --- | --- | --- |
@@ -186,7 +186,7 @@ means running manually with real API keys.
 
 | Feature (landing page) | Today | 6 weeks |
 | --- | --- | --- |
-| Works with your stack (Python + TS) | Partial — TS has no providers; no CLI scaffold | Achievable — TS providers + `agentkit init` |
+| Works with your stack (Python + TS) | Partial — TS has no providers; no CLI scaffold | Achievable — TS providers + `kaji init` |
 | Event-sourced runtime | Done | Done |
 | Tool registry + toolgen | Partial — registry done; ToolGen (build-time code generation) not implemented | Partial — ToolGen V0 (OpenAPI source) is ~1 week; full pipeline is months |
 | Pluggable LLM providers | Partial — Python: OpenAI/Kimi work; Gemini partial; Anthropic missing. TS: interface only. | Achievable — Anthropic (Py) + OpenAI/Anthropic (TS) |
@@ -202,7 +202,7 @@ means running manually with real API keys.
 
 ~~1. **Anthropic provider (Python)**~~ — Done. `providers/anthropic.py` ships; `anthropic` in `pyproject.toml`.
 ~~2. **Fix Gemini model name**~~ — Done. Reads `GEMINI_MODEL` from config.
-~~3. **OpenAI + Anthropic provider adapters (TypeScript)**~~ — Done. Both ship and export from `@agentkit/sdk`.
+~~3. **OpenAI + Anthropic provider adapters (TypeScript)**~~ — Done. Both ship and export from `@kaji/sdk`.
 ~~4a. **`AgentRuntime.send()` (TypeScript)**~~ — Done.
 ~~4b. **`AgentStrategy.maxToolIterations` (TypeScript)**~~ — Done. Was hardcoded to 10.
 ~~4c. **`ModelProvider` interface hardening**~~ — Done. `temperature`, `maxTokens`, `cancellationToken` added.
@@ -212,7 +212,7 @@ means running manually with real API keys.
 ~~5. **Integration base class + namespaced tools + risk labels**~~ — Done. `Integration` ABC (Python + TS), `ToolSpec.risk` field, namespace-prefix registration via `register(registry)`. Tests: 4 Python + 4 TS.
 ~~6. **Approval events + `ToolPolicy` upgrade**~~ — Done. `ToolPolicy` (Python + TS) with allow/deny lists + risk-gated approval. `ToolPlanner` emits `TOOL_APPROVAL_REQUESTED/APPROVED/REJECTED`; fail-safe: no handler = rejected.
 ~~7. **`Agent` facade**~~ — Done as `AgentBuilder` (builder pattern, cleaner long-term than constructor params). Fluent `.provider().integration().policy().build()` in both SDKs. Tests: 4 Python + 4 TS.
-~~8. **ToolGen V0**~~ — Done as `agentkit gen --spec <openapi.json> --out <dir>` in `@agentkit/cli`. Emits `ToolSpec[]` + fetch-based stub handlers. Risk inferred from HTTP method. Zero new runtime deps.
+~~8. **ToolGen V0**~~ — Done as `kaji gen --spec <openapi.json> --out <dir>` in `@kaji/cli`. Emits `ToolSpec[]` + fetch-based stub handlers. Risk inferred from HTTP method. Zero new runtime deps.
 
 ~~3. **`@tool` decorator**~~ — Done. `tool(meta, fn)` in `integrations/base.ts`; overload on `ToolRegistry.register` + `registerTool` auto-derives spec from tagged handler.
 ~~4. **`TOOL_CALL_FAILED` projection (TS)**~~ — Done. Replay projects failed tool calls; `AgentRuntime` emits `TOOL_CALL_FAILED` on execution errors.
@@ -227,7 +227,7 @@ Also resolved (not originally tracked):
 
 Remaining:
 1. **Integration test scaffold** — `pytest -m integration` harness (Python) + Vitest integration suite (TS) gated behind env flag. ~1d.
-2. **`agentkit init` CLI** — scaffold exists (`apps/cli/src/commands/init.ts`) but is a stub (no file writes, no real setup). ~1-2d.
+2. **`kaji init` CLI** — scaffold exists (`apps/cli/src/commands/init.ts`) but is a stub (no file writes, no real setup). ~1-2d.
 
 <!-- TODO(task-12): Voice — Deepgram STT + barge-in
      Why Deepgram over Soniox for barge-in: Deepgram emits structured VAD events
@@ -283,10 +283,10 @@ ToolGen is the build-time pipeline that converts APIs, schemas, and app metadata
 **What ToolGen produces** (target output, none exists today):
 
 ```
-agentkit_billing/
+kaji_billing/
   pyproject.toml
   integration.yaml        ← manifest
-  agentkit_billing/
+  kaji_billing/
     integration.py        ← Integration subclass
     tools.py              ← @tool handlers (stubs, ready to fill)
     schemas.py            ← Pydantic request/response models
@@ -301,11 +301,11 @@ agentkit_billing/
 
 | Source | CLI | Status | Notes |
 | --- | --- | --- | --- |
-| OpenAPI spec | `agentkit toolgen from-openapi ./spec.yaml` | Missing | Highest leverage; most APIs have one |
-| MCP server | `agentkit toolgen from-mcp github` | Missing | Wraps MCP as an Integration, adds policy/approval layer |
-| Postgres schema | `agentkit toolgen from-postgres $DATABASE_URL` | Missing | Infers business entities from table/column names |
-| Airtable base | `agentkit toolgen from-airtable --base app123` | Missing | SaaS-specific; generates domain tools from base schema |
-| Docs / runbooks | `agentkit toolgen from-docs ./docs` | Missing | Advanced; requires human review before use |
+| OpenAPI spec | `kaji toolgen from-openapi ./spec.yaml` | Missing | Highest leverage; most APIs have one |
+| MCP server | `kaji toolgen from-mcp github` | Missing | Wraps MCP as an Integration, adds policy/approval layer |
+| Postgres schema | `kaji toolgen from-postgres $DATABASE_URL` | Missing | Infers business entities from table/column names |
+| Airtable base | `kaji toolgen from-airtable --base app123` | Missing | SaaS-specific; generates domain tools from base schema |
+| Docs / runbooks | `kaji toolgen from-docs ./docs` | Missing | Advanced; requires human review before use |
 
 **Pipeline stages** (target, none implemented):
 

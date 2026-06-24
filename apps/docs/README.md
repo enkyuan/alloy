@@ -7,7 +7,7 @@ Run development server:
 
 ```bash
 # From the repo root
-bun --filter @agentkit/docs dev
+bun --filter @kaji/docs dev
 # Or from this directory
 bun dev
 ```

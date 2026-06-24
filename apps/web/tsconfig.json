@@ -1,5 +1,5 @@
 {
-  "extends": "@agentkit/shared/tsconfig/react",
+  "extends": "@kaji/shared/tsconfig/react",
   "compilerOptions": {
     "types": ["vite/client", "node"],
     "allowImportingTsExtensions": true,

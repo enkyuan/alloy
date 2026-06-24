@@ -12,7 +12,7 @@ export const AgentkitWordmark = ({ className }: { className?: string }) => {
           fill="#FF6E3C"
         />
       </svg>
-      <span className="text-lg font-semibold tracking-tight text-foreground">agentkit</span>
+      <span className="text-lg font-semibold tracking-tight text-foreground">kaji</span>
     </span>
   );
 };

@@ -1,9 +1,9 @@
 ---
 title: Reference Service
-description: agentkit-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice. This page shows how to run them.
+description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice. This page shows how to run them.
 ---
 
-`agentkit-serve` (`agentkit/serve`) wraps the SDK as three processes
+`kaji-serve` (`kaji/serve`) wraps the SDK as three processes
 over Redis so heavy tool execution never stalls a real-time exchange.
 
 | Process      | Role                                                      | Port |
@@ -21,7 +21,7 @@ time.
 The fastest path. Provides Redis automatically.
 
 ```bash
-cd docker/agentkit
+cd docker/kaji
 docker compose up
 ```
 
@@ -37,18 +37,18 @@ If you already have a Redis instance, you can start each process by hand
 in three separate terminals.
 
 ```bash
-cd agentkit/serve
+cd kaji/serve
 poetry install
 export REDIS_URL=redis://localhost:6379/0
 
 # Terminal 1: api
-poetry run uvicorn agentkit_serve.server.app:app --host 0.0.0.0 --port 8080
+poetry run uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
 
 # Terminal 2: bus-worker
-poetry run python -m agentkit_serve.workers.main
+poetry run python -m kaji_serve.workers.main
 
 # Terminal 3: worker
-poetry run taskiq worker agentkit_serve.workers.broker:broker agentkit_serve.workers.tasks.tools
+poetry run taskiq worker kaji_serve.workers.broker:broker kaji_serve.workers.tasks.tools
 ```
 
 ## When to use the reference service

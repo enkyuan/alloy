@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Migrate the better-auth docs app's design system + landing page into alloy's `apps/docs` 1:1 (rebranded to agentkit, using `shape-40.svg`), then produce a TS-vs-Python SDK gap report with a prioritized closure plan.
+**Goal:** Migrate the better-auth docs app's design system + landing page into alloy's `apps/docs` 1:1 (rebranded to kaji, using `shape-40.svg`), then produce a TS-vs-Python SDK gap report with a prioritized closure plan.
 
 **Architecture:** Both apps are fumadocs 16 + Tailwind 4 + Next 16. We swap alloy's *design layer* (CSS tokens, fonts, UI component library, MDX component specs, custom docs sidebar, landing) while keeping alloy's working content pipeline (`collections/server`, `source.config.ts`, `proxy.ts`, `app/llms.txt`, `app/og`). Dependencies are matched to better-auth exactly. The SDK review is a written report only — no SDK code changes.
 
@@ -26,7 +26,7 @@
 - `components/ui/*.tsx` — 22 primitives
 - `components/docs/mdx-components.tsx`, `components/docs/docs-sidebar.tsx`, `components/docs/custom-sidebar.tsx`, `components/docs/icons.tsx`
 - `components/mdx/mermaid.tsx`
-- `components/sidebar-content.tsx` — hand-authored agentkit nav tree
+- `components/sidebar-content.tsx` — hand-authored kaji nav tree
 - `components/version-switcher.tsx`, `components/theme-toggle.tsx`, `components/providers.tsx`, `components/search-dialog.tsx`
 - `components/landing/*.tsx` — landing suite
 - `lib/docs-versions.ts`, `lib/metadata.ts`
@@ -396,7 +396,7 @@ Expected: PASS.
 
 ```bash
 git add apps/docs/components/icons.tsx apps/docs/public/logo.svg
-git commit -m "feat(docs): adopt shape-40 agentkit logo mark"
+git commit -m "feat(docs): adopt shape-40 kaji logo mark"
 ```
 
 ---
@@ -420,11 +420,11 @@ cp /Users/Enkang.Yuan1/Desktop/Projects/better-auth/docs/lib/metadata.ts apps/do
 
 - [ ] **Step 2: Reconcile `version-switcher.tsx` to single-version**
 
-alloy has no beta docs. Open `components/version-switcher.tsx`; if `SidebarVersionSwitcher` hardcodes better-auth version paths, simplify it to render a static "agentkit" label (or the current version from `apps/docs/package.json`). Keep the export name `SidebarVersionSwitcher` so the sidebar import (Task 8) resolves.
+alloy has no beta docs. Open `components/version-switcher.tsx`; if `SidebarVersionSwitcher` hardcodes better-auth version paths, simplify it to render a static "kaji" label (or the current version from `apps/docs/package.json`). Keep the export name `SidebarVersionSwitcher` so the sidebar import (Task 8) resolves.
 
 - [ ] **Step 3: Reconcile `search-dialog.tsx` and `metadata.ts`**
 
-`search-dialog.tsx`: keep as-is if it only uses fumadocs search context; if it imports typesense, replace the search source with alloy's default fumadocs search (`/api/search` already exists at `app/api/search/route.ts`). `metadata.ts`: ensure `createMetadata` defaults reference agentkit (title "agentkit"), not Better Auth.
+`search-dialog.tsx`: keep as-is if it only uses fumadocs search context; if it imports typesense, replace the search source with alloy's default fumadocs search (`/api/search` already exists at `app/api/search/route.ts`). `metadata.ts`: ensure `createMetadata` defaults reference kaji (title "kaji"), not Better Auth.
 
 - [ ] **Step 4: Typecheck**
 
@@ -440,7 +440,7 @@ git commit -m "feat(docs): port providers, theme-toggle, version-switcher, searc
 
 ---
 
-### Task 8: Port custom docs sidebar + hand-author agentkit nav tree
+### Task 8: Port custom docs sidebar + hand-author kaji nav tree
 
 **Files:**
 - Create: `apps/docs/components/docs/docs-sidebar.tsx`, `apps/docs/components/docs/custom-sidebar.tsx`
@@ -454,9 +454,9 @@ cp /Users/Enkang.Yuan1/Desktop/Projects/better-auth/docs/components/docs/docs-si
 cp /Users/Enkang.Yuan1/Desktop/Projects/better-auth/docs/components/docs/custom-sidebar.tsx apps/docs/components/docs/
 ```
 
-- [ ] **Step 2: Author `components/sidebar-content.tsx` for agentkit**
+- [ ] **Step 2: Author `components/sidebar-content.tsx` for kaji**
 
-Copy better-auth's `sidebar-content.tsx` as the structural template, then replace its `contents` array with an agentkit nav tree mirroring `apps/docs/content/docs`. Use this tree (icons from lucide-react, matching the `ListItem`/`Section` types the template defines):
+Copy better-auth's `sidebar-content.tsx` as the structural template, then replace its `contents` array with an kaji nav tree mirroring `apps/docs/content/docs`. Use this tree (icons from lucide-react, matching the `ListItem`/`Section` types the template defines):
 
 ```tsx
 // contents: one Section per group, list items point at /docs/* routes
@@ -536,7 +536,7 @@ Run dev server, load `/docs`, confirm the custom sidebar renders with both secti
 
 ```bash
 git add apps/docs/components/docs apps/docs/components/sidebar-content.tsx apps/docs/app/docs/layout.tsx
-git commit -m "feat(docs): port custom docs sidebar + agentkit nav tree"
+git commit -m "feat(docs): port custom docs sidebar + kaji nav tree"
 ```
 
 ---
@@ -613,7 +613,7 @@ git commit -m "feat(docs): port root layout (geist fonts, providers, nav overlay
 
 ---
 
-### Task 10: Port landing page (rebranded to agentkit)
+### Task 10: Port landing page (rebranded to kaji)
 
 **Files:**
 - Create: `apps/docs/components/landing/*.tsx` (hero-title, hero-readme, line-field-bg, signature-mark, staggered-nav-files, footer, trusted-by, framework-sections, halftone-bg, logo-context-menu)
@@ -637,7 +637,7 @@ rm -rf "apps/docs/app/(home)"
 - [ ] **Step 3: Rebrand copy + data**
 
 Across `apps/docs/components/landing/*` and `app/page.tsx`, replace:
-  - "Better Auth" / "better-auth" / "Better Auth Inc." → "agentkit"
+  - "Better Auth" / "better-auth" / "Better Auth Inc." → "kaji"
   - Hero tagline → "The embeddable SDK for building voice agents" (or the description string from `lib/shared`/metadata).
   - Hero CTA links → `/docs/getting-started` (Get Started) and the alloy GitHub repo (`https://github.com/enkyuan/alloy`).
   - Footer links → keep Docs (`/docs`) + GitHub; remove links to non-existent routes (blog/pricing/careers/changelog/legal) or point them at `/docs`.
@@ -665,7 +665,7 @@ Expected: PASS or pre-existing-only warnings.
 ```bash
 git add apps/docs/components/landing apps/docs/app/page.tsx
 git rm -r "apps/docs/app/(home)"
-git commit -m "feat(docs): port rebranded agentkit landing page"
+git commit -m "feat(docs): port rebranded kaji landing page"
 ```
 
 ---
@@ -737,7 +737,7 @@ Expected: PASS, no type/lint/compile errors.
 - [ ] **Step 2: Start dev server and QA via /browse**
 
 Run dev server. Use the gstack `/browse` skill (per CLAUDE.md, never use chrome MCP directly) to load:
-  - `/` — landing renders, hero + nav + footer present, agentkit branding, shape-40 logo, no "Better Auth" strings, no console errors.
+  - `/` — landing renders, hero + nav + footer present, kaji branding, shape-40 logo, no "Better Auth" strings, no console errors.
   - `/docs` — custom sidebar with Get Started + Concepts sections, active-state tracking, MDX content styled (code blocks flat dark, callouts/cards styled), theme toggle works.
   - Toggle dark/light — tokens apply correctly.
 
@@ -770,7 +770,7 @@ git commit -m "fix(docs): QA fixes from browse review"
 
 Create `docs/sdk-gap-analysis.md` with these sections (content is fully derived from the triage already done — see the design doc §B2/§B3):
 
-  1. **Scope** — TS `agentkit/ts/src` vs Python `agentkit/sdk/agentkit`, serve excluded. Note both share an event-sourced core.
+  1. **Scope** — TS `kaji/ts/src` vs Python `kaji/sdk/kaji`, serve excluded. Note both share an event-sourced core.
   2. **Surface map** — table: module → exists in Python / exists in TS, for events, store, bus, replay, tools, runtime, providers, voice, knowledge, core infra, sessions, cancellation.
   3. **Aligned** — EventType taxonomy (identical), EventStore interface, tool registry shape (modulo naming).
   4. **Missing in TS** — real providers (openai/kimi/gemini), voice/STT/TTS, knowledge/RAG, core infra (config/redis/db/auth/observability), SessionManager/SessionStore, AgentStrategy, ToolPlanner, Swarm, neutral tool-payload translators.
@@ -785,10 +785,10 @@ Create `docs/sdk-gap-analysis.md` with these sections (content is fully derived 
 For each "alignment issue", re-open the cited TS and Python file and confirm the claim still holds (memories/triage are point-in-time). Fix any drifted claim.
 
 Files to spot-check:
-  - `agentkit/ts/src/tools/registry.ts` vs `agentkit/sdk/agentkit/runtime/tools/registry.py` (ToolContext naming)
-  - `agentkit/ts/src/providers/base.ts` vs `agentkit/sdk/agentkit/runtime/providers/base.py` (tool-call shape, generate params)
-  - `agentkit/ts/src/sessions/replay.ts` vs `agentkit/sdk/agentkit/infra/events/replay.py` (toolCallId, failure projection)
-  - `agentkit/ts/src/events/bus.ts` vs `agentkit/sdk/agentkit/infra/events/bus.py` (publish/subscribe contract)
+  - `kaji/ts/src/tools/registry.ts` vs `kaji/sdk/kaji/runtime/tools/registry.py` (ToolContext naming)
+  - `kaji/ts/src/providers/base.ts` vs `kaji/sdk/kaji/runtime/providers/base.py` (tool-call shape, generate params)
+  - `kaji/ts/src/sessions/replay.ts` vs `kaji/sdk/kaji/infra/events/replay.py` (toolCallId, failure projection)
+  - `kaji/ts/src/events/bus.ts` vs `kaji/sdk/kaji/infra/events/bus.py` (publish/subscribe contract)
 
 - [ ] **Step 3: Commit**
 

@@ -32,26 +32,26 @@ export const moreProviders = [
 ];
 
 export const providerSnippets: Record<string, string> = {
-  OpenAI: `import { AgentBuilder, EventBus, InMemoryEventStore, openai } from "@agentkit/sdk"
+  OpenAI: `import { AgentBuilder, EventBus, InMemoryEventStore, openai } from "@kaji/sdk"
 
 const runtime = new AgentBuilder()
   .provider(openai("gpt-4o"))
   .build({ bus: new EventBus(), store: new InMemoryEventStore() })`,
-  OpenRouter: `import { openrouter } from "@agentkit/sdk"
+  OpenRouter: `import { openrouter } from "@kaji/sdk"
 
 provider: openrouter("anthropic/claude-sonnet-4-5")`,
-  Kimi: `import { kimi } from "@agentkit/sdk"
+  Kimi: `import { kimi } from "@kaji/sdk"
 
 provider: kimi()`,
-  Gemini: `import { gemini } from "@agentkit/sdk"
+  Gemini: `import { gemini } from "@kaji/sdk"
 
 provider: gemini("gemini-2.5-flash")`,
-  Anthropic: `import { anthropic } from "@agentkit/sdk"
+  Anthropic: `import { anthropic } from "@kaji/sdk"
 
 provider: anthropic("claude-sonnet-4-6")`,
 };
 
-export const serverCodeTs = `import { EventType } from "@agentkit/sdk"
+export const serverCodeTs = `import { EventType } from "@kaji/sdk"
 
 // Send a message and stream the response
 const session = crypto.randomUUID()
@@ -66,7 +66,7 @@ for await (const event of bus.subscribe(session)) {
   }
 }`;
 
-export const serverCodePy = `from agentkit.infra.events.types import EventType
+export const serverCodePy = `from kaji.infra.events.types import EventType
 
 # Send a message and stream the response
 session_id = "s1"

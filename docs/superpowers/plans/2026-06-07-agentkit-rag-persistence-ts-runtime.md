@@ -1,14 +1,14 @@
-<!-- /autoplan restore point: /Users/Enkang.Yuan1/.gstack/projects/enkyuan-alloy/feat-agentkit-rag-persistence-ts-runtime-autoplan-restore-20260607-132529.md -->
-# AgentKit: Document RAG + Durable Persistence + TS Runtime Parity
+<!-- /autoplan restore point: /Users/Enkang.Yuan1/.gstack/projects/enkyuan-alloy/feat-kaji-rag-persistence-ts-runtime-autoplan-restore-20260607-132529.md -->
+# Kaji: Document RAG + Durable Persistence + TS Runtime Parity
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close four roadmap gaps across the two AgentKit SDKs without breaking the infra-free guarantee (`import agentkit` / `import @agentkit/sdk` must work with zero env, and an agent must run end-to-end with in-memory + mock).
+**Goal:** Close four roadmap gaps across the two Kaji SDKs without breaking the infra-free guarantee (`import kaji` / `import @kaji/sdk` must work with zero env, and an agent must run end-to-end with in-memory + mock).
 
-- **Phase 1 (Python, `agentkit/sdk/`):**
+- **Phase 1 (Python, `kaji/sdk/`):**
   1. Document/knowledge RAG subsystem (ROADMAP item 14): ingestion → chunking → embedding → in-memory vector store → retrieval-over-corpus. Pluggable backends mirroring the existing `ToolRetriever` `Embedder`/`EmbeddingCache` protocol. Infra-free default.
   2. Durable session persistence (ROADMAP item 16): a `SessionStore` interface in the SDK + a real `list_active` on `SessionManager` (today it returns `[]`).
-- **Phase 2 (TypeScript, `agentkit/ts/`):** full agent-runtime parity (ROADMAP items 25-28): `ModelProvider` interface + registry + mock provider + `AgentRuntime.runTurn` port + tool-loop glue + settle the sync-vs-async `publish` question (already `async` in `bus.ts:69` — confirm and lock it).
+- **Phase 2 (TypeScript, `kaji/ts/`):** full agent-runtime parity (ROADMAP items 25-28): `ModelProvider` interface + registry + mock provider + `AgentRuntime.runTurn` port + tool-loop glue + settle the sync-vs-async `publish` question (already `async` in `bus.ts:69` — confirm and lock it).
 
 **Reference implementation:** The Python SDK is canonical. The TS port matches its public surface, event names (snake_case wire format), and the tool-lifecycle event sequence (`ToolCallRequested → ToolCallStarted → ToolCallCompleted | ToolCallFailed`).
 
@@ -23,10 +23,10 @@
 These are the load-bearing choices. The /autoplan review should pressure-test them.
 
 ### D-A. RAG reuses the `Embedder` protocol, does NOT fork it
-`agentkit/sdk/agentkit/runtime/tools/retriever.py` already defines `Embedder` (async `embed(text) -> List[float]`) and `cosine_similarity`. The document RAG store reuses the *same* `Embedder` protocol so one embedder instance serves both tool-RAG and doc-RAG. The new `VectorStore` is a separate concern (it stores chunked documents, not tool names), but it depends on the existing `Embedder`, not a new one. DRY (principle 4).
+`kaji/sdk/kaji/runtime/tools/retriever.py` already defines `Embedder` (async `embed(text) -> List[float]`) and `cosine_similarity`. The document RAG store reuses the *same* `Embedder` protocol so one embedder instance serves both tool-RAG and doc-RAG. The new `VectorStore` is a separate concern (it stores chunked documents, not tool names), but it depends on the existing `Embedder`, not a new one. DRY (principle 4).
 
 ### D-B. RAG lives in a new top-level package group `knowledge/`, not under `runtime/tools/`
-Tool-RAG (`runtime/tools/retriever.py`) selects *which tool to call*. Document-RAG retrieves *knowledge to ground a response*. Different lifecycle, different consumer. New module: `agentkit/sdk/agentkit/knowledge/` with `chunking.py`, `store.py`, `rag.py`. This mirrors the existing layering (infra / modalities / runtime are sibling groups). Explicit over clever (principle 5).
+Tool-RAG (`runtime/tools/retriever.py`) selects *which tool to call*. Document-RAG retrieves *knowledge to ground a response*. Different lifecycle, different consumer. New module: `kaji/sdk/kaji/knowledge/` with `chunking.py`, `store.py`, `rag.py`. This mirrors the existing layering (infra / modalities / runtime are sibling groups). Explicit over clever (principle 5).
 
 ### D-C. The RAG retrieval seam is the existing `MemoryRetrieval*` events
 Both SDKs already define `MemoryRetrievalStarted` / `MemoryRetrievalCompleted` events (Python `infra/events/schemas.py`; TS `events/schemas.ts:57-66`). Doc-RAG emits these when wired into a runtime, so the event vocabulary already exists. Phase 1 builds the *retrieval capability* and emits these events from a thin helper; full auto-injection into `AgentRuntime` is explicitly OUT of scope (deferred — see NOT in scope) because it touches the reasoning loop and belongs with a broader memory-injection design.
@@ -38,13 +38,13 @@ class SessionStore(Protocol):
     async def list_sessions(self, user_id: str) -> list[SessionRecord]: ...
     async def record_session(self, record: SessionRecord) -> None: ...
 ```
-`SessionManager` takes an optional `SessionStore`. When present, `list_active` delegates to it. When absent (the infra-free default), `list_active` returns `[]` with a one-line "no session store configured" log — the same honest behavior, but now there is a real interface a durable backend (or `agentkit-serve`) can implement. Explicit over clever (principle 5); does not break the import-free guarantee.
+`SessionManager` takes an optional `SessionStore`. When present, `list_active` delegates to it. When absent (the infra-free default), `list_active` returns `[]` with a one-line "no session store configured" log — the same honest behavior, but now there is a real interface a durable backend (or `kaji-serve`) can implement. Explicit over clever (principle 5); does not break the import-free guarantee.
 
 ### D-E. An `InMemorySessionStore` ships so the interface is exercised and testable
-Without a concrete implementation the protocol is untested vaporware. Ship `InMemorySessionStore` (a `dict[user_id, list[SessionRecord]]`) so `list_active` has a real, tested path. Durable (Postgres/Redis) backends remain `agentkit-serve`'s job. Completeness (principle 1).
+Without a concrete implementation the protocol is untested vaporware. Ship `InMemorySessionStore` (a `dict[user_id, list[SessionRecord]]`) so `list_active` has a real, tested path. Durable (Postgres/Redis) backends remain `kaji-serve`'s job. Completeness (principle 1).
 
 ### D-F. TS `publish` stays `async`, runtime awaits it
-The 2026-06-05 plan said publish "stays sync." That is now stale: `agentkit/ts/src/events/bus.ts:69` already returns `Promise<void>`. Keep it async (it is harmless — the body is synchronous fan-out) and have the runtime `await bus.publish(event)`, matching the Python `_emit` which does `await self.bus.publish(event)`. Lock the decision with a doc comment. This resolves item 28 with the *opposite* conclusion the old plan reached, because the code already moved.
+The 2026-06-05 plan said publish "stays sync." That is now stale: `kaji/ts/src/events/bus.ts:69` already returns `Promise<void>`. Keep it async (it is harmless — the body is synchronous fan-out) and have the runtime `await bus.publish(event)`, matching the Python `_emit` which does `await self.bus.publish(event)`. Lock the decision with a doc comment. This resolves item 28 with the *opposite* conclusion the old plan reached, because the code already moved.
 
 ---
 
@@ -53,39 +53,39 @@ The 2026-06-05 plan said publish "stays sync." That is now stale: `agentkit/ts/s
 ### Phase 1a — Document RAG (Python)
 | file | status | responsibility |
 |------|--------|---------------|
-| `agentkit/sdk/agentkit/knowledge/__init__.py` | create | package exports: `Document`, `Chunk`, `chunk_text`, `VectorStore`, `InMemoryVectorStore`, `DocumentRAG` |
-| `agentkit/sdk/agentkit/knowledge/types.py` | create | `Document` + `Chunk` dataclasses |
-| `agentkit/sdk/agentkit/knowledge/chunking.py` | create | `chunk_text(text, size, overlap)` — deterministic, no deps |
-| `agentkit/sdk/agentkit/knowledge/store.py` | create | `VectorStore` protocol + `InMemoryVectorStore` (cosine search) |
-| `agentkit/sdk/agentkit/knowledge/rag.py` | create | `DocumentRAG` — ties Embedder + VectorStore: `add_document`, `retrieve` |
-| `agentkit/sdk/agentkit/__init__.py` | modify | add knowledge surface to the lazy export map |
-| `agentkit/sdk/tests/test_knowledge_chunking.py` | create | chunking edge cases (empty, < size, overlap, unicode) |
-| `agentkit/sdk/tests/test_knowledge_store.py` | create | vector store add/search/top-k/threshold/empty |
-| `agentkit/sdk/tests/test_knowledge_rag.py` | create | end-to-end RAG with a stub embedder (no network) |
+| `kaji/sdk/kaji/knowledge/__init__.py` | create | package exports: `Document`, `Chunk`, `chunk_text`, `VectorStore`, `InMemoryVectorStore`, `DocumentRAG` |
+| `kaji/sdk/kaji/knowledge/types.py` | create | `Document` + `Chunk` dataclasses |
+| `kaji/sdk/kaji/knowledge/chunking.py` | create | `chunk_text(text, size, overlap)` — deterministic, no deps |
+| `kaji/sdk/kaji/knowledge/store.py` | create | `VectorStore` protocol + `InMemoryVectorStore` (cosine search) |
+| `kaji/sdk/kaji/knowledge/rag.py` | create | `DocumentRAG` — ties Embedder + VectorStore: `add_document`, `retrieve` |
+| `kaji/sdk/kaji/__init__.py` | modify | add knowledge surface to the lazy export map |
+| `kaji/sdk/tests/test_knowledge_chunking.py` | create | chunking edge cases (empty, < size, overlap, unicode) |
+| `kaji/sdk/tests/test_knowledge_store.py` | create | vector store add/search/top-k/threshold/empty |
+| `kaji/sdk/tests/test_knowledge_rag.py` | create | end-to-end RAG with a stub embedder (no network) |
 
 ### Phase 1b — Durable session persistence (Python)
 | file | status | responsibility |
 |------|--------|---------------|
-| `agentkit/sdk/agentkit/runtime/sessions/store.py` | create | `SessionRecord` dataclass + `SessionStore` protocol + `InMemorySessionStore` |
-| `agentkit/sdk/agentkit/runtime/sessions/manager.py` | modify | accept optional `SessionStore`; real `list_active`; record on session creation |
-| `agentkit/sdk/agentkit/__init__.py` | modify | export `SessionStore`, `InMemorySessionStore`, `SessionRecord` |
-| `agentkit/sdk/tests/test_sessions_store.py` | create | in-memory store: record, list, per-user isolation |
-| `agentkit/sdk/tests/test_sessions_manager.py` | modify/create | `list_active` returns recorded sessions; empty when no store |
+| `kaji/sdk/kaji/runtime/sessions/store.py` | create | `SessionRecord` dataclass + `SessionStore` protocol + `InMemorySessionStore` |
+| `kaji/sdk/kaji/runtime/sessions/manager.py` | modify | accept optional `SessionStore`; real `list_active`; record on session creation |
+| `kaji/sdk/kaji/__init__.py` | modify | export `SessionStore`, `InMemorySessionStore`, `SessionRecord` |
+| `kaji/sdk/tests/test_sessions_store.py` | create | in-memory store: record, list, per-user isolation |
+| `kaji/sdk/tests/test_sessions_manager.py` | modify/create | `list_active` returns recorded sessions; empty when no store |
 
 ### Phase 2 — TS runtime parity
 | file | status | responsibility |
 |------|--------|---------------|
-| `agentkit/ts/src/events/bus.ts` | modify | doc comment locking the async-`publish` decision |
-| `agentkit/ts/src/providers/base.ts` | create | `ModelProvider`, `ProviderMessage`, `ToolCall`, `ModelResponseChunk`, `ModelResponse` |
-| `agentkit/ts/src/providers/mock.ts` | create | mock provider: requests first tool, then text |
-| `agentkit/ts/src/providers/registry.ts` | create | `registerProvider`, `getProvider`, `clearProviders` |
-| `agentkit/ts/src/providers/index.ts` | create | provider layer re-exports |
-| `agentkit/ts/src/runtime/cancellation.ts` | create | `CancellationToken` |
-| `agentkit/ts/src/runtime/context.ts` | create | `buildMessages` — `SessionState.messages` → provider format |
-| `agentkit/ts/src/runtime/runtime.ts` | create | `AgentRuntime.runTurn` — the ReAct loop |
-| `agentkit/ts/src/index.ts` | modify | export provider + runtime surface |
-| `agentkit/ts/tests/providers.mock.test.ts` | create | provider interface + registry + mock |
-| `agentkit/ts/tests/runtime.test.ts` | create | full `runTurn` loop with mock provider |
+| `kaji/ts/src/events/bus.ts` | modify | doc comment locking the async-`publish` decision |
+| `kaji/ts/src/providers/base.ts` | create | `ModelProvider`, `ProviderMessage`, `ToolCall`, `ModelResponseChunk`, `ModelResponse` |
+| `kaji/ts/src/providers/mock.ts` | create | mock provider: requests first tool, then text |
+| `kaji/ts/src/providers/registry.ts` | create | `registerProvider`, `getProvider`, `clearProviders` |
+| `kaji/ts/src/providers/index.ts` | create | provider layer re-exports |
+| `kaji/ts/src/runtime/cancellation.ts` | create | `CancellationToken` |
+| `kaji/ts/src/runtime/context.ts` | create | `buildMessages` — `SessionState.messages` → provider format |
+| `kaji/ts/src/runtime/runtime.ts` | create | `AgentRuntime.runTurn` — the ReAct loop |
+| `kaji/ts/src/index.ts` | modify | export provider + runtime surface |
+| `kaji/ts/tests/providers.mock.test.ts` | create | provider interface + registry + mock |
+| `kaji/ts/tests/runtime.test.ts` | create | full `runTurn` loop with mock provider |
 
 > **Note on OpenAI provider:** The 2026-06-05 plan included a TS `OpenAIProvider`. Phase 2 here keeps scope to the *runtime parity milestone* (interface + registry + mock + runtime + tool loop) — the same bar as the Python P0. A real TS provider is a clean follow-up (it has no design risk once the interface lands) and is deferred to keep this plan reviewable. See NOT in scope.
 
@@ -95,7 +95,7 @@ The 2026-06-05 plan said publish "stays sync." That is now stale: `agentkit/ts/s
 
 - **Auto-injecting doc-RAG into `AgentRuntime`** (Python or TS). The retrieval capability ships; wiring it into the reasoning loop (when to retrieve, how to inject context, dedup with tool-RAG) is a memory-architecture decision that deserves its own design. Building it half-way now would bake in the wrong seam.
 - **A real TS LLM provider** (OpenAI/Anthropic). Interface + mock proves the runtime; a real provider is mechanical once the interface is fixed. Deferred to keep the review focused.
-- **Durable (Postgres/Redis) `SessionStore` / `VectorStore` backends.** These belong in `agentkit-serve`, which is explicitly out of scope this round. The SDK ships the *interfaces* + in-memory implementations so serve can implement them later.
+- **Durable (Postgres/Redis) `SessionStore` / `VectorStore` backends.** These belong in `kaji-serve`, which is explicitly out of scope this round. The SDK ships the *interfaces* + in-memory implementations so serve can implement them later.
 - **Anthropic Python provider, multi-agent router** (ROADMAP 5, 15). Not requested for this build.
 - **Persisting documents across restarts.** `InMemoryVectorStore` is process-local by design, matching `InMemoryEventStore` / `InMemoryEmbeddingCache`.
 
@@ -110,7 +110,7 @@ The 2026-06-05 plan said publish "stays sync." That is now stale: `agentkit/ts/s
 | retrieval events | `MemoryRetrievalStarted/Completed` (Python `infra/events/schemas.py`; TS `events/schemas.ts:57`) |
 | session state projection | `ReplaySession` / `replaySession` (Python + TS) |
 | event store interface | `EventStore` protocol (`infra/events/store/base.py`) — the model for `SessionStore` |
-| TS event bus, store, replay, tool registry | `agentkit/ts/src/{events,sessions,tools}/` — all present, runtime plugs into them |
+| TS event bus, store, replay, tool registry | `kaji/ts/src/{events,sessions,tools}/` — all present, runtime plugs into them |
 | Python runtime loop to port | `runtime/agents/runtime.py:79` `run_turn` |
 | mock provider to port | `runtime/providers/mock.py` |
 | tool lifecycle events to emit | `ToolPlanner._execute_single` (`runtime/agents/planner.py:53`) |
@@ -121,17 +121,17 @@ The 2026-06-05 plan said publish "stays sync." That is now stale: `agentkit/ts/s
 
 ### Task 1: Extract `cosine_similarity` to a shared util
 
-DRY: tool-RAG and doc-RAG both need it. Today it lives inside `retriever.py`. Move it to `agentkit/sdk/agentkit/knowledge/` is wrong (tool-RAG would then depend on knowledge). Put it in a neutral home both import.
+DRY: tool-RAG and doc-RAG both need it. Today it lives inside `retriever.py`. Move it to `kaji/sdk/kaji/knowledge/` is wrong (tool-RAG would then depend on knowledge). Put it in a neutral home both import.
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/runtime/tools/_vector_math.py` (neutral, low-level)
-- Modify: `agentkit/sdk/agentkit/runtime/tools/retriever.py` (import from new util)
+- Create: `kaji/sdk/kaji/runtime/tools/_vector_math.py` (neutral, low-level)
+- Modify: `kaji/sdk/kaji/runtime/tools/retriever.py` (import from new util)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `agentkit/sdk/tests/test_vector_math.py`:
+Create `kaji/sdk/tests/test_vector_math.py`:
 ```python
-from agentkit.runtime.tools._vector_math import cosine_similarity
+from kaji.runtime.tools._vector_math import cosine_similarity
 
 
 def test_identical_vectors_score_one():
@@ -148,7 +148,7 @@ def test_zero_vector_scores_zero_not_nan():
 
 - [ ] **Step 2: Run test, verify it fails** (`No module named ... _vector_math`)
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_vector_math.py
+cd kaji/sdk && poetry run pytest tests/test_vector_math.py
 ```
 
 - [ ] **Step 3: Create `_vector_math.py`** — move the exact function body from `retriever.py:21-27`:
@@ -170,19 +170,19 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 - [ ] **Step 4: Update `retriever.py`** — replace the local def with an import. Keep a re-export so any external caller of `retriever.cosine_similarity` still works:
 ```python
-from agentkit.runtime.tools._vector_math import cosine_similarity  # re-exported
+from kaji.runtime.tools._vector_math import cosine_similarity  # re-exported
 ```
 Delete the old inline `def cosine_similarity` and its `import math` if now unused.
 
 - [ ] **Step 5: Run the full tool-RAG suite to confirm no regression**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_tools_retriever.py tests/test_vector_math.py
+cd kaji/sdk && poetry run pytest tests/test_tools_retriever.py tests/test_vector_math.py
 ```
 Expected: all pass.
 
 - [ ] **Step 6: Commit**
 ```bash
-git add agentkit/sdk/agentkit/runtime/tools/_vector_math.py agentkit/sdk/agentkit/runtime/tools/retriever.py agentkit/sdk/tests/test_vector_math.py
+git add kaji/sdk/kaji/runtime/tools/_vector_math.py kaji/sdk/kaji/runtime/tools/retriever.py kaji/sdk/tests/test_vector_math.py
 git commit -m "refactor(sdk): extract cosine_similarity to shared _vector_math"
 ```
 
@@ -191,16 +191,16 @@ git commit -m "refactor(sdk): extract cosine_similarity to shared _vector_math"
 ### Task 2: Document + Chunk types and chunking
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/knowledge/__init__.py` (start minimal, grow per task)
-- Create: `agentkit/sdk/agentkit/knowledge/types.py`
-- Create: `agentkit/sdk/agentkit/knowledge/chunking.py`
-- Create: `agentkit/sdk/tests/test_knowledge_chunking.py`
+- Create: `kaji/sdk/kaji/knowledge/__init__.py` (start minimal, grow per task)
+- Create: `kaji/sdk/kaji/knowledge/types.py`
+- Create: `kaji/sdk/kaji/knowledge/chunking.py`
+- Create: `kaji/sdk/tests/test_knowledge_chunking.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/sdk/tests/test_knowledge_chunking.py`:
+Create `kaji/sdk/tests/test_knowledge_chunking.py`:
 ```python
-from agentkit.knowledge.chunking import chunk_text
+from kaji.knowledge.chunking import chunk_text
 
 
 def test_short_text_is_one_chunk():
@@ -241,7 +241,7 @@ def test_overlap_must_be_less_than_size():
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_chunking.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_chunking.py
 ```
 
 - [ ] **Step 3: Create `types.py`**
@@ -321,22 +321,22 @@ def chunk_text(text: str, size: int = 1000, overlap: int = 200) -> List[str]:
 
 - [ ] **Step 5: Create minimal `__init__.py`**
 ```python
-"""AgentKit knowledge subsystem: document ingestion and retrieval (RAG)."""
+"""Kaji knowledge subsystem: document ingestion and retrieval (RAG)."""
 
-from agentkit.knowledge.chunking import chunk_text
-from agentkit.knowledge.types import Chunk, Document
+from kaji.knowledge.chunking import chunk_text
+from kaji.knowledge.types import Chunk, Document
 
 __all__ = ["chunk_text", "Chunk", "Document"]
 ```
 
 - [ ] **Step 6: Run, verify pass**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_chunking.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_chunking.py
 ```
 
 - [ ] **Step 7: Commit**
 ```bash
-git add agentkit/sdk/agentkit/knowledge/ agentkit/sdk/tests/test_knowledge_chunking.py
+git add kaji/sdk/kaji/knowledge/ kaji/sdk/tests/test_knowledge_chunking.py
 git commit -m "feat(sdk): add knowledge types and deterministic text chunking"
 ```
 
@@ -345,17 +345,17 @@ git commit -m "feat(sdk): add knowledge types and deterministic text chunking"
 ### Task 3: VectorStore protocol + InMemoryVectorStore
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/knowledge/store.py`
-- Create: `agentkit/sdk/tests/test_knowledge_store.py`
+- Create: `kaji/sdk/kaji/knowledge/store.py`
+- Create: `kaji/sdk/tests/test_knowledge_store.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/sdk/tests/test_knowledge_store.py`:
+Create `kaji/sdk/tests/test_knowledge_store.py`:
 ```python
 import pytest
 
-from agentkit.knowledge.store import InMemoryVectorStore
-from agentkit.knowledge.types import Chunk
+from kaji.knowledge.store import InMemoryVectorStore
+from kaji.knowledge.types import Chunk
 
 
 def _chunk(doc_id: str, text: str, idx: int, vec: list[float]) -> Chunk:
@@ -410,7 +410,7 @@ async def test_chunks_without_embeddings_are_skipped():
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_store.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_store.py
 ```
 
 - [ ] **Step 3: Create `store.py`**
@@ -418,15 +418,15 @@ cd agentkit/sdk && poetry run pytest tests/test_knowledge_store.py
 """Vector store for document chunks. Infra-free in-memory default.
 
 The protocol mirrors the spirit of ``EventStore``: a narrow interface a durable
-backend (pgvector, etc., in agentkit-serve) can implement later. The bundled
+backend (pgvector, etc., in kaji-serve) can implement later. The bundled
 ``InMemoryVectorStore`` does an exact cosine scan — fine for embedded use and
 tests, not for millions of chunks.
 """
 
 from typing import List, Protocol
 
-from agentkit.knowledge.types import Chunk
-from agentkit.runtime.tools._vector_math import cosine_similarity
+from kaji.knowledge.types import Chunk
+from kaji.runtime.tools._vector_math import cosine_similarity
 
 
 class VectorStore(Protocol):
@@ -478,12 +478,12 @@ class InMemoryVectorStore:
 
 - [ ] **Step 4: Run, verify pass**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_store.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_store.py
 ```
 
 - [ ] **Step 5: Commit**
 ```bash
-git add agentkit/sdk/agentkit/knowledge/store.py agentkit/sdk/tests/test_knowledge_store.py
+git add kaji/sdk/kaji/knowledge/store.py kaji/sdk/tests/test_knowledge_store.py
 git commit -m "feat(sdk): add VectorStore protocol and InMemoryVectorStore"
 ```
 
@@ -492,19 +492,19 @@ git commit -m "feat(sdk): add VectorStore protocol and InMemoryVectorStore"
 ### Task 4: DocumentRAG — tie embedder + store
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/knowledge/rag.py`
-- Modify: `agentkit/sdk/agentkit/knowledge/__init__.py`
-- Create: `agentkit/sdk/tests/test_knowledge_rag.py`
+- Create: `kaji/sdk/kaji/knowledge/rag.py`
+- Modify: `kaji/sdk/kaji/knowledge/__init__.py`
+- Create: `kaji/sdk/tests/test_knowledge_rag.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/sdk/tests/test_knowledge_rag.py`:
+Create `kaji/sdk/tests/test_knowledge_rag.py`:
 ```python
 import pytest
 
-from agentkit.knowledge.rag import DocumentRAG
-from agentkit.knowledge.store import InMemoryVectorStore
-from agentkit.knowledge.types import Document
+from kaji.knowledge.rag import DocumentRAG
+from kaji.knowledge.store import InMemoryVectorStore
+from kaji.knowledge.types import Document
 
 
 class StubEmbedder:
@@ -558,7 +558,7 @@ async def test_rag_is_infra_free_by_default():
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_rag.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_rag.py
 ```
 
 - [ ] **Step 3: Create `rag.py`**
@@ -578,10 +578,10 @@ left to a future memory-injection design — see the plan's NOT-in-scope section
 import logging
 from typing import List, Optional
 
-from agentkit.knowledge.chunking import chunk_text
-from agentkit.knowledge.store import InMemoryVectorStore, VectorStore
-from agentkit.knowledge.types import Chunk, Document
-from agentkit.runtime.tools.retriever import Embedder, GeminiEmbedder
+from kaji.knowledge.chunking import chunk_text
+from kaji.knowledge.store import InMemoryVectorStore, VectorStore
+from kaji.knowledge.types import Chunk, Document
+from kaji.runtime.tools.retriever import Embedder, GeminiEmbedder
 
 logger = logging.getLogger(__name__)
 
@@ -658,12 +658,12 @@ class DocumentRAG:
 
 - [ ] **Step 4: Expand `knowledge/__init__.py`**
 ```python
-"""AgentKit knowledge subsystem: document ingestion and retrieval (RAG)."""
+"""Kaji knowledge subsystem: document ingestion and retrieval (RAG)."""
 
-from agentkit.knowledge.chunking import chunk_text
-from agentkit.knowledge.rag import DocumentRAG
-from agentkit.knowledge.store import InMemoryVectorStore, VectorStore
-from agentkit.knowledge.types import Chunk, Document
+from kaji.knowledge.chunking import chunk_text
+from kaji.knowledge.rag import DocumentRAG
+from kaji.knowledge.store import InMemoryVectorStore, VectorStore
+from kaji.knowledge.types import Chunk, Document
 
 __all__ = [
     "chunk_text",
@@ -677,12 +677,12 @@ __all__ = [
 
 - [ ] **Step 5: Run, verify pass**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_knowledge_rag.py
+cd kaji/sdk && poetry run pytest tests/test_knowledge_rag.py
 ```
 
 - [ ] **Step 6: Commit**
 ```bash
-git add agentkit/sdk/agentkit/knowledge/rag.py agentkit/sdk/agentkit/knowledge/__init__.py agentkit/sdk/tests/test_knowledge_rag.py
+git add kaji/sdk/kaji/knowledge/rag.py kaji/sdk/kaji/knowledge/__init__.py kaji/sdk/tests/test_knowledge_rag.py
 git commit -m "feat(sdk): add DocumentRAG (ingest + retrieve), infra-free default"
 ```
 
@@ -691,31 +691,31 @@ git commit -m "feat(sdk): add DocumentRAG (ingest + retrieve), infra-free defaul
 ### Task 5: Export knowledge surface from the SDK public API
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/__init__.py`
+- Modify: `kaji/sdk/kaji/__init__.py`
 
 - [ ] **Step 1: Read the lazy export map**
 ```bash
-cd agentkit/sdk && grep -n "knowledge\|DocumentRAG\|_LAZY\|__getattr__" agentkit/__init__.py | head
+cd kaji/sdk && grep -n "knowledge\|DocumentRAG\|_LAZY\|__getattr__" kaji/__init__.py | head
 ```
 Match the existing lazy-import style (the file maps public names to module paths and constructs on first attribute access — do NOT add eager imports, that breaks the infra-free guarantee).
 
-- [ ] **Step 2: Add `DocumentRAG`, `Document`, `Chunk`, `InMemoryVectorStore`, `VectorStore`, `chunk_text`** to the lazy map, pointing at `agentkit.knowledge.*`.
+- [ ] **Step 2: Add `DocumentRAG`, `Document`, `Chunk`, `InMemoryVectorStore`, `VectorStore`, `chunk_text`** to the lazy map, pointing at `kaji.knowledge.*`.
 
 - [ ] **Step 3: Verify import stays infra-free** (no env set):
 ```bash
-cd agentkit/sdk && poetry run python -c "import agentkit; print(agentkit.DocumentRAG, agentkit.Document, agentkit.chunk_text)"
+cd kaji/sdk && poetry run python -c "import kaji; print(kaji.DocumentRAG, kaji.Document, kaji.chunk_text)"
 ```
 Expected: prints the three objects, no exception, no env required.
 
 - [ ] **Step 4: Run the whole SDK suite**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/ -q
+cd kaji/sdk && poetry run pytest tests/ -q
 ```
 Expected: all green (83 prior + new knowledge tests).
 
 - [ ] **Step 5: Commit**
 ```bash
-git add agentkit/sdk/agentkit/__init__.py
+git add kaji/sdk/kaji/__init__.py
 git commit -m "feat(sdk): export knowledge/RAG surface from public API"
 ```
 
@@ -726,16 +726,16 @@ git commit -m "feat(sdk): export knowledge/RAG surface from public API"
 ### Task 6: SessionStore protocol + InMemorySessionStore
 
 **Files:**
-- Create: `agentkit/sdk/agentkit/runtime/sessions/store.py`
-- Create: `agentkit/sdk/tests/test_sessions_store.py`
+- Create: `kaji/sdk/kaji/runtime/sessions/store.py`
+- Create: `kaji/sdk/tests/test_sessions_store.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/sdk/tests/test_sessions_store.py`:
+Create `kaji/sdk/tests/test_sessions_store.py`:
 ```python
 import pytest
 
-from agentkit.runtime.sessions.store import InMemorySessionStore, SessionRecord
+from kaji.runtime.sessions.store import InMemorySessionStore, SessionRecord
 
 
 @pytest.mark.asyncio
@@ -767,7 +767,7 @@ async def test_recording_same_session_is_idempotent():
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_sessions_store.py
+cd kaji/sdk && poetry run pytest tests/test_sessions_store.py
 ```
 
 - [ ] **Step 3: Create `store.py`**
@@ -780,7 +780,7 @@ protocol for that. Keeping it separate means the infra-free ``InMemoryEventStore
 does not have to maintain a user->session map it never needs.
 
 The bundled ``InMemorySessionStore`` is process-local. A durable backend
-(Postgres in agentkit-serve) implements the same protocol later.
+(Postgres in kaji-serve) implements the same protocol later.
 """
 
 from __future__ import annotations
@@ -827,12 +827,12 @@ class InMemorySessionStore:
 
 - [ ] **Step 4: Run, verify pass**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_sessions_store.py
+cd kaji/sdk && poetry run pytest tests/test_sessions_store.py
 ```
 
 - [ ] **Step 5: Commit**
 ```bash
-git add agentkit/sdk/agentkit/runtime/sessions/store.py agentkit/sdk/tests/test_sessions_store.py
+git add kaji/sdk/kaji/runtime/sessions/store.py kaji/sdk/tests/test_sessions_store.py
 git commit -m "feat(sdk): add SessionStore protocol and InMemorySessionStore"
 ```
 
@@ -841,19 +841,19 @@ git commit -m "feat(sdk): add SessionStore protocol and InMemorySessionStore"
 ### Task 7: Wire SessionStore into SessionManager
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/runtime/sessions/manager.py`
-- Create: `agentkit/sdk/tests/test_sessions_manager.py`
+- Modify: `kaji/sdk/kaji/runtime/sessions/manager.py`
+- Create: `kaji/sdk/tests/test_sessions_manager.py`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/sdk/tests/test_sessions_manager.py`:
+Create `kaji/sdk/tests/test_sessions_manager.py`:
 ```python
 import pytest
 
-from agentkit.infra.events.store.inmem import InMemoryEventStore
-from agentkit.infra.events.schemas import UserMessage
-from agentkit.runtime.sessions.manager import SessionManager
-from agentkit.runtime.sessions.store import InMemorySessionStore, SessionRecord
+from kaji.infra.events.store.inmem import InMemoryEventStore
+from kaji.infra.events.schemas import UserMessage
+from kaji.runtime.sessions.manager import SessionManager
+from kaji.runtime.sessions.store import InMemorySessionStore, SessionRecord
 
 
 @pytest.mark.asyncio
@@ -883,7 +883,7 @@ async def test_get_state_still_works():
 
 - [ ] **Step 2: Run, verify fail** (constructor doesn't accept `session_store` yet)
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_sessions_manager.py
+cd kaji/sdk && poetry run pytest tests/test_sessions_manager.py
 ```
 
 - [ ] **Step 3: Rewrite `manager.py`**
@@ -895,10 +895,10 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from agentkit.infra.events.store import EventStore
-from agentkit.runtime.sessions.replay import ReplaySession
-from agentkit.runtime.sessions.state import SessionState
-from agentkit.runtime.sessions.store import SessionRecord, SessionStore
+from kaji.infra.events.store import EventStore
+from kaji.runtime.sessions.replay import ReplaySession
+from kaji.runtime.sessions.state import SessionState
+from kaji.runtime.sessions.store import SessionRecord, SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -908,7 +908,7 @@ class SessionManager:
 
     Pass an optional ``SessionStore`` to enable ``list_active``. Without one,
     ``list_active`` returns ``[]`` (the SDK ships no durable index by default —
-    that lives in agentkit-serve).
+    that lives in kaji-serve).
     """
 
     def __init__(
@@ -948,7 +948,7 @@ class SessionManager:
 
 - [ ] **Step 4: Run, verify pass**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/test_sessions_manager.py
+cd kaji/sdk && poetry run pytest tests/test_sessions_manager.py
 ```
 
 - [ ] **Step 4b: Wire `record_session` so persistence is genuinely exercised (Eng M5 fix).** A `record_session` method that nothing calls leaves `list_active` always-empty in real flows — the same bug, relocated. Add a recording call at the one place a session is born. Add this test to `test_sessions_manager.py`:
@@ -964,20 +964,20 @@ async def test_recording_then_listing_round_trips():
 ```
 `record_session` is already on `SessionManager` (Step 3). This test proves the round-trip through the manager (not just the store in isolation), so the ROADMAP-16 "real `list_active`" claim is backed by an exercised path. NOTE: auto-recording from inside `AgentRuntime` is deliberately NOT done here (the runtime has no `user_id` and no `SessionManager` reference; coupling them is a larger change). The honest claim is "callable + round-trip-tested via SessionManager," reflected in the softened ROADMAP wording (Task 12).
 
-- [ ] **Step 5: Export the session-store surface** — add `SessionStore`, `InMemorySessionStore`, `SessionRecord` to `agentkit/__init__.py` lazy map (same style as Task 5). Verify:
+- [ ] **Step 5: Export the session-store surface** — add `SessionStore`, `InMemorySessionStore`, `SessionRecord` to `kaji/__init__.py` lazy map (same style as Task 5). Verify:
 ```bash
-cd agentkit/sdk && poetry run python -c "import agentkit; print(agentkit.SessionStore, agentkit.InMemorySessionStore, agentkit.SessionRecord)"
+cd kaji/sdk && poetry run python -c "import kaji; print(kaji.SessionStore, kaji.InMemorySessionStore, kaji.SessionRecord)"
 ```
 
 - [ ] **Step 6: Full SDK suite**
 ```bash
-cd agentkit/sdk && poetry run pytest tests/ -q
+cd kaji/sdk && poetry run pytest tests/ -q
 ```
 Expected: all green.
 
 - [ ] **Step 7: Commit**
 ```bash
-git add agentkit/sdk/agentkit/runtime/sessions/manager.py agentkit/sdk/agentkit/__init__.py agentkit/sdk/tests/test_sessions_manager.py
+git add kaji/sdk/kaji/runtime/sessions/manager.py kaji/sdk/kaji/__init__.py kaji/sdk/tests/test_sessions_manager.py
 git commit -m "feat(sdk): wire SessionStore into SessionManager.list_active"
 ```
 
@@ -988,13 +988,13 @@ git commit -m "feat(sdk): wire SessionStore into SessionManager.list_active"
 ### Task 7.5: Thread real `tool_call_id` through replay (Eng H3 fix — do BEFORE the runtime)
 
 **Files:**
-- Modify: `agentkit/ts/src/sessions/replay.ts`
+- Modify: `kaji/ts/src/sessions/replay.ts`
 
 The runtime emits tool calls with real ids (`tc.id`), but `replay.ts`'s `Message` only stores `{role, content, name}` — the id is discarded, so `buildMessages` later fabricates one from the tool name. That breaks any real provider (OpenAI/Anthropic reject a tool result whose `tool_call_id` doesn't match the request) and collides when the same tool is called twice. Fix the data model now, before the runtime depends on it.
 
 - [ ] **Step 1: Add `toolCallId` to `Message` and project it**
 
-In `agentkit/ts/src/sessions/replay.ts`, extend the `Message` interface:
+In `kaji/ts/src/sessions/replay.ts`, extend the `Message` interface:
 ```ts
 export interface Message {
   role: "user" | "assistant" | "tool";
@@ -1020,12 +1020,12 @@ In the `TOOL_CALL_COMPLETED` case, carry the id through:
 
 Add a comment above the `AGENT_MESSAGE_DELTA`/transient cases noting they must NOT be projected (the mock provider's termination depends on only `AGENT_MESSAGE_COMPLETED`→assistant and `TOOL_CALL_COMPLETED`→tool appearing in history; projecting deltas would loop forever).
 
-- [ ] **Step 2: Add a regression test** to `agentkit/ts/tests/replay.test.ts`: a `TOOL_CALL_COMPLETED` event with `tool_call_id: "call_abc"` projects a tool message with `toolCallId === "call_abc"`.
+- [ ] **Step 2: Add a regression test** to `kaji/ts/tests/replay.test.ts`: a `TOOL_CALL_COMPLETED` event with `tool_call_id: "call_abc"` projects a tool message with `toolCallId === "call_abc"`.
 
 - [ ] **Step 3: Run + commit**
 ```bash
-cd agentkit/ts && bun run test tests/replay.test.ts
-git add agentkit/ts/src/sessions/replay.ts agentkit/ts/tests/replay.test.ts
+cd kaji/ts && bun run test tests/replay.test.ts
+git add kaji/ts/src/sessions/replay.ts kaji/ts/tests/replay.test.ts
 git commit -m "fix(ts): preserve real tool_call_id through session replay"
 ```
 
@@ -1034,11 +1034,11 @@ git commit -m "fix(ts): preserve real tool_call_id through session replay"
 ### Task 8: Lock the async-`publish` decision
 
 **Files:**
-- Modify: `agentkit/ts/src/events/bus.ts`
+- Modify: `kaji/ts/src/events/bus.ts`
 
 The 2026-06-05 plan claimed publish would stay *sync*. The code has since moved: `bus.ts:69` already declares `async publish(...): Promise<void>`. The body is synchronous fan-out, so `async` is harmless and lets callers `await` it uniformly. Keep it async (matches Python `await self.bus.publish(...)`); lock it with a comment.
 
-- [ ] **Step 1: Add the decision comment.** Edit `agentkit/ts/src/events/bus.ts`, replacing the existing `/** Publish an event to every subscriber of its session. */` above `async publish` with:
+- [ ] **Step 1: Add the decision comment.** Edit `kaji/ts/src/events/bus.ts`, replacing the existing `/** Publish an event to every subscriber of its session. */` above `async publish` with:
 ```ts
   /**
    * Publish an event to every subscriber of its session.
@@ -1052,13 +1052,13 @@ The 2026-06-05 plan claimed publish would stay *sync*. The code has since moved:
 
 - [ ] **Step 2: Confirm nothing broke**
 ```bash
-cd agentkit/ts && bun run test && bun run typecheck
+cd kaji/ts && bun run test && bun run typecheck
 ```
 Expected: existing tests pass, no type errors.
 
 - [ ] **Step 3: Commit**
 ```bash
-git add agentkit/ts/src/events/bus.ts
+git add kaji/ts/src/events/bus.ts
 git commit -m "docs(ts): lock async publish decision in EventBus"
 ```
 
@@ -1067,15 +1067,15 @@ git commit -m "docs(ts): lock async publish decision in EventBus"
 ### Task 9: Provider interface, types, registry, and mock
 
 **Files:**
-- Create: `agentkit/ts/src/providers/base.ts`
-- Create: `agentkit/ts/src/providers/registry.ts`
-- Create: `agentkit/ts/src/providers/mock.ts`
-- Create: `agentkit/ts/src/providers/index.ts`
-- Create: `agentkit/ts/tests/providers.mock.test.ts`
+- Create: `kaji/ts/src/providers/base.ts`
+- Create: `kaji/ts/src/providers/registry.ts`
+- Create: `kaji/ts/src/providers/mock.ts`
+- Create: `kaji/ts/src/providers/index.ts`
+- Create: `kaji/ts/tests/providers.mock.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/ts/tests/providers.mock.test.ts`:
+Create `kaji/ts/tests/providers.mock.test.ts`:
 ```ts
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -1168,14 +1168,14 @@ describe("MockProvider", () => {
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/ts && bun run test tests/providers.mock.test.ts
+cd kaji/ts && bun run test tests/providers.mock.test.ts
 ```
 
 - [ ] **Step 3: Create `base.ts`**
 ```ts
 /**
  * Provider interface for LLM backends, mirroring
- * `agentkit.runtime.providers.base.ModelProvider`.
+ * `kaji.runtime.providers.base.ModelProvider`.
  *
  * Each provider translates the neutral message + tool format to its own API at
  * its boundary. The runtime never imports provider-specific types.
@@ -1225,7 +1225,7 @@ export interface ModelProvider {
 ```ts
 /**
  * Provider registry: a process-level map from name to `ModelProvider`.
- * Mirrors `agentkit.runtime.providers.registry`.
+ * Mirrors `kaji.runtime.providers.registry`.
  */
 import type { ModelProvider } from "./base";
 
@@ -1257,7 +1257,7 @@ export function clearProviders(): void {
 - [ ] **Step 5: Create `mock.ts`**
 ```ts
 /**
- * Mock LLM provider, mirroring `agentkit.runtime.providers.mock`.
+ * Mock LLM provider, mirroring `kaji.runtime.providers.mock`.
  *
  * If tools are offered and no tool result is yet in history, it calls the first
  * tool with empty args; otherwise it returns a fixed text response. This drives
@@ -1314,12 +1314,12 @@ export { clearProviders, getProvider, registerProvider } from "./registry";
 
 - [ ] **Step 7: Run, verify pass**
 ```bash
-cd agentkit/ts && bun run test tests/providers.mock.test.ts
+cd kaji/ts && bun run test tests/providers.mock.test.ts
 ```
 
 - [ ] **Step 8: Commit**
 ```bash
-git add agentkit/ts/src/providers/ agentkit/ts/tests/providers.mock.test.ts
+git add kaji/ts/src/providers/ kaji/ts/tests/providers.mock.test.ts
 git commit -m "feat(ts): add ModelProvider interface, registry, and MockProvider"
 ```
 
@@ -1328,19 +1328,19 @@ git commit -m "feat(ts): add ModelProvider interface, registry, and MockProvider
 ### Task 10: CancellationToken, buildMessages, and AgentRuntime
 
 **Files:**
-- Create: `agentkit/ts/src/runtime/cancellation.ts`
-- Create: `agentkit/ts/src/runtime/context.ts`
-- Create: `agentkit/ts/src/runtime/runtime.ts`
-- Create: `agentkit/ts/tests/runtime.test.ts`
+- Create: `kaji/ts/src/runtime/cancellation.ts`
+- Create: `kaji/ts/src/runtime/context.ts`
+- Create: `kaji/ts/src/runtime/runtime.ts`
+- Create: `kaji/ts/tests/runtime.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `agentkit/ts/tests/runtime.test.ts`:
+Create `kaji/ts/tests/runtime.test.ts`:
 ```ts
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { AgentKitEvent, EventType } from "../src/events/schemas";
+import { KajiEvent, EventType } from "../src/events/schemas";
 import { EventBus } from "../src/events/bus";
 import { InMemoryEventStore } from "../src/events/store";
 import { MockProvider } from "../src/providers/mock";
@@ -1412,10 +1412,10 @@ describe("AgentRuntime.runTurn", () => {
 
   async function seed(store: InMemoryEventStore, sessionId: string) {
     await store.append(
-      AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
+      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }),
     );
     await store.append(
-      AgentKitEvent.parse({
+      KajiEvent.parse({
         type: EventType.USER_MESSAGE,
         session_id: sessionId,
         content: "hello",
@@ -1424,7 +1424,7 @@ describe("AgentRuntime.runTurn", () => {
   }
 
   async function collectUntilCompleted(bus: EventBus, sessionId: string) {
-    const got: AgentKitEvent[] = [];
+    const got: KajiEvent[] = [];
     const sub = bus.subscribe(sessionId);
     const done = (async () => {
       for await (const e of sub) {
@@ -1527,7 +1527,7 @@ describe("AgentRuntime.runTurn", () => {
 
 - [ ] **Step 2: Run, verify fail**
 ```bash
-cd agentkit/ts && bun run test tests/runtime.test.ts
+cd kaji/ts && bun run test tests/runtime.test.ts
 ```
 
 - [ ] **Step 3: Create `cancellation.ts`**
@@ -1556,7 +1556,7 @@ export class CancellationToken {
 ```ts
 /**
  * Build the provider message list from replayed session state. Mirrors the
- * message construction in `agentkit.runtime.agents.runtime`.
+ * message construction in `kaji.runtime.agents.runtime`.
  */
 import type { ProviderMessage } from "../providers/base";
 import type { Message } from "../sessions/replay";
@@ -1591,14 +1591,14 @@ export function buildMessages(
 ```ts
 /**
  * Agent runtime: the ReAct tool-using loop, mirroring
- * `agentkit.runtime.agents.runtime.AgentRuntime`.
+ * `kaji.runtime.agents.runtime.AgentRuntime`.
  *
  * runTurn: replay state -> build messages -> stream from provider -> emit
  * events -> execute tool calls concurrently (scatter-gather) -> loop until the
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
 import { EventBus } from "../events/bus";
-import { AgentKitEvent, type AgentKitEventInput, EventType } from "../events/schemas";
+import { KajiEvent, type KajiEventInput, EventType } from "../events/schemas";
 import type { EventStore } from "../events/store";
 import type { ModelProvider, ToolCall } from "../providers/base";
 import { replaySession } from "../sessions/replay";
@@ -1637,9 +1637,9 @@ export class AgentRuntime {
     token.throwIfCancelled();
 
     const emit = async (
-      input: Omit<AgentKitEventInput, "session_id">,
+      input: Omit<KajiEventInput, "session_id">,
     ): Promise<void> => {
-      const event = AgentKitEvent.parse({ ...input, session_id: sessionId });
+      const event = KajiEvent.parse({ ...input, session_id: sessionId });
       await this.store.append(event);
       await this.bus.publish(event);
     };
@@ -1727,13 +1727,13 @@ export class AgentRuntime {
 
 - [ ] **Step 6: Run, verify pass**
 ```bash
-cd agentkit/ts && bun run test tests/runtime.test.ts
+cd kaji/ts && bun run test tests/runtime.test.ts
 ```
 Expected: CancellationToken (2), buildMessages (3), AgentRuntime (4) all pass.
 
 - [ ] **Step 7: Commit**
 ```bash
-git add agentkit/ts/src/runtime/ agentkit/ts/tests/runtime.test.ts
+git add kaji/ts/src/runtime/ kaji/ts/tests/runtime.test.ts
 git commit -m "feat(ts): add AgentRuntime ReAct loop, CancellationToken, buildMessages"
 ```
 
@@ -1742,7 +1742,7 @@ git commit -m "feat(ts): add AgentRuntime ReAct loop, CancellationToken, buildMe
 ### Task 11: Export the provider + runtime surface
 
 **Files:**
-- Modify: `agentkit/ts/src/index.ts`
+- Modify: `kaji/ts/src/index.ts`
 
 - [ ] **Step 1: Append the new exports** (after the existing Tools block):
 ```ts
@@ -1769,13 +1769,13 @@ export { buildMessages } from "./runtime/context";
 
 - [ ] **Step 2: Full TS gate**
 ```bash
-cd agentkit/ts && bun run test && bun run typecheck && bun run build
+cd kaji/ts && bun run test && bun run typecheck && bun run build
 ```
 Expected: all tests pass, no type errors, `dist/` built.
 
 - [ ] **Step 3: Commit**
 ```bash
-git add agentkit/ts/src/index.ts
+git add kaji/ts/src/index.ts
 git commit -m "feat(ts): export provider and runtime surface from index"
 ```
 
@@ -1807,20 +1807,20 @@ git commit -m "docs: mark RAG, session persistence, and TS runtime items done"
 "Done on the roadmap, missing to every dev who tries it" is a launch blocker. Each of the three features needs a copy-paste-complete, zero-key-runnable snippet. All three use the infra-free path (stub embedder / `InMemorySessionStore` / `MockProvider`) so they run with no env, matching the existing agent quickstart's use of `mock`.
 
 **Files:**
-- Modify: `agentkit/sdk/agentkit/README.md` (Python: RAG + sessions)
-- Modify: `agentkit/ts/README.md` (TS: agent runtime)
+- Modify: `kaji/sdk/kaji/README.md` (Python: RAG + sessions)
+- Modify: `kaji/ts/README.md` (TS: agent runtime)
 
 - [ ] **Step 1: Add a "Document RAG" section to the Python README** with a runnable block using an injected stub embedder (no key needed), then one sentence naming the seam:
 ```python
-import agentkit
+import kaji
 
 # Inject any embedder; this stub keeps the example key-free and runnable.
 class StubEmbedder:
     async def embed(self, text: str) -> list[float]:
         return [1.0, 0.0] if "cat" in text.lower() else [0.0, 1.0]
 
-rag = agentkit.DocumentRAG(embedder=StubEmbedder())
-await rag.add_document(agentkit.Document(id="d1", text="cats purr; dogs bark"))
+rag = kaji.DocumentRAG(embedder=StubEmbedder())
+await rag.add_document(kaji.Document(id="d1", text="cats purr; dogs bark"))
 chunks = await rag.retrieve("tell me about cats", top_k=1)
 # For production, pass a real embedder (e.g. set GEMINI_API_KEY and use the default).
 ```
@@ -1828,11 +1828,11 @@ chunks = await rag.retrieve("tell me about cats", top_k=1)
 
 - [ ] **Step 2: Add a "Listing sessions" snippet** to the Python README:
 ```python
-import agentkit
+import kaji
 
-store = agentkit.InMemoryEventStore()
-sessions = agentkit.InMemorySessionStore()
-mgr = agentkit.SessionManager(store, session_store=sessions)
+store = kaji.InMemoryEventStore()
+sessions = kaji.InMemorySessionStore()
+mgr = kaji.SessionManager(store, session_store=sessions)
 
 await mgr.record_session("s1", user_id="u1", title="First chat")
 active = await mgr.list_active("u1")  # [{"session_id": "s1", ...}]
@@ -1841,21 +1841,21 @@ active = await mgr.list_active("u1")  # [{"session_id": "s1", ...}]
 
 - [ ] **Step 3: Add a "Run an agent" quickstart to the TS README** (it currently has none) using `MockProvider`, and a note on the constructor difference from Python (DX F2):
 ```ts
-import { AgentRuntime, EventBus, InMemoryEventStore, MockProvider, AgentKitEvent, EventType } from "@agentkit/sdk";
+import { AgentRuntime, EventBus, InMemoryEventStore, MockProvider, KajiEvent, EventType } from "@kaji/sdk";
 
 const store = new InMemoryEventStore();
 const bus = new EventBus();
 const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
 
-await store.append(AgentKitEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }));
-await store.append(AgentKitEvent.parse({ type: EventType.USER_MESSAGE, session_id: "s1", content: "hi" }));
+await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }));
+await store.append(KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: "s1", content: "hi" }));
 await runtime.runTurn("s1");
 ```
 > Note: the TS `AgentRuntime` takes an options object and runs the tool loop internally (no separate `ToolPlanner`); the Python `AgentRuntime` takes positional args plus a `ToolPlanner`. Same event sequence, different constructor ergonomics.
 
 - [ ] **Step 4: Commit**
 ```bash
-git add agentkit/sdk/agentkit/README.md agentkit/ts/README.md
+git add kaji/sdk/kaji/README.md kaji/ts/README.md
 git commit -m "docs: add runnable quickstarts for RAG, sessions, and TS agent"
 ```
 
@@ -1865,16 +1865,16 @@ git commit -m "docs: add runnable quickstarts for RAG, sessions, and TS agent"
 
 - [ ] **Python SDK, infra-free import** (no env):
 ```bash
-cd agentkit/sdk && poetry run python -c "import agentkit; print(agentkit.DocumentRAG, agentkit.InMemorySessionStore)"
+cd kaji/sdk && poetry run python -c "import kaji; print(kaji.DocumentRAG, kaji.InMemorySessionStore)"
 ```
 - [ ] **Python full suite**:
 ```bash
-cd agentkit/sdk && poetry run pytest tests/ -q
+cd kaji/sdk && poetry run pytest tests/ -q
 ```
 Expected: all green (83 prior + ~25 new).
 - [ ] **TS full gate**:
 ```bash
-cd agentkit/ts && bun run test && bun run typecheck && bun run build
+cd kaji/ts && bun run test && bun run typecheck && bun run build
 ```
 Expected: all tests pass (existing + ~15 new), no type errors, clean build.
 - [ ] **Both SDKs still infra-free**: neither import nor the happy-path run requires a DB, Redis, server, or API key (mock + in-memory only).
@@ -1915,7 +1915,7 @@ Expected: all tests pass (existing + ~15 new), no type errors, clean build.
 
 **STATUS: APPROVED 2026-06-07.** User kept original scope (RAG + persistence + TS runtime parity) over the CEO challenge to pivot to providers-first. All Eng (C1/H3/H4/M5) and DX (F1/F3/F4/F5/F6) auto-fixes folded into the task bodies. Ready to execute.
 
-Reviewed 2026-06-07 on `feat/agentkit-rag-persistence-ts-runtime`. Dual voices degraded to **[subagent-only]** (Codex CLI not authed). CEO + Eng + DX phases ran at full depth via independent Claude subagents.
+Reviewed 2026-06-07 on `feat/kaji-rag-persistence-ts-runtime`. Dual voices degraded to **[subagent-only]** (Codex CLI not authed). CEO + Eng + DX phases ran at full depth via independent Claude subagents.
 
 ### CEO consensus (subagent-only)
 | Dimension | Subagent | Note |

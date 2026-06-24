@@ -4,46 +4,46 @@ on:
   push:
     branches: [main]
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.format.yml"
   pull_request:
     paths:
-      - "agentkit/sdk/**"
-      - "agentkit/serve/**"
+      - "kaji/sdk/**"
+      - "kaji/serve/**"
       - ".github/actions/setup-python-poetry/**"
       - ".github/workflows/python.format.yml"
 
 jobs:
   sdk:
-    name: agentkit/sdk
+    name: kaji/sdk
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/sdk
+        working-directory: kaji/sdk
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/sdk
+          working-directory: kaji/sdk
 
       - name: Check formatting
         run: poetry run ruff format --check .
 
   serve:
-    name: agentkit/serve
+    name: kaji/serve
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentkit/serve
+        working-directory: kaji/serve
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-python-poetry
         with:
-          working-directory: agentkit/serve
+          working-directory: kaji/serve
 
       - name: Check formatting
         run: poetry run ruff format --check .

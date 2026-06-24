@@ -1,0 +1,23 @@
+# ryo local dev — Caddy reverse proxy
+# Automatic TLS via internal CA (trust once with: caddy trust)
+#
+# @ryo/api  → http://host.docker.internal:8090
+# @ryo/web  → http://host.docker.internal:5173  (Vite dev server)
+
+localhost {
+	# API — all /v1/* and /webhooks/* routes
+	handle /v1/* {
+		reverse_proxy host.docker.internal:8090
+	}
+	handle /webhooks/* {
+		reverse_proxy host.docker.internal:8090
+	}
+	handle /health {
+		reverse_proxy host.docker.internal:8090
+	}
+
+	# Web — everything else
+	handle {
+		reverse_proxy host.docker.internal:5173
+	}
+}

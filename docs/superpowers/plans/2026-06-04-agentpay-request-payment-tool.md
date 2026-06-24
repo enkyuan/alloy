@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `request_payment` tool to the agentkit Python SDK that calls `POST /v1/sessions` on `@agentpay/api` and returns a checkout URL to the agent.
+**Goal:** Add a `request_payment` tool to the kaji Python SDK that calls `POST /v1/sessions` on `@agentpay/api` and returns a checkout URL to the agent.
 
-**Architecture:** The tool lives in `packages/sdk/agentkit/tools/payment.py`. It registers itself with agentkit's tool registry using the existing `register_tool` + `ToolSpec` pattern. Configuration (API base URL, API key) is read from env vars at call time. The tool is opt-in — nothing imports it by default; callers register it by importing the module.
+**Architecture:** The tool lives in `packages/sdk/kaji/tools/payment.py`. It registers itself with kaji's tool registry using the existing `register_tool` + `ToolSpec` pattern. Configuration (API base URL, API key) is read from env vars at call time. The tool is opt-in — nothing imports it by default; callers register it by importing the module.
 
-**Tech Stack:** Python 3.11+, `httpx` (already a SDK dep), `agentkit.runtime.tools.registry`.
+**Tech Stack:** Python 3.11+, `httpx` (already a SDK dep), `kaji.runtime.tools.registry`.
 
 **Dependency:** Requires Plan 1 (agentpay API extensions) deployed — the tool calls `POST /v1/sessions`.
 
@@ -16,8 +16,8 @@
 
 | file | action | responsibility |
 |------|--------|---------------|
-| `packages/sdk/agentkit/tools/__init__.py` | create | empty package marker |
-| `packages/sdk/agentkit/tools/payment.py` | create | `request_payment` tool + registration helper |
+| `packages/sdk/kaji/tools/__init__.py` | create | empty package marker |
+| `packages/sdk/kaji/tools/payment.py` | create | `request_payment` tool + registration helper |
 | `packages/sdk/tests/test_tools_payment.py` | create | unit tests (mocked HTTP) |
 
 ---
@@ -25,19 +25,19 @@
 ## Task 1: Package scaffold
 
 **Files:**
-- Create: `packages/sdk/agentkit/tools/__init__.py`
+- Create: `packages/sdk/kaji/tools/__init__.py`
 
 - [ ] **Step 1: Create the package**
 
 ```bash
-mkdir -p packages/sdk/agentkit/tools
-touch packages/sdk/agentkit/tools/__init__.py
+mkdir -p packages/sdk/kaji/tools
+touch packages/sdk/kaji/tools/__init__.py
 ```
 
 - [ ] **Step 2: Verify importable**
 
 ```bash
-cd packages/sdk && python -c "import agentkit.tools; print('ok')"
+cd packages/sdk && python -c "import kaji.tools; print('ok')"
 ```
 
 Expected: `ok`
@@ -45,8 +45,8 @@ Expected: `ok`
 - [ ] **Step 3: Commit**
 
 ```bash
-git add packages/sdk/agentkit/tools/__init__.py
-git commit -m "feat(sdk): add agentkit.tools package"
+git add packages/sdk/kaji/tools/__init__.py
+git commit -m "feat(sdk): add kaji.tools package"
 ```
 
 ---
@@ -67,7 +67,7 @@ import pytest
 import httpx
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from agentkit.runtime.tools.registry import (
+from kaji.runtime.tools.registry import (
     ToolContext,
     _TOOL_SPECS,
     _TOOL_HANDLERS,
@@ -90,7 +90,7 @@ def isolated_registry():
 
 def test_register_payment_tool_adds_to_registry():
     """Importing and calling register() adds request_payment to the registry."""
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
     register_payment_tool(api_base_url="http://api.test", api_key="tok")
     assert "request_payment" in _TOOL_SPECS
     spec = _TOOL_SPECS["request_payment"]
@@ -102,7 +102,7 @@ def test_register_payment_tool_adds_to_registry():
 @pytest.mark.asyncio
 async def test_request_payment_returns_checkout_url(monkeypatch):
     """Successful API call returns client_secret."""
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
     register_payment_tool(api_base_url="http://api.test", api_key="tok")
 
     mock_response = MagicMock()
@@ -129,7 +129,7 @@ async def test_request_payment_returns_checkout_url(monkeypatch):
 @pytest.mark.asyncio
 async def test_request_payment_handles_api_error(monkeypatch):
     """Non-2xx from API returns error dict (does not raise)."""
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
     register_payment_tool(api_base_url="http://api.test", api_key="tok")
 
     mock_response = MagicMock()
@@ -152,7 +152,7 @@ async def test_request_payment_handles_api_error(monkeypatch):
 @pytest.mark.asyncio
 async def test_request_payment_missing_required_args():
     """Missing required args returns error dict."""
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
     register_payment_tool(api_base_url="http://api.test", api_key="tok")
 
     ctx = ToolContext(user_id="user-1")
@@ -165,7 +165,7 @@ async def test_request_payment_missing_required_args():
 
 def test_register_twice_raises():
     """Calling register_payment_tool twice raises ValueError."""
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
     register_payment_tool(api_base_url="http://api.test", api_key="tok")
     with pytest.raises(ValueError, match="already registered"):
         register_payment_tool(api_base_url="http://api.test", api_key="tok")
@@ -177,7 +177,7 @@ def test_register_twice_raises():
 cd packages/sdk && python -m pytest tests/test_tools_payment.py -v
 ```
 
-Expected: `ImportError: cannot import name 'register_payment_tool' from 'agentkit.tools.payment'`
+Expected: `ImportError: cannot import name 'register_payment_tool' from 'kaji.tools.payment'`
 
 - [ ] **Step 3: Commit the test file**
 
@@ -191,18 +191,18 @@ git commit -m "test(sdk): failing tests for request_payment tool"
 ## Task 3: Implement the tool
 
 **Files:**
-- Create: `packages/sdk/agentkit/tools/payment.py`
+- Create: `packages/sdk/kaji/tools/payment.py`
 
 - [ ] **Step 1: Write the implementation**
 
-Create `packages/sdk/agentkit/tools/payment.py`:
+Create `packages/sdk/kaji/tools/payment.py`:
 
 ```python
 """request_payment tool for agentpay.
 
 Usage::
 
-    from agentkit.tools.payment import register_payment_tool
+    from kaji.tools.payment import register_payment_tool
 
     register_payment_tool(
         api_base_url=os.environ["AGENTPAY_API_URL"],
@@ -210,7 +210,7 @@ Usage::
     )
 
 After calling ``register_payment_tool``, the ``request_payment`` tool is
-available in the agentkit registry and will be surfaced to any ``AgentRuntime``
+available in the kaji registry and will be surfaced to any ``AgentRuntime``
 configured with it.
 """
 
@@ -221,14 +221,14 @@ from typing import Any, Dict
 
 import httpx
 
-from agentkit.runtime.tools.registry import ToolContext, ToolSpec, register_tool
+from kaji.runtime.tools.registry import ToolContext, ToolSpec, register_tool
 
 
 def register_payment_tool(
     api_base_url: str | None = None,
     api_key: str | None = None,
 ) -> None:
-    """Register the request_payment tool with the agentkit registry.
+    """Register the request_payment tool with the kaji registry.
 
     Args:
         api_base_url: Base URL for @agentpay/api.
@@ -328,7 +328,7 @@ Expected: all 5 tests PASS.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add packages/sdk/agentkit/tools/payment.py
+git add packages/sdk/kaji/tools/payment.py
 git commit -m "feat(sdk): request_payment agentpay tool"
 ```
 
@@ -337,28 +337,28 @@ git commit -m "feat(sdk): request_payment agentpay tool"
 ## Task 4: Export from public API
 
 **Files:**
-- Modify: `packages/sdk/agentkit/__init__.py`
+- Modify: `packages/sdk/kaji/__init__.py`
 
 - [ ] **Step 1: Check current lazy export map**
 
 ```bash
-cd packages/sdk && grep -n "register_payment_tool\|agentkit.tools" agentkit/__init__.py | head -10
+cd packages/sdk && grep -n "register_payment_tool\|kaji.tools" kaji/__init__.py | head -10
 ```
 
 Expected: no results (not yet exported).
 
 - [ ] **Step 2: Add to lazy export map**
 
-Open `packages/sdk/agentkit/__init__.py` and find the `_LAZY_MAP` dict. Add:
+Open `packages/sdk/kaji/__init__.py` and find the `_LAZY_MAP` dict. Add:
 
 ```python
-"register_payment_tool": "agentkit.tools.payment",
+"register_payment_tool": "kaji.tools.payment",
 ```
 
 - [ ] **Step 3: Verify the public import works**
 
 ```bash
-cd packages/sdk && python -c "import agentkit; print(agentkit.register_payment_tool)"
+cd packages/sdk && python -c "import kaji; print(kaji.register_payment_tool)"
 ```
 
 Expected: `<function register_payment_tool at 0x...>`
@@ -374,7 +374,7 @@ Expected: all tests pass (83+ passing).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/sdk/agentkit/__init__.py
+git add packages/sdk/kaji/__init__.py
 git commit -m "feat(sdk): export register_payment_tool from public API"
 ```
 
@@ -388,14 +388,14 @@ Run this snippet in a Python shell (no API key or real endpoint needed):
 
 ```python
 import asyncio
-import agentkit
+import kaji
 from unittest.mock import patch, AsyncMock, MagicMock
 
 # Register the tool pointed at a mock URL
-agentkit.register_payment_tool(api_base_url="http://localhost:8090", api_key="test-token")
+kaji.register_payment_tool(api_base_url="http://localhost:8090", api_key="test-token")
 
 # Confirm it appears in the registry
-specs = agentkit.list_tool_specs()
+specs = kaji.list_tool_specs()
 names = [s.name for s in specs]
 assert "request_payment" in names, f"tool not registered: {names}"
 print("request_payment registered:", next(s for s in specs if s.name == "request_payment"))

@@ -7,12 +7,12 @@ describe("secret command", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      await secret.parseAsync(["node", "agentkit"]);
+      await secret.parseAsync(["node", "kaji"]);
     } finally {
       console.log = orig;
     }
     const joined = logs.join("\n");
-    expect(joined).toMatch(/AGENTKIT_SECRET=[0-9a-f]{64}/);
+    expect(joined).toMatch(/KAJI_SECRET=[0-9a-f]{64}/);
   });
 
   it("supports --json", async () => {
@@ -20,12 +20,12 @@ describe("secret command", () => {
     const orig = console.log;
     console.log = (...a) => logs.push(a.join(" "));
     try {
-      await secret.parseAsync(["node", "agentkit", "--json"]);
+      await secret.parseAsync(["node", "kaji", "--json"]);
     } finally {
       console.log = orig;
     }
     const json = JSON.parse(logs.join(""));
-    expect(json.name).toBe("AGENTKIT_SECRET");
+    expect(json.name).toBe("KAJI_SECRET");
     expect(json.value).toMatch(/^[0-9a-f]{64}$/);
   });
 });

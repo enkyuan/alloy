@@ -1,4 +1,4 @@
-export const appName = "agentkit";
+export const appName = "kaji";
 export const docsRoute = "/docs";
 export const docsImageRoute = "/og/docs";
 export const docsContentRoute = "/llms.mdx/docs";

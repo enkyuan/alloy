@@ -51,7 +51,7 @@ export function DesktopNavTabs({
   const [stars, setStars] = useState<number | null>(null);
 
   useEffect(() => {
-    const cached = sessionStorage.getItem("agentkit-gh-stars");
+    const cached = sessionStorage.getItem("kaji-gh-stars");
     if (cached) {
       setStars(Number(cached));
       return;
@@ -62,7 +62,7 @@ export function DesktopNavTabs({
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { stargazers_count?: number } | null) => {
         if (data?.stargazers_count !== undefined) {
-          sessionStorage.setItem("agentkit-gh-stars", String(data.stargazers_count));
+          sessionStorage.setItem("kaji-gh-stars", String(data.stargazers_count));
           setStars(data.stargazers_count);
         }
       })
@@ -194,7 +194,7 @@ export function DesktopNavTabs({
             target="_blank"
             rel="noreferrer"
             className="flex items-center gap-2 px-5 py-3 cursor-pointer font-mono text-xs uppercase tracking-wider bg-foreground text-background transition-opacity duration-150 hover:opacity-90"
-            aria-label="Star agentkit on GitHub"
+            aria-label="Star kaji on GitHub"
           >
             <GitHubIcon size={14} />
             <span>Star on GitHub</span>

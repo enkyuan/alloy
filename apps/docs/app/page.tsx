@@ -6,7 +6,7 @@ import { SignatureMark } from "@components/landing/footer/signature-mark";
 import { getCommunityStats } from "@lib/community-stats";
 
 export const metadata: Metadata = {
-  title: "agentkit — open-source agentic platform",
+  title: "kaji — open-source agentic platform",
   description:
     "The open-source SDK for building agentic applications. Tool registry, LLM providers, event bus, and more.",
 };

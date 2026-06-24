@@ -6,7 +6,7 @@ status: approved
 ## summary
 
 Restyle the existing `apps/docs` Fumadocs site to resemble the better-auth docs
-site, and polish the agentkit content using better-auth's writing patterns. Stay
+site, and polish the kaji content using better-auth's writing patterns. Stay
 on Next.js + Fumadocs (no framework migration). This is an in-place reskin of the
 app built on `feat/apps-docs-fumadocs`, not a re-clone.
 
@@ -103,10 +103,10 @@ For each of: `index.mdx`, `getting-started.mdx`, `architecture.mdx`,
 6. **Rich `description:` frontmatter**: rewrite each thin description into a
    specific better-auth-style sentence describing what the page covers.
 
-PRESERVE verbatim (do NOT case-change): the brand `agentkit`, package names
-(`agentkit-serve`, `@agentkit/sdk`), code identifiers (`replaySession`,
+PRESERVE verbatim (do NOT case-change): the brand `kaji`, package names
+(`kaji-serve`, `@kaji/sdk`), code identifiers (`replaySession`,
 `InMemoryEventBus`, `ModelProvider`, `ToolContext`, etc.), env vars
-(`AGENTKIT_MODEL_PROVIDER`), event type strings (`user.message`,
+(`KAJI_MODEL_PROVIDER`), event type strings (`user.message`,
 `tool.call.completed`), file paths, and everything inside code fences.
 
 Keep: the 9 pages, their structure, code samples, language-neutral framing, the
@@ -122,15 +122,15 @@ before is REPLACED by proper casing per the user's explicit request.
 
 - New branch `feat/docs` off the current `feat/apps-docs-fumadocs`.
 - Use bun for all package operations (`bun add geist`, `bun install`,
-  `bun --filter @agentkit/docs <script>`). Never npm.
+  `bun --filter @kaji/docs <script>`). Never npm.
 - Commit styling and content as separate logical commits.
 
 ## verification
 
 1. `bun add geist` succeeds in the workspace; `bun install` at root clean.
-2. `bun --filter @agentkit/docs build` passes (next build, all pages compile).
-3. `bun --filter @agentkit/docs typecheck` passes.
-4. `turbo run lint --filter=@agentkit/docs` and `format:check` do not regress.
+2. `bun --filter @kaji/docs build` passes (next build, all pages compile).
+3. `bun --filter @kaji/docs typecheck` passes.
+4. `turbo run lint --filter=@kaji/docs` and `format:check` do not regress.
 5. Clean-clone build: `git archive HEAD apps/docs | tar -x` into a temp dir,
    `bun install && bun run build` -> exit 0 (catches any untracked file).
 6. `/browse` dogfood: load the running dev site, confirm the black theme and

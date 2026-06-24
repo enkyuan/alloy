@@ -403,7 +403,7 @@ import (
 	"github.com/enkyuan/alloy/apps/api/internal/middleware"
 )
 
-// CreateSessionRequest is the payload sent by the agentkit request_payment tool.
+// CreateSessionRequest is the payload sent by the kaji request_payment tool.
 type CreateSessionRequest struct {
 	AgentID     string `json:"agent_id"    validate:"required"`
 	AmountCents int64  `json:"amount_cents" validate:"required,min=1"`

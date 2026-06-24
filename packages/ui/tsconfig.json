@@ -1,4 +1,4 @@
 {
-  "extends": "@agentkit/shared/tsconfig/react",
+  "extends": "@kaji/shared/tsconfig/react",
   "include": ["src"]
 }

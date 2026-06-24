@@ -1,9 +1,9 @@
 ---
 title: Events
-description: All agentkit session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
+description: All kaji session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
 ---
 
-Session state in agentkit is a deterministic projection of an append-only
+Session state in kaji is a deterministic projection of an append-only
 event log. The runtime appends events as you call `send`; `replaySession`
 reads them back into a usable `SessionState`.
 
@@ -44,8 +44,8 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 The canonical list is in the SDK source -- check there before relying on
 any event type:
 
-- Python: `agentkit/sdk/agentkit/infra/events/types.py`
-- TypeScript: `agentkit/ts/src/events/types.ts`
+- Python: `kaji/sdk/kaji/infra/events/types.py`
+- TypeScript: `kaji/ts/src/events/types.ts`
 
 ## Reading the log
 

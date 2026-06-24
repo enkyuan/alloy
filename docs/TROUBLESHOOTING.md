@@ -1,6 +1,6 @@
 # Troubleshooting
 
-The failures you're most likely to hit when embedding `agentkit`, with the
+The failures you're most likely to hit when embedding `kaji`, with the
 shortest path to a fix.
 
 ## "OpenAI API key is not configured"
@@ -10,7 +10,7 @@ ProviderConfigError: OpenAI API key is not configured. Set OPENAI_API_KEY.
 ```
 
 Set `OPENAI_API_KEY` in the environment, or pass the key inline:
-`agentkit.get_provider("openai", api_key="sk-...")`. The other providers
+`kaji.get_provider("openai", api_key="sk-...")`. The other providers
 have parallel checks:
 
 - `anthropic` -> `ANTHROPIC_API_KEY` (raises `ProviderConfigError`)
@@ -19,21 +19,21 @@ have parallel checks:
 - `gemini` -> `GEMINI_API_KEY` (raises plain `ValueError`, not
   `ProviderConfigError`)
 
-Run `agentkit info` to see what's currently set.
+Run `kaji info` to see what's currently set.
 
 ## "OpenAI provider requires the openai package"
 
 ```
-ProviderConfigError: OpenAI provider requires openai. Install agentkit[openai].
+ProviderConfigError: OpenAI provider requires openai. Install kaji[openai].
 ```
 
 Provider SDKs are optional peer dependencies. Install the extra:
 
 ```bash
-pip install 'agentkit[openai]'        # OpenAI
-pip install 'agentkit[anthropic]'     # Anthropic
-pip install 'agentkit[gemini]'        # Gemini
-pip install 'agentkit[providers]'     # all of the above
+pip install 'kaji[openai]'        # OpenAI
+pip install 'kaji[anthropic]'     # Anthropic
+pip install 'kaji[gemini]'        # Gemini
+pip install 'kaji[providers]'     # all of the above
 ```
 
 For the TS SDK, install the matching peer (`openai`, `@anthropic-ai/sdk`)
@@ -55,7 +55,7 @@ The model called a tool name the registry doesn't know. Usually one of:
   scan uses the attribute name; if you've manually overridden `tools()`,
   the `ToolSpec.name` you return is canonical.
 - Provider-safe name mangling collapsed two different tools to the same
-  name. Check `agentkit.runtime.tools.registry.provider_safe_tool_name`.
+  name. Check `kaji.runtime.tools.registry.provider_safe_tool_name`.
 
 ## "Invalid tool arguments"
 
@@ -90,12 +90,12 @@ The upstream API rejected the request. The error carries
 retry; wrap your `runtime.send` call if you want backoff. The same
 class is raised by every provider so you can catch it generically.
 
-## `import agentkit` is slow / requires env
+## `import kaji` is slow / requires env
 
-It shouldn't. `agentkit` resolves top-level names lazily and reads no
+It shouldn't. `kaji` resolves top-level names lazily and reads no
 environment at import. If you're seeing import-time failures or
 slowness, you've likely imported a non-MVP subpackage directly
-(`agentkit.knowledge`, `agentkit.modalities.voice`). Those have heavier
+(`kaji.knowledge`, `kaji.modalities.voice`). Those have heavier
 deps and may read settings.
 
 ## Test runs fail with `ValueError: Tool already registered`
@@ -105,7 +105,7 @@ ValueError: Tool already registered: get_weather
 ```
 
 The process-default `ToolRegistry` is module-global and persists across
-tests in the same interpreter. Call `agentkit.runtime.tools.registry.clear_tools()`
+tests in the same interpreter. Call `kaji.runtime.tools.registry.clear_tools()`
 in a fixture, or build a fresh scoped `ToolRegistry` per test instead of
 using the global decorator path.
 
@@ -118,6 +118,6 @@ been iterated to completion. Awaiting `text` without ever consuming
 
 ## See also
 
-- [CLI.md](CLI.md) for `agentkit doctor` and `agentkit info`.
+- [CLI.md](CLI.md) for `kaji doctor` and `kaji info`.
 - [RUNTIME_API.md](RUNTIME_API.md) for the headline API surface.
-- [AGENTKIT.md](AGENTKIT.md) for the shared concepts overview.
+- [KAJI.md](KAJI.md) for the shared concepts overview.

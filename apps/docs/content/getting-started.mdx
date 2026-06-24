@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install agentkit, define a tool, and run an agent turn end-to-end. Python and TypeScript.
+description: Install kaji, define a tool, and run an agent turn end-to-end. Python and TypeScript.
 ---
 
 This page takes you from `install` to a working agent in five steps. By the
@@ -14,12 +14,12 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```bash
-        pip install "agentkit[openai]"
+        pip install "kaji[openai]"
         ```
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun add @agentkit/sdk openai
+        bun add @kaji/sdk openai
         ```
       </Tab>
     </Tabs>
@@ -41,7 +41,7 @@ tool wired in.
     export KIMI_API_KEY=...              # Python default
     ```
 
-    To override the Python default, set `AGENTKIT_MODEL_PROVIDER=openai`.
+    To override the Python default, set `KAJI_MODEL_PROVIDER=openai`.
 
   </Step>
 
@@ -55,7 +55,7 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```python
-        from agentkit import function_tool
+        from kaji import function_tool
 
         @function_tool
         async def get_weather(city: str) -> dict:
@@ -65,7 +65,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { functionTool } from "@agentkit/sdk";
+        import { functionTool } from "@kaji/sdk";
         import { z } from "zod";
 
         const getWeather = functionTool(
@@ -91,7 +91,7 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```python
-        from agentkit import AgentBuilder, get_provider
+        from kaji import AgentBuilder, get_provider
 
         runtime = (
             AgentBuilder()
@@ -104,7 +104,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { AgentBuilder, OpenAIProvider } from "@agentkit/sdk";
+        import { AgentBuilder, OpenAIProvider } from "@kaji/sdk";
 
         const runtime = new AgentBuilder()
           .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))

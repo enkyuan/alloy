@@ -17,7 +17,7 @@ function writeFile(target: string, body: string, force: boolean): boolean {
 }
 
 async function interactive(): Promise<{ lang: Lang; provider: Provider }> {
-  p.intro(chalk.bold("agentkit init"));
+  p.intro(chalk.bold("kaji init"));
   const opts = await p.group(
     {
       lang: () =>
@@ -50,7 +50,7 @@ async function interactive(): Promise<{ lang: Lang; provider: Provider }> {
 }
 
 export const init = new Command("init")
-  .description("scaffold a new agentkit project")
+  .description("scaffold a new kaji project")
   .option("--cwd <cwd>", "target directory", process.cwd())
   .option("--lang <lang>", "ts|python")
   .option("--provider <provider>", "openai|anthropic|kimi|gemini")

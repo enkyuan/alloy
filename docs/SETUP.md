@@ -1,35 +1,35 @@
-# AgentKit Local Setup
+# Kaji Local Setup
 
 ## Structure
 
 ```
 .
-├── agentkit/
-│   ├── sdk/             # the `agentkit` SDK (Python)
-│   ├── serve/           # `agentkit-serve` -- FastAPI + workers (path-depends on ../sdk)
-│   └── ts/              # `@agentkit/sdk` -- TypeScript SDK
+├── kaji/
+│   ├── sdk/             # the `kaji` SDK (Python)
+│   ├── serve/           # `kaji-serve` -- FastAPI + workers (path-depends on ../sdk)
+│   └── ts/              # `@kaji/sdk` -- TypeScript SDK
 └── docker/
-    ├── agentkit/        # Postgres, Redis, Supabase for agentkit-serve
+    ├── kaji/        # Postgres, Redis, Supabase for kaji-serve
     └── agentpay/        # docker stack for the agentpay product
 ```
 
 ## FastAPI Backend Setup
 
-The reference service is the `agentkit-serve` distribution. Run these from
-`agentkit/serve/`; it pulls in the `agentkit` SDK via a path dependency
+The reference service is the `kaji-serve` distribution. Run these from
+`kaji/serve/`; it pulls in the `kaji` SDK via a path dependency
 (`../sdk`).
 
 ### 1. Install Poetry dependencies
 
 ```bash
-cd agentkit/serve
+cd kaji/serve
 poetry install
 ```
 
 ### 2. Set up environment
 
 ```bash
-cp ../../docker/agentkit/.env.example .env
+cp ../../docker/kaji/.env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
@@ -42,7 +42,7 @@ poetry run alembic upgrade head
 ### 4. Start development server
 
 ```bash
-poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+poetry run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`
@@ -52,29 +52,29 @@ API docs: `http://localhost:8080/api/v1/docs`
 From the repository root:
 
 ```bash
-cd docker/agentkit
+cd docker/kaji
 cp .env.example .env   # configure credentials
 docker compose up -d
 ```
 
-Services use the `agentkit` Compose project name (`agentkit-sdk`, `agentkit-worker`, `agentkit-bus-worker`).
+Services use the `kaji` Compose project name (`kaji-sdk`, `kaji-worker`, `kaji-bus-worker`).
 
 ## Running Tests
 
 ```bash
-# Core SDK tests (from agentkit/sdk/ -- no database needed)
-cd agentkit/sdk && poetry run pytest tests/
+# Core SDK tests (from kaji/sdk/ -- no database needed)
+cd kaji/sdk && poetry run pytest tests/
 
-# Reference service tests (from agentkit/serve/ -- DB tests need Postgres)
-cd agentkit/serve && poetry run pytest tests/
+# Reference service tests (from kaji/serve/ -- DB tests need Postgres)
+cd kaji/serve && poetry run pytest tests/
 ```
 
 ## Quick Start
 
 ```bash
-# Terminal 1: infrastructure + API (from docker/agentkit/)
-cd docker/agentkit && docker compose up -d
+# Terminal 1: infrastructure + API (from docker/kaji/)
+cd docker/kaji && docker compose up -d
 
-# Terminal 2: API server (from agentkit/serve/)
-cd agentkit/serve && poetry run uvicorn agentkit_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+# Terminal 2: API server (from kaji/serve/)
+cd kaji/serve && poetry run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

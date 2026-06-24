@@ -4,7 +4,7 @@ import { Command } from "commander";
 
 export const secret = new Command("secret")
   .description("generate a random 32-byte hex secret")
-  .option("--name <name>", "env var name", "AGENTKIT_SECRET")
+  .option("--name <name>", "env var name", "KAJI_SECRET")
   .option("--json", "print as JSON")
   .action((opts: { name: string; json?: boolean }) => {
     const value = Crypto.randomBytes(32).toString("hex");
@@ -13,5 +13,5 @@ export const secret = new Command("secret")
       return;
     }
     console.log(`\nAdd the following to your .env file:`);
-    console.log(`${chalk.gray("# agentkit secret")}\n${chalk.green(`${opts.name}=${value}`)}\n`);
+    console.log(`${chalk.gray("# kaji secret")}\n${chalk.green(`${opts.name}=${value}`)}\n`);
   });

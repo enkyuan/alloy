@@ -1,7 +1,8 @@
 {
-  "name": "@agentkit/docs",
+  "name": "@kaji/docs",
   "version": "0.0.0",
   "private": true,
+  "license": "SEE LICENSE IN ../../LICENSE",
   "scripts": {
     "build": "next build",
     "dev": "next dev",
@@ -14,7 +15,7 @@
     "clean": "rm -rf .next .source node_modules/.tmp out"
   },
   "dependencies": {
-    "@agentkit/ui": "workspace:*",
+    "@kaji/ui": "workspace:*",
     "@radix-ui/react-checkbox": "^1.3.4",
     "@radix-ui/react-dialog": "^1.1.16",
     "@radix-ui/react-label": "^2.1.9",
