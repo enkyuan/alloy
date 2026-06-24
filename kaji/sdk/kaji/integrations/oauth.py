@@ -115,16 +115,24 @@ class KeyringTokenStorage:
         self.service_name = service_name
         self.account = account
 
-    def _require_keyring(self) -> None:
+    def _require_keyring(self) -> Any:
+        """Return the loaded keyring module, raising a clear error if absent.
+
+        Returns the module rather than a bare ``None``-guard so the caller
+        works against a narrowed local; the static type-checker cannot
+        track that ``self.keyring`` stays non-None after a separate
+        method call.
+        """
         if keyring is None:
             raise OAuthError(
                 "KeyringTokenStorage requires the 'keyring' package. "
                 "Install with: pip install 'kaji[oauth-keyring]'"
             )
+        return keyring
 
     def load(self) -> Optional[dict[str, Any]]:
-        self._require_keyring()
-        secret = keyring.get_password(self.service_name, self.account)
+        kr = self._require_keyring()
+        secret = kr.get_password(self.service_name, self.account)
         if secret is None:
             return None
         try:
@@ -141,8 +149,8 @@ class KeyringTokenStorage:
             return None
 
     def save(self, data: dict[str, Any]) -> None:
-        self._require_keyring()
-        keyring.set_password(self.service_name, self.account, json.dumps(data))
+        kr = self._require_keyring()
+        kr.set_password(self.service_name, self.account, json.dumps(data))
 
 
 @dataclass
