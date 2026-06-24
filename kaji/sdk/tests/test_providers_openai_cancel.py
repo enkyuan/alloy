@@ -56,7 +56,11 @@ async def test_generate_stream_raises_mid_stream_on_cancel():
     class _Chunk:
         def __init__(self, content: str) -> None:
             self.choices = [
-                type("C", (), {"delta": type("D", (), {"content": content, "tool_calls": None})})()
+                type(
+                    "C",
+                    (),
+                    {"delta": type("D", (), {"content": content, "tool_calls": None})},
+                )()
             ]
 
     async def _fake_stream():
@@ -103,7 +107,11 @@ async def test_generate_stream_completes_when_token_never_set():
     class _Chunk:
         def __init__(self, content: str) -> None:
             self.choices = [
-                type("C", (), {"delta": type("D", (), {"content": content, "tool_calls": None})})()
+                type(
+                    "C",
+                    (),
+                    {"delta": type("D", (), {"content": content, "tool_calls": None})},
+                )()
             ]
 
     async def _fake_stream():

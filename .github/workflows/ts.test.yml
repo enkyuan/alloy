@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "kaji/ts/**"
-      - "agentpay/auth/**"
+      - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
       - "package.json"
@@ -14,7 +14,7 @@ on:
   pull_request:
     paths:
       - "kaji/ts/**"
-      - "agentpay/auth/**"
+      - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
       - "package.json"
@@ -81,17 +81,17 @@ jobs:
           npx --yes tsx ./smoke-install.mts
 
   auth:
-    name: agentpay/auth
+    name: ryo/auth
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: agentpay/auth
+        working-directory: ryo/auth
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: agentpay/auth
+          working-directory: ryo/auth
 
       - name: Typecheck
         run: bun run typecheck

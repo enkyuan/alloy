@@ -39,8 +39,8 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c1", name: "price_check", arguments: { price: Number.NaN } }],
       noopEmit,
     );
-    expect("error" in out[0]).toBe(true);
-    expect((out[0] as { error: string }).error).toMatch(/finite/i);
+    expect("error" in out[0]!).toBe(true);
+    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
   });
 
   it("rejects positive Infinity as a number argument", async () => {
@@ -56,8 +56,8 @@ describe("ToolPlanner argument validation", () => {
       ],
       noopEmit,
     );
-    expect("error" in out[0]).toBe(true);
-    expect((out[0] as { error: string }).error).toMatch(/finite/i);
+    expect("error" in out[0]!).toBe(true);
+    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
   });
 
   it("rejects negative Infinity as a number argument", async () => {
@@ -73,8 +73,8 @@ describe("ToolPlanner argument validation", () => {
       ],
       noopEmit,
     );
-    expect("error" in out[0]).toBe(true);
-    expect((out[0] as { error: string }).error).toMatch(/finite/i);
+    expect("error" in out[0]!).toBe(true);
+    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
   });
 
   it("rejects NaN as an integer argument", async () => {
@@ -84,8 +84,8 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c4", name: "count_check", arguments: { n: Number.NaN } }],
       noopEmit,
     );
-    expect("error" in out[0]).toBe(true);
-    expect((out[0] as { error: string }).error).toMatch(/finite/i);
+    expect("error" in out[0]!).toBe(true);
+    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
   });
 
   it("accepts a finite number", async () => {
@@ -95,7 +95,7 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c5", name: "price_check", arguments: { price: 42 } }],
       noopEmit,
     );
-    expect("result" in out[0]).toBe(true);
+    expect("result" in out[0]!).toBe(true);
   });
 
   it("accepts a finite integer", async () => {
@@ -105,6 +105,6 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c6", name: "count_check", arguments: { n: 7 } }],
       noopEmit,
     );
-    expect("result" in out[0]).toBe(true);
+    expect("result" in out[0]!).toBe(true);
   });
 });

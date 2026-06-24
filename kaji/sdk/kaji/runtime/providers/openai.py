@@ -23,7 +23,9 @@ from kaji.runtime.providers.types import (
     ModelResponseChunk,
     TokenMetrics,
 )
-from kaji.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
+from kaji.runtime.providers._cancellation import (
+    raise_if_cancelled as _raise_if_cancelled,
+)
 from kaji.runtime.providers._translate import format_messages_openai
 from kaji.runtime.tools.payload import to_openai
 

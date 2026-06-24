@@ -26,9 +26,7 @@ def mock_redis():
     async def get_redis():
         return fake_redis
 
-    with patch(
-        "kaji_serve.server.v1.tools.get_redis_client", side_effect=get_redis
-    ):
+    with patch("kaji_serve.server.v1.tools.get_redis_client", side_effect=get_redis):
         yield fake_redis
 
 

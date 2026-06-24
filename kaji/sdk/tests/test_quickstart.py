@@ -48,9 +48,7 @@ async def test_quickstart_agent_builder_path() -> None:
         .build(bus=bus, store=store)
     )
 
-    await store.append(
-        kaji.UserMessage(session_id="s1", content="Weather in Seattle?")
-    )
+    await store.append(kaji.UserMessage(session_id="s1", content="Weather in Seattle?"))
     await runtime.run_turn("s1")
 
     events = await store.get_events("s1")
@@ -93,9 +91,7 @@ async def test_quickstart_send_convenience_method() -> None:
     bus = kaji.InMemoryEventBus()
     store = kaji.InMemoryEventStore()
 
-    runtime = (
-        kaji.AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
-    )
+    runtime = kaji.AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
 
     # seed SESSION_CREATED so replay doesn't error on empty log
     await store.append(kaji.UserMessage(session_id="s3", content="first"))

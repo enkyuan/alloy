@@ -217,9 +217,7 @@ def test_keyring_token_storage_uses_keyring(monkeypatch: pytest.MonkeyPatch) -> 
         def get_password(service: str, account: str):
             return fake_store.get((service, account))
 
-    monkeypatch.setattr(
-        "kaji.integrations.oauth.keyring", FakeKeyring, raising=False
-    )
+    monkeypatch.setattr("kaji.integrations.oauth.keyring", FakeKeyring, raising=False)
 
     storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
     payload = {"access_token": "a", "refresh_token": "r", "expires_at": 1.0}
@@ -237,9 +235,7 @@ def test_keyring_token_storage_returns_none_when_unset(
         def get_password(_service: str, _account: str):
             return None
 
-    monkeypatch.setattr(
-        "kaji.integrations.oauth.keyring", FakeKeyring, raising=False
-    )
+    monkeypatch.setattr("kaji.integrations.oauth.keyring", FakeKeyring, raising=False)
 
     storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
     assert storage.load() is None

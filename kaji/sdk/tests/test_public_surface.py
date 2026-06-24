@@ -38,9 +38,7 @@ EXPECTED_PUBLIC = {
 
 
 def test_public_surface_is_pinned() -> None:
-    public = {
-        n for n in dir(kaji) if not n.startswith("_") and n != "TYPE_CHECKING"
-    }
+    public = {n for n in dir(kaji) if not n.startswith("_") and n != "TYPE_CHECKING"}
     # __version__ is the only non-LAZY exported name.
     public -= {"__version__"}
     assert public == EXPECTED_PUBLIC, sorted(public ^ EXPECTED_PUBLIC)

@@ -48,9 +48,7 @@ def run_checks(env: dict, python_version: str, kaji_version: str) -> dict:
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
-    p = sub.add_parser(
-        "doctor", help="check the environment for common kaji issues"
-    )
+    p = sub.add_parser("doctor", help="check the environment for common kaji issues")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run)
 

@@ -139,7 +139,8 @@ export function streamText(options: GenerateTextOptions): StreamTextResult {
             await advance;
           }
           if (cursor < collected.length) {
-            return { value: collected[cursor++], done: false };
+            const value = collected[cursor++] as string;
+            return { value, done: false };
           }
           if (drainError) throw drainError;
           return { value: undefined as unknown as string, done: true };

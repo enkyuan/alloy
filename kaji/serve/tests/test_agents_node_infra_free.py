@@ -53,9 +53,7 @@ def registered_tool():
 async def test_node_text_response_no_tools(use_mock_provider):
     """With no tools registered, the node returns a plain text response."""
     # Guard: ensure no tools leak in from other tests.
-    with patch(
-        "kaji_serve.runtime.nodes.agentic.build_tools_payload", return_value=[]
-    ):
+    with patch("kaji_serve.runtime.nodes.agentic.build_tools_payload", return_value=[]):
         node = AgentReasoningNode(system_prompt="You are helpful.")
         outputs = [chunk async for chunk in node.generate(_message("hello"))]
 

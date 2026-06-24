@@ -20,8 +20,8 @@ class InMemoryEventBus:
 
     def __init__(self) -> None:
         self._log: Dict[str, List[KajiEvent]] = defaultdict(list)
-        self._subscribers: Dict[str, List["asyncio.Queue[KajiEvent]"]] = (
-            defaultdict(list)
+        self._subscribers: Dict[str, List["asyncio.Queue[KajiEvent]"]] = defaultdict(
+            list
         )
 
     async def publish(self, event: KajiEvent) -> str:

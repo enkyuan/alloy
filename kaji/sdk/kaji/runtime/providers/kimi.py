@@ -5,7 +5,9 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 
 from kaji.core.config import get_settings
-from kaji.runtime.providers._cancellation import raise_if_cancelled as _raise_if_cancelled
+from kaji.runtime.providers._cancellation import (
+    raise_if_cancelled as _raise_if_cancelled,
+)
 from kaji.runtime.providers._translate import format_messages_openai
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.errors import ProviderAPIError, ProviderConfigError
