@@ -71,4 +71,28 @@ print("\nChecking version...")
 assert hasattr(kaji, "__version__"), "kaji.__version__ missing"
 print(f"  ok: kaji.__version__ = {kaji.__version__}")
 
+# ---------------------------------------------------------------------------
+# 4. Every registry manifest file ships in the wheel.
+# ---------------------------------------------------------------------------
+# Catches packaging drift: the registry is dual-language (.py + .ts), and
+# pyproject.toml must include every glob declared by any manifest. A missing
+# file would only surface when a user calls install_integration() on a real
+# install, so check it here.
+print("\nChecking every registry manifest file is packaged...")
+
+from kaji.integrations import list_integrations, load_manifest  # noqa: E402
+
+for entry in list_integrations():
+    manifest = load_manifest(entry)
+    for rel in manifest.files:
+        src = manifest.root / rel
+        if not src.exists():
+            print(
+                f"FAIL: {entry}: manifest declares '{rel}' but it is missing "
+                f"from the installed wheel at {src}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"  ok: {entry}/{rel}")
+
 print("\nSmoke install: PASSED")

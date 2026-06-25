@@ -1,9 +1,15 @@
 /**
  * Mock LLM provider, mirroring `kaji.runtime.providers.mock`.
  *
- * If tools are offered and no tool result is yet in history, it calls the first
- * tool with schema-satisfying placeholder args; otherwise it returns a fixed
- * text response. This drives the full tool loop without a network call.
+ * Default behavior (no options): if tools are offered and no tool result is
+ * yet in history, it calls the first tool with schema-satisfying placeholder
+ * args; otherwise it returns a fixed text response.
+ *
+ * Options (`reply` and `toolCall` are mutually exclusive):
+ *   `reply`     literal text returned by `generate` / yielded as one chunk by `generateStream`.
+ *   `toolCall`  one canned tool call on the first turn; falls through to FINAL_TEXT
+ *               once a tool-result message appears in history (so the loop terminates).
+ *   `streamChunks` pre-baked deltas for streaming default-text scenarios.
  */
 import type {
   ModelProvider,
@@ -11,6 +17,7 @@ import type {
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  ToolCall,
 } from "./base";
 import type { ToolSpec } from "../tools/registry";
 
@@ -44,21 +51,37 @@ function placeholderArgs(spec: ToolSpec): Record<string, unknown> {
 
 /** Optional configuration for `MockProvider` to drive specific test scenarios. */
 export interface MockProviderOptions {
-  /**
-   * Pre-baked deltas to yield from `generateStream` instead of emitting the
-   * whole final text as a single chunk. Useful for testing consumers that
-   * react to partial output (token-by-token UIs, cancellation mid-stream).
-   * The deltas are concatenated to form the final text on the non-streaming
-   * `generate` path as well.
-   */
+  /** Pre-baked deltas yielded by `generateStream` instead of one chunk. */
   streamChunks?: readonly string[];
+  /** Literal text the provider returns; mutually exclusive with `toolCall`. */
+  reply?: string;
+  /** Canned tool call returned on the first turn; mutually exclusive with `reply`. */
+  toolCall?: { name: string; args: Record<string, unknown> };
 }
 
 export class MockProvider implements ModelProvider {
   private readonly streamChunks: readonly string[] | undefined;
+  private readonly reply: string | undefined;
+  private readonly toolCall: { name: string; args: Record<string, unknown> } | undefined;
 
   constructor(options: MockProviderOptions = {}) {
+    if (options.reply !== undefined && options.toolCall !== undefined) {
+      throw new Error("MockProvider: pass reply OR toolCall, not both.");
+    }
     this.streamChunks = options.streamChunks;
+    this.reply = options.reply;
+    this.toolCall = options.toolCall;
+  }
+
+  private scriptedToolCall(): ToolCall {
+    if (this.toolCall === undefined) {
+      throw new Error("scriptedToolCall called without toolCall option");
+    }
+    return {
+      id: "mock-call-1",
+      name: this.toolCall.name,
+      args: this.toolCall.args,
+    };
   }
 
   async generate(
@@ -67,6 +90,15 @@ export class MockProvider implements ModelProvider {
     options?: ModelProviderOptions,
   ): Promise<ModelResponse> {
     if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    if (this.toolCall !== undefined) {
+      if (!hasToolResult(messages)) {
+        return { content: "", toolCalls: [this.scriptedToolCall()] };
+      }
+      return { content: FINAL_TEXT, toolCalls: [] };
+    }
+    if (this.reply !== undefined) {
+      return { content: this.reply, toolCalls: [] };
+    }
     const first = tools[0];
     if (first !== undefined && !hasToolResult(messages)) {
       return {
@@ -84,6 +116,18 @@ export class MockProvider implements ModelProvider {
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
     if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    if (this.toolCall !== undefined) {
+      if (!hasToolResult(messages)) {
+        yield { delta: "", toolCalls: [this.scriptedToolCall()] };
+        return;
+      }
+      yield { delta: FINAL_TEXT, toolCalls: [] };
+      return;
+    }
+    if (this.reply !== undefined) {
+      yield { delta: this.reply, toolCalls: [] };
+      return;
+    }
     const first = tools[0];
     if (first !== undefined && !hasToolResult(messages)) {
       yield {

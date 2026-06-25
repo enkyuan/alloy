@@ -64,6 +64,11 @@
       "outputs": ["dist/**"],
       "cache": true
     },
+    "@kaji/sdk#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "registry/**"],
+      "cache": true
+    },
     "@kaji/cli#dev": {
       "cache": false,
       "persistent": false

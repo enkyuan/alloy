@@ -15,6 +15,7 @@ import { replaySession } from "../sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
 import type { ToolPolicy } from "../tools/policy";
 import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
+import { defaultUuid } from "../internal/uuid";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
 
@@ -62,6 +63,28 @@ export interface AgentRuntimeOptions {
 
 export interface RunTurnOptions {
   cancellationToken?: CancellationToken;
+}
+
+export interface TurnOptions {
+  /** Existing session to reuse; a fresh UUID is generated when omitted. */
+  sessionId?: string;
+  cancellationToken?: CancellationToken;
+}
+
+/**
+ * Result of one `AgentRuntime.turn` call.
+ *
+ * - `text` is built from `AGENT_MESSAGE_COMPLETED` content joined across
+ *   iterations, not delta accumulation.
+ * - `toolCallEvents` are `KajiEvent`s of type `TOOL_CALL_REQUESTED`, not
+ *   provider-neutral `ToolCall` payloads. The name reflects the type.
+ * - `events` is the full slice of events appended by this call.
+ */
+export interface TurnResult {
+  text: string;
+  sessionId: string;
+  toolCallEvents: KajiEvent[];
+  events: KajiEvent[];
 }
 
 /**
@@ -126,6 +149,38 @@ export class AgentRuntime {
 
   private resolvePlanner(tools: ToolSpec[]): ToolPlanner {
     return this.planner ?? this.buildPlanner(tools);
+  }
+
+  /**
+   * Run one full agent turn and return a structured result.
+   *
+   * Wraps the ceremony of bootstrapping a session, sending the prompt,
+   * running the ReAct loop, and slicing the new events out of the store.
+   * Errors from the underlying loop propagate unchanged.
+   */
+  async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
+    const sessionId = options.sessionId ?? defaultUuid();
+    const existing = await this.store.getEvents(sessionId);
+    if (existing.length === 0) {
+      const created = KajiEvent.parse({
+        type: EventType.SESSION_CREATED,
+        session_id: sessionId,
+      });
+      await this.store.append(created);
+      await this.bus.publish(created);
+    }
+    const snapshotLen = existing.length;
+    await this.send(sessionId, prompt, {
+      cancellationToken: options.cancellationToken,
+    });
+    const all = await this.store.getEvents(sessionId);
+    const turnEvents = all.slice(snapshotLen);
+    const text = turnEvents
+      .filter((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)
+      .map((e) => ("content" in e ? (e.content as string) : ""))
+      .join("");
+    const toolCallEvents = turnEvents.filter((e) => e.type === EventType.TOOL_CALL_REQUESTED);
+    return { text, sessionId, toolCallEvents, events: turnEvents };
   }
 
   /**

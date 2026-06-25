@@ -174,9 +174,19 @@ def install_integration(
     already at the destination unless ``force=True``. Raises if the file
     exists and ``force`` is false; the caller (typically the CLI) is
     expected to surface a clear message.
+
+    Rejects manifests whose ``files`` entries are absolute or contain ``..``
+    to prevent path-traversal writes outside ``dest``.
     """
     manifest = load_manifest(name)
+    for rel in manifest.files:
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise ManifestError(
+                f"Manifest {manifest.path} contains unsafe file path: {rel!r}"
+            )
     dest.mkdir(parents=True, exist_ok=True)
+    resolved_dest = dest.resolve()
     written: list[Path] = []
     for rel in manifest.files:
         src = manifest.root / rel
@@ -187,6 +197,12 @@ def install_integration(
         # Preserve any sub-directory structure declared in the manifest so an
         # integration can ship multiple files like ["foo.py", "lib/bar.py"].
         target = dest / rel
+        # Defense in depth: even with the .. check above, anchor the resolved
+        # target under the resolved dest before any filesystem write.
+        try:
+            target.resolve().relative_to(resolved_dest)
+        except ValueError:
+            raise ManifestError(f"Refusing to write outside dest: {target}") from None
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and not force:
             raise FileExistsError(

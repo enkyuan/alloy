@@ -1,9 +1,10 @@
 /**
  * Smoke test for the minimal-agent example.
  *
- * Uses a mocked OpenAI client — no API key required. Verifies the example
- * code path runs end-to-end (imports, wiring, event emission) without a
- * real network call.
+ * The first case exercises `runAgent` with a mocked openai client to keep
+ * the upstream example file fully exercised end-to-end. The second case
+ * exercises the same shape against `MockProvider` directly to keep the
+ * provider mocking surface area small.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -36,36 +37,22 @@ vi.mock("openai", () => {
 });
 
 describe("minimal-agent example", () => {
-  it("runs the full agent loop and emits events", async () => {
+  it("runs runAgent end-to-end with a mocked openai client", async () => {
     const { runAgent } = await import("./index");
-
-    // runAgent imports OpenAIProvider which now uses the mocked openai client
     await expect(runAgent("test-key")).resolves.not.toThrow();
   });
 
-  it("produces AGENT_MESSAGE_COMPLETED in the event log", async () => {
-    const {
-      AgentBuilder,
-      EventBus,
-      InMemoryEventStore,
-      OpenAIProvider,
-      KajiEvent,
-      EventType: ET,
-    } = await import("../../src/index");
-
-    const store = new InMemoryEventStore();
-    const bus = new EventBus();
+  it("turn() returns text driven by MockProvider", async () => {
+    const { AgentBuilder, EventBus, InMemoryEventStore } = await import("../../src/index");
+    const { MockProvider } = await import("../../src/providers/mock");
 
     const runtime = new AgentBuilder()
-      .provider(new OpenAIProvider({ apiKey: "test-key" }))
+      .provider(new MockProvider({ reply: "It is 68F in Seattle." }))
       .systemPrompt("Test")
-      .build({ bus, store });
+      .build({ bus: new EventBus(), store: new InMemoryEventStore() });
 
-    await store.append(KajiEvent.parse({ type: ET.SESSION_CREATED, session_id: "s-smoke" }));
-    await runtime.send("s-smoke", "hello");
-
-    const events = await store.getEvents("s-smoke");
-    const types = events.map((e) => e.type);
-    expect(types).toContain(ET.AGENT_MESSAGE_COMPLETED);
+    const result = await runtime.turn("What's the weather in Seattle?");
+    expect(result.text).toBe("It is 68F in Seattle.");
+    expect(result.sessionId).toBeTruthy();
   });
 });
