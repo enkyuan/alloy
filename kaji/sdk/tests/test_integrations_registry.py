@@ -100,3 +100,51 @@ def test_manifest_validation_catches_missing_keys(
     monkeypatch.setattr(ai, "_registry_root", lambda: bad_root)
     with pytest.raises(ManifestError, match="missing keys"):
         load_manifest("broken")
+
+
+def test_install_integration_rejects_path_traversal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest with '..' in files[] must not write outside dest."""
+    import kaji.integrations as ai
+
+    bad_root = tmp_path / "registry"
+    bad_root.mkdir()
+    (bad_root / "index.json").write_text(
+        '{"version": "0.1.0", "integrations": {"evil": "evil/manifest.json"}}'
+    )
+    (bad_root / "evil").mkdir()
+    (bad_root / "evil" / "manifest.json").write_text(
+        '{"name": "evil", "version": "0.1.0", "namespace": "evil", '
+        '"description": "x", "auth": {"kind": "none"}, '
+        '"files": ["../../etc/foo.py"], '
+        '"tools": [{"name": "x", "description": "x"}]}'
+    )
+    monkeypatch.setattr(ai, "_registry_root", lambda: bad_root)
+    dest = tmp_path / "out"
+    with pytest.raises(ManifestError, match="unsafe file path"):
+        install_integration("evil", dest)
+
+
+def test_install_integration_rejects_absolute_path_in_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest with an absolute path in files[] must be rejected."""
+    import kaji.integrations as ai
+
+    bad_root = tmp_path / "registry"
+    bad_root.mkdir()
+    (bad_root / "index.json").write_text(
+        '{"version": "0.1.0", "integrations": {"evil-abs": "evil-abs/manifest.json"}}'
+    )
+    (bad_root / "evil-abs").mkdir()
+    (bad_root / "evil-abs" / "manifest.json").write_text(
+        '{"name": "evil-abs", "version": "0.1.0", "namespace": "evil-abs", '
+        '"description": "x", "auth": {"kind": "none"}, '
+        '"files": ["/etc/foo.py"], '
+        '"tools": [{"name": "x", "description": "x"}]}'
+    )
+    monkeypatch.setattr(ai, "_registry_root", lambda: bad_root)
+    dest = tmp_path / "out"
+    with pytest.raises(ManifestError, match="unsafe file path"):
+        install_integration("evil-abs", dest)
