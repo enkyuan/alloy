@@ -13,7 +13,7 @@
  *  1  unknown integration, missing manifest, validation failure, or collision
  *     without `--force`.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export interface AddOptions {
@@ -155,8 +155,13 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
   }
 
   // Anchor every destination under the resolved --out so even a future bug
-  // in the manifest check can't escape it.
+  // in the manifest check can't escape it. We materialise --out first so
+  // realpath can resolve it, then re-check each destination's REAL parent
+  // (following symlinks) against the real --out — purely lexical containment
+  // is bypassable when --out/sub is a symlink pointing outside.
   const resolvedOut = resolve(out);
+  mkdirSync(resolvedOut, { recursive: true });
+  const realOut = realpathSync(resolvedOut);
   const manifestDir = dirname(manifestPath);
   for (const f of tsFiles) {
     const src = join(manifestDir, f);
@@ -170,13 +175,30 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       log(`Refusing to write outside --out: ${dest}`);
       return 1;
     }
+    // Realpath check: walk to the deepest existing ancestor of dest and
+    // confirm it sits under realOut. Catches symlink escapes that the
+    // string-level check above would miss (e.g. --out/sub -> /tmp/elsewhere).
+    let probe = dirname(dest);
+    while (!existsSync(probe) && probe !== dirname(probe)) {
+      probe = dirname(probe);
+    }
+    if (existsSync(probe)) {
+      const realProbe = realpathSync(probe);
+      const realRel = relative(realOut, realProbe);
+      if (
+        realRel !== "" &&
+        (realRel.startsWith("..") || isAbsolute(realRel) || realRel.split(sep).includes(".."))
+      ) {
+        log(`Refusing to write through symlinked parent: ${dest} -> ${realProbe}`);
+        return 1;
+      }
+    }
     if (existsSync(dest) && !force) {
       log(`File exists: ${dest} (use --force to overwrite)`);
       return 1;
     }
   }
 
-  mkdirSync(resolvedOut, { recursive: true });
   for (const f of tsFiles) {
     const src = join(manifestDir, f);
     const dest = resolve(resolvedOut, f);

@@ -185,6 +185,46 @@ describe("kaji add", () => {
     expect(code).toBe(1);
   });
 
+  it("rejects writes through a symlinked subdir even when path is lexically inside --out", async () => {
+    // Manifest declares sub/foo.ts. We pre-create --out/sub as a symlink to
+    // a directory OUTSIDE the project; copyFileSync would follow the symlink
+    // and write outside --out. The realpath check must catch it.
+    const { symlinkSync } = await import("node:fs");
+    const evilDir = join(registry, "sym-evil");
+    mkdirSync(evilDir, { recursive: true });
+    mkdirSync(join(evilDir, "sub"), { recursive: true });
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify({ integrations: { "sym-evil": "sym-evil/manifest.json" } }),
+    );
+    writeFileSync(
+      join(evilDir, "manifest.json"),
+      JSON.stringify({
+        name: "sym-evil",
+        version: "0.1.0",
+        namespace: "sym-evil",
+        description: "evil",
+        auth: { kind: "none" },
+        files: ["sub/foo.ts"],
+        tools: [{ name: "x", description: "x" }],
+      }),
+    );
+    writeFileSync(join(evilDir, "sub/foo.ts"), "// evil\n");
+
+    const out = join(tmp, "integrations");
+    const outsideTarget = join(tmp, "outside-target");
+    mkdirSync(outsideTarget, { recursive: true });
+    mkdirSync(out, { recursive: true });
+    symlinkSync(outsideTarget, join(out, "sub"));
+
+    const code = await add(["sym-evil", "--out", out], {
+      registryRoot: registry,
+    });
+    expect(code).toBe(1);
+    // The file must NOT have been written to the symlink target.
+    expect(existsSync(join(outsideTarget, "foo.ts"))).toBe(false);
+  });
+
   it("ships the echo integration in the real registry", async () => {
     const out = join(tmp, "real-out");
     const realRegistry = join(__dirname, "..", "..", "sdk", "kaji", "integrations", "registry");
