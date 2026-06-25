@@ -19,8 +19,12 @@
       "require": "./dist/testing.cjs"
     }
   },
-  "files": ["dist"],
+  "bin": {
+    "kaji": "./dist/cli/index.js"
+  },
+  "files": ["dist", "registry"],
   "scripts": {
+    "prebuild": "bun run scripts/copy-registry.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
