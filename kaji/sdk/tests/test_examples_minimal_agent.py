@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from kaji import (
-    AgentBuilder,
-    InMemoryEventBus,
-    InMemoryEventStore,
-    function_tool,
-)
+from kaji.infra.events.bus import InMemoryEventBus
+from kaji.infra.events.store import InMemoryEventStore
+from kaji.runtime.agents import AgentBuilder
+from kaji.runtime.integrations import function_tool
 from kaji.runtime.providers.mock import MockProvider
 
 

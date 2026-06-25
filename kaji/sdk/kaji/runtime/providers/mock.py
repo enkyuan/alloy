@@ -78,7 +78,7 @@ class MockProvider:
         if self._tool_call is not None:
             if not _tool_already_called(messages):
                 return GenerateResponse(
-                    text="", tool_calls=[self._scripted_tool_call()]
+                    text="", tool_calls=cast(Any, [self._scripted_tool_call()])
                 )
             return GenerateResponse(text=FINAL_TEXT, tool_calls=[])
         if self._reply is not None:
@@ -102,7 +102,7 @@ class MockProvider:
         if self._tool_call is not None:
             if not _tool_already_called(messages):
                 yield ModelResponseChunk(
-                    delta="", tool_calls=[self._scripted_tool_call()]
+                    delta="", tool_calls=cast(Any, [self._scripted_tool_call()])
                 )
                 return
             yield ModelResponseChunk(delta=FINAL_TEXT)

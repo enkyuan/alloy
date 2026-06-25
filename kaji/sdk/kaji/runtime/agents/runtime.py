@@ -184,7 +184,7 @@ class AgentRuntime:
             for e in turn_events
             if e.type == EventType.AGENT_MESSAGE_COMPLETED
         )
-        tool_call_events = [
+        tool_call_events: List[KajiEvent] = [
             e for e in turn_events if e.type == EventType.TOOL_CALL_REQUESTED
         ]
         return TurnResult(

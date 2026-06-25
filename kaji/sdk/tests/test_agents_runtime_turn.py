@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from kaji import AgentBuilder, InMemoryEventBus, InMemoryEventStore
+from kaji.infra.events.bus import InMemoryEventBus
+from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents import AgentBuilder
 from kaji.runtime.providers.mock import MockProvider
 
 
