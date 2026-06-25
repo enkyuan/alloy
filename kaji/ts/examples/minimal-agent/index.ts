@@ -13,28 +13,23 @@ import {
   EventBus,
   InMemoryEventStore,
   OpenAIProvider,
-  Integration,
-  tool,
+  functionTool,
 } from "@kaji/sdk";
 import { z } from "zod";
 
-class WeatherIntegration extends Integration {
-  readonly namespace = "weather";
-
-  readonly getWeather = tool(
-    {
-      description: "Return current weather for a city.",
-      parameters: z.object({ city: z.string() }),
-      risk: "read",
-    },
-    async (_ctx, args) => ({ city: args.city, tempF: 68 }),
-  );
-}
+const getWeather = functionTool(
+  {
+    description: "Return current weather for a city.",
+    parameters: z.object({ city: z.string() }),
+    risk: "read",
+  },
+  async ({ city }) => ({ city, tempF: 68 }),
+);
 
 export async function runAgent(apiKey: string): Promise<void> {
   const runtime = new AgentBuilder()
     .provider(new OpenAIProvider({ apiKey }))
-    .integration(new WeatherIntegration())
+    .tool(getWeather)
     .systemPrompt("You are a weather assistant.")
     .build({ bus: new EventBus(), store: new InMemoryEventStore() });
 
