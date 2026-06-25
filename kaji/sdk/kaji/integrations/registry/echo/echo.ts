@@ -8,6 +8,8 @@ import { z } from "zod";
 
 export const say = functionTool(
   {
+    name: "say",
+    namespace: "echo",
     description: "Return the input string unchanged.",
     parameters: z.object({ message: z.string() }),
     risk: "read",
@@ -17,6 +19,8 @@ export const say = functionTool(
 
 export const shout = functionTool(
   {
+    name: "shout",
+    namespace: "echo",
     description: "Return the input string uppercased.",
     parameters: z.object({ message: z.string() }),
     risk: "read",

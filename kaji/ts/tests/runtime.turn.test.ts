@@ -51,6 +51,26 @@ describe("AgentRuntime.turn", () => {
     expect(r2.events.some((e) => e.type === EventType.SESSION_CREATED)).toBe(false);
   });
 
+  it("uses defaultUuid (works without crypto.randomUUID)", async () => {
+    // Simulate a restricted runtime where crypto.randomUUID is unavailable.
+    // The runtime must not throw — defaultUuid falls back to a Math.random hex.
+    const originalCrypto = globalThis.crypto;
+    Object.defineProperty(globalThis, "crypto", {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      const { runtime } = build(new MockProvider({ reply: "ok" }));
+      const r = await runtime.turn("hi");
+      expect(r.sessionId).toBeTruthy();
+    } finally {
+      Object.defineProperty(globalThis, "crypto", {
+        value: originalCrypto,
+        configurable: true,
+      });
+    }
+  });
+
   it("propagates provider errors", async () => {
     class FailingProvider {
       async generate() {

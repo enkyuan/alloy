@@ -15,6 +15,7 @@ import { replaySession } from "../sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
 import type { ToolPolicy } from "../tools/policy";
 import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
+import { defaultUuid } from "../internal/uuid";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
 
@@ -158,7 +159,7 @@ export class AgentRuntime {
    * Errors from the underlying loop propagate unchanged.
    */
   async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
-    const sessionId = options.sessionId ?? crypto.randomUUID();
+    const sessionId = options.sessionId ?? defaultUuid();
     const existing = await this.store.getEvents(sessionId);
     if (existing.length === 0) {
       const created = KajiEvent.parse({
