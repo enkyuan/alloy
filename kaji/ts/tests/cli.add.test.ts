@@ -109,6 +109,82 @@ describe("kaji add", () => {
     expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
   });
 
+  it("rejects manifests with path-traversal in files[]", async () => {
+    const evilDir = join(registry, "evil");
+    mkdirSync(evilDir, { recursive: true });
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify({ integrations: { evil: "evil/manifest.json" } }),
+    );
+    writeFileSync(
+      join(evilDir, "manifest.json"),
+      JSON.stringify({
+        name: "evil",
+        version: "0.1.0",
+        namespace: "evil",
+        description: "evil",
+        auth: { kind: "none" },
+        files: ["../../../etc/foo.ts"],
+        tools: [{ name: "x", description: "x" }],
+      }),
+    );
+    const code = await add(["evil", "--out", join(tmp, "integrations")], {
+      registryRoot: registry,
+    });
+    expect(code).toBe(1);
+  });
+
+  it("rejects manifests with absolute paths in files[]", async () => {
+    const evilDir = join(registry, "evil-abs");
+    mkdirSync(evilDir, { recursive: true });
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify({ integrations: { "evil-abs": "evil-abs/manifest.json" } }),
+    );
+    writeFileSync(
+      join(evilDir, "manifest.json"),
+      JSON.stringify({
+        name: "evil-abs",
+        version: "0.1.0",
+        namespace: "evil-abs",
+        description: "evil",
+        auth: { kind: "none" },
+        files: ["/etc/foo.ts"],
+        tools: [{ name: "x", description: "x" }],
+      }),
+    );
+    const code = await add(["evil-abs", "--out", join(tmp, "integrations")], {
+      registryRoot: registry,
+    });
+    expect(code).toBe(1);
+  });
+
+  it("rejects manifests with invalid auth.kind", async () => {
+    const bad = join(registry, "bad-auth");
+    mkdirSync(bad, { recursive: true });
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify({ integrations: { "bad-auth": "bad-auth/manifest.json" } }),
+    );
+    writeFileSync(
+      join(bad, "manifest.json"),
+      JSON.stringify({
+        name: "bad-auth",
+        version: "0.1.0",
+        namespace: "bad-auth",
+        description: "bad",
+        auth: { kind: "magic" },
+        files: ["bad.ts"],
+        tools: [{ name: "x", description: "x" }],
+      }),
+    );
+    writeFileSync(join(bad, "bad.ts"), "// bad\n");
+    const code = await add(["bad-auth", "--out", join(tmp, "integrations")], {
+      registryRoot: registry,
+    });
+    expect(code).toBe(1);
+  });
+
   it("ships the echo integration in the real registry", async () => {
     const out = join(tmp, "real-out");
     const realRegistry = join(__dirname, "..", "..", "sdk", "kaji", "integrations", "registry");

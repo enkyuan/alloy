@@ -23,5 +23,9 @@ export default defineConfig([
     sourcemap: true,
     clean: false,
     banner: { js: "#!/usr/bin/env node" },
+    // Defensive: today the CLI doesn't reach into providers, but if a future
+    // CLI subcommand imports from `src/index.ts` we don't want either SDK to
+    // get inlined into the bin.
+    external: ["openai", "@anthropic-ai/sdk"],
   },
 ]);

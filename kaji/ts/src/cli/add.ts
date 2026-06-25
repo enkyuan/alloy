@@ -14,7 +14,7 @@
  *     without `--force`.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export interface AddOptions {
   /** Absolute path to a registry directory (one with `index.json`). */
@@ -114,9 +114,38 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       return 1;
     }
   }
+  // Match the Python loader's auth.kind enum (integrations/__init__.py:111).
+  // A manifest accepted here must also be accepted by the Python side.
+  if (
+    typeof manifest.auth !== "object" ||
+    manifest.auth === null ||
+    typeof manifest.auth.kind !== "string"
+  ) {
+    log(`Manifest 'auth.kind' is required at ${manifestPath}`);
+    return 1;
+  }
+  if (!["env", "oauth", "none"].includes(manifest.auth.kind)) {
+    log(
+      `Manifest auth.kind must be one of env|oauth|none, got '${manifest.auth.kind}' at ${manifestPath}`,
+    );
+    return 1;
+  }
+  if (manifest.auth.kind === "env" && !manifest.auth.env) {
+    log(`Manifest auth.kind=='env' requires 'auth.env' at ${manifestPath}`);
+    return 1;
+  }
   if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
     log(`Manifest 'files' must be a non-empty array at ${manifestPath}`);
     return 1;
+  }
+  // Path traversal guard: reject any file entry that escapes the manifest
+  // directory. An attacker-controlled manifest could otherwise drop files
+  // anywhere the user has write access via "../../etc/foo.ts".
+  for (const f of manifest.files) {
+    if (typeof f !== "string" || isAbsolute(f) || f.split(/[\\/]/).includes("..")) {
+      log(`Manifest 'files' contains unsafe path: ${JSON.stringify(f)}`);
+      return 1;
+    }
   }
 
   const tsFiles = manifest.files.filter((f) => f.endsWith(".ts"));
@@ -125,6 +154,9 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     return 0;
   }
 
+  // Anchor every destination under the resolved --out so even a future bug
+  // in the manifest check can't escape it.
+  const resolvedOut = resolve(out);
   const manifestDir = dirname(manifestPath);
   for (const f of tsFiles) {
     const src = join(manifestDir, f);
@@ -132,20 +164,25 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       log(`Manifest ${manifestPath} references missing file ${src}`);
       return 1;
     }
-    const dest = join(out, f);
+    const dest = resolve(resolvedOut, f);
+    const rel = relative(resolvedOut, dest);
+    if (rel.startsWith("..") || isAbsolute(rel) || rel.split(sep).includes("..")) {
+      log(`Refusing to write outside --out: ${dest}`);
+      return 1;
+    }
     if (existsSync(dest) && !force) {
       log(`File exists: ${dest} (use --force to overwrite)`);
       return 1;
     }
   }
 
-  mkdirSync(out, { recursive: true });
+  mkdirSync(resolvedOut, { recursive: true });
   for (const f of tsFiles) {
     const src = join(manifestDir, f);
-    const dest = join(out, f);
+    const dest = resolve(resolvedOut, f);
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(src, dest);
   }
-  log(`Wrote ${tsFiles.length} file(s) to ${out}`);
+  log(`Wrote ${tsFiles.length} file(s) to ${resolvedOut}`);
   return 0;
 }
