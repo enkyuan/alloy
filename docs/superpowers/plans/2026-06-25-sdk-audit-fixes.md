@@ -6,7 +6,7 @@
 
 **Architecture:** Each fix is a thin slice that ships independently. (1) is a pure surface change to `kaji/__init__.py`'s lazy map. (2) follows the existing opt-in `pytest -m live` convention from `tests/integration/test_anthropic_provider.py`. (3) extends `kaji/ts/src/cli/index.ts` with a dispatch table plus two new commands that read the same `registry/` directory the existing `add` command uses. (4) plumbs three already-defined approval events through the existing `EventBus` and `replaySession`, then ships a `cliApprovalHandler` that prompts on stdin.
 
-**Tech Stack:** Python 3.11+, pytest with asyncio_mode=auto and a `live` marker; TypeScript with vitest, tsup, bun; existing `EventBus` / `ToolPlanner` / `replaySession` primitives.
+**Tech Stack:** Python 3.11+, pytest with `asyncio_mode = auto` and the existing `integration` marker; TypeScript with vitest, tsup, bun; existing `EventBus` / `ToolPlanner` / `replaySession` primitives.
 
 ## Global Constraints
 
@@ -28,21 +28,20 @@
 - Modify: `kaji/sdk/kaji/runtime/agents/__init__.py` — re-export `HistoryStore`, `InMemoryHistoryStore` so the lazy map has a stable module to target.
 - Modify: `kaji/sdk/kaji/runtime/tools/__init__.py` — re-export `Embedder`, `EmbeddingCache`, `ToolRetriever`, `build_tools_payload`, `spec_to_neutral`, `to_openai`, `to_anthropic`, `to_gemini`.
 - Create: `kaji/sdk/tests/test_public_api.py` — asserts every roadmap-claimed public name is reachable via `from kaji import X`.
-- Create: `kaji/sdk/tests/integration/test_gemini_provider.py` — live `pytest -m live` smoke test for `generate` and `generate_stream` with a tool call.
-- Create: `kaji/sdk/tests/integration/test_kimi_provider.py` — live `pytest -m live` smoke test for `generate` and `generate_stream` with a tool call.
+- Create: `kaji/sdk/tests/integration/test_gemini_provider.py` — opt-in `pytest -m integration` smoke test for `generate` and `generate_stream` with a tool call.
+- Create: `kaji/sdk/tests/integration/test_kimi_provider.py` — opt-in `pytest -m integration` smoke test for `generate` and `generate_stream` with a tool call.
 
 **TypeScript (`kaji/ts/`)**
 - Modify: `kaji/ts/src/cli/index.ts` — replace inline branch with a dispatch map; add `--help` for all commands.
 - Create: `kaji/ts/src/cli/list_integrations.ts` — reads `registry/` and prints `name  description`.
 - Create: `kaji/ts/src/cli/init.ts` — scaffolds a minimal TS starter (`package.json`, `tsconfig.json`, `agent.ts`, `.env.example`) into a target directory.
 - Modify: `kaji/ts/src/events/types.ts` and `kaji/ts/src/events/schemas.ts` — confirm `TOOL_APPROVAL_REQUESTED / APPROVED / REJECTED` are already typed; no schema change.
-- Modify: `kaji/ts/src/sessions/replay.ts` — project the three approval events into a new `pendingApprovals` / `approvedToolIds` / `rejectedToolIds` block of `SessionState`.
-- Modify: `kaji/ts/src/tools/planner.ts` — when `ApprovalHandler` exists, emit `TOOL_APPROVAL_REQUESTED` on the bus before awaiting, emit `APPROVED` or `REJECTED` after.
-- Create: `kaji/ts/src/tools/cli_approval_handler.ts` — default stdin/readline handler that prints the tool name + args and reads `y`/`n`.
-- Modify: `kaji/ts/src/index.ts` — export `cliApprovalHandler` and the approval event types.
+- Modify: `kaji/ts/src/sessions/replay.ts` — project the three approval events into new `pendingApprovals` / `approvedToolCallIds` / `rejectedToolCallIds` sets on `SessionState`. The planner already emits the events.
+- Create: `kaji/ts/src/tools/cli_approval_handler.ts` — default stdin/readline handler that prints the tool name, risk, and args and reads `y`/`n`.
+- Modify: `kaji/ts/src/index.ts` — export `cliApprovalHandler`.
 - Create: `kaji/ts/tests/cli/list_integrations.test.ts` and `kaji/ts/tests/cli/init.test.ts`.
 - Create: `kaji/ts/tests/tools/cli_approval_handler.test.ts`.
-- Create: `kaji/ts/tests/tools/approval_flow.test.ts` — planner emits the three events in order; replay projects them.
+- Create: `kaji/ts/tests/sessions/approval_replay.test.ts` — verifies the projection.
 
 ---
 
@@ -546,17 +545,25 @@ export async function runCli(argv: string[], opts: RunOptions): Promise<number> 
   return handler.run(rest, opts);
 }
 
-async function main(): Promise<number> {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const registryRoot = join(here, "..", "..", "registry");
-  return runCli(process.argv.slice(2), { registryRoot });
-}
-
-// Only execute when invoked as a script, not when imported by tests.
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().then((code) => process.exit(code));
-}
 ```
+
+Then create `kaji/ts/src/cli/bin.ts` as the binary entry — keeps `index.ts` cleanly importable from tests without firing `process.exit` side effects:
+
+```typescript
+/**
+ * Binary entry. Built by tsup with a `#!/usr/bin/env node` banner.
+ * package.json `bin` points at `./dist/cli/bin.js`.
+ */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { runCli } from "./index";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const registryRoot = join(here, "..", "..", "registry");
+runCli(process.argv.slice(2), { registryRoot }).then((code) => process.exit(code));
+```
+
+Update `kaji/ts/package.json` `bin` field from `./dist/cli/index.js` to `./dist/cli/bin.js`, and update `kaji/ts/tsup.config.ts` so `bin.ts` is also a build entry alongside `index.ts`.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -589,6 +596,8 @@ git commit -m "feat(ts): cli dispatch table with working --help and unknown-comm
 - Produces: nothing for downstream tasks.
 
 **Background:** The TS registry uses an `index.json` catalog at `kaji/ts/registry/index.json` of the form `{ version, integrations: { "<name>": "<name>/manifest.json", ... } }`. Each referenced `manifest.json` holds `{ name, version, namespace, description, auth, files, tools }`. The TS `add` command also reads through this catalog (see `kaji/ts/src/cli/add.ts:99-113`). `list-integrations` must follow the same flow — do not scan subdirectories blindly.
+
+**Drift risk note (review feedback):** `index.json` is hand-maintained. If a new manifest is added on disk but the catalog is not updated, `add` and `list-integrations` will both miss it silently. Out of scope for this PR, but worth a `TODO: validate index.json against filesystem in a build step` line in `kaji/ts/registry/index.json` so a later maintainer sees it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -778,7 +787,7 @@ describe("kaji init", () => {
       expect(existsSync(join(out, f))).toBe(true);
     }
     const pkg = JSON.parse(readFileSync(join(out, "package.json"), "utf8"));
-    expect(pkg.dependencies).toHaveProperty("@agentkit/sdk");
+    expect(pkg.dependencies).toHaveProperty("@kaji/sdk");
   });
 
   it("refuses to overwrite an existing file without --force", async () => {
@@ -840,7 +849,7 @@ const FILES: Record<string, string> = {
       private: true,
       type: "module",
       scripts: { start: "tsx agent.ts" },
-      dependencies: { "@agentkit/sdk": "^0.1.0" },
+      dependencies: { "@kaji/sdk": "^0.1.0" },
       devDependencies: { tsx: "^4.0.0", typescript: "^5.4.0" },
     },
     null,
@@ -861,7 +870,7 @@ const FILES: Record<string, string> = {
     null,
     2,
   ),
-  "agent.ts": `import { AgentBuilder, getProvider } from "@agentkit/sdk";
+  "agent.ts": `import { AgentBuilder, getProvider } from "@kaji/sdk";
 
 const agent = new AgentBuilder()
   .provider(getProvider("openai"))
@@ -890,6 +899,8 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
     writeFileSync(join(args.out, name), body);
     log(`wrote ${join(args.out, name)}`);
   }
+  log("");
+  log(`Next: cd ${args.out} && bun install && bun start`);
   return 0;
 }
 ```
@@ -1160,6 +1171,17 @@ describe("cliApprovalHandler", () => {
     await handler("ship_it", {}, undefined);
     expect(out.chunks.join("")).toMatch(/risk: unknown/);
   });
+
+  it("prints the optional label to disambiguate concurrent agents", async () => {
+    const out = captureWritable();
+    const handler = cliApprovalHandler({
+      input: streamFromString("y\n"),
+      output: out.stream,
+      label: "agent-a",
+    });
+    await handler("ship_it", {}, "write");
+    expect(out.chunks.join("")).toMatch(/\[agent-a\]/);
+  });
 });
 ```
 
@@ -1178,20 +1200,27 @@ import type { ApprovalHandler } from "./planner";
 export interface CliApprovalOptions {
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
+  /**
+   * Optional label printed in the prompt header to disambiguate concurrent
+   * agents (e.g. `"agent-a"`, `"session-c1"`). Defaults to the empty string.
+   */
+  label?: string;
 }
 
 /**
- * Default approval handler for dev/REPL use. Prints the tool name, risk, and
- * arguments to `output` (stdout by default), then reads a single line from
- * `input` (stdin by default). Returns `true` only on `"y"` (case-insensitive).
+ * Default approval handler for dev/REPL use. Prints the optional label, tool
+ * name, risk, and arguments to `output` (stdout by default), then reads a
+ * single line from `input` (stdin by default). Returns `true` only on `"y"`
+ * (case-insensitive).
  */
 export function cliApprovalHandler(opts: CliApprovalOptions = {}): ApprovalHandler {
   return async (name, args, risk) => {
     const input = opts.input ?? process.stdin;
     const output = opts.output ?? process.stdout;
+    const labelSuffix = opts.label ? ` [${opts.label}]` : "";
     const rl = createInterface({ input, output });
     try {
-      output.write(`\nApproval requested: ${name}\n`);
+      output.write(`\nApproval requested${labelSuffix}: ${name}\n`);
       output.write(`  risk: ${risk ?? "unknown"}\n`);
       output.write(`  arguments: ${JSON.stringify(args)}\n`);
       const answer = await new Promise<string>((resolve) => {
@@ -1226,7 +1255,71 @@ git commit -m "feat(ts): default cli approval handler for dev/repl use"
 
 ---
 
-## Task 10: Open the PR
+## Task 10: Document the new surface (CHANGELOG + README snippets)
+
+**Files:**
+- Modify: `kaji/sdk/CHANGELOG.md` (or create if absent)
+- Modify: `kaji/ts/CHANGELOG.md` (or create if absent)
+- Modify: `kaji/ts/README.md` (append an "Approval handler" section)
+
+**Background:** Tasks 1-9 add real public surface (18 new Python names, a TS CLI, a default approval handler). Without docs, consumers can't find the new capabilities.
+
+- [ ] **Step 1: Update `kaji/sdk/CHANGELOG.md`**
+
+Prepend (or create with this content if the file is missing):
+```markdown
+## Unreleased
+
+### Added
+- Public exports for the knowledge subsystem: `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore`.
+- Public exports for pluggable infra protocols: `SessionStore`, `InMemorySessionStore`, `SessionRecord`, `HistoryStore`, `InMemoryHistoryStore`.
+- Public exports for tool retrieval primitives: `Embedder`, `EmbeddingCache`, `ToolRetriever`.
+- Public exports for neutral tool payload translators: `build_tools_payload`, `spec_to_neutral`, `to_openai`, `to_anthropic`, `to_gemini`.
+- Opt-in live integration tests for Gemini and Kimi providers (gated on `KAJI_LIVE_GEMINI=1` and `KAJI_LIVE_KIMI=1` respectively).
+```
+
+- [ ] **Step 2: Update `kaji/ts/CHANGELOG.md`**
+
+Prepend (or create):
+```markdown
+## Unreleased
+
+### Added
+- CLI: dispatch table with working `--help`, plus new `kaji list-integrations` and `kaji init` commands.
+- `cliApprovalHandler` default approval handler for dev/REPL use; printed prompt supports an optional `label` for concurrent-agent disambiguation.
+- `SessionState` now projects approval lifecycle: `pendingApprovals`, `approvedToolCallIds`, `rejectedToolCallIds`.
+```
+
+- [ ] **Step 3: Append to `kaji/ts/README.md`**
+
+Find the existing "Usage" or similar section and append:
+````markdown
+### Approval handler
+
+Tools marked with a risk above your policy threshold pause for approval before running. Wire `cliApprovalHandler` for dev/REPL use:
+
+```typescript
+import { AgentBuilder, getProvider, cliApprovalHandler } from "@kaji/sdk";
+
+const agent = new AgentBuilder()
+  .provider(getProvider("openai"))
+  .approvalHandler(cliApprovalHandler({ label: "agent-a" }))
+  .build();
+```
+
+For production, implement your own `ApprovalHandler` — `(name, args, risk) => Promise<boolean>` — that talks to a web modal, Slack, etc.
+````
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add kaji/sdk/CHANGELOG.md kaji/ts/CHANGELOG.md kaji/ts/README.md
+git commit -m "docs(sdk): changelog + readme for new exports, cli, and approval handler"
+```
+
+---
+
+## Task 11: Open the PR
 
 - [ ] **Step 1: Push the branch**
 
@@ -1263,11 +1356,19 @@ Expected: PR URL printed.
 
 ## Self-Review Notes
 
-- **Spec coverage:** all four issues in the user request are covered. Python exports → Tasks 1-2. Live Gemini/Kimi tests → Tasks 3-4. TS CLI parity → Tasks 5-7. Approval projection + default handler → Tasks 8-9. STT/TTS modalities for TS explicitly skipped per user instruction.
+- **Spec coverage:** all four issues in the user request are covered. Python exports → Tasks 1-2. Live Gemini/Kimi tests → Tasks 3-4. TS CLI parity → Tasks 5-7. Approval projection + default handler → Tasks 8-9. Docs (CHANGELOG + README) → Task 10. STT/TTS modalities for TS explicitly skipped per user instruction.
 - **Placeholder scan:** every code step has runnable code. Task 4 Step 1 confirms the Kimi env var name with a targeted grep; Task 8 Step 1 reads `replay.ts` end-to-end before editing.
 - **Type consistency:** `RunOptions` defined in Task 5 and consumed unchanged in Tasks 6-7. `pendingApprovals` / `approvedToolCallIds` / `rejectedToolCallIds` defined in Task 8 and used only within Task 8's test. `ApprovalHandler`'s `(name, args, risk)` signature in Task 9 matches `kaji/ts/src/tools/planner.ts:78-82` verbatim.
 - **Ground-truth corrections from pre-flight scan:**
   - The `live` pytest marker does not exist; the project uses `integration` (registered in `kaji/sdk/pytest.ini:9`). Tasks 3 and 4 use that marker.
   - `kaji/ts/src/tools/planner.ts:213-272` already emits all three approval events. Task 8 only adds the replay projection; it does **not** touch the planner.
   - `kaji/ts/registry/index.json` is the canonical catalog (referenced by `add.ts`). Task 6 reads it instead of scanning subdirectories, which avoids treating `index.json` / `schema.json` as integrations.
-- **Out of scope (deliberate):** native TS Gemini/Kimi providers, `gen`/`info`/`doctor` TS commands, web/Slack approval UIs, STT/TTS modalities, ryo work.
+  - TS package name is `@kaji/sdk` (verified from `kaji/ts/package.json:2`), not `@agentkit/sdk`. Task 7 scaffold uses the real name.
+- **Plan-review fold-ins (2026-06-25):**
+  - ENG: Task 5 splits binary entry into `cli/index.ts` (importable) + `cli/bin.ts` (script-only) for cleaner test ergonomics.
+  - ENG: Task 6 notes the `index.json` <> filesystem drift risk and parks the validate-in-CI follow-up as a TODO.
+  - CEO: Task 10 adds CHANGELOG entries for both packages so the new public surface is discoverable to consumers.
+  - DEVEX: Task 7 prints a `Next: cd <out> && bun install && bun start` hint so `kaji init` is not a dead end.
+  - DEVEX: Task 9's `cliApprovalHandler` accepts an optional `label` to disambiguate concurrent agents in the prompt.
+  - DEVEX: Task 10 appends a copy-pasteable approval handler snippet to `kaji/ts/README.md` so the new export is wireable from the docs alone.
+- **Out of scope (deliberate):** native TS Gemini/Kimi providers, `gen`/`info`/`doctor` TS commands, web/Slack approval UIs, STT/TTS modalities, ryo work, automated `index.json` validation.
