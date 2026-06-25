@@ -44,9 +44,7 @@ class MockProvider:
         tool_call: Optional[Dict[str, Any]] = None,
     ) -> None:
         if reply is not None and tool_call is not None:
-            raise ValueError(
-                "MockProvider: pass reply OR tool_call, not both."
-            )
+            raise ValueError("MockProvider: pass reply OR tool_call, not both.")
         self._reply = reply
         self._tool_call = tool_call
 

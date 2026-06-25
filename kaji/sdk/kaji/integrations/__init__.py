@@ -202,9 +202,7 @@ def install_integration(
         try:
             target.resolve().relative_to(resolved_dest)
         except ValueError:
-            raise ManifestError(
-                f"Refusing to write outside dest: {target}"
-            ) from None
+            raise ManifestError(f"Refusing to write outside dest: {target}") from None
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and not force:
             raise FileExistsError(

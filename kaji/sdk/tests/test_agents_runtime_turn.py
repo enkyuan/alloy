@@ -58,9 +58,7 @@ async def test_turn_emits_tool_call_requested_event():
     # mock fires one call, then falls through to terminal text on second turn.
     runtime, _ = _build(MockProvider(tool_call={"name": "ping", "args": {}}))
     result = await runtime.turn("call ping")
-    assert any(
-        e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events
-    )
+    assert any(e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events)
 
 
 @pytest.mark.asyncio

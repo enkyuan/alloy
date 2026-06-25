@@ -40,7 +40,11 @@ async def test_function_tool_drives_a_tool_call():
     """MockProvider scripts a tool call; loop terminates on the second turn."""
     runtime = (
         AgentBuilder()
-        .provider(MockProvider(tool_call={"name": "fn.get_weather", "args": {"city": "Seattle"}}))
+        .provider(
+            MockProvider(
+                tool_call={"name": "fn.get_weather", "args": {"city": "Seattle"}}
+            )
+        )
         .tool(get_weather)
         .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
     )
@@ -48,6 +52,4 @@ async def test_function_tool_drives_a_tool_call():
     # The mock fires one tool call on iteration 1, then terminal text on iteration 2.
     from kaji.infra.events.types import EventType
 
-    assert any(
-        e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events
-    )
+    assert any(e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events)

@@ -45,6 +45,7 @@ class TurnResult:
     tool_call_events: List[KajiEvent] = field(default_factory=list)
     events: List[KajiEvent] = field(default_factory=list)
 
+
 logger = logging.getLogger(__name__)
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
