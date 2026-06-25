@@ -3,7 +3,7 @@
  *
  * Prerequisites:
  *   npm install @kaji/sdk zod openai   # or @anthropic-ai/sdk
- *   export OPENAI_API_KEY=sk-...           # or ANTHROPIC_API_KEY
+ *   export OPENAI_API_KEY=sk-...       # or ANTHROPIC_API_KEY
  *
  * Run:
  *   npx tsx index.ts
@@ -15,8 +15,6 @@ import {
   OpenAIProvider,
   Integration,
   tool,
-  KajiEvent,
-  EventType,
 } from "@kaji/sdk";
 import { z } from "zod";
 
@@ -34,23 +32,14 @@ class WeatherIntegration extends Integration {
 }
 
 export async function runAgent(apiKey: string): Promise<void> {
-  const store = new InMemoryEventStore();
-  const bus = new EventBus();
-
   const runtime = new AgentBuilder()
     .provider(new OpenAIProvider({ apiKey }))
     .integration(new WeatherIntegration())
     .systemPrompt("You are a weather assistant.")
-    .build({ bus, store });
+    .build({ bus: new EventBus(), store: new InMemoryEventStore() });
 
-  await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }));
-  await runtime.send("s1", "What is the weather in Seattle?");
-
-  const events = await store.getEvents("s1");
-  for (const e of events) {
-    const text = "content" in e ? e.content : "delta" in e ? e.delta : "";
-    if (text) console.log(`[${e.type}] ${text}`);
-  }
+  const { text } = await runtime.turn("What is the weather in Seattle?");
+  console.log(text);
 }
 
 // Entry point when run directly

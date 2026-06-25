@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from kaji.runtime.agents.cancellation import CancellationToken
@@ -16,10 +18,32 @@ from kaji.infra.events.schemas import (
     AgentMessageDelta,
     AgentReasoningStarted,
     CancellationCompleted,
+    SessionCreated,
     UserMessage,
 )
 from kaji.infra.events.store import EventStore
+from kaji.infra.events.types import EventType
 from kaji.runtime.providers.base import ModelProvider
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    """The user-facing result of a single ``AgentRuntime.turn`` call.
+
+    Attributes:
+        text: All ``AgentMessageCompleted`` content emitted this turn, joined.
+            May be empty when the provider returned only a tool call.
+        tool_call_events: ``ToolCallRequested`` events emitted this turn.
+            Named for the type honestly (not provider-neutral ``ToolCall``s).
+        session_id: The session this turn ran against (auto-generated when
+            no ``session_id`` was passed to ``turn``).
+        events: Every event the runtime appended to the store this turn.
+    """
+
+    text: str
+    session_id: str
+    tool_call_events: List[KajiEvent] = field(default_factory=list)
+    events: List[KajiEvent] = field(default_factory=list)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +147,52 @@ class AgentRuntime:
         """Commit an event to the source of truth and broadcast it."""
         await self.store.append(event)
         await self.bus.publish(event)
+
+    async def turn(
+        self,
+        prompt: str,
+        *,
+        session_id: Optional[str] = None,
+        cancellation_token: Optional[CancellationToken] = None,
+    ) -> TurnResult:
+        """Run one full agent turn and return a structured result.
+
+        One call wraps the ceremony of bootstrapping a session, sending the
+        prompt, running the ReAct loop, and slicing the new events out of the
+        store. Errors from the underlying loop propagate unchanged.
+
+        Args:
+            prompt: The user message to send.
+            session_id: Existing session to reuse; a fresh UUID hex is
+                generated when omitted.
+            cancellation_token: Optional token threaded into ``send``.
+
+        Returns:
+            ``TurnResult`` with ``text``, ``session_id``, ``tool_call_events``,
+            and the full ``events`` slice emitted by this call.
+        """
+        sid = session_id or uuid.uuid4().hex
+        existing = await self.store.get_events(sid)
+        if not existing:
+            await self._emit(SessionCreated(session_id=sid))
+        snapshot_len = len(existing)
+        await self.send(sid, prompt, cancellation_token=cancellation_token)
+        all_events = await self.store.get_events(sid)
+        turn_events = all_events[snapshot_len:]
+        text = "".join(
+            getattr(e, "content", "")
+            for e in turn_events
+            if e.type == EventType.AGENT_MESSAGE_COMPLETED
+        )
+        tool_call_events = [
+            e for e in turn_events if e.type == EventType.TOOL_CALL_REQUESTED
+        ]
+        return TurnResult(
+            text=text,
+            session_id=sid,
+            tool_call_events=tool_call_events,
+            events=turn_events,
+        )
 
     async def send(
         self,
