@@ -51,3 +51,17 @@ def test_echo_py_tools_register_without_collision(tmp_path: Path):
     echo_mod.shout.register(registry)
     specs = {s.name for s in registry.list_specs()}
     assert {"echo_say", "echo_shout"} <= specs or {"say", "shout"} <= specs
+
+
+def test_every_registry_manifest_file_exists_on_disk():
+    """Catch packaging drift: every file declared by a manifest must actually
+    ship with the wheel. ``pyproject.toml`` include globs cover *.json/*.py/
+    *.md/*.ts; a manifest that lists, e.g., a .sh would silently break
+    install_integration on installed wheels.
+    """
+    from kaji.integrations import list_integrations, load_manifest
+
+    for name in list_integrations():
+        m = load_manifest(name)
+        for rel in m.files:
+            assert (m.root / rel).exists(), f"{name}: missing {rel}"

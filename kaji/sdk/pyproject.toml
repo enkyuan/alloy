@@ -10,6 +10,11 @@ include = [
     { path = "kaji/integrations/registry/**/*.json", format = ["sdist", "wheel"] },
     { path = "kaji/integrations/registry/**/*.py", format = ["sdist", "wheel"] },
     { path = "kaji/integrations/registry/**/*.md", format = ["sdist", "wheel"] },
+    # Registry entries are dual-language; install_integration copies every file
+    # in manifest.files, including .ts templates that Python consumers can hand
+    # to a TS sibling. Excluding them would make install_integration("echo",
+    # ...) fail with a missing-file error on installed wheels.
+    { path = "kaji/integrations/registry/**/*.ts", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]
