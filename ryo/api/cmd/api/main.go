@@ -72,7 +72,7 @@ func main() {
 	})
 
 	// Stripe webhook — no JWT auth, verified by Stripe signature
-	r.Post("/stripe/webhook", stripehandler.New(stripeWebhookSecret, sessStore, whStore).ServeHTTP)
+	r.Post("/stripe/webhook", stripehandler.New(stripeWebhookSecret, sessStore, whStore, s.DB).ServeHTTP)
 
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.Auth(authSecret))
