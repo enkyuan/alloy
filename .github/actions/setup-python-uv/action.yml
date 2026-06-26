@@ -1,0 +1,34 @@
+name: Setup Python uv
+description: Set up Python, install uv, cache the uv store, and run uv sync.
+
+inputs:
+  working-directory:
+    description: Directory containing pyproject.toml and uv.lock.
+    required: true
+  python-version:
+    description: Python version to install.
+    required: false
+    default: "3.11"
+  sync-args:
+    description: Arguments passed to `uv sync` (e.g. `--extra openai`).
+    required: false
+    default: "--frozen"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: ${{ format('{0}/uv.lock', inputs.working-directory) }}
+
+    - name: Sync dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv sync ${{ inputs.sync-args }}

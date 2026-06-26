@@ -6,13 +6,13 @@ on:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.test.yml"
   pull_request:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.test.yml"
 
 jobs:
@@ -25,15 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
 
       - name: Run quickstart smoke
-        run: poetry run pytest tests/test_quickstart.py -q
+        run: uv run pytest tests/test_quickstart.py -q
 
       - name: Run non-network tests
-        run: poetry run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=35
+        run: uv run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -51,12 +51,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
 
       - name: Build wheel
-        run: poetry build --format wheel
+        run: uv build --wheel
+
+      - name: Verify wheel contents
+        run: ./scripts/verify_wheel_contents.sh
 
       - name: Install wheel in clean venv
         run: |
@@ -93,12 +96,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/serve
 
       - name: Run tests
-        run: poetry run pytest tests/ --cov=kaji_serve --cov-report=xml --cov-fail-under=35
+        run: uv run pytest tests/ --cov=kaji_serve --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -118,13 +121,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
-          install-args: "--no-interaction --sync -E openai"
+          sync-args: "--frozen --extra openai"
 
       - name: Run OpenAI integration smoke
-        run: poetry run pytest -m integration tests/integration/test_openai_provider.py
+        run: uv run pytest -m integration tests/integration/test_openai_provider.py
 
   live-anthropic:
     name: live provider / anthropic
@@ -137,10 +140,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
-          install-args: "--no-interaction --sync -E anthropic"
+          sync-args: "--frozen --extra anthropic"
 
       - name: Run Anthropic integration smoke
-        run: poetry run pytest -m integration tests/integration/test_anthropic_provider.py
+        run: uv run pytest -m integration tests/integration/test_anthropic_provider.py
