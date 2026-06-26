@@ -54,6 +54,7 @@ export {
   type ToolExecutor,
   type ApprovalHandler,
 } from "./tools/planner";
+export { cliApprovalHandler, type CliApprovalOptions } from "./tools/cli_approval_handler";
 
 // Providers
 export type {
