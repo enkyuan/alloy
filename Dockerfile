@@ -1,55 +1,60 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# syntax=docker/dockerfile:1.7
+
+# --- Stage 1: build deps and editable install via uv ---------------------
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
 
 ARG BUILD_COMMIT=unknown
 LABEL build.commit="${BUILD_COMMIT}"
 
-# Set working directory
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/app/kaji/serve/.venv
+
 WORKDIR /app
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    libpq-dev \
-    curl \
+# System deps that some Python packages (psycopg2-binary, etc.) need to import.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install poetry==1.8.3
-
-# Configure poetry to not create a virtual environment
-RUN poetry config virtualenvs.create false
-
-# Copy the monorepo. The Python distributions live under kaji/:
-#   kaji/sdk   -> the kaji SDK
-#   kaji/serve -> the FastAPI + workers service (path-depends on ../sdk)
+# Copy the monorepo. kaji/serve has a path dep on ../sdk, so both must be present.
 COPY . .
 
-# Installing the serve distribution pulls in the SDK via its path dependency
-# (kaji/serve -> ../sdk), so a single install gives both.
-RUN pip install ./kaji/serve
+# Install. Frozen = lockfile must already exist and resolve; no remote re-resolution.
+# --no-dev = skip the [dependency-groups].dev group; the image is for runtime.
+RUN cd kaji/serve && uv sync --frozen --no-dev
 
-# Fail at build time if either package is unimportable (catches stale cached images
-# built before the monorepo restructure, where the installed path no longer matches).
+# --- Stage 2: slim runtime ----------------------------------------------
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/app/kaji/serve/.venv/bin:${PATH}"
+
+# Runtime system deps (psql client for entrypoint waits, curl for healthcheck).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        postgresql-client \
+        libpq5 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Bring in the synced venv plus the source tree.
+COPY --from=builder /app /app
+
+# Fail at build time if either package is unimportable. Catches stale image
+# layers built before the monorepo restructure.
 RUN python -c "import kaji; import kaji_serve"
 
-# Create a non-root user
+# Non-root user.
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port
 EXPOSE 8080
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application (the reference service lives in kaji-serve)
 CMD ["uvicorn", "kaji_serve.server.app:app", "--host", "0.0.0.0", "--port", "8080"]
