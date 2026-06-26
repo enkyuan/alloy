@@ -10,7 +10,7 @@ If a task is clear but the implementation details are uncertain, **default to of
 
 * Python **3.13+**
 * Use **type hints everywhere**
-* Enforce correctness with **pyrefly** (no unresolved types, no `Any` leaks)
+* Enforce correctness with **ty** (no unresolved types, no `Any` leaks)
 * Prefer explicit imports and clear module boundaries
 
 ### 1.2 Async-First Design
@@ -322,7 +322,7 @@ Messages must be:
 When modifying or adding backend code:
 
 1. Do not invent APIs
-2. Enforce types with pyrefly
+2. Enforce types with ty
 3. Keep async boundaries clear
 4. Centralize shared logic
 5. Ask for docs if uncertain

@@ -9,7 +9,7 @@ from kaji.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Global Redis clients (typed as Any so pyrefly is happy when redis is optional)
+# Global Redis clients (typed as Any so the type checker is happy when redis is optional)
 redis_client: Optional[Any] = None
 redis_stream_client: Optional[Any] = None
 redis_binary_client: Optional[Any] = None
