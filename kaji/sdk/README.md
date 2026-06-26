@@ -149,7 +149,7 @@ shared with the TypeScript SDK.
 cd kaji/sdk
 poetry install
 poetry run pytest tests/          # no API keys required
-poetry run pyrefly check          # static type check
+poetry run ty check               # static type check
 poetry run ruff check kaji        # lint
 ```
 

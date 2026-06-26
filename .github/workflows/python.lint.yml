@@ -30,7 +30,7 @@ jobs:
           working-directory: kaji/sdk
 
       - name: Type check
-        run: poetry run pyrefly check
+        run: poetry run ty check
 
       - name: Lint
         run: poetry run ruff check kaji tests
