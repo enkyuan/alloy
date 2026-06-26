@@ -19,11 +19,11 @@ The reference service is the `kaji-serve` distribution. Run these from
 `kaji/serve/`; it pulls in the `kaji` SDK via a path dependency
 (`../sdk`).
 
-### 1. Install Poetry dependencies
+### 1. Install dependencies with uv
 
 ```bash
 cd kaji/serve
-poetry install
+uv sync
 ```
 
 ### 2. Set up environment
@@ -36,13 +36,13 @@ cp ../../docker/kaji/.env.example .env
 ### 3. Run migrations
 
 ```bash
-poetry run alembic upgrade head
+uv run alembic upgrade head
 ```
 
 ### 4. Start development server
 
 ```bash
-poetry run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`
@@ -63,10 +63,10 @@ Services use the `kaji` Compose project name (`kaji-sdk`, `kaji-worker`, `kaji-b
 
 ```bash
 # Core SDK tests (from kaji/sdk/ -- no database needed)
-cd kaji/sdk && poetry run pytest tests/
+cd kaji/sdk && uv run pytest tests/
 
 # Reference service tests (from kaji/serve/ -- DB tests need Postgres)
-cd kaji/serve && poetry run pytest tests/
+cd kaji/serve && uv run pytest tests/
 ```
 
 ## Quick Start
@@ -76,5 +76,5 @@ cd kaji/serve && poetry run pytest tests/
 cd docker/kaji && docker compose up -d
 
 # Terminal 2: API server (from kaji/serve/)
-cd kaji/serve && poetry run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+cd kaji/serve && uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
