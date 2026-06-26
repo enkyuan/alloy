@@ -19,6 +19,11 @@ describe("kaji init", () => {
     }
     const pkg = JSON.parse(readFileSync(join(out, "package.json"), "utf8"));
     expect(pkg.dependencies).toHaveProperty("@kaji/sdk");
+    // `openai` is an optional peer dep that OpenAIProvider imports
+    // dynamically; without it, `bun install && bun start` fails with
+    // "OpenAI provider requires the openai package". The scaffold defaults
+    // to the OpenAI provider so the dep must be included.
+    expect(pkg.dependencies).toHaveProperty("openai");
     expect(pkg.scripts.start).toBe("tsx agent.ts");
     expect(readFileSync(join(out, "agent.ts"), "utf8")).toMatch(/from "@kaji\/sdk"/);
     expect(lines.join("\n")).toMatch(/Next: cd .* && bun install && bun start/);

@@ -45,7 +45,12 @@ const FILES: Record<string, string> = {
       private: true,
       type: "module",
       scripts: { start: "tsx agent.ts" },
-      dependencies: { "@kaji/sdk": "^0.1.0" },
+      // `openai` is an optional peer dep of @kaji/sdk that OpenAIProvider
+      // imports dynamically. The scaffold defaults to the OpenAI provider,
+      // so include it here so `bun install && bun start` runs end-to-end.
+      // Swap to `@anthropic-ai/sdk` (or remove) if you wire a different
+      // provider in agent.ts.
+      dependencies: { "@kaji/sdk": "^0.1.0", openai: "^6.42.0" },
       devDependencies: { tsx: "^4.0.0", typescript: "^5.4.0" },
     },
     null,
