@@ -1,5 +1,9 @@
 import ast
+import importlib
+import sys
 from pathlib import Path
+
+import pytest
 
 import kaji
 
@@ -12,24 +16,42 @@ def test_public_api_exports_stable_runtime_surface():
         "AgentBuilder",
         "AgentRuntime",
         "CancellationToken",
+        "Chunk",
+        "Document",
+        "DocumentRAG",
+        "Embedder",
+        "EmbeddingCache",
+        "HistoryStore",
         "InMemoryEventBus",
         "InMemoryEventStore",
+        "InMemoryHistoryStore",
+        "InMemorySessionStore",
+        "InMemoryVectorStore",
         "Integration",
         "ModelProvider",
         "ProviderAPIError",
         "ProviderConfigError",
         "ProviderError",
         "SessionManager",
+        "SessionRecord",
+        "SessionStore",
         "ToolContext",
         "ToolRegistry",
+        "ToolRetriever",
         "ToolSpec",
         "UnknownToolError",
+        "VectorStore",
         # Decorators / function helpers
+        "build_tools_payload",
         "function_tool",
         "get_provider",
         "list_tool_specs",
         "register_provider",
         "register_tool",
+        "spec_to_neutral",
+        "to_anthropic",
+        "to_gemini",
+        "to_openai",
         "tool",
     }
 
@@ -72,20 +94,19 @@ def test_public_api_keeps_low_level_verbs_hidden_from_top_level():
 
 
 def test_public_api_hides_non_mvp_extensions_from_top_level():
+    """Modality adapters (TTS, text-only session helpers) and the legacy
+    UpperCamel retriever factory stay subpackage-only. Knowledge primitives
+    (Chunk/Document/DocumentRAG/VectorStore/InMemoryVectorStore) and the
+    tool retriever (ToolRetriever/Embedder/EmbeddingCache) were promoted to
+    the top-level surface in feat/sdk-audit-fixes Task 2."""
     non_mvp = {
-        "Chunk",
         "ChunkText",
-        "Document",
-        "DocumentRAG",
         "GetToolRetriever",
         "GetTTSProvider",
-        "InMemoryVectorStore",
         "TextModalityAdapter",
         "TextSession",
         "TextSessionConfig",
-        "ToolRetriever",
         "TTSProvider",
-        "VectorStore",
         "VoiceTTSAdapter",
     }
 
@@ -135,6 +156,72 @@ def test_public_api_does_not_export_snake_case_service_owned_names():
     }
 
     assert service_owned.isdisjoint(set(kaji.__all__))
+
+
+# Names promoted to the top-level surface in feat/sdk-audit-fixes Task 2.
+# Each must resolve through PEP 562 ``__getattr__`` without an eager
+# submodule import of providers, infra, or knowledge.
+_NEWLY_EXPOSED = [
+    "Chunk",
+    "Document",
+    "DocumentRAG",
+    "Embedder",
+    "EmbeddingCache",
+    "HistoryStore",
+    "InMemoryHistoryStore",
+    "InMemorySessionStore",
+    "InMemoryVectorStore",
+    "SessionRecord",
+    "SessionStore",
+    "ToolRetriever",
+    "VectorStore",
+    "build_tools_payload",
+    "spec_to_neutral",
+    "to_anthropic",
+    "to_gemini",
+    "to_openai",
+]
+
+
+@pytest.mark.parametrize("name", _NEWLY_EXPOSED)
+def test_newly_exposed_name_resolves(name: str) -> None:
+    """Every Task-2 promoted name resolves via the lazy map."""
+    assert getattr(kaji, name) is not None, f"kaji.{name} did not resolve"
+
+
+def test_import_kaji_does_not_eagerly_load_heavy_submodules() -> None:
+    """``import kaji`` must remain side-effect-free: the lazy map adds 18 new
+    names but accessing none of them should leave knowledge/providers/infra
+    submodules unimported.
+
+    Restores ``sys.modules`` afterwards so this test does not bleed cleared
+    module cache into later tests (pytest's monkeypatch resolves dotted
+    targets via the live module graph).
+    """
+    prefixes = (
+        "kaji",
+        "kaji.knowledge",
+        "kaji.runtime",
+        "kaji.runtime.providers.openai",
+        "kaji.runtime.providers.anthropic",
+        "kaji.infra.realtime",
+    )
+    saved = {name: mod for name, mod in sys.modules.items() if name.startswith("kaji")}
+    try:
+        for name in list(sys.modules):
+            if name.startswith(prefixes):
+                sys.modules.pop(name, None)
+        importlib.import_module("kaji")
+        assert "kaji.knowledge.rag" not in sys.modules
+        assert "kaji.runtime.providers.openai" not in sys.modules
+        assert "kaji.infra.realtime.redis" not in sys.modules
+    finally:
+        # Restore everything we cleared so monkeypatch.setattr targets in
+        # later tests still resolve to the same module objects.
+        for name in list(sys.modules):
+            if name.startswith("kaji") and name not in saved:
+                sys.modules.pop(name, None)
+        sys.modules.update(saved)
 
 
 def test_sdk_package_exports_only_advertise_pep8_names_in_all():

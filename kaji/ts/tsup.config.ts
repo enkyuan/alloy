@@ -15,9 +15,11 @@ export default defineConfig([
     external: ["openai", "@anthropic-ai/sdk"],
   },
   {
-    // `kaji` CLI binary. ESM only; tsup strips shebangs unless restored via
-    // banner. The `bin` field in package.json points at `dist/cli/index.js`.
-    entry: ["src/cli/index.ts"],
+    // `kaji` CLI. ESM only; tsup strips shebangs unless restored via banner.
+    // `bin.ts` is the binary entry (package.json `bin` points at dist/cli/bin.js);
+    // `index.ts` is the importable runCli surface used by tests and any host
+    // embedding kaji's command dispatch.
+    entry: ["src/cli/bin.ts", "src/cli/index.ts"],
     format: ["esm"],
     outDir: "dist/cli",
     sourcemap: true,

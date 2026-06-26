@@ -21,6 +21,15 @@ export interface SessionState {
   sessionId: string;
   isActive: boolean;
   messages: Message[];
+  /**
+   * tool_call_ids that emitted TOOL_APPROVAL_REQUESTED but have not yet been
+   * approved or rejected. The set drains as APPROVED / REJECTED events arrive.
+   */
+  pendingApprovals: Set<string>;
+  /** tool_call_ids the host approved via TOOL_APPROVAL_APPROVED. */
+  approvedToolCallIds: Set<string>;
+  /** tool_call_ids the host rejected via TOOL_APPROVAL_REJECTED. */
+  rejectedToolCallIds: Set<string>;
 }
 
 /**
@@ -38,6 +47,9 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
     sessionId: first.session_id,
     isActive: false,
     messages: [],
+    pendingApprovals: new Set<string>(),
+    approvedToolCallIds: new Set<string>(),
+    rejectedToolCallIds: new Set<string>(),
   };
 
   let ordered: readonly KajiEvent[] = events;
@@ -87,6 +99,17 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
           content: `Error: ${event.error}`,
           toolCallId: event.tool_call_id,
         });
+        break;
+      case EventType.TOOL_APPROVAL_REQUESTED:
+        state.pendingApprovals.add(event.tool_call_id);
+        break;
+      case EventType.TOOL_APPROVAL_APPROVED:
+        state.pendingApprovals.delete(event.tool_call_id);
+        state.approvedToolCallIds.add(event.tool_call_id);
+        break;
+      case EventType.TOOL_APPROVAL_REJECTED:
+        state.pendingApprovals.delete(event.tool_call_id);
+        state.rejectedToolCallIds.add(event.tool_call_id);
         break;
       // NOTE: AGENT_MESSAGE_DELTA and the transient tool events (REQUESTED,
       // STARTED) are intentionally NOT projected. The agent loop's termination

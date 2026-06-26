@@ -17,7 +17,14 @@ describe("SessionManager", () => {
     it("returns empty SessionState for a session with no events (no throw)", async () => {
       const manager = new SessionManager(new InMemoryEventStore());
       const state = await manager.getState("nonexistent-session");
-      expect(state).toEqual({ sessionId: "nonexistent-session", isActive: false, messages: [] });
+      expect(state).toEqual({
+        sessionId: "nonexistent-session",
+        isActive: false,
+        messages: [],
+        pendingApprovals: new Set<string>(),
+        approvedToolCallIds: new Set<string>(),
+        rejectedToolCallIds: new Set<string>(),
+      });
     });
 
     it("returns correct SessionState from replayed events", async () => {

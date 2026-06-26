@@ -15,7 +15,14 @@ export class SessionManager {
   async getState(sessionId: string): Promise<SessionState> {
     const events = await this._store.getEvents(sessionId);
     if (events.length === 0) {
-      return { sessionId, isActive: false, messages: [] };
+      return {
+        sessionId,
+        isActive: false,
+        messages: [],
+        pendingApprovals: new Set<string>(),
+        approvedToolCallIds: new Set<string>(),
+        rejectedToolCallIds: new Set<string>(),
+      };
     }
     return replaySession(events);
   }

@@ -20,7 +20,7 @@
     }
   },
   "bin": {
-    "kaji": "./dist/cli/index.js"
+    "kaji": "./dist/cli/bin.js"
   },
   "files": ["dist", "registry"],
   "scripts": {

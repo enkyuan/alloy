@@ -110,6 +110,12 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |
 | `UserMessage` | Convenience constructor for the initial `user.message` event |
 | `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
+| `SessionStore`, `InMemorySessionStore`, `SessionRecord` | Cross-session index keyed by user (process-local default; postgres opt-in) |
+| `HistoryStore`, `InMemoryHistoryStore` | Conversation history backend for reasoning nodes (in-memory default; Redis opt-in) |
+| `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore` | Document RAG primitives: chunking, ingest, retrieval |
+| `ToolRetriever`, `Embedder`, `EmbeddingCache` | Semantic tool retrieval with a pluggable embedder and cache |
+| `build_tools_payload`, `spec_to_neutral` | Build the neutral tool payload from the registry |
+| `to_openai`, `to_anthropic`, `to_gemini` | Per-provider translators applied at the provider boundary |
 | `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
 | `ProviderMessage`, `ProviderToolSpec` | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `kaji.runtime.providers.types`) |
 | `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
@@ -128,8 +134,8 @@ shared with the TypeScript SDK.
 | `AgentBuilder` + integrations | Yes | Yes |
 | OpenAI / Anthropic providers | Yes | Yes |
 | OpenRouter / Kimi / Gemini providers | Yes (native) | Yes (via OpenAI-compatible factory) |
-| Document RAG / vector store | Yes (non-MVP) | No |
-| Tool retriever | Yes (non-MVP) | No |
+| Document RAG / vector store | Yes | No |
+| Tool retriever | Yes | No |
 | Text modality adapter | Yes (non-MVP) | No |
 | Voice / TTS | Yes (non-MVP) | No |
 | Redis realtime bus | Yes (non-MVP) | No |
@@ -172,13 +178,7 @@ real agents -- it produces fixed, non-intelligent responses.
 
 ---
 
-## Extensions (non-MVP)
-
-The following features are available in the Python SDK but are outside the
-five-step MVP path. They require additional configuration, infra, or hardening
-before production use.
-
-### Document RAG
+## Document RAG
 
 Ingest documents and retrieve relevant chunks. Both the embedder and the vector
 store are pluggable; the example injects a tiny stub embedder so it runs with no
@@ -186,7 +186,7 @@ API key (swap in a keyed embedder for production).
 
 ```python
 import asyncio
-from kaji.knowledge import Document, DocumentRAG
+from kaji import Document, DocumentRAG
 
 class StubEmbedder:
     async def embed(self, text: str) -> list[float]:
@@ -200,6 +200,14 @@ async def main():
 
 asyncio.run(main())
 ```
+
+---
+
+## Extensions (non-MVP)
+
+The following features are available in the Python SDK but are outside the
+five-step MVP path. They require additional configuration, infra, or hardening
+before production use.
 
 Pass a `DocumentRAG` instance to `AgentRuntime(rag=rag)` to automatically inject
 retrieved chunks into the system prompt on each turn.

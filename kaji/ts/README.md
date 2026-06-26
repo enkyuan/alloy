@@ -85,6 +85,35 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
 
+## Approval handler
+
+Tools whose risk exceeds your policy threshold pause for approval before the
+runtime executes them. `cliApprovalHandler` is a built-in handler for
+dev / REPL use that prints the tool name, risk, and arguments, then reads
+`y` / `N` on stdin:
+
+```ts
+import { AgentBuilder, cliApprovalHandler, openai } from "@kaji/sdk";
+
+const agent = new AgentBuilder()
+  .provider(openai())
+  .approvalHandler(cliApprovalHandler({ label: "agent-a" }))
+  .build();
+```
+
+`ApprovalHandler` is `(name, args, risk) => Promise<boolean>`. For production
+hosts, implement your own handler that talks to a web modal, Slack, or
+whatever your operator workflow needs.
+
+## CLI
+
+```
+kaji --help                            # list subcommands
+kaji add <integration>                 # copy an integration into your project
+kaji init [--out <dir>] [--force]      # scaffold a TypeScript Kaji project
+kaji list-integrations                 # enumerate the registry catalog
+```
+
 ## Global tool registry (advanced)
 
 For simple setups you can use the process-level registry:
@@ -111,6 +140,7 @@ const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
 | `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
+| `ApprovalHandler`, `cliApprovalHandler` | Approval callback type + default stdin handler for dev / REPL |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
 | `Integration`, `tool` | Integration helper for scoped tools |
