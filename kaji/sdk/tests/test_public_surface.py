@@ -11,10 +11,19 @@ EXPECTED_PUBLIC = {
     "AgentBuilder",
     "AgentRuntime",
     "CancellationToken",
+    "Chunk",
+    "Document",
+    "DocumentRAG",
+    "Embedder",
+    "EmbeddingCache",
     "EventBus",
     "EventStore",
+    "HistoryStore",
     "InMemoryEventBus",
     "InMemoryEventStore",
+    "InMemoryHistoryStore",
+    "InMemorySessionStore",
+    "InMemoryVectorStore",
     "Integration",
     "ModelProvider",
     "ProviderAPIError",
@@ -22,17 +31,26 @@ EXPECTED_PUBLIC = {
     "ProviderError",
     "replay_session",
     "SessionManager",
+    "SessionRecord",
     "SessionState",
+    "SessionStore",
     "ToolContext",
     "ToolRegistry",
+    "ToolRetriever",
     "ToolSpec",
     "UnknownToolError",
     "UserMessage",
+    "VectorStore",
+    "build_tools_payload",
     "function_tool",
     "get_provider",
     "list_tool_specs",
     "register_provider",
     "register_tool",
+    "spec_to_neutral",
+    "to_anthropic",
+    "to_gemini",
+    "to_openai",
     "tool",
 }
 
@@ -50,9 +68,10 @@ def test_each_public_name_resolves() -> None:
 
 
 def test_internal_names_still_importable_from_subpackages() -> None:
-    # Things removed from the top-level lazy map must still be importable
-    # from their canonical subpackage. Each name is asserted to silence
-    # F401 (unused-import) and prove the import resolved.
+    # Names not in the top-level lazy map (and names that ARE in the top-level
+    # map but whose canonical home is a subpackage) must remain importable
+    # from their submodule path. Each name is asserted to silence F401 and
+    # prove the import resolved.
     from kaji.runtime.agents import AgentStrategy
     from kaji.runtime.agents.planner import ToolExecutor, ToolPlanner
     from kaji.runtime.integrations import BoundTool
