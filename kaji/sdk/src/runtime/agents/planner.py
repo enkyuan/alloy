@@ -121,8 +121,8 @@ class ToolPlanner:
         risk = spec.risk if spec else None
         catalog_name = spec.catalog_name if spec else None
         aliases = [catalog_name] if catalog_name else []
-        # `Any` widens the dict to satisfy pyrefly's `Mapping[LaxStr, Any]`
-        # parameter type on the event constructors.
+        # `Any` widens the dict to satisfy the type checker's parameter
+        # type on the event constructors.
         metadata: Any = {"catalog_name": catalog_name} if catalog_name else {}
 
         # 1. Announce intent to call
