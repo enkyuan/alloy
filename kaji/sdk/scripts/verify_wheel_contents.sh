@@ -27,7 +27,7 @@ for ext in json py md ts; do
   COUNT=$(echo "$LISTING" | grep -cE "kaji/integrations/registry/.*\.${ext}\$" || true)
   if [ "$COUNT" -eq 0 ]; then
     echo "FAIL: no .${ext} files under kaji/integrations/registry/ in wheel" >&2
-    echo "      hatchling force-include is misconfigured. install_integration() will break for end users." >&2
+    echo "      setuptools package-data is misconfigured (see [tool.setuptools.package-data] in pyproject.toml). install_integration() will break for end users." >&2
     exit 1
   fi
   echo "  ok: $COUNT .${ext} files"

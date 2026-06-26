@@ -57,7 +57,7 @@ modalities. payment collection is a tool the agent calls.
 ## getting started
 
 **prerequisites:** go 1.25+; [bun](https://bun.sh) ≥ 1.3 and node ≥ 22;
-python 3.11+ and [poetry](https://python-poetry.org/); docker (postgres + redis).
+python 3.11+ and [uv](https://docs.astral.sh/uv/); docker (postgres + redis).
 
 ```bash
 # js/ts workspace (studio + kaji/ts)
@@ -73,7 +73,7 @@ go run ./cmd/api/main.go
 bun --filter @ryo/web dev
 
 # kaji python sdk
-cd kaji/sdk && poetry install && poetry run pytest
+cd kaji/sdk && uv sync && uv run pytest
 ```
 
 see [`ryo/README.md`](ryo/README.md) for the full ryo setup, routes, and environment variables.
