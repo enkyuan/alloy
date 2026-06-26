@@ -23,7 +23,8 @@ export const COMMANDS: Record<string, Command> = {
   add: {
     describe: "Copy an integration's TypeScript source into your project.",
     usage: "kaji add <name> [--out <dir>] [--force]",
-    run: (rest, opts) => Promise.resolve(add(rest, { registryRoot: opts.registryRoot })),
+    run: (rest, opts) =>
+      Promise.resolve(add(rest, { registryRoot: opts.registryRoot, log: opts.log })),
   },
   init: {
     describe: "Scaffold a new TypeScript Kaji project.",

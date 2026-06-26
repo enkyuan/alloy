@@ -22,6 +22,7 @@ interface Manifest {
 
 export async function listIntegrations(_rest: string[], opts: RunOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
+  const err = opts.err ?? ((m: string) => console.error(m));
   const indexPath = join(opts.registryRoot, "index.json");
   if (!existsSync(indexPath)) {
     log("No integrations found.");
@@ -30,9 +31,12 @@ export async function listIntegrations(_rest: string[], opts: RunOptions): Promi
   let index: IndexFile;
   try {
     index = JSON.parse(readFileSync(indexPath, "utf8")) as IndexFile;
-  } catch {
-    log("No integrations found.");
-    return 0;
+  } catch (e) {
+    // Distinguish corruption from absence so a broken catalog is fixable
+    // instead of silently invisible.
+    const msg = e instanceof Error ? e.message : String(e);
+    err(`Registry index is not valid JSON (${indexPath}): ${msg}`);
+    return 1;
   }
   const entries = Object.entries(index.integrations ?? {}).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) {

@@ -53,4 +53,37 @@ describe("kaji init", () => {
     expect(code).toBe(0);
     expect(existsSync(join(out, "package.json"))).toBe(true);
   });
+
+  it("errors when --out has no value (trailing position)", async () => {
+    const stderr: string[] = [];
+    const code = await init(["--out"], {
+      registryRoot: "",
+      log: () => {},
+      err: (m) => stderr.push(m),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(/--out requires a directory argument/);
+  });
+
+  it("errors when --out is followed by another flag", async () => {
+    const stderr: string[] = [];
+    const code = await init(["--out", "--force"], {
+      registryRoot: "",
+      log: () => {},
+      err: (m) => stderr.push(m),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(/--out requires a directory argument/);
+  });
+
+  it("errors on unknown arguments", async () => {
+    const stderr: string[] = [];
+    const code = await init(["weirdarg"], {
+      registryRoot: "",
+      log: () => {},
+      err: (m) => stderr.push(m),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(/unknown argument: weirdarg/);
+  });
 });

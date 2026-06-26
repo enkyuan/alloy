@@ -14,14 +14,24 @@ interface Args {
   force: boolean;
 }
 
+class CliArgError extends Error {}
+
 function parseArgs(rest: string[]): Args {
   let out = ".";
   let force = false;
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i] === "--out") {
-      out = rest[++i] ?? ".";
-    } else if (rest[i] === "--force") {
+    const arg = rest[i];
+    if (arg === "--out") {
+      const next = rest[i + 1];
+      if (next === undefined || next.startsWith("--")) {
+        throw new CliArgError("--out requires a directory argument");
+      }
+      out = next;
+      i++;
+    } else if (arg === "--force") {
       force = true;
+    } else {
+      throw new CliArgError(`unknown argument: ${arg}`);
     }
   }
   return { out: resolve(out), force };
@@ -71,7 +81,17 @@ console.log(result.text);
 export async function init(rest: string[], opts: RunOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
   const err = opts.err ?? ((m: string) => console.error(m));
-  const args = parseArgs(rest);
+  let args: Args;
+  try {
+    args = parseArgs(rest);
+  } catch (e) {
+    if (e instanceof CliArgError) {
+      err(`Error: ${e.message}`);
+      err("usage: kaji init [--out <dir>] [--force]");
+      return 1;
+    }
+    throw e;
+  }
   if (!existsSync(args.out)) {
     mkdirSync(args.out, { recursive: true });
   }

@@ -4,7 +4,7 @@
 
 **Goal:** Close the four highest-leverage gaps surfaced by the 2026-06-25 audit of `kaji/sdk` (Python) and `kaji/ts` (TypeScript): (1) export the implemented-but-hidden Python types, (2) add live integration tests for Gemini + Kimi, (3) bring the TS CLI to rough parity with Python (`list-integrations`, `init`, working dispatch), (4) wire the approval flow end-to-end in TS with a CLI fallback handler. STT/TTS modalities for TS are explicitly out of scope.
 
-**Architecture:** Each fix is a thin slice that ships independently. (1) is a pure surface change to `kaji/__init__.py`'s lazy map. (2) follows the existing opt-in `pytest -m live` convention from `tests/integration/test_anthropic_provider.py`. (3) extends `kaji/ts/src/cli/index.ts` with a dispatch table plus two new commands that read the same `registry/` directory the existing `add` command uses. (4) plumbs three already-defined approval events through the existing `EventBus` and `replaySession`, then ships a `cliApprovalHandler` that prompts on stdin.
+**Architecture:** Each fix is a thin slice that ships independently. (1) is a pure surface change to `kaji/__init__.py`'s lazy map. (2) follows the existing opt-in `pytest -m integration` convention from `tests/integration/test_anthropic_provider.py`. (3) extends `kaji/ts/src/cli/index.ts` with a dispatch table plus two new commands that read the same `registry/` directory the existing `add` command uses. (4) plumbs three already-defined approval events through the existing `EventBus` and `replaySession`, then ships a `cliApprovalHandler` that prompts on stdin.
 
 **Tech Stack:** Python 3.11+, pytest with `asyncio_mode = auto` and the existing `integration` marker; TypeScript with vitest, tsup, bun; existing `EventBus` / `ToolPlanner` / `replaySession` primitives.
 
@@ -232,7 +232,7 @@ Create `kaji/sdk/tests/integration/test_gemini_provider.py`:
 """Live smoke test for the Gemini provider.
 
 Opt-in: set KAJI_LIVE_GEMINI=1 and GEMINI_API_KEY=... then run
-    pytest -m live tests/integration/test_gemini_provider.py
+    pytest -m integration tests/integration/test_gemini_provider.py
 """
 from __future__ import annotations
 
@@ -342,7 +342,7 @@ Create `kaji/sdk/tests/integration/test_kimi_provider.py`:
 """Live smoke test for the Kimi provider (OpenRouter endpoint).
 
 Opt-in: set KAJI_LIVE_KIMI=1 and OPENROUTER_API_KEY=... then run
-    pytest -m live tests/integration/test_kimi_provider.py
+    pytest -m integration tests/integration/test_kimi_provider.py
 """
 from __future__ import annotations
 

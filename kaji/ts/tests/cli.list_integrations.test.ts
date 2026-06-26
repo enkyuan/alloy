@@ -63,12 +63,21 @@ describe("kaji list-integrations", () => {
     expect(lines.join("\n")).toMatch(/No integrations found/);
   });
 
-  it("returns 0 and a friendly note when index.json is malformed JSON", async () => {
+  it("exits 1 and reports the parse error when index.json is malformed JSON", async () => {
     writeFileSync(join(registryRoot, "index.json"), "{not valid json");
-    const lines: string[] = [];
-    const code = await listIntegrations([], { registryRoot, log: (m) => lines.push(m) });
-    expect(code).toBe(0);
-    expect(lines.join("\n")).toMatch(/No integrations found/);
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot,
+      log: (m) => stdout.push(m),
+      err: (m) => stderr.push(m),
+    });
+    expect(code).toBe(1);
+    // Real corruption surfaces on stderr so the user can fix it; the
+    // friendly "No integrations found." message is reserved for missing /
+    // empty catalogs.
+    expect(stderr.join("\n")).toMatch(/Registry index is not valid JSON/);
+    expect(stdout.join("\n")).not.toMatch(/No integrations found/);
   });
 
   it("falls back to the catalog key when a manifest is missing or unreadable", async () => {
