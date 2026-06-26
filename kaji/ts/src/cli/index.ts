@@ -4,6 +4,7 @@
  * from tests does not trigger `process.exit`.
  */
 import { add } from "./add";
+import { init } from "./init";
 import { listIntegrations } from "./list_integrations";
 
 export interface RunOptions {
@@ -23,6 +24,11 @@ export const COMMANDS: Record<string, Command> = {
     describe: "Copy an integration's TypeScript source into your project.",
     usage: "kaji add <name> [--out <dir>] [--force]",
     run: (rest, opts) => Promise.resolve(add(rest, { registryRoot: opts.registryRoot })),
+  },
+  init: {
+    describe: "Scaffold a new TypeScript Kaji project.",
+    usage: "kaji init [--out <dir>] [--force]",
+    run: (rest, opts) => init(rest, opts),
   },
   "list-integrations": {
     describe: "List integrations available via `kaji add`.",
