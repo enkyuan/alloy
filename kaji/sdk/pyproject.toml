@@ -33,30 +33,71 @@ realtime = ["redis[asyncio]>=6.4.0,<7"]
 kaji = "kaji.cli:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68", "editables>=0.5"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
+[tool.setuptools]
+include-package-data = true
 
-[tool.hatch.build.targets.wheel.sources]
-"src" = "kaji"
-
-# The integrations registry holds dual-language manifest assets that
-# install_integration() loads at runtime. Hatchling includes all file types
-# within the packages scope (not Python-only), so .ts/.md/.json files under
-# src/integrations/registry/ ship automatically via the sources remap.
-# py.typed is also within src/ and ships without explicit force-include.
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "src/",
-    "tests/",
-    "README.md",
-    "CHANGELOG.md",
-    "pyproject.toml",
-    "scripts/",
+# src/ IS the kaji package root (no src/kaji/ subdirectory exists).
+# We enumerate all packages explicitly with kaji.* names so setuptools
+# knows to remap src/ → kaji at install time. The editables>=0.5 backend
+# then implements the prefix-change case via a runtime MetaPathFinder.
+packages = [
+    "kaji",
+    "kaji.cli",
+    "kaji.core",
+    "kaji.infra",
+    "kaji.infra.events",
+    "kaji.infra.events.store",
+    "kaji.infra.observability",
+    "kaji.infra.realtime",
+    "kaji.integrations",
+    "kaji.knowledge",
+    "kaji.modalities",
+    "kaji.modalities.text",
+    "kaji.modalities.voice",
+    "kaji.modalities.voice.legacy",
+    "kaji.modalities.voice.tts",
+    "kaji.modalities.voice.utils",
+    "kaji.runtime",
+    "kaji.runtime.agents",
+    "kaji.runtime.integrations",
+    "kaji.runtime.providers",
+    "kaji.runtime.sessions",
+    "kaji.runtime.tools",
+    "kaji.runtime.workflows",
+    "kaji.types",
 ]
+
+[tool.setuptools.package-dir]
+kaji = "src"
+"kaji.cli" = "src/cli"
+"kaji.core" = "src/core"
+"kaji.infra" = "src/infra"
+"kaji.infra.events" = "src/infra/events"
+"kaji.infra.events.store" = "src/infra/events/store"
+"kaji.infra.observability" = "src/infra/observability"
+"kaji.infra.realtime" = "src/infra/realtime"
+"kaji.integrations" = "src/integrations"
+"kaji.knowledge" = "src/knowledge"
+"kaji.modalities" = "src/modalities"
+"kaji.modalities.text" = "src/modalities/text"
+"kaji.modalities.voice" = "src/modalities/voice"
+"kaji.modalities.voice.legacy" = "src/modalities/voice/legacy"
+"kaji.modalities.voice.tts" = "src/modalities/voice/tts"
+"kaji.modalities.voice.utils" = "src/modalities/voice/utils"
+"kaji.runtime" = "src/runtime"
+"kaji.runtime.agents" = "src/runtime/agents"
+"kaji.runtime.integrations" = "src/runtime/integrations"
+"kaji.runtime.providers" = "src/runtime/providers"
+"kaji.runtime.sessions" = "src/runtime/sessions"
+"kaji.runtime.tools" = "src/runtime/tools"
+"kaji.runtime.workflows" = "src/runtime/workflows"
+"kaji.types" = "src/types"
+
+[tool.setuptools.package-data]
+kaji = ["py.typed", "integrations/registry/**/*"]
 
 [dependency-groups]
 dev = [
@@ -74,6 +115,7 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = [
     "--cov=kaji",
     "--cov-report=term-missing",
+    "--import-mode=importlib",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
