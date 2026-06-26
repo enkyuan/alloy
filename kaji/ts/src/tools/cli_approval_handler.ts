@@ -56,6 +56,22 @@ export function cliApprovalHandler(opts: CliApprovalOptions = {}): ApprovalHandl
     );
     await prior;
 
+    // Short-circuit if a prior prompt drained and ended the stream while we
+    // were queued: createInterface against an already-ended readable may
+    // never emit 'line' OR 'close', which would hang this approval forever.
+    // Treat that as EOF (reject the call) so the agent loop stays live.
+    const ended =
+      (input as { readableEnded?: boolean }).readableEnded === true ||
+      (input as { destroyed?: boolean }).destroyed === true;
+    if (ended) {
+      output.write(`\nApproval requested${labelSuffix}: ${name}\n`);
+      output.write(`  risk: ${risk ?? "unknown"}\n`);
+      output.write(`  arguments: ${JSON.stringify(args)}\n`);
+      output.write("  approve? [y/N]: (input ended) -> N\n");
+      release();
+      return false;
+    }
+
     const rl = createInterface({ input, output });
     try {
       output.write(`\nApproval requested${labelSuffix}: ${name}\n`);

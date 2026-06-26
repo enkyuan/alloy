@@ -88,6 +88,21 @@ describe("cliApprovalHandler", () => {
     expect(result).toBe(false);
   });
 
+  it("does not hang when a queued prompt finds the shared stream already ended", async () => {
+    // `printf 'y\n' | kaji` pattern: a finite stream the first prompt fully
+    // drains. The second queued prompt should resolve to false (EOF) instead
+    // of hanging on a closed readline.
+    const input = Readable.from(["y\n"]);
+    const out = captureWritable();
+    const handler = cliApprovalHandler({ input, output: out.stream });
+    const [first, second] = await Promise.all([
+      handler("first", {}, "write"),
+      handler("second", {}, "write"),
+    ]);
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+  });
+
   it("queues concurrent prompts on the same input stream (second waits for first to finish)", async () => {
     // Two prompts share a stream where the second handler should not even
     // print its 'approve?' line until the first one completes. We verify
