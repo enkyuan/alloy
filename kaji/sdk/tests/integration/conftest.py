@@ -28,6 +28,10 @@ def pytest_collection_modifyitems(items: list) -> None:
             key = "OPENAI_API_KEY"
         elif "anthropic" in module_name:
             key = "ANTHROPIC_API_KEY"
+        elif "gemini" in module_name:
+            key = "GEMINI_API_KEY"
+        elif "kimi" in module_name:
+            key = "OPENROUTER_API_KEY"
         else:
             # Generic integration test — skip unless at least one known key exists.
             key = None
