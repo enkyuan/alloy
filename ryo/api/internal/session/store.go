@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -23,6 +24,9 @@ type Session struct {
 	AmountCollectedCents     int64     `json:"amount_collected_cents"`
 	Currency                 string    `json:"currency"`
 	StartedAt                time.Time `json:"started_at"`
+	// IdempotencyKey is the client-supplied Idempotency-Key header value.
+	// Never serialised back to clients; stored only to detect replays.
+	IdempotencyKey string `json:"-"`
 }
 
 type scanner interface {
@@ -44,8 +48,9 @@ func (s *Store) Insert(ctx context.Context, sess Session) (Session, error) {
 	row := s.db.QueryRow(ctx, `
 		INSERT INTO sessions
 		  (id, agent_id, channel, status, stripe_payment_intent_id,
-		   consumer_stripe_customer_id, amount_collected_cents, currency, started_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		   consumer_stripe_customer_id, amount_collected_cents, currency, started_at,
+		   idempotency_key)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, agent_id, channel, status, stripe_payment_intent_id,
 		          consumer_stripe_customer_id, plain_summary,
 		          amount_collected_cents, currency, started_at`,
@@ -53,7 +58,20 @@ func (s *Store) Insert(ctx context.Context, sess Session) (Session, error) {
 		nullableStr(sess.StripePaymentIntentID),
 		nullableStr(sess.ConsumerStripeCustomerID),
 		sess.AmountCollectedCents, sess.Currency, sess.StartedAt,
+		nullableStr(sess.IdempotencyKey),
 	)
+	return scanSession(row)
+}
+
+// GetByIdempotencyKey returns the session previously inserted under key, or
+// pgx.ErrNoRows if there is no such session. Used to make POST /v1/sessions
+// idempotent on retry.
+func (s *Store) GetByIdempotencyKey(ctx context.Context, key string) (Session, error) {
+	row := s.db.QueryRow(ctx, `
+		SELECT id, agent_id, channel, status, stripe_payment_intent_id,
+		       consumer_stripe_customer_id, plain_summary,
+		       amount_collected_cents, currency, started_at
+		FROM sessions WHERE idempotency_key = $1`, key)
 	return scanSession(row)
 }
 
@@ -106,8 +124,10 @@ func scanSession(row scanner) (Session, error) {
 		&sess.AmountCollectedCents, &sess.Currency, &sess.StartedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return Session{}, fmt.Errorf("session not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Wrap so callers can use errors.Is(err, pgx.ErrNoRows) to
+			// distinguish "no such row" from real DB failures.
+			return Session{}, fmt.Errorf("session not found: %w", pgx.ErrNoRows)
 		}
 		return Session{}, fmt.Errorf("scan session: %w", err)
 	}
