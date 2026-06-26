@@ -295,9 +295,9 @@ fixed and does not reflect real LLM outputs.
 
 | Package | Checks |
 |---------|--------|
-| `kaji/sdk` | pyrefly (type check), ruff (lint), pytest (unit + quickstart) |
+| `kaji/sdk` | ty (type check), ruff (lint), pytest (unit + quickstart) |
 | `kaji/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
-| `kaji/serve` | ruff (lint), pytest (unit); no pyrefly until typing debt is addressed |
+| `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed |
 
 Install smoke jobs for both SDK packages validate that the published wheel /
 tarball exports resolve correctly and provider errors are clear.
@@ -553,7 +553,7 @@ Required checks:
 
 ```bash
 # Python SDK
-poetry run pyrefly check
+poetry run ty check
 poetry run ruff check kaji tests
 poetry run pytest tests/test_quickstart.py tests/test_public_api.py -q
 
