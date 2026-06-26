@@ -6,13 +6,13 @@ on:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.lint.yml"
   pull_request:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.lint.yml"
 
 jobs:
@@ -25,15 +25,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
 
       - name: Type check
-        run: poetry run ty check
+        run: uv run ty check
 
       - name: Lint
-        run: poetry run ruff check kaji tests
+        run: uv run ruff check src tests
 
   serve:
     name: kaji/serve
@@ -44,9 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/serve
 
       - name: Lint
-        run: poetry run ruff check kaji_serve tests alembic
+        run: uv run ruff check src tests alembic

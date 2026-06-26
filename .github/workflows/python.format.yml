@@ -6,13 +6,13 @@ on:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
   pull_request:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
-      - ".github/actions/setup-python-poetry/**"
+      - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
 
 jobs:
@@ -25,12 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
 
       - name: Check formatting
-        run: poetry run ruff format --check .
+        run: uv run ruff format --check .
 
   serve:
     name: kaji/serve
@@ -41,9 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./.github/actions/setup-python-poetry
+      - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/serve
 
       - name: Check formatting
-        run: poetry run ruff format --check .
+        run: uv run ruff format --check .
