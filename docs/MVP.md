@@ -553,9 +553,9 @@ Required checks:
 
 ```bash
 # Python SDK
-poetry run ty check
-poetry run ruff check kaji tests
-poetry run pytest tests/test_quickstart.py tests/test_public_api.py -q
+uv run ty check
+uv run ruff check src tests
+uv run pytest tests/test_quickstart.py tests/test_public_api.py -q
 
 # TypeScript SDK
 bun run typecheck

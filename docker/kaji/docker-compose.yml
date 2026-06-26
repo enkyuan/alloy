@@ -108,8 +108,8 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
-      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
+      - ../../kaji/serve/src:/app/kaji/serve/src:ro
 
   worker:
     container_name: kaji-worker
@@ -174,8 +174,8 @@ services:
         "kaji_serve.workers.tasks.tools",
       ]
     volumes:
-      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
-      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
+      - ../../kaji/serve/src:/app/kaji/serve/src:ro
 
   bus-worker:
     container_name: kaji-bus-worker
@@ -238,8 +238,8 @@ services:
 
     command: ["python", "-m", "kaji_serve.workers.main"]
     volumes:
-      - ../kaji/sdk/kaji:/app/kaji/sdk/kaji:ro
-      - ../kaji/serve/kaji_serve:/app/kaji/serve/kaji_serve:ro
+      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
+      - ../../kaji/serve/src:/app/kaji/serve/src:ro
 
   # ============================================================================
   # Supabase Services

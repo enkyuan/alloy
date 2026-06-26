@@ -1,11 +1,11 @@
 """Minimal Kaji agent — Python hello-world.
 
 Prerequisites:
-    poetry install
+    uv sync --extra openai
     export OPENAI_API_KEY=sk-...
 
 Run:
-    poetry run python -m examples.minimal_agent
+    uv run python -m examples.minimal_agent
 """
 
 from __future__ import annotations
