@@ -9,6 +9,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ### Added
 
+- **Public exports** — the lazy map in `kaji/__init__.py` now surfaces 18
+  additional names so consumers can import them directly from the top level
+  instead of digging into subpackages:
+  - Knowledge: `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore`.
+  - Pluggable infra: `SessionStore`, `InMemorySessionStore`, `SessionRecord`,
+    `HistoryStore`, `InMemoryHistoryStore`.
+  - Tool retrieval: `Embedder`, `EmbeddingCache`, `ToolRetriever`.
+  - Neutral tool payload translators: `build_tools_payload`, `spec_to_neutral`,
+    `to_openai`, `to_anthropic`, `to_gemini`.
+  The parity table in `kaji/sdk/README.md` now lists Document RAG and the tool
+  retriever as MVP (no longer "non-MVP"). Imports remain lazy: `import kaji`
+  performs no eager submodule loads.
+- **`tests/integration/test_gemini_provider.py`** and
+  **`tests/integration/test_kimi_provider.py`** — opt-in live integration tests
+  matching the existing OpenAI/Anthropic pattern. Skipped when `GEMINI_API_KEY`
+  (resp. `OPENROUTER_API_KEY`) is absent; conftest extended to dispatch.
 - **`test_agent_builder.py`** — unit and E2E tests for `AgentBuilder`: fluent
   API, scoped registry isolation, policy wiring, and the regression test that
   builder-registered integration tools are executable (not just listed).
