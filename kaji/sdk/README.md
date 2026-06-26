@@ -137,21 +137,24 @@ shared with the TypeScript SDK.
 
 ## Development
 
-**Prerequisites:** Python 3.11+, [Poetry](https://python-poetry.org/).
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cd kaji/sdk
-poetry install
-poetry run pytest tests/          # no API keys required
-poetry run ty check               # static type check
-poetry run ruff check kaji        # lint
+uv sync                           # creates .venv, installs deps + dev group
+uv run pytest tests/              # no API keys required
+uv run ty check                   # static type check
+uv run ruff check src             # lint
 ```
 
-Live provider tests are opt-in:
+Live provider tests are opt-in (extras pull in the provider SDK):
 
 ```bash
-OPENAI_API_KEY=... poetry run pytest -m integration tests/integration/test_openai_provider.py
-ANTHROPIC_API_KEY=... poetry run pytest -m integration tests/integration/test_anthropic_provider.py
+uv sync --extra openai
+OPENAI_API_KEY=... uv run pytest -m integration tests/integration/test_openai_provider.py
+
+uv sync --extra anthropic
+ANTHROPIC_API_KEY=... uv run pytest -m integration tests/integration/test_anthropic_provider.py
 ```
 
 The SDK test suite needs no environment. The service tests under
@@ -163,7 +166,7 @@ The SDK test suite needs no environment. The service tests under
 The default test path mocks provider HTTP clients and requires no keys:
 
 ```bash
-poetry run pytest -m "not integration"
+uv run pytest -m "not integration"
 ```
 
 `MockProvider` is a deterministic stub used in unit tests to exercise the full
