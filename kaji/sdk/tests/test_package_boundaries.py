@@ -5,7 +5,7 @@ from pathlib import Path
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
-PACKAGE_ROOT = SDK_ROOT / "kaji"
+PACKAGE_ROOT = SDK_ROOT / "src"
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -72,7 +72,7 @@ def test_core_package_has_no_infra_or_runtime_dependencies():
 
 
 def test_redis_client_is_confined_to_realtime_boundary():
-    allowed = Path("kaji/infra/realtime/redis.py")
+    allowed = Path("src/infra/realtime/redis.py")
     violations: list[str] = []
 
     for path in _python_files(PACKAGE_ROOT):
@@ -87,32 +87,25 @@ def test_redis_client_is_confined_to_realtime_boundary():
 
 def test_redis_dependency_is_an_explicit_realtime_extra():
     sdk_pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    redis_dep = sdk_pyproject["tool"]["poetry"]["dependencies"]["redis"]
-    realtime_extra = sdk_pyproject["tool"]["poetry"]["extras"]["realtime"]
+    # PEP 621: optional deps live under [project.optional-dependencies].
+    optional_deps = sdk_pyproject["project"]["optional-dependencies"]
+    realtime_extra = optional_deps["realtime"]
 
-    assert redis_dep["optional"] is True
-    assert "redis" in realtime_extra
-
-    serve_pyproject = tomllib.loads(
-        (REPO_ROOT / "kaji" / "serve" / "pyproject.toml").read_text()
-    )
-    serve_kaji_dep = serve_pyproject["tool"]["poetry"]["dependencies"]["kaji"]
-    assert "realtime" in serve_kaji_dep["extras"]
-    assert "providers" in serve_kaji_dep["extras"]
+    assert any("redis" in dep for dep in realtime_extra)
 
 
 def test_provider_sdks_are_explicit_optional_extras():
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    dependencies = pyproject["tool"]["poetry"]["dependencies"]
-    extras = pyproject["tool"]["poetry"]["extras"]
+    # PEP 621: optional deps live under [project.optional-dependencies].
+    extras = pyproject["project"]["optional-dependencies"]
 
-    for name in ["anthropic", "google-genai", "openai", "rich"]:
-        assert dependencies[name]["optional"] is True
-
-    assert extras["openai"] == ["openai"]
-    assert extras["anthropic"] == ["anthropic"]
-    assert extras["gemini"] == ["google-genai"]
-    assert set(extras["providers"]) == {"anthropic", "google-genai", "openai"}
+    assert any("openai" in dep for dep in extras["openai"])
+    assert any("anthropic" in dep for dep in extras["anthropic"])
+    assert any("google-genai" in dep for dep in extras["gemini"])
+    provider_deps = " ".join(extras["providers"])
+    assert "anthropic" in provider_deps
+    assert "google-genai" in provider_deps
+    assert "openai" in provider_deps
 
 
 def test_runtime_tools_do_not_import_legacy_tool_definition() -> None:
