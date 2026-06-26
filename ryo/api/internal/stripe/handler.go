@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 
@@ -22,14 +24,18 @@ type Handler struct {
 	webhookSecret string
 	sessions      *session.Store
 	webhooks      *wh.Store
+	db            *pgxpool.Pool
 }
 
-// New creates a Stripe webhook handler.
-func New(webhookSecret string, sessions *session.Store, webhooks *wh.Store) *Handler {
+// New creates a Stripe webhook handler. db is used to begin a single tx that
+// spans session update + webhook delivery enqueue, so neither can succeed
+// without the other.
+func New(webhookSecret string, sessions *session.Store, webhooks *wh.Store, db *pgxpool.Pool) *Handler {
 	return &Handler{
 		webhookSecret: webhookSecret,
 		sessions:      sessions,
 		webhooks:      webhooks,
+		db:            db,
 	}
 }
 
@@ -48,89 +54,129 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch event.Type {
 	case "payment_intent.succeeded":
-		h.handleSucceeded(r.Context(), event)
+		if err := h.handleSucceeded(r.Context(), event); err != nil {
+			slog.Error("handle payment_intent.succeeded", "event_id", event.ID, "err", err)
+			http.Error(w, "internal", http.StatusInternalServerError)
+			return
+		}
 	case "payment_intent.payment_failed":
-		h.handleFailed(r.Context(), event)
+		if err := h.handleFailed(r.Context(), event); err != nil {
+			slog.Error("handle payment_intent.payment_failed", "event_id", event.ID, "err", err)
+			http.Error(w, "internal", http.StatusInternalServerError)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-func (h *Handler) handleSucceeded(ctx context.Context, event stripe.Event) {
+func (h *Handler) handleSucceeded(ctx context.Context, event stripe.Event) error {
 	var pi stripe.PaymentIntent
 	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
-		slog.Error("unmarshal payment_intent", "err", err)
-		return
+		return fmt.Errorf("unmarshal payment_intent: %w", err)
 	}
-
 	summary := fmt.Sprintf("Payment of $%.2f completed", float64(pi.Amount)/100)
-	if err := h.sessions.UpdateAfterPayment(ctx, pi.ID, "completed", summary, pi.Amount); err != nil {
-		slog.Error("update session after payment", "pi_id", pi.ID, "err", err)
-		return
-	}
-
-	sess, err := h.sessions.GetByPaymentIntent(ctx, pi.ID)
-	if err != nil {
-		slog.Error("get session by payment intent", "pi_id", pi.ID, "err", err)
-		return
-	}
-
-	h.enqueueEvent(ctx, sess, "payment.completed", map[string]any{
-		"session_id":   sess.ID,
+	return h.applyAndEnqueue(ctx, event.ID, string(event.Type), pi.ID, "completed", summary, pi.Amount, "payment.completed", map[string]any{
 		"amount_cents": pi.Amount,
 		"currency":     string(pi.Currency),
 		"status":       "completed",
 	})
 }
 
-func (h *Handler) handleFailed(ctx context.Context, event stripe.Event) {
+func (h *Handler) handleFailed(ctx context.Context, event stripe.Event) error {
 	var pi stripe.PaymentIntent
 	if err := json.Unmarshal(event.Data.Raw, &pi); err != nil {
-		slog.Error("unmarshal payment_intent", "err", err)
-		return
+		return fmt.Errorf("unmarshal payment_intent: %w", err)
 	}
-
-	if err := h.sessions.UpdateAfterPayment(ctx, pi.ID, "failed", "Payment failed - no charge made", 0); err != nil {
-		slog.Error("update session after failure", "pi_id", pi.ID, "err", err)
-		return
-	}
-
-	sess, err := h.sessions.GetByPaymentIntent(ctx, pi.ID)
-	if err != nil {
-		slog.Error("get session by payment intent", "pi_id", pi.ID, "err", err)
-		return
-	}
-
-	h.enqueueEvent(ctx, sess, "payment.failed", map[string]any{
-		"session_id": sess.ID,
-		"status":     "failed",
+	return h.applyAndEnqueue(ctx, event.ID, string(event.Type), pi.ID, "failed", "Payment failed - no charge made", 0, "payment.failed", map[string]any{
+		"status": "failed",
 	})
 }
 
-func (h *Handler) enqueueEvent(ctx context.Context, sess session.Session, eventType string, payload map[string]any) {
-	payloadBytes, err := json.Marshal(payload)
+// applyAndEnqueue updates the session row, looks up the matching session,
+// and inserts a delivery row per subscribed webhook — all inside one tx.
+// If any step fails, the entire effect is rolled back so we never end up
+// with a "session is completed but no webhook ever fired" state.
+//
+// The tx also dedups on stripeEventID: Stripe delivers at-least-once, and any
+// 5xx response from this handler (including the ones we return on internal
+// error) causes Stripe to retry. Without dedup, a retry would insert a
+// second set of webhook_deliveries rows and merchants would receive the
+// event twice. Rollback on any subsequent error is safe because the
+// dedup insert is part of the same tx.
+func (h *Handler) applyAndEnqueue(
+	ctx context.Context,
+	stripeEventID, stripeEventType string,
+	piID, status, summary string,
+	amountCents int64,
+	eventType string,
+	extraPayload map[string]any,
+) error {
+	tx, err := h.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		slog.Error("marshal event payload", "err", err)
-		return
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	// Rollback after commit is a no-op in pgx; the ctx-canceled error from
+	// rollback during a canceled request is also benign and discarded here.
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Idempotency gate. ON CONFLICT DO NOTHING returns zero rows when the
+	// event has already been processed; in that case commit nothing further
+	// and let the handler return 200 to Stripe.
+	var insertedID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO processed_stripe_events (event_id, event_type)
+		VALUES ($1, $2)
+		ON CONFLICT (event_id) DO NOTHING
+		RETURNING event_id`, stripeEventID, stripeEventType).Scan(&insertedID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			slog.Info("stripe event already processed, skipping", "event_id", stripeEventID)
+			return tx.Commit(ctx)
+		}
+		return fmt.Errorf("dedup insert: %w", err)
+	}
+
+	if err := h.sessions.UpdateAfterPaymentTx(ctx, tx, piID, status, summary, amountCents); err != nil {
+		return fmt.Errorf("update session: %w", err)
+	}
+
+	sess, err := h.sessions.GetByPaymentIntentTx(ctx, tx, piID)
+	if err != nil {
+		return fmt.Errorf("get session: %w", err)
 	}
 
 	// MVP: broadcast to all webhooks subscribed to this event across all orgs.
 	// TODO: scope to org once session.Store exposes OrgIDForAgent.
-	webhooks, err := h.webhooks.ListAllForEvent(ctx, eventType)
+	webhooks, err := h.webhooks.ListAllForEventTx(ctx, tx, eventType)
 	if err != nil {
-		slog.Error("list webhooks for event", "event", eventType, "err", err)
-		return
+		return fmt.Errorf("list webhooks: %w", err)
 	}
 
-	for _, webhook := range webhooks {
+	payload := map[string]any{"session_id": sess.ID}
+	for k, v := range extraPayload {
+		payload[k] = v
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
+	now := time.Now().UTC()
+	for _, webhookRow := range webhooks {
 		d := wh.Delivery{
 			ID:          uuid.New().String(),
-			WebhookID:   webhook.ID,
+			WebhookID:   webhookRow.ID,
 			EventType:   eventType,
 			Payload:     payloadBytes,
-			NextAttempt: time.Now().UTC(),
+			NextAttempt: now,
 		}
-		if err := h.webhooks.InsertDelivery(ctx, d); err != nil {
-			slog.Error("insert delivery", "webhook_id", webhook.ID, "err", err)
+		if err := h.webhooks.InsertDeliveryTx(ctx, tx, d); err != nil {
+			return fmt.Errorf("insert delivery: %w", err)
 		}
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }

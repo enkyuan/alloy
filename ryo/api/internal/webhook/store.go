@@ -143,6 +143,38 @@ func (s *Store) InsertDelivery(ctx context.Context, d Delivery) error {
 	return err
 }
 
+// InsertDeliveryTx is InsertDelivery scoped to an existing transaction.
+func (s *Store) InsertDeliveryTx(ctx context.Context, tx pgx.Tx, d Delivery) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO webhook_deliveries
+		  (id, webhook_id, event_type, payload, status, attempts, next_attempt, created_at)
+		VALUES ($1, $2, $3, $4, 'pending', 0, $5, now())`,
+		d.ID, d.WebhookID, d.EventType, d.Payload, d.NextAttempt,
+	)
+	return err
+}
+
+// ListAllForEventTx is ListAllForEvent scoped to an existing transaction.
+func (s *Store) ListAllForEventTx(ctx context.Context, tx pgx.Tx, eventType string) ([]Webhook, error) {
+	rows, err := tx.Query(ctx, `
+		SELECT id, org_id, url, secret, events, created_at
+		FROM webhooks
+		WHERE $1 = ANY(events) OR cardinality(events) = 0`, eventType)
+	if err != nil {
+		return nil, fmt.Errorf("list all for event: %w", err)
+	}
+	defer rows.Close()
+	var out []Webhook
+	for rows.Next() {
+		wh, err := scanWebhook(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, wh)
+	}
+	return out, rows.Err()
+}
+
 // PollPending fetches up to limit pending deliveries due now.
 func (s *Store) PollPending(ctx context.Context, limit int) ([]Delivery, error) {
 	rows, err := s.db.Query(ctx, `

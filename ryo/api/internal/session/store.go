@@ -77,6 +77,26 @@ func (s *Store) UpdateAfterPayment(ctx context.Context, piID, status, plainSumma
 	return err
 }
 
+// UpdateAfterPaymentTx is UpdateAfterPayment scoped to an existing transaction.
+func (s *Store) UpdateAfterPaymentTx(ctx context.Context, tx pgx.Tx, piID, status, plainSummary string, amountCents int64) error {
+	_, err := tx.Exec(ctx, `
+		UPDATE sessions
+		SET status = $2, plain_summary = $3, amount_collected_cents = $4
+		WHERE stripe_payment_intent_id = $1`,
+		piID, status, plainSummary, amountCents)
+	return err
+}
+
+// GetByPaymentIntentTx fetches the session matching a Stripe PaymentIntent ID inside a tx.
+func (s *Store) GetByPaymentIntentTx(ctx context.Context, tx pgx.Tx, piID string) (Session, error) {
+	row := tx.QueryRow(ctx, `
+		SELECT id, agent_id, channel, status, stripe_payment_intent_id,
+		       consumer_stripe_customer_id, plain_summary,
+		       amount_collected_cents, currency, started_at
+		FROM sessions WHERE stripe_payment_intent_id = $1`, piID)
+	return scanSession(row)
+}
+
 func scanSession(row scanner) (Session, error) {
 	var sess Session
 	var piID, custID, summary *string
