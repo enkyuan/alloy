@@ -37,7 +37,13 @@ jobs:
           sync-args: "--frozen --no-editable"
 
       - name: Type check
-        run: uv run ty check
+        # Direct venv invocation (NOT `uv run`) — `uv run` re-syncs the venv
+        # against the lockfile before executing, which overrides the
+        # --no-editable sync done by setup-python-uv above. ty needs the
+        # built-wheel install to resolve `import kaji.X` against an on-disk
+        # kaji/ directory, since it doesn't read setuptools+editables'
+        # runtime MetaPathFinder.
+        run: .venv/bin/ty check
 
       - name: Lint
         run: uv run ruff check src tests

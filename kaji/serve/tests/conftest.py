@@ -22,6 +22,10 @@ from fastapi.testclient import TestClient
 import fakeredis.aioredis
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+# Expose the SDK's tests/helpers (which contains MockProvider and other shared
+# test utilities) to serve's test suite. test_agents_node_infra_free.py imports
+# tests.helpers.mock_provider — that module lives in kaji/sdk/tests/helpers/.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "sdk"))
 
 from unittest.mock import AsyncMock
 
