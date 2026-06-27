@@ -16,6 +16,11 @@ import (
 // Lives in package stripehandler (no _test suffix on the package) so we can
 // call the unexported method directly without widening the public API.
 
+// internalTestDB mirrors testDB in handler_tx_test.go. The duplication is
+// intentional: this file is in package stripehandler (white-box, no _test
+// suffix) while handler_tx_test.go is in package stripehandler_test. Go does
+// not allow sharing helpers across those two test packages in the same
+// directory, so each must define its own DB setup helper.
 func internalTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
