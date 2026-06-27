@@ -28,6 +28,13 @@ jobs:
       - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
+          # --no-editable installs kaji as a built wheel (src/ -> kaji/ remap
+          # applied at install time) rather than via the runtime MetaPathFinder
+          # that setuptools+editables uses for editable installs. Static type
+          # checkers (ty, pyrefly, pyright) don't execute the redirector, so
+          # they can only resolve `import kaji.X` against an on-disk kaji/
+          # directory. The wheel install creates one in site-packages.
+          sync-args: "--frozen --no-editable"
 
       - name: Type check
         run: uv run ty check

@@ -86,7 +86,6 @@ asyncio_default_fixture_loop_scope = "function"
 addopts = [
     "--cov=kaji_serve",
     "--cov-report=term-missing",
-    "--import-mode=importlib",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
