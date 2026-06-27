@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import pytest
 from pydantic import BaseModel, Field
@@ -141,8 +141,12 @@ def test_tool_decorator_accepts_pydantic_model():
 
 
 def test_tool_decorator_rejects_missing_parameters():
+    # Call via a dynamic alias so static type checkers (ty, pyrefly) don't
+    # flag the deliberately-bad invocation. The runtime TypeError from
+    # Python's required-arg check is the assertion under test.
+    bad_call: Any = tool
     with pytest.raises(TypeError):
-        tool(description="bad")  # type: ignore[call-arg]
+        bad_call(description="bad")
 
 
 def test_manual_tools_override_still_works():
