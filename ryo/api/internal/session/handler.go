@@ -2,11 +2,13 @@ package session
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	stripe "github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/paymentintent"
@@ -74,13 +76,7 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 			// client_secret the original response carried. Otherwise the
 			// caller (e.g. the frontend rendering Stripe's Payment Element)
 			// has no way to drive the second response forward.
-			resp := map[string]any{"session": existing}
-			if existing.StripePaymentIntentID != "" {
-				if pi, err := paymentintent.Get(existing.StripePaymentIntentID, nil); err == nil {
-					resp["client_secret"] = pi.ClientSecret
-				}
-			}
-			writeJSON(w, http.StatusCreated, resp)
+			h.writeReplay(w, existing)
 			return
 		case errors.Is(err, pgx.ErrNoRows):
 			// Fall through to normal create path.
@@ -127,6 +123,21 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 
 	created, err := h.store.Insert(r.Context(), sess)
 	if err != nil {
+		// Concurrent race: two requests with the same new Idempotency-Key
+		// both missed the GetByIdempotencyKey lookup, both called Stripe
+		// (Stripe deduped them), and both tried to INSERT. The second hits
+		// the unique constraint on idempotency_key (code 23505). Re-read
+		// the row that the first request committed and return it.
+		var pgErr *pgconn.PgError
+		if idemKey != "" && errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			existing, getErr := h.store.GetByIdempotencyKey(r.Context(), idemKey)
+			if getErr != nil {
+				writeError(w, http.StatusInternalServerError, "idempotency race recovery failed")
+				return
+			}
+			h.writeReplay(w, existing)
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -135,6 +146,27 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 		"session":       created,
 		"client_secret": pi.ClientSecret,
 	})
+}
+
+// writeReplay returns the idempotency-replay response for an existing session.
+// It re-fetches the PaymentIntent to recover client_secret. If Stripe is
+// unreachable, it returns 502 rather than silently omitting the secret — a
+// client without client_secret cannot complete payment and would be stuck.
+func (h *handler) writeReplay(w http.ResponseWriter, existing Session) {
+	resp := map[string]any{"session": existing}
+	if existing.StripePaymentIntentID != "" {
+		pi, err := paymentintent.Get(existing.StripePaymentIntentID, nil)
+		if err != nil {
+			slog.Error("stripe paymentintent get failed on idempotency replay",
+				"error", err,
+				"session_id", existing.ID,
+				"payment_intent_id", existing.StripePaymentIntentID)
+			writeError(w, http.StatusBadGateway, "failed to retrieve payment intent for replay")
+			return
+		}
+		resp["client_secret"] = pi.ClientSecret
+	}
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
