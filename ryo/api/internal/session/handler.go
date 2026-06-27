@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -72,6 +73,14 @@ func (h *handler) createSession(w http.ResponseWriter, r *http.Request) {
 		existing, err := h.store.GetByIdempotencyKey(r.Context(), idemKey)
 		switch {
 		case err == nil:
+			// Mismatch check: if the caller reuses an Idempotency-Key with
+			// different contract fields, reject with 422 before replaying.
+			// Description is intentionally excluded — it is freeform metadata
+			// and mirrors Stripe's behaviour of allowing it to differ.
+			if mismatch := checkIdempotencyMismatch(&req, currency, channel, existing); mismatch != "" {
+				writeError(w, http.StatusUnprocessableEntity, mismatch)
+				return
+			}
 			// Replay: re-fetch the PaymentIntent so we can return the same
 			// client_secret the original response carried. Otherwise the
 			// caller (e.g. the frontend rendering Stripe's Payment Element)
@@ -167,6 +176,24 @@ func (h *handler) writeReplay(w http.ResponseWriter, existing Session) {
 		resp["client_secret"] = pi.ClientSecret
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// checkIdempotencyMismatch returns a non-empty error string if the new
+// request's contract fields differ from those stored in existing. It is a pure
+// function so it can be unit-tested independently of the HTTP layer. Description
+// is not a contract field and is intentionally ignored (matches Stripe's
+// behaviour: description may differ across retries of the same key).
+func checkIdempotencyMismatch(req *CreateSessionRequest, currency, channel string, existing Session) string {
+	if req.AgentID != existing.AgentID ||
+		req.AmountCents != existing.AmountCollectedCents ||
+		currency != existing.Currency ||
+		channel != existing.Channel {
+		return fmt.Sprintf(
+			"Idempotency-Key was first used with different parameters. Original request: agent_id=%s, amount_cents=%d, currency=%s, channel=%s. Use a different Idempotency-Key or send the same parameters as the original request.",
+			existing.AgentID, existing.AmountCollectedCents, existing.Currency, existing.Channel,
+		)
+	}
+	return ""
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

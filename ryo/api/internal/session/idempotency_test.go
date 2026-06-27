@@ -205,6 +205,102 @@ func TestCreateSession_IdempotencyKeyTooLong(t *testing.T) {
 	}
 }
 
+// TestCreateSession_IdempotencyKeyParamMismatchReturns422 verifies that
+// replaying an Idempotency-Key with different contract fields (agent_id,
+// amount_cents, currency, channel) is rejected with 422 and an informative
+// error message. The original session row must be left completely unchanged.
+func TestCreateSession_IdempotencyKeyParamMismatchReturns422(t *testing.T) {
+	db := setupTestDBForIdempotency(t)
+	ctx := context.Background()
+
+	orgID := "org-mismatch-" + t.Name()
+	agentA := "agent-A-" + t.Name()
+	agentB := "agent-B-" + t.Name()
+	for _, id := range []string{orgID} {
+		if _, err := db.Exec(ctx,
+			`INSERT INTO orgs (id, name, slug, created_at) VALUES ($1,$1,$1,now()) ON CONFLICT DO NOTHING`,
+			id); err != nil {
+			t.Fatalf("seed org: %v", err)
+		}
+	}
+	for _, agentID := range []string{agentA, agentB} {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO agents (id, org_id, name, business_type, system_prompt, tools, voice_enabled, embed_token, created_at, updated_at)
+			VALUES ($1, $2, 'test', 'custom', '', '{}', false, $1, now(), now()) ON CONFLICT DO NOTHING`,
+			agentID, orgID); err != nil {
+			t.Fatalf("seed agent %s: %v", agentID, err)
+		}
+	}
+	t.Cleanup(func() {
+		db.Exec(ctx, `DELETE FROM agents WHERE id=$1`, agentA)
+		db.Exec(ctx, `DELETE FROM agents WHERE id=$1`, agentB)
+		db.Exec(ctx, `DELETE FROM orgs WHERE id=$1`, orgID)
+	})
+
+	store := session.NewStore(db)
+	idemKey := "key-mismatch-" + t.Name()
+	existingID := "sess-mismatch-" + t.Name()
+
+	// Seed the original session under agentA with amount=500, usd, chat.
+	existing, err := store.Insert(ctx, session.Session{
+		ID:                   existingID,
+		AgentID:              agentA,
+		Channel:              "chat",
+		Status:               "pending",
+		AmountCollectedCents: 500,
+		Currency:             "usd",
+		StartedAt:            time.Now().UTC(),
+		IdempotencyKey:       idemKey,
+	})
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(ctx, `DELETE FROM sessions WHERE id=$1`, existing.ID) })
+
+	// Replay with the same key but a different agent_id (agentB).
+	router := session.Router(db, stripeKeyForTest)
+	body := `{"agent_id":"` + agentB + `","amount_cents":500,"currency":"usd"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", idemKey)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status: got %d, want 422; body=%s", w.Code, w.Body.String())
+	}
+
+	var errResp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if !strings.Contains(errResp["error"], "different parameters") {
+		t.Errorf("error message missing 'different parameters': got %q", errResp["error"])
+	}
+
+	// The original session row must be unchanged (count = 1, same fields).
+	var n int
+	if err := db.QueryRow(ctx,
+		`SELECT count(*) FROM sessions WHERE idempotency_key=$1`, idemKey).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("session row count changed after rejected replay: got %d, want 1", n)
+	}
+	// Re-fetch the row and confirm fields are untouched.
+	got, err := store.GetByIdempotencyKey(ctx, idemKey)
+	if err != nil {
+		t.Fatalf("re-fetch original session: %v", err)
+	}
+	if got.AgentID != agentA {
+		t.Errorf("original session agent_id mutated: got %q, want %q", got.AgentID, agentA)
+	}
+	if got.AmountCollectedCents != 500 {
+		t.Errorf("original session amount_collected_cents mutated: got %d, want 500", got.AmountCollectedCents)
+	}
+}
+
 func setupTestDBForIdempotency(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	// Defer to the existing testDB helper convention in store_test.go.
