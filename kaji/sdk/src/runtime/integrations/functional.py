@@ -144,7 +144,9 @@ def function_tool(
         elif isinstance(parameters, type) and issubclass(parameters, BaseModel):
             params_schema = tool_spec_from_model("_", "_", parameters).parameters
         else:
-            params_schema = parameters  # already Dict[str, Any] per the Union guard above
+            params_schema = (
+                parameters  # already Dict[str, Any] per the Union guard above
+            )
 
         spec = ToolSpec(
             name=fn_name,
