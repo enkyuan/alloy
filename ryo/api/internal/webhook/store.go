@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,6 +39,14 @@ type Store struct {
 
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+// Querier is satisfied by both *pgxpool.Pool and pgx.Tx, allowing store
+// methods to be shared between pool-level and tx-scoped calls without
+// duplicating SQL.
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
 // NewStore creates a Store backed by db.
@@ -113,7 +122,16 @@ func (s *Store) ListForEvent(ctx context.Context, orgID, eventType string) ([]We
 
 // ListAllForEvent returns all webhooks subscribed to eventType across all orgs.
 func (s *Store) ListAllForEvent(ctx context.Context, eventType string) ([]Webhook, error) {
-	rows, err := s.db.Query(ctx, `
+	return listAllForEventImpl(ctx, s.db, eventType)
+}
+
+// ListAllForEventTx is ListAllForEvent scoped to an existing transaction.
+func (s *Store) ListAllForEventTx(ctx context.Context, tx pgx.Tx, eventType string) ([]Webhook, error) {
+	return listAllForEventImpl(ctx, tx, eventType)
+}
+
+func listAllForEventImpl(ctx context.Context, q Querier, eventType string) ([]Webhook, error) {
+	rows, err := q.Query(ctx, `
 		SELECT id, org_id, url, secret, events, created_at
 		FROM webhooks
 		WHERE $1 = ANY(events) OR cardinality(events) = 0`, eventType)
@@ -134,45 +152,22 @@ func (s *Store) ListAllForEvent(ctx context.Context, eventType string) ([]Webhoo
 
 // InsertDelivery enqueues a new delivery row (status: pending).
 func (s *Store) InsertDelivery(ctx context.Context, d Delivery) error {
-	_, err := s.db.Exec(ctx, `
-		INSERT INTO webhook_deliveries
-		  (id, webhook_id, event_type, payload, status, attempts, next_attempt, created_at)
-		VALUES ($1, $2, $3, $4, 'pending', 0, $5, now())`,
-		d.ID, d.WebhookID, d.EventType, d.Payload, d.NextAttempt,
-	)
-	return err
+	return insertDeliveryImpl(ctx, s.db, d)
 }
 
 // InsertDeliveryTx is InsertDelivery scoped to an existing transaction.
 func (s *Store) InsertDeliveryTx(ctx context.Context, tx pgx.Tx, d Delivery) error {
-	_, err := tx.Exec(ctx, `
+	return insertDeliveryImpl(ctx, tx, d)
+}
+
+func insertDeliveryImpl(ctx context.Context, q Querier, d Delivery) error {
+	_, err := q.Exec(ctx, `
 		INSERT INTO webhook_deliveries
 		  (id, webhook_id, event_type, payload, status, attempts, next_attempt, created_at)
 		VALUES ($1, $2, $3, $4, 'pending', 0, $5, now())`,
 		d.ID, d.WebhookID, d.EventType, d.Payload, d.NextAttempt,
 	)
 	return err
-}
-
-// ListAllForEventTx is ListAllForEvent scoped to an existing transaction.
-func (s *Store) ListAllForEventTx(ctx context.Context, tx pgx.Tx, eventType string) ([]Webhook, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT id, org_id, url, secret, events, created_at
-		FROM webhooks
-		WHERE $1 = ANY(events) OR cardinality(events) = 0`, eventType)
-	if err != nil {
-		return nil, fmt.Errorf("list all for event: %w", err)
-	}
-	defer rows.Close()
-	var out []Webhook
-	for rows.Next() {
-		wh, err := scanWebhook(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, wh)
-	}
-	return out, rows.Err()
 }
 
 // PollPending fetches up to limit pending deliveries due now.

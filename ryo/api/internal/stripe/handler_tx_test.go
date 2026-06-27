@@ -12,6 +12,10 @@ import (
 	"github.com/enkyuan/alloy/ryo/api/internal/webhook"
 )
 
+// testDB mirrors internalTestDB in handler_internal_test.go. The duplication
+// is intentional: this file is in package stripehandler_test (black-box) while
+// handler_internal_test.go is in package stripehandler. Go does not allow
+// sharing helpers across those two test packages in the same directory.
 func testDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")

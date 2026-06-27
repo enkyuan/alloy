@@ -3,6 +3,7 @@ package stripehandler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,11 @@ import (
 	"github.com/enkyuan/alloy/ryo/api/internal/session"
 	wh "github.com/enkyuan/alloy/ryo/api/internal/webhook"
 )
+
+// errAlreadyProcessed is a sentinel returned by ensureStripeEventNotProcessed
+// when the event has already been committed. The caller commits the (empty) tx
+// and returns nil to Stripe — an idempotent no-op.
+var errAlreadyProcessed = errors.New("stripe event already processed")
 
 // Handler handles POST /stripe/webhook.
 type Handler struct {
@@ -92,6 +98,26 @@ func (h *Handler) handleFailed(ctx context.Context, event stripe.Event) error {
 	})
 }
 
+// stripeEventInfo carries the Stripe event identity fields into the tx helpers.
+type stripeEventInfo struct {
+	eventID   string
+	eventType string
+}
+
+// paymentUpdate carries the session mutation parameters.
+type paymentUpdate struct {
+	piID        string
+	status      string
+	plainSummary string
+	amountCents int64
+}
+
+// webhookEvent carries the webhook enqueue parameters.
+type webhookEvent struct {
+	eventType    string
+	extraPayload map[string]any
+}
+
 // applyAndEnqueue updates the session row, looks up the matching session,
 // and inserts a delivery row per subscribed webhook — all inside one tx.
 // If any step fails, the entire effect is rolled back so we never end up
@@ -119,64 +145,102 @@ func (h *Handler) applyAndEnqueue(
 	// rollback during a canceled request is also benign and discarded here.
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	// Idempotency gate. ON CONFLICT DO NOTHING returns zero rows when the
-	// event has already been processed; in that case commit nothing further
-	// and let the handler return 200 to Stripe.
+	evInfo := stripeEventInfo{eventID: stripeEventID, eventType: stripeEventType}
+	if err := ensureStripeEventNotProcessed(ctx, tx, evInfo); err != nil {
+		if errors.Is(err, errAlreadyProcessed) {
+			// Idempotent no-op: event already committed. Commit the empty tx
+			// (dedup INSERT did NOTHING) and return 200 to Stripe.
+			return tx.Commit(ctx)
+		}
+		return err
+	}
+
+	update := paymentUpdate{piID: piID, status: status, plainSummary: summary, amountCents: amountCents}
+	sess, err := updateSessionAndFetch(ctx, tx, h.sessions, update)
+	if err != nil {
+		return err
+	}
+
+	ev := webhookEvent{eventType: eventType, extraPayload: extraPayload}
+	if err := enqueueWebhooks(ctx, tx, h.webhooks, sess, ev); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// ensureStripeEventNotProcessed inserts the event into processed_stripe_events.
+// Returns errAlreadyProcessed (a sentinel) when the event has already been seen
+// so the caller can commit the empty tx and short-circuit gracefully.
+func ensureStripeEventNotProcessed(ctx context.Context, tx pgx.Tx, ev stripeEventInfo) error {
 	var insertedID string
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO processed_stripe_events (event_id, event_type)
 		VALUES ($1, $2)
 		ON CONFLICT (event_id) DO NOTHING
-		RETURNING event_id`, stripeEventID, stripeEventType).Scan(&insertedID)
+		RETURNING event_id`, ev.eventID, ev.eventType).Scan(&insertedID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			slog.Info("stripe event already processed, skipping", "event_id", stripeEventID)
-			return tx.Commit(ctx)
+			slog.Info("stripe event already processed, skipping", "event_id", ev.eventID)
+			return errAlreadyProcessed
 		}
 		return fmt.Errorf("dedup insert: %w", err)
 	}
+	return nil
+}
 
-	if err := h.sessions.UpdateAfterPaymentTx(ctx, tx, piID, status, summary, amountCents); err != nil {
-		return fmt.Errorf("update session: %w", err)
+// updateSessionAndFetch applies the payment update within tx and returns the
+// resulting session row for use in subsequent enqueue steps.
+func updateSessionAndFetch(ctx context.Context, tx pgx.Tx, sessions *session.Store, u paymentUpdate) (session.Session, error) {
+	if err := sessions.UpdateAfterPaymentTx(ctx, tx, u.piID, u.status, u.plainSummary, u.amountCents); err != nil {
+		return session.Session{}, fmt.Errorf("update session: %w", err)
 	}
-
-	sess, err := h.sessions.GetByPaymentIntentTx(ctx, tx, piID)
+	sess, err := sessions.GetByPaymentIntentTx(ctx, tx, u.piID)
 	if err != nil {
-		return fmt.Errorf("get session: %w", err)
+		return session.Session{}, fmt.Errorf("get session: %w", err)
 	}
+	return sess, nil
+}
 
+// enqueueWebhooks inserts a delivery row for every webhook subscribed to
+// ev.EventType. Canonical keys (session_id) are written after copying
+// extraPayload so they cannot be shadowed by a caller-supplied key.
+func enqueueWebhooks(ctx context.Context, tx pgx.Tx, webhooks *wh.Store, sess session.Session, ev webhookEvent) error {
 	// MVP: broadcast to all webhooks subscribed to this event across all orgs.
 	// TODO: scope to org once session.Store exposes OrgIDForAgent.
-	webhooks, err := h.webhooks.ListAllForEventTx(ctx, tx, eventType)
+	webhookRows, err := webhooks.ListAllForEventTx(ctx, tx, ev.eventType)
 	if err != nil {
 		return fmt.Errorf("list webhooks: %w", err)
 	}
 
-	payload := map[string]any{"session_id": sess.ID}
-	for k, v := range extraPayload {
+	// Build payload: copy extraPayload first, then set canonical keys so they
+	// always win even if extraPayload contained a colliding key like "session_id".
+	payload := make(map[string]any, len(ev.extraPayload)+1)
+	for k, v := range ev.extraPayload {
 		payload[k] = v
 	}
+	payload["session_id"] = sess.ID // canonical key; always wins
+
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
 	now := time.Now().UTC()
-	for _, webhookRow := range webhooks {
+	for _, webhookRow := range webhookRows {
 		d := wh.Delivery{
 			ID:          uuid.New().String(),
 			WebhookID:   webhookRow.ID,
-			EventType:   eventType,
+			EventType:   ev.eventType,
 			Payload:     payloadBytes,
 			NextAttempt: now,
 		}
-		if err := h.webhooks.InsertDeliveryTx(ctx, tx, d); err != nil {
+		if err := webhooks.InsertDeliveryTx(ctx, tx, d); err != nil {
 			return fmt.Errorf("insert delivery: %w", err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
 	}
 	return nil
 }
