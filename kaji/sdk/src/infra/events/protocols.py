@@ -7,7 +7,7 @@ relationship, keeping the infra-free core independent of Redis.
 
 from __future__ import annotations
 
-from typing import AsyncGenerator, Protocol, runtime_checkable
+from typing import AsyncGenerator, Protocol, cast, runtime_checkable
 
 from kaji.infra.events.schemas import KajiEvent
 
@@ -30,4 +30,4 @@ class EventBusProtocol(Protocol):
         ...
         # This unreachable yield makes the return type an AsyncGenerator,
         # satisfying Protocol static-analysis requirements.
-        yield  # type: ignore[misc]
+        yield cast(KajiEvent, None)  # pragma: no cover

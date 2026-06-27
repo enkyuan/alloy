@@ -88,7 +88,9 @@ def test_tool_decorator_auto_registers():
     assert spec.risk == "read"
     # Bound methods are re-created on each attribute access, so compare by
     # underlying function identity rather than object identity.
-    assert handler.__func__ is type(integration).retrieve_charge  # type: ignore[union-attr]
+    # getattr used because ToolHandler is typed as Callable, not a bound method;
+    # at runtime the handler IS a bound method so __func__ exists.
+    assert getattr(handler, "__func__", None) is type(integration).retrieve_charge
 
 
 def test_tool_decorator_namespace_prefix():
