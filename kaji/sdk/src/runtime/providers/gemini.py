@@ -108,7 +108,7 @@ class GeminiService:
             cache = await asyncio.to_thread(
                 self.client.caches.create,
                 model=self.model,
-                config=cache_config,  # type: ignore
+                config=cache_config,
             )
             if not cache.name:
                 return None

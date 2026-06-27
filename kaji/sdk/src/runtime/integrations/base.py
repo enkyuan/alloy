@@ -31,7 +31,7 @@ def _warn_on_sanitize(original: str, sanitized: str) -> None:
 def tool(
     *,
     description: str,
-    parameters: Union[Dict[str, Any], Type[BaseModel]],
+    parameters: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
     risk: Optional[str] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
@@ -40,7 +40,13 @@ def tool(
 
     ``parameters`` accepts either a JSON Schema dict or a Pydantic ``BaseModel``
     subclass; the model is converted to JSON Schema at registration time.
+    Omitting ``parameters`` is a programming error and raises ``TypeError``.
     """
+    if parameters is None:
+        raise TypeError(
+            "tool() requires parameters= (a JSON Schema dict or a Pydantic BaseModel). "
+            "Got None."
+        )
     if isinstance(parameters, type) and issubclass(parameters, BaseModel):
         parameters_schema = tool_spec_from_model("_", "_", parameters).parameters
     else:

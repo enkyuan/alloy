@@ -19,7 +19,7 @@ from __future__ import annotations
 import inspect
 import logging
 from dataclasses import replace
-from typing import Any, Callable, Dict, Optional, Type, Union, cast, get_type_hints
+from typing import Any, Callable, Dict, Optional, Type, Union, get_type_hints
 
 from pydantic import BaseModel, Field, create_model
 
@@ -81,8 +81,9 @@ def _model_from_signature(fn: Callable[..., Any], model_name: str) -> Type[BaseM
         if name in ("self", "ctx"):
             continue
         if name not in hints:
+            fn_name = getattr(fn, "__name__", repr(fn))
             raise TypeError(
-                f"@tool function {fn.__name__!r} parameter {name!r} has no type "
+                f"@tool function {fn_name!r} parameter {name!r} has no type "
                 "annotation; annotate it or pass parameters= explicitly."
             )
         default = param.default if param.default is not inspect.Parameter.empty else ...
@@ -135,18 +136,19 @@ def function_tool(
     """
 
     def make(fn: Callable[..., Any]) -> BoundTool:
+        fn_name: str = getattr(fn, "__name__", "<anonymous>")
         params_schema: Dict[str, Any]
         if parameters is None:
-            model = _model_from_signature(fn, f"{fn.__name__}__Args")
+            model = _model_from_signature(fn, f"{fn_name}__Args")
             params_schema = tool_spec_from_model("_", "_", model).parameters
         elif isinstance(parameters, type) and issubclass(parameters, BaseModel):
             params_schema = tool_spec_from_model("_", "_", parameters).parameters
         else:
-            params_schema = cast(Dict[str, Any], parameters)
+            params_schema = parameters  # already Dict[str, Any] per the Union guard above
 
         spec = ToolSpec(
-            name=fn.__name__,
-            description=description or fn.__doc__ or fn.__name__,
+            name=fn_name,
+            description=description or getattr(fn, "__doc__", None) or fn_name,
             parameters=params_schema,
             risk=risk,
             tags=tags,

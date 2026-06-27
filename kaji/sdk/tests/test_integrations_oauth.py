@@ -39,15 +39,16 @@ def _write_tokens(path: Path, **overrides) -> None:
 
 
 def _client(tmp_path: Path, **overrides) -> GoogleOAuthClient:
-    defaults = {
-        "client_id": "cid",
-        "client_secret": "csec",
-        "scopes": ["scope/a"],
-        "token_path": tmp_path / "tokens.json",
-        "open_browser": False,
-    }
-    defaults.update(overrides)
-    return GoogleOAuthClient(**defaults)
+    # Build kwargs explicitly so ty can check each argument's type.
+    return GoogleOAuthClient(
+        client_id=overrides.get("client_id", "cid"),
+        client_secret=overrides.get("client_secret", "csec"),
+        scopes=overrides.get("scopes", ["scope/a"]),
+        token_path=overrides.get("token_path", tmp_path / "tokens.json"),
+        open_browser=overrides.get("open_browser", False),
+        callback_port=overrides.get("callback_port", 0),
+        token_storage=overrides.get("token_storage", None),
+    )
 
 
 def test_requires_client_id_and_secret(tmp_path: Path) -> None:
