@@ -8,10 +8,11 @@ from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents import AgentBuilder
+from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.mock import MockProvider
 
 
-def _build(provider: MockProvider, store: InMemoryEventStore | None = None):
+def _build(provider: ModelProvider, store: InMemoryEventStore | None = None):
     bus = InMemoryEventBus()
     store = store or InMemoryEventStore()
     return (
@@ -92,6 +93,6 @@ async def test_turn_propagates_provider_errors():
             raise RuntimeError("provider boom")
             yield  # pragma: no cover
 
-    runtime, _ = _build(FailingProvider())  # type: ignore[arg-type]
+    runtime, _ = _build(FailingProvider())
     with pytest.raises(RuntimeError, match="provider boom"):
         await runtime.turn("hi")

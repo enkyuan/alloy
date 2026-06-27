@@ -67,8 +67,6 @@ class GeminiEmbedder:
         embedding = await self._service.embed_text(text)
         if not embedding:
             return []
-        if hasattr(embedding, "values"):
-            return list(embedding.values)
         return list(embedding)
 
 
