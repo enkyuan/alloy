@@ -145,6 +145,61 @@ func TestStore_GetByIdempotencyKey(t *testing.T) {
 	}
 }
 
+// TestCreateSession_IdempotencyKeyTooLong verifies that a POST with an
+// Idempotency-Key longer than 255 chars is rejected with 400 and no session
+// row is created. This mirrors the documented cap (maxIdempotencyKeyLen = 255)
+// that matches Stripe's own limit.
+func TestCreateSession_IdempotencyKeyTooLong(t *testing.T) {
+	db := setupTestDBForIdempotency(t)
+	ctx := context.Background()
+
+	// Seed org + agent for the request body (even though we expect a 400 before
+	// any DB insert, the handler decodes the body first so we need a valid one).
+	orgID := "org-len-" + t.Name()
+	agentID := "agent-len-" + t.Name()
+	if _, err := db.Exec(ctx,
+		`INSERT INTO orgs (id, name, slug, created_at) VALUES ($1,$1,$1,now()) ON CONFLICT DO NOTHING`,
+		orgID); err != nil {
+		t.Fatalf("seed org: %v", err)
+	}
+	if _, err := db.Exec(ctx, `
+		INSERT INTO agents (id, org_id, name, business_type, system_prompt, tools, voice_enabled, embed_token, created_at, updated_at)
+		VALUES ($1, $2, 'test', 'custom', '', '{}', false, $1, now(), now()) ON CONFLICT DO NOTHING`,
+		agentID, orgID); err != nil {
+		t.Fatalf("seed agent: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Exec(ctx, `DELETE FROM agents WHERE id=$1`, agentID)
+		db.Exec(ctx, `DELETE FROM orgs WHERE id=$1`, orgID)
+	})
+
+	// Build a key that is exactly 256 chars (one over the 255 limit).
+	longKey := strings.Repeat("k", 256)
+
+	router := session.Router(db, stripeKeyForTest)
+	body := `{"agent_id":"` + agentID + `","amount_cents":100,"currency":"usd"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", longKey)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400; body=%s", w.Code, w.Body.String())
+	}
+
+	// Confirm no session row was created for this over-length key.
+	var n int
+	if err := db.QueryRow(ctx,
+		`SELECT count(*) FROM sessions WHERE idempotency_key=$1`, longKey).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("session row created despite 400: count=%d, want 0", n)
+	}
+}
+
 func setupTestDBForIdempotency(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	// Defer to the existing testDB helper convention in store_test.go.
