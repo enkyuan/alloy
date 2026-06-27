@@ -106,10 +106,10 @@ type stripeEventInfo struct {
 
 // paymentUpdate carries the session mutation parameters.
 type paymentUpdate struct {
-	piID        string
-	status      string
+	piID         string
+	status       string
 	plainSummary string
-	amountCents int64
+	amountCents  int64
 }
 
 // webhookEvent carries the webhook enqueue parameters.
