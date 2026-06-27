@@ -47,16 +47,19 @@ func TestCreateSession_ReplayOnIdempotencyKey(t *testing.T) {
 
 	store := session.NewStore(db)
 	existingID := "sess-idem-existing-" + t.Name()
+	// Seed with empty StripePaymentIntentID so the replay path skips the
+	// paymentintent.Get call entirely. The test's purpose is to verify the
+	// short-circuit on Idempotency-Key match; the PaymentIntent re-fetch is
+	// exercised by tests that have a real (or mocked) Stripe client.
 	existing, err := store.Insert(ctx, session.Session{
-		ID:                    existingID,
-		AgentID:               agentID,
-		Channel:               "chat",
-		Status:                "pending",
-		StripePaymentIntentID: "pi_idem_pre_" + t.Name(),
-		AmountCollectedCents:  500,
-		Currency:              "usd",
-		StartedAt:             time.Now().UTC(),
-		IdempotencyKey:        "key-abc-" + t.Name(),
+		ID:                   existingID,
+		AgentID:              agentID,
+		Channel:              "chat",
+		Status:               "pending",
+		AmountCollectedCents: 500,
+		Currency:             "usd",
+		StartedAt:            time.Now().UTC(),
+		IdempotencyKey:       "key-abc-" + t.Name(),
 	})
 	if err != nil {
 		t.Fatalf("seed session: %v", err)
@@ -76,16 +79,18 @@ func TestCreateSession_ReplayOnIdempotencyKey(t *testing.T) {
 		t.Fatalf("status: got %d, want 201; body=%s", w.Code, w.Body.String())
 	}
 
-	var resp struct {
-		Session struct {
-			ID string `json:"id"`
-		} `json:"session"`
-	}
+	var resp map[string]any
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if resp.Session.ID != existingID {
-		t.Errorf("replay did not return original session: got %q, want %q", resp.Session.ID, existingID)
+	sess, _ := resp["session"].(map[string]any)
+	if sess == nil || sess["id"] != existingID {
+		t.Errorf("replay did not return original session: got %v, want id=%q", sess, existingID)
+	}
+	// No PI ID was seeded, so client_secret must be absent (we didn't call
+	// paymentintent.Get, which is the whole point of the no-Stripe assertion).
+	if _, ok := resp["client_secret"]; ok {
+		t.Errorf("client_secret unexpectedly present on replay with no PI ID: %v", resp["client_secret"])
 	}
 
 	// Confirm only ONE row exists for this key (no duplicate insert).
