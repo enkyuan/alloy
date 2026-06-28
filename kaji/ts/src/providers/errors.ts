@@ -42,6 +42,20 @@ export class ProviderConnectionError extends ProviderError {
   }
 }
 
+export class ProviderRateLimitedError extends ProviderError {
+  readonly retryAfterMs: number;
+  readonly attempts: number;
+
+  constructor(
+    message: string,
+    options: Omit<ProviderErrorOptions, "action"> & { retryAfterMs: number; attempts: number },
+  ) {
+    super(message, { ...options, action: "api call", statusCode: 429 });
+    this.retryAfterMs = options.retryAfterMs;
+    this.attempts = options.attempts;
+  }
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

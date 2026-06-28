@@ -17,6 +17,16 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",
       "require": "./dist/testing.cjs"
+    },
+    "./openai": {
+      "types": "./dist/openai.d.ts",
+      "import": "./dist/openai.js",
+      "require": "./dist/openai.cjs"
+    },
+    "./anthropic": {
+      "types": "./dist/anthropic.d.ts",
+      "import": "./dist/anthropic.js",
+      "require": "./dist/anthropic.cjs"
     }
   },
   "bin": {
@@ -34,6 +44,7 @@
     "test:quickstart": "vitest run examples/minimal-agent/smoke.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
+    "check:integrations": "bun run scripts/check-integration.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {

@@ -22,6 +22,8 @@ export class SessionManager {
         pendingApprovals: new Set<string>(),
         approvedToolCallIds: new Set<string>(),
         rejectedToolCallIds: new Set<string>(),
+        totalTokens: { input: 0, output: 0 },
+        totalCostUsd: 0,
       };
     }
     return replaySession(events);

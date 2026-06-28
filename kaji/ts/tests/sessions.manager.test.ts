@@ -24,6 +24,8 @@ describe("SessionManager", () => {
         pendingApprovals: new Set<string>(),
         approvedToolCallIds: new Set<string>(),
         rejectedToolCallIds: new Set<string>(),
+        totalTokens: { input: 0, output: 0 },
+        totalCostUsd: 0,
       });
     });
 

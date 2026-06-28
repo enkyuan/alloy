@@ -6,6 +6,7 @@
 import { add } from "./add";
 import { init } from "./init";
 import { listIntegrations } from "./list_integrations";
+import { replay } from "./replay";
 
 export interface RunOptions {
   registryRoot: string;
@@ -35,6 +36,12 @@ export const COMMANDS: Record<string, Command> = {
     describe: "List integrations available via `kaji add`.",
     usage: "kaji list-integrations",
     run: (rest, opts) => listIntegrations(rest, opts),
+  },
+  replay: {
+    describe: "Pretty-print a kaji session replay log (JSONL).",
+    usage:
+      "kaji replay <session.jsonl> [--format tree|summary|json] [--filter <kind>] [--grep <pattern>] [--tail]",
+    run: (rest, opts) => replay(rest, opts),
   },
 };
 

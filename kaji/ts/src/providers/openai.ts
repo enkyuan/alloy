@@ -19,11 +19,19 @@ import type {
 } from "./base";
 import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
 import { parseToolArgsJSON } from "./_args";
+import { calculateCostUsd } from "./_cost_table";
 import type { ToolSpec } from "../tools/registry";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
 type ChatToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
+
+export interface RetryOptions {
+  /** Maximum retry attempts on 429 rate-limit responses. Defaults to 3. */
+  maxAttempts?: number;
+  /** Base delay in ms before first retry. Doubles each attempt. Defaults to 1000. */
+  baseDelayMs?: number;
+}
 
 export interface OpenAIProviderOptions {
   apiKey: string;
@@ -35,6 +43,8 @@ export interface OpenAIProviderOptions {
    * gateways (OpenRouter, Together, Groq) to attach attribution or routing
    * metadata. Ignored when the value is empty. */
   defaultHeaders?: Record<string, string>;
+  /** Rate-limit retry configuration. */
+  retry?: RetryOptions;
 }
 
 function toOpenAITools(tools: ToolSpec[]): ChatTool[] {
@@ -74,6 +84,7 @@ interface ResolvedOpenAIOptions {
   temperature: number;
   maxTokens: number;
   defaultHeaders: Record<string, string> | undefined;
+  retry: Required<RetryOptions>;
 }
 
 export class OpenAIProvider implements ModelProvider {
@@ -94,7 +105,16 @@ export class OpenAIProvider implements ModelProvider {
         opts.defaultHeaders && Object.keys(opts.defaultHeaders).length > 0
           ? opts.defaultHeaders
           : undefined,
+      retry: {
+        maxAttempts: opts.retry?.maxAttempts ?? 3,
+        baseDelayMs: opts.retry?.baseDelayMs ?? 1000,
+      },
     };
+  }
+
+  /** Expose the model name for downstream cost calculation. */
+  get model(): string {
+    return this.opts.model;
   }
 
   private async getClient(): Promise<OpenAI> {
@@ -130,6 +150,48 @@ export class OpenAIProvider implements ModelProvider {
     });
   }
 
+  /**
+   * Retry wrapper for rate-limited (429) responses. Backs off exponentially,
+   * up to `opts.retry.maxAttempts` total attempts.
+   */
+  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    const { maxAttempts, baseDelayMs } = this.opts.retry;
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const statusCode =
+          typeof error === "object" && error !== null && "status" in error
+            ? (error as { status: unknown }).status
+            : undefined;
+        if (statusCode !== 429 || attempt === maxAttempts) {
+          throw error;
+        }
+        // Parse Retry-After header if present.
+        const retryAfterMs = this.parseRetryAfterMs(error) ?? baseDelayMs * 2 ** (attempt - 1);
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+      }
+    }
+    throw lastError;
+  }
+
+  private parseRetryAfterMs(error: unknown): number | undefined {
+    if (typeof error !== "object" || error === null) return undefined;
+    const headers =
+      "headers" in error
+        ? (error as { headers: unknown }).headers
+        : "response" in error && typeof (error as { response: unknown }).response === "object"
+          ? ((error as { response: { headers?: unknown } }).response?.headers ?? null)
+          : null;
+    if (typeof headers !== "object" || headers === null) return undefined;
+    const retryAfter = (headers as Record<string, string>)["retry-after"];
+    if (!retryAfter) return undefined;
+    const seconds = Number(retryAfter);
+    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+  }
+
   async generate(
     messages: ProviderMessage[],
     tools: ToolSpec[],
@@ -146,17 +208,25 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const response = await client.chat.completions.create(params, {
-        signal: options?.cancellationToken?.signal,
-      });
+      const response = await this.withRetry(() =>
+        client.chat.completions.create(params, { signal: options?.cancellationToken?.signal }),
+      );
       const choice = response.choices[0];
       if (!choice) {
-        return { content: "", toolCalls: [] };
+        return { content: "", toolCalls: [], usage: undefined };
       }
       const message = choice.message;
+      const usage = response.usage
+        ? { input: response.usage.prompt_tokens, output: response.usage.completion_tokens }
+        : undefined;
+      const costUsd = usage
+        ? calculateCostUsd(this.opts.model, usage.input, usage.output)
+        : undefined;
       return {
         content: message.content ?? "",
         toolCalls: parseToolCalls(message.tool_calls),
+        usage,
+        costUsd,
       };
     } catch (error) {
       throw providerAPIErrorFromUnknown("openai", error);

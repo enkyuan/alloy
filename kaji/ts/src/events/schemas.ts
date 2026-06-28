@@ -78,6 +78,10 @@ export const AgentMessageDelta = event({
 export const AgentMessageCompleted = event({
   type: z.literal(EventType.AGENT_MESSAGE_COMPLETED),
   content: z.string(),
+  tokens: z
+    .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
+    .optional(),
+  cost_usd: z.number().nonnegative().optional(),
 });
 
 export const ToolCallRequested = event({
@@ -98,6 +102,10 @@ export const ToolCallCompleted = event({
   tool_name: z.string(),
   tool_call_id: z.string(),
   result: z.unknown(),
+  tokens: z
+    .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
+    .optional(),
+  cost_usd: z.number().nonnegative().optional(),
 });
 
 export const ToolCallFailed = event({
@@ -154,6 +162,13 @@ export const CancellationCompleted = event({
   type: z.literal(EventType.CANCELLATION_COMPLETED),
 });
 
+export const ProviderRateLimited = event({
+  type: z.literal(EventType.PROVIDER_RATE_LIMITED),
+  provider: z.string(),
+  retry_after_ms: z.number().nonnegative(),
+  attempt: z.number().int().positive(),
+});
+
 /** Discriminated union over every event, keyed on `type`. */
 export const KajiEvent = z.discriminatedUnion("type", [
   SessionCreated,
@@ -179,6 +194,7 @@ export const KajiEvent = z.discriminatedUnion("type", [
   WorkflowFailed,
   CancellationRequested,
   CancellationCompleted,
+  ProviderRateLimited,
 ]);
 
 /** A validated Kaji event (output type, with defaults applied). */
