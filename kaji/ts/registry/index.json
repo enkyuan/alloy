@@ -1,0 +1,11 @@
+{
+  "$schema": "./schema.json",
+  "version": "0.1.0",
+  "integrations": {
+    "echo": "echo/manifest.json",
+    "http": "http/manifest.json",
+    "fs": "fs/manifest.json",
+    "web": "web/manifest.json",
+    "sqlite": "sqlite/manifest.json"
+  }
+}

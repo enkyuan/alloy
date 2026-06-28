@@ -1,0 +1,21 @@
+{
+  "name": "echo",
+  "version": "0.1.0",
+  "namespace": "echo",
+  "description": "Trivial echo integration. Two pure functions, no auth, no network. Proves the cross-language registry contract.",
+  "auth": { "kind": "none" },
+  "files": ["index.ts"],
+  "tools": [
+    {
+      "name": "say",
+      "description": "Return the input string unchanged.",
+      "risk": "read"
+    },
+    {
+      "name": "shout",
+      "description": "Return the input string uppercased.",
+      "risk": "read"
+    }
+  ],
+  "peerDeps": {}
+}

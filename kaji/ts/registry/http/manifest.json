@@ -1,0 +1,15 @@
+{
+  "name": "http",
+  "version": "0.1.0",
+  "namespace": "http",
+  "description": "Generic HTTP client. Tools for GET, POST, PUT, DELETE. Allowlist hosts to prevent SSRF.",
+  "auth": { "kind": "none" },
+  "files": ["index.ts"],
+  "tools": [
+    { "name": "fetch", "description": "HTTP GET a URL and return the response body.", "risk": "read" },
+    { "name": "post", "description": "HTTP POST JSON to a URL.", "risk": "write" },
+    { "name": "put", "description": "HTTP PUT JSON to a URL.", "risk": "write" },
+    { "name": "delete", "description": "HTTP DELETE a URL.", "risk": "write" }
+  ],
+  "peerDeps": {}
+}

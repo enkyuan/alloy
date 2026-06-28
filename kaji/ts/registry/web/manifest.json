@@ -1,0 +1,14 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "namespace": "web",
+  "description": "Web fetch with reader-mode HTML extraction. search requires BRAVE_API_KEY.",
+  "auth": { "kind": "env", "env": "BRAVE_API_KEY", "optional": true },
+  "files": ["index.ts"],
+  "tools": [
+    { "name": "fetch", "description": "Fetch a URL and extract readable text (reader mode).", "risk": "read" },
+    { "name": "fetch_raw", "description": "Fetch a URL and return raw HTML/text.", "risk": "read" },
+    { "name": "search", "description": "Web search via Brave Search API.", "risk": "read" }
+  ],
+  "peerDeps": {}
+}

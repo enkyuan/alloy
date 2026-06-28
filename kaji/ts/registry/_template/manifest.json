@@ -1,0 +1,10 @@
+{
+  "name": "template",
+  "version": "0.1.0",
+  "namespace": "template",
+  "description": "Integration template",
+  "auth": { "kind": "none" },
+  "files": ["index.ts"],
+  "tools": [],
+  "peerDeps": {}
+}
