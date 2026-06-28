@@ -28,12 +28,9 @@ function fmtTimestamp(ts: number): string {
 
 function failureColor(errorMsg: string): string {
   const lc = errorMsg.toLowerCase();
-  if (lc.includes("validation_error") || lc.includes("validation error"))
-    return C.yellow;
-  if (lc.includes("policy_denied") || lc.includes("policy denied"))
-    return C.magenta;
-  if (lc.includes("approval_rejected") || lc.includes("approval rejected"))
-    return C.blue;
+  if (lc.includes("validation_error") || lc.includes("validation error")) return C.yellow;
+  if (lc.includes("policy_denied") || lc.includes("policy denied")) return C.magenta;
+  if (lc.includes("approval_rejected") || lc.includes("approval rejected")) return C.blue;
   return C.red;
 }
 
@@ -210,9 +207,7 @@ export function renderTree(events: KajiEvent[]): string {
                 `    ${C.yellow}TOOL${C.reset}: ${C.bold}${e.tool_name}${C.reset}` +
                   `(${C.dim}${argsJson}${C.reset})`,
               );
-              lines.push(
-                `      ${fColor}✗ failed${durStr}: ${info.error}${C.reset}`,
-              );
+              lines.push(`      ${fColor}✗ failed${durStr}: ${info.error}${C.reset}`);
             } else {
               // Still pending or no completion tracked
               lines.push(
@@ -279,12 +274,8 @@ export function renderSummary(events: KajiEvent[]): string {
 
   for (const { sessionId, events: sevents } of groups) {
     const turns = sevents.filter((e) => e.type === EventType.USER_MESSAGE).length;
-    const toolCalls = sevents.filter(
-      (e) => e.type === EventType.TOOL_CALL_REQUESTED,
-    ).length;
-    const errors = sevents.filter(
-      (e) => e.type === EventType.TOOL_CALL_FAILED,
-    ).length;
+    const toolCalls = sevents.filter((e) => e.type === EventType.TOOL_CALL_REQUESTED).length;
+    const errors = sevents.filter((e) => e.type === EventType.TOOL_CALL_FAILED).length;
     const firstTs = sevents[0]!.timestamp;
     const lastTs = sevents[sevents.length - 1]!.timestamp;
     const durationS = (lastTs - firstTs).toFixed(3);

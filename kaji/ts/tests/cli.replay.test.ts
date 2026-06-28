@@ -5,11 +5,7 @@
  * written to a temp file. Event types use the wire-format dot-notation strings
  * (e.g. "user.message") matching EventType constants in events/types.ts.
  */
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -64,9 +60,7 @@ afterAll(() => {
 // Helper
 // ---------------------------------------------------------------------------
 
-async function run(
-  args: string[],
-): Promise<{ code: number; out: string; err: string }> {
+async function run(args: string[]): Promise<{ code: number; out: string; err: string }> {
   const outLines: string[] = [];
   const errLines: string[] = [];
   const code = await replay(args, {
@@ -113,13 +107,7 @@ describe("kaji replay", () => {
   });
 
   it("--filter user.message returns only USER_MESSAGE events in json output", async () => {
-    const { code, out } = await run([
-      fixturePath,
-      "--format",
-      "json",
-      "--filter",
-      "user.message",
-    ]);
+    const { code, out } = await run([fixturePath, "--format", "json", "--filter", "user.message"]);
     expect(code).toBe(0);
     const parsed = JSON.parse(out) as Array<{ type: string }>;
     expect(parsed.length).toBeGreaterThan(0);
@@ -129,13 +117,7 @@ describe("kaji replay", () => {
   });
 
   it("--grep 'hello' only shows events containing 'hello'", async () => {
-    const { code, out } = await run([
-      fixturePath,
-      "--format",
-      "json",
-      "--grep",
-      "hello",
-    ]);
+    const { code, out } = await run([fixturePath, "--format", "json", "--grep", "hello"]);
     expect(code).toBe(0);
     const parsed = JSON.parse(out) as Array<Record<string, unknown>>;
     expect(parsed.length).toBeGreaterThan(0);
@@ -145,12 +127,7 @@ describe("kaji replay", () => {
   });
 
   it("--tail shows only last 20 events (drops first 5 of 25)", async () => {
-    const { code, out } = await run([
-      tailFixturePath,
-      "--format",
-      "tree",
-      "--tail",
-    ]);
+    const { code, out } = await run([tailFixturePath, "--format", "tree", "--tail"]);
     expect(code).toBe(0);
     // Messages 1–5 were trimmed; 6–25 must appear
     expect(out).not.toMatch(/Message 5\b/);
@@ -165,11 +142,7 @@ describe("kaji replay", () => {
   });
 
   it("invalid --format returns exit code 1", async () => {
-    const { code, err } = await run([
-      fixturePath,
-      "--format",
-      "invalid-format",
-    ]);
+    const { code, err } = await run([fixturePath, "--format", "invalid-format"]);
     expect(code).toBe(1);
     expect(err).toMatch(/--format must be/);
   });

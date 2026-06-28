@@ -13,10 +13,7 @@ export interface ReplayOptions {
   err?: (msg: string) => void;
 }
 
-export async function replay(
-  argv: string[],
-  opts: ReplayOptions,
-): Promise<number> {
+export async function replay(argv: string[], opts: ReplayOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => process.stdout.write(m + "\n"));
   const err = opts.err ?? ((m: string) => process.stderr.write(m + "\n"));
 
