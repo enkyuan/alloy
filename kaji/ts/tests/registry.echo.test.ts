@@ -20,10 +20,8 @@ import { AgentBuilder, EventBus, InMemoryEventStore, functionTool } from "../src
 import { MockProvider } from "../src/providers/mock";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ECHO_TS_SOURCE = readFileSync(
-  join(__dirname, "..", "..", "sdk", "kaji", "integrations", "registry", "echo", "echo.ts"),
-  "utf8",
-);
+// Read from the TS-native registry (kaji/ts/registry/echo/index.ts)
+const ECHO_TS_SOURCE = readFileSync(join(__dirname, "..", "registry", "echo", "index.ts"), "utf8");
 
 describe("echo registry template", () => {
   it("the shipped echo.ts sets explicit names so tools don't collide", () => {

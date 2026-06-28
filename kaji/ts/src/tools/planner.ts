@@ -7,6 +7,10 @@ import { EventType } from "../events/types";
 import { defaultUuid } from "../internal/uuid";
 import type { ToolSpec } from "./registry";
 import type { ToolPolicy } from "./policy";
+import type {
+  TypedApprovalHandler,
+  ToolContext as ApprovalContext,
+} from "../runtime/approval/types";
 
 const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
   object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),
@@ -82,10 +86,18 @@ export type ApprovalHandler = (
 ) => Promise<boolean>;
 export type EmitFn = (event: KajiEvent) => Promise<void>;
 
+/** Either a legacy function-style handler or the new structured handler. */
+type AnyApprovalHandler = ApprovalHandler | TypedApprovalHandler;
+
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
   policy?: ToolPolicy;
-  approvalHandler?: ApprovalHandler;
+  /**
+   * Approval gate invoked when policy requires approval. Accepts either the
+   * legacy `(name, args, risk) => Promise<boolean>` function form or the new
+   * `TypedApprovalHandler` object form (duck-typed: has a `.request` method).
+   */
+  approvalHandler?: AnyApprovalHandler;
   specs?: Map<string, ToolSpec>;
   /**
    * Override the call-id generator. Defaults to `globalThis.crypto.randomUUID`
@@ -97,7 +109,7 @@ export interface ToolPlannerOptions {
 export class ToolPlanner {
   private readonly executor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
-  private readonly approvalHandler: ApprovalHandler | undefined;
+  private readonly approvalHandler: AnyApprovalHandler | undefined;
   private readonly specs: Map<string, ToolSpec>;
   private readonly uuid: () => string;
 
@@ -224,15 +236,26 @@ export class ToolPlanner {
       );
 
       let approved = false;
+      let rejectedReason = "Rejected by approval handler";
       if (this.approvalHandler !== undefined) {
-        approved = await this.approvalHandler(toolName, toolArgs, risk);
+        if (typeof this.approvalHandler === "function") {
+          approved = await this.approvalHandler(toolName, toolArgs, risk);
+        } else {
+          const approvalCtx: ApprovalContext = { sessionId, risk };
+          const decision = await this.approvalHandler.request(
+            { id: callId, name: toolName, args: toolArgs },
+            approvalCtx,
+          );
+          approved = decision.granted;
+          if (!approved && decision.reason) {
+            rejectedReason = decision.reason;
+          }
+        }
       }
 
       if (!approved) {
         const reason =
-          this.approvalHandler === undefined
-            ? "No approval handler registered"
-            : "Rejected by approval handler";
+          this.approvalHandler === undefined ? "No approval handler registered" : rejectedReason;
         const errorMsg = `Tool approval rejected: ${reason}`;
         await emit(
           KajiEvent.parse({
