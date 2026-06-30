@@ -7,9 +7,10 @@ infra-free (no database, Supabase, FastAPI, or web server required).
 > **Status:** pre-beta, MVP-ready for embedded agents. The core SDK (runtime,
 > toolgen, OpenAI/Anthropic providers, and session replay) is suitable for
 > internal embedded agents. Multi-process platform features (Redis event
-> backbone, durable sessions, voice workers) are present but not
-> production-hardened -- do not deploy the realtime/voice stack without
-> additional load and durability testing.
+> backbone, Postgres session index, voice workers) are present but not
+> production-hardened. Durable event replay is not wired by default; do not
+> deploy the realtime/voice stack without additional load and durability
+> testing.
 
 See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
 definition.
@@ -139,7 +140,7 @@ shared with the TypeScript SDK.
 | Text modality adapter | Yes (non-MVP) | No |
 | Voice / TTS | Yes (non-MVP) | No |
 | Redis realtime bus | Yes (non-MVP) | No |
-| CLI scaffold | Yes | No |
+| CLI scaffold | Yes | Yes |
 
 ## Development
 
@@ -231,7 +232,7 @@ events = await session.send("hello")
 
 `SessionManager.list_active` returns a user's sessions when a `SessionStore` is
 configured (the SDK ships an in-memory one; a durable backend lives in
-`kaji-serve`).
+`kaji-serve` for session-list metadata).
 
 ```python
 import asyncio
@@ -348,7 +349,7 @@ configuration is needed to `import kaji`.
 | `DATABASE_URL` | kaji-serve only | Postgres connection |
 | `SUPABASE_ANON_KEY` | kaji-serve only | Supabase auth |
 
-See [`.env.example`](.env.example) for the full list.
+See [`.env.example`](../../.env.example) for the full list.
 
 ## Project layout notes
 

@@ -1,4 +1,4 @@
-"""Kaji -- build agentic voice platforms in Python.
+"""Kaji -- build agentic platforms in Python.
 
 Public names are resolved lazily (PEP 562): ``import kaji`` performs no
 heavy submodule imports and requires no environment configured. A name is

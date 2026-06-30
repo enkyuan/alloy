@@ -92,7 +92,7 @@ identical across both SDKs.
 | cancellation | `cancellation.completed` | runtime acknowledged and stopped |
 
 the canonical sources are
-[`kaji/sdk/kaji/infra/events/types.py`](sdk/kaji/infra/events/types.py)
+[`kaji/sdk/src/infra/events/types.py`](sdk/src/infra/events/types.py)
 and [`kaji/ts/src/events/types.ts`](ts/src/events/types.ts);
 the table above must match them byte-for-byte.
 
@@ -144,9 +144,9 @@ default; inject one when the tool needs persistence).
 
 the event bus fans out events to subscribers per session. in the python SDK the
 default implementation is in-memory (`InMemoryEventBus`); a Redis Stream-backed
-bus is used in `kaji-serve` for cross-process durability. the typescript SDK
-ships an in-memory bus only (sufficient for an embedded SDK; Redis deferred until
-there is a TS server runtime).
+bus is available for service hand-off. the typescript SDK ships an in-memory bus
+only (sufficient for an embedded SDK; Redis deferred until there is a TS server
+runtime).
 
 ### providers
 
@@ -172,10 +172,12 @@ so heavy tool execution never stalls a real-time exchange:
 | `bus-worker` | service runtime: LLM calls, event bus, tool dispatch |
 | `worker` | async tool execution (TaskIQ), results back to bus-worker |
 
-Redis Streams provide durable at-least-once hand-off between processes.
+Redis Streams provide at-least-once hand-off between service processes.
 Redis Pub/Sub fans out agent responses to the connected client in real time.
+Session-list metadata is stored in Postgres; durable event replay is not the
+default until a persistent `EventStore` is wired in.
 
-use `kaji-serve` when you need multi-process durability and real-time voice.
+use `kaji-serve` when you need multi-process workers and real-time voice.
 embed `kaji` directly when you want infra-free usage inside your own app.
 
 ## typescript SDK

@@ -10,6 +10,8 @@ author can revisit when the name changes.
 Scope of "user-facing docs":
 - ``kaji/README.md`` -- the shared concepts overview
 - ``kaji/sdk/README.md`` -- the python SDK README
+- ``kaji/serve/README.md`` -- the reference-service README
+- ``kaji/ts/README.md`` -- the TypeScript SDK README
 - ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
 
 Plan/spec files under ``docs/superpowers/`` are excluded -- those are
@@ -41,6 +43,8 @@ def _user_facing_docs() -> list[Path]:
     paths: list[Path] = [
         REPO_ROOT / "kaji" / "README.md",
         REPO_ROOT / "kaji" / "sdk" / "README.md",
+        REPO_ROOT / "kaji" / "serve" / "README.md",
+        REPO_ROOT / "kaji" / "ts" / "README.md",
     ]
     paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
     return paths
@@ -119,3 +123,24 @@ def test_no_em_dashes_in_user_facing_docs() -> None:
         if count:
             offenders[str(path.relative_to(REPO_ROOT))] = count
     assert not offenders, f"Em-dashes found: {offenders}. Replace with -- or a comma."
+
+
+def test_user_facing_docs_reference_existing_relative_markdown_links() -> None:
+    """Relative markdown links in user-facing docs must resolve."""
+    missing: list[str] = []
+    link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+
+    for path in USER_FACING_DOCS:
+        text = path.read_text()
+        for raw_target in link_pattern.findall(text):
+            target = raw_target.split()[0].split("#", 1)[0]
+            if not target:
+                continue
+            if target.startswith(("http://", "https://", "mailto:", "#", "/")):
+                continue
+
+            candidate = (path.parent / target).resolve()
+            if not candidate.exists():
+                missing.append(f"{path.relative_to(REPO_ROOT)}: {raw_target}")
+
+    assert missing == []

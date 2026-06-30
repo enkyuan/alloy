@@ -32,6 +32,16 @@ function isInside(root: string, candidate: string): boolean {
   return rel === "" || (!rel.startsWith("..") && resolve(root, rel) === candidate);
 }
 
+function sandboxEscapeError(path: string): Error {
+  return new Error(`Path escapes sandbox root: ${JSON.stringify(path)}`);
+}
+
+function assertInsideSandbox(root: string, candidate: string, unsafePath: string): void {
+  if (!isInside(root, candidate)) {
+    throw sandboxEscapeError(unsafePath);
+  }
+}
+
 async function sandboxResolve(
   root: string,
   unsafePath: string,
@@ -42,14 +52,12 @@ async function sandboxResolve(
   const resolved = resolve(rootPath, unsafePath);
   const rel = relative(rootPath, resolved);
   if (rel.startsWith("..") || resolve(rootPath, rel) !== resolved) {
-    throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
+    throw sandboxEscapeError(unsafePath);
   }
 
   try {
     const targetReal = await realpath(resolved);
-    if (!isInside(rootReal, targetReal)) {
-      throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
-    }
+    assertInsideSandbox(rootReal, targetReal, unsafePath);
     return targetReal;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT" || mode === "read") {
@@ -59,7 +67,7 @@ async function sandboxResolve(
 
   try {
     if ((await lstat(resolved)).isSymbolicLink()) {
-      throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
+      throw sandboxEscapeError(unsafePath);
     }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -69,17 +77,13 @@ async function sandboxResolve(
 
   const parent = await deepestExisting(dirname(resolved));
   const parentReal = await realpath(parent);
-  if (!isInside(rootReal, parentReal)) {
-    throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
-  }
+  assertInsideSandbox(rootReal, parentReal, unsafePath);
   return resolved;
 }
 
 async function walkDir(dir: string, rootReal: string): Promise<string[]> {
   const dirReal = await realpath(dir);
-  if (!isInside(rootReal, dirReal)) {
-    throw new Error(`Path escapes sandbox root: ${JSON.stringify(dir)}`);
-  }
+  assertInsideSandbox(rootReal, dirReal, dir);
 
   const files: string[] = [];
   let entries;

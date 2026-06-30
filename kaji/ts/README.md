@@ -8,9 +8,10 @@ server, or environment configured). It mirrors the runtime core of the Python
 > **Status:** beta candidate for the core embedded loop. Event-sourced building
 > blocks, tool registry, `ToolPlanner` / `ToolPolicy`, `AgentBuilder`, OpenAI
 > and Anthropic providers, and the agent runtime are implemented and CI-tested.
-> RAG, voice, Redis realtime, and CLI are not yet ported from Python.
+> RAG, voice, and Redis realtime are not yet ported from Python. CLI scaffold
+> and integration-registry commands are present.
 
-See [**Kaji MVP**](../MVP.md) for the full five-step developer path and scope
+See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
 definition.
 
 ## Install
@@ -162,7 +163,7 @@ shared with the Python SDK.
 | Text modality adapter | Yes (non-MVP) | No |
 | Voice / TTS | Yes (non-MVP) | No |
 | Redis realtime bus | Yes (non-MVP) | No (in-memory only) |
-| CLI scaffold | Yes | No |
+| CLI scaffold | Yes | Yes |
 
 ## Testing without API keys
 
@@ -203,5 +204,5 @@ bun run build
 
 This package ports the **runtime core** of the Python `kaji` SDK: events,
 sessions, tools, providers, and the ReAct loop. Python's Redis realtime bus,
-RAG, text/voice modalities, and CLI are not yet ported. The Python bus can be
+RAG, and text/voice modalities are not yet ported. The Python bus can be
 Redis-backed for multi-process deployments; the TS `EventBus` is in-memory only.

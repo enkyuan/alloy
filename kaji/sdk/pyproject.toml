@@ -57,7 +57,6 @@ packages = [
     "kaji.modalities",
     "kaji.modalities.text",
     "kaji.modalities.voice",
-    "kaji.modalities.voice.legacy",
     "kaji.modalities.voice.tts",
     "kaji.modalities.voice.utils",
     "kaji.runtime",
@@ -67,7 +66,6 @@ packages = [
     "kaji.runtime.sessions",
     "kaji.runtime.tools",
     "kaji.runtime.workflows",
-    "kaji.types",
 ]
 
 [tool.setuptools.package-dir]
@@ -84,7 +82,6 @@ kaji = "src"
 "kaji.modalities" = "src/modalities"
 "kaji.modalities.text" = "src/modalities/text"
 "kaji.modalities.voice" = "src/modalities/voice"
-"kaji.modalities.voice.legacy" = "src/modalities/voice/legacy"
 "kaji.modalities.voice.tts" = "src/modalities/voice/tts"
 "kaji.modalities.voice.utils" = "src/modalities/voice/utils"
 "kaji.runtime" = "src/runtime"
@@ -94,7 +91,6 @@ kaji = "src"
 "kaji.runtime.sessions" = "src/runtime/sessions"
 "kaji.runtime.tools" = "src/runtime/tools"
 "kaji.runtime.workflows" = "src/runtime/workflows"
-"kaji.types" = "src/types"
 
 [tool.setuptools.package-data]
 kaji = ["py.typed", "integrations/registry/**/*"]

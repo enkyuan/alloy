@@ -10,7 +10,7 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 
 
 @router.get("")
-async def list_tools():
+async def list_tools(_: dict = Depends(get_current_supabase_user)):
     """List available Agent tool definitions."""
     return {
         "tools": [

@@ -120,11 +120,9 @@ runtime = (
 `parameters` accepts either a JSON Schema dict or a Pydantic `BaseModel`
 subclass; the model is converted to JSON Schema at registration time.
 
-Built-in integrations:
+Bundled registry entry:
 
-- `from kaji.integrations.registry.github.github import GitHub`
-- `from kaji.integrations.registry.gmail.gmail import Gmail`
-- `from kaji.integrations.registry.gcal.gcal import GoogleCalendar`
+- `kaji add echo` copies a no-auth echo integration used as the registry contract example.
 
 ## Providers
 
