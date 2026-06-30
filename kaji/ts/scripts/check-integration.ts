@@ -7,7 +7,7 @@
  *
  * Exits 1 with a clear error message on first failure.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,7 +44,9 @@ if (!existsSync(indexPath)) {
 
 let index: { integrations?: Record<string, string> };
 try {
-  index = JSON.parse(readFileSync(indexPath, "utf8")) as { integrations?: Record<string, string> };
+  index = JSON.parse(await Bun.file(indexPath).text()) as {
+    integrations?: Record<string, string>;
+  };
 } catch (e) {
   fail(`Registry index.json is not valid JSON: ${(e as Error).message}`);
 }
@@ -74,7 +76,7 @@ for (const name of names) {
 
   let manifest: Record<string, unknown>;
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    manifest = JSON.parse(await Bun.file(manifestPath).text()) as Record<string, unknown>;
   } catch (e) {
     fail(`manifest.json is not valid JSON for ${context}: ${(e as Error).message}`);
   }
@@ -96,7 +98,7 @@ for (const name of names) {
       fail(`${f} listed in manifest.files not found for ${context} at ${tsPath}`);
     }
 
-    const source = readFileSync(tsPath, "utf8");
+    const source = await Bun.file(tsPath).text();
     if (!source.startsWith(REQUIRED_HEADER_PREFIX)) {
       fail(
         `${f} for ${context} must start with '${REQUIRED_HEADER_PREFIX}...'\n` +

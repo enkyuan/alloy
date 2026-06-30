@@ -18,8 +18,8 @@ describe("event id default with no Web Crypto", () => {
   it("constructs an event when globalThis.crypto is undefined", async () => {
     expect((globalThis as { crypto?: unknown }).crypto).toBeUndefined();
 
-    const { KajiEvent } = await import("../src/events/schemas");
-    const { EventType } = await import("../src/events/types");
+    const { KajiEvent } = await import("@/events/schemas");
+    const { EventType } = await import("@/events/types");
 
     const event = KajiEvent.parse({
       type: EventType.SESSION_CREATED,

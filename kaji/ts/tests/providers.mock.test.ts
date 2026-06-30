@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "../src/providers/base";
-import { ProviderConfigError } from "../src/providers/errors";
-import { MockProvider } from "../src/providers/mock";
-import { clearProviders, getProvider, registerProvider } from "../src/providers/registry";
-import { toolSpecFromSchema } from "../src/tools/registry";
+import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "@/providers/base";
+import { ProviderConfigError } from "@/providers/errors";
+import { MockProvider } from "@/providers/mock";
+import { clearProviders, getProvider, registerProvider } from "@/providers/registry";
+import { toolSpecFromSchema } from "@/tools/registry";
 
 afterEach(() => clearProviders());
 

@@ -4,9 +4,9 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { ProviderAPIError, ProviderConfigError } from "../src/providers/errors";
-import { OpenAIProvider } from "../src/providers/openai";
-import type { ProviderMessage } from "../src/providers/base";
+import { ProviderAPIError, ProviderConfigError } from "@/providers/errors";
+import { OpenAIProvider } from "@/providers/openai";
+import type { ProviderMessage } from "@/providers/base";
 
 // ---------------------------------------------------------------------------
 // buildMessages (private) — accessed via cast for targeted unit coverage

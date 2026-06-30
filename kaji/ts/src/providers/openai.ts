@@ -16,11 +16,15 @@ import type {
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
-} from "./base";
-import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
-import { parseToolArgsJSON } from "./_args";
-import { calculateCostUsd } from "./_cost_table";
-import type { ToolSpec } from "../tools/registry";
+} from "@/providers/base";
+import {
+  ProviderConfigError,
+  ProviderError,
+  providerAPIErrorFromUnknown,
+} from "@/providers/errors";
+import { parseToolArgsJSON } from "@/providers/_args";
+import { calculateCostUsd } from "@/providers/_cost_table";
+import type { ToolSpec } from "@/tools/registry";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;

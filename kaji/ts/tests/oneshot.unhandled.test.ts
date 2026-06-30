@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { streamText } from "../src/runtime/oneshot";
-import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "../src/providers/base";
+import { streamText } from "@/runtime/oneshot";
+import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "@/providers/base";
 
 function makeFlakyProvider(): ModelProvider {
   return {

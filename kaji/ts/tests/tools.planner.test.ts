@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { ToolPlanner } from "../src/tools/planner";
-import { ToolPolicy } from "../src/tools/policy";
-import { EventType } from "../src/events/types";
-import { InMemoryEventStore } from "../src/events/store";
-import { KajiEvent } from "../src/events/schemas";
-import { EventApprovalHandler } from "../src/runtime/approval/event_handler";
+import { ToolPlanner } from "@/tools/planner";
+import { ToolPolicy } from "@/tools/policy";
+import { EventType } from "@/events/types";
+import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent } from "@/events/schemas";
+import { EventApprovalHandler } from "@/runtime/approval/event_handler";
 
 describe("ToolPlanner", () => {
   it("emits lifecycle events on success", async () => {

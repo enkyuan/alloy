@@ -2,8 +2,8 @@
  * Provider registry: a process-level map from name to `ModelProvider`.
  * Mirrors `kaji.runtime.providers.registry`.
  */
-import type { ModelProvider } from "./base";
-import { ProviderConfigError } from "./errors";
+import type { ModelProvider } from "@/providers/base";
+import { ProviderConfigError } from "@/providers/errors";
 
 const providers = new Map<string, ModelProvider>();
 

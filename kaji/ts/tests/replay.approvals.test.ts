@@ -3,9 +3,9 @@
  * through Zod's `KajiEvent.parse` so the shapes match the wire format.
  */
 import { describe, expect, it } from "vitest";
-import { EventType } from "../src/events/types";
-import { KajiEvent } from "../src/events/schemas";
-import { replaySession } from "../src/sessions/replay";
+import { EventType } from "@/events/types";
+import { KajiEvent } from "@/events/schemas";
+import { replaySession } from "@/sessions/replay";
 
 const SESSION_ID = "s1";
 

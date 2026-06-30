@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { AnthropicProvider } from "../../src/providers/anthropic";
+import { AnthropicProvider } from "@/providers/anthropic";
 import { hasKey } from "./helpers";
 
 describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => {

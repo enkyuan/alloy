@@ -8,7 +8,7 @@
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCli } from "./index";
+import { runCli } from "@/cli/index";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // dist/cli/bin.js -> dist/cli -> dist -> <pkg>/registry

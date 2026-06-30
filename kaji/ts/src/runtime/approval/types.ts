@@ -3,7 +3,7 @@
  * `TypedApprovalHandler` is the structured alternative to the legacy
  * `ApprovalHandler` function type.
  */
-import type { ToolCall } from "../../providers/base";
+import type { ToolCall } from "@/providers/base";
 
 export interface ToolContext {
   sessionId: string;

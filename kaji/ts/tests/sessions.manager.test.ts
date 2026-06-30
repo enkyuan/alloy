@@ -6,7 +6,7 @@ import {
   InMemoryEventStore,
   InMemorySessionStore,
   SessionManager,
-} from "../src/index";
+} from "@/index";
 
 function makeEvent(input: Record<string, unknown>) {
   return KajiEvent.parse(input);

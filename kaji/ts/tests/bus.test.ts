@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventBus, EventType } from "../src/index";
+import { KajiEvent, EventBus, EventType } from "@/index";
 
 function userMessage(sessionId: string, content: string) {
   return KajiEvent.parse({

@@ -8,10 +8,10 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { anthropic, gemini, kimi, openai, openrouter } from "../src/providers/factory";
-import { AnthropicProvider } from "../src/providers/anthropic";
-import { OpenAIProvider } from "../src/providers/openai";
-import { ProviderConfigError } from "../src/providers/errors";
+import { anthropic, gemini, kimi, openai, openrouter } from "@/providers/factory";
+import { AnthropicProvider } from "@/providers/anthropic";
+import { OpenAIProvider } from "@/providers/openai";
+import { ProviderConfigError } from "@/providers/errors";
 
 interface ResolvedOpenAIOpts {
   apiKey: string;

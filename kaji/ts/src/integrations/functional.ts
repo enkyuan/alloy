@@ -22,7 +22,7 @@ import {
   type ToolRegistry,
   type ToolSpec,
   toolParametersToJSONSchema,
-} from "../tools/registry";
+} from "@/tools/registry";
 
 type ArgsOf<P> = P extends z.ZodType ? z.infer<P> : Record<string, unknown>;
 

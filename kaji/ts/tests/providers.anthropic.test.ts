@@ -4,8 +4,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { ProviderAPIError, ProviderConfigError } from "../src/providers/errors";
-import { AnthropicProvider } from "../src/providers/anthropic";
+import { ProviderAPIError, ProviderConfigError } from "@/providers/errors";
+import { AnthropicProvider } from "@/providers/anthropic";
 
 // ---------------------------------------------------------------------------
 // splitMessages (module-local helper) — tested via generate() with mocked client

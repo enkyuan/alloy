@@ -7,9 +7,34 @@
 // Updates: re-run `kaji add fs` to diff against the latest version we ship.
 
 import { functionTool } from "@kaji/sdk";
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
+
+type BunRuntime = typeof Bun;
+
+function bunRuntime(): BunRuntime | undefined {
+  return (globalThis as { Bun?: BunRuntime }).Bun;
+}
+
+async function readTextFile(path: string): Promise<string> {
+  const bun = bunRuntime();
+  if (bun) {
+    return bun.file(path).text();
+  }
+  const { readFile } = await import("node:fs/promises");
+  return readFile(path, "utf8");
+}
+
+async function writeTextFile(path: string, content: string): Promise<void> {
+  const bun = bunRuntime();
+  if (bun) {
+    await bun.write(path, content);
+    return;
+  }
+  const { writeFile } = await import("node:fs/promises");
+  await writeFile(path, content, "utf8");
+}
 
 async function deepestExisting(path: string): Promise<string> {
   let probe = path;
@@ -164,7 +189,7 @@ export function createFsIntegration(opts: { root: string }): {
     },
     async ({ path }) => {
       const safe = await sandboxResolve(root, path, "read");
-      const content = await readFile(safe, "utf8");
+      const content = await readTextFile(safe);
       return { content };
     },
   );
@@ -180,7 +205,7 @@ export function createFsIntegration(opts: { root: string }): {
     async ({ path, content }) => {
       const safe = await sandboxResolve(root, path, "write");
       await mkdir(dirname(safe), { recursive: true });
-      await writeFile(safe, content, "utf8");
+      await writeTextFile(safe, content);
       return { written: content.length };
     },
   );

@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { AnthropicProvider } from "../../src/providers/anthropic";
+import { AnthropicProvider } from "@/providers/anthropic";
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 

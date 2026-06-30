@@ -15,8 +15,8 @@ import type {
   ModelProviderOptions,
   ModelResponse,
   ProviderMessage,
-} from "../providers/base";
-import type { ToolSpec } from "../tools/registry";
+} from "@/providers/base";
+import type { ToolSpec } from "@/tools/registry";
 
 export interface GenerateTextOptions extends ModelProviderOptions {
   provider: ModelProvider;

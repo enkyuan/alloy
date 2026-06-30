@@ -6,7 +6,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listIntegrations } from "../src/cli/list_integrations";
+import { listIntegrations } from "@/cli/list_integrations";
 
 describe("kaji list-integrations", () => {
   let registryRoot: string;

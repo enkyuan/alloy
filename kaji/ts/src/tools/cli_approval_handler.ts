@@ -15,7 +15,7 @@
  * you want parallelism.
  */
 import { createInterface } from "node:readline";
-import type { ApprovalHandler } from "./planner";
+import type { ApprovalHandler } from "@/tools/planner";
 
 export interface CliApprovalOptions {
   /** Defaults to process.stdin. Override in tests with a Readable stream. */

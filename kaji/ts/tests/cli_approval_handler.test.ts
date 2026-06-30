@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { Readable, Writable } from "node:stream";
-import { cliApprovalHandler } from "../src/tools/cli_approval_handler";
+import { cliApprovalHandler } from "@/tools/cli_approval_handler";
 
 function streamFromString(s: string): NodeJS.ReadableStream {
   return Readable.from([s]);

@@ -6,9 +6,10 @@
  * "available" means: an entry in `index.json`, not just a directory under
  * `registry/`.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { RunOptions } from "./index";
+import { readTextFile } from "@/cli/bun_io";
+import type { RunOptions } from "@/cli/index";
 
 interface IndexFile {
   version?: string;
@@ -30,7 +31,7 @@ export async function listIntegrations(_rest: string[], opts: RunOptions): Promi
   }
   let index: IndexFile;
   try {
-    index = JSON.parse(readFileSync(indexPath, "utf8")) as IndexFile;
+    index = JSON.parse(await readTextFile(indexPath)) as IndexFile;
   } catch (e) {
     // Distinguish corruption from absence so a broken catalog is fixable
     // instead of silently invisible.
@@ -48,7 +49,7 @@ export async function listIntegrations(_rest: string[], opts: RunOptions): Promi
     const manifestPath = join(opts.registryRoot, manifestRel);
     let manifest: Manifest = {};
     try {
-      manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
+      manifest = JSON.parse(await readTextFile(manifestPath)) as Manifest;
     } catch {
       // Treat missing/unreadable manifest as a still-listable integration.
     }

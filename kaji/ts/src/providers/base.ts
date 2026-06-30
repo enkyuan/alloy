@@ -5,7 +5,7 @@
  * Each provider translates the neutral message + tool format to its own API at
  * its boundary. The runtime never imports provider-specific types.
  */
-import type { ToolSpec } from "../tools/registry";
+import type { ToolSpec } from "@/tools/registry";
 
 /** A message in the conversation history passed to the provider. */
 export interface ProviderMessage {

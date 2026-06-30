@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { CancellationToken } from "../src/runtime/cancellation";
-import { OpenAIProvider } from "../src/providers/openai";
-import { AnthropicProvider } from "../src/providers/anthropic";
+import { CancellationToken } from "@/runtime/cancellation";
+import { OpenAIProvider } from "@/providers/openai";
+import { AnthropicProvider } from "@/providers/anthropic";
 
 describe("CancellationToken", () => {
   it("starts not cancelled with a non-aborted signal", () => {

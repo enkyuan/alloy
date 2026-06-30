@@ -3,8 +3,8 @@
  * `kaji.infra.events.replay`. The append-only log is the source of truth;
  * `SessionState` is a read model derived by replaying events in time order.
  */
-import { EventType } from "../events/types";
-import type { KajiEvent } from "../events/schemas";
+import { EventType } from "@/events/types";
+import type { KajiEvent } from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
 export interface Message {

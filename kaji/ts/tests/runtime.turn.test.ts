@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { AgentBuilder, EventBus, InMemoryEventStore, EventType } from "@kaji/sdk";
-import { MockProvider } from "../src/providers/mock";
+import { MockProvider } from "@/providers/mock";
 
 function build(provider: MockProvider) {
   const store = new InMemoryEventStore();

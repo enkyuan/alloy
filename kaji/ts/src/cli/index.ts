@@ -3,10 +3,10 @@
  * table; the script-mode binary lives in `./bin.ts` so importing this module
  * from tests does not trigger `process.exit`.
  */
-import { add } from "./add";
-import { init } from "./init";
-import { listIntegrations } from "./list_integrations";
-import { replay } from "./replay";
+import { add } from "@/cli/add";
+import { init } from "@/cli/init";
+import { listIntegrations } from "@/cli/list_integrations";
+import { replay } from "@/cli/replay";
 
 export interface RunOptions {
   registryRoot: string;

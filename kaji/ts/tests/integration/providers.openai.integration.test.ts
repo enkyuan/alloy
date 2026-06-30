@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { OpenAIProvider } from "../../src/providers/openai";
+import { OpenAIProvider } from "@/providers/openai";
 
 const apiKey = process.env.OPENAI_API_KEY;
 

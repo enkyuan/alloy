@@ -15,12 +15,16 @@ import type {
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
-} from "./base";
-import { ProviderConfigError, ProviderError, providerAPIErrorFromUnknown } from "./errors";
-import { parseToolArgsJSON } from "./_args";
-import { calculateCostUsd } from "./_cost_table";
-import type { RetryOptions } from "./openai";
-import type { ToolSpec } from "../tools/registry";
+} from "@/providers/base";
+import {
+  ProviderConfigError,
+  ProviderError,
+  providerAPIErrorFromUnknown,
+} from "@/providers/errors";
+import { parseToolArgsJSON } from "@/providers/_args";
+import { calculateCostUsd } from "@/providers/_cost_table";
+import type { RetryOptions } from "@/providers/openai";
+import type { ToolSpec } from "@/tools/registry";
 
 type AnthropicMessageParam = Anthropic.Messages.MessageParam;
 type AnthropicTool = Anthropic.Messages.Tool;

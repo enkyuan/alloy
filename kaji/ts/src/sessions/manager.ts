@@ -1,7 +1,7 @@
-import type { EventStore } from "../events/store";
-import { replaySession } from "./replay";
-import type { SessionState } from "./replay";
-import type { SessionStore } from "./store";
+import type { EventStore } from "@/events/store";
+import { replaySession } from "@/sessions/replay";
+import type { SessionState } from "@/sessions/replay";
+import type { SessionStore } from "@/sessions/store";
 
 export class SessionManager {
   private readonly _store: EventStore;

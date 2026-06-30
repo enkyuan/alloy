@@ -7,12 +7,12 @@
  * - AutoApprovalHandler: allow, deny, allowAll
  */
 import { describe, it, expect } from "vitest";
-import { InMemoryEventStore } from "../src/events/store";
-import { KajiEvent } from "../src/events/schemas";
-import { EventType } from "../src/events/types";
-import { EventApprovalHandler } from "../src/runtime/approval/event_handler";
-import { AutoApprovalHandler } from "../src/runtime/approval/auto";
-import type { ToolCall } from "../src/providers/base";
+import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import { EventApprovalHandler } from "@/runtime/approval/event_handler";
+import { AutoApprovalHandler } from "@/runtime/approval/auto";
+import type { ToolCall } from "@/providers/base";
 
 // ---------------------------------------------------------------------------
 // Helpers

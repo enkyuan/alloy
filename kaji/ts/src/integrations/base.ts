@@ -2,14 +2,14 @@
  * Integration abstract base class: namespace-scoped tool bundle.
  * Mirrors `kaji.runtime.integrations.base.Integration`.
  */
-import type { ToolHandler, ToolSpec } from "../tools/registry";
+import type { ToolHandler, ToolSpec } from "@/tools/registry";
 import {
   TOOL_META,
   ToolRegistry,
   providerSafeToolName,
   toolParametersToJSONSchema,
-} from "../tools/registry";
-import type { TaggedHandler, ToolMeta } from "../tools/registry";
+} from "@/tools/registry";
+import type { TaggedHandler, ToolMeta } from "@/tools/registry";
 
 /**
  * Mark a handler function as a tool with the given metadata.

@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { generateText, streamText } from "../src/runtime/oneshot";
-import { MockProvider } from "../src/providers/mock";
-import { openai, anthropic, openrouter, kimi, gemini } from "../src/providers/factory";
-import { OpenAIProvider } from "../src/providers/openai";
-import { AnthropicProvider } from "../src/providers/anthropic";
+import { generateText, streamText } from "@/runtime/oneshot";
+import { MockProvider } from "@/providers/mock";
+import { openai, anthropic, openrouter, kimi, gemini } from "@/providers/factory";
+import { OpenAIProvider } from "@/providers/openai";
+import { AnthropicProvider } from "@/providers/anthropic";
 import type {
   ModelProvider,
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
-} from "../src/providers/base";
-import type { ToolSpec } from "../src/tools/registry";
+} from "@/providers/base";
+import type { ToolSpec } from "@/tools/registry";
 
 class FixedProvider implements ModelProvider {
   constructor(

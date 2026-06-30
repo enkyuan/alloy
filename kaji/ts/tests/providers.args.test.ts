@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parseToolArgsJSON } from "../src/providers/_args";
+import { parseToolArgsJSON } from "@/providers/_args";
 
 describe("parseToolArgsJSON", () => {
   it("returns {} for null", () => {

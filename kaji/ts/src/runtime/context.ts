@@ -2,8 +2,8 @@
  * Build the provider message list from replayed session state. Mirrors the
  * message construction in `kaji.runtime.agents.runtime`.
  */
-import type { ProviderMessage } from "../providers/base";
-import type { Message } from "../sessions/replay";
+import type { ProviderMessage } from "@/providers/base";
+import type { Message } from "@/sessions/replay";
 
 export function buildMessages(messages: Message[], systemPrompt?: string): ProviderMessage[] {
   const result: ProviderMessage[] = [];

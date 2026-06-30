@@ -12,11 +12,11 @@
  *    by `tool_call_id`.
  * 5. Rejects with a timeout error if no decision arrives in time.
  */
-import type { ToolCall } from "../../providers/base";
-import type { EventStore } from "../../events/store";
-import { KajiEvent } from "../../events/schemas";
-import { EventType } from "../../events/types";
-import type { TypedApprovalHandler, ToolContext, ApprovalDecision } from "./types";
+import type { ToolCall } from "@/providers/base";
+import type { EventStore } from "@/events/store";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import type { TypedApprovalHandler, ToolContext, ApprovalDecision } from "@/runtime/approval/types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 

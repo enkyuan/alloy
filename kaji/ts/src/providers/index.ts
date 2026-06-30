@@ -4,16 +4,16 @@ export type {
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
-} from "./base";
-export { MockProvider } from "./mock";
-export { AnthropicProvider } from "./anthropic";
-export type { AnthropicProviderOptions } from "./anthropic";
-export { OpenAIProvider } from "./openai";
-export type { OpenAIProviderOptions } from "./openai";
+} from "@/providers/base";
+export { MockProvider } from "@/providers/mock";
+export { AnthropicProvider } from "@/providers/anthropic";
+export type { AnthropicProviderOptions } from "@/providers/anthropic";
+export { OpenAIProvider } from "@/providers/openai";
+export type { OpenAIProviderOptions } from "@/providers/openai";
 export {
   ProviderAPIError,
   ProviderConfigError,
   ProviderConnectionError,
   ProviderError,
-} from "./errors";
-export { clearProviders, getProvider, registerProvider } from "./registry";
+} from "@/providers/errors";
+export { clearProviders, getProvider, registerProvider } from "@/providers/registry";

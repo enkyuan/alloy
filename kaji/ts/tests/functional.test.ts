@@ -8,8 +8,8 @@ import {
   functionTool,
   InMemoryEventStore,
   ToolRegistry,
-} from "../src";
-import { MockProvider } from "../src/testing";
+} from "@/index";
+import { MockProvider } from "@/testing";
 
 describe("functionTool", () => {
   it("produces a BoundTool with the handler name", () => {

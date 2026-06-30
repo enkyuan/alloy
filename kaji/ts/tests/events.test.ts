@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventType } from "../src/index";
+import { KajiEvent, EventType } from "@/index";
 
 describe("KajiEvent", () => {
   it("applies defaults for id, version, timestamp, metadata", () => {

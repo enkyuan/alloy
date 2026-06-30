@@ -5,11 +5,12 @@
     "module": "ESNext",
     "ignoreDeprecations": "6.0",
     "lib": ["ES2022"],
-    "types": ["node"],
+    "types": ["node", "bun"],
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "@kaji/sdk": ["./src/index.ts"]
+      "@kaji/sdk": ["./src/index.ts"],
+      "@/*": ["./src/*"]
     },
     "declaration": true,
     "verbatimModuleSyntax": true,

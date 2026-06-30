@@ -2,15 +2,15 @@
  * ToolPlanner: concurrent scatter-gather execution of LLM tool calls.
  * Mirrors `kaji.runtime.agents.planner` from the Python SDK.
  */
-import { KajiEvent } from "../events/schemas";
-import { EventType } from "../events/types";
-import { defaultUuid } from "../internal/uuid";
-import type { ToolSpec } from "./registry";
-import type { ToolPolicy } from "./policy";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import { defaultUuid } from "@/internal/uuid";
+import type { ToolSpec } from "@/tools/registry";
+import type { ToolPolicy } from "@/tools/policy";
 import type {
   TypedApprovalHandler,
   ToolContext as ApprovalContext,
-} from "../runtime/approval/types";
+} from "@/runtime/approval/types";
 
 const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
   object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),

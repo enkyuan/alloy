@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { ToolPolicy, listToolSpecs, registerTool, tool, toolSpecFromSchema } from "../src/index";
-import { TOOL_META, ToolRegistry, clearTools, executeTool } from "../src/tools/registry";
-import { AgentRuntime } from "../src/runtime/runtime";
-import { MockProvider } from "../src/providers/mock";
-import { EventBus } from "../src/events/bus";
-import { EventType } from "../src/events/types";
-import { InMemoryEventStore } from "../src/events/store";
-import { KajiEvent } from "../src/events/schemas";
+import { ToolPolicy, listToolSpecs, registerTool, tool, toolSpecFromSchema } from "@/index";
+import { TOOL_META, ToolRegistry, clearTools, executeTool } from "@/tools/registry";
+import { AgentRuntime } from "@/runtime/runtime";
+import { MockProvider } from "@/providers/mock";
+import { EventBus } from "@/events/bus";
+import { EventType } from "@/events/types";
+import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent } from "@/events/schemas";
 
 afterEach(() => {
   clearTools();

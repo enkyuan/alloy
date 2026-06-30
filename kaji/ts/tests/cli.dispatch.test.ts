@@ -5,7 +5,7 @@
  * without spawning a node subprocess.
  */
 import { describe, expect, it } from "vitest";
-import { COMMANDS, runCli } from "../src/cli/index";
+import { COMMANDS, runCli } from "@/cli/index";
 
 describe("kaji cli dispatch", () => {
   it("prints help and exits 0 on --help", async () => {

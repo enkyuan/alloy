@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { Integration, tool } from "../src/integrations/base";
-import { ToolRegistry } from "../src/tools/registry";
-import type { ToolHandler, ToolSpec } from "../src/tools/registry";
+import { Integration, tool } from "@/integrations/base";
+import { ToolRegistry } from "@/tools/registry";
+import type { ToolHandler, ToolSpec } from "@/tools/registry";
 
 const dummyHandler: ToolHandler = async (_ctx, _args) => ({ ok: true });
 const dummySpec: ToolSpec = { name: "bar", description: "A test tool", parameters: {} };

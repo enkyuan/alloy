@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { providerSafeToolName } from "../src/tools/registry";
+import { providerSafeToolName } from "@/tools/registry";
 
 describe("providerSafeToolName", () => {
   it("invokes onMutate when the name is changed", () => {

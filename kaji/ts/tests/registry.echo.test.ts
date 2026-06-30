@@ -16,8 +16,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { AgentBuilder, EventBus, InMemoryEventStore, functionTool } from "../src/index";
-import { MockProvider } from "../src/providers/mock";
+import { AgentBuilder, EventBus, InMemoryEventStore, functionTool } from "@/index";
+import { MockProvider } from "@/providers/mock";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Read from the TS-native registry (kaji/ts/registry/echo/index.ts)

@@ -13,8 +13,9 @@
  *  1  unknown integration, missing manifest, validation failure, or collision
  *     without `--force`.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { copyFileBunFirst, readTextFile } from "@/cli/bun_io";
 
 export interface AddOptions {
   /** Absolute path to a registry directory (one with `index.json`). */
@@ -80,7 +81,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
   }
   let index: RegistryIndex;
   try {
-    index = JSON.parse(readFileSync(indexPath, "utf8")) as RegistryIndex;
+    index = JSON.parse(await readTextFile(indexPath)) as RegistryIndex;
   } catch (e) {
     log(`Registry index is not valid JSON: ${(e as Error).message}`);
     return 1;
@@ -103,7 +104,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
   }
   let manifest: Manifest;
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest;
+    manifest = JSON.parse(await readTextFile(manifestPath)) as Manifest;
   } catch (e) {
     log(`Manifest is not valid JSON: ${(e as Error).message}`);
     return 1;
@@ -203,7 +204,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     const src = join(manifestDir, f);
     const dest = resolve(resolvedOut, f);
     mkdirSync(dirname(dest), { recursive: true });
-    copyFileSync(src, dest);
+    await copyFileBunFirst(src, dest);
   }
   log(`Wrote ${tsFiles.length} file(s) to ${resolvedOut}`);
   return 0;

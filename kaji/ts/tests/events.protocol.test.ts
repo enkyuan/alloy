@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { AgentRuntime } from "../src/runtime/runtime";
-import { InMemoryEventStore } from "../src/events/store";
-import { EventBus } from "../src/events/bus";
-import { KajiEvent } from "../src/events/schemas";
-import { EventType } from "../src/events/types";
-import type { EventBusProtocol } from "../src/events/protocols";
+import { AgentRuntime } from "@/runtime/runtime";
+import { InMemoryEventStore } from "@/events/store";
+import { EventBus } from "@/events/bus";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import type { EventBusProtocol } from "@/events/protocols";
 import type {
   ModelProvider,
   ModelProviderOptions,
   ModelResponseChunk,
   ProviderMessage,
-} from "../src/providers/base";
-import type { ToolSpec } from "../src/tools/registry";
+} from "@/providers/base";
+import type { ToolSpec } from "@/tools/registry";
 
 class RecordingBus implements EventBusProtocol {
   readonly published: KajiEvent[] = [];

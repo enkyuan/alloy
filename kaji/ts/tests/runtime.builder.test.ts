@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { EventBus } from "../src/events/bus";
-import { KajiEvent } from "../src/events/schemas";
-import { EventType } from "../src/events/types";
-import { InMemoryEventStore } from "../src/events/store";
-import { MockProvider } from "../src/providers/mock";
-import { AgentRuntime } from "../src/runtime/runtime";
-import { AgentBuilder, type Integrable } from "../src/runtime/builder";
-import { ToolRegistry, type ToolSpec, type ToolHandler } from "../src/tools/registry";
+import { EventBus } from "@/events/bus";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import { InMemoryEventStore } from "@/events/store";
+import { MockProvider } from "@/providers/mock";
+import { AgentRuntime } from "@/runtime/runtime";
+import { AgentBuilder, type Integrable } from "@/runtime/builder";
+import { ToolRegistry, type ToolSpec, type ToolHandler } from "@/tools/registry";
 
 // ---------------------------------------------------------------------------
 // Helpers

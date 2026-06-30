@@ -1,1 +1,1 @@
-export { MockProvider } from "./providers/mock";
+export { MockProvider } from "@/providers/mock";

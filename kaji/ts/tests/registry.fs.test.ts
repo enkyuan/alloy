@@ -9,7 +9,7 @@ import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createFsIntegration } from "../registry/fs/index";
-import type { ToolContext } from "../src/index";
+import type { ToolContext } from "@/index";
 
 const ctx: ToolContext = { userId: "_" };
 

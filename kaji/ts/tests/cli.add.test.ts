@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readFileSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { add } from "../src/cli/add";
+import { add } from "@/cli/add";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

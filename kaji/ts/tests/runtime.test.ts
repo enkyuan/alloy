@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { EventBus } from "../src/events/bus";
-import { KajiEvent } from "../src/events/schemas";
-import { EventType } from "../src/events/types";
-import { InMemoryEventStore } from "../src/events/store";
-import { MockProvider } from "../src/providers/mock";
-import { CancellationToken } from "../src/runtime/cancellation";
-import { buildMessages } from "../src/runtime/context";
-import { AgentRuntime, type AgentStrategy } from "../src/runtime/runtime";
-import { AgentBuilder } from "../src/runtime/builder";
-import { ToolPolicy } from "../src/tools/policy";
-import { clearTools, registerTool, toolSpecFromSchema } from "../src/tools/registry";
-import { replaySession } from "../src/sessions/replay";
-import type { Message } from "../src/sessions/replay";
+import { EventBus } from "@/events/bus";
+import { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import { InMemoryEventStore } from "@/events/store";
+import { MockProvider } from "@/providers/mock";
+import { CancellationToken } from "@/runtime/cancellation";
+import { buildMessages } from "@/runtime/context";
+import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
+import { AgentBuilder } from "@/runtime/builder";
+import { ToolPolicy } from "@/tools/policy";
+import { clearTools, registerTool, toolSpecFromSchema } from "@/tools/registry";
+import { replaySession } from "@/sessions/replay";
+import type { Message } from "@/sessions/replay";
 
 afterEach(() => clearTools());
 
@@ -509,7 +509,7 @@ describe("AgentBuilder policy", () => {
     const sessionId = "s-builder-deny";
 
     class WeatherIntegration {
-      register(registry: import("../src/tools/registry").ToolRegistry): void {
+      register(registry: import("@/tools/registry").ToolRegistry): void {
         registry.register(
           toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
           async () => ({ tempF: 68 }),

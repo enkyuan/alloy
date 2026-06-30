@@ -18,8 +18,8 @@ import type {
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
-} from "./base";
-import type { ToolSpec } from "../tools/registry";
+} from "@/providers/base";
+import type { ToolSpec } from "@/tools/registry";
 
 const FINAL_TEXT = "The mock provider has completed the tool loop.";
 

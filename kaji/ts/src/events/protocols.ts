@@ -12,7 +12,7 @@
  * either sync (in-memory) or async (durable bus needing connection
  * teardown).
  */
-import type { KajiEvent } from "./schemas";
+import type { KajiEvent } from "@/events/schemas";
 
 export interface EventBusProtocol {
   /**

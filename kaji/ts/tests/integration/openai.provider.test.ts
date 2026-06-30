@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { OpenAIProvider } from "../../src/providers/openai";
+import { OpenAIProvider } from "@/providers/openai";
 import { hasKey } from "./helpers";
 
 describe.skipIf(!hasKey("OPENAI_API_KEY"))("OpenAIProvider (live)", () => {

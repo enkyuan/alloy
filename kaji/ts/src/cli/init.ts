@@ -5,9 +5,10 @@
  * 'Next: bun install && bun start' hint so the scaffold is not a dead end.
  * Refuses to overwrite any existing file unless --force is passed.
  */
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { RunOptions } from "./index";
+import { writeTextFile } from "@/cli/bun_io";
+import type { RunOptions } from "@/cli/index";
 
 interface Args {
   out: string;
@@ -111,7 +112,7 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
     return 1;
   }
   for (const [name, body] of Object.entries(FILES)) {
-    writeFileSync(join(args.out, name), body);
+    await writeTextFile(join(args.out, name), body);
     log(`wrote ${join(args.out, name)}`);
   }
   log("");

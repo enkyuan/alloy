@@ -9,8 +9,8 @@
  */
 import { z } from "zod";
 
-import { defaultUuid } from "../internal/uuid";
-import { EventType } from "./types";
+import { defaultUuid } from "@/internal/uuid";
+import { EventType } from "@/events/types";
 
 /** Fields shared by every event. No provider- or voice-specific fields here. */
 const baseShape = {

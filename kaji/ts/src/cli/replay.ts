@@ -4,9 +4,9 @@
  *
  * All file I/O happens here; `_replay_render.ts` is pure (no I/O).
  */
-import { readFileSync } from "node:fs";
-import { KajiEvent } from "../events/schemas";
-import { renderJson, renderSummary, renderTree } from "./_replay_render";
+import { KajiEvent } from "@/events/schemas";
+import { renderJson, renderSummary, renderTree } from "@/cli/_replay_render";
+import { readTextFile } from "@/cli/bun_io";
 
 export interface ReplayOptions {
   log?: (msg: string) => void;
@@ -54,7 +54,7 @@ export async function replay(argv: string[], opts: ReplayOptions): Promise<numbe
 
   let raw: string;
   try {
-    raw = readFileSync(file, "utf-8");
+    raw = await readTextFile(file);
   } catch {
     err(`Cannot read file: ${file}`);
     return 1;

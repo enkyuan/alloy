@@ -11,8 +11,8 @@
  *     messages: [{ role: "user", content: "Hello" }],
  *   });
  */
-import { OpenAIProvider, type OpenAIProviderOptions } from "./openai";
-import { AnthropicProvider, type AnthropicProviderOptions } from "./anthropic";
+import { OpenAIProvider, type OpenAIProviderOptions } from "@/providers/openai";
+import { AnthropicProvider, type AnthropicProviderOptions } from "@/providers/anthropic";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_KIMI_MODEL = "moonshotai/kimi-k2";

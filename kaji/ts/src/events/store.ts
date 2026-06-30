@@ -3,7 +3,7 @@
  * `kaji.infra.events.store`. The append-only log is the source of truth;
  * session state is a projection (see `replaySession`).
  */
-import type { KajiEvent } from "./schemas";
+import type { KajiEvent } from "@/events/schemas";
 
 /** Interface every persistent backend implements. */
 export interface EventStore {

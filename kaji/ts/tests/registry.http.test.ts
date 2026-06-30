@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { functionTool, type ToolContext } from "../src/index";
+import { functionTool, type ToolContext } from "@/index";
 
 const ctx: ToolContext = { userId: "_" };
 

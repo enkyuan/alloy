@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ToolPlanner } from "../src/tools/planner";
-import type { ToolSpec } from "../src/tools/registry";
+import { ToolPlanner } from "@/tools/planner";
+import type { ToolSpec } from "@/tools/registry";
 
 const numericSpec: ToolSpec = {
   name: "price_check",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventType, replaySession } from "../src/index";
+import { KajiEvent, EventType, replaySession } from "@/index";
 
 function ev(input: Record<string, unknown>) {
   return KajiEvent.parse(input);

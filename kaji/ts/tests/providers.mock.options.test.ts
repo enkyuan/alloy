@@ -2,7 +2,7 @@
  * Tests for MockProvider's reply / toolCall options.
  */
 import { describe, it, expect } from "vitest";
-import { MockProvider } from "../src/providers/mock";
+import { MockProvider } from "@/providers/mock";
 
 describe("MockProvider options", () => {
   it("reply returns literal text", async () => {

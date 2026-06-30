@@ -2,15 +2,15 @@
  * AgentBuilder: fluent builder for AgentRuntime.
  * Mirrors `kaji.runtime.agents.builder.AgentBuilder`.
  */
-import { AgentRuntime } from "./runtime";
-import type { AgentStrategy } from "./runtime";
-import type { ModelProvider } from "../providers/base";
-import type { ToolPolicy } from "../tools/policy";
-import { ToolPlanner, type AnyApprovalHandler } from "../tools/planner";
-import { ToolRegistry } from "../tools/registry";
-import { EventBus } from "../events/bus";
-import type { EventBusProtocol } from "../events/protocols";
-import { InMemoryEventStore, type EventStore } from "../events/store";
+import { AgentRuntime } from "@/runtime/runtime";
+import type { AgentStrategy } from "@/runtime/runtime";
+import type { ModelProvider } from "@/providers/base";
+import type { ToolPolicy } from "@/tools/policy";
+import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
+import { ToolRegistry } from "@/tools/registry";
+import { EventBus } from "@/events/bus";
+import type { EventBusProtocol } from "@/events/protocols";
+import { InMemoryEventStore, type EventStore } from "@/events/store";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {

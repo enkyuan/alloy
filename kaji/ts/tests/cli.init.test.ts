@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { init } from "../src/cli/init";
+import { init } from "@/cli/init";
 
 describe("kaji init", () => {
   it("scaffolds package.json, tsconfig.json, agent.ts, .env.example", async () => {

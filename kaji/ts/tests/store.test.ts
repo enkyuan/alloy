@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventType, InMemoryEventStore } from "../src/index";
+import { KajiEvent, EventType, InMemoryEventStore } from "@/index";
 
 function userMessage(sessionId: string, content: string, timestamp: number) {
   return KajiEvent.parse({

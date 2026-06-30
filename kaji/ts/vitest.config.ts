@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@kaji/sdk": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   test: {

@@ -2,8 +2,8 @@
  * Pure rendering functions for `kaji replay`. No file I/O here —
  * all renderers accept parsed KajiEvent[] and return a string.
  */
-import type { KajiEvent } from "../events/schemas";
-import { EventType } from "../events/types";
+import type { KajiEvent } from "@/events/schemas";
+import { EventType } from "@/events/types";
 
 const C = {
   reset: "\x1b[0m",

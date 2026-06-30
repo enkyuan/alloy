@@ -3,8 +3,8 @@
  * without any I/O. Useful for testing, sandboxed environments, or as a
  * safe default that denies everything not explicitly listed.
  */
-import type { ToolCall } from "../../providers/base";
-import type { TypedApprovalHandler, ToolContext, ApprovalDecision } from "./types";
+import type { ToolCall } from "@/providers/base";
+import type { TypedApprovalHandler, ToolContext, ApprovalDecision } from "@/runtime/approval/types";
 
 export interface AutoApprovalPolicy {
   /** Tool names to always allow, regardless of `allowAll`. */

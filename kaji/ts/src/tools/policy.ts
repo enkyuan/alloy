@@ -3,7 +3,7 @@
  * Controls which tools may run and which require explicit approval before
  * execution, keyed on tool name and risk classification.
  */
-import type { ToolRisk } from "./registry";
+import type { ToolRisk } from "@/tools/registry";
 
 export type { ToolRisk };
 

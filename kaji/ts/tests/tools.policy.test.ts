@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ToolPolicy, ToolPolicyViolation } from "../src/tools/policy";
+import { ToolPolicy, ToolPolicyViolation } from "@/tools/policy";
 
 describe("ToolPolicy", () => {
   it("allowlist permits listed tools and blocks others", () => {

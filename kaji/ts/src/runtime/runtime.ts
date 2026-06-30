@@ -6,18 +6,18 @@
  * events -> execute tool calls concurrently (scatter-gather) -> loop until the
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
-import type { EventBusProtocol } from "../events/protocols";
-import { KajiEvent, type KajiEventInput } from "../events/schemas";
-import { EventType } from "../events/types";
-import type { EventStore } from "../events/store";
-import type { ModelProvider, ToolCall } from "../providers/base";
-import { replaySession } from "../sessions/replay";
-import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
-import type { ToolPolicy } from "../tools/policy";
-import { ToolPlanner, type AnyApprovalHandler } from "../tools/planner";
-import { defaultUuid } from "../internal/uuid";
-import { CancellationToken } from "./cancellation";
-import { buildMessages } from "./context";
+import type { EventBusProtocol } from "@/events/protocols";
+import { KajiEvent, type KajiEventInput } from "@/events/schemas";
+import { EventType } from "@/events/types";
+import type { EventStore } from "@/events/store";
+import type { ModelProvider, ToolCall } from "@/providers/base";
+import { replaySession } from "@/sessions/replay";
+import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
+import type { ToolPolicy } from "@/tools/policy";
+import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
+import { defaultUuid } from "@/internal/uuid";
+import { CancellationToken } from "@/runtime/cancellation";
+import { buildMessages } from "@/runtime/context";
 
 /** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
 export interface AgentStrategy {
