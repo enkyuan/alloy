@@ -177,7 +177,7 @@ class GoogleOAuthClient:
     """OAuth 2.0 installed-application flow for Google APIs.
 
     ``client_id`` and ``client_secret`` come from your Google Cloud OAuth
-    consent screen; see each integration's SETUP.md.
+    consent screen; see your out-of-tree integration docs.
 
     ``scopes`` declares the access you need; the user's consent screen
     shows them this list. Use the most restrictive scope possible
@@ -209,7 +209,7 @@ class GoogleOAuthClient:
         if not client_id or not client_secret:
             raise OAuthError(
                 "GoogleOAuthClient requires client_id and client_secret. "
-                "See the integration's SETUP.md for the Google Cloud step."
+                "See your integration docs for the Google Cloud step."
             )
         if token_path is None and token_storage is None:
             raise OAuthError(

@@ -55,9 +55,8 @@ def test_echo_py_tools_register_without_collision(tmp_path: Path):
 
 def test_every_registry_manifest_file_exists_on_disk():
     """Catch packaging drift: every file declared by a manifest must actually
-    ship with the wheel. ``pyproject.toml`` include globs cover *.json/*.py/
-    *.md/*.ts; a manifest that lists, e.g., a .sh would silently break
-    install_integration on installed wheels.
+    ship with the wheel. A manifest that lists a file outside the package-data
+    globs would silently break install_integration on installed wheels.
     """
     from kaji.integrations import list_integrations, load_manifest
 
