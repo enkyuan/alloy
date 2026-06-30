@@ -30,10 +30,22 @@ export interface ModelResponseChunk {
   toolCalls: ToolCall[];
 }
 
+/** Token usage from a provider response. */
+export interface TokenUsage {
+  /** Prompt / input tokens consumed. */
+  input: number;
+  /** Completion / output tokens generated. */
+  output: number;
+}
+
 /** A complete non-streaming response. */
 export interface ModelResponse {
   content: string;
   toolCalls: ToolCall[];
+  /** Token usage, if the provider reported it. */
+  usage?: TokenUsage;
+  /** Estimated cost in USD, if the model is in the cost table. */
+  costUsd?: number;
 }
 
 /**

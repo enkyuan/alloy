@@ -14,7 +14,7 @@ import type { ModelProvider, ToolCall } from "../providers/base";
 import { replaySession } from "../sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "../tools/registry";
 import type { ToolPolicy } from "../tools/policy";
-import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
+import { ToolPlanner, type AnyApprovalHandler } from "../tools/planner";
 import { defaultUuid } from "../internal/uuid";
 import { CancellationToken } from "./cancellation";
 import { buildMessages } from "./context";
@@ -46,7 +46,7 @@ export interface AgentRuntimeOptions {
    * Optional approval handler for tools that require explicit approval.
    * Wired into the default `ToolPlanner` when `planner` is not provided.
    */
-  approvalHandler?: ApprovalHandler;
+  approvalHandler?: AnyApprovalHandler;
   /**
    * Tool execution planner. When omitted, a default planner is constructed from
    * `toolExecutor`, `policy`, `approvalHandler`, and `tools`.
@@ -106,7 +106,7 @@ export class AgentRuntime {
   private readonly fixedTools: ToolSpec[] | undefined;
   private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   private readonly policy: ToolPolicy | undefined;
-  private readonly approvalHandler: ApprovalHandler | undefined;
+  private readonly approvalHandler: AnyApprovalHandler | undefined;
   private readonly userId: string;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool

@@ -19,9 +19,15 @@ export { KajiEvent, type KajiEventInput, type BaseEvent } from "./events/schemas
 export { EventBus } from "./events/bus";
 export { type EventBusProtocol } from "./events/protocols";
 export { type EventStore, InMemoryEventStore } from "./events/store";
+export { ProviderRateLimited } from "./events/schemas";
 
 // Sessions
-export { replaySession, type SessionState, type Message } from "./sessions/replay";
+export {
+  replaySession,
+  type SessionState,
+  type Message,
+  type SessionTokens,
+} from "./sessions/replay";
 export { SessionManager } from "./sessions/manager";
 export { type SessionRecord, type SessionStore, InMemorySessionStore } from "./sessions/store";
 
@@ -53,6 +59,7 @@ export {
   type ToolCallResult,
   type ToolExecutor,
   type ApprovalHandler,
+  type AnyApprovalHandler,
 } from "./tools/planner";
 export { cliApprovalHandler, type CliApprovalOptions } from "./tools/cli_approval_handler";
 
@@ -64,9 +71,10 @@ export type {
   ModelResponseChunk,
   ProviderMessage,
   ToolCall,
+  TokenUsage,
 } from "./providers/base";
 export { OpenAIProvider } from "./providers/openai";
-export type { OpenAIProviderOptions } from "./providers/openai";
+export type { OpenAIProviderOptions, RetryOptions } from "./providers/openai";
 export { AnthropicProvider } from "./providers/anthropic";
 export type { AnthropicProviderOptions } from "./providers/anthropic";
 export {
@@ -74,7 +82,10 @@ export {
   ProviderConfigError,
   ProviderConnectionError,
   ProviderError,
+  ProviderRateLimitedError,
 } from "./providers/errors";
+export { lookupCost, calculateCostUsd } from "./providers/_cost_table";
+export type { ModelCostEntry } from "./providers/_cost_table";
 export { getProvider, registerProvider } from "./providers/registry";
 export {
   openai,
@@ -85,6 +96,9 @@ export {
   type OpenRouterFactoryOptions,
   type GeminiFactoryOptions,
 } from "./providers/factory";
+
+// Auth
+export { type SecretSource, EnvSecretSource } from "./auth/secret_source";
 
 // Integrations
 export {
@@ -111,3 +125,13 @@ export {
   type GenerateTextOptions,
   type StreamTextResult,
 } from "./runtime/oneshot";
+
+// Approval handlers
+export type {
+  TypedApprovalHandler,
+  ApprovalDecision,
+  ToolContext as ApprovalContext,
+  ApprovalRequest,
+} from "./runtime/approval/types";
+export { EventApprovalHandler } from "./runtime/approval/event_handler";
+export { AutoApprovalHandler, type AutoApprovalPolicy } from "./runtime/approval/auto";

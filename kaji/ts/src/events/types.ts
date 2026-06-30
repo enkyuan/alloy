@@ -34,6 +34,8 @@ export const EventType = {
 
   CANCELLATION_REQUESTED: "cancellation.requested",
   CANCELLATION_COMPLETED: "cancellation.completed",
+
+  PROVIDER_RATE_LIMITED: "provider.rate_limited",
 } as const;
 
 export type EventType = (typeof EventType)[keyof typeof EventType];

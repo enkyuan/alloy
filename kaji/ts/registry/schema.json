@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/schemas/integration-manifest.json",
+  "title": "Kaji integration manifest",
+  "description": "Describes a copyable integration: identity, auth, files to copy, and tools surfaced.",
+  "type": "object",
+  "required": ["name", "version", "namespace", "description", "auth", "files", "tools"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "description": "Lowercase identifier used by `kaji add <name>`."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Semver version of the manifest."
+    },
+    "namespace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Namespace prefix applied to tool catalog names (e.g. 'github')."
+    },
+    "description": {
+      "type": "string"
+    },
+    "auth": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "enum": ["env", "oauth", "none"],
+          "description": "Auth mechanism. 'env' = single env var (e.g. PAT). 'oauth' = OAuth 2.0 flow. 'none' = public, no auth."
+        },
+        "env": {
+          "type": "string",
+          "description": "Required when kind=='env'. The environment variable name the integration reads."
+        },
+        "docs": {
+          "type": "string",
+          "description": "URL pointing at vendor docs for obtaining the credential."
+        },
+        "scopes": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "OAuth scopes; required when kind=='oauth'."
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "description": "Paths (relative to the manifest's directory) that `kaji add` copies."
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "risk": {
+            "enum": ["read", "write", "external_effect", "financial", "destructive", "admin"]
+          }
+        }
+      }
+    },
+    "peerDeps": {
+      "type": "object",
+      "additionalProperties": {"type": "string"},
+      "description": "npm peer/optional dependencies the integration requires, keyed by package name to semver range (e.g. {\"better-sqlite3\": \"^9\"})."
+    }
+  }
+}

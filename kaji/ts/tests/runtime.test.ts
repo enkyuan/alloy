@@ -467,6 +467,39 @@ describe("AgentRuntime policy via ToolPlanner", () => {
     expect(types).toContain(EventType.TOOL_APPROVAL_APPROVED);
     expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
   });
+
+  it("runs approval-required tools when a typed approval handler approves", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
+      approvalHandler: {
+        async request() {
+          return { granted: true };
+        },
+      },
+      tools: [
+        {
+          name: "get_weather",
+          description: "weather",
+          parameters: {},
+          risk: "destructive",
+        },
+      ],
+      toolExecutor: async () => ({ tempF: 68 }),
+    });
+    const s = "s-policy-typed-approve";
+    await seed(store, s);
+
+    await runtime.runTurn(s);
+
+    const types = (await store.getEvents(s)).map((e) => e.type);
+    expect(types).toContain(EventType.TOOL_APPROVAL_APPROVED);
+    expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
 });
 
 describe("AgentBuilder policy", () => {

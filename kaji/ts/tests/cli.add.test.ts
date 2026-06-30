@@ -227,11 +227,20 @@ describe("kaji add", () => {
 
   it("ships the echo integration in the real registry", async () => {
     const out = join(tmp, "real-out");
-    const realRegistry = join(__dirname, "..", "..", "sdk", "kaji", "integrations", "registry");
+    // Use the TS-native registry that ships with kaji/ts
+    const realRegistry = join(__dirname, "..", "registry");
     const code = await add(["echo", "--out", out], {
       registryRoot: realRegistry,
     });
     expect(code).toBe(0);
-    expect(existsSync(join(out, "echo.ts"))).toBe(true);
+    // TS-native echo ships index.ts (not echo.ts)
+    expect(existsSync(join(out, "index.ts"))).toBe(true);
+  });
+
+  it("does not ship unindexed Python-only integrations in the real TS registry", () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    expect(existsSync(join(realRegistry, "gcal"))).toBe(false);
+    expect(existsSync(join(realRegistry, "github"))).toBe(false);
+    expect(existsSync(join(realRegistry, "gmail"))).toBe(false);
   });
 });

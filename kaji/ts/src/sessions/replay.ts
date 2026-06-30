@@ -16,6 +16,12 @@ export interface Message {
   toolCallId?: string;
 }
 
+/** Accumulated token counts across all turns in the session. */
+export interface SessionTokens {
+  input: number;
+  output: number;
+}
+
 /** A projection of the event log into current session state. */
 export interface SessionState {
   sessionId: string;
@@ -30,6 +36,10 @@ export interface SessionState {
   approvedToolCallIds: Set<string>;
   /** tool_call_ids the host rejected via TOOL_APPROVAL_REJECTED. */
   rejectedToolCallIds: Set<string>;
+  /** Total tokens consumed in this session (summed from AGENT_MESSAGE_COMPLETED events). */
+  totalTokens: SessionTokens;
+  /** Estimated total cost in USD for this session. */
+  totalCostUsd: number;
 }
 
 /**
@@ -50,6 +60,8 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
     pendingApprovals: new Set<string>(),
     approvedToolCallIds: new Set<string>(),
     rejectedToolCallIds: new Set<string>(),
+    totalTokens: { input: 0, output: 0 },
+    totalCostUsd: 0,
   };
 
   let ordered: readonly KajiEvent[] = events;
@@ -73,6 +85,13 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
         break;
       case EventType.AGENT_MESSAGE_COMPLETED:
         state.messages.push({ role: "assistant", content: event.content });
+        if (event.tokens) {
+          state.totalTokens.input += event.tokens.input;
+          state.totalTokens.output += event.tokens.output;
+        }
+        if (event.cost_usd) {
+          state.totalCostUsd += event.cost_usd;
+        }
         break;
       case EventType.TRANSCRIPT_FINAL:
         // For voice sessions, the final transcript acts as a user message.

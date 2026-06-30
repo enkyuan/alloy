@@ -42,6 +42,20 @@ describe("AgentBuilder", () => {
     expect(runtime).toBeInstanceOf(AgentRuntime);
   });
 
+  it("accepts typed approval handlers in the fluent builder", () => {
+    const { bus, store } = makeInfra();
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider())
+      .approvalHandler({
+        async request() {
+          return { granted: true };
+        },
+      })
+      .build({ bus, store });
+
+    expect(runtime).toBeInstanceOf(AgentRuntime);
+  });
+
   it("executes integration tools via scoped registry", async () => {
     const { bus, store } = makeInfra();
     const sessionId = "s-builder-ping";

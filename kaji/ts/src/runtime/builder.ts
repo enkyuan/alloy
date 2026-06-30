@@ -6,7 +6,7 @@ import { AgentRuntime } from "./runtime";
 import type { AgentStrategy } from "./runtime";
 import type { ModelProvider } from "../providers/base";
 import type { ToolPolicy } from "../tools/policy";
-import { ToolPlanner, type ApprovalHandler } from "../tools/planner";
+import { ToolPlanner, type AnyApprovalHandler } from "../tools/planner";
 import { ToolRegistry } from "../tools/registry";
 import { EventBus } from "../events/bus";
 import type { EventBusProtocol } from "../events/protocols";
@@ -28,7 +28,7 @@ export class AgentBuilder {
   private _provider: ModelProvider | undefined;
   private readonly _integrations: Integrable[] = [];
   private _policy: ToolPolicy | undefined;
-  private _approvalHandler: ApprovalHandler | undefined;
+  private _approvalHandler: AnyApprovalHandler | undefined;
   private _systemPrompt = "You are a helpful assistant.";
   private _strategy: AgentStrategy | undefined;
 
@@ -53,7 +53,7 @@ export class AgentBuilder {
     return this;
   }
 
-  approvalHandler(handler: ApprovalHandler): this {
+  approvalHandler(handler: AnyApprovalHandler): this {
     this._approvalHandler = handler;
     return this;
   }

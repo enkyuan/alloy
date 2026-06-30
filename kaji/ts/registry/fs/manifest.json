@@ -1,0 +1,15 @@
+{
+  "name": "fs",
+  "version": "0.1.0",
+  "namespace": "fs",
+  "description": "Sandboxed filesystem tools. Read, write, list, glob. Constrained to a root directory.",
+  "auth": { "kind": "none" },
+  "files": ["index.ts"],
+  "tools": [
+    { "name": "list", "description": "List files in a directory.", "risk": "read" },
+    { "name": "read", "description": "Read a file's contents.", "risk": "read" },
+    { "name": "write", "description": "Write content to a file.", "risk": "write" },
+    { "name": "glob", "description": "Glob for files matching a pattern.", "risk": "read" }
+  ],
+  "peerDeps": {}
+}
