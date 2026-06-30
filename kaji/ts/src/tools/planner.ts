@@ -87,7 +87,7 @@ export type ApprovalHandler = (
 export type EmitFn = (event: KajiEvent) => Promise<void>;
 
 /** Either a legacy function-style handler or the new structured handler. */
-type AnyApprovalHandler = ApprovalHandler | TypedApprovalHandler;
+export type AnyApprovalHandler = ApprovalHandler | TypedApprovalHandler;
 
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
@@ -223,17 +223,24 @@ export class ToolPlanner {
 
     // 3. Approval gate
     if (this.policy?.requiresApproval(toolName, risk)) {
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_APPROVAL_REQUESTED,
-          session_id: sessionId,
-          tool_name: toolName,
-          tool_call_id: callId,
-          tool_args: toolArgs,
-          risk: risk ?? null,
-          metadata,
-        }),
-      );
+      const handlerPublishesApprovalRequest =
+        this.approvalHandler !== undefined &&
+        typeof this.approvalHandler !== "function" &&
+        this.approvalHandler.emitsApprovalRequest === true;
+
+      if (!handlerPublishesApprovalRequest) {
+        await emit(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_REQUESTED,
+            session_id: sessionId,
+            tool_name: toolName,
+            tool_call_id: callId,
+            tool_args: toolArgs,
+            risk: risk ?? null,
+            metadata,
+          }),
+        );
+      }
 
       let approved = false;
       let rejectedReason = "Rejected by approval handler";

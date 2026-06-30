@@ -2,6 +2,9 @@ import { describe, it, expect, vi } from "vitest";
 import { ToolPlanner } from "../src/tools/planner";
 import { ToolPolicy } from "../src/tools/policy";
 import { EventType } from "../src/events/types";
+import { InMemoryEventStore } from "../src/events/store";
+import { KajiEvent } from "../src/events/schemas";
+import { EventApprovalHandler } from "../src/runtime/approval/event_handler";
 
 describe("ToolPlanner", () => {
   it("emits lifecycle events on success", async () => {
@@ -102,6 +105,44 @@ describe("ToolPlanner", () => {
     expect(types).toContain(EventType.TOOL_APPROVAL_REQUESTED);
     expect(types).toContain(EventType.TOOL_APPROVAL_APPROVED);
     expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
+    expect(results[0]).toHaveProperty("result", { ok: true });
+  });
+
+  it("emits exactly one approval request when EventApprovalHandler publishes request events", async () => {
+    const store = new InMemoryEventStore();
+    const sessionId = "sess-event-handler-approval";
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const approvalHandler = new EventApprovalHandler(store, { timeoutMs: 250 });
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const specs = new Map([
+      ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
+    ]);
+
+    store.subscribe(sessionId, (event) => {
+      if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === "c-typed") {
+        void store.append(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_APPROVED,
+            session_id: sessionId,
+            tool_name: "nuke",
+            tool_call_id: "c-typed",
+          }),
+        );
+      }
+    });
+
+    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const results = await planner.executeScatterGather(
+      sessionId,
+      [{ id: "c-typed", name: "nuke", arguments: {} }],
+      async (e) => {
+        await store.append(e);
+      },
+    );
+
+    const events = await store.getEvents(sessionId);
+    expect(events.filter((e) => e.type === EventType.TOOL_APPROVAL_REQUESTED)).toHaveLength(1);
+    expect(events.map((e) => e.type)).toContain(EventType.TOOL_APPROVAL_APPROVED);
     expect(results[0]).toHaveProperty("result", { ok: true });
   });
 

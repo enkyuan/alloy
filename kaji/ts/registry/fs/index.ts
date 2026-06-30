@@ -7,20 +7,80 @@
 // Updates: re-run `kaji add fs` to diff against the latest version we ship.
 
 import { functionTool } from "@kaji/sdk";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { z } from "zod";
 
-function sandboxResolve(root: string, unsafePath: string): string {
-  const resolved = resolve(root, unsafePath);
-  const rel = relative(root, resolved);
-  if (rel.startsWith("..") || resolve(root, rel) !== resolved) {
+async function deepestExisting(path: string): Promise<string> {
+  let probe = path;
+  while (probe !== dirname(probe)) {
+    try {
+      await realpath(probe);
+      return probe;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      probe = dirname(probe);
+    }
+  }
+  return probe;
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && resolve(root, rel) === candidate);
+}
+
+async function sandboxResolve(
+  root: string,
+  unsafePath: string,
+  mode: "read" | "write",
+): Promise<string> {
+  const rootPath = resolve(root);
+  const rootReal = await realpath(rootPath);
+  const resolved = resolve(rootPath, unsafePath);
+  const rel = relative(rootPath, resolved);
+  if (rel.startsWith("..") || resolve(rootPath, rel) !== resolved) {
+    throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
+  }
+
+  try {
+    const targetReal = await realpath(resolved);
+    if (!isInside(rootReal, targetReal)) {
+      throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
+    }
+    return targetReal;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT" || mode === "read") {
+      throw error;
+    }
+  }
+
+  try {
+    if ((await lstat(resolved)).isSymbolicLink()) {
+      throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const parent = await deepestExisting(dirname(resolved));
+  const parentReal = await realpath(parent);
+  if (!isInside(rootReal, parentReal)) {
     throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
   }
   return resolved;
 }
 
-async function walkDir(dir: string): Promise<string[]> {
+async function walkDir(dir: string, rootReal: string): Promise<string[]> {
+  const dirReal = await realpath(dir);
+  if (!isInside(rootReal, dirReal)) {
+    throw new Error(`Path escapes sandbox root: ${JSON.stringify(dir)}`);
+  }
+
   const files: string[] = [];
   let entries;
   try {
@@ -30,8 +90,11 @@ async function walkDir(dir: string): Promise<string[]> {
   }
   for (const entry of entries) {
     const full = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
     if (entry.isDirectory()) {
-      files.push(...(await walkDir(full)));
+      files.push(...(await walkDir(full, rootReal)));
     } else {
       files.push(full);
     }
@@ -40,13 +103,26 @@ async function walkDir(dir: string): Promise<string[]> {
 }
 
 function globToRegex(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*\//g, "(?:.+/)?")
-    .replace(/\*\*/g, ".*")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]");
-  return new RegExp(`^${escaped}$`);
+  let regex = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern.charAt(i);
+    const next = pattern.charAt(i + 1);
+    const afterNext = pattern.charAt(i + 2);
+    if (char === "*" && next === "*" && afterNext === "/") {
+      regex += "(?:.*/)?";
+      i += 2;
+    } else if (char === "*" && next === "*") {
+      regex += ".*";
+      i++;
+    } else if (char === "*") {
+      regex += "[^/]*";
+    } else if (char === "?") {
+      regex += "[^/]";
+    } else {
+      regex += char.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+  }
+  return new RegExp(`^${regex}$`);
 }
 
 export function createFsIntegration(opts: { root: string }): {
@@ -66,7 +142,7 @@ export function createFsIntegration(opts: { root: string }): {
       risk: "read",
     },
     async ({ path }) => {
-      const safe = sandboxResolve(root, path);
+      const safe = await sandboxResolve(root, path, "read");
       const entries = await readdir(safe, { withFileTypes: true });
       return {
         entries: entries.map((e) => ({ name: e.name, isDir: e.isDirectory() })),
@@ -83,7 +159,7 @@ export function createFsIntegration(opts: { root: string }): {
       risk: "read",
     },
     async ({ path }) => {
-      const safe = sandboxResolve(root, path);
+      const safe = await sandboxResolve(root, path, "read");
       const content = await readFile(safe, "utf8");
       return { content };
     },
@@ -98,7 +174,7 @@ export function createFsIntegration(opts: { root: string }): {
       risk: "write",
     },
     async ({ path, content }) => {
-      const safe = sandboxResolve(root, path);
+      const safe = await sandboxResolve(root, path, "write");
       await mkdir(dirname(safe), { recursive: true });
       await writeFile(safe, content, "utf8");
       return { written: content.length };
@@ -114,7 +190,8 @@ export function createFsIntegration(opts: { root: string }): {
       risk: "read",
     },
     async ({ pattern }) => {
-      const allFiles = await walkDir(root);
+      const rootReal = await realpath(root);
+      const allFiles = await walkDir(root, rootReal);
       const regex = globToRegex(pattern);
       const matches = allFiles.map((f) => relative(root, f)).filter((rel) => regex.test(rel));
       return { matches };

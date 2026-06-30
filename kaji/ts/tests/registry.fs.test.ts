@@ -1,95 +1,40 @@
 /**
  * Tests for the fs registry integration pattern.
  *
- * Validates sandbox path checking, list/read/write operations using a
- * real tmpdir. Reconstructs key logic inline (like registry.echo.test.ts)
- * so tests run against the local source tree without the registry files
- * needing to be in tsconfig.
+ * Validates sandbox path checking and list/read/write/glob operations using a
+ * real tmpdir against the shipped registry template.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { z } from "zod";
-import { functionTool, type ToolContext } from "../src/index";
+import { createFsIntegration } from "../registry/fs/index";
+import type { ToolContext } from "../src/index";
 
 const ctx: ToolContext = { userId: "_" };
 
-function sandboxResolve(root: string, unsafePath: string): string {
-  const resolved = resolve(root, unsafePath);
-  const rel = relative(root, resolved);
-  if (rel.startsWith("..") || resolve(root, rel) !== resolved) {
-    throw new Error(`Path escapes sandbox root: ${JSON.stringify(unsafePath)}`);
-  }
-  return resolved;
-}
+describe("fs integration: sandbox path handling", () => {
+  let tmpRoot: string;
 
-function createFsList(root: string) {
-  return functionTool(
-    {
-      name: "list",
-      namespace: "fs",
-      description: "List files in a directory.",
-      parameters: z.object({ path: z.string().default(".") }),
-      risk: "read",
-    },
-    async ({ path }) => {
-      const safe = sandboxResolve(root, path);
-      const entries = await readdir(safe, { withFileTypes: true });
-      return {
-        entries: entries.map((e) => ({ name: e.name, isDir: e.isDirectory() })),
-      };
-    },
-  );
-}
-
-function createFsRead(root: string) {
-  return functionTool(
-    {
-      name: "read",
-      namespace: "fs",
-      description: "Read a file's contents.",
-      parameters: z.object({ path: z.string() }),
-      risk: "read",
-    },
-    async ({ path }) => {
-      const safe = sandboxResolve(root, path);
-      const content = await readFile(safe, "utf8");
-      return { content };
-    },
-  );
-}
-
-function createFsWrite(root: string) {
-  return functionTool(
-    {
-      name: "write",
-      namespace: "fs",
-      description: "Write content to a file.",
-      parameters: z.object({ path: z.string(), content: z.string() }),
-      risk: "write",
-    },
-    async ({ path, content }) => {
-      const safe = sandboxResolve(root, path);
-      await mkdir(dirname(safe), { recursive: true });
-      await writeFile(safe, content, "utf8");
-      return { written: content.length };
-    },
-  );
-}
-
-describe("fs integration: sandboxResolve", () => {
-  it("allows paths within root", () => {
-    const root = "/tmp/sandbox";
-    expect(() => sandboxResolve(root, "subdir/file.txt")).not.toThrow();
-    expect(() => sandboxResolve(root, ".")).not.toThrow();
-    expect(() => sandboxResolve(root, "a/b/c")).not.toThrow();
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "kaji-fs-test-"));
+    await writeFile(join(tmpRoot, "inside.txt"), "inside");
   });
 
-  it("blocks paths that escape the root", () => {
-    const root = "/tmp/sandbox";
-    expect(() => sandboxResolve(root, "../../etc/passwd")).toThrow(/escape.*sandbox/i);
-    expect(() => sandboxResolve(root, "../other")).toThrow(/escape.*sandbox/i);
+  afterEach(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("allows ordinary paths within root", async () => {
+    const { read } = createFsIntegration({ root: tmpRoot });
+    await expect(read.handler(ctx, { path: "inside.txt" })).resolves.toEqual({ content: "inside" });
+  });
+
+  it("blocks lexical paths that escape the root", async () => {
+    const { read } = createFsIntegration({ root: tmpRoot });
+    await expect(read.handler(ctx, { path: "../../etc/passwd" })).rejects.toThrow(
+      /escape.*sandbox/i,
+    );
   });
 });
 
@@ -107,8 +52,8 @@ describe("fs integration: list", () => {
   });
 
   it("lists files in the temp directory", async () => {
-    const tool = createFsList(tmpRoot);
-    const result = await tool.handler(ctx, { path: "." });
+    const { list } = createFsIntegration({ root: tmpRoot });
+    const result = await list.handler(ctx, { path: "." });
 
     expect(result).toHaveProperty("entries");
     const entries = result["entries"] as { name: string; isDir: boolean }[];
@@ -131,17 +76,25 @@ describe("fs integration: read", () => {
   });
 
   it("reads a file that was written in setup", async () => {
-    const tool = createFsRead(tmpRoot);
-    const result = await tool.handler(ctx, { path: "greeting.txt" });
+    const { read } = createFsIntegration({ root: tmpRoot });
+    const result = await read.handler(ctx, { path: "greeting.txt" });
 
     expect(result).toEqual({ content: "Hello from test!" });
   });
 
-  it("path escape blocked: ../../etc/passwd throws", async () => {
-    const tool = createFsRead(tmpRoot);
-    await expect(tool.handler(ctx, { path: "../../etc/passwd" })).rejects.toThrow(
-      /escape.*sandbox/i,
-    );
+  it("rejects reads through a symlink that points outside the root", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "kaji-fs-outside-"));
+    try {
+      await writeFile(join(outside, "secret.txt"), "secret");
+      await symlink(join(outside, "secret.txt"), join(tmpRoot, "secret-link.txt"));
+      const { read } = createFsIntegration({ root: tmpRoot });
+
+      await expect(read.handler(ctx, { path: "secret-link.txt" })).rejects.toThrow(
+        /escape.*sandbox/i,
+      );
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });
 
@@ -157,9 +110,9 @@ describe("fs integration: write", () => {
   });
 
   it("creates a file and returns byte count", async () => {
-    const tool = createFsWrite(tmpRoot);
+    const { write } = createFsIntegration({ root: tmpRoot });
     const content = "Written by test";
-    const result = await tool.handler(ctx, { path: "output.txt", content });
+    const result = await write.handler(ctx, { path: "output.txt", content });
 
     expect(result).toEqual({ written: content.length });
 
@@ -167,10 +120,75 @@ describe("fs integration: write", () => {
     expect(actual).toBe(content);
   });
 
-  it("path escape blocked on write: ../../tmp/evil throws", async () => {
-    const tool = createFsWrite(tmpRoot);
-    await expect(tool.handler(ctx, { path: "../../tmp/evil", content: "bad" })).rejects.toThrow(
+  it("blocks lexical paths that escape the root on write", async () => {
+    const { write } = createFsIntegration({ root: tmpRoot });
+    await expect(write.handler(ctx, { path: "../../tmp/evil", content: "bad" })).rejects.toThrow(
       /escape.*sandbox/i,
     );
+  });
+
+  it("rejects writes through a symlinked parent directory", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "kaji-fs-outside-"));
+    try {
+      await symlink(outside, join(tmpRoot, "linkdir"));
+      const { write } = createFsIntegration({ root: tmpRoot });
+
+      await expect(
+        write.handler(ctx, { path: "linkdir/evil.txt", content: "bad" }),
+      ).rejects.toThrow(/escape.*sandbox/i);
+      await expect(readFile(join(outside, "evil.txt"), "utf8")).rejects.toThrow();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects writes through a symlinked file with a missing target", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "kaji-fs-outside-"));
+    try {
+      await symlink(join(outside, "missing.txt"), join(tmpRoot, "missing-link.txt"));
+      const { write } = createFsIntegration({ root: tmpRoot });
+
+      await expect(
+        write.handler(ctx, { path: "missing-link.txt", content: "bad" }),
+      ).rejects.toThrow(/escape.*sandbox/i);
+      await expect(readFile(join(outside, "missing.txt"), "utf8")).rejects.toThrow();
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("fs integration: glob", () => {
+  let tmpRoot: string;
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "kaji-fs-test-"));
+    await writeFile(join(tmpRoot, "visible.txt"), "visible");
+  });
+
+  afterEach(async () => {
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("returns files matching a pattern", async () => {
+    const { glob } = createFsIntegration({ root: tmpRoot });
+    const result = await glob.handler(ctx, { pattern: "**/*.txt" });
+
+    expect(result).toEqual({ matches: ["visible.txt"] });
+  });
+
+  it("does not return symlinked outside-root paths from glob", async () => {
+    const outside = await mkdtemp(join(tmpdir(), "kaji-fs-outside-"));
+    try {
+      await writeFile(join(outside, "secret.txt"), "secret");
+      await symlink(join(outside, "secret.txt"), join(tmpRoot, "secret-link.txt"));
+      const { glob } = createFsIntegration({ root: tmpRoot });
+
+      const result = await glob.handler(ctx, { pattern: "**/*" });
+      const matches = result["matches"] as string[];
+      expect(matches).not.toContain("secret-link.txt");
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

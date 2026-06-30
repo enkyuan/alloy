@@ -59,6 +59,7 @@ export {
   type ToolCallResult,
   type ToolExecutor,
   type ApprovalHandler,
+  type AnyApprovalHandler,
 } from "./tools/planner";
 export { cliApprovalHandler, type CliApprovalOptions } from "./tools/cli_approval_handler";
 

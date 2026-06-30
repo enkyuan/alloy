@@ -21,5 +21,6 @@ export interface ApprovalRequest {
 }
 
 export interface TypedApprovalHandler {
+  readonly emitsApprovalRequest?: boolean;
   request(call: ToolCall, ctx: ToolContext): Promise<ApprovalDecision>;
 }

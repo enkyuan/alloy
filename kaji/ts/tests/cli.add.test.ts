@@ -236,4 +236,11 @@ describe("kaji add", () => {
     // TS-native echo ships index.ts (not echo.ts)
     expect(existsSync(join(out, "index.ts"))).toBe(true);
   });
+
+  it("does not ship unindexed Python-only integrations in the real TS registry", () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    expect(existsSync(join(realRegistry, "gcal"))).toBe(false);
+    expect(existsSync(join(realRegistry, "github"))).toBe(false);
+    expect(existsSync(join(realRegistry, "gmail"))).toBe(false);
+  });
 });

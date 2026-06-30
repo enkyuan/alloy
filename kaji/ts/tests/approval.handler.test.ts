@@ -105,6 +105,28 @@ describe("EventApprovalHandler", () => {
     expect(decision.granted).toBe(true);
   });
 
+  it("captures a synchronous approval appended by a request-event subscriber", async () => {
+    const store = new InMemoryEventStore();
+    const handler = new EventApprovalHandler(store);
+    const call = makeCall({ id: "call-sync" });
+    const ctx = { sessionId: "session-sync" };
+
+    store.subscribe(ctx.sessionId, (event) => {
+      if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === call.id) {
+        void store.append(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_APPROVED,
+            session_id: ctx.sessionId,
+            tool_name: call.name,
+            tool_call_id: call.id,
+          }),
+        );
+      }
+    });
+
+    await expect(handler.request(call, ctx)).resolves.toEqual({ granted: true });
+  });
+
   it("reject flow: resolves granted:false with reason when TOOL_APPROVAL_REJECTED is appended", async () => {
     const store = new InMemoryEventStore();
     const handler = new EventApprovalHandler(store);
