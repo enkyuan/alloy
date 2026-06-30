@@ -31,13 +31,23 @@ def mock_redis():
 
 
 @pytest.mark.asyncio
-async def test_api_tools_list_tools(async_client: AsyncClient, mock_tool_specs):
-    response = await async_client.get("/api/v1/tools")
+async def test_api_tools_list_tools(
+    async_client: AsyncClient, mock_tool_specs, mock_current_user
+):
+    response = await async_client.get(
+        "/api/v1/tools", headers={"Authorization": "Bearer valid_token"}
+    )
     assert response.status_code == 200
     data = response.json()
     assert len(data["tools"]) == 1
     assert data["tools"][0]["name"] == "test_tool"
     assert data["tools"][0]["description"] == "A test tool"
+
+
+@pytest.mark.asyncio
+async def test_api_tools_list_tools_requires_auth(async_client: AsyncClient):
+    response = await async_client.get("/api/v1/tools")
+    assert response.status_code in {401, 403}
 
 
 @pytest.mark.asyncio

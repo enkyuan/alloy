@@ -1,6 +1,6 @@
 ---
 title: Reference Service
-description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process durability and real-time voice. This page shows how to run them.
+description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process hand-off and real-time voice. This page shows how to run them.
 ---
 
 `kaji-serve` (`kaji/serve`) wraps the SDK as three processes
@@ -12,9 +12,10 @@ over Redis so heavy tool execution never stalls a real-time exchange.
 | `bus-worker` | reasoning loop: LLM calls, event bus, tool dispatch       | -    |
 | `worker`     | async tool execution (TaskIQ), results back to bus-worker | -    |
 
-Redis Streams provide durable at-least-once hand-off between processes.
-Redis Pub/Sub fans agent responses out to the connected client in real
-time.
+Redis Streams provide at-least-once hand-off between processes. Redis
+Pub/Sub fans agent responses out to the connected client in real time.
+Session-list metadata is stored in Postgres; durable event replay needs
+a persistent `EventStore` before production use.
 
 ## Run with docker compose
 
@@ -55,7 +56,7 @@ poetry run taskiq worker kaji_serve.workers.broker:broker kaji_serve.workers.tas
 
 Reach for it when you need:
 
-- multi-process durability (a tool crash should not lose session state),
+- multi-process hand-off for worker execution,
 - real-time voice over a WebSocket,
 - horizontal scale: more workers behind one bus.
 

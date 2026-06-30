@@ -10,10 +10,11 @@ from unittest.mock import patch
 from kaji.cli import main
 
 
-def test_add_github_copies_file(tmp_path: Path) -> None:
-    rc = main(["add", "github", "--out", str(tmp_path)])
+def test_add_echo_copies_files(tmp_path: Path) -> None:
+    rc = main(["add", "echo", "--out", str(tmp_path)])
     assert rc == 0
-    assert (tmp_path / "github.py").exists()
+    assert (tmp_path / "echo.py").exists()
+    assert (tmp_path / "echo.ts").exists()
 
 
 def test_add_unknown_integration_returns_nonzero(tmp_path: Path) -> None:
@@ -25,30 +26,31 @@ def test_add_unknown_integration_returns_nonzero(tmp_path: Path) -> None:
 
 
 def test_add_refuses_overwrite_without_force(tmp_path: Path) -> None:
-    rc1 = main(["add", "github", "--out", str(tmp_path)])
+    rc1 = main(["add", "echo", "--out", str(tmp_path)])
     assert rc1 == 0
     out = StringIO()
     with patch("sys.stdout", out):
-        rc2 = main(["add", "github", "--out", str(tmp_path)])
+        rc2 = main(["add", "echo", "--out", str(tmp_path)])
     assert rc2 == 1
     assert "--force" in out.getvalue()
 
 
 def test_add_force_overwrites(tmp_path: Path) -> None:
-    main(["add", "github", "--out", str(tmp_path)])
-    target = tmp_path / "github.py"
+    main(["add", "echo", "--out", str(tmp_path)])
+    target = tmp_path / "echo.py"
     target.write_text("# modified\n")
-    rc = main(["add", "github", "--out", str(tmp_path), "--force"])
+    rc = main(["add", "echo", "--out", str(tmp_path), "--force"])
     assert rc == 0
-    assert "class GitHub" in target.read_text()
+    assert "async def say" in target.read_text()
 
 
-def test_list_integrations_prints_github() -> None:
+def test_list_integrations_prints_echo() -> None:
     out = StringIO()
     with patch("sys.stdout", out):
         rc = main(["list-integrations"])
     assert rc == 0
-    assert "github" in out.getvalue()
+    assert "echo" in out.getvalue()
+    assert "github" not in out.getvalue()
 
 
 def test_list_integrations_json_emits_valid_object() -> None:
@@ -58,7 +60,8 @@ def test_list_integrations_json_emits_valid_object() -> None:
     assert rc == 0
     parsed = json.loads(out.getvalue())
     names = {entry["name"] for entry in parsed}
-    assert "github" in names
-    github = next(entry for entry in parsed if entry["name"] == "github")
-    assert github["auth_kind"] == "env"
-    assert "get_repo" in github["tools"]
+    assert "echo" in names
+    assert {"github", "gmail", "gcal"}.isdisjoint(names)
+    echo = next(entry for entry in parsed if entry["name"] == "echo")
+    assert echo["auth_kind"] == "none"
+    assert "say" in echo["tools"]

@@ -18,33 +18,19 @@ from kaji.integrations import (
 
 def test_list_integrations_includes_known_names() -> None:
     names = list_integrations()
-    assert {"github", "gmail", "gcal"} <= set(names)
-
-
-def test_gmail_manifest_declares_oauth_and_readonly_scope() -> None:
-    m = load_manifest("gmail")
-    assert m.auth.kind == "oauth"
-    assert m.auth.scopes == ("https://www.googleapis.com/auth/gmail.readonly",)
-    assert {t.name for t in m.tools} == {"list_messages", "get_message"}
-
-
-def test_gcal_manifest_declares_oauth_and_readonly_scope() -> None:
-    m = load_manifest("gcal")
-    assert m.auth.kind == "oauth"
-    assert m.auth.scopes == ("https://www.googleapis.com/auth/calendar.readonly",)
-    assert {t.name for t in m.tools} == {"list_events", "get_event"}
+    assert "echo" in names
+    assert {"github", "gmail", "gcal"}.isdisjoint(names)
 
 
 def test_load_manifest_returns_parsed_manifest() -> None:
-    m = load_manifest("github")
+    m = load_manifest("echo")
     assert isinstance(m, Manifest)
-    assert m.name == "github"
-    assert m.namespace == "github"
-    assert m.auth.kind == "env"
-    assert m.auth.env == "GITHUB_TOKEN"
-    assert "github.py" in m.files
+    assert m.name == "echo"
+    assert m.namespace == "echo"
+    assert m.auth.kind == "none"
+    assert {"echo.py", "echo.ts"} <= set(m.files)
     tool_names = {t.name for t in m.tools}
-    assert {"get_repo", "list_issues", "get_pull_request", "search_repos"} <= tool_names
+    assert tool_names == {"say", "shout"}
 
 
 def test_load_manifest_unknown_raises_integration_not_found() -> None:
@@ -53,29 +39,29 @@ def test_load_manifest_unknown_raises_integration_not_found() -> None:
 
 
 def test_install_integration_copies_files(tmp_path: Path) -> None:
-    written = install_integration("github", tmp_path)
-    assert any(p.name == "github.py" for p in written)
-    target = tmp_path / "github.py"
+    written = install_integration("echo", tmp_path)
+    assert {p.name for p in written} == {"echo.py", "echo.ts"}
+    target = tmp_path / "echo.py"
     assert target.exists()
     # Sanity: the copied file is non-trivial and importable Python.
     source = target.read_text()
-    assert "class GitHub" in source
-    assert "kaji.Integration" in source
+    assert "async def say" in source
+    assert "kaji.function_tool" in source
 
 
 def test_install_integration_refuses_overwrite_without_force(tmp_path: Path) -> None:
-    install_integration("github", tmp_path)
+    install_integration("echo", tmp_path)
     with pytest.raises(FileExistsError):
-        install_integration("github", tmp_path)
+        install_integration("echo", tmp_path)
 
 
 def test_install_integration_overwrites_with_force(tmp_path: Path) -> None:
-    install_integration("github", tmp_path)
-    target = tmp_path / "github.py"
+    install_integration("echo", tmp_path)
+    target = tmp_path / "echo.py"
     target.write_text("# modified by user\n")
-    install_integration("github", tmp_path, force=True)
+    install_integration("echo", tmp_path, force=True)
     # Force re-copy restored the SDK content.
-    assert "class GitHub" in target.read_text()
+    assert "async def say" in target.read_text()
 
 
 def test_manifest_validation_catches_missing_keys(

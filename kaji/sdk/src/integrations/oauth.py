@@ -10,13 +10,11 @@ https://developers.google.com/identity/protocols/oauth2/native-app:
     5. Persist them to disk at a user-controlled path.
     6. Refresh on expiry.
 
-This module ships with the SDK and is used by both the Gmail and Google
-Calendar integrations under :mod:`kaji.integrations.registry`.
+This module ships with the SDK for out-of-tree Google OAuth tools.
 
 What the SDK does NOT do: register a Google Cloud project for you. You
 must create one (free), enable the API you want, and obtain a client
-ID + client secret. Each integration's ``SETUP.md`` walks through this
-once.
+ID + client secret.
 """
 
 from __future__ import annotations

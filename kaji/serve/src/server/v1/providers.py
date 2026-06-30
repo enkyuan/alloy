@@ -1,17 +1,26 @@
 """Provider HTTP routes (Gemini and related)."""
 
 import logging
-from typing import Any, NoReturn
+from typing import Any, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kaji_serve.server.deps import get_current_supabase_user
 from kaji.runtime.providers.gemini import get_gemini_service
+from kaji.runtime.providers.errors import (
+    ServiceError,
+    service_error_to_detail,
+    service_error_to_http_status,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini", tags=["gemini"])
+
+MAX_PROMPT_CHARS = 20_000
+MAX_CHAT_MESSAGES = 128
+MAX_OUTPUT_TOKENS = 8_192
 
 
 def _raise_generation_http_error(detail: str, *, error: Exception) -> NoReturn:
@@ -22,28 +31,36 @@ def _raise_generation_http_error(detail: str, *, error: Exception) -> NoReturn:
     ) from error
 
 
+def _raise_service_http_error(detail: str, *, error: ServiceError) -> NoReturn:
+    logger.warning("%s: %s", detail, error, exc_info=True)
+    raise HTTPException(
+        status_code=service_error_to_http_status(error),
+        detail=service_error_to_detail(error, fallback=detail),
+    ) from error
+
+
 class GenerateRequest(BaseModel):
     """Request model for text generation."""
 
-    prompt: str
-    system_instruction: str | None = None
-    temperature: float = 0.7
-    max_tokens: int | None = None
+    prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
+    system_instruction: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=None, ge=1, le=MAX_OUTPUT_TOKENS)
 
 
 class ChatMessage(BaseModel):
     """Chat message model."""
 
-    role: str
-    content: str
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
 
 
 class ChatRequest(BaseModel):
     """Request model for chat completion."""
 
-    messages: list[ChatMessage]
-    system_instruction: str | None = None
-    temperature: float = 0.7
+    messages: list[ChatMessage] = Field(min_length=1, max_length=MAX_CHAT_MESSAGES)
+    system_instruction: str | None = Field(default=None, max_length=MAX_PROMPT_CHARS)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
 
 
 class GenerateResponse(BaseModel):
@@ -72,6 +89,8 @@ async def generate_text(
 
     except HTTPException:
         raise
+    except ServiceError as error:
+        _raise_service_http_error("Failed to generate text", error=error)
     except Exception as error:
         _raise_generation_http_error("Failed to generate text", error=error)
 
@@ -100,6 +119,8 @@ async def chat_completion(
 
     except HTTPException:
         raise
+    except ServiceError as error:
+        _raise_service_http_error("Failed to generate chat response", error=error)
     except Exception as error:
         _raise_generation_http_error(
             "Failed to generate chat response",
@@ -129,5 +150,7 @@ async def stream_generation(
 
     except HTTPException:
         raise
+    except ServiceError as error:
+        _raise_service_http_error("Failed to stream generation", error=error)
     except Exception as error:
         _raise_generation_http_error("Failed to stream generation", error=error)

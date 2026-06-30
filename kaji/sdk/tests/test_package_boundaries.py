@@ -130,6 +130,41 @@ def test_runtime_tools_do_not_import_legacy_tool_definition() -> None:
     )
 
 
+def test_sdk_does_not_ship_third_party_integration_registry() -> None:
+    """Third-party integration examples must not be packaged as SDK surface."""
+    registry_root = PACKAGE_ROOT / "integrations" / "registry"
+    forbidden = {"github", "gmail", "gcal"}
+    shipped = (
+        {
+            path.name
+            for path in registry_root.iterdir()
+            if path.is_dir() and path.name in forbidden
+        }
+        if registry_root.exists()
+        else set()
+    )
+
+    assert shipped == set(), (
+        "Third-party integration registry modules are shipped in the SDK: "
+        + ", ".join(sorted(shipped))
+    )
+
+
+def test_sdk_does_not_ship_legacy_tooldefinition_surface() -> None:
+    """Legacy ToolDefinition surfaces must not be packaged in the SDK."""
+    legacy_paths = [
+        PACKAGE_ROOT / "types" / "tool.py",
+        PACKAGE_ROOT / "modalities" / "voice" / "legacy",
+    ]
+    shipped = [
+        str(path.relative_to(PACKAGE_ROOT)) for path in legacy_paths if path.exists()
+    ]
+
+    assert shipped == [], (
+        "Legacy ToolDefinition surfaces are still packaged: " + ", ".join(shipped)
+    )
+
+
 def test_non_integration_tests_do_not_use_redis_event_bus() -> None:
     """Tests that do not opt in to Redis must use InMemoryEventBus.
 

@@ -60,9 +60,9 @@ integration's source files out of the registry bundled with the SDK,
 shadcn-style, so you own the copies and can edit them freely.
 
 ```bash
-kaji add github                       # writes ./integrations/github.py
-kaji add github --out ./custom/path   # custom destination
-kaji add github --force               # overwrite existing files
+kaji add echo                         # writes ./integrations/echo.py and echo.ts
+kaji add echo --out ./custom/path     # custom destination
+kaji add echo --force                 # overwrite existing files
 ```
 
 | flag | default | meaning |
@@ -71,16 +71,10 @@ kaji add github --force               # overwrite existing files
 | `--out` | `./integrations` | destination directory |
 | `--force` | off | overwrite existing files |
 
-After install, the CLI prints any setup steps (env var to set, OAuth
-scopes, optional `pip install` extras). Currently shipping:
+After install, the CLI prints any setup steps declared by the manifest.
+Currently shipping:
 
-- `github` -- read repos, issues, PRs via a personal access token.
-- `gmail` -- read-only Gmail access via OAuth 2.0 (gmail.readonly).
-- `gcal` -- read-only Google Calendar via OAuth 2.0 (calendar.readonly).
-
-The Google integrations bundle a `SETUP.md` walking through the
-one-time Google Cloud Console step. Both share the same OAuth client
-credentials (`GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`).
+- `echo` -- no-auth contract example with Python and TypeScript source files.
 
 ## list-integrations
 
