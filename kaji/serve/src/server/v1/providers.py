@@ -51,7 +51,7 @@ class GenerateRequest(BaseModel):
 class ChatMessage(BaseModel):
     """Chat message model."""
 
-    role: Literal["system", "user", "assistant", "tool"]
+    role: Literal["system", "user", "assistant", "tool", "model"]
     content: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
 
 
@@ -136,13 +136,21 @@ async def stream_generation(
     """Stream text generation using Gemini AI."""
     try:
         gemini = get_gemini_service()
+        stream = gemini.generate_streaming_response(
+            prompt=request.prompt,
+            system_instruction=request.system_instruction,
+            temperature=request.temperature,
+        )
+
+        try:
+            first_chunk = await anext(stream)
+        except StopAsyncIteration:
+            first_chunk = None
 
         async def generate():
-            async for chunk in gemini.generate_streaming_response(
-                prompt=request.prompt,
-                system_instruction=request.system_instruction,
-                temperature=request.temperature,
-            ):
+            if first_chunk is not None:
+                yield first_chunk
+            async for chunk in stream:
                 yield chunk
 
         logger.info("Started streaming generation for user %s", supabase_user["id"])

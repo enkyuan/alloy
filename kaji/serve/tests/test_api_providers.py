@@ -113,6 +113,28 @@ async def test_api_providers_chat_completion(
 
 
 @pytest.mark.asyncio
+async def test_api_providers_chat_accepts_gemini_model_role(
+    async_client: AsyncClient, mock_current_user, mock_gemini_service
+):
+    headers = {"Authorization": "Bearer token"}
+    payload = {
+        "messages": [
+            {"role": "user", "content": "Hi"},
+            {"role": "model", "content": "hello"},
+        ],
+    }
+    response = await async_client.post(
+        "/api/v1/gemini/chat", headers=headers, json=payload
+    )
+
+    assert response.status_code == 200
+    called_messages = mock_gemini_service.generate_chat_response.call_args.kwargs[
+        "messages"
+    ]
+    assert called_messages[1]["role"] == "model"
+
+
+@pytest.mark.asyncio
 async def test_api_providers_chat_rejects_invalid_role(
     async_client: AsyncClient, mock_current_user, mock_gemini_service
 ):
@@ -142,3 +164,27 @@ async def test_api_providers_generate_stream(
         combined = "".join(content)
         assert "Chunk 1" in combined
         assert "Chunk 2" in combined
+
+
+@pytest.mark.asyncio
+async def test_api_providers_stream_maps_error_before_headers(
+    async_client: AsyncClient, mock_current_user, mock_gemini_service
+):
+    async def error_stream(*args, **kwargs):
+        raise ServiceRateLimitError(
+            service="gemini",
+            action="stream",
+            message="rate limited",
+        )
+        yield ""
+
+    mock_gemini_service.generate_streaming_response = error_stream
+
+    response = await async_client.post(
+        "/api/v1/gemini/stream",
+        headers={"Authorization": "Bearer token"},
+        json={"prompt": "Stream me"},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "gemini rate limit reached"
