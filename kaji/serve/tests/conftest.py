@@ -71,7 +71,10 @@ def db_engine():
             conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB_NAME}"))
             conn.execute(text(f"CREATE DATABASE {TEST_DB_NAME}"))
     except Exception as e:
-        print(f"Error initializing test database: {e}")
+        pytest.skip(
+            "Postgres test database unavailable at "
+            f"{ADMIN_DATABASE_URL}: {e}"
+        )
     finally:
         admin_engine.dispose()
 
@@ -115,8 +118,26 @@ async def session_fixture(async_db_engine) -> AsyncGenerator[AsyncSession, None]
 
 
 @pytest.fixture(name="async_client")
-async def async_client_fixture(session) -> AsyncGenerator[AsyncClient, None]:
-    """Provide an async client with overridden dependencies."""
+async def async_client_fixture() -> AsyncGenerator[AsyncClient, None]:
+    """Provide a no-DB async client for routes that do not touch Postgres."""
+    fake_redis = fakeredis.aioredis.FakeRedis()
+
+    async def override_get_redis():
+        return fake_redis
+
+    app.dependency_overrides[get_redis_client] = override_get_redis
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture(name="db_async_client")
+async def db_async_client_fixture(session) -> AsyncGenerator[AsyncClient, None]:
+    """Provide an async client with Postgres dependency override."""
     fake_redis = fakeredis.aioredis.FakeRedis()
 
     async def override_get_redis():

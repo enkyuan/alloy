@@ -38,13 +38,9 @@ export OPENAI_API_KEY=sk-...
 ```ts
 import {
   AgentBuilder,
-  EventBus,
-  InMemoryEventStore,
   OpenAIProvider,
   Integration,
   tool,
-  KajiEvent,
-  EventType,
 } from "@kaji/sdk";
 import { z } from "zod";
 
@@ -61,21 +57,16 @@ class WeatherIntegration extends Integration {
   );
 }
 
-const store = new InMemoryEventStore();
-const bus = new EventBus();
 const runtime = new AgentBuilder()
   .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
   .integration(new WeatherIntegration())
   .systemPrompt("You are a weather assistant.")
-  .build({ bus, store });
+  .build();
 
-await store.append(
-  KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
-);
-await runtime.send("s1", "Weather in Seattle?");
+const result = await runtime.turn("Weather in Seattle?");
+console.log(result.text);
 
-const events = await store.getEvents("s1");
-for (const e of events) {
+for (const e of result.events) {
   console.log(e.type, "content" in e ? e.content : "delta" in e ? e.delta : "");
 }
 ```
@@ -85,6 +76,64 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
+
+## Prove it with a model
+
+OpenAI with `gpt-5.4-mini` is the recommended first live check because it is
+cost-effective and exercises the SDK's Chat Completions tool path.
+
+```bash
+cd kaji/ts
+bun run test:quickstart
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  bun run test:integration tests/integration/openai-tools.test.ts
+```
+
+The live test registers a read-only probe tool, verifies the model calls it,
+and verifies the runtime emits final assistant text using the tool result. It
+skips automatically when `OPENAI_API_KEY` is absent. After OpenAI passes, test
+providers in this order: Anthropic, the Gemini OpenAI-compatible factory, then
+Kimi/OpenRouter. The TS Kimi and Gemini paths are OpenAI-compatible factories,
+not native provider implementations.
+
+For the cross-SDK release gate, run from the repository root:
+
+```bash
+bash kaji/scripts/live-openai-tool-loop.sh
+KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
+It is not a provider-readiness signal. With `KAJI_REQUIRE_LIVE_KEYS=1`, the
+same no-key state fails loudly. A release cannot be called live-ready until this
+command exits with `PASS: OpenAI live tool-loop readiness verified` while
+`OPENAI_API_KEY` is set:
+
+```bash
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+## Stability tiers
+
+- **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
+  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  event bus/store are the beta-candidate embedded-agent surface.
+- **Experimental Python-only:** Redis realtime/history, voice/TTS,
+  `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
+  modalities exist in Python but are not production-hardened.
+- **TS not ported:** Redis realtime, voice/TTS, and RAG are not implemented in
+  TypeScript. TS Gemini/Kimi remain OpenAI-compatible factories rather than
+  native provider implementations.
+
+See [`kaji/RELEASE_MATRIX.md`](../RELEASE_MATRIX.md) for the cross-SDK release
+matrix and the exact distinction between stable core, experimental Python-only
+surfaces, and TypeScript surfaces that are not ported.
+
+The beta promise is the core agent loop. Redis realtime/history, voice/TTS,
+`DocumentRAG`, native Gemini/Kimi, and tool retrieval remain outside the beta
+gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
+Gemini and Kimi are OpenAI-compatible factories in TypeScript, not native
+provider implementations.
 
 ## Approval handler
 
@@ -157,7 +206,7 @@ shared with the Python SDK.
 | Tool registry + planner + policy | Yes | Yes |
 | `AgentBuilder` + integrations | Yes | Yes |
 | OpenAI / Anthropic providers | Yes | Yes |
-| Kimi / Gemini providers | Yes | No |
+| Kimi / Gemini providers | Yes | Yes (OpenAI-compatible factories) |
 | Document RAG / vector store | Yes (non-MVP) | No |
 | Tool retriever | Yes (non-MVP) | No |
 | Text modality adapter | Yes (non-MVP) | No |
@@ -178,6 +227,8 @@ Live provider tests are opt-in and skip automatically when keys are absent:
 
 ```bash
 OPENAI_API_KEY=... bun run test:integration
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  bun run test:integration tests/integration/openai-tools.test.ts
 ANTHROPIC_API_KEY=... bun run test:integration
 ```
 

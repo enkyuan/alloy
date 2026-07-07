@@ -35,13 +35,6 @@ class ProviderToolSpec(TypedDict):
     parameters: Dict[str, Any]
 
 
-class ModelResponseChunk(BaseModel):
-    """A generic output chunk from an LLM provider."""
-
-    delta: str = ""
-    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
-
-
 class ModelMetadata(BaseModel):
     provider_name: str
     model_name: str
@@ -51,6 +44,15 @@ class TokenMetrics(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+
+
+class ModelResponseChunk(BaseModel):
+    """A generic output chunk from an LLM provider."""
+
+    delta: str = ""
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    metrics: Optional[TokenMetrics] = None
+    cost_usd: Optional[float] = None
 
 
 class GenerateResponse(BaseModel):

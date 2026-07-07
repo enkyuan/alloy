@@ -83,10 +83,7 @@ class Bridge:
         return "unknown"
 
     def authorize(self, *node_ids) -> "Bridge":
-        """Restrict bridge access to specific nodes.
-
-        TODO (AD): What does this mean? Every bridge has a node right?
-        """
+        """Restrict bridge access to specific nodes."""
         self.authorized_nodes = set(node_ids)
         return self
 
@@ -336,10 +333,8 @@ class Bridge:
             self.active_route_tasks.clear()
             logger.info("Bridge %s: All route tasks cancelled", self.node_id)
 
-    # TODO: Do we need this if we are doing the filtering anyway on each event?
     def can_handle(self, event: Any) -> bool:
         """Check if this bridge can handle the event type."""
-        # TODO: This is a very expensive check (maybe?). Just feels too heavy.
         return len(self._find_matching_routes(event)) > 0
 
     def _find_matching_routes(self, event: EventInstance) -> List[RouteHandler]:

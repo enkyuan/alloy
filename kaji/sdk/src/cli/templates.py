@@ -15,19 +15,15 @@ import kaji
 
 
 async def main() -> None:
-    bus = kaji.InMemoryEventBus()
-    store = kaji.InMemoryEventStore()
     provider_name = os.environ.get("KAJI_MODEL_PROVIDER", {provider!r})
     runtime = (
         kaji.AgentBuilder()
         .provider(kaji.get_provider(provider_name))
         .system_prompt("You are a helpful assistant.")
-        .build(bus=bus, store=store)
+        .build()
     )
-    await store.append(kaji.UserMessage(session_id="s1", content="Hello!"))
-    await runtime.run_turn("s1")
-    for e in await store.get_events("s1"):
-        print(e.type, getattr(e, "content", getattr(e, "delta", "")))
+    result = await runtime.turn("Say hello.")
+    print(result.text)
 
 
 if __name__ == "__main__":

@@ -9,20 +9,32 @@ import { parseYaml } from "../utils/yaml.js";
 // Types
 // ---------------------------------------------------------------------------
 
+type PrimitiveType = "string" | "integer" | "number" | "boolean";
+type ParamLocation = "path" | "query";
+
+interface OpenApiParameter {
+  name: string;
+  in: string;
+  required?: boolean;
+  description?: string;
+  schema?: { type?: string };
+}
+
 interface OpenApiOperation {
   operationId?: string;
   summary?: string;
   description?: string;
   tags?: string[];
-  parameters?: Array<{
-    name: string;
-    in: string;
-    required?: boolean;
-  }>;
+  parameters?: OpenApiParameter[];
+}
+
+interface OpenApiPathItem {
+  parameters?: OpenApiParameter[];
+  [method: string]: OpenApiOperation | OpenApiParameter[] | undefined;
 }
 
 interface OpenApiSpec {
-  paths?: Record<string, Record<string, OpenApiOperation>>;
+  paths?: Record<string, OpenApiPathItem>;
   servers?: Array<{ url: string }>;
   info?: { title?: string };
 }
@@ -57,8 +69,53 @@ interface ParsedOperation {
   path: string;
   summary: string;
   tag: string | undefined;
-  pathParams: string[];
+  params: ParamInfo[];
   risk: "read" | "write";
+}
+
+interface ParamInfo {
+  name: string;
+  location: ParamLocation;
+  required: boolean;
+  type: PrimitiveType;
+  description: string;
+}
+
+function normalizePrimitiveType(type: string | undefined): PrimitiveType {
+  if (type === "integer" || type === "number" || type === "boolean") return type;
+  return "string";
+}
+
+function parseParameters(
+  path: string,
+  pathItemParams: OpenApiParameter[] | undefined,
+  operationParams: OpenApiParameter[] | undefined,
+): ParamInfo[] {
+  const byKey = new Map<string, ParamInfo>();
+  for (const p of [...(pathItemParams ?? []), ...(operationParams ?? [])]) {
+    if (p.in !== "path" && p.in !== "query") continue;
+    const location = p.in;
+    byKey.set(`${location}:${p.name}`, {
+      name: p.name,
+      location,
+      required: location === "path" || p.required === true,
+      type: normalizePrimitiveType(p.schema?.type),
+      description: p.description ?? `${p.name} ${location} param`,
+    });
+  }
+  for (const name of extractPathParams(path)) {
+    const key = `path:${name}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        name,
+        location: "path",
+        required: true,
+        type: "string",
+        description: `${name} path param`,
+      });
+    }
+  }
+  return [...byKey.values()];
 }
 
 function parseSpec(spec: OpenApiSpec): ParsedOperation[] {
@@ -67,15 +124,16 @@ function parseSpec(spec: OpenApiSpec): ParsedOperation[] {
 
   for (const [path, methods] of Object.entries(paths)) {
     if (!methods || typeof methods !== "object") continue;
+    const pathItemParams = Array.isArray(methods.parameters) ? methods.parameters : undefined;
     for (const method of HTTP_METHODS) {
-      const op = (methods as Record<string, OpenApiOperation>)[method];
-      if (!op || !op.operationId) continue;
+      const op = methods[method] as OpenApiOperation | undefined;
+      if (!op || Array.isArray(op) || !op.operationId) continue;
 
       const operationId = op.operationId;
       const fnName = toSnakeCase(operationId);
       const summary = op.summary ?? op.description ?? operationId;
       const tag = op.tags?.[0];
-      const pathParams = extractPathParams(path);
+      const params = parseParameters(path, pathItemParams, op.parameters);
       const risk: "read" | "write" = method === "get" ? "read" : "write";
 
       ops.push({
@@ -85,7 +143,7 @@ function parseSpec(spec: OpenApiSpec): ParsedOperation[] {
         path,
         summary,
         tag,
-        pathParams,
+        params,
         risk,
       });
     }
@@ -107,15 +165,27 @@ function inferEnvVarName(spec: OpenApiSpec): string {
   return toSnakeCase(title).toUpperCase() + "_API_KEY";
 }
 
+function tsPropertyKey(name: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(name) ? name : JSON.stringify(name);
+}
+
+function pythonTuple(names: string[]): string {
+  return `(${names.map((name) => JSON.stringify(name)).join(", ")}${names.length === 1 ? "," : ""})`;
+}
+
 function generateToolsArray(ops: ParsedOperation[], prefix: string): string {
   const entries = ops.map((op) => {
     const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
-    const props = op.pathParams
-      .map((p) => `        ${p}: { type: "string", description: "${p} path param" }`)
+    const props = op.params
+      .map(
+        (p) =>
+          `        ${tsPropertyKey(p.name)}: { type: "${p.type}", description: ${JSON.stringify(p.description)} }`,
+      )
       .join(",\n");
+    const requiredParams = op.params.filter((p) => p.required).map((p) => p.name);
     const required =
-      op.pathParams.length > 0
-        ? `\n      required: [${op.pathParams.map((p) => `"${p}"`).join(", ")}],`
+      requiredParams.length > 0
+        ? `\n      required: [${requiredParams.map((p) => JSON.stringify(p)).join(", ")}],`
         : "";
     const tag = op.tag ? `\n    tags: ["${op.tag}"],` : "";
 
@@ -125,7 +195,7 @@ function generateToolsArray(ops: ParsedOperation[], prefix: string): string {
     parameters: {
       type: "object",
       properties: {
-${props || "        // no path params"}
+${props || "        // no params"}
       },${required}
     },
     risk: "${op.risk}",${tag}
@@ -139,18 +209,42 @@ function generateHandlers(ops: ParsedOperation[], _baseUrl: string, prefix: stri
   return ops
     .map((op) => {
       const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
-      // Build URL: replace {param} with template literal ${args.param}
-      const urlPath = op.path.replace(/\{([^}]+)\}/g, "${args.$1}");
+      const urlPath = op.path.replace(
+        /\{([^}]+)\}/g,
+        (_match, paramName: string) =>
+          `\${encodeURIComponent(String(args[${JSON.stringify(paramName)}]))}`,
+      );
       const hasBody = op.method !== "GET" && op.method !== "HEAD" && op.method !== "OPTIONS";
-      const bodyLines = hasBody ? `\n    body: JSON.stringify(args),` : "";
+      const queryParams = op.params.filter((p) => p.location === "query");
+      const queryLines = queryParams
+        .map(
+          (p) => `  if (args[${JSON.stringify(p.name)}] !== undefined) {
+    url.searchParams.set(${JSON.stringify(p.name)}, String(args[${JSON.stringify(p.name)}]));
+  }`,
+        )
+        .join("\n");
+      const paramNames = op.params.map((p) => p.name);
+      const bodySetup =
+        hasBody && paramNames.length > 0
+          ? `  const bodyKeys = new Set([${paramNames.map((p) => JSON.stringify(p)).join(", ")}]);
+  const body = Object.fromEntries(Object.entries(args).filter(([k]) => !bodyKeys.has(k)));
+`
+          : "";
+      const bodyLines = hasBody
+        ? `\n    body: JSON.stringify(${paramNames.length > 0 ? "body" : "args"}),`
+        : "";
       const contentTypeHeader = hasBody ? `, "Content-Type": "application/json"` : "";
 
       return `export async function ${name}(args: Record<string, unknown>): Promise<unknown> {
   const url = new URL(\`\${BASE_URL}${urlPath}\`);
+${queryLines ? `${queryLines}\n` : ""}${bodySetup}
   const r = await fetch(url.toString(), {
     method: "${op.method}",
     headers: { Authorization: \`Bearer \${API_KEY}\`${contentTypeHeader} },${bodyLines}
   });
+  if (!r.ok) {
+    throw new Error(\`${op.method} \${url.pathname} failed: \${r.status} \${await r.text()}\`);
+  }
   return r.json();
 }`;
     })
@@ -184,12 +278,16 @@ function generatePythonFile(spec: OpenApiSpec, ops: ParsedOperation[], prefix: s
   const toolEntries = ops
     .map((op) => {
       const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
-      const props = op.pathParams
-        .map((p) => `            "${p}": {"type": "string", "description": "${p} path param"}`)
+      const props = op.params
+        .map(
+          (p) =>
+            `            ${JSON.stringify(p.name)}: {"type": "${p.type}", "description": ${JSON.stringify(p.description)}}`,
+        )
         .join(",\n");
+      const requiredParams = op.params.filter((p) => p.required).map((p) => p.name);
       const required =
-        op.pathParams.length > 0
-          ? `, "required": [${op.pathParams.map((p) => `"${p}"`).join(", ")}]`
+        requiredParams.length > 0
+          ? `, "required": [${requiredParams.map((p) => JSON.stringify(p)).join(", ")}]`
           : "";
       return `    {
         "name": "${name}",
@@ -197,7 +295,7 @@ function generatePythonFile(spec: OpenApiSpec, ops: ParsedOperation[], prefix: s
         "parameters": {
             "type": "object",
             "properties": {
-${props || "                # no path params"}
+${props || "                # no params"}
             }${required}
         },
         "risk": "${op.risk}"
@@ -211,12 +309,25 @@ ${props || "                # no path params"}
       // Replace {param} with {args['param']} for Python f-string interpolation
       const urlPath = op.path.replace(/\{([^}]+)\}/g, "{args['$1']}");
       const hasBody = op.method !== "GET" && op.method !== "HEAD" && op.method !== "OPTIONS";
-      const jsonArg = hasBody ? ", json=args" : "";
+      const queryParams = op.params.filter((p) => p.location === "query").map((p) => p.name);
+      const allParams = op.params.map((p) => p.name);
+      const paramsLine =
+        queryParams.length > 0
+          ? `    params = {k: args[k] for k in ${pythonTuple(queryParams)} if k in args}\n`
+          : "";
+      const paramsArg = queryParams.length > 0 ? ", params=params" : "";
+      const bodyLine =
+        hasBody && allParams.length > 0
+          ? `    body = {k: v for k, v in args.items() if k not in ${pythonTuple(allParams)}}\n`
+          : "";
+      const jsonArg = hasBody ? `, json=${allParams.length > 0 ? "body" : "args"}` : "";
 
       return `async def ${name}(args: dict) -> dict:
     url = f"{BASE_URL}${urlPath}"
+${paramsLine}${bodyLine}
     async with httpx.AsyncClient() as c:
-        r = await c.request("${op.method}", url, headers={"Authorization": f"Bearer {API_KEY}"}${jsonArg})
+        r = await c.request("${op.method}", url, headers={"Authorization": f"Bearer {API_KEY}"}${paramsArg}${jsonArg})
+        r.raise_for_status()
         return r.json()`;
     })
     .join("\n\n");

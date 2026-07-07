@@ -10,24 +10,39 @@ import kaji
 
 
 async def main() -> None:
-    bus = kaji.InMemoryEventBus()
-    store = kaji.InMemoryEventStore()
     provider_name = os.environ.get("KAJI_MODEL_PROVIDER", ${JSON.stringify(provider)})
     runtime = (
         kaji.AgentBuilder()
         .provider(kaji.get_provider(provider_name))
         .system_prompt("You are a helpful assistant.")
-        .build(bus=bus, store=store)
+        .build()
     )
-    await store.append(kaji.UserMessage(session_id="s1", content="Hello!"))
-    await runtime.run_turn("s1")
-    for e in await store.get_events("s1"):
-        print(e.type, getattr(e, "content", getattr(e, "delta", "")))
+    result = await runtime.turn("Say hello.")
+    print(result.text)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 `;
+}
+
+const PYTHON_EXTRAS: Record<string, string> = {
+  openai: "kaji[openai]",
+  anthropic: "kaji[anthropic]",
+  gemini: "kaji[gemini]",
+  kimi: "kaji",
+};
+
+function resolvePythonRequirement(provider: string): string {
+  const requirement = PYTHON_EXTRAS[provider];
+  if (requirement) return requirement;
+  throw new Error(
+    `Unknown provider '${provider}'. Supported: ${Object.keys(PYTHON_EXTRAS).join(", ")}.`,
+  );
+}
+
+export function pyRequirementsTemplate(provider: string): string {
+  return `${resolvePythonRequirement(provider)}>=0.1.0\n`;
 }
 
 export function pyEnvTemplate(provider: string): string {

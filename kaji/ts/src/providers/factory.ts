@@ -1,13 +1,13 @@
 /**
  * Function-style provider factories.
  *
- * Convenience wrappers so callers can write `openai("gpt-4o")` instead of
- * `new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY!, model: "gpt-4o" })`.
+ * Convenience wrappers so callers can write `openai("gpt-5.4-mini")` instead of
+ * `new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY!, model: "gpt-5.4-mini" })`.
  * Reads the conventional environment variable when no apiKey is given.
  *
  *   import { openai, anthropic, generateText } from "@kaji/sdk";
  *   const { text } = await generateText({
- *     provider: openai("gpt-4o"),
+ *     provider: openai("gpt-5.4-mini"),
  *     messages: [{ role: "user", content: "Hello" }],
  *   });
  */
@@ -33,16 +33,28 @@ function resolveOptions<TOpts extends { apiKey: string; model?: string }>(
   return { ...defaults, apiKey, ...arg } as TOpts;
 }
 
+/** @internal */
+export function resolveOpenAIOptions(
+  arg?: ModelOrOptions<OpenAIProviderOptions>,
+): OpenAIProviderOptions {
+  return resolveOptions<OpenAIProviderOptions>("OPENAI_API_KEY", {}, arg);
+}
+
 /** Create an OpenAI provider. Reads `OPENAI_API_KEY` from the environment when no `apiKey` is passed. */
 export function openai(arg?: ModelOrOptions<OpenAIProviderOptions>): OpenAIProvider {
-  return new OpenAIProvider(resolveOptions<OpenAIProviderOptions>("OPENAI_API_KEY", {}, arg));
+  return new OpenAIProvider(resolveOpenAIOptions(arg));
+}
+
+/** @internal */
+export function resolveAnthropicOptions(
+  arg?: ModelOrOptions<AnthropicProviderOptions>,
+): AnthropicProviderOptions {
+  return resolveOptions<AnthropicProviderOptions>("ANTHROPIC_API_KEY", {}, arg);
 }
 
 /** Create an Anthropic provider. Reads `ANTHROPIC_API_KEY` from the environment when no `apiKey` is passed. */
 export function anthropic(arg?: ModelOrOptions<AnthropicProviderOptions>): AnthropicProvider {
-  return new AnthropicProvider(
-    resolveOptions<AnthropicProviderOptions>("ANTHROPIC_API_KEY", {}, arg),
-  );
+  return new AnthropicProvider(resolveAnthropicOptions(arg));
 }
 
 /** Optional OpenRouter-specific options for routing and attribution. */
@@ -62,7 +74,7 @@ function mergeOpenRouterHeaders(
   httpReferer: string | undefined,
   appTitle: string | undefined,
 ): Record<string, string> | undefined {
-  const merged: Record<string, string> = { ...(base ?? {}) };
+  const merged: Record<string, string> = { ...base };
   if (httpReferer) merged["HTTP-Referer"] = httpReferer;
   if (appTitle) merged["X-Title"] = appTitle;
   return Object.keys(merged).length > 0 ? merged : undefined;
@@ -77,17 +89,24 @@ function mergeOpenRouterHeaders(
  *   const p = openrouter("anthropic/claude-3.5-sonnet");
  *   const p = openrouter({ model: "meta-llama/llama-3.1-70b-instruct", appTitle: "My agent" });
  */
-export function openrouter(arg?: string | OpenRouterFactoryOptions): OpenAIProvider {
+/** @internal */
+export function resolveOpenRouterOptions(
+  arg?: string | OpenRouterFactoryOptions,
+): OpenAIProviderOptions {
   const opts: OpenRouterFactoryOptions = typeof arg === "string" ? { model: arg } : (arg ?? {});
   const apiKey = opts.apiKey ?? process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
-  return new OpenAIProvider({
+  return {
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
     model: opts.model,
     temperature: opts.temperature,
     maxTokens: opts.maxTokens,
     defaultHeaders: mergeOpenRouterHeaders(opts.defaultHeaders, opts.httpReferer, opts.appTitle),
-  });
+  };
+}
+
+export function openrouter(arg?: string | OpenRouterFactoryOptions): OpenAIProvider {
+  return new OpenAIProvider(resolveOpenRouterOptions(arg));
 }
 
 /**
@@ -97,9 +116,14 @@ export function openrouter(arg?: string | OpenRouterFactoryOptions): OpenAIProvi
  *   const p = kimi();
  *   const p = kimi("moonshotai/kimi-k2.6");
  */
+/** @internal */
+export function resolveKimiOptions(arg?: string | OpenRouterFactoryOptions): OpenAIProviderOptions {
+  if (typeof arg === "string") return resolveOpenRouterOptions(arg);
+  return resolveOpenRouterOptions({ model: DEFAULT_KIMI_MODEL, ...arg });
+}
+
 export function kimi(arg?: string | OpenRouterFactoryOptions): OpenAIProvider {
-  if (typeof arg === "string") return openrouter(arg);
-  return openrouter({ model: DEFAULT_KIMI_MODEL, ...(arg ?? {}) });
+  return new OpenAIProvider(resolveKimiOptions(arg));
 }
 
 /** Optional Gemini factory options. Mirrors the OpenAI/anthropic shape. */
@@ -123,15 +147,20 @@ export interface GeminiFactoryOptions extends Omit<OpenAIProviderOptions, "apiKe
  * for those, instantiate `@google/genai` directly and adapt the response to
  * `ModelProvider`.
  */
-export function gemini(arg?: string | GeminiFactoryOptions): OpenAIProvider {
+/** @internal */
+export function resolveGeminiOptions(arg?: string | GeminiFactoryOptions): OpenAIProviderOptions {
   const opts: GeminiFactoryOptions = typeof arg === "string" ? { model: arg } : (arg ?? {});
   const apiKey = opts.apiKey ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
-  return new OpenAIProvider({
+  return {
     apiKey,
     baseURL: GEMINI_OPENAI_BASE_URL,
     model: opts.model ?? DEFAULT_GEMINI_MODEL,
     temperature: opts.temperature,
     maxTokens: opts.maxTokens,
     defaultHeaders: opts.defaultHeaders,
-  });
+  };
+}
+
+export function gemini(arg?: string | GeminiFactoryOptions): OpenAIProvider {
+  return new OpenAIProvider(resolveGeminiOptions(arg));
 }

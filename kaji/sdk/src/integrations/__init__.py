@@ -13,7 +13,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 
 # Errors are deliberately specific so the CLI can produce useful messages.
@@ -54,6 +54,7 @@ class Manifest:
     files: tuple[str, ...]
     tools: tuple[ManifestTool, ...]
     extras: tuple[str, ...]
+    peer_deps: Mapping[str, str]
     # Absolute path to the manifest file on disk, so callers can resolve
     # ``files`` entries relative to it.
     path: Path
@@ -105,6 +106,19 @@ def _validate_manifest(data: Any, path: Path) -> None:
         raise ManifestError(f"{path}: 'files' must be a non-empty list.")
     if not isinstance(data["tools"], list) or not data["tools"]:
         raise ManifestError(f"{path}: 'tools' must be a non-empty list.")
+    if "extras" in data and (
+        not isinstance(data["extras"], list)
+        or any(not isinstance(item, str) for item in data["extras"])
+    ):
+        raise ManifestError(f"{path}: 'extras' must be a list of strings.")
+    if "peerDeps" in data and (
+        not isinstance(data["peerDeps"], dict)
+        or any(
+            not isinstance(pkg, str) or not isinstance(version, str)
+            for pkg, version in data["peerDeps"].items()
+        )
+    ):
+        raise ManifestError(f"{path}: 'peerDeps' must be an object of string versions.")
     auth = data["auth"]
     if not isinstance(auth, dict) or "kind" not in auth:
         raise ManifestError(f"{path}: 'auth.kind' is required.")
@@ -158,6 +172,7 @@ def load_manifest(name: str) -> Manifest:
             for t in data["tools"]
         ),
         extras=tuple(data.get("extras") or ()),
+        peer_deps=dict(data.get("peerDeps") or {}),
         path=manifest_path,
     )
 

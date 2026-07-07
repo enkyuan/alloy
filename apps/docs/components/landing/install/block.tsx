@@ -165,8 +165,9 @@ export function InstallBlock() {
                       className="text-[13px] truncate"
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
-                      <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">kaji mcp</span>
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        MCP setup coming soon
+                      </span>
                     </code>
                     <McpDropdown
                       copied={copied}

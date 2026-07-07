@@ -1,4 +1,4 @@
-"""Provider HTTP routes (Gemini and related)."""
+"""Gemini convenience HTTP routes for the reference service."""
 
 import logging
 from typing import Any, Literal, NoReturn

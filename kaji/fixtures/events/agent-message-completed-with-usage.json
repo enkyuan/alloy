@@ -1,0 +1,10 @@
+{
+  "type": "agent.message.completed",
+  "session_id": "sess-usage",
+  "content": "The answer is ready.",
+  "tokens": {
+    "input": 12,
+    "output": 7
+  },
+  "cost_usd": 0.0000405
+}

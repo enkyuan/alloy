@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # OpenAI (LLM provider + TTS)
     OPENAI_API_KEY: Optional[str] = None
-    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_MODEL: str = "gpt-5.4-mini"
     OPENAI_BASE_URL: Optional[str] = None
 
     # Anthropic

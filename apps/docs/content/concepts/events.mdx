@@ -4,8 +4,8 @@ description: All kaji session state derives from an append-only event log. Wire-
 ---
 
 Session state in kaji is a deterministic projection of an append-only
-event log. The runtime appends events as you call `send`; `replaySession`
-reads them back into a usable `SessionState`.
+event log. The runtime appends events as you call `turn()` or the lower-level
+`send`; `replaySession` reads them back into a usable `SessionState`.
 
 You usually don't emit events yourself -- the runtime does. Reach into
 the log when you want to inspect, persist, or replay a session.
@@ -19,7 +19,7 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 | ---------------------------- | --------------------------------- |
 | `session.created`            | First event in a new session      |
 | `session.closed`             | Session was closed                |
-| `user.message`               | Caller (via `runtime.send`)       |
+| `user.message`               | Caller (via `runtime.turn` or `runtime.send`) |
 | `user.audio.chunk`           | Audio input from user             |
 | `transcript.partial`         | Partial STT transcript available  |
 | `transcript.final`           | Final STT transcript completed    |

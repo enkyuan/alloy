@@ -13,8 +13,9 @@ from kaji.infra.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
+from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk, TokenMetrics
 from kaji.runtime.tools.registry import ToolSpec
 from tests.helpers.mock_provider import MockProvider as _RegistryMockProvider
 
@@ -90,6 +91,64 @@ async def test_agent_runtime_basic_turn():
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_emits_streamed_usage_on_completed_message():
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+    planner = ToolPlanner(executor=mock_executor)
+
+    class TelemetryProvider(ModelProvider):
+        async def generate(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            response_format: Dict[str, Any] | None = None,
+            cancellation_token: Any | None = None,
+        ) -> GenerateResponse:
+            return GenerateResponse(text="")
+
+        async def generate_stream(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            cancellation_token: Any | None = None,
+        ) -> AsyncGenerator[ModelResponseChunk, None]:
+            yield ModelResponseChunk(delta="hello")
+            yield ModelResponseChunk(
+                metrics=TokenMetrics(
+                    prompt_tokens=3,
+                    completion_tokens=2,
+                    total_tokens=5,
+                ),
+                cost_usd=0.00001125,
+            )
+
+    runtime = AgentRuntime(
+        bus=bus,
+        store=store,
+        provider=TelemetryProvider(),
+        planner=planner,
+    )
+
+    await store.append(UserMessage(session_id="usage-1", content="Hi"))
+    await runtime.run_turn("usage-1")
+
+    events = await store.get_events("usage-1")
+    completed = next(e for e in events if e.type == EventType.AGENT_MESSAGE_COMPLETED)
+
+    assert completed.content == "hello"
+    assert completed.tokens is not None
+    assert completed.tokens.input == 3
+    assert completed.tokens.output == 2
+    assert completed.cost_usd == 0.00001125
+
+
+@pytest.mark.asyncio
 async def test_agent_runtime_tool_loop_end_to_end():
     """A full request -> execute -> continue loop using MockProvider.
 
@@ -137,6 +196,70 @@ async def test_agent_runtime_tool_loop_end_to_end():
     completed = [e for e in events if e.type == EventType.AGENT_MESSAGE_COMPLETED]
     assert len(completed) == 1
     assert completed[0].content == "mock"
+
+
+@pytest.mark.asyncio
+async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+
+    async def executor(name: str, args: Dict[str, Any]) -> Any:
+        return {"ok": True}
+
+    class AlwaysToolProvider(ModelProvider):
+        async def generate(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            response_format: Dict[str, Any] | None = None,
+            cancellation_token: Any | None = None,
+        ) -> GenerateResponse:
+            return GenerateResponse(text="")
+
+        async def generate_stream(
+            self,
+            messages: List[Dict[str, Any]],
+            tools: Optional[List[Dict[str, Any]]] = None,
+            system_instruction: str | None = None,
+            temperature: float = 0.7,
+            max_tokens: int | None = None,
+            cancellation_token: Any | None = None,
+        ) -> AsyncGenerator[ModelResponseChunk, None]:
+            yield ModelResponseChunk(
+                delta="",
+                tool_calls=[{"id": "loop-1", "name": "lookup", "arguments": {}}],
+            )
+
+    runtime = AgentRuntime(
+        bus=bus,
+        store=store,
+        provider=AlwaysToolProvider(),
+        planner=ToolPlanner(executor=executor),
+        tools=[
+            ToolSpec(
+                name="lookup",
+                description="Look something up.",
+                parameters={"type": "object", "properties": {}, "required": []},
+            )
+        ],
+        strategy=AgentStrategy(max_iterations=2),
+    )
+
+    await store.append(UserMessage(session_id="exhaust-1", content="Use a tool"))
+    await runtime.run_turn("exhaust-1")
+
+    events = await store.get_events("exhaust-1")
+    exhausted = [e for e in events if e.type == EventType.AGENT_TURN_EXHAUSTED]
+
+    assert len(exhausted) == 1
+    assert exhausted[0].max_iterations == 2
+    assert exhausted[0].pending_tool_calls == [
+        {"id": "loop-1", "name": "lookup", "arguments": {}}
+    ]
+    assert exhausted[0].reason == "max_iterations"
 
 
 @pytest.mark.asyncio

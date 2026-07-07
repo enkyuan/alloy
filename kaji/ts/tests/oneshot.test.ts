@@ -82,11 +82,11 @@ describe("streamText", () => {
 });
 
 describe("provider factories", () => {
-  it("openai('gpt-4o') builds an OpenAIProvider with that model", () => {
+  it("openai('gpt-5.4-mini') builds an OpenAIProvider with that model", () => {
     const prev = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "test-key";
     try {
-      const p = openai("gpt-4o");
+      const p = openai("gpt-5.4-mini");
       expect(p).toBeInstanceOf(OpenAIProvider);
     } finally {
       if (prev === undefined) delete process.env.OPENAI_API_KEY;
@@ -121,7 +121,7 @@ describe("provider factories", () => {
     const prev = process.env.OPENAI_API_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
-      expect(() => openai("gpt-4o")).toThrow(/not configured/i);
+      expect(() => openai("gpt-5.4-mini")).toThrow(/not configured/i);
     } finally {
       if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     }
@@ -176,7 +176,7 @@ describe("openrouter factory", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
     try {
       const p = openrouter({
-        model: "openai/gpt-4o",
+        model: "openai/gpt-5.4-mini",
         httpReferer: "https://example.com",
         appTitle: "My Agent",
       });

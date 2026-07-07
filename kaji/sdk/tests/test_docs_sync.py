@@ -12,6 +12,7 @@ Scope of "user-facing docs":
 - ``kaji/sdk/README.md`` -- the python SDK README
 - ``kaji/serve/README.md`` -- the reference-service README
 - ``kaji/ts/README.md`` -- the TypeScript SDK README
+- ``docs/MVP.md`` -- the SDK MVP contract and readiness snapshot
 - ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
 
 Plan/spec files under ``docs/superpowers/`` are excluded -- those are
@@ -45,6 +46,7 @@ def _user_facing_docs() -> list[Path]:
         REPO_ROOT / "kaji" / "sdk" / "README.md",
         REPO_ROOT / "kaji" / "serve" / "README.md",
         REPO_ROOT / "kaji" / "ts" / "README.md",
+        REPO_ROOT / "docs" / "MVP.md",
     ]
     paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
     return paths
@@ -144,3 +146,36 @@ def test_user_facing_docs_reference_existing_relative_markdown_links() -> None:
                 missing.append(f"{path.relative_to(REPO_ROOT)}: {raw_target}")
 
     assert missing == []
+
+
+def test_typescript_readme_matches_provider_factory_parity() -> None:
+    ts_readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
+    factory = (REPO_ROOT / "kaji" / "ts" / "src" / "providers" / "factory.ts").read_text()
+
+    assert "export function kimi" in factory
+    assert "export function gemini" in factory
+    assert "| Kimi / Gemini providers | Yes | Yes" in ts_readme
+
+
+def test_user_facing_docs_include_stability_contract() -> None:
+    haystack = _doc_haystack()
+    for phrase in (
+        "Stable core",
+        "Experimental Python-only",
+        "TS not ported",
+        "Redis realtime",
+        "voice/TTS",
+        "DocumentRAG",
+        "OpenAI-compatible factories",
+        "scripts/release_smoke.sh",
+    ):
+        assert phrase in haystack
+
+
+def test_mvp_manifest_status_is_current() -> None:
+    mvp = (REPO_ROOT / "docs" / "MVP.md").read_text()
+
+    assert "Catalog contract implemented" in mvp
+    assert "Plan 3 - Define the first-party integration catalog contract (implemented)" in mvp
+    assert "no shared manifest/auth/credential shape" not in mvp
+    assert "Catalog contract still open" not in mvp

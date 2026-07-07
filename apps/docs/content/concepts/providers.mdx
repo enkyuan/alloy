@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: LLM, TTS, and STT providers implement common interfaces. The Python SDK ships kimi, openai, anthropic, gemini, and mock. The TypeScript SDK ships openai and anthropic.
+description: LLM, TTS, and STT providers implement common interfaces. The Python SDK ships kimi, openai, anthropic, gemini, and mock. The TypeScript SDK ships openai, anthropic, and OpenAI-compatible factories for kimi and gemini.
 ---
 
 Pick a provider when you build the runtime. The runtime never imports
@@ -13,13 +13,15 @@ against a neutral message and tool-spec format.
 | ----------- | ----------- | -------------- | ------------------- |
 | `openai`    | ✓           | ✓              | `OPENAI_API_KEY`    |
 | `anthropic` | ✓           | ✓              | `ANTHROPIC_API_KEY` |
-| `kimi`      | ✓ (default) | -              | `KIMI_API_KEY`      |
-| `gemini`    | ✓           | -              | `GEMINI_API_KEY`    |
+| `kimi`      | ✓           | OpenAI-compatible factory | `KIMI_API_KEY`      |
+| `gemini`    | ✓           | OpenAI-compatible factory | `GEMINI_API_KEY`    |
 | `mock`      | ✓           | -              | -                   |
 
-Select the Python default via `KAJI_MODEL_PROVIDER`. Adding a provider
-means implementing the `ModelProvider` protocol and registering it with
-`register_provider` (`registerProvider` in TS).
+The base Python SDK defaults to `mock` for tests. Select a real Python
+provider via `KAJI_MODEL_PROVIDER`; TypeScript callers choose a provider
+factory in code. Adding a provider means implementing the `ModelProvider`
+protocol and registering it with `register_provider` (`registerProvider` in
+TS).
 
 ## TTS and STT
 

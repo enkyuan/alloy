@@ -1,0 +1,20 @@
+id: python-service-import-in-sdk
+language: python
+message: SDK code must not import service-only modules.
+severity: error
+files:
+  - kaji/sdk/**/*.py
+rule:
+  any:
+    - pattern: import kaji_serve
+    - pattern: from kaji_serve.$$$MOD import $$$NAMES
+    - pattern: from kaji_serve import $$$NAMES
+    - pattern: import fastapi
+    - pattern: from fastapi.$$$MOD import $$$NAMES
+    - pattern: from fastapi import $$$NAMES
+    - pattern: import sqlalchemy
+    - pattern: from sqlalchemy.$$$MOD import $$$NAMES
+    - pattern: from sqlalchemy import $$$NAMES
+    - pattern: import taskiq
+    - pattern: from taskiq.$$$MOD import $$$NAMES
+    - pattern: from taskiq import $$$NAMES

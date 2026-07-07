@@ -3,9 +3,22 @@ from unittest.mock import patch
 
 import pytest
 
-from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.agents.planner import ToolPlanner
+from kaji.runtime.providers.errors import (
+    ProviderConfigError,
+    ServiceNetworkError,
+    ServiceRateLimitError,
+)
 from kaji.runtime.providers.openai import OpenAIProvider
 from kaji.runtime.providers.registry import get_provider
+from kaji.runtime.tools.registry import ToolSpec
+
+
+class FakeProviderHTTPError(RuntimeError):
+    def __init__(self, message: str, *, status: int, response_text: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.response = SimpleNamespace(text=response_text)
 
 
 def test_openai_provider_registered_and_loadable():
@@ -48,7 +61,40 @@ def test_openai_parse_tool_calls_handles_bad_json():
     raw = [
         SimpleNamespace(id="c", function=SimpleNamespace(name="n", arguments="{bad"))
     ]
-    assert OpenAIProvider._parse_tool_calls(raw)[0]["arguments"] == {}
+    assert "__parse_error" in OpenAIProvider._parse_tool_calls(raw)[0]["arguments"]
+
+
+@pytest.mark.asyncio
+async def test_openai_bad_json_tool_args_fail_closed_in_planner():
+    emitted = []
+    executed = False
+
+    async def executor(name, args):
+        nonlocal executed
+        executed = True
+        return {"ok": True}
+
+    planner = ToolPlanner(
+        executor=executor,
+        specs={
+            "n": ToolSpec(
+                name="n",
+                description="No-op.",
+                parameters={"type": "object", "properties": {}, "required": []},
+            )
+        },
+    )
+    call = OpenAIProvider._parse_tool_calls(
+        [SimpleNamespace(id="c", function=SimpleNamespace(name="n", arguments="{bad"))]
+    )[0]
+
+    async def emit(event):
+        emitted.append(event)
+
+    await planner.execute_scatter_gather("s1", [call], emit)
+
+    assert executed is False
+    assert emitted[-1].type.value == "tool.call.failed"
 
 
 @pytest.mark.asyncio
@@ -116,6 +162,38 @@ async def test_openai_generate_translates_tools_and_parses_response():
 
 
 @pytest.mark.asyncio
+async def test_openai_generate_maps_rate_limits_to_service_error():
+    async def fake_create(**_kwargs):
+        raise FakeProviderHTTPError(
+            "slow down", status=429, response_text="slow down"
+        )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+    provider = OpenAIProvider(api_key="test-key")
+    provider._client = fake_client
+
+    with pytest.raises(ServiceRateLimitError):
+        await provider.generate(messages=[{"role": "user", "content": "hi"}])
+
+
+@pytest.mark.asyncio
+async def test_openai_generate_maps_transport_errors_to_network_error():
+    async def fake_create(**_kwargs):
+        raise OSError("network down")
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+    provider = OpenAIProvider(api_key="test-key")
+    provider._client = fake_client
+
+    with pytest.raises(ServiceNetworkError):
+        await provider.generate(messages=[{"role": "user", "content": "hi"}])
+
+
+@pytest.mark.asyncio
 async def test_openai_stream_accumulates_fragmented_tool_call_arguments():
     class FakeStream:
         def __aiter__(self):
@@ -178,6 +256,54 @@ async def test_openai_stream_accumulates_fragmented_tool_call_arguments():
     assert chunks[0].tool_calls == [
         {"id": "call-1", "name": "lookup", "arguments": {"q": "weather"}}
     ]
+
+
+@pytest.mark.asyncio
+async def test_openai_stream_yields_usage_metadata_chunk():
+    captured: dict = {}
+
+    class FakeStream:
+        def __aiter__(self):
+            return self._iter()
+
+        async def _iter(self):
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content="hi", tool_calls=None)
+                    )
+                ],
+                usage=None,
+            )
+            yield SimpleNamespace(
+                choices=[],
+                usage=SimpleNamespace(
+                    prompt_tokens=3,
+                    completion_tokens=2,
+                    total_tokens=5,
+                ),
+            )
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return FakeStream()
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+
+    provider = OpenAIProvider(api_key="test-key")
+    provider._client = fake_client
+
+    chunks = [chunk async for chunk in provider.generate_stream(messages=[], tools=[])]
+
+    assert captured["stream_options"] == {"include_usage": True}
+    assert chunks[0].delta == "hi"
+    assert chunks[-1].metrics is not None
+    assert chunks[-1].metrics.prompt_tokens == 3
+    assert chunks[-1].metrics.completion_tokens == 2
+    assert chunks[-1].cost_usd is not None
+    assert chunks[-1].cost_usd > 0
 
 
 def test_format_messages_openai_preserves_tool_call_id():

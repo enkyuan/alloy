@@ -34,7 +34,7 @@
   },
   "files": ["dist", "registry"],
   "scripts": {
-    "prebuild": "bun run scripts/copy-registry.ts",
+    "prebuild": "bun run scripts/copy.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
@@ -44,9 +44,9 @@
     "test:quickstart": "vitest run examples/minimal-agent/smoke.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
-    "check:integrations": "bun run scripts/check-integration.ts",
+    "check:integrations": "bun run scripts/check.ts",
     "clean": "rm -rf dist",
-    "validate:registry": "bun scripts/validate-manifests.ts"
+    "validate:registry": "bun scripts/validate.ts"
   },
   "dependencies": {
     "zod": "^4.3.6"

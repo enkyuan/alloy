@@ -22,11 +22,11 @@ import {
   ProviderError,
   providerAPIErrorFromUnknown,
 } from "@/providers/errors";
-import { parseToolArgsJSON } from "@/providers/_args";
-import { calculateCostUsd } from "@/providers/_cost_table";
+import { parseToolArgsJSON } from "@/providers/args";
+import { calculateCostUsd } from "@/providers/costs";
+import { toOpenAIChatMessages } from "@/providers/openai-format";
 import type { ToolSpec } from "@/tools/registry";
 
-type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
 type ChatToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
 
@@ -101,7 +101,7 @@ export class OpenAIProvider implements ModelProvider {
     }
     this.opts = {
       apiKey: opts.apiKey,
-      model: opts.model ?? "gpt-4o",
+      model: opts.model ?? "gpt-5.4-mini",
       baseURL: opts.baseURL ?? "",
       temperature: opts.temperature ?? 0.7,
       maxTokens: opts.maxTokens ?? 4096,
@@ -121,16 +121,20 @@ export class OpenAIProvider implements ModelProvider {
     return this.opts.model;
   }
 
+  protected async createClient(): Promise<OpenAI> {
+    const { default: OpenAIDefault } = await import("openai");
+    return new OpenAIDefault({
+      apiKey: this.opts.apiKey,
+      ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
+      ...(this.opts.defaultHeaders ? { defaultHeaders: this.opts.defaultHeaders } : {}),
+    });
+  }
+
   private async getClient(): Promise<OpenAI> {
     if (this.client !== null) return this.client;
     // Dynamic import so the package is optional at bundle time.
     try {
-      const { default: OpenAIDefault } = await import("openai");
-      this.client = new OpenAIDefault({
-        apiKey: this.opts.apiKey,
-        ...(this.opts.baseURL ? { baseURL: this.opts.baseURL } : {}),
-        ...(this.opts.defaultHeaders ? { defaultHeaders: this.opts.defaultHeaders } : {}),
-      });
+      this.client = await this.createClient();
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("OpenAI provider requires the openai package.", {
@@ -139,19 +143,6 @@ export class OpenAIProvider implements ModelProvider {
       });
     }
     return this.client;
-  }
-
-  private buildMessages(messages: ProviderMessage[]): ChatMessage[] {
-    return messages.map<ChatMessage>((m) => {
-      if (m.role === "tool") {
-        return {
-          role: "tool",
-          content: m.content,
-          tool_call_id: m.tool_call_id ?? "",
-        };
-      }
-      return { role: m.role, content: m.content };
-    });
   }
 
   /**
@@ -205,7 +196,7 @@ export class OpenAIProvider implements ModelProvider {
     const client = await this.getClient();
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: this.opts.model,
-      messages: this.buildMessages(messages),
+      messages: toOpenAIChatMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
       max_tokens: options?.maxTokens ?? this.opts.maxTokens,
     };
@@ -246,10 +237,11 @@ export class OpenAIProvider implements ModelProvider {
     const client = await this.getClient();
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: this.opts.model,
-      messages: this.buildMessages(messages),
+      messages: toOpenAIChatMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
       max_tokens: options?.maxTokens ?? this.opts.maxTokens,
       stream: true,
+      stream_options: { include_usage: true },
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
@@ -262,6 +254,19 @@ export class OpenAIProvider implements ModelProvider {
       const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
 
       for await (const chunk of stream) {
+        const usage = chunk.usage
+          ? { input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens }
+          : undefined;
+        if (usage) {
+          yield {
+            delta: "",
+            toolCalls: [],
+            usage,
+            costUsd: calculateCostUsd(this.opts.model, usage.input, usage.output),
+          };
+          continue;
+        }
+
         const delta = chunk.choices[0]?.delta;
         if (!delta) continue;
 

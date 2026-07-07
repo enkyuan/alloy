@@ -7,6 +7,12 @@ import { EventType } from "@/events/types";
 import type { KajiEvent } from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
+export interface MessageToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
 export interface Message {
   role: "user" | "assistant" | "tool";
   content: string;
@@ -14,6 +20,8 @@ export interface Message {
   name?: string;
   /** Set only for tool messages: the id from the originating tool call request. */
   toolCallId?: string;
+  /** Set only for assistant messages that requested tools. */
+  toolCalls?: MessageToolCall[];
 }
 
 /** Accumulated token counts across all turns in the session. */
@@ -46,6 +54,10 @@ export interface SessionState {
  * Reconstruct session state by replaying a sequence of events. Events from
  * `EventStore` arrive in append order; out-of-order inputs (e.g. constructed
  * in tests) are sorted on the fly. Throws on an empty log, matching Python.
+ *
+ * TOOL_CALL_REQUESTED events are attached to the most recent assistant message
+ * so provider history includes the assistant-side tool call before the matching
+ * role:tool result. OpenAI and Anthropic reject orphan tool-result messages.
  */
 export function replaySession(events: readonly KajiEvent[]): SessionState {
   const first = events[0];
@@ -72,6 +84,8 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
     }
   }
 
+  let lastAssistant: Message | undefined;
+
   for (const event of ordered) {
     switch (event.type) {
       case EventType.SESSION_CREATED:
@@ -82,9 +96,11 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
         break;
       case EventType.USER_MESSAGE:
         state.messages.push({ role: "user", content: event.content });
+        lastAssistant = undefined;
         break;
       case EventType.AGENT_MESSAGE_COMPLETED:
-        state.messages.push({ role: "assistant", content: event.content });
+        lastAssistant = { role: "assistant", content: event.content };
+        state.messages.push(lastAssistant);
         if (event.tokens) {
           state.totalTokens.input += event.tokens.input;
           state.totalTokens.output += event.tokens.output;
@@ -96,6 +112,19 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
       case EventType.TRANSCRIPT_FINAL:
         // For voice sessions, the final transcript acts as a user message.
         state.messages.push({ role: "user", content: event.text });
+        lastAssistant = undefined;
+        break;
+      case EventType.TOOL_CALL_REQUESTED:
+        if (lastAssistant === undefined) {
+          lastAssistant = { role: "assistant", content: "", toolCalls: [] };
+          state.messages.push(lastAssistant);
+        }
+        lastAssistant.toolCalls ??= [];
+        lastAssistant.toolCalls.push({
+          id: event.tool_call_id,
+          name: event.tool_name,
+          args: event.tool_args,
+        });
         break;
       case EventType.TOOL_CALL_COMPLETED:
         state.messages.push({
@@ -130,12 +159,9 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
         state.pendingApprovals.delete(event.tool_call_id);
         state.rejectedToolCallIds.add(event.tool_call_id);
         break;
-      // NOTE: AGENT_MESSAGE_DELTA and the transient tool events (REQUESTED,
-      // STARTED) are intentionally NOT projected. The agent loop's termination
-      // depends on only AGENT_MESSAGE_COMPLETED -> assistant and
-      // TOOL_CALL_COMPLETED / TOOL_CALL_FAILED -> tool appearing in replayed
-      // history. Projecting deltas as assistant turns would make a tool-driven
-      // mock never see a tool result and loop forever.
+      // NOTE: AGENT_MESSAGE_DELTA and TOOL_CALL_STARTED are intentionally NOT
+      // projected. Deltas are transient, and STARTED does not carry provider
+      // history data beyond the preceding TOOL_CALL_REQUESTED event.
       default:
         break;
     }

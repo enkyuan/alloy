@@ -177,8 +177,9 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 Both `@kaji/cli` (TypeScript) and `kaji` (Python) ship the same surface:
 `init`, `gen`, `info`, `secret`, `upgrade`, `doctor`. The TS CLI additionally
-ships `mcp` for registering an kaji MCP server with the user's AI tool.
+ships `mcp` only as a status command; MCP server registration is deferred until
+a real server command exists.
 
 - TS: `bun add -D @kaji/cli` -> `npx kaji init --lang ts|python --provider openai|anthropic|kimi|gemini`
 - Python: `pip install kaji` -> `kaji init --provider openai`
-- Landing-page CLI tab: now safe to show both `kaji init` flows.
+- Landing-page CLI tab: safe to show both `kaji init` flows, but not MCP setup commands.

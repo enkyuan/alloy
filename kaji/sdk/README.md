@@ -64,23 +64,16 @@ class WeatherIntegration(kaji.Integration):
 
 
 async def main():
-    bus = kaji.InMemoryEventBus()
-    store = kaji.InMemoryEventStore()
-
     runtime = (
         kaji.AgentBuilder()
         .provider(kaji.get_provider("openai"))  # reads OPENAI_API_KEY
         .integration(WeatherIntegration())
         .system_prompt("You are a weather assistant.")
-        .build(bus=bus, store=store)
+        .build()
     )
 
-    await store.append(kaji.UserMessage(session_id="s1", content="Weather in Seattle?"))
-    await runtime.run_turn("s1")
-
-    events = await store.get_events("s1")
-    for e in events:
-        print(e.type, getattr(e, "content", getattr(e, "delta", "")))
+    result = await runtime.turn("Weather in Seattle?")
+    print(result.text)
 
 
 asyncio.run(main())
@@ -88,6 +81,61 @@ asyncio.run(main())
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
+
+## Prove it with a model
+
+OpenAI with `gpt-5.4-mini` is the recommended first live check because it is
+cost-effective and exercises the SDK's Chat Completions tool path.
+
+```bash
+cd kaji/sdk
+uv sync --extra openai
+uv run pytest tests/test_quickstart.py -q
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  uv run pytest -m integration tests/integration/test_openai_tools.py -q
+```
+
+The live test registers a read-only probe tool, verifies the model calls it,
+and verifies the runtime emits final assistant text using the tool result. It
+skips automatically when `OPENAI_API_KEY` is absent. After OpenAI passes, test
+providers in this order: Anthropic, Python Gemini native, then Kimi/OpenRouter.
+
+For the cross-SDK release gate, run from the repository root:
+
+```bash
+bash kaji/scripts/live-openai-tool-loop.sh
+KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
+It is not a provider-readiness signal. With `KAJI_REQUIRE_LIVE_KEYS=1`, the
+same no-key state fails loudly. A release cannot be called live-ready until this
+command exits with `PASS: OpenAI live tool-loop readiness verified` while
+`OPENAI_API_KEY` is set:
+
+```bash
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+## Stability tiers
+
+- **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
+  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  event bus/store are the pre-beta embedded-agent surface.
+- **Experimental Python-only:** Redis realtime/history, voice/TTS,
+  `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
+  modalities exist for early adopters but are not production-hardened.
+- **TS not ported:** Redis realtime, voice/TTS, and RAG are not implemented in
+  TypeScript. TS Gemini/Kimi remain OpenAI-compatible factories rather than
+  native provider implementations.
+
+See [`kaji/RELEASE_MATRIX.md`](../RELEASE_MATRIX.md) for the cross-SDK release
+matrix and the exact distinction between stable core, experimental Python-only
+surfaces, and TypeScript surfaces that are not ported.
+
+The beta promise is the core agent loop. Redis realtime/history, voice/TTS,
+`DocumentRAG`, native Gemini/Kimi, and tool retrieval remain outside the beta
+gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 
 ## CLI scaffold
 
@@ -150,8 +198,15 @@ shared with the TypeScript SDK.
 cd kaji/sdk
 uv sync                           # creates .venv, installs deps + dev group
 uv run pytest tests/              # no API keys required
-uv run ty check                   # static type check
+uv run python scripts/typecheck_ty.py  # static type check for the src/ remap
 uv run ruff check src             # lint
+```
+
+Release smoke checks the current `src/` package remap in an installed wheel:
+
+```bash
+bash scripts/clean_generated.sh
+bash scripts/release_smoke.sh
 ```
 
 Live provider tests are opt-in (extras pull in the provider SDK):
@@ -159,6 +214,8 @@ Live provider tests are opt-in (extras pull in the provider SDK):
 ```bash
 uv sync --extra openai
 OPENAI_API_KEY=... uv run pytest -m integration tests/integration/test_openai_provider.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  uv run pytest -m integration tests/integration/test_openai_tools.py
 
 uv sync --extra anthropic
 ANTHROPIC_API_KEY=... uv run pytest -m integration tests/integration/test_anthropic_provider.py
@@ -342,7 +399,7 @@ configuration is needed to `import kaji`.
 | `OPENAI_API_KEY` | for openai provider | OpenAI LLM |
 | `ANTHROPIC_API_KEY` | for anthropic provider | Anthropic LLM |
 | `KAJI_MODEL_PROVIDER` | no | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
-| `OPENAI_MODEL` | no | OpenAI model (default `gpt-4o`) |
+| `OPENAI_MODEL` | no | OpenAI model (default `gpt-5.4-mini`) |
 | `REDIS_URL` | for realtime extra | Defaults to `redis://redis:6379/0` |
 | `GEMINI_API_KEY` | for gemini provider | Gemini LLM + TTS |
 | `TTS_PROVIDER` | no | `none` (default), `gemini`, or `openai` |

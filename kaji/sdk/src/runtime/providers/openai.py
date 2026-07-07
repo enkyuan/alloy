@@ -15,7 +15,11 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.errors import ProviderAPIError, ProviderConfigError
+from kaji.runtime.providers.errors import (
+    ProviderConfigError,
+    provider_error_from_exception,
+)
+from kaji.runtime.providers.costs import calculate_cost_usd
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -96,10 +100,24 @@ class OpenAIProvider(ModelProvider):
         for tc in raw or []:
             func = field(tc, "function")
             raw_args = field(func, "arguments") or "{}"
-            try:
-                args = json.loads(raw_args)
-            except (json.JSONDecodeError, TypeError):
-                args = {}
+            if isinstance(raw_args, dict):
+                args = raw_args
+            else:
+                try:
+                    args = json.loads(raw_args)
+                except (json.JSONDecodeError, TypeError) as exc:
+                    raw_snippet = (
+                        raw_args if len(str(raw_args)) <= 200 else str(raw_args)[:200] + "..."
+                    )
+                    logger.warning(
+                        "OpenAI tool_call arguments failed to parse "
+                        "for tool=%s id=%s raw=%r: %s",
+                        field(func, "name"),
+                        field(tc, "id") or "<unknown>",
+                        raw_snippet,
+                        exc,
+                    )
+                    args = {"__parse_error": str(exc)}
             calls.append(
                 {
                     "id": field(tc, "id"),
@@ -211,7 +229,9 @@ class OpenAIProvider(ModelProvider):
             response = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001 - surface as a provider error
             logger.error("OpenAI API error: %s", e)
-            raise ProviderAPIError(f"OpenAI request failed: {e}") from e
+            raise provider_error_from_exception(
+                service="openai", action="request", error=e
+            ) from e
 
         choice = response.choices[0]
         message = choice.message
@@ -255,6 +275,7 @@ class OpenAIProvider(ModelProvider):
             "messages": self._build_messages(messages, system_instruction),
             "temperature": temperature,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if max_tokens:
             kwargs["max_tokens"] = max_tokens
@@ -267,12 +288,31 @@ class OpenAIProvider(ModelProvider):
             stream = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001
             logger.error("OpenAI streaming API error: %s", e)
-            raise ProviderAPIError(f"OpenAI stream failed: {e}") from e
+            raise provider_error_from_exception(
+                service="openai", action="stream", error=e
+            ) from e
 
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
         async for chunk in stream:
             _raise_if_cancelled(cancellation_token)
+
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                metrics = TokenMetrics(
+                    prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                    completion_tokens=getattr(usage, "completion_tokens", 0),
+                    total_tokens=getattr(usage, "total_tokens", 0),
+                )
+                yield ModelResponseChunk(
+                    metrics=metrics,
+                    cost_usd=calculate_cost_usd(
+                        self.model_name,
+                        metrics.prompt_tokens,
+                        metrics.completion_tokens,
+                    ),
+                )
+                continue
 
             if not chunk.choices:
                 continue

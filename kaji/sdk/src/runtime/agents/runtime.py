@@ -17,13 +17,16 @@ from kaji.infra.events.schemas import (
     AgentMessageCompleted,
     AgentMessageDelta,
     AgentReasoningStarted,
+    AgentTurnExhausted,
     CancellationCompleted,
+    EventTokenUsage,
     SessionCreated,
     UserMessage,
 )
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.types import TokenMetrics
 
 
 @dataclass(frozen=True)
@@ -32,7 +35,8 @@ class TurnResult:
 
     Attributes:
         text: All ``AgentMessageCompleted`` content emitted this turn, joined.
-            May be empty when the provider returned only a tool call.
+            May be empty when the provider returned only tool calls; inspect
+            ``events`` for ``AgentTurnExhausted`` when max iterations are hit.
         tool_call_events: ``ToolCallRequested`` events emitted this turn.
             Named for the type honestly (not provider-neutral ``ToolCall``s).
         session_id: The session this turn ran against (auto-generated when
@@ -232,7 +236,7 @@ class AgentRuntime:
 
         await self._emit(AgentReasoningStarted(session_id=session_id))
 
-        for _ in range(self.strategy.max_iterations):
+        for iteration in range(self.strategy.max_iterations):
             if token.is_cancelled:
                 await self._emit(CancellationCompleted(session_id=session_id))
                 return
@@ -273,6 +277,8 @@ class AgentRuntime:
             # 2. Surface tools to the provider (cached payload, see __init__).
             full_response = ""
             tool_calls = []
+            stream_metrics: TokenMetrics | None = None
+            stream_cost_usd: float | None = None
 
             # 3. Stream from Provider. The provider raises asyncio.CancelledError
             # when the token flips mid-stream; we catch it here so the canonical
@@ -291,6 +297,10 @@ class AgentRuntime:
 
                     if chunk.tool_calls:
                         tool_calls.extend(chunk.tool_calls)
+                    if chunk.metrics is not None:
+                        stream_metrics = chunk.metrics
+                    if chunk.cost_usd is not None:
+                        stream_cost_usd = chunk.cost_usd
             except asyncio.CancelledError:
                 if not token.is_cancelled:
                     # Cancellation came from outside our token (parent task).
@@ -306,8 +316,19 @@ class AgentRuntime:
 
             # 4. Finalize text message
             if full_response:
+                tokens: EventTokenUsage | None = None
+                if stream_metrics is not None:
+                    tokens = EventTokenUsage(
+                        input=stream_metrics.prompt_tokens,
+                        output=stream_metrics.completion_tokens,
+                    )
                 await self._emit(
-                    AgentMessageCompleted(session_id=session_id, content=full_response)
+                    AgentMessageCompleted(
+                        session_id=session_id,
+                        content=full_response,
+                        tokens=tokens,
+                        cost_usd=stream_cost_usd,
+                    )
                 )
 
             # 5. Break if done
@@ -321,3 +342,12 @@ class AgentRuntime:
 
             # The planner has emitted ToolCallCompleted/Failed events.
             # The loop continues, which re-evaluates state including the new tool results.
+            if iteration == self.strategy.max_iterations - 1:
+                await self._emit(
+                    AgentTurnExhausted(
+                        session_id=session_id,
+                        max_iterations=self.strategy.max_iterations,
+                        pending_tool_calls=tool_calls,
+                        reason="max_iterations",
+                    )
+                )

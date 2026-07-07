@@ -2,11 +2,11 @@
  * `kaji replay <session.jsonl>` — parse a JSONL event log and render it
  * to stdout in one of three formats: tree (default), summary, or json.
  *
- * All file I/O happens here; `_replay_render.ts` is pure (no I/O).
+ * All file I/O happens here; `render.ts` is pure (no I/O).
  */
 import { KajiEvent } from "@/events/schemas";
-import { renderJson, renderSummary, renderTree } from "@/cli/_replay_render";
-import { readTextFile } from "@/cli/bun_io";
+import { renderJson, renderSummary, renderTree } from "@/cli/render";
+import { readTextFile } from "@/cli/bun-io";
 
 export interface ReplayOptions {
   log?: (msg: string) => void;

@@ -15,6 +15,8 @@ export interface ProviderMessage {
   name?: string;
   /** Set only for tool-result messages: id from the originating tool call. */
   tool_call_id?: string;
+  /** Set only for assistant messages that requested tools. */
+  toolCalls?: ToolCall[];
 }
 
 /** A tool call the model wants to make. */
@@ -28,6 +30,10 @@ export interface ToolCall {
 export interface ModelResponseChunk {
   delta: string;
   toolCalls: ToolCall[];
+  /** Token usage, if the provider reported it during streaming. */
+  usage?: TokenUsage;
+  /** Estimated cost in USD, if the model is in the cost table. */
+  costUsd?: number;
 }
 
 /** Token usage from a provider response. */

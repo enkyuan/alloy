@@ -15,7 +15,7 @@
  */
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { copyFileBunFirst, readTextFile } from "@/cli/bun_io";
+import { copyFileBunFirst, readTextFile } from "@/cli/bun-io";
 
 export interface AddOptions {
   /** Absolute path to a registry directory (one with `index.json`). */
@@ -36,6 +36,8 @@ interface Manifest {
   auth: { kind: string; env?: string };
   files: string[];
   tools: { name: string; description: string }[];
+  extras?: string[];
+  peerDeps?: Record<string, string>;
 }
 
 const REQUIRED_KEYS = [

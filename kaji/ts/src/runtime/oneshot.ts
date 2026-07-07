@@ -3,7 +3,7 @@
  * event-sourced runtime. Use when you just want one model response.
  *
  *   const { text } = await generateText({
- *     provider: openai("gpt-4o"),
+ *     provider: openai("gpt-5.4-mini"),
  *     messages: [{ role: "user", content: "Hello" }],
  *   });
  *
@@ -56,7 +56,7 @@ export interface StreamTextResult {
  * is drained eagerly in the background so awaiting any one of them is
  * sufficient. All three reject if the source errors.
  *
- *   const { textStream, text } = streamText({ provider: openai("gpt-4o"), messages });
+ *   const { textStream, text } = streamText({ provider: openai("gpt-5.4-mini"), messages });
  *   for await (const chunk of textStream) process.stdout.write(chunk);
  *   console.log("\nfinal:", await text);
  *

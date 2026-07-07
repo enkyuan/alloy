@@ -8,6 +8,8 @@ LLM-provider-specific subclasses on top.
 
 from __future__ import annotations
 
+import httpx
+
 from kaji.core.errors import (
     ServiceAPIError,
     ServiceAuthError,
@@ -36,6 +38,7 @@ __all__ = [
     "ServiceErrorToHTTPStatus",
     "ServiceNetworkError",
     "ServiceRateLimitError",
+    "provider_error_from_exception",
 ]
 
 
@@ -105,3 +108,66 @@ class ProviderConnectionError(ServiceNetworkError):
             message=message,
             cause=cause,
         )
+
+
+def _extract_status_code(error: Exception) -> int | None:
+    for attr in ("status_code", "status", "code"):
+        value = getattr(error, attr, None)
+        if isinstance(value, int):
+            return value
+
+    response = getattr(error, "response", None)
+    response_status = getattr(response, "status_code", None)
+    return response_status if isinstance(response_status, int) else None
+
+
+def _extract_response_text(error: Exception) -> str | None:
+    response = getattr(error, "response", None)
+    if isinstance(response, str):
+        return response
+
+    text = getattr(response, "text", None)
+    if isinstance(text, str):
+        return text
+
+    body = getattr(error, "body", None)
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    if isinstance(body, str):
+        return body
+
+    return None
+
+
+def provider_error_from_exception(
+    *,
+    service: str,
+    action: str,
+    error: Exception,
+) -> ServiceError:
+    """Convert provider SDK exceptions into typed service errors."""
+    if isinstance(error, ServiceError):
+        return error
+
+    status_code = _extract_status_code(error)
+    if status_code is not None:
+        return classify_http_error(
+            service=service,
+            action=action,
+            status_code=status_code,
+            response_text=_extract_response_text(error),
+        )
+
+    if isinstance(error, (ConnectionError, OSError, TimeoutError, httpx.RequestError)):
+        return ServiceNetworkError(
+            service=service,
+            action=action,
+            message=f"{service} {action} failed due to a network error",
+            cause=error,
+        )
+
+    return ProviderAPIError(
+        f"{service} {action} failed: {error}",
+        service=service,
+        response_text=_extract_response_text(error),
+    )

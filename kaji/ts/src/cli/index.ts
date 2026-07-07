@@ -5,7 +5,7 @@
  */
 import { add } from "@/cli/add";
 import { init } from "@/cli/init";
-import { listIntegrations } from "@/cli/list_integrations";
+import { listIntegrations } from "@/cli/list";
 import { replay } from "@/cli/replay";
 
 export interface RunOptions {

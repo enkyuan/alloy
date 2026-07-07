@@ -13,6 +13,7 @@ from kaji.core.logging import setup_logging
 from kaji_serve.server.database import close_async_engine
 from kaji.infra.realtime.redis import close_redis_client
 from kaji_serve.server.lifecycle import close_registered_services
+from kaji_serve.server.v1.health import health_payload, root_payload
 from kaji.runtime.providers.errors import (
     ServiceError,
     service_error_to_detail,
@@ -73,15 +74,10 @@ logger.info("Starting %s", settings.PROJECT_NAME)
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
     logger.debug("Health check requested")
-    return {"status": "healthy", "service": settings.PROJECT_NAME, "version": "1.0.0"}
+    return health_payload()
 
 
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
-    return {
-        "message": settings.PROJECT_NAME,
-        "version": "1.0.0",
-        "docs": f"{settings.API_V1_PREFIX}/docs",
-        "health": "/health",
-    }
+    return root_payload()

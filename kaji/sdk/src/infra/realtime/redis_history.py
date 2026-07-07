@@ -12,7 +12,7 @@ in-memory. Wire this in for durable, cross-process history::
 from typing import Any, Dict, List, Optional
 
 from kaji.infra.realtime.redis import get_redis_client
-from kaji.infra.realtime.redis_events import append_history, get_history
+from kaji.infra.realtime.history_ops import append_history, get_history
 
 
 class RedisHistoryStore:

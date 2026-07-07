@@ -21,7 +21,7 @@ export function buildMessages(messages: Message[], systemPrompt?: string): Provi
         tool_call_id: m.toolCallId ?? m.name ?? "unknown",
       });
     } else {
-      result.push({ role: m.role, content: m.content });
+      result.push({ role: m.role, content: m.content, toolCalls: m.toolCalls });
     }
   }
   return result;

@@ -1,0 +1,14 @@
+{
+  "type": "tool.call.completed",
+  "session_id": "sess-usage",
+  "tool_name": "echo_probe",
+  "tool_call_id": "call_echo",
+  "result": {
+    "ok": true
+  },
+  "tokens": {
+    "input": 4,
+    "output": 2
+  },
+  "cost_usd": 0.000012
+}

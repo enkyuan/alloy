@@ -9,6 +9,10 @@ from kaji.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+class SonioxConfigError(RuntimeError):
+    """Raised when Soniox STT is called without usable configuration."""
+
+
 class SonioxService:
     """Service for real-time speech-to-text via Soniox WebSocket API."""
 
@@ -45,7 +49,7 @@ class SonioxService:
             Configuration dictionary for Soniox WebSocket API
         """
         if not self.api_key:
-            raise Exception("Soniox API key is not configured.")
+            raise SonioxConfigError("Soniox API key is not configured.")
 
         config = {
             "api_key": self.api_key,

@@ -1,6 +1,6 @@
 ---
 title: Runtime
-description: AgentBuilder configures the runtime; AgentRuntime.send appends a user message and runs one turn; AgentRuntime.history reads back the event log.
+description: AgentBuilder configures the runtime; AgentRuntime.turn runs the high-level user-message path; AgentRuntime.history reads back the event log.
 ---
 
 `AgentRuntime` is the loop that takes a user message, calls the LLM,
@@ -23,7 +23,8 @@ into session state. You build one with `AgentBuilder`.
 
 | Method                   | Returns                                    | Description                                                                |
 | ------------------------ | ------------------------------------------ | -------------------------------------------------------------------------- |
-| `send(session_id, text)` | `None` / `Promise<void>`                   | Appends a `USER_MESSAGE` event and runs one turn (may include tool loops). |
+| `turn(text)`             | turn result                                | High-level path for one user message and model/tool loop.                  |
+| `send(session_id, text)` | `None` / `Promise<void>`                   | Lower-level session API: append a `USER_MESSAGE` and run one turn.         |
 | `history(session_id)`    | `list[KajiEvent]` / `Promise<KajiEvent[]>` | All events appended to this session, in order.                             |
 
 In Python, methods are snake_case (`send`, `history`) and async. In
@@ -42,8 +43,8 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
         .system_prompt("You are a helpful assistant.")
         .build()
     )
-    await runtime.send("s1", "Hello")
-    events = await runtime.history("s1")
+    result = await runtime.turn("Hello")
+    print(result.text)
     ```
 
   </Tab>
@@ -55,8 +56,8 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
       .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
       .systemPrompt("You are a helpful assistant.")
       .build();
-    await runtime.send("s1", "Hello");
-    const events = await runtime.history("s1");
+    const result = await runtime.turn("Hello");
+    console.log(result.text);
     ```
 
   </Tab>

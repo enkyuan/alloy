@@ -75,6 +75,11 @@
       "type": "array",
       "items": {"type": "string"},
       "description": "Extra peer/optional deps the integration requires (e.g. 'httpx')."
+    },
+    "peerDeps": {
+      "type": "object",
+      "additionalProperties": {"type": "string"},
+      "description": "npm peer/optional dependencies the integration requires, keyed by package name to semver range (e.g. {\"better-sqlite3\": \"^9\"})."
     }
   }
 }

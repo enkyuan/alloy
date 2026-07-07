@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import type Anthropic from "@anthropic-ai/sdk";
+import type OpenAI from "openai";
 
 import { CancellationToken } from "@/runtime/cancellation";
-import { OpenAIProvider } from "@/providers/openai";
-import { AnthropicProvider } from "@/providers/anthropic";
+import { TestAnthropicProvider, TestOpenAIProvider } from "./helpers/provider-clients";
+
+function openAIClient(create: ReturnType<typeof vi.fn>): OpenAI {
+  return { chat: { completions: { create } } } as unknown as OpenAI;
+}
+
+function anthropicClient(create: ReturnType<typeof vi.fn>): Anthropic {
+  return { messages: { create } } as unknown as Anthropic;
+}
 
 describe("CancellationToken", () => {
   it("starts not cancelled with a non-aborted signal", () => {
@@ -43,14 +52,11 @@ describe("CancellationToken", () => {
 
 describe("OpenAIProvider AbortSignal plumbing", () => {
   it("passes cancellationToken.signal to the OpenAI client on generate()", async () => {
-    const provider = new OpenAIProvider({ apiKey: "test-key" });
     const token = new CancellationToken();
     const create = vi.fn().mockResolvedValue({
       choices: [{ message: { content: "ok", tool_calls: null } }],
     });
-    (provider as unknown as { client: unknown }).client = {
-      chat: { completions: { create } },
-    };
+    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
 
     await provider.generate([{ role: "user", content: "hi" }], [], {
       cancellationToken: token,
@@ -62,13 +68,10 @@ describe("OpenAIProvider AbortSignal plumbing", () => {
   });
 
   it("passes signal on generateStream() too", async () => {
-    const provider = new OpenAIProvider({ apiKey: "test-key" });
     const token = new CancellationToken();
     async function* empty() {} // eslint-disable-line @typescript-eslint/no-empty-function
     const create = vi.fn().mockResolvedValue(empty());
-    (provider as unknown as { client: unknown }).client = {
-      chat: { completions: { create } },
-    };
+    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
 
     const iter = provider.generateStream([{ role: "user", content: "hi" }], [], {
       cancellationToken: token,
@@ -86,12 +89,12 @@ describe("OpenAIProvider AbortSignal plumbing", () => {
 
 describe("AnthropicProvider AbortSignal plumbing", () => {
   it("passes cancellationToken.signal to the Anthropic client on generate()", async () => {
-    const provider = new AnthropicProvider({ apiKey: "test-key" });
     const token = new CancellationToken();
     const create = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
-    (provider as unknown as { client: unknown }).client = {
-      messages: { create },
-    };
+    const provider = new TestAnthropicProvider(
+      { apiKey: "test-key" },
+      anthropicClient(create),
+    );
 
     await provider.generate([{ role: "user", content: "hi" }], [], {
       cancellationToken: token,

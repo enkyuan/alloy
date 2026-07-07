@@ -47,8 +47,14 @@ describe("replaySession", () => {
 
     const state = replaySession(events);
 
-    expect(state.messages).toHaveLength(2);
-    const toolMsg = state.messages[1]!;
+    expect(state.messages).toHaveLength(3);
+    const assistantMsg = state.messages[1]!;
+    expect(assistantMsg).toMatchObject({
+      role: "assistant",
+      content: "",
+      toolCalls: [{ id: "call_fail_1", name: "risky_tool", args: {} }],
+    });
+    const toolMsg = state.messages[2]!;
     expect(toolMsg.role).toBe("tool");
     expect(toolMsg.name).toBe("risky_tool");
     expect(toolMsg.content).toMatch(/^Error: /);
@@ -95,8 +101,17 @@ describe("replaySession", () => {
 
     const state = replaySession(events);
 
-    // user + failed tool + completed tool = 3 messages
-    expect(state.messages).toHaveLength(3);
+    // user + assistant parent + failed tool + completed tool = provider-safe history.
+    expect(state.messages).toHaveLength(4);
+    const assistantMsg = state.messages[1]!;
+    expect(assistantMsg).toMatchObject({
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        { id: "call_bad", name: "bad_tool", args: {} },
+        { id: "call_good", name: "good_tool", args: {} },
+      ],
+    });
 
     const failedMsg = state.messages.find((m) => m.name === "bad_tool")!;
     expect(failedMsg.role).toBe("tool");
@@ -182,6 +197,38 @@ describe("AgentRuntime.runTurn", () => {
     await runtime.runTurn(s);
     const events = await store.getEvents(s);
     expect(events.some((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)).toBe(true);
+  });
+
+  it("attaches streamed usage and cost to completed messages", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const provider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* () {
+        yield { delta: "hello", toolCalls: [] };
+        yield {
+          delta: "",
+          toolCalls: [],
+          usage: { input: 3, output: 2 },
+          costUsd: 0.00001125,
+        };
+      },
+    };
+    const runtime = new AgentRuntime({ provider, store, bus });
+    const s = "s-usage";
+
+    await seed(store, s);
+    await runtime.runTurn(s);
+
+    const completed = (await store.getEvents(s)).find(
+      (e) => e.type === EventType.AGENT_MESSAGE_COMPLETED,
+    );
+
+    expect(completed).toMatchObject({
+      content: "hello",
+      tokens: { input: 3, output: 2 },
+      cost_usd: 0.00001125,
+    });
   });
 
   it("emits the tool lifecycle then completion for one tool call", async () => {
@@ -314,6 +361,16 @@ describe("AgentRuntime.runTurn", () => {
     );
     // No completion with empty content may be emitted.
     expect(completions.every((e) => "content" in e && e.content !== "")).toBe(true);
+
+    const exhausted = (await store.getEvents(s)).filter(
+      (e) => e.type === EventType.AGENT_TURN_EXHAUSTED,
+    );
+    expect(exhausted).toHaveLength(1);
+    expect(exhausted[0]).toMatchObject({
+      max_iterations: 10,
+      reason: "max_iterations",
+      pending_tool_calls: [{ id: "x", name: "loop", arguments: {} }],
+    });
   });
 });
 

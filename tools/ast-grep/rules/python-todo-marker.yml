@@ -1,0 +1,14 @@
+id: python-todo-marker
+language: python
+message: TODO/FIXME marker in Kaji Python code; resolve or track deliberately.
+severity: hint
+files:
+  - kaji/**/*.py
+rule:
+  any:
+    - all:
+        - kind: comment
+        - regex: "(TODO|FIXME)"
+    - all:
+        - kind: string
+        - regex: "(TODO|FIXME)"

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import { init } from "./commands/init.js";
 import { gen } from "./commands/gen.js";
 import { info } from "./commands/info.js";
@@ -13,7 +14,7 @@ import { readNearestPackageJson } from "./utils/package-info.js";
 process.on("SIGINT", () => process.exit(0));
 process.on("SIGTERM", () => process.exit(0));
 
-async function main() {
+export function buildProgram(): Command {
   const program = new Command("kaji");
   const pkg = readNearestPackageJson(new URL("..", import.meta.url).pathname);
   const version = (pkg?.version as string | undefined) ?? "0.1.0";
@@ -30,10 +31,16 @@ async function main() {
     .addCommand(mcp)
     .action(() => program.help());
 
-  await program.parseAsync();
+  return program;
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+export async function main(argv = process.argv) {
+  await buildProgram().parseAsync(argv);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

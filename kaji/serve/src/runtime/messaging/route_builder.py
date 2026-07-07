@@ -82,7 +82,7 @@ class RouteConfig:
     Args:
         operations: List of operations to perform on the event.
         suspended: Whether the route is suspended. If `True`, this route won't execute.
-        source: The source node to filter events from. TODO: Deprecate this.
+        source: Compatibility source-node filter.
         interrupt_events: List of all events that can interrupt this route.
             If *any* of these events are received, the route will be interrupted.
         suspend_on_events: List of events that will suspend the route.
@@ -399,10 +399,8 @@ class RouteHandler:
         # if not self.should_process_message(message):
         #     return None
 
-        # Check source filter (legacy support).
-        # TODO: We have to filter out events that are not from the source node instead of a .filter() method
-        # because we don't know what the return type of the previous operation is.
-        # This is more of a utility method.
+        # Check source filter before operations, since operation return types
+        # are route-specific.
         if self.route_config.source and message.source != self.route_config.source:
             return None
 
@@ -439,12 +437,9 @@ class RouteHandler:
                 self._active_tasks.append(task)
 
             result = await task
-            # TODO: Do we really want to wait to clean up rather than just returning.
             await self._clean_active_tasks_safe()
             return result
         except asyncio.CancelledError:
-            # TODO (AD): Improve the debug log here to include information
-            # about which route is being cancelled.
             logger.debug("Route execution (handler %s) cancelled", self)
             return None
 
@@ -565,7 +560,6 @@ class RouteHandler:
                 task for task in self._active_tasks if not task.done()
             ]
 
-    # TODO(noah): this is claude-generated and kind of sus to me.
     async def _cancel_task_with_cleanup(self, task: asyncio.Task) -> None:
         """Cancel a task and wait for it to complete."""
         if task.done():

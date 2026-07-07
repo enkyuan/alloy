@@ -16,6 +16,7 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
+    "audit:ast-grep": "bunx -p @ast-grep/cli sg scan --config sgconfig.yml kaji",
     "prepare": "husky",
     "docker:up": "docker compose -f docker/ryo/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/ryo/docker-compose.yml down",

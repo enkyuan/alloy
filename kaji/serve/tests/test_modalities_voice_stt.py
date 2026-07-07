@@ -1,7 +1,13 @@
-import pytest
-from unittest.mock import patch
 import json
+from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
+
+from kaji_serve.modalities.voice.stt.soniox_service import (
+    SonioxConfigError,
+    SonioxService,
+)
 
 
 @pytest.fixture
@@ -141,3 +147,11 @@ def test_modalities_voice_auth_failure(test_client: TestClient, mock_supabase_au
             ) as websocket:
                 err = websocket.receive_json()
                 assert err["type"] == "error"
+
+
+def test_soniox_service_missing_api_key_raises_typed_error():
+    service = SonioxService.__new__(SonioxService)
+    service.api_key = None
+
+    with pytest.raises(SonioxConfigError):
+        service.get_config()

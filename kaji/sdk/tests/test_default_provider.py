@@ -27,3 +27,10 @@ def test_explicit_provider_env_still_wins() -> None:
 
         settings = Settings()
         assert settings.KAJI_MODEL_PROVIDER == "kimi"
+
+
+def test_default_openai_model_is_recommended_live_test_model() -> None:
+    from kaji.core.config import Settings
+
+    settings = Settings()
+    assert settings.OPENAI_MODEL == "gpt-5.4-mini"

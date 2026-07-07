@@ -34,7 +34,7 @@ your image size reflects only what you use.
 | Anthropic provider | Yes | Yes |
 | Event store + bus (in-memory) | Yes | Yes |
 | Session replay (`replaySession`) | Yes | Yes |
-| `kaji init` CLI scaffold | Yes | Not planned |
+| `kaji init` CLI scaffold | Yes | Yes |
 | `CancellationToken` | Yes | Yes |
 
 ---
@@ -48,13 +48,13 @@ integration catalog contract.
 | Area | Python SDK | TypeScript SDK | MVP status |
 |------|------------|----------------|------------|
 | Embedded ReAct runtime | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`. | Same shape as Python. | Implemented. |
-| Custom tools | Works through `ToolRegistry`; `Integration` + `Tool` are exported from top-level `kaji`. | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters. | Implemented. |
+| Custom tools | Works through `ToolRegistry`; `Integration` + `tool` are exported from top-level `kaji`. | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters. | Implemented. |
 | Provider setup | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`. | OpenAI/Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented. |
 | Provider-safe tool names | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`. | Implemented. |
-| First-party integration catalog | `kaji add` vendors GitHub/Gmail/GCal source into the user's tree. | No catalog yet. | Python partial; TS gap. |
+| First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema. | TypeScript ships local/dev examples and validates manifests against the same schema. | Catalog contract implemented; production third-party integrations remain out of MVP. |
 | Event inspection | Store-backed event log is the source of truth. | Store-backed event log is the source of truth. | Implemented. |
 | Quickstart protection | `tests/test_quickstart.py` + `tests/test_public_api.py`. | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`. | Implemented. |
-| Public surface | Top-level `kaji` advertises only the MVP runtime; non-MVP features (RAG, text/voice modalities) live under submodules. | Top-level entry is MVP-only; `MockProvider` moved to `@kaji/sdk/testing`. | Implemented. |
+| Public surface | Top-level `kaji` includes the core runtime plus documented Python extensions. | Top-level entry is MVP-focused; `MockProvider` moved to `@kaji/sdk/testing`. | Implemented; keep docs honest. |
 
 The practical readiness judgement:
 
@@ -62,9 +62,10 @@ The practical readiness judgement:
   and developer-authored tools.
 - Provider error contracts, tool-name safety, and the public surface are
   aligned across Python and TypeScript.
-- The remaining gap is the first-party integration catalog contract: Python
-  ships three CLI-vendored integrations but no shared manifest/auth/credential
-  shape, and TypeScript has no catalog at all. See Plan 3 below.
+- Catalog contract implemented: both SDKs validate the same v0 manifest shape,
+  including `extras`, `peerDeps`, and non-empty `tools`. The remaining
+  integration work is production expansion: auth flows, credential storage,
+  third-party catalogs, and scraper fallback policy.
 
 ---
 
@@ -75,7 +76,7 @@ to build a working embedded agent and are not part of the getting-started path:
 
 | Feature | Status |
 |---------|--------|
-| Kimi / Gemini providers | Python only |
+| Kimi / Gemini providers | Python native; TS OpenAI-compatible factories |
 | Document RAG / vector store | Python only |
 | Tool retriever | Python only |
 | Text modality adapter | Python only |
@@ -83,11 +84,31 @@ to build a working embedded agent and are not part of the getting-started path:
 | Redis realtime bus | Python only (not hardened) |
 | `kaji-serve` (FastAPI + workers) | Python only (not hardened) |
 | Durable event/session stores | Neither; bring your own |
-| Observability / token metrics | Post-MVP |
+| Observability / token metrics | Core event schema and streamed usage/cost metadata only |
 
 "Not hardened" means the code is present but multi-process deployments need
 additional load and durability testing before production use. See the Python
 README for details.
+
+## Stability tiers
+
+- **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
+  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  event bus/store are the embedded-agent contract both SDKs must keep green.
+- **Experimental Python-only:** Redis realtime/history, voice/TTS,
+  `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
+  modalities are available in Python but are not production-hardened.
+- **TS not ported:** Redis realtime, voice/TTS, and RAG are not implemented in
+  TypeScript. TS Gemini/Kimi remain OpenAI-compatible factories rather than
+  native provider implementations.
+
+See [`kaji/RELEASE_MATRIX.md`](../kaji/RELEASE_MATRIX.md) for the cross-SDK
+release matrix and the exact distinction between stable core, experimental
+Python-only surfaces, and TypeScript surfaces that are not ported.
+
+The beta promise is the core agent loop. Redis realtime/history, voice/TTS,
+`DocumentRAG`, native Gemini/Kimi, and tool retrieval remain outside the beta
+gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 
 ---
 
@@ -144,17 +165,87 @@ import { AnthropicProvider } from "@kaji/sdk";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
 
+### Step 2.5 - Prove one real agent
+
+Use OpenAI `gpt-5.4-mini` as the first live SDK proof. It is the lowest-friction
+path that exercises a real model, a real tool call, SDK tool execution, and
+final assistant text.
+
+**Python**
+
+```bash
+cd kaji/sdk
+uv run pytest tests/test_quickstart.py -q
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  uv run pytest -m integration tests/integration/test_openai_tools.py -q
+```
+
+**TypeScript**
+
+```bash
+cd kaji/ts
+bun run test:quickstart
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
+  bun run test:integration tests/integration/openai-tools.test.ts
+```
+
+Live tests are optional and skip without keys. After OpenAI passes, test
+Anthropic, Python Gemini native, TS Gemini via the OpenAI-compatible factory,
+then Kimi/OpenRouter. TS Kimi and Gemini are OpenAI-compatible factories, not
+native provider implementations.
+
+For release readiness, run the cross-SDK gate from the repository root:
+
+```bash
+bash kaji/scripts/live-openai-tool-loop.sh
+KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
+It is not a provider-readiness signal. With `KAJI_REQUIRE_LIVE_KEYS=1`, the
+same no-key state fails loudly. A release cannot be called live-ready until this
+command exits with `PASS: OpenAI live tool-loop readiness verified` while
+`OPENAI_API_KEY` is set:
+
+```bash
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
+```
+
+### Step 2.6 - Scaffold the first run
+
+The cross-language `@kaji/cli` scaffold should lead to the same public SDK API
+as the hand-written quickstarts:
+
+```bash
+kaji init --cwd ./my-agent --lang ts --provider openai --yes
+cd ./my-agent
+bun install
+export OPENAI_API_KEY=sk-...
+bun start
+```
+
+```bash
+kaji init --cwd ./my-agent --lang python --provider openai --yes
+cd ./my-agent
+python -m pip install -r requirements.txt
+export OPENAI_API_KEY=sk-...
+python agent.py
+```
+
+Generated agents call `turn("Say hello.")`. MCP server setup is not part of
+the MVP scaffold path until a real server command exists.
+
 ### Step 3 - Register tools
 
 **Python**
 
 ```python
-from kaji import Integration, Tool, ToolContext
+from kaji import Integration, ToolContext, tool
 
 class WeatherIntegration(Integration):
     namespace = "weather"
 
-    @Tool(
+    @tool(
         description="Return weather for a city.",
         parameters={
             "type": "object",
@@ -193,22 +284,19 @@ class WeatherIntegration extends Integration {
 
 ```python
 import asyncio
-from kaji import AgentBuilder, InMemoryEventBus, InMemoryEventStore, UserMessage
+from kaji import AgentBuilder
 
 async def main():
-    bus = InMemoryEventBus()
-    store = InMemoryEventStore()
-
     runtime = (
         AgentBuilder()
         .provider(provider)             # from step 2
         .integration(WeatherIntegration())  # from step 3
         .system_prompt("You are a weather assistant.")
-        .build(bus=bus, store=store)
+        .build()
     )
 
-    await store.append(UserMessage(session_id="s1", content="Weather in Seattle?"))
-    await runtime.run_turn("s1")
+    result = await runtime.turn("Weather in Seattle?")
+    print(result.text)
 
 asyncio.run(main())
 ```
@@ -216,27 +304,16 @@ asyncio.run(main())
 **TypeScript**
 
 ```ts
-import {
-  AgentBuilder,
-  InMemoryEventStore,
-  EventBus,
-  KajiEvent,
-  EventType,
-} from "@kaji/sdk";
-
-const store = new InMemoryEventStore();
-const bus = new EventBus();
+import { AgentBuilder } from "@kaji/sdk";
 
 const runtime = new AgentBuilder()
   .provider(provider)                   // from step 2
   .integration(new WeatherIntegration())  // from step 3
   .systemPrompt("You are a weather assistant.")
-  .build({ bus, store });
+  .build();
 
-await store.append(
-  KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "s1" }),
-);
-await runtime.send("s1", "Weather in Seattle?");
+const result = await runtime.turn("Weather in Seattle?");
+console.log(result.text);
 ```
 
 ### Step 5 - Inspect events
@@ -244,16 +321,14 @@ await runtime.send("s1", "Weather in Seattle?");
 **Python**
 
 ```python
-events = await store.get_events("s1")
-for e in events:
+for e in result.events:
     print(e.type, getattr(e, "content", getattr(e, "delta", "")))
 ```
 
 **TypeScript**
 
 ```ts
-const events = await store.getEvents("s1");
-for (const e of events) {
+for (const e of result.events) {
   console.log(e.type, "content" in e ? e.content : "delta" in e ? e.delta : "");
 }
 ```
@@ -295,12 +370,23 @@ fixed and does not reflect real LLM outputs.
 
 | Package | Checks |
 |---------|--------|
-| `kaji/sdk` | ty (type check), ruff (lint), pytest (unit + quickstart) |
+| `kaji/sdk` | `scripts/typecheck_ty.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
 | `kaji/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
 | `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed |
 
 Install smoke jobs for both SDK packages validate that the published wheel /
 tarball exports resolve correctly and provider errors are clear.
+
+Python release packaging must also run:
+
+```bash
+cd kaji/sdk
+bash scripts/clean_generated.sh
+bash scripts/release_smoke.sh
+```
+
+`scripts/release_smoke.sh` builds the wheel, verifies wheel contents, installs
+the wheel into a temporary virtualenv, and runs `scripts/smoke_install.py`.
 
 ---
 
@@ -356,7 +442,7 @@ catalog) is the only outstanding item.
 Today there are two styles:
 
 - Plain objects with `register(registry)`.
-- `Integration` subclasses with `namespace` and `Tool(...)` discovery.
+- `Integration` subclasses with `namespace` and `tool(...)` discovery.
 
 Keep both internally if useful, but document and protect one beginner path in
 both SDKs. The recommended external API should be the class-based integration
@@ -366,14 +452,14 @@ scraper-backed integrations.
 Target Python shape:
 
 ```python
-from kaji import Integration, Tool, ToolContext
+from kaji import Integration, ToolContext, tool
 
 class WeatherIntegration(Integration):
     @property
     def namespace(self) -> str:
         return "weather"
 
-    @Tool(
+    @tool(
         description="Return weather for a city.",
         parameters={
             "type": "object",
@@ -388,7 +474,7 @@ class WeatherIntegration(Integration):
 
 Implemented Python changes:
 
-- Export `Tool` from `kaji/__init__.py` next to `Integration`.
+- Export `tool` from `kaji/__init__.py` next to `Integration`.
 - Add a quickstart test that imports only from `kaji` and uses the snippet
   above.
 - Keep `ToolRegistry` as the runtime primitive; do not move tool execution into
@@ -460,37 +546,41 @@ Current behavior:
 - Tool policies accept either the safe provider name or the catalog name, with
   deny rules taking precedence.
 
-### Plan 3 - Define the first-party integration catalog contract (open)
+### Plan 3 - Define the first-party integration catalog contract (implemented)
 
 The production developer goal includes integrations such as Gmail and Spotify.
-The current SDKs only provide a registry abstraction; they do not provide a
-catalog, auth model, manifest, credential shape, or scraper fallback contract.
+The current SDKs now share a v0 manifest contract for registry entries, but
+production auth, credential storage, third-party catalogs, and scraper fallback
+policy remain future integration-expansion work.
 
-Add a small manifest contract before adding many integrations:
+Current manifest contract:
 
 ```ts
 interface IntegrationManifest {
-  id: string;
-  displayName: string;
-  auth: "api_key" | "oauth" | "none";
-  scopes?: string[];
+  name: string;
+  version: string;
+  namespace: string;
+  description: string;
+  auth: { kind: "none" | "api_key" | "oauth" };
+  files: string[];
+  extras?: string[];
+  peerDeps?: Record<string, string>;
   tools: Array<{
     name: string;
     description: string;
-    risk: ToolRisk;
   }>;
 }
 ```
 
-Python should expose the same fields as a dataclass or Pydantic model.
+Python and TypeScript validate this contract against normalized equivalent
+`schema.json` files. This is enough for the pre-beta SDK catalog proof.
 
-Implementation order:
+Future production integration expansion order:
 
-1. Add shared manifest concepts in each SDK's integration package.
-2. Build one low-risk integration end to end in both SDKs, such as a read-only
+1. Build one low-risk integration end to end in both SDKs, such as a read-only
    web/search or mock calendar integration.
-3. Add one authenticated integration after credential injection is explicit.
-4. Only then add scraper-backed fallbacks, with clear risk and rate-limit
+2. Add one authenticated integration after credential injection is explicit.
+3. Only then add scraper-backed fallbacks, with clear risk and rate-limit
    behavior.
 
 ### Plan 4 - Normalize provider errors across SDKs (implemented)
@@ -553,7 +643,7 @@ Required checks:
 
 ```bash
 # Python SDK
-uv run ty check
+uv run python scripts/typecheck_ty.py
 uv run ruff check src tests
 uv run pytest tests/test_quickstart.py tests/test_public_api.py -q
 

@@ -32,16 +32,18 @@ tool wired in.
   <Step>
     ### Set a provider key
 
-    Pick one provider and export its key. The default in Python is `kimi`
-    (OpenRouter); the TypeScript SDK ships `openai` and `anthropic`.
+    Pick one provider and export its key. The base SDK uses a mock provider for
+    tests until you configure a real one; scaffolds generated with
+    `--provider openai` set `KAJI_MODEL_PROVIDER=openai`.
 
     ```bash
     export OPENAI_API_KEY=sk-...        # or
     export ANTHROPIC_API_KEY=sk-ant-... # or
-    export KIMI_API_KEY=...              # Python default
+    export KIMI_API_KEY=...              # Kimi/OpenRouter
     ```
 
-    To override the Python default, set `KAJI_MODEL_PROVIDER=openai`.
+    To choose another provider, set `KAJI_MODEL_PROVIDER=openai`,
+    `anthropic`, `gemini`, or `kimi`.
 
   </Step>
 
@@ -122,11 +124,11 @@ tool wired in.
   </Step>
 
   <Step>
-    ### Send a message
+    ### Run a turn
 
-    `send()` appends a `UserMessage` to the event log and runs one turn. The
-    model decides whether to call your tool; the runtime dispatches it,
-    collects the result, and produces a final response.
+    `turn()` appends the user message, runs one model/tool loop, and returns
+    the final assistant text. The model decides whether to call your tool; the
+    runtime dispatches it, collects the result, and produces a response.
 
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
@@ -134,19 +136,16 @@ tool wired in.
         import asyncio
 
         async def main():
-            await runtime.send("session-1", "What's the weather in NYC?")
-            for event in await runtime.history("session-1"):
-                print(event.type, getattr(event, "content", ""))
+            result = await runtime.turn("What's the weather in NYC?")
+            print(result.text)
 
         asyncio.run(main())
         ```
       </Tab>
       <Tab value="typescript">
         ```ts
-        await runtime.send("session-1", "What's the weather in NYC?");
-        for (const event of await runtime.history("session-1")) {
-          console.log(event.type, event.content ?? "");
-        }
+        const result = await runtime.turn("What's the weather in NYC?");
+        console.log(result.text);
         ```
       </Tab>
     </Tabs>

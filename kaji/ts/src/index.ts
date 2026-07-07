@@ -19,7 +19,6 @@ export { KajiEvent, type KajiEventInput, type BaseEvent } from "@/events/schemas
 export { EventBus } from "@/events/bus";
 export { type EventBusProtocol } from "@/events/protocols";
 export { type EventStore, InMemoryEventStore } from "@/events/store";
-export { ProviderRateLimited } from "@/events/schemas";
 
 // Sessions
 export {
@@ -61,7 +60,7 @@ export {
   type ApprovalHandler,
   type AnyApprovalHandler,
 } from "@/tools/planner";
-export { cliApprovalHandler, type CliApprovalOptions } from "@/tools/cli_approval_handler";
+export { cliApprovalHandler, type CliApprovalOptions } from "@/tools/approval";
 
 // Providers
 export type {
@@ -84,8 +83,8 @@ export {
   ProviderError,
   ProviderRateLimitedError,
 } from "@/providers/errors";
-export { lookupCost, calculateCostUsd } from "@/providers/_cost_table";
-export type { ModelCostEntry } from "@/providers/_cost_table";
+export { lookupCost, calculateCostUsd } from "@/providers/costs";
+export type { ModelCostEntry } from "@/providers/costs";
 export { getProvider, registerProvider } from "@/providers/registry";
 export {
   openai,
@@ -98,7 +97,7 @@ export {
 } from "@/providers/factory";
 
 // Auth
-export { type SecretSource, EnvSecretSource } from "@/auth/secret_source";
+export { type SecretSource, EnvSecretSource } from "@/auth/source";
 
 // Integrations
 export {
@@ -133,5 +132,5 @@ export type {
   ToolContext as ApprovalContext,
   ApprovalRequest,
 } from "@/runtime/approval/types";
-export { EventApprovalHandler } from "@/runtime/approval/event_handler";
+export { EventApprovalHandler } from "@/runtime/approval/handler";
 export { AutoApprovalHandler, type AutoApprovalPolicy } from "@/runtime/approval/auto";

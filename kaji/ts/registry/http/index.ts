@@ -62,7 +62,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       checkSSRF(url, allowedHosts);
       const resp = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+        headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(body),
       });
       const text = await resp.text();
@@ -86,7 +86,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       checkSSRF(url, allowedHosts);
       const resp = await fetch(url, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+        headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify(body),
       });
       const text = await resp.text();

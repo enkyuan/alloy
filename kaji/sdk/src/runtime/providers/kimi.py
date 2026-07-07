@@ -10,7 +10,12 @@ from kaji.runtime.providers._cancellation import (
 )
 from kaji.runtime.providers._translate import format_messages_openai
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.errors import ProviderAPIError, ProviderConfigError
+from kaji.runtime.providers.errors import (
+    ProviderAPIError,
+    ProviderConfigError,
+    classify_http_error,
+    provider_error_from_exception,
+)
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -25,32 +30,43 @@ logger = logging.getLogger(__name__)
 class KimiProvider(ModelProvider):
     """Kimi provider implementation, supporting OpenAI-compatible and Cloudflare endpoints."""
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        http_referer: Optional[str] = None,
+        app_title: Optional[str] = None,
+        **_: Any,
+    ) -> None:
         settings = get_settings()
         self.is_cloudflare = bool(
             settings.CLOUDFLARE_ACCOUNT_ID and settings.CLOUDFLARE_API_TOKEN
-        )
+        ) and api_key is None and base_url is None
 
         if self.is_cloudflare:
-            self.model_name = settings.CLOUDFLARE_KIMI_MODEL
+            self.model_name = model or settings.CLOUDFLARE_KIMI_MODEL
             self.base_url = f"https://api.cloudflare.com/client/v4/accounts/{settings.CLOUDFLARE_ACCOUNT_ID}/ai/v1/chat/completions"
             self.api_key = settings.CLOUDFLARE_API_TOKEN
             self.http_referer = None
             self.app_title = None
         else:
-            self.model_name = settings.KIMI_MODEL
+            self.model_name = model or settings.KIMI_MODEL
             self.base_url = (
-                settings.KIMI_BASE_URL
+                base_url
+                or settings.KIMI_BASE_URL
                 or settings.OPENROUTER_BASE_URL
                 or "https://openrouter.ai/api/v1/chat/completions"
             )
-            self.api_key = settings.OPENROUTER_API_KEY or settings.KIMI_API_KEY
-            self.http_referer = settings.OPENROUTER_HTTP_REFERER
-            self.app_title = settings.OPENROUTER_APP_TITLE
+            self.api_key = api_key or settings.OPENROUTER_API_KEY or settings.KIMI_API_KEY
+            self.http_referer = http_referer or settings.OPENROUTER_HTTP_REFERER
+            self.app_title = app_title or settings.OPENROUTER_APP_TITLE
 
         if not self.api_key:
             raise ProviderConfigError(
-                "Kimi/Cloudflare API key is not configured. Set OPENROUTER_API_KEY."
+                "Kimi/Cloudflare API key is not configured. Set OPENROUTER_API_KEY.",
+                service="kimi",
             )
 
     def _get_headers(self) -> Dict[str, str]:
@@ -162,68 +178,85 @@ class KimiProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.base_url,
-                headers=self._get_headers(),
-                json=payload,
-                timeout=60.0,
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    self.base_url,
+                    headers=self._get_headers(),
+                    json=payload,
+                    timeout=60.0,
+                )
+        except httpx.HTTPError as error:
+            raise provider_error_from_exception(
+                service="kimi",
+                action="generate",
+                error=error,
+            ) from error
+
+        if response.status_code != 200:
+            logger.error("Kimi API Error: %s", response.text)
+            raise classify_http_error(
+                service="kimi",
+                action="generate",
+                status_code=response.status_code,
+                response_text=response.text,
             )
 
-            if response.status_code != 200:
-                logger.error(f"Kimi API Error: {response.text}")
-                raise ProviderAPIError(
-                    f"Kimi API returned status {response.status_code}: {response.text}"
+        try:
+            data = response.json()
+        except ValueError as error:
+            raise ProviderAPIError(
+                "Kimi API returned invalid JSON.",
+                service="kimi",
+                response_text=response.text,
+            ) from error
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise ProviderAPIError("No choices in Kimi API response", service="kimi")
+
+        message = choices[0].get("message", {})
+        text = message.get("content", "") or ""
+
+        tool_calls_data = message.get("tool_calls", [])
+        tool_calls = []
+        for tc in tool_calls_data:
+            if tc.get("type") == "function":
+                func = tc.get("function", {})
+                args = func.get("arguments", "{}")
+                try:
+                    parsed_args = json.loads(args)
+                except json.JSONDecodeError as exc:
+                    parsed_args = {
+                        "__parse_error": f"Kimi tool args were not valid JSON: {exc}"
+                    }
+
+                tool_calls.append(
+                    {
+                        "id": tc.get("id"),
+                        "name": func.get("name"),
+                        "arguments": parsed_args,
+                    }
                 )
 
-            data = response.json()
+        usage = data.get("usage", {})
+        metrics = TokenMetrics(
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+        )
 
-            choices = data.get("choices", [])
-            if not choices:
-                raise ProviderAPIError("No choices in Kimi API response")
+        metadata = ModelMetadata(
+            provider_name="kimi" if not self.is_cloudflare else "cloudflare",
+            model_name=self.model_name,
+        )
 
-            message = choices[0].get("message", {})
-            text = message.get("content", "") or ""
-
-            tool_calls_data = message.get("tool_calls", [])
-            tool_calls = []
-            for tc in tool_calls_data:
-                if tc.get("type") == "function":
-                    func = tc.get("function", {})
-                    args = func.get("arguments", "{}")
-                    try:
-                        parsed_args = json.loads(args)
-                    except json.JSONDecodeError as exc:
-                        parsed_args = {
-                            "__parse_error": f"Kimi tool args were not valid JSON: {exc}"
-                        }
-
-                    tool_calls.append(
-                        {
-                            "id": tc.get("id"),
-                            "name": func.get("name"),
-                            "arguments": parsed_args,
-                        }
-                    )
-
-            usage = data.get("usage", {})
-            metrics = TokenMetrics(
-                prompt_tokens=usage.get("prompt_tokens", 0),
-                completion_tokens=usage.get("completion_tokens", 0),
-                total_tokens=usage.get("total_tokens", 0),
-            )
-
-            metadata = ModelMetadata(
-                provider_name="kimi" if not self.is_cloudflare else "cloudflare",
-                model_name=self.model_name,
-            )
-
-            return GenerateResponse(
-                text=text,
-                tool_calls=cast(Any, tool_calls),
-                metadata=metadata,
-                metrics=metrics,
-            )
+        return GenerateResponse(
+            text=text,
+            tool_calls=cast(Any, tool_calls),
+            metadata=metadata,
+            metrics=metrics,
+        )
 
     async def generate_stream(
         self,
@@ -240,40 +273,50 @@ class KimiProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                self.base_url,
-                headers=self._get_headers(),
-                json=payload,
-                timeout=60.0,
-            ) as response:
-                if response.status_code != 200:
-                    body = (await response.aread()).decode("utf-8", errors="replace")
-                    raise ProviderAPIError(
-                        f"Kimi Streaming API Error {response.status_code}: {body}"
-                    )
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    self.base_url,
+                    headers=self._get_headers(),
+                    json=payload,
+                    timeout=60.0,
+                ) as response:
+                    if response.status_code != 200:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        raise classify_http_error(
+                            service="kimi",
+                            action="stream",
+                            status_code=response.status_code,
+                            response_text=body,
+                        )
 
-                pending_tool_calls: Dict[int, Dict[str, str]] = {}
+                    pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
-                async for line in response.aiter_lines():
-                    _raise_if_cancelled(cancellation_token)
+                    async for line in response.aiter_lines():
+                        _raise_if_cancelled(cancellation_token)
 
-                    line = line.strip()
-                    if not line or line == "data: [DONE]":
-                        continue
+                        line = line.strip()
+                        if not line or line == "data: [DONE]":
+                            continue
 
-                    if line.startswith("data: "):
-                        line = line[6:]
+                        if line.startswith("data: "):
+                            line = line[6:]
 
-                    try:
-                        data = json.loads(line)
+                        try:
+                            data = json.loads(line)
+                        except json.JSONDecodeError as error:
+                            raise ProviderAPIError(
+                                "Kimi stream returned invalid JSON.",
+                                service="kimi",
+                                response_text=line,
+                            ) from error
+
                         choices = data.get("choices", [])
                         if not choices:
                             continue
 
                         delta = choices[0].get("delta", {})
-
                         chunk_text = delta.get("content", "") or ""
 
                         self._accumulate_stream_tool_calls(
@@ -282,12 +325,16 @@ class KimiProvider(ModelProvider):
 
                         if chunk_text:
                             yield ModelResponseChunk(delta=chunk_text, tool_calls=[])
-                    except json.JSONDecodeError:
-                        continue
 
-                tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
-                if tool_calls:
-                    yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
+                    tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+                    if tool_calls:
+                        yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
+        except httpx.HTTPError as error:
+            raise provider_error_from_exception(
+                service="kimi",
+                action="stream",
+                error=error,
+            ) from error
 
 
 register_provider("kimi", KimiProvider)

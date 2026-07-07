@@ -53,6 +53,8 @@ packages = [
     "kaji.infra.observability",
     "kaji.infra.realtime",
     "kaji.integrations",
+    "kaji.integrations.registry",
+    "kaji.integrations.registry.echo",
     "kaji.knowledge",
     "kaji.modalities",
     "kaji.modalities.text",
@@ -78,6 +80,8 @@ kaji = "src"
 "kaji.infra.observability" = "src/infra/observability"
 "kaji.infra.realtime" = "src/infra/realtime"
 "kaji.integrations" = "src/integrations"
+"kaji.integrations.registry" = "src/integrations/registry"
+"kaji.integrations.registry.echo" = "src/integrations/registry/echo"
 "kaji.knowledge" = "src/knowledge"
 "kaji.modalities" = "src/modalities"
 "kaji.modalities.text" = "src/modalities/text"

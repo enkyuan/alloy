@@ -14,7 +14,11 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.errors import ProviderAPIError, ProviderConfigError
+from kaji.runtime.providers.errors import (
+    ProviderConfigError,
+    provider_error_from_exception,
+)
+from kaji.runtime.providers.costs import calculate_cost_usd
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -34,10 +38,16 @@ logger = logging.getLogger(__name__)
 class AnthropicProvider(ModelProvider):
     """Anthropic Messages API provider with streaming and tool use."""
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        **_: Any,
+    ) -> None:
         settings = get_settings()
-        self.api_key = settings.ANTHROPIC_API_KEY
-        self.model_name = settings.ANTHROPIC_MODEL
+        self.api_key = api_key if api_key is not None else settings.ANTHROPIC_API_KEY
+        self.model_name = model if model is not None else settings.ANTHROPIC_MODEL
         self._client: Any = None
 
         if not self.api_key:
@@ -173,7 +183,9 @@ class AnthropicProvider(ModelProvider):
             response = await self.client.messages.create(**kwargs)
         except Exception as e:  # noqa: BLE001
             logger.error("Anthropic API error: %s", e)
-            raise ProviderAPIError(f"Anthropic request failed: {e}") from e
+            raise provider_error_from_exception(
+                service="anthropic", action="request", error=e
+            ) from e
 
         text, tool_calls = self._parse_tool_use(response.content)
 
@@ -224,17 +236,37 @@ class AnthropicProvider(ModelProvider):
             stream = self.client.messages.stream(**kwargs)
         except Exception as e:  # noqa: BLE001
             logger.error("Anthropic streaming API error: %s", e)
-            raise ProviderAPIError(f"Anthropic stream failed: {e}") from e
+            raise provider_error_from_exception(
+                service="anthropic", action="stream", error=e
+            ) from e
 
         # Accumulate tool_use blocks — Anthropic streams them in deltas that
         # must be reassembled before the arguments are valid JSON.
         pending_tool: Dict[str, Any] = {}
+        latest_metrics: TokenMetrics | None = None
 
         async with stream as s:
             async for event in s:
                 _raise_if_cancelled(cancellation_token)
 
                 event_type = getattr(event, "type", None)
+                usage = getattr(event, "usage", None)
+                if usage is not None:
+                    prompt_tokens = getattr(
+                        usage,
+                        "input_tokens",
+                        latest_metrics.prompt_tokens if latest_metrics else 0,
+                    )
+                    completion_tokens = getattr(
+                        usage,
+                        "output_tokens",
+                        latest_metrics.completion_tokens if latest_metrics else 0,
+                    )
+                    latest_metrics = TokenMetrics(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    )
 
                 if event_type == "content_block_start":
                     block = getattr(event, "content_block", None)
@@ -277,6 +309,16 @@ class AnthropicProvider(ModelProvider):
                         ),
                     )
                     pending_tool = {}
+
+        if latest_metrics is not None:
+            yield ModelResponseChunk(
+                metrics=latest_metrics,
+                cost_usd=calculate_cost_usd(
+                    self.model_name,
+                    latest_metrics.prompt_tokens,
+                    latest_metrics.completion_tokens,
+                ),
+            )
 
 
 register_provider("anthropic", AnthropicProvider)

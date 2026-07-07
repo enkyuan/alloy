@@ -40,6 +40,26 @@ describe("EventBus", () => {
     await sub.return?.();
   });
 
+  it("delivers session backlog to subscribers created after publish", async () => {
+    const bus = new EventBus();
+
+    await bus.publish(userMessage("s1", "one"));
+    await bus.publish(userMessage("s1", "two"));
+    const sub = bus.subscribe("s1");
+    await bus.publish(userMessage("s1", "three"));
+
+    const first = await sub.next();
+    const second = await sub.next();
+    const third = await sub.next();
+    expect(
+      [first, second, third].map((r) =>
+        r.value?.type === EventType.USER_MESSAGE ? r.value.content : "",
+      ),
+    ).toEqual(["one", "two", "three"]);
+
+    await sub.return?.();
+  });
+
   it("does not deliver events from other sessions", async () => {
     const bus = new EventBus();
     const sub = bus.subscribe("s1");

@@ -14,6 +14,7 @@ import type {
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  TokenUsage,
   ToolCall,
 } from "@/providers/base";
 import {
@@ -21,8 +22,8 @@ import {
   ProviderError,
   providerAPIErrorFromUnknown,
 } from "@/providers/errors";
-import { parseToolArgsJSON } from "@/providers/_args";
-import { calculateCostUsd } from "@/providers/_cost_table";
+import { parseToolArgsJSON } from "@/providers/args";
+import { calculateCostUsd } from "@/providers/costs";
 import type { RetryOptions } from "@/providers/openai";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -71,6 +72,19 @@ function splitMessages(messages: ProviderMessage[]): {
           },
         ],
       });
+    } else if (m.role === "assistant" && m.toolCalls?.length) {
+      anthropicMessages.push({
+        role: "assistant",
+        content: [
+          ...(m.content ? [{ type: "text" as const, text: m.content }] : []),
+          ...m.toolCalls.map((tc) => ({
+            type: "tool_use" as const,
+            id: tc.id,
+            name: tc.name,
+            input: tc.args ?? {},
+          })),
+        ],
+      });
     } else {
       anthropicMessages.push({ role: m.role, content: m.content });
     }
@@ -100,6 +114,18 @@ function parseContentBlocks(blocks: AnthropicContentBlock[] | undefined | null):
     }
   }
   return { content, toolCalls };
+}
+
+function usageFromEvent(event: AnthropicStreamEvent, current: TokenUsage | undefined): TokenUsage | undefined {
+  const rawUsage =
+    "usage" in event
+      ? (event as { usage?: { input_tokens?: number; output_tokens?: number } }).usage
+      : undefined;
+  if (!rawUsage) return current;
+  return {
+    input: rawUsage.input_tokens ?? current?.input ?? 0,
+    output: rawUsage.output_tokens ?? current?.output ?? 0,
+  };
 }
 
 interface ResolvedAnthropicOptions {
@@ -168,11 +194,15 @@ export class AnthropicProvider implements ModelProvider {
     return Number.isFinite(seconds) ? seconds * 1000 : undefined;
   }
 
+  protected async createClient(): Promise<Anthropic> {
+    const { default: AnthropicDefault } = await import("@anthropic-ai/sdk");
+    return new AnthropicDefault({ apiKey: this.opts.apiKey });
+  }
+
   private async getClient(): Promise<Anthropic> {
     if (this.client !== null) return this.client;
     try {
-      const { default: AnthropicDefault } = await import("@anthropic-ai/sdk");
-      this.client = new AnthropicDefault({ apiKey: this.opts.apiKey });
+      this.client = await this.createClient();
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("Anthropic provider requires the @anthropic-ai/sdk package.", {
@@ -239,6 +269,7 @@ export class AnthropicProvider implements ModelProvider {
     // Anthropic streams tool_use blocks as fragmented input_json_delta events
     // that must be accumulated before the args are parseable.
     let pendingTool: { id: string; name: string; argsRaw: string } | null = null;
+    let latestUsage: TokenUsage | undefined;
 
     try {
       const stream = client.messages.stream(params, {
@@ -246,6 +277,7 @@ export class AnthropicProvider implements ModelProvider {
       });
 
       for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
+        latestUsage = usageFromEvent(event, latestUsage);
         if (event.type === "content_block_start") {
           const block = event.content_block;
           if (block.type === "tool_use") {
@@ -271,6 +303,14 @@ export class AnthropicProvider implements ModelProvider {
           };
           pendingTool = null;
         }
+      }
+      if (latestUsage) {
+        yield {
+          delta: "",
+          toolCalls: [],
+          usage: latestUsage,
+          costUsd: calculateCostUsd(this.opts.model, latestUsage.input, latestUsage.output),
+        };
       }
     } catch (error) {
       throw providerAPIErrorFromUnknown("anthropic", error);

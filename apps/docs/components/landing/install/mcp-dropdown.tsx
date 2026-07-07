@@ -10,10 +10,10 @@ import {
 } from "@components/docs/icons/editors";
 
 const mcpCommands = [
-  { name: "Cursor", command: "npx kaji mcp --cursor" },
-  { name: "Claude Code", command: "npx kaji mcp --claude-code" },
-  { name: "Open Code", command: "npx kaji mcp --open-code" },
-  { name: "Manual", command: "npx kaji mcp --manual" },
+  { name: "Cursor" },
+  { name: "Claude Code" },
+  { name: "Open Code" },
+  { name: "Manual" },
 ];
 
 type Props = {
@@ -24,7 +24,7 @@ type Props = {
   onCopy: (cmd: string) => void;
 };
 
-export function McpDropdown({ copied, open, onToggle, onClose, onCopy }: Props) {
+export function McpDropdown({ copied, open, onToggle, onClose }: Props) {
   return (
     <div className="relative">
       <button
@@ -52,9 +52,9 @@ export function McpDropdown({ copied, open, onToggle, onClose, onCopy }: Props) 
               <button
                 type="button"
                 key={mc.name}
-                onClick={() => onCopy(mc.command)}
+                disabled
                 className={cn(
-                  "flex items-center gap-2.5 w-full px-3 py-2 text-[12px] text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/[0.05] transition-all text-left",
+                  "flex items-center gap-2.5 w-full px-3 py-2 text-[12px] text-neutral-400 dark:text-neutral-500 text-left cursor-not-allowed",
                   i < mcpCommands.length - 1 &&
                     "border-b border-neutral-100 dark:border-white/[0.06]",
                 )}
@@ -66,6 +66,7 @@ export function McpDropdown({ copied, open, onToggle, onClose, onCopy }: Props) 
                   {mc.name === "Manual" && <TerminalIcon size={14} />}
                 </span>
                 <span className="font-mono text-[11px]">{mc.name}</span>
+                <span className="ml-auto text-[10px] uppercase tracking-wide">Soon</span>
               </button>
             ))}
           </div>

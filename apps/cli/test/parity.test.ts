@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { buildProgram } from "../src/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = resolve(__dirname, "..", "dist", "index.js");
@@ -18,6 +19,15 @@ function hasPoetry(): boolean {
 }
 
 const canRun = existsSync(distPath) && hasPoetry();
+
+describe("CLI command registry", () => {
+  it("exposes the supported source-level subcommands", () => {
+    const commands = buildProgram()
+      .commands.map((command) => command.name())
+      .sort();
+    expect(commands).toEqual(["doctor", "gen", "info", "init", "mcp", "secret", "upgrade"]);
+  });
+});
 
 describe.skipIf(!canRun)("CLI parity", () => {
   it("ts and python share the same subcommands (mcp is ts-only)", () => {

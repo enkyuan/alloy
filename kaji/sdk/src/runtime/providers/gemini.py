@@ -6,11 +6,14 @@ import hashlib
 import json
 
 from importlib import import_module
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, NoReturn, Optional
 
 from kaji.core.config import get_settings
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.providers.errors import (
+    ProviderConfigError,
+    provider_error_from_exception,
+)
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -29,6 +32,14 @@ from kaji.runtime.providers._translate import (
 logger = logging.getLogger(__name__)
 
 
+def _raise_gemini_error(action: str, error: Exception) -> NoReturn:
+    raise provider_error_from_exception(
+        service="gemini",
+        action=action,
+        error=error,
+    ) from error
+
+
 class GeminiService:
     """Service for Google Gemini AI operations."""
 
@@ -40,10 +51,10 @@ class GeminiService:
         Args:
             api_key: Optional API key. If not provided, uses GEMINI_API_KEY from settings.
         """
-        self.api_key = get_settings().GEMINI_API_KEY
+        self.api_key = api_key if api_key is not None else get_settings().GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
-            raise ValueError("GEMINI_API_KEY is required")
+            raise ProviderConfigError("GEMINI_API_KEY is required", service="gemini")
 
         logger.info("Initializing Gemini client...")
         try:
@@ -132,22 +143,28 @@ class GeminiService:
             max_tokens=max_tokens,
         )
 
-        response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.model,
-            contents=prompt,
-            config=config,
-        )
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
+        except Exception as error:
+            _raise_gemini_error("generate", error)
 
         return response.text or ""
 
     async def embed_text(self, text: str) -> List[float]:
         """Embed text directly through Gemini models natively"""
-        response = await asyncio.to_thread(
-            self.client.models.embed_content,
-            model="text-embedding-004",
-            contents=text,
-        )
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.embed_content,
+                model="text-embedding-004",
+                contents=text,
+            )
+        except Exception as error:
+            _raise_gemini_error("embed", error)
         if not response.embeddings or not response.embeddings[0].values:
             return []
         return list(response.embeddings[0].values)
@@ -186,12 +203,15 @@ class GeminiService:
             # Only pass the un-cached remainder (last two messages) to the LLM
             active_contents = contents[-2:] if len(contents) >= 2 else contents
 
-        response = await asyncio.to_thread(
-            self.client.models.generate_content,
-            model=self.model,
-            contents=active_contents,
-            config=config,
-        )
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content,
+                model=self.model,
+                contents=active_contents,
+                config=config,
+            )
+        except Exception as error:
+            _raise_gemini_error("chat", error)
         return response
 
     async def generate_streaming_response(
@@ -206,19 +226,22 @@ class GeminiService:
             system_instruction=system_instruction,
         )
 
-        response = await asyncio.to_thread(
-            self.client.models.generate_content_stream,
-            model=self.model,
-            contents=prompt,
-            config=config,
-        )
-        iterator = iter(response)
-        while True:
-            chunk = await asyncio.to_thread(lambda: next(iterator, None))
-            if chunk is None:
-                break
-            if chunk.text:
-                yield chunk.text
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content_stream,
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
+            iterator = iter(response)
+            while True:
+                chunk = await asyncio.to_thread(lambda: next(iterator, None))
+                if chunk is None:
+                    break
+                if chunk.text:
+                    yield chunk.text
+        except Exception as error:
+            _raise_gemini_error("stream", error)
 
     async def generate_chat_stream(
         self,
@@ -242,18 +265,21 @@ class GeminiService:
         if tools:
             config["tools"] = tools
 
-        response = await asyncio.to_thread(
-            self.client.models.generate_content_stream,
-            model=self.model,
-            contents=contents,
-            config=config,
-        )
-        iterator = iter(response)
-        while True:
-            chunk = await asyncio.to_thread(lambda: next(iterator, None))
-            if chunk is None:
-                break
-            yield chunk
+        try:
+            response = await asyncio.to_thread(
+                self.client.models.generate_content_stream,
+                model=self.model,
+                contents=contents,
+                config=config,
+            )
+            iterator = iter(response)
+            while True:
+                chunk = await asyncio.to_thread(lambda: next(iterator, None))
+                if chunk is None:
+                    break
+                yield chunk
+        except Exception as error:
+            _raise_gemini_error("stream", error)
 
     def _build_generation_config(
         self,
@@ -286,7 +312,12 @@ class GeminiProvider(ModelProvider):
     """Gemini provider implementing the generic ModelProvider interface."""
 
     def __init__(self, **kwargs):
-        self.service = get_gemini_service()
+        api_key = kwargs.get("api_key")
+        self.service = (
+            GeminiService(api_key=api_key)
+            if api_key is not None
+            else get_gemini_service()
+        )
 
     async def generate(
         self,

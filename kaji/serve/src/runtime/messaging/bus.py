@@ -376,10 +376,6 @@ class Bus:
         logger.debug("Bus: Routing message: %s", message)
         try:
             # Handle agent handoff events or transfer_to_* tool calls directly.
-            # TODO: Consider adding certain types of events as being high priority to handle.
-            # For example, it would be reasonable to prioritize these events:
-            # - AgentResponse should be sent to the user bridge immediately.
-            # - Interruption events should be processed by the interruption routes first.
             event = message.event
             if isinstance(event, AgentHandoff):
                 logger.info("Bus: Handling handoff to %s", event.target_agent)
@@ -399,7 +395,6 @@ class Bus:
                     # We want the bridges to process the tasks in the background.
                     # This is to ensure that future messages are not blocked by the task.
                     # NOTE: There is an implicit ordering here determined by the order of the bridges.
-                    # TODO: Consider making this explicit.
                     task = asyncio.create_task(
                         self._run_bridge_with_semaphore(bridge, message)
                     )

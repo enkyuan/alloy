@@ -75,9 +75,25 @@ class AgentMessageDelta(BaseEvent):
     delta: str
 
 
+class EventTokenUsage(BaseModel):
+    input: int = Field(ge=0)
+    output: int = Field(ge=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AgentMessageCompleted(BaseEvent):
     type: Literal[EventType.AGENT_MESSAGE_COMPLETED] = EventType.AGENT_MESSAGE_COMPLETED
     content: str
+    tokens: Optional[EventTokenUsage] = None
+    cost_usd: Optional[float] = Field(default=None, ge=0)
+
+
+class AgentTurnExhausted(BaseEvent):
+    type: Literal[EventType.AGENT_TURN_EXHAUSTED] = EventType.AGENT_TURN_EXHAUSTED
+    max_iterations: int
+    pending_tool_calls: List[Dict[str, Any]]
+    reason: Optional[str] = None
 
 
 class ToolCallRequested(BaseEvent):
@@ -98,6 +114,8 @@ class ToolCallCompleted(BaseEvent):
     tool_name: str
     tool_call_id: str
     result: Any
+    tokens: Optional[EventTokenUsage] = None
+    cost_usd: Optional[float] = Field(default=None, ge=0)
 
 
 class ToolCallFailed(BaseEvent):
@@ -166,6 +184,7 @@ KajiEvent = Union[
     AgentReasoningStarted,
     AgentMessageDelta,
     AgentMessageCompleted,
+    AgentTurnExhausted,
     ToolCallRequested,
     ToolCallStarted,
     ToolCallCompleted,

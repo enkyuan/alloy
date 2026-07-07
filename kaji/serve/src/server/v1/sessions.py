@@ -3,13 +3,21 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.runtime.sessions.store import SessionRecord
 from kaji_serve.server.database import get_db
-from kaji.runtime.sessions.manager import SessionManager
 from kaji_serve.server.deps import get_current_supabase_user
 from kaji_serve.server.session_store import PostgresSessionStore
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _session_response(record: SessionRecord) -> dict:
+    return {
+        "session_id": record.session_id,
+        "user_id": record.user_id,
+        "created_at": record.created_at,
+        "title": record.title,
+    }
 
 
 @router.get("")
@@ -18,8 +26,6 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
 ):
     """List active sessions for the authenticated user."""
-    manager = SessionManager(
-        InMemoryEventStore(), session_store=PostgresSessionStore(db)
-    )
-    sessions = await manager.list_active(user["id"])
+    records = await PostgresSessionStore(db).list_sessions(user["id"])
+    sessions = [_session_response(record) for record in records]
     return {"sessions": sessions}

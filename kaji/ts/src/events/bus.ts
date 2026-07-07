@@ -64,6 +64,7 @@ class Subscription implements AsyncIterableIterator<KajiEvent> {
 }
 
 export class EventBus implements EventBusProtocol {
+  private readonly log = new Map<string, KajiEvent[]>();
   private readonly subscribers = new Map<string, Set<Subscription>>();
 
   /**
@@ -75,6 +76,13 @@ export class EventBus implements EventBusProtocol {
    * `await self.bus.publish(event)`. The agent runtime depends on this shape.
    */
   async publish(event: KajiEvent): Promise<void> {
+    let backlog = this.log.get(event.session_id);
+    if (!backlog) {
+      backlog = [];
+      this.log.set(event.session_id, backlog);
+    }
+    backlog.push(event);
+
     const subs = this.subscribers.get(event.session_id);
     if (!subs) return;
     for (const sub of subs) sub.push(event);
@@ -95,6 +103,9 @@ export class EventBus implements EventBusProtocol {
       bucket.delete(sub);
       if (bucket.size === 0) this.subscribers.delete(sessionId);
     });
+    for (const event of this.log.get(sessionId) ?? []) {
+      sub.push(event);
+    }
     bucket.add(sub);
     return sub;
   }

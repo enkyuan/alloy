@@ -78,6 +78,7 @@ identical across both SDKs.
 | agent | `agent.reasoning.started` | runtime entered a turn |
 | agent | `agent.message.delta` | streaming token from the model |
 | agent | `agent.message.completed` | model finalized its text for the turn |
+| agent | `agent.turn.exhausted` | runtime hit the configured tool-iteration limit without a final response |
 | tool call | `tool.call.requested` | model asked for a tool call |
 | tool call | `tool.call.started` | runtime began executing |
 | tool call | `tool.call.completed` | tool returned a result |

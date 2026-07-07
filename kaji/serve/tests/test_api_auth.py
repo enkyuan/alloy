@@ -40,11 +40,12 @@ def mock_existing_user():
 
 
 @pytest.mark.asyncio
+@pytest.mark.db
 async def test_api_auth_sync_new_user(
-    async_client: AsyncClient, mock_sync_user, session
+    db_async_client: AsyncClient, mock_sync_user, session
 ):
     headers = {"Authorization": "Bearer valid_token"}
-    response = await async_client.post("/api/v1/auth/sync", headers=headers)
+    response = await db_async_client.post("/api/v1/auth/sync", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -58,8 +59,9 @@ async def test_api_auth_sync_new_user(
 
 
 @pytest.mark.asyncio
+@pytest.mark.db
 async def test_api_auth_me_success(
-    async_client: AsyncClient, mock_existing_user, session
+    db_async_client: AsyncClient, mock_existing_user, session
 ):
     user = User(
         id="existing_user_id",
@@ -71,7 +73,7 @@ async def test_api_auth_me_success(
     await session.flush()
 
     headers = {"Authorization": "Bearer valid_token"}
-    response = await async_client.get("/api/v1/auth/me", headers=headers)
+    response = await db_async_client.get("/api/v1/auth/me", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -80,8 +82,9 @@ async def test_api_auth_me_success(
 
 
 @pytest.mark.asyncio
+@pytest.mark.db
 async def test_api_auth_refresh_token(
-    async_client: AsyncClient, mock_supabase_auth, session
+    db_async_client: AsyncClient, mock_supabase_auth, session
 ):
     user = User(id="refresh_user_id", email="refresh@example.com")
     session.add(user)
@@ -95,7 +98,7 @@ async def test_api_auth_refresh_token(
     }
 
     payload = {"refresh_token": "old_refresh_token"}
-    response = await async_client.post("/api/v1/auth/refresh", json=payload)
+    response = await db_async_client.post("/api/v1/auth/refresh", json=payload)
 
     assert response.status_code == 200
     data = response.json()

@@ -7,7 +7,7 @@
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { writeTextFile } from "@/cli/bun_io";
+import { writeTextFile } from "@/cli/bun-io";
 import type { RunOptions } from "@/cli/index";
 
 interface Args {

@@ -16,14 +16,14 @@ from kaji.modalities.voice.event_models import ToolResult
 from kaji.infra.realtime.redis import get_redis_client
 from kaji.runtime.providers.errors import ServiceNetworkError
 from kaji.runtime.tools.registry import execute_tool
-from kaji.infra.realtime.redis_events import (
+from kaji.infra.realtime.redis_dedup import (
     is_tool_call_retry_safe,
     clear_tool_call_execution_in_progress,
     claim_tool_call_execution,
     is_tool_call_execution_complete,
     mark_tool_call_execution_complete,
-    publish_user_update,
 )
+from kaji.infra.realtime.redis_publish import publish_user_update
 from kaji_serve.workers.broker import QUEUE_HIGH_PRIORITY, broker
 
 logger = logging.getLogger(__name__)

@@ -32,6 +32,13 @@ def test_agent_template_is_valid_python() -> None:
     ast.parse(agent_template("openai"))
 
 
+def test_agent_template_uses_high_level_turn_api() -> None:
+    source = agent_template("openai")
+    assert "runtime.turn(" in source
+    assert "runtime.run_turn(" not in source
+    assert "store.append(" not in source
+
+
 def test_env_template_mentions_provider() -> None:
     env = env_template("anthropic")
     assert "KAJI_MODEL_PROVIDER=anthropic" in env

@@ -11,23 +11,38 @@ Run `kaji --help` to see the live list.
 
 | Command   | Purpose                                                   | Python | TS  |
 | --------- | --------------------------------------------------------- | ------ | --- |
-| `init`    | Scaffold a new project (`agent.ts`/`.py`, `.env.example`) | ✓      | ✓   |
+| `init`    | Scaffold a runnable `turn()` agent project                | ✓      | ✓   |
 | `gen`     | Generate tool stubs from an OpenAPI spec                  | ✓      | ✓   |
 | `info`    | Show environment + installed kaji packages                | ✓      | ✓   |
 | `secret`  | Generate a random 32-byte hex secret                      | ✓      | ✓   |
 | `doctor`  | Check the environment for common issues                   | ✓      | ✓   |
 | `upgrade` | Upgrade installed kaji packages                           | ✓      | ✓   |
-| `mcp`     | Register the kaji MCP server with an AI tool              | --     | ✓   |
+| `mcp`     | Explain MCP setup status; server support is deferred      | --     | ✓   |
 
 ## init
 
 ```bash
-kaji init . --provider openai --yes              # python: scaffolds agent.py
-kaji init --lang ts --provider openai --yes      # ts: scaffolds agent.ts
+kaji init --cwd ./my-agent --lang ts --provider openai --yes
+cd ./my-agent
+bun install
+export OPENAI_API_KEY=sk-...
+bun start
 ```
 
-Writes `agent.{py,ts}` and `.env.example` with the provider you chose
-pre-filled. `--force` overwrites; `--yes` skips the interactive prompts.
+```bash
+kaji init --cwd ./my-agent --lang python --provider openai --yes
+cd ./my-agent
+python -m pip install -r requirements.txt
+export OPENAI_API_KEY=sk-...
+python agent.py
+```
+
+TypeScript scaffolds write `package.json`, `tsconfig.json`, `agent.ts`, and
+`.env.example`. Python scaffolds write `agent.py`, `requirements.txt`, and
+`.env.example`. Both generated agents use the high-level
+`turn("Say hello.")` API. `--force` overwrites; `--yes` skips the interactive
+prompts. OpenAI `gpt-5.4-mini` is the recommended first live model in the SDK
+readiness tests, and live tests skip when provider keys are absent.
 
 ## gen
 
@@ -48,8 +63,10 @@ kaji info --json         # machine-readable
 kaji doctor              # exit 1 if anything is wrong
 ```
 
-`doctor` returns a non-zero exit code if any hard check fails (Python >=3.11,
-Node >=22, kaji installed, at least one provider key in env).
+`doctor` returns a non-zero exit code if any hard check fails. It detects the
+scaffold language, checks Node >=22 for TypeScript, Python >=3.11 for Python,
+the expected SDK/provider package, and the provider key selected by
+`KAJI_MODEL_PROVIDER`.
 
 ## secret / upgrade
 
@@ -62,10 +79,9 @@ kaji upgrade -y          # bumps @kaji/* (TS) or kaji/kaji-* (PyPI)
 ## mcp (TypeScript only)
 
 ```bash
-kaji mcp                 # interactive: pick tool (cursor/claude-code/...) and scope
+kaji mcp                 # prints current MCP setup status
 ```
 
-Writes the MCP server entry to the appropriate config file
-(`.cursor/mcp.json`, `claude_desktop_config.json`, etc.). The Python CLI
-does not ship `mcp`. Register the Python agent's tools through your AI
-tool directly.
+`@kaji/cli` does not ship an MCP server yet, so this command does not write
+AI-tool configuration. Use `kaji gen` to generate tool handlers today. MCP
+server support is planned separately.

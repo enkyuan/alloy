@@ -15,12 +15,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kaji.runtime.providers.errors import ProviderConfigError
+from kaji.runtime.providers.errors import (
+    ProviderConfigError,
+    ServiceNetworkError,
+    ServiceRateLimitError,
+)
 
 # Patch target: the binding used inside the provider module.
 _PATCH = "kaji.runtime.providers.anthropic.get_settings"
 
 _FAKE_SETTINGS = dict(ANTHROPIC_API_KEY="test-key", ANTHROPIC_MODEL="claude-sonnet-4-6")
+
+
+class FakeProviderHTTPError(RuntimeError):
+    def __init__(self, message: str, *, status: int, response_text: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.response = SimpleNamespace(text=response_text)
 
 
 def _provider():
@@ -52,6 +63,15 @@ def test_anthropic_provider_requires_api_key():
         )
         with pytest.raises(ProviderConfigError, match="ANTHROPIC_API_KEY"):
             AnthropicProvider()
+
+
+def test_anthropic_provider_honors_explicit_options():
+    from kaji.runtime.providers.anthropic import AnthropicProvider
+
+    provider = AnthropicProvider(api_key="explicit-key", model="explicit-model")
+
+    assert provider.api_key == "explicit-key"
+    assert provider.model_name == "explicit-model"
 
 
 # ---------------------------------------------------------------------------
@@ -201,6 +221,38 @@ async def test_anthropic_generate_with_tools_passes_translated_payload():
     assert result.tool_calls[0]["arguments"] == {"q": "test"}
 
 
+@pytest.mark.asyncio
+async def test_anthropic_generate_maps_rate_limits_to_service_error():
+    provider = _provider()
+
+    async def fake_create(**_kwargs):
+        raise FakeProviderHTTPError(
+            "slow down", status=429, response_text="rate limit"
+        )
+
+    fake_client = MagicMock()
+    fake_client.messages.create = fake_create
+    provider._client = fake_client
+
+    with pytest.raises(ServiceRateLimitError):
+        await provider.generate([{"role": "user", "content": "hi"}])
+
+
+@pytest.mark.asyncio
+async def test_anthropic_generate_maps_transport_errors_to_network_error():
+    provider = _provider()
+
+    async def fake_create(**_kwargs):
+        raise OSError("network down")
+
+    fake_client = MagicMock()
+    fake_client.messages.create = fake_create
+    provider._client = fake_client
+
+    with pytest.raises(ServiceNetworkError):
+        await provider.generate([{"role": "user", "content": "hi"}])
+
+
 # ---------------------------------------------------------------------------
 # generate_stream()
 # ---------------------------------------------------------------------------
@@ -228,6 +280,46 @@ async def test_anthropic_generate_stream_yields_text_chunks():
         chunks.append(chunk)
 
     assert any(c.delta == "Hello" for c in chunks)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_generate_stream_yields_usage_metadata_when_present():
+    provider = _provider()
+
+    async def fake_stream_iter():
+        yield SimpleNamespace(
+            type="message_start",
+            usage=SimpleNamespace(input_tokens=5, output_tokens=0),
+        )
+        yield SimpleNamespace(
+            type="content_block_delta",
+            delta=SimpleNamespace(type="text_delta", text="Hello"),
+        )
+        yield SimpleNamespace(
+            type="message_delta",
+            usage=SimpleNamespace(output_tokens=3),
+        )
+
+    fake_stream = MagicMock()
+    fake_stream.__aenter__ = AsyncMock(return_value=fake_stream)
+    fake_stream.__aexit__ = AsyncMock(return_value=False)
+    fake_stream.__aiter__ = lambda self: fake_stream_iter()
+
+    fake_client = MagicMock()
+    fake_client.messages.stream = MagicMock(return_value=fake_stream)
+    provider._client = fake_client
+
+    chunks = []
+    async for chunk in provider.generate_stream([{"role": "user", "content": "hi"}]):
+        chunks.append(chunk)
+
+    assert any(c.delta == "Hello" for c in chunks)
+    metadata = chunks[-1]
+    assert metadata.metrics is not None
+    assert metadata.metrics.prompt_tokens == 5
+    assert metadata.metrics.completion_tokens == 3
+    assert metadata.cost_usd is not None
+    assert metadata.cost_usd > 0
 
 
 @pytest.mark.asyncio

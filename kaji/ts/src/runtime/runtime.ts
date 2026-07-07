@@ -10,7 +10,7 @@ import type { EventBusProtocol } from "@/events/protocols";
 import { KajiEvent, type KajiEventInput } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { EventStore } from "@/events/store";
-import type { ModelProvider, ToolCall } from "@/providers/base";
+import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
 import { replaySession } from "@/sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
@@ -75,7 +75,8 @@ export interface TurnOptions {
  * Result of one `AgentRuntime.turn` call.
  *
  * - `text` is built from `AGENT_MESSAGE_COMPLETED` content joined across
- *   iterations, not delta accumulation.
+ *   iterations, not delta accumulation. It may be empty when the provider keeps
+ *   returning tool calls; inspect `events` for `AGENT_TURN_EXHAUSTED`.
  * - `toolCallEvents` are `KajiEvent`s of type `TOOL_CALL_REQUESTED`, not
  *   provider-neutral `ToolCall` payloads. The name reflects the type.
  * - `events` is the full slice of events appended by this call.
@@ -236,6 +237,8 @@ export class AgentRuntime {
 
       let content = "";
       const toolCalls: ToolCall[] = [];
+      let usage: TokenUsage | undefined;
+      let costUsd: number | undefined;
 
       for await (const chunk of this.provider.generateStream(messages, tools, {
         cancellationToken: token,
@@ -246,6 +249,8 @@ export class AgentRuntime {
           await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
         }
         toolCalls.push(...chunk.toolCalls);
+        if (chunk.usage) usage = chunk.usage;
+        if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
       }
 
       // Finalize the assistant text for THIS iteration before touching tools.
@@ -254,7 +259,12 @@ export class AgentRuntime {
       // is lost from replayed state. Guarded on truthy content so an empty
       // tool-only turn (and max-iteration exhaustion) emits no phantom turn (C1).
       if (content) {
-        await emit({ type: EventType.AGENT_MESSAGE_COMPLETED, content });
+        await emit({
+          type: EventType.AGENT_MESSAGE_COMPLETED,
+          content,
+          ...(usage ? { tokens: usage } : {}),
+          ...(costUsd !== undefined ? { cost_usd: costUsd } : {}),
+        });
       }
 
       if (toolCalls.length === 0) {
@@ -274,6 +284,18 @@ export class AgentRuntime {
         },
       );
       // Loop: next iteration replays state including the new tool results.
+      if (i === this.maxToolIterations - 1) {
+        await emit({
+          type: EventType.AGENT_TURN_EXHAUSTED,
+          max_iterations: this.maxToolIterations,
+          pending_tool_calls: toolCalls.map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.args,
+          })),
+          reason: "max_iterations",
+        });
+      }
     }
   }
 }

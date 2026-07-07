@@ -1,0 +1,10 @@
+id: python-broad-exception
+language: python
+message: Broad exception handler; verify it is a real resilience boundary.
+severity: hint
+rule:
+  all:
+    - kind: except_clause
+    - has:
+        pattern: Exception
+        stopBy: end

@@ -15,10 +15,8 @@ from kaji.infra.realtime.redis import (
     get_redis_stream_client,
 )
 from kaji_serve.runtime.messaging import Bus, Message
-from kaji.infra.realtime.redis_events import (
-    publish_user_update_safely,
-    run_stream_with_dlq,
-)
+from kaji.infra.realtime.redis_publish import publish_user_update_safely
+from kaji.infra.realtime.redis_streams import run_stream_with_dlq
 
 logger = logging.getLogger(__name__)
 
