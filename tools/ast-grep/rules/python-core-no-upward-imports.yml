@@ -1,0 +1,32 @@
+id: python-core-no-upward-imports
+language: Python
+message: kaji.core must stay foundational; do not import infra, runtime, knowledge, modalities, Redis, or service modules from core.
+severity: error
+files:
+  - "kaji/sdk/src/core/**/*.py"
+rule:
+  any:
+    - pattern: import kaji.infra
+    - pattern: import kaji.infra.$M
+    - pattern: from kaji.infra import $$$
+    - pattern: from kaji.infra.$M import $$$
+    - pattern: import kaji.runtime
+    - pattern: import kaji.runtime.$M
+    - pattern: from kaji.runtime import $$$
+    - pattern: from kaji.runtime.$M import $$$
+    - pattern: import kaji.knowledge
+    - pattern: import kaji.knowledge.$M
+    - pattern: from kaji.knowledge import $$$
+    - pattern: from kaji.knowledge.$M import $$$
+    - pattern: import kaji.modalities
+    - pattern: import kaji.modalities.$M
+    - pattern: from kaji.modalities import $$$
+    - pattern: from kaji.modalities.$M import $$$
+    - pattern: import kaji_serve
+    - pattern: import kaji_serve.$M
+    - pattern: from kaji_serve import $$$
+    - pattern: from kaji_serve.$M import $$$
+    - pattern: import redis
+    - pattern: import redis.$M
+    - pattern: from redis import $$$
+    - pattern: from redis.$M import $$$

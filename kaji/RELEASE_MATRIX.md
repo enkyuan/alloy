@@ -60,6 +60,8 @@ tooling such as `bun` or `uv` is missing, and does not spend provider credits by
 default. To include the keyed OpenAI live proof in the same run, set
 `KAJI_RUN_KEYED_LIVE=1` with `OPENAI_API_KEY`.
 
+When available, the ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
+
 | Gate | Command | Required for beta |
 | --- | --- | --- |
 | Non-keyed beta gate bundle | `bash kaji/scripts/beta-release-check.sh` | Yes, aggregates non-keyed gates |

@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BETA_GATE = REPO_ROOT / "kaji" / "scripts" / "beta-release-check.sh"
+RULE_DIR = REPO_ROOT / "tools" / "ast-grep" / "rules"
 
 
 def test_beta_release_check_shell_syntax() -> None:
@@ -33,6 +34,19 @@ def test_beta_release_check_wraps_required_gates() -> None:
         assert expected in script
 
 
+def test_beta_structural_audit_rules_cover_sdk_boundaries() -> None:
+    rule_text = "\n".join(path.read_text() for path in sorted(RULE_DIR.glob("*.yml")))
+
+    for expected in [
+        "python-sdk-no-service-imports",
+        "python-core-no-upward-imports",
+        "python-runtime-no-legacy-tooldefinition",
+        "ts-no-provider-value-imports",
+        "no-generic-ts-cancelled-error",
+    ]:
+        assert f"id: {expected}" in rule_text
+
+
 def test_release_docs_reference_beta_release_check() -> None:
     combined = "\n".join(
         [
@@ -45,3 +59,5 @@ def test_release_docs_reference_beta_release_check() -> None:
 
     assert "bash kaji/scripts/beta-release-check.sh" in combined
     assert "KAJI_RUN_KEYED_LIVE=1" in combined
+    assert "SDK/service boundary" in combined
+    assert "TypeScript optional provider imports" in combined

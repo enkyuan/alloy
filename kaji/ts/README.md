@@ -103,7 +103,8 @@ bash kaji/scripts/beta-release-check.sh
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
-checks, TS package smoke, ast-grep when available, and no-key live-gate hygiene.
+checks, TS package smoke, ast-grep boundary checks when available, and no-key
+live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
 
 For the live-gate credential modes specifically:
 

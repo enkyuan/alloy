@@ -1,0 +1,32 @@
+id: python-sdk-no-service-imports
+language: Python
+message: Keep kaji/sdk/src independent from service-only runtime dependencies; service APIs belong under kaji/serve.
+severity: error
+files:
+  - "kaji/sdk/src/**/*.py"
+rule:
+  any:
+    - pattern: import kaji_serve
+    - pattern: import kaji_serve.$M
+    - pattern: from kaji_serve import $$$
+    - pattern: from kaji_serve.$M import $$$
+    - pattern: import fastapi
+    - pattern: import fastapi.$M
+    - pattern: from fastapi import $$$
+    - pattern: from fastapi.$M import $$$
+    - pattern: import sqlalchemy
+    - pattern: import sqlalchemy.$M
+    - pattern: from sqlalchemy import $$$
+    - pattern: from sqlalchemy.$M import $$$
+    - pattern: import taskiq
+    - pattern: import taskiq.$M
+    - pattern: from taskiq import $$$
+    - pattern: from taskiq.$M import $$$
+    - pattern: import taskiq_redis
+    - pattern: import taskiq_redis.$M
+    - pattern: from taskiq_redis import $$$
+    - pattern: from taskiq_redis.$M import $$$
+    - pattern: import websockets
+    - pattern: import websockets.$M
+    - pattern: from websockets import $$$
+    - pattern: from websockets.$M import $$$

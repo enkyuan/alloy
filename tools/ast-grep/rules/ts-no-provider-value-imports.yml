@@ -1,0 +1,14 @@
+id: ts-no-provider-value-imports
+language: TypeScript
+message: Keep provider SDK packages optional; use import type at the top level and dynamic import() for runtime loading.
+severity: error
+files:
+  - "kaji/ts/src/**/*.ts"
+rule:
+  any:
+    - pattern: import $X from "openai"
+    - pattern: import { $$$ } from "openai"
+    - pattern: import * as $X from "openai"
+    - pattern: import $X from "@anthropic-ai/sdk"
+    - pattern: import { $$$ } from "@anthropic-ai/sdk"
+    - pattern: import * as $X from "@anthropic-ai/sdk"
