@@ -1,0 +1,8 @@
+id: no-generic-ts-cancelled-error
+language: TypeScript
+message: Use CancellationError or throwIfCancellationRequested for cancellation so AgentRuntime can emit cancellation.completed.
+severity: error
+rule:
+  any:
+    - pattern: throw new Error("Cancelled")
+    - pattern: throw new Error("Agent run was cancelled")

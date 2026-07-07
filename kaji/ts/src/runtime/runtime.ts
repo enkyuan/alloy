@@ -16,7 +16,7 @@ import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
 import { defaultUuid } from "@/internal/uuid";
-import { CancellationToken } from "@/runtime/cancellation";
+import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { buildMessages } from "@/runtime/context";
 
 /** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
@@ -214,7 +214,6 @@ export class AgentRuntime {
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
     const token = options.cancellationToken ?? new CancellationToken();
-    token.throwIfCancelled();
 
     const emit = async <T extends KajiEventInput>(
       input: EventInputWithoutSession<T>,
@@ -226,76 +225,84 @@ export class AgentRuntime {
 
     await emit({ type: EventType.AGENT_REASONING_STARTED });
 
-    const tools = this.fixedTools ?? listToolSpecs();
+    try {
+      const tools = this.fixedTools ?? listToolSpecs();
 
-    for (let i = 0; i < this.maxToolIterations; i++) {
-      token.throwIfCancelled();
-
-      const events = await this.store.getEvents(sessionId);
-      const state = replaySession(events);
-      const messages = buildMessages(state.messages, this.systemPrompt);
-
-      let content = "";
-      const toolCalls: ToolCall[] = [];
-      let usage: TokenUsage | undefined;
-      let costUsd: number | undefined;
-
-      for await (const chunk of this.provider.generateStream(messages, tools, {
-        cancellationToken: token,
-      })) {
+      for (let i = 0; i < this.maxToolIterations; i++) {
         token.throwIfCancelled();
-        if (chunk.delta) {
-          content += chunk.delta;
-          await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+
+        const events = await this.store.getEvents(sessionId);
+        const state = replaySession(events);
+        const messages = buildMessages(state.messages, this.systemPrompt);
+
+        let content = "";
+        const toolCalls: ToolCall[] = [];
+        let usage: TokenUsage | undefined;
+        let costUsd: number | undefined;
+
+        for await (const chunk of this.provider.generateStream(messages, tools, {
+          cancellationToken: token,
+        })) {
+          token.throwIfCancelled();
+          if (chunk.delta) {
+            content += chunk.delta;
+            await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+          }
+          toolCalls.push(...chunk.toolCalls);
+          if (chunk.usage) usage = chunk.usage;
+          if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
         }
-        toolCalls.push(...chunk.toolCalls);
-        if (chunk.usage) usage = chunk.usage;
-        if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
-      }
 
-      // Finalize the assistant text for THIS iteration before touching tools.
-      // Mirrors the Python reference (runtime.py:134): a turn that streams both
-      // text and tool calls must still emit AgentMessageCompleted, or the text
-      // is lost from replayed state. Guarded on truthy content so an empty
-      // tool-only turn (and max-iteration exhaustion) emits no phantom turn (C1).
-      if (content) {
-        await emit({
-          type: EventType.AGENT_MESSAGE_COMPLETED,
-          content,
-          ...(usage ? { tokens: usage } : {}),
-          ...(costUsd !== undefined ? { cost_usd: costUsd } : {}),
-        });
-      }
+        // Finalize the assistant text for THIS iteration before touching tools.
+        // Mirrors the Python reference (runtime.py:134): a turn that streams both
+        // text and tool calls must still emit AgentMessageCompleted, or the text
+        // is lost from replayed state. Guarded on truthy content so an empty
+        // tool-only turn (and max-iteration exhaustion) emits no phantom turn (C1).
+        if (content) {
+          await emit({
+            type: EventType.AGENT_MESSAGE_COMPLETED,
+            content,
+            ...(usage ? { tokens: usage } : {}),
+            ...(costUsd !== undefined ? { cost_usd: costUsd } : {}),
+          });
+        }
 
-      if (toolCalls.length === 0) {
-        break;
-      }
+        if (toolCalls.length === 0) {
+          break;
+        }
 
-      await this.resolvePlanner(tools).executeScatterGather(
-        sessionId,
-        toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args,
-        })),
-        async (event) => {
-          await this.store.append(event);
-          await this.bus.publish(event);
-        },
-      );
-      // Loop: next iteration replays state including the new tool results.
-      if (i === this.maxToolIterations - 1) {
-        await emit({
-          type: EventType.AGENT_TURN_EXHAUSTED,
-          max_iterations: this.maxToolIterations,
-          pending_tool_calls: toolCalls.map((tc) => ({
+        await this.resolvePlanner(tools).executeScatterGather(
+          sessionId,
+          toolCalls.map((tc) => ({
             id: tc.id,
             name: tc.name,
             arguments: tc.args,
           })),
-          reason: "max_iterations",
-        });
+          async (event) => {
+            await this.store.append(event);
+            await this.bus.publish(event);
+          },
+        );
+        // Loop: next iteration replays state including the new tool results.
+        if (i === this.maxToolIterations - 1) {
+          await emit({
+            type: EventType.AGENT_TURN_EXHAUSTED,
+            max_iterations: this.maxToolIterations,
+            pending_tool_calls: toolCalls.map((tc) => ({
+              id: tc.id,
+              name: tc.name,
+              arguments: tc.args,
+            })),
+            reason: "max_iterations",
+          });
+        }
       }
+    } catch (error) {
+      if (error instanceof CancellationError || token.isCancelled) {
+        await emit({ type: EventType.CANCELLATION_COMPLETED });
+        return;
+      }
+      throw error;
     }
   }
 }

@@ -107,7 +107,9 @@ class OpenAIProvider(ModelProvider):
                     args = json.loads(raw_args)
                 except (json.JSONDecodeError, TypeError) as exc:
                     raw_snippet = (
-                        raw_args if len(str(raw_args)) <= 200 else str(raw_args)[:200] + "..."
+                        raw_args
+                        if len(str(raw_args)) <= 200
+                        else str(raw_args)[:200] + "..."
                     )
                     logger.warning(
                         "OpenAI tool_call arguments failed to parse "

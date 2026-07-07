@@ -226,9 +226,7 @@ async def test_anthropic_generate_maps_rate_limits_to_service_error():
     provider = _provider()
 
     async def fake_create(**_kwargs):
-        raise FakeProviderHTTPError(
-            "slow down", status=429, response_text="rate limit"
-        )
+        raise FakeProviderHTTPError("slow down", status=429, response_text="rate limit")
 
     fake_client = MagicMock()
     fake_client.messages.create = fake_create

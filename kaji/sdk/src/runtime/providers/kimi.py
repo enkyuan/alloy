@@ -41,9 +41,11 @@ class KimiProvider(ModelProvider):
         **_: Any,
     ) -> None:
         settings = get_settings()
-        self.is_cloudflare = bool(
-            settings.CLOUDFLARE_ACCOUNT_ID and settings.CLOUDFLARE_API_TOKEN
-        ) and api_key is None and base_url is None
+        self.is_cloudflare = (
+            bool(settings.CLOUDFLARE_ACCOUNT_ID and settings.CLOUDFLARE_API_TOKEN)
+            and api_key is None
+            and base_url is None
+        )
 
         if self.is_cloudflare:
             self.model_name = model or settings.CLOUDFLARE_KIMI_MODEL
@@ -59,7 +61,9 @@ class KimiProvider(ModelProvider):
                 or settings.OPENROUTER_BASE_URL
                 or "https://openrouter.ai/api/v1/chat/completions"
             )
-            self.api_key = api_key or settings.OPENROUTER_API_KEY or settings.KIMI_API_KEY
+            self.api_key = (
+                api_key or settings.OPENROUTER_API_KEY or settings.KIMI_API_KEY
+            )
             self.http_referer = http_referer or settings.OPENROUTER_HTTP_REFERER
             self.app_title = app_title or settings.OPENROUTER_APP_TITLE
 
@@ -283,7 +287,9 @@ class KimiProvider(ModelProvider):
                     timeout=60.0,
                 ) as response:
                     if response.status_code != 200:
-                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        body = (await response.aread()).decode(
+                            "utf-8", errors="replace"
+                        )
                         raise classify_http_error(
                             service="kimi",
                             action="stream",
@@ -328,7 +334,9 @@ class KimiProvider(ModelProvider):
 
                     tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
                     if tool_calls:
-                        yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
+                        yield ModelResponseChunk(
+                            delta="", tool_calls=cast(Any, tool_calls)
+                        )
         except httpx.HTTPError as error:
             raise provider_error_from_exception(
                 service="kimi",

@@ -12,8 +12,10 @@ import {
   AgentBuilder,
   EventBus,
   InMemoryEventStore,
-  OpenAIProvider,
+  anthropic,
   functionTool,
+  openai,
+  type ModelProvider,
 } from "@kaji/sdk";
 import { z } from "zod";
 
@@ -26,9 +28,15 @@ const getWeather = functionTool(
   async ({ city }) => ({ city, tempF: 68 }),
 );
 
-export async function runAgent(apiKey: string): Promise<void> {
+export function providerFromEnv(): ModelProvider {
+  if (process.env.OPENAI_API_KEY) return openai();
+  if (process.env.ANTHROPIC_API_KEY) return anthropic();
+  throw new Error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY before running.");
+}
+
+export async function runAgent(provider = providerFromEnv()): Promise<void> {
   const runtime = new AgentBuilder()
-    .provider(new OpenAIProvider({ apiKey }))
+    .provider(provider)
     .tool(getWeather)
     .systemPrompt("You are a weather assistant.")
     .build({ bus: new EventBus(), store: new InMemoryEventStore() });
@@ -39,12 +47,7 @@ export async function runAgent(apiKey: string): Promise<void> {
 
 // Entry point when run directly
 if (process.argv[1] === new URL(import.meta.url).pathname) {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    console.error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY before running.");
-    process.exit(1);
-  }
-  runAgent(apiKey).catch((err) => {
+  runAgent().catch((err) => {
     console.error(err);
     process.exit(1);
   });

@@ -15,7 +15,11 @@ from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk, TokenMetrics
+from kaji.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    TokenMetrics,
+)
 from kaji.runtime.tools.registry import ToolSpec
 from tests.helpers.mock_provider import MockProvider as _RegistryMockProvider
 

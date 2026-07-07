@@ -19,6 +19,7 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "@/providers/base";
+import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
 const FINAL_TEXT = "The mock provider has completed the tool loop.";
@@ -89,7 +90,7 @@ export class MockProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): Promise<ModelResponse> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     if (this.toolCall !== undefined) {
       if (!hasToolResult(messages)) {
         return { content: "", toolCalls: [this.scriptedToolCall()] };
@@ -115,7 +116,7 @@ export class MockProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     if (this.toolCall !== undefined) {
       if (!hasToolResult(messages)) {
         yield { delta: "", toolCalls: [this.scriptedToolCall()] };
@@ -138,7 +139,7 @@ export class MockProvider implements ModelProvider {
     }
     if (this.streamChunks && this.streamChunks.length > 0) {
       for (const delta of this.streamChunks) {
-        if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+        throwIfCancellationRequested(options?.cancellationToken);
         yield { delta, toolCalls: [] };
       }
       return;

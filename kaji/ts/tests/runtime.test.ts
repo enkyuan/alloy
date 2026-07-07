@@ -5,6 +5,7 @@ import { EventBus } from "@/events/bus";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
+import type { ModelProviderOptions } from "@/providers/base";
 import { MockProvider } from "@/providers/mock";
 import { CancellationToken } from "@/runtime/cancellation";
 import { buildMessages } from "@/runtime/context";
@@ -324,13 +325,76 @@ describe("AgentRuntime.runTurn", () => {
     expect(contents).toContain("It is 68F and sunny.");
   });
 
-  it("rejects when cancelled before the loop", async () => {
+  it("emits cancellation.completed when cancelled before the loop", async () => {
     const { store, runtime } = setup();
     const s = "s-cancel";
     await seed(store, s);
     const token = new CancellationToken();
     token.cancel();
-    await expect(runtime.runTurn(s, { cancellationToken: token })).rejects.toThrow(/cancelled/);
+    await runtime.runTurn(s, { cancellationToken: token });
+
+    const events = await store.getEvents(s);
+    const types = events.map((e) => e.type);
+    expect(types).toContain(EventType.AGENT_REASONING_STARTED);
+    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types.indexOf(EventType.AGENT_REASONING_STARTED)).toBeLessThan(
+      types.indexOf(EventType.CANCELLATION_COMPLETED),
+    );
+    expect(types).not.toContain(EventType.AGENT_MESSAGE_COMPLETED);
+  });
+
+  it("emits cancellation.completed without completing partial text after mid-stream cancel", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const provider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* (
+        _messages: unknown,
+        _tools: unknown,
+        options?: ModelProviderOptions,
+      ) {
+        yield { delta: "partial", toolCalls: [] };
+        (options?.cancellationToken as CancellationToken | undefined)?.cancel();
+        yield { delta: "after-cancel", toolCalls: [] };
+      },
+    };
+    const runtime = new AgentRuntime({ provider, store, bus });
+    const s = "s-mid-stream-cancel";
+    await seed(store, s);
+
+    await runtime.runTurn(s, { cancellationToken: new CancellationToken() });
+
+    const events = await store.getEvents(s);
+    const types = events.map((e) => e.type);
+    const deltas = events
+      .filter((e) => e.type === EventType.AGENT_MESSAGE_DELTA)
+      .map((e) => ("delta" in e ? e.delta : ""));
+    expect(deltas).toEqual(["partial"]);
+    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types).not.toContain(EventType.AGENT_MESSAGE_COMPLETED);
+  });
+
+  it("still rejects provider errors when the cancellation token is not cancelled", async () => {
+    const store = new InMemoryEventStore();
+    const bus = new EventBus();
+    const error = new Error("provider broke");
+    const provider = {
+      generate: async () => ({ content: "", toolCalls: [] }),
+      generateStream: async function* () {
+        throw error;
+        yield { delta: "", toolCalls: [] };
+      },
+    };
+    const runtime = new AgentRuntime({ provider, store, bus });
+    const s = "s-provider-error";
+    await seed(store, s);
+
+    await expect(runtime.runTurn(s, { cancellationToken: new CancellationToken() })).rejects.toBe(
+      error,
+    );
+
+    const types = (await store.getEvents(s)).map((e) => e.type);
+    expect(types).not.toContain(EventType.CANCELLATION_COMPLETED);
   });
 
   it("does NOT emit an empty completion on max-iteration exhaustion (C1)", async () => {
@@ -422,9 +486,11 @@ describe("AgentRuntime.send", () => {
 
     const token = new CancellationToken();
     token.cancel();
-    await expect(runtime.send(s, "hello", { cancellationToken: token })).rejects.toThrow(
-      /cancelled/,
-    );
+    await runtime.send(s, "hello", { cancellationToken: token });
+
+    const types = (await store.getEvents(s)).map((e) => e.type);
+    expect(types).toContain(EventType.USER_MESSAGE);
+    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
   });
 });
 

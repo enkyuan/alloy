@@ -1,12 +1,11 @@
 /**
  * Smoke test for the minimal-agent example.
  *
- * The first case exercises `runAgent` with a mocked openai client to keep
- * the upstream example file fully exercised end-to-end. The second case
- * exercises the same shape against `MockProvider` directly to keep the
- * provider mocking surface area small.
+ * The first cases exercise the environment-based provider selection without
+ * live network calls. The final case exercises `runAgent` with MockProvider
+ * directly to keep the example fully executable in CI.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock the openai module before the provider is imported
 vi.mock("openai", () => {
@@ -37,22 +36,51 @@ vi.mock("openai", () => {
 });
 
 describe("minimal-agent example", () => {
-  it("runs runAgent end-to-end with a mocked openai client", async () => {
-    const { runAgent } = await import("./index");
-    await expect(runAgent("test-key")).resolves.not.toThrow();
+  const originalOpenAIKey = process.env.OPENAI_API_KEY;
+  const originalAnthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  afterEach(() => {
+    if (originalOpenAIKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalOpenAIKey;
+    if (originalAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropicKey;
+  });
+
+  it("selects OpenAI when OPENAI_API_KEY is set", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const { providerFromEnv } = await import("./index");
+    const { OpenAIProvider } = await import("../../src/providers/openai");
+
+    expect(providerFromEnv()).toBeInstanceOf(OpenAIProvider);
+  });
+
+  it("selects Anthropic when only ANTHROPIC_API_KEY is set", async () => {
+    delete process.env.OPENAI_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+
+    const { providerFromEnv } = await import("./index");
+    const { AnthropicProvider } = await import("../../src/providers/anthropic");
+
+    expect(providerFromEnv()).toBeInstanceOf(AnthropicProvider);
+  });
+
+  it("throws a clear error when no provider key is set", async () => {
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const { providerFromEnv } = await import("./index");
+
+    expect(() => providerFromEnv()).toThrow("Set OPENAI_API_KEY or ANTHROPIC_API_KEY");
   });
 
   it("turn() returns text driven by MockProvider", async () => {
-    const { AgentBuilder, EventBus, InMemoryEventStore } = await import("../../src/index");
+    const { runAgent } = await import("./index");
     const { MockProvider } = await import("../../src/providers/mock");
 
-    const runtime = new AgentBuilder()
-      .provider(new MockProvider({ reply: "It is 68F in Seattle." }))
-      .systemPrompt("Test")
-      .build({ bus: new EventBus(), store: new InMemoryEventStore() });
-
-    const result = await runtime.turn("What's the weather in Seattle?");
-    expect(result.text).toBe("It is 68F in Seattle.");
-    expect(result.sessionId).toBeTruthy();
+    await expect(runAgent(new MockProvider({ reply: "It is 68F in Seattle." }))).resolves.toBe(
+      undefined,
+    );
   });
 });

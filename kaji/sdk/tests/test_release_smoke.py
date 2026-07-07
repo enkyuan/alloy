@@ -46,4 +46,7 @@ def test_registry_namespace_packages_are_declared() -> None:
     assert "kaji.integrations.registry" in packages
     assert "kaji.integrations.registry.echo" in packages
     assert package_dir["kaji.integrations.registry"] == "src/integrations/registry"
-    assert package_dir["kaji.integrations.registry.echo"] == "src/integrations/registry/echo"
+    assert (
+        package_dir["kaji.integrations.registry.echo"]
+        == "src/integrations/registry/echo"
+    )

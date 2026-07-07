@@ -116,7 +116,12 @@ export {
   type AgentStrategy,
   type RunTurnOptions,
 } from "@/runtime/runtime";
-export { CancellationToken } from "@/runtime/cancellation";
+export {
+  CancellationError,
+  CancellationToken,
+  throwIfCancellationRequested,
+  type CancellationTokenLike,
+} from "@/runtime/cancellation";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "@/runtime/builder";
 export {
   generateText,

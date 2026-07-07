@@ -5,7 +5,10 @@ import { AnthropicProvider, type AnthropicProviderOptions } from "@/providers/an
 import { OpenAIProvider, type OpenAIProviderOptions } from "@/providers/openai";
 
 export class TestOpenAIProvider extends OpenAIProvider {
-  constructor(opts: OpenAIProviderOptions, private readonly fakeClient: OpenAI) {
+  constructor(
+    opts: OpenAIProviderOptions,
+    private readonly fakeClient: OpenAI,
+  ) {
     super(opts);
   }
 
@@ -15,7 +18,10 @@ export class TestOpenAIProvider extends OpenAIProvider {
 }
 
 export class TestAnthropicProvider extends AnthropicProvider {
-  constructor(opts: AnthropicProviderOptions, private readonly fakeClient: Anthropic) {
+  constructor(
+    opts: AnthropicProviderOptions,
+    private readonly fakeClient: Anthropic,
+  ) {
     super(opts);
   }
 

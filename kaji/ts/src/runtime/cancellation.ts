@@ -6,6 +6,27 @@
  * `EventTarget` listeners, etc.). The boolean `isCancelled` flag remains
  * for the polling style the runtime already uses; both fire together.
  */
+export class CancellationError extends Error {
+  constructor(message = "Agent run was cancelled") {
+    super(message);
+    this.name = "CancellationError";
+  }
+}
+
+export interface CancellationTokenLike {
+  isCancelled: boolean;
+  signal?: AbortSignal;
+  throwIfCancelled?: () => void;
+}
+
+export function throwIfCancellationRequested(token?: CancellationTokenLike): void {
+  if (!token?.isCancelled) return;
+  if (typeof token.throwIfCancelled === "function") {
+    token.throwIfCancelled();
+  }
+  throw new CancellationError();
+}
+
 export class CancellationToken {
   private readonly controller = new AbortController();
 
@@ -31,7 +52,7 @@ export class CancellationToken {
 
   throwIfCancelled(): void {
     if (this.controller.signal.aborted) {
-      throw new Error("Agent run was cancelled");
+      throw new CancellationError();
     }
   }
 }

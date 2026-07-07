@@ -25,6 +25,7 @@ import {
 import { parseToolArgsJSON } from "@/providers/args";
 import { calculateCostUsd } from "@/providers/costs";
 import type { RetryOptions } from "@/providers/openai";
+import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
 type AnthropicMessageParam = Anthropic.Messages.MessageParam;
@@ -116,7 +117,10 @@ function parseContentBlocks(blocks: AnthropicContentBlock[] | undefined | null):
   return { content, toolCalls };
 }
 
-function usageFromEvent(event: AnthropicStreamEvent, current: TokenUsage | undefined): TokenUsage | undefined {
+function usageFromEvent(
+  event: AnthropicStreamEvent,
+  current: TokenUsage | undefined,
+): TokenUsage | undefined {
   const rawUsage =
     "usage" in event
       ? (event as { usage?: { input_tokens?: number; output_tokens?: number } }).usage
@@ -218,7 +222,7 @@ export class AnthropicProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): Promise<ModelResponse> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
@@ -244,6 +248,7 @@ export class AnthropicProvider implements ModelProvider {
         : undefined;
       return { content, toolCalls, usage, costUsd };
     } catch (error) {
+      throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("anthropic", error);
     }
   }
@@ -253,7 +258,7 @@ export class AnthropicProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     const client = await this.getClient();
     const { system, messages: anthropicMessages } = splitMessages(messages);
 
@@ -313,6 +318,7 @@ export class AnthropicProvider implements ModelProvider {
         };
       }
     } catch (error) {
+      throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("anthropic", error);
     }
   }

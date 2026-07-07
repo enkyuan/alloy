@@ -5,6 +5,7 @@ import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "@/provi
 import { ProviderConfigError } from "@/providers/errors";
 import { MockProvider } from "@/providers/mock";
 import { clearProviders, getProvider, registerProvider } from "@/providers/registry";
+import { CancellationError } from "@/runtime/cancellation";
 import { toolSpecFromSchema } from "@/tools/registry";
 
 afterEach(() => clearProviders());
@@ -104,6 +105,6 @@ describe("MockProvider", () => {
     const first = await iter.next();
     expect(first.value?.delta).toBe("one");
     token.isCancelled = true;
-    await expect(iter.next()).rejects.toThrow(/Cancelled/);
+    await expect(iter.next()).rejects.toThrow(CancellationError);
   });
 });

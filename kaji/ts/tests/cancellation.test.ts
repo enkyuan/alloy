@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 
-import { CancellationToken } from "@/runtime/cancellation";
+import {
+  CancellationError,
+  CancellationToken,
+  throwIfCancellationRequested,
+} from "@/runtime/cancellation";
 import { TestAnthropicProvider, TestOpenAIProvider } from "./helpers/provider-clients";
 
 function openAIClient(create: ReturnType<typeof vi.fn>): OpenAI {
@@ -38,7 +42,12 @@ describe("CancellationToken", () => {
     const t = new CancellationToken();
     expect(() => t.throwIfCancelled()).not.toThrow();
     t.cancel();
-    expect(() => t.throwIfCancelled()).toThrow(/cancelled/i);
+    expect(() => t.throwIfCancelled()).toThrow(CancellationError);
+  });
+
+  it("throwIfCancellationRequested raises CancellationError for structural tokens", () => {
+    expect(() => throwIfCancellationRequested({ isCancelled: false })).not.toThrow();
+    expect(() => throwIfCancellationRequested({ isCancelled: true })).toThrow(CancellationError);
   });
 
   it("notifies AbortSignal listeners synchronously on cancel", () => {
@@ -85,16 +94,30 @@ describe("OpenAIProvider AbortSignal plumbing", () => {
     const [, requestOpts] = create.mock.calls[0]!;
     expect(requestOpts).toEqual({ signal: token.signal });
   });
+
+  it("maps token-owned client aborts to CancellationError", async () => {
+    const token = new CancellationToken();
+    const create = vi.fn().mockImplementation(() => {
+      token.cancel();
+      return Promise.reject(new Error("aborted"));
+    });
+    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
+
+    await expect(
+      provider.generate([{ role: "user", content: "hi" }], [], {
+        cancellationToken: token,
+      }),
+    ).rejects.toBeInstanceOf(CancellationError);
+
+    expect(create).toHaveBeenCalledOnce();
+  });
 });
 
 describe("AnthropicProvider AbortSignal plumbing", () => {
   it("passes cancellationToken.signal to the Anthropic client on generate()", async () => {
     const token = new CancellationToken();
     const create = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
-    const provider = new TestAnthropicProvider(
-      { apiKey: "test-key" },
-      anthropicClient(create),
-    );
+    const provider = new TestAnthropicProvider({ apiKey: "test-key" }, anthropicClient(create));
 
     await provider.generate([{ role: "user", content: "hi" }], [], {
       cancellationToken: token,
@@ -103,5 +126,22 @@ describe("AnthropicProvider AbortSignal plumbing", () => {
     expect(create).toHaveBeenCalledOnce();
     const [, requestOpts] = create.mock.calls[0]!;
     expect(requestOpts).toEqual({ signal: token.signal });
+  });
+
+  it("maps token-owned client aborts to CancellationError", async () => {
+    const token = new CancellationToken();
+    const create = vi.fn().mockImplementation(() => {
+      token.cancel();
+      return Promise.reject(new Error("aborted"));
+    });
+    const provider = new TestAnthropicProvider({ apiKey: "test-key" }, anthropicClient(create));
+
+    await expect(
+      provider.generate([{ role: "user", content: "hi" }], [], {
+        cancellationToken: token,
+      }),
+    ).rejects.toBeInstanceOf(CancellationError);
+
+    expect(create).toHaveBeenCalledOnce();
   });
 });

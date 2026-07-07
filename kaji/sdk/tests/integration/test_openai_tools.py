@@ -32,7 +32,9 @@ class EchoProbeIntegration(kaji.Integration):
         },
         risk="read",
     )
-    async def echo_probe(self, ctx: kaji.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    async def echo_probe(
+        self, ctx: kaji.ToolContext, args: dict[str, Any]
+    ) -> dict[str, Any]:
         return {"marker": args["marker"], "source": "kaji-live-tool-loop"}
 
 
@@ -88,7 +90,9 @@ async def test_openai_agent_executes_tool_and_finishes() -> None:
         if event.type == EventType.AGENT_MESSAGE_COMPLETED
     ]
     assert completed, "OpenAI completed the tool call but did not produce final text"
-    assert result.tool_call_events, "OpenAI completed a tool event without a requested-call event"
+    assert result.tool_call_events, (
+        "OpenAI completed a tool event without a requested-call event"
+    )
     assert any(marker in content for content in completed), (
         "OpenAI final text did not mention the probe marker returned by the tool"
     )

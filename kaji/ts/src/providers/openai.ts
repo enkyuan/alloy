@@ -25,6 +25,7 @@ import {
 import { parseToolArgsJSON } from "@/providers/args";
 import { calculateCostUsd } from "@/providers/costs";
 import { toOpenAIChatMessages } from "@/providers/openai-format";
+import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
@@ -192,7 +193,7 @@ export class OpenAIProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): Promise<ModelResponse> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     const client = await this.getClient();
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: this.opts.model,
@@ -224,6 +225,7 @@ export class OpenAIProvider implements ModelProvider {
         costUsd,
       };
     } catch (error) {
+      throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("openai", error);
     }
   }
@@ -233,7 +235,7 @@ export class OpenAIProvider implements ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
-    if (options?.cancellationToken?.isCancelled) throw new Error("Cancelled");
+    throwIfCancellationRequested(options?.cancellationToken);
     const client = await this.getClient();
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
       model: this.opts.model,
@@ -301,6 +303,7 @@ export class OpenAIProvider implements ModelProvider {
         }
       }
     } catch (error) {
+      throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("openai", error);
     }
   }

@@ -44,7 +44,9 @@ describe("cross-SDK release matrix docs", () => {
     const mvp = read("docs/MVP.md");
 
     expect(mvp).toContain("Catalog contract implemented");
-    expect(mvp).toContain("Plan 3 - Define the first-party integration catalog contract (implemented)");
+    expect(mvp).toContain(
+      "Plan 3 - Define the first-party integration catalog contract (implemented)",
+    );
     expect(mvp).not.toContain("Catalog contract still open");
     expect(mvp).not.toContain("no shared manifest/auth/credential shape");
   });

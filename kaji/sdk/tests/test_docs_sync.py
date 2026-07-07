@@ -150,7 +150,9 @@ def test_user_facing_docs_reference_existing_relative_markdown_links() -> None:
 
 def test_typescript_readme_matches_provider_factory_parity() -> None:
     ts_readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
-    factory = (REPO_ROOT / "kaji" / "ts" / "src" / "providers" / "factory.ts").read_text()
+    factory = (
+        REPO_ROOT / "kaji" / "ts" / "src" / "providers" / "factory.ts"
+    ).read_text()
 
     assert "export function kimi" in factory
     assert "export function gemini" in factory
@@ -176,6 +178,9 @@ def test_mvp_manifest_status_is_current() -> None:
     mvp = (REPO_ROOT / "docs" / "MVP.md").read_text()
 
     assert "Catalog contract implemented" in mvp
-    assert "Plan 3 - Define the first-party integration catalog contract (implemented)" in mvp
+    assert (
+        "Plan 3 - Define the first-party integration catalog contract (implemented)"
+        in mvp
+    )
     assert "no shared manifest/auth/credential shape" not in mvp
     assert "Catalog contract still open" not in mvp

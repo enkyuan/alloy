@@ -24,6 +24,12 @@ Thumbs.db
 .antigravitycli/
 .superpowers/
 tools/
+!tools/
+tools/*
+!tools/ast-grep/
+tools/ast-grep/*
+!tools/ast-grep/rules/
+!tools/ast-grep/rules/**
 
 # ── Node / Bun ───────────────────────────────────────────────────────────────
 node_modules/

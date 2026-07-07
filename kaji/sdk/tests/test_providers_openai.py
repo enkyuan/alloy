@@ -164,9 +164,7 @@ async def test_openai_generate_translates_tools_and_parses_response():
 @pytest.mark.asyncio
 async def test_openai_generate_maps_rate_limits_to_service_error():
     async def fake_create(**_kwargs):
-        raise FakeProviderHTTPError(
-            "slow down", status=429, response_text="slow down"
-        )
+        raise FakeProviderHTTPError("slow down", status=429, response_text="slow down")
 
     fake_client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
