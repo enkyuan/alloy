@@ -22,6 +22,8 @@ Thumbs.db
 .kiro/
 .gstack/
 .antigravitycli/
+.superpowers/
+tools/
 
 # ── Node / Bun ───────────────────────────────────────────────────────────────
 node_modules/

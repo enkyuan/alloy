@@ -1,6 +1,0 @@
-id: ts-generic-error
-language: typescript
-message: Generic Error throw; confirm this is an internal developer error, not public API.
-severity: hint
-rule:
-  pattern: throw new Error($MSG)
