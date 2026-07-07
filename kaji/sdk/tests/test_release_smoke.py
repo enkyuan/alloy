@@ -17,13 +17,16 @@ def test_release_smoke_invokes_wheel_verifier_and_install_smoke() -> None:
     assert "PASS: release smoke verified" in script
 
 
-def test_clean_generated_is_scoped_to_src_and_tests() -> None:
+def test_clean_generated_removes_project_caches_without_touching_venv() -> None:
     script = (SDK_ROOT / "scripts" / "clean_generated.sh").read_text()
 
     assert "find src tests" in script
     assert "__pycache__" in script
     assert "*.pyc" in script
     assert "*.pyo" in script
+    assert ".pytest_cache" in script
+    assert ".ruff_cache" in script
+    assert ".venv" not in script
 
 
 def test_release_docs_reference_release_smoke() -> None:

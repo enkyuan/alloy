@@ -99,6 +99,15 @@ not native provider implementations.
 For the cross-SDK release gate, run from the repository root:
 
 ```bash
+bash kaji/scripts/beta-release-check.sh
+```
+
+This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
+checks, TS package smoke, ast-grep when available, and no-key live-gate hygiene.
+
+For the live-gate credential modes specifically:
+
+```bash
 bash kaji/scripts/live-openai-tool-loop.sh
 KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
 ```
@@ -112,6 +121,9 @@ command exits with `PASS: OpenAI live tool-loop readiness verified` while
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
 ```
+
+The same keyed proof can be included in the wrapper with
+`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 bash kaji/scripts/beta-release-check.sh`.
 
 ## Stability tiers
 

@@ -17,6 +17,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "audit:ast-grep": "bun x -p @ast-grep/cli sg scan --config sgconfig.yml kaji",
+    "audit:kaji-beta": "bash kaji/scripts/beta-release-check.sh",
     "prepare": "husky",
     "docker:up": "docker compose -f docker/ryo/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/ryo/docker-compose.yml down",
