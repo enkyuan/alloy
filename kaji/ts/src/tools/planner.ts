@@ -22,6 +22,16 @@ const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
   null: (v) => v === null,
 };
 
+function jsonTypeName(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function isJsonObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Shallow JSON Schema check against ToolSpec.parameters. Returns null on success. */
 function validateArgs(spec: ToolSpec, args: Record<string, unknown>): string | null {
   const schema = (spec.parameters ?? {}) as Record<string, unknown>;
@@ -150,7 +160,12 @@ export class ToolPlanner {
     emit: EmitFn,
   ): Promise<ToolCallResult> {
     const toolName = call.name;
-    const toolArgs = call.arguments;
+    const rawToolArgs: unknown = call.arguments;
+    const toolArgs = isJsonObjectRecord(rawToolArgs)
+      ? rawToolArgs
+      : {
+          __parse_error: `arguments must be a JSON object, got ${jsonTypeName(rawToolArgs)}`,
+        };
     const callId = call.id ?? this.uuid();
     const spec = this.specs.get(toolName);
     const risk = spec?.risk;

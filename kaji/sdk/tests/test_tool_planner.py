@@ -73,6 +73,25 @@ async def test_planner_emits_failed_on_executor_error():
     assert "boom" in results[0]["error"]
 
 
+@pytest.mark.parametrize("bad_args", [[], "not-object", None])
+@pytest.mark.asyncio
+async def test_planner_rejects_non_object_arguments_before_executor(bad_args):
+    executor = AsyncMock(return_value={"ok": True})
+    planner = ToolPlanner(executor=executor)
+
+    emitted, results = await _collect(
+        planner, "sess-bad-args", [{"id": "bad-args", "name": "search", "arguments": bad_args}]
+    )
+
+    executor.assert_not_called()
+    assert _types(emitted) == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    assert "Invalid tool arguments" in results[0]["error"]
+    assert "arguments must be an object" in results[0]["error"]
+
+
 @pytest.mark.asyncio
 async def test_planner_generates_call_id_when_absent():
     executor = AsyncMock(return_value={})

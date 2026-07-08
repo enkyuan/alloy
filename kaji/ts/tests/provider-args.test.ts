@@ -28,6 +28,14 @@ describe("parseToolArgsJSON", () => {
     expect(parseToolArgsJSON('{"city":"Seattle"}', "OpenAI")).toEqual({ city: "Seattle" });
   });
 
+  it("returns a labeled __parse_error sentinel for valid non-object JSON", () => {
+    for (const raw of ["[]", '"hello"', "1", "true"]) {
+      const out = parseToolArgsJSON(raw, "OpenAI");
+      expect(out).toHaveProperty("__parse_error");
+      expect(out.__parse_error).toMatch(/OpenAI tool args must be a JSON object/);
+    }
+  });
+
   it("returns a labeled __parse_error sentinel for malformed JSON", () => {
     const out = parseToolArgsJSON("{not json", "Anthropic");
     expect(out).toHaveProperty("__parse_error");

@@ -31,6 +31,22 @@ _JSON_TYPE_TO_PY: Dict[str, tuple] = {
 }
 
 
+def _json_type_name(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
+
+
 def _validate_args(spec: ToolSpec, args: Dict[str, Any]) -> Optional[str]:
     """Shallow JSON Schema check against ToolSpec.parameters. Returns error string or None.
 
@@ -41,7 +57,7 @@ def _validate_args(spec: ToolSpec, args: Dict[str, Any]) -> Optional[str]:
     """
     schema = spec.parameters or {}
     if schema.get("type") == "object" and not isinstance(args, dict):
-        return f"arguments must be an object, got {type(args).__name__}"
+        return f"arguments must be an object, got {_json_type_name(args)}"
     if not isinstance(args, dict):
         return None
     for key in schema.get("required", []) or []:
@@ -115,7 +131,16 @@ class ToolPlanner:
     ) -> Dict[str, Any]:
         """Execute a single tool with policy enforcement and approval hooks."""
         tool_name = call.get("name", "unknown")
-        tool_args = call.get("arguments", {})
+        raw_tool_args = call.get("arguments", {})
+        tool_args = (
+            raw_tool_args
+            if isinstance(raw_tool_args, dict)
+            else {
+                "__parse_error": (
+                    f"arguments must be an object, got {_json_type_name(raw_tool_args)}"
+                )
+            }
+        )
         call_id = call.get("id", str(uuid.uuid4()))
         spec = self._specs.get(tool_name)
         risk = spec.risk if spec else None

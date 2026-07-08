@@ -45,6 +45,31 @@ describe("ToolPlanner", () => {
     expect(emitted.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(true);
   });
 
+  it("rejects non-object arguments before executor", async () => {
+    for (const badArgs of [[], "not-object", null]) {
+      const emitted: any[] = [];
+      const executor = vi.fn().mockResolvedValue({ ok: true });
+      const planner = new ToolPlanner({ executor });
+
+      const results = await planner.executeScatterGather(
+        "sess-bad-args",
+        [{ id: "bad-args", name: "search", arguments: badArgs as any }],
+        async (e) => {
+          emitted.push(e);
+        },
+      );
+
+      expect(executor).not.toHaveBeenCalled();
+      expect(emitted.map((e) => e.type)).toEqual([
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+      ]);
+      expect(results[0]).toHaveProperty("error");
+      expect((results[0] as { error: string }).error).toContain("Invalid tool arguments");
+      expect((results[0] as { error: string }).error).toContain("arguments must be a JSON object");
+    }
+  });
+
   it("generates a call ID when none is provided", async () => {
     const emitted: any[] = [];
     const planner = new ToolPlanner({ executor: vi.fn().mockResolvedValue("ok") });
