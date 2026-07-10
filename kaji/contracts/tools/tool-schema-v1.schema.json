@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/tools/tool-schema-v1.schema.json",
+  "title": "Kaji tool specification",
+  "type": "object",
+  "required": ["name", "description", "parameters", "risk"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$" },
+    "description": { "type": "string", "minLength": 1 },
+    "parameters": { "type": "object" },
+    "risk": {
+      "enum": ["read", "write", "external_effect", "financial", "destructive", "admin"]
+    },
+    "parallel_safe": { "type": "boolean", "default": false },
+    "timeout_ms": { "type": "integer", "minimum": 1 }
+  }
+}

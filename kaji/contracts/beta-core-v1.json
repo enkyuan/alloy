@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/beta-core-v1.json",
+  "contractVersion": "1.0.0",
+  "runtime": {
+    "sameSessionTurns": "serialized",
+    "crossSessionTurns": "concurrent",
+    "maxToolIterations": 5,
+    "contextWindowTurns": 32,
+    "contextWindowCharacters": 100000
+  },
+  "tools": {
+    "schemaDraft": "2020-12",
+    "validateFormats": true,
+    "maxConcurrency": 4,
+    "timeoutMs": 30000,
+    "approvalTimeoutMs": 300000,
+    "riskRequired": true,
+    "idempotencyKey": "session_id:tool_call_id",
+    "idempotencyMaxEntries": 10000,
+    "idempotencyCompletedTtlSeconds": 86400
+  },
+  "events": {
+    "ordering": "store_sequence",
+    "draftSchema": "new-kaji-event-v1.schema.json",
+    "storedSchema": "stored-kaji-event-v1.schema.json",
+    "warmProjection": "cursor_suffix",
+    "subscriberQueueCapacity": 1024,
+    "inMemoryStoreMaxSessions": 1000,
+    "inMemoryStoreMaxEventsPerSession": 10000,
+    "maxPayloadBytes": 65536,
+    "overflow": "typed_error"
+  },
+  "integrations": {
+    "stable": ["echo"],
+    "experimentalRequiresOptIn": true
+  }
+}
