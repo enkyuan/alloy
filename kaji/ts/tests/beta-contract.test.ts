@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const contractPath = resolve(__dirname, "../../contracts/beta-core-v1.json");
+const canonicalPath = resolve(__dirname, "../../contracts/beta-core-v1.json");
+const packagedPath = resolve(__dirname, "../contracts/beta-core-v1.json");
 
 describe("production-beta contract", () => {
   it("pins the production-beta compatibility defaults", () => {
@@ -20,5 +22,9 @@ describe("production-beta contract", () => {
       subscriberQueueCapacity: 1024,
       inMemoryStoreMaxEventsPerSession: 10_000,
     });
+  });
+
+  it("ships a byte-identical package copy", () => {
+    expect(readFileSync(packagedPath)).toEqual(readFileSync(canonicalPath));
   });
 });

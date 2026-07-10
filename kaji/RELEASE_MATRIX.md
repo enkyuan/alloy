@@ -8,6 +8,8 @@ It does not mean every Python-only modality or infrastructure adapter is beta-re
 
 ## Stable Core
 
+<!-- beta-stable: echo -->
+
 | Surface | Python | TypeScript | Release gate |
 | --- | --- | --- | --- |
 | AgentBuilder | Stable core | Stable core | unit tests |
@@ -17,6 +19,11 @@ It does not mean every Python-only modality or infrastructure adapter is beta-re
 | OpenAI provider | Stable core | Stable core | unit tests + live OpenAI tool loop |
 | Anthropic provider | Stable core | Stable core | unit tests + live smoke when keyed |
 | In-memory event bus/store | Stable core | Stable core | bus/store tests |
+
+The echo integration is the only catalog entry inside the first beta promise.
+HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
+
+<!-- beta-experimental: http,web,fs,sqlite -->
 
 ## Experimental Python-Only
 

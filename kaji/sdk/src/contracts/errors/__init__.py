@@ -1,0 +1,1 @@
+"""Packaged error contract data."""

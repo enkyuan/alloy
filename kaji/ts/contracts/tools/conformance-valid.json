@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "name": "nested object and array",
+      "schema": {
+        "type": "object",
+        "required": ["profile", "tags"],
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "type": "object",
+            "required": ["email", "role"],
+            "additionalProperties": false,
+            "properties": {
+              "email": { "type": "string", "format": "email" },
+              "role": { "enum": ["admin", "member"] }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "arguments": {
+        "profile": { "email": "user@example.com", "role": "member" },
+        "tags": ["beta"]
+      }
+    },
+    {
+      "name": "local reference",
+      "schema": {
+        "$defs": {
+          "target": {
+            "type": "object",
+            "required": ["url"],
+            "properties": { "url": { "type": "string", "format": "uri" } }
+          }
+        },
+        "type": "object",
+        "required": ["target"],
+        "properties": { "target": { "$ref": "#/$defs/target" } }
+      },
+      "arguments": { "target": { "url": "https://example.com/resource" } }
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "name": "nested required",
+      "schema": {
+        "type": "object",
+        "required": ["profile"],
+        "properties": {
+          "profile": {
+            "type": "object",
+            "required": ["email"],
+            "properties": { "email": { "type": "string" } }
+          }
+        }
+      },
+      "arguments": { "profile": {} },
+      "expectedPath": "/profile",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "nested additional property",
+      "schema": {
+        "type": "object",
+        "required": ["profile"],
+        "properties": {
+          "profile": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "name": { "type": "string" } }
+          }
+        }
+      },
+      "arguments": { "profile": { "extra": true } },
+      "expectedPath": "/profile",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "enum",
+      "schema": {
+        "type": "object",
+        "required": ["mode"],
+        "properties": { "mode": { "enum": ["safe", "strict"] } }
+      },
+      "arguments": { "mode": "other" },
+      "expectedPath": "/mode",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "number bound",
+      "schema": {
+        "type": "object",
+        "properties": { "count": { "type": "integer", "minimum": 1, "maximum": 5 } }
+      },
+      "arguments": { "count": 6 },
+      "expectedPath": "/count",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "string pattern",
+      "schema": {
+        "type": "object",
+        "properties": { "slug": { "type": "string", "pattern": "^[a-z]+$" } }
+      },
+      "arguments": { "slug": "NOT-valid" },
+      "expectedPath": "/slug",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "uri format",
+      "schema": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "format": "uri" } }
+      },
+      "arguments": { "url": "not a uri" },
+      "expectedPath": "/url",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "array item",
+      "schema": {
+        "type": "object",
+        "properties": { "ids": { "type": "array", "items": { "type": "integer" } } }
+      },
+      "arguments": { "ids": [1, "two"] },
+      "expectedPath": "/ids/1",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    },
+    {
+      "name": "local reference",
+      "schema": {
+        "$defs": { "positive": { "type": "integer", "minimum": 1 } },
+        "type": "object",
+        "properties": { "value": { "$ref": "#/$defs/positive" } }
+      },
+      "arguments": { "value": 0 },
+      "expectedPath": "/value",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/events/stored-kaji-event-v1.schema.json",
+  "title": "Stored Kaji event",
+  "type": "object",
+  "required": ["id", "type", "version", "timestamp", "session_id", "sequence"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "type": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "turn_id": { "type": "string", "minLength": 1 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "metadata": { "type": "object" }
+  },
+  "additionalProperties": true
+}

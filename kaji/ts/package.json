@@ -32,7 +32,7 @@
   "bin": {
     "kaji": "./dist/cli/bin.js"
   },
-  "files": ["dist", "registry"],
+  "files": ["contracts", "dist", "registry"],
   "scripts": {
     "prebuild": "bun run scripts/copy.ts",
     "build": "tsup",

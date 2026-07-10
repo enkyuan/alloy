@@ -66,6 +66,10 @@ with zipfile.ZipFile(wheel) as zf:
     package_markers = [
         f"{registry_root}/__init__.py",
         f"{registry_root}/echo/__init__.py",
+        "kaji/contracts/__init__.py",
+        "kaji/contracts/beta-core-v1.json",
+        "kaji/contracts/events/new-kaji-event-v1.schema.json",
+        "kaji/contracts/events/stored-kaji-event-v1.schema.json",
     ]
 
     generated = sorted(path for path in names if "__pycache__" in path or path.endswith(".pyc"))

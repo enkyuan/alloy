@@ -47,6 +47,10 @@ include-package-data = true
 packages = [
     "kaji",
     "kaji.cli",
+    "kaji.contracts",
+    "kaji.contracts.errors",
+    "kaji.contracts.events",
+    "kaji.contracts.tools",
     "kaji.core",
     "kaji.infra",
     "kaji.infra.events",
@@ -74,6 +78,10 @@ packages = [
 [tool.setuptools.package-dir]
 kaji = "src"
 "kaji.cli" = "src/cli"
+"kaji.contracts" = "src/contracts"
+"kaji.contracts.errors" = "src/contracts/errors"
+"kaji.contracts.events" = "src/contracts/events"
+"kaji.contracts.tools" = "src/contracts/tools"
 "kaji.core" = "src/core"
 "kaji.infra" = "src/infra"
 "kaji.infra.events" = "src/infra/events"
@@ -99,6 +107,10 @@ kaji = "src"
 
 [tool.setuptools.package-data]
 kaji = ["py.typed", "integrations/registry/**/*"]
+"kaji.contracts" = ["*.json", "*.md"]
+"kaji.contracts.errors" = ["*.json"]
+"kaji.contracts.events" = ["*.json"]
+"kaji.contracts.tools" = ["*.json"]
 
 [dependency-groups]
 dev = [
