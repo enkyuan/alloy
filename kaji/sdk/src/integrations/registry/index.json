@@ -1,7 +1,11 @@
 {
-  "$schema": "./schema.json",
+  "$schema": "./index.schema.json",
   "version": "0.1.0",
   "integrations": {
-    "echo": "echo/manifest.json"
+    "echo": {
+      "manifest": "echo/manifest.json",
+      "stability": "beta",
+      "runtimes": ["python", "typescript"]
+    }
   }
 }

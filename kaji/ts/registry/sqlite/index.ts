@@ -20,7 +20,8 @@ type Database = {
 
 async function openDb(dbPath: string): Promise<Database> {
   // Dynamic import so better-sqlite3 remains an optional peer dep.
-  const mod = (await import("better-sqlite3")) as { default: new (path: string) => Database };
+  const packageName = "better-sqlite3";
+  const mod = (await import(packageName)) as { default: new (path: string) => Database };
   return new mod.default(dbPath);
 }
 

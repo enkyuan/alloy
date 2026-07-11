@@ -1,11 +1,31 @@
 {
-  "$schema": "./schema.json",
+  "$schema": "./index.schema.json",
   "version": "0.1.0",
   "integrations": {
-    "echo": "echo/manifest.json",
-    "http": "http/manifest.json",
-    "fs": "fs/manifest.json",
-    "web": "web/manifest.json",
-    "sqlite": "sqlite/manifest.json"
+    "echo": {
+      "manifest": "echo/manifest.json",
+      "stability": "beta",
+      "runtimes": ["python", "typescript"]
+    },
+    "fs": {
+      "manifest": "fs/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["typescript"]
+    },
+    "http": {
+      "manifest": "http/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["typescript"]
+    },
+    "sqlite": {
+      "manifest": "sqlite/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["typescript"]
+    },
+    "web": {
+      "manifest": "web/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["typescript"]
+    }
   }
 }

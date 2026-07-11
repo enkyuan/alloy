@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "cases": [
+    {
+      "name": "manifest with no authentication",
+      "target": "manifest",
+      "document": {
+        "name": "echo",
+        "version": "0.1.0",
+        "namespace": "echo",
+        "description": "Echo text.",
+        "auth": { "kind": "none" },
+        "files": ["index.ts"],
+        "tools": [{ "name": "say", "description": "Echo text.", "risk": "read" }]
+      }
+    },
+    {
+      "name": "manifest with optional environment authentication",
+      "target": "manifest",
+      "document": {
+        "name": "search",
+        "version": "0.1.0",
+        "namespace": "search",
+        "description": "Search text.",
+        "auth": {
+          "kind": "env",
+          "env": "SEARCH_API_KEY",
+          "optional": true,
+          "docs": "https://example.com/auth"
+        },
+        "files": ["index.ts"],
+        "tools": [{ "name": "search", "description": "Search text.", "risk": "read" }]
+      }
+    },
+    {
+      "name": "manifest with OAuth authentication",
+      "target": "manifest",
+      "document": {
+        "name": "mail",
+        "version": "0.1.0",
+        "namespace": "mail",
+        "description": "Read mail.",
+        "auth": {
+          "kind": "oauth",
+          "scopes": ["mail.read", "mail.send"],
+          "docs": "https://example.com/oauth"
+        },
+        "files": ["mail/index.ts"],
+        "tools": [{ "name": "read", "description": "Read mail.", "risk": "read" }]
+      }
+    },
+    {
+      "name": "registry index with beta and experimental entries",
+      "target": "index",
+      "document": {
+        "$schema": "./index.schema.json",
+        "version": "0.1.0",
+        "integrations": {
+          "echo": {
+            "manifest": "echo/manifest.json",
+            "stability": "beta",
+            "runtimes": ["python", "typescript"]
+          },
+          "http": {
+            "manifest": "http/manifest.json",
+            "stability": "experimental",
+            "runtimes": ["typescript"]
+          }
+        }
+      }
+    }
+  ]
+}

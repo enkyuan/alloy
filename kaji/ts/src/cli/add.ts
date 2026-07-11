@@ -13,42 +13,72 @@
  *  1  unknown integration, missing manifest, validation failure, or collision
  *     without `--force`.
  */
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { copyFileBunFirst, readTextFile } from "@/cli/bun-io";
+import { randomUUID } from "node:crypto";
+import { constants, existsSync, mkdirSync, realpathSync } from "node:fs";
+import { copyFile, lstat, rename, rm } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  formatIntegrationError,
+  loadManifest,
+  loadRegistryIndex,
+  resolveManifestFile,
+  type LoadedIntegrationManifest,
+  type RegistryIndexDocument,
+} from "@/integrations/registry-loader";
 
 export interface AddOptions {
   /** Absolute path to a registry directory (one with `index.json`). */
   registryRoot: string;
+  /** Directory containing the packaged integration schemas. Defaults to registryRoot. */
+  schemaRoot?: string;
   /** Sink for human-readable progress + error messages. Defaults to console.log. */
   log?: (msg: string) => void;
 }
 
-interface RegistryIndex {
-  integrations?: Record<string, string>;
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && "code" in error
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
 }
 
-interface Manifest {
-  name: string;
-  version: string;
-  namespace: string;
-  description: string;
-  auth: { kind: string; env?: string };
-  files: string[];
-  tools: { name: string; description: string }[];
-  extras?: string[];
-  peerDeps?: Record<string, string>;
+async function rejectDestinationSymlink(destination: string): Promise<void> {
+  try {
+    if ((await lstat(destination)).isSymbolicLink()) {
+      throw new Error(`Refusing to overwrite destination symlink: ${destination}`);
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") throw error;
+  }
 }
 
-const REQUIRED_KEYS = [
-  "name",
-  "version",
-  "namespace",
-  "description",
-  "auth",
-  "files",
-  "tools",
-] as const;
+async function copyToDestination(
+  source: string,
+  destination: string,
+  force: boolean,
+): Promise<void> {
+  await rejectDestinationSymlink(destination);
+  if (!force) {
+    // COPYFILE_EXCL makes a final-component swap fail instead of following it.
+    await copyFile(source, destination, constants.COPYFILE_EXCL);
+    return;
+  }
+
+  // Build the replacement beside the destination, then rename it atomically.
+  // rename(2) replaces a raced-in final symlink entry; it never follows that
+  // symlink to the victim. The second lstat still rejects symlinks observed
+  // before the atomic replacement.
+  const temporary = join(
+    dirname(destination),
+    `.${basename(destination)}.kaji-${randomUUID()}.tmp`,
+  );
+  try {
+    await copyFile(source, temporary, constants.COPYFILE_EXCL);
+    await rejectDestinationSymlink(destination);
+    await rename(temporary, destination);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
 
 export async function add(argv: string[], opts: AddOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
@@ -76,82 +106,34 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     }
   }
 
-  const indexPath = join(opts.registryRoot, "index.json");
-  if (!existsSync(indexPath)) {
-    log(`Registry index missing at ${indexPath}`);
-    return 1;
-  }
-  let index: RegistryIndex;
+  let index: RegistryIndexDocument;
   try {
-    index = JSON.parse(await readTextFile(indexPath)) as RegistryIndex;
-  } catch (e) {
-    log(`Registry index is not valid JSON: ${(e as Error).message}`);
+    index = await loadRegistryIndex(opts.registryRoot, { schemaRoot: opts.schemaRoot });
+  } catch (error) {
+    log(formatIntegrationError(error));
     return 1;
   }
 
-  const rel = index.integrations?.[name];
-  if (!rel) {
-    const available =
-      Object.keys(index.integrations ?? {})
-        .sort()
-        .join(", ") || "(none)";
+  if (index.integrations[name] === undefined) {
+    const available = Object.keys(index.integrations).sort().join(", ") || "(none)";
     log(`Unknown integration: '${name}'. Available: ${available}`);
     return 1;
   }
 
-  const manifestPath = join(opts.registryRoot, rel);
-  if (!existsSync(manifestPath)) {
-    log(`Manifest missing: ${manifestPath}`);
-    return 1;
-  }
-  let manifest: Manifest;
+  let manifest: LoadedIntegrationManifest;
   try {
-    manifest = JSON.parse(await readTextFile(manifestPath)) as Manifest;
-  } catch (e) {
-    log(`Manifest is not valid JSON: ${(e as Error).message}`);
+    manifest = await loadManifest(opts.registryRoot, name, {
+      schemaRoot: opts.schemaRoot,
+      index,
+    });
+  } catch (error) {
+    log(formatIntegrationError(error));
     return 1;
-  }
-  for (const key of REQUIRED_KEYS) {
-    if (!(key in manifest)) {
-      log(`Manifest missing key '${key}' at ${manifestPath}`);
-      return 1;
-    }
-  }
-  // Match the Python loader's auth.kind enum (integrations/__init__.py:111).
-  // A manifest accepted here must also be accepted by the Python side.
-  if (
-    typeof manifest.auth !== "object" ||
-    manifest.auth === null ||
-    typeof manifest.auth.kind !== "string"
-  ) {
-    log(`Manifest 'auth.kind' is required at ${manifestPath}`);
-    return 1;
-  }
-  if (!["env", "oauth", "none"].includes(manifest.auth.kind)) {
-    log(
-      `Manifest auth.kind must be one of env|oauth|none, got '${manifest.auth.kind}' at ${manifestPath}`,
-    );
-    return 1;
-  }
-  if (manifest.auth.kind === "env" && !manifest.auth.env) {
-    log(`Manifest auth.kind=='env' requires 'auth.env' at ${manifestPath}`);
-    return 1;
-  }
-  if (!Array.isArray(manifest.files) || manifest.files.length === 0) {
-    log(`Manifest 'files' must be a non-empty array at ${manifestPath}`);
-    return 1;
-  }
-  // Path traversal guard: reject any file entry that escapes the manifest
-  // directory. An attacker-controlled manifest could otherwise drop files
-  // anywhere the user has write access via "../../etc/foo.ts".
-  for (const f of manifest.files) {
-    if (typeof f !== "string" || isAbsolute(f) || f.split(/[\\/]/).includes("..")) {
-      log(`Manifest 'files' contains unsafe path: ${JSON.stringify(f)}`);
-      return 1;
-    }
   }
 
-  const tsFiles = manifest.files.filter((f) => f.endsWith(".ts"));
+  const tsFiles = manifest.files
+    .map((file, index) => ({ file, index }))
+    .filter(({ file }) => file.endsWith(".ts"));
   if (tsFiles.length === 0) {
     log(`Skipping '${name}': no TypeScript source files in this integration (Python only).`);
     return 0;
@@ -165,11 +147,11 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
   const resolvedOut = resolve(out);
   mkdirSync(resolvedOut, { recursive: true });
   const realOut = realpathSync(resolvedOut);
-  const manifestDir = dirname(manifestPath);
-  for (const f of tsFiles) {
-    const src = join(manifestDir, f);
-    if (!existsSync(src)) {
-      log(`Manifest ${manifestPath} references missing file ${src}`);
+  for (const { file: f, index } of tsFiles) {
+    try {
+      await resolveManifestFile(manifest, index);
+    } catch (error) {
+      log(formatIntegrationError(error));
       return 1;
     }
     const dest = resolve(resolvedOut, f);
@@ -202,11 +184,24 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     }
   }
 
-  for (const f of tsFiles) {
-    const src = join(manifestDir, f);
+  for (const { file: f, index } of tsFiles) {
+    let src: string;
+    try {
+      // Re-resolve immediately before copying so a swapped source symlink is
+      // rechecked against the manifest directory containment boundary.
+      src = await resolveManifestFile(manifest, index);
+    } catch (error) {
+      log(formatIntegrationError(error));
+      return 1;
+    }
     const dest = resolve(resolvedOut, f);
     mkdirSync(dirname(dest), { recursive: true });
-    await copyFileBunFirst(src, dest);
+    try {
+      await copyToDestination(src, dest, force);
+    } catch (error) {
+      log(formatIntegrationError(error));
+      return 1;
+    }
   }
   log(`Wrote ${tsFiles.length} file(s) to ${resolvedOut}`);
   return 0;

@@ -13,7 +13,18 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
+
+from kaji.integrations.validation import (
+    IndexValidationError,
+    IntegrationValidationError as IntegrationValidationError,
+    ManifestError,
+    ManifestValidationError,
+    json_pointer,
+    validate_index_document,
+    validate_manifest_document,
+)
+from kaji.runtime.tools.registry import ToolRisk
 
 
 # Errors are deliberately specific so the CLI can produce useful messages.
@@ -23,23 +34,27 @@ class IntegrationNotFound(KeyError):
     """Raised when a name isn't in the registry index."""
 
 
-class ManifestError(ValueError):
-    """Raised when a manifest is malformed."""
-
-
 @dataclass(frozen=True)
 class ManifestTool:
     name: str
     description: str
-    risk: Optional[str] = None
+    risk: Optional[ToolRisk] = None
 
 
 @dataclass(frozen=True)
 class ManifestAuth:
     kind: str  # "env" | "oauth" | "none"
     env: Optional[str] = None
+    optional: bool = False
     docs: Optional[str] = None
     scopes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RegistryEntry:
+    manifest: str
+    stability: str
+    runtimes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -55,6 +70,8 @@ class Manifest:
     tools: tuple[ManifestTool, ...]
     extras: tuple[str, ...]
     peer_deps: Mapping[str, str]
+    stability: str
+    runtimes: tuple[str, ...]
     # Absolute path to the manifest file on disk, so callers can resolve
     # ``files`` entries relative to it.
     path: Path
@@ -74,18 +91,26 @@ def _registry_root() -> Path:
     return Path(__file__).resolve().parent / "registry"
 
 
-def _read_index() -> dict[str, str]:
+def _read_index() -> dict[str, RegistryEntry]:
     index_path = _registry_root() / "index.json"
     if not index_path.exists():
-        raise ManifestError(f"Registry index missing at {index_path}")
+        raise IndexValidationError("/", "Registry index is missing")
     try:
         data = json.loads(index_path.read_text())
     except json.JSONDecodeError as e:
-        raise ManifestError(f"Registry index is not valid JSON: {e}") from e
-    integrations = data.get("integrations")
-    if not isinstance(integrations, dict):
-        raise ManifestError("Registry index missing 'integrations' object.")
-    return integrations
+        raise IndexValidationError("/", "Registry index is not valid JSON") from e
+    except (OSError, UnicodeError) as e:
+        raise IndexValidationError("/", "Registry index is unreadable") from e
+    validate_index_document(data)
+    integrations = cast(dict[str, dict[str, Any]], data["integrations"])
+    return {
+        name: RegistryEntry(
+            manifest=entry["manifest"],
+            stability=entry["stability"],
+            runtimes=tuple(entry["runtimes"]),
+        )
+        for name, entry in integrations.items()
+    }
 
 
 def list_integrations() -> list[str]:
@@ -93,41 +118,23 @@ def list_integrations() -> list[str]:
     return sorted(_read_index().keys())
 
 
-def _validate_manifest(data: Any, path: Path) -> None:
-    """Cheap structural validation. We don't pull in jsonschema; the
-    schema.json file is the canonical reference and human-readable check."""
-    if not isinstance(data, dict):
-        raise ManifestError(f"{path}: manifest must be a JSON object.")
-    required = {"name", "version", "namespace", "description", "auth", "files", "tools"}
-    missing = required - data.keys()
-    if missing:
-        raise ManifestError(f"{path}: manifest missing keys: {sorted(missing)}")
-    if not isinstance(data["files"], list) or not data["files"]:
-        raise ManifestError(f"{path}: 'files' must be a non-empty list.")
-    if not isinstance(data["tools"], list) or not data["tools"]:
-        raise ManifestError(f"{path}: 'tools' must be a non-empty list.")
-    if "extras" in data and (
-        not isinstance(data["extras"], list)
-        or any(not isinstance(item, str) for item in data["extras"])
-    ):
-        raise ManifestError(f"{path}: 'extras' must be a list of strings.")
-    if "peerDeps" in data and (
-        not isinstance(data["peerDeps"], dict)
-        or any(
-            not isinstance(pkg, str) or not isinstance(version, str)
-            for pkg, version in data["peerDeps"].items()
-        )
-    ):
-        raise ManifestError(f"{path}: 'peerDeps' must be an object of string versions.")
-    auth = data["auth"]
-    if not isinstance(auth, dict) or "kind" not in auth:
-        raise ManifestError(f"{path}: 'auth.kind' is required.")
-    if auth["kind"] not in ("env", "oauth", "none"):
-        raise ManifestError(
-            f"{path}: auth.kind must be one of env|oauth|none, got {auth['kind']!r}."
-        )
-    if auth["kind"] == "env" and not auth.get("env"):
-        raise ManifestError(f"{path}: auth.kind=='env' requires 'auth.env'.")
+def _contained_path(root: Path, relative: str, *, path: str, index: bool) -> Path:
+    try:
+        resolved_root = root.resolve()
+        resolved = (root / relative).resolve()
+    except (OSError, RuntimeError):
+        message = f"Integration path cannot be resolved safely at {path}"
+        if index:
+            raise IndexValidationError(path, message) from None
+        raise ManifestValidationError(path, message) from None
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError:
+        message = f"Integration path resolves outside its allowed root at {path}"
+        if index:
+            raise IndexValidationError(path, message) from None
+        raise ManifestValidationError(path, message) from None
+    return resolved
 
 
 def load_manifest(name: str) -> Manifest:
@@ -137,19 +144,38 @@ def load_manifest(name: str) -> Manifest:
     ``ManifestError`` if the manifest file itself is malformed.
     """
     index = _read_index()
-    rel = index.get(name)
-    if rel is None:
+    entry = index.get(name)
+    if entry is None:
         raise IntegrationNotFound(f"Unknown integration: {name!r}")
-    manifest_path = _registry_root() / rel
-    if not manifest_path.exists():
-        raise ManifestError(
-            f"Integration {name!r} index points at {manifest_path} which does not exist."
+    manifest_pointer = json_pointer(("integrations", name, "manifest"))
+    manifest_path = _contained_path(
+        _registry_root(), entry.manifest, path=manifest_pointer, index=True
+    )
+    if not manifest_path.is_file():
+        raise IndexValidationError(
+            manifest_pointer, "Integration index references a missing manifest"
         )
     try:
         data = json.loads(manifest_path.read_text())
     except json.JSONDecodeError as e:
-        raise ManifestError(f"{manifest_path}: invalid JSON: {e}") from e
-    _validate_manifest(data, manifest_path)
+        raise ManifestValidationError(
+            "/", "Integration manifest is not valid JSON"
+        ) from e
+    except (OSError, UnicodeError) as e:
+        raise ManifestValidationError("/", "Integration manifest is unreadable") from e
+    validate_manifest_document(data)
+    if data["name"] != name:
+        raise IndexValidationError(
+            "/name", "Integration index key does not match manifest name"
+        )
+    manifest_root = manifest_path.parent
+    for file_index, relative in enumerate(data["files"]):
+        pointer = f"/files/{file_index}"
+        source = _contained_path(manifest_root, relative, path=pointer, index=False)
+        if not source.is_file():
+            raise ManifestValidationError(
+                pointer, "Integration manifest references a missing file"
+            )
     auth = data["auth"]
     return Manifest(
         name=data["name"],
@@ -159,6 +185,7 @@ def load_manifest(name: str) -> Manifest:
         auth=ManifestAuth(
             kind=auth["kind"],
             env=auth.get("env"),
+            optional=auth.get("optional", False),
             docs=auth.get("docs"),
             scopes=tuple(auth.get("scopes") or ()),
         ),
@@ -173,6 +200,8 @@ def load_manifest(name: str) -> Manifest:
         ),
         extras=tuple(data.get("extras") or ()),
         peer_deps=dict(data.get("peerDeps") or {}),
+        stability=entry.stability,
+        runtimes=entry.runtimes,
         path=manifest_path,
     )
 
@@ -200,14 +229,20 @@ def install_integration(
             raise ManifestError(
                 f"Manifest {manifest.path} contains unsafe file path: {rel!r}"
             )
-    dest.mkdir(parents=True, exist_ok=True)
-    resolved_dest = dest.resolve()
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        resolved_dest = dest.resolve()
+    except (OSError, RuntimeError):
+        raise ManifestError("Destination path cannot be resolved safely") from None
     written: list[Path] = []
-    for rel in manifest.files:
-        src = manifest.root / rel
-        if not src.exists():
-            raise ManifestError(
-                f"Manifest {manifest.path} references missing file {src}"
+    for file_index, rel in enumerate(manifest.files):
+        src = _contained_path(
+            manifest.root, rel, path=f"/files/{file_index}", index=False
+        )
+        if not src.is_file():
+            raise ManifestValidationError(
+                f"/files/{file_index}",
+                "Integration manifest references a missing file",
             )
         # Preserve any sub-directory structure declared in the manifest so an
         # integration can ship multiple files like ["foo.py", "lib/bar.py"].
@@ -216,7 +251,7 @@ def install_integration(
         # target under the resolved dest before any filesystem write.
         try:
             target.resolve().relative_to(resolved_dest)
-        except ValueError:
+        except (OSError, RuntimeError, ValueError):
             raise ManifestError(f"Refusing to write outside dest: {target}") from None
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and not force:

@@ -10,6 +10,8 @@ import { replay } from "@/cli/replay";
 
 export interface RunOptions {
   registryRoot: string;
+  /** Directory containing schema.json and index.schema.json. Defaults to registryRoot. */
+  schemaRoot?: string;
   log?: (msg: string) => void;
   err?: (msg: string) => void;
 }
@@ -25,7 +27,13 @@ export const COMMANDS: Record<string, Command> = {
     describe: "Copy an integration's TypeScript source into your project.",
     usage: "kaji add <name> [--out <dir>] [--force]",
     run: (rest, opts) =>
-      Promise.resolve(add(rest, { registryRoot: opts.registryRoot, log: opts.log })),
+      Promise.resolve(
+        add(rest, {
+          registryRoot: opts.registryRoot,
+          schemaRoot: opts.schemaRoot,
+          log: opts.log,
+        }),
+      ),
   },
   init: {
     describe: "Scaffold a new TypeScript Kaji project.",

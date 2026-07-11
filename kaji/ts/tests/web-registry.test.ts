@@ -1,94 +1,14 @@
 /**
  * Tests for the web registry integration pattern.
  *
- * Validates HTML-stripping reader mode, and error on missing BRAVE_API_KEY.
- * Reconstructs key logic inline (like registry.echo.test.ts) so tests run
- * against the local source tree without the registry files needing to be
- * in tsconfig.
+ * Validates HTML-stripping reader mode and missing BRAVE_API_KEY behavior by
+ * importing the implementation consumers receive.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as z from "zod";
-import { functionTool, type ToolContext } from "@/index";
+import type { ToolContext } from "@/index";
 import { createWebIntegration } from "../registry/web/index";
 
 const ctx: ToolContext = { userId: "_" };
-
-function extractReadableText(html: string): { text: string; title?: string } {
-  const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-  const rawTitle = titleMatch?.[1]?.trim();
-  const title = rawTitle
-    ? rawTitle.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    : undefined;
-
-  const text = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return { text, ...(title ? { title } : {}) };
-}
-
-function createWebFetch() {
-  return functionTool(
-    {
-      name: "fetch",
-      namespace: "web",
-      description: "Fetch a URL and extract readable text (reader mode).",
-      parameters: z.object({ url: z.string().url() }),
-      risk: "read",
-    },
-    async ({ url }) => {
-      const resp = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; KajiBot/1.0)" },
-      });
-      const html = await resp.text();
-      const { text, title } = extractReadableText(html);
-      return { url, text, ...(title ? { title } : {}) };
-    },
-  );
-}
-
-function createWebSearch(braveApiKey?: string) {
-  return functionTool(
-    {
-      name: "search",
-      namespace: "web",
-      description: "Web search via Brave Search API.",
-      parameters: z.object({ query: z.string(), count: z.number().default(5) }),
-      risk: "read",
-    },
-    async ({ query, count }) => {
-      const apiKey = braveApiKey ?? process.env["BRAVE_API_KEY"];
-      if (!apiKey) {
-        throw new Error("BRAVE_API_KEY not set. Get one at https://brave.com/search/api/");
-      }
-      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
-      const resp = await fetch(url, {
-        headers: { "X-Subscription-Token": apiKey, Accept: "application/json" },
-      });
-      if (!resp.ok) {
-        throw new Error(`Brave Search API error: ${resp.status} ${resp.statusText}`);
-      }
-      const data = (await resp.json()) as {
-        web?: { results?: { title: string; url: string; description: string }[] };
-      };
-      const results = (data.web?.results ?? []).map(({ title, url, description }) => ({
-        title,
-        url,
-        description,
-      }));
-      return { results };
-    },
-  );
-}
 
 describe("web integration: fetch (reader mode)", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -117,7 +37,7 @@ describe("web integration: fetch (reader mode)", () => {
       text: async () => html,
     } as Partial<Response>);
 
-    const tool = createWebFetch();
+    const { fetch: tool } = createWebIntegration();
     const result = await tool.handler(ctx, { url: "https://example.com" });
 
     expect(result["url"]).toBe("https://example.com");
@@ -138,7 +58,7 @@ describe("web integration: fetch (reader mode)", () => {
       text: async () => html,
     } as Partial<Response>);
 
-    const tool = createWebFetch();
+    const { fetch: tool } = createWebIntegration();
     const result = await tool.handler(ctx, { url: "https://example.com" });
 
     expect(result["title"]).toBe("My Great Page");
@@ -151,7 +71,7 @@ describe("web integration: fetch (reader mode)", () => {
       text: async () => html,
     } as Partial<Response>);
 
-    const tool = createWebFetch();
+    const { fetch: tool } = createWebIntegration();
     const result = await tool.handler(ctx, { url: "https://example.com" });
     const text = result["text"] as string;
 
@@ -168,7 +88,7 @@ describe("web integration: search", () => {
   it("throws a clear error when BRAVE_API_KEY is not set", async () => {
     delete process.env["BRAVE_API_KEY"];
 
-    const tool = createWebSearch(/* no key */);
+    const { search: tool } = createWebIntegration();
     await expect(tool.handler(ctx, { query: "test query", count: 5 })).rejects.toThrow(
       /BRAVE_API_KEY not set/i,
     );
@@ -185,7 +105,7 @@ describe("web integration: search", () => {
     } as Partial<Response>);
     vi.stubGlobal("fetch", mockFetch);
 
-    const tool = createWebSearch("test-api-key");
+    const { search: tool } = createWebIntegration({ braveApiKey: "test-api-key" });
     const result = await tool.handler(ctx, { query: "hello", count: 1 });
 
     expect(result["results"]).toHaveLength(1);

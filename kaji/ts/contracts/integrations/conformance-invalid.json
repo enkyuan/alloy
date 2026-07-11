@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "cases": [
+    {
+      "name": "environment auth missing env",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "env" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "environment auth has unsafe lowercase env",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "env", "env": "api_key" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "environment auth has OAuth fields",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "env", "env": "API_KEY", "scopes": ["read"] },
+        "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "OAuth auth missing scopes",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "OAuth auth has empty scopes",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth", "scopes": [] }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "OAuth auth has duplicate scopes",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth", "scopes": ["read", "read"] },
+        "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "OAuth auth has env fields",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth", "scopes": ["read"], "env": "API_KEY" },
+        "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "none auth has credential fields",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none", "env": "API_KEY" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "invalid authentication docs URI",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "env", "env": "API_KEY", "docs": "not a uri" },
+        "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "tool missing risk",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x" }]
+      },
+      "expectedPath": "/tools/0",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "tool missing name",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/tools/0",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "duplicate tool name",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [
+          { "name": "x", "description": "first", "risk": "read" },
+          { "name": "x", "description": "second", "risk": "write" }
+        ]
+      },
+      "expectedPath": "/tools/1/name",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "absolute manifest file path",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["/tmp/index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/files/0",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "parent traversal manifest file path",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["../index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/files/0",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "duplicate manifest file",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts", "index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+      },
+      "expectedPath": "/files",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    },
+    {
+      "name": "index manifest path escapes registry",
+      "target": "index",
+      "document": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "x": { "manifest": "../x/manifest.json", "stability": "beta", "runtimes": ["typescript"] }
+        }
+      },
+      "expectedPath": "/integrations/x/manifest",
+      "expectedCode": "INVALID_INTEGRATION_INDEX"
+    },
+    {
+      "name": "unknown stability tier",
+      "target": "index",
+      "document": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "x": { "manifest": "x/manifest.json", "stability": "preview", "runtimes": ["typescript"] }
+        }
+      },
+      "expectedPath": "/integrations/x/stability",
+      "expectedCode": "INVALID_INTEGRATION_INDEX"
+    },
+    {
+      "name": "unknown integration runtime",
+      "target": "index",
+      "document": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "x": { "manifest": "x/manifest.json", "stability": "beta", "runtimes": ["ruby"] }
+        }
+      },
+      "expectedPath": "/integrations/x/runtimes/0",
+      "expectedCode": "INVALID_INTEGRATION_INDEX"
+    },
+    {
+      "name": "index key does not match manifest name",
+      "target": "registry",
+      "index": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "alias": { "manifest": "actual/manifest.json", "stability": "beta", "runtimes": ["typescript"] }
+        }
+      },
+      "manifests": {
+        "actual/manifest.json": {
+          "name": "actual", "version": "0.1.0", "namespace": "actual", "description": "actual",
+          "auth": { "kind": "none" }, "files": ["index.ts"],
+          "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        }
+      },
+      "files": ["actual/index.ts"],
+      "expectedPath": "/name",
+      "expectedCode": "INVALID_INTEGRATION_INDEX"
+    },
+    {
+      "name": "index points to missing manifest",
+      "target": "registry",
+      "index": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "ghost": { "manifest": "ghost/manifest.json", "stability": "experimental", "runtimes": ["typescript"] }
+        }
+      },
+      "manifests": {},
+      "files": [],
+      "expectedPath": "/integrations/ghost/manifest",
+      "expectedCode": "INVALID_INTEGRATION_INDEX"
+    },
+    {
+      "name": "manifest references missing file",
+      "target": "registry",
+      "index": {
+        "$schema": "./index.schema.json", "version": "0.1.0",
+        "integrations": {
+          "x": { "manifest": "x/manifest.json", "stability": "experimental", "runtimes": ["typescript"] }
+        }
+      },
+      "manifests": {
+        "x/manifest.json": {
+          "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+          "auth": { "kind": "none" }, "files": ["missing.ts"],
+          "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        }
+      },
+      "files": [],
+      "expectedPath": "/files/0",
+      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+    }
+  ]
+}

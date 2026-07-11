@@ -1,85 +1,106 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kaji.dev/schemas/integration-manifest.json",
+  "$id": "https://kaji.dev/schemas/integration-manifest-v1.json",
   "title": "Kaji integration manifest",
-  "description": "Describes a copyable integration: identity, auth, files to copy, and tools surfaced.",
   "type": "object",
   "required": ["name", "version", "namespace", "description", "auth", "files", "tools"],
   "additionalProperties": false,
   "properties": {
     "name": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_-]*$",
-      "description": "Lowercase identifier used by `kaji add <name>`."
+      "pattern": "^[a-z][a-z0-9_-]*$"
     },
     "version": {
       "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semver version of the manifest."
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
     "namespace": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_]*$",
-      "description": "Namespace prefix applied to tool catalog names (e.g. 'github')."
+      "pattern": "^[a-z][a-z0-9_]*$"
     },
     "description": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "auth": {
-      "type": "object",
-      "required": ["kind"],
-      "additionalProperties": true,
-      "properties": {
-        "kind": {
-          "enum": ["env", "oauth", "none"],
-          "description": "Auth mechanism. 'env' = single env var (e.g. PAT). 'oauth' = OAuth 2.0 flow. 'none' = public, no auth."
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "none" }
+          },
+          "additionalProperties": false
         },
-        "env": {
-          "type": "string",
-          "description": "Required when kind=='env'. The environment variable name the integration reads."
+        {
+          "type": "object",
+          "required": ["kind", "env"],
+          "properties": {
+            "kind": { "const": "env" },
+            "env": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "optional": { "type": "boolean", "default": false },
+            "docs": { "type": "string", "format": "uri" }
+          },
+          "additionalProperties": false
         },
-        "docs": {
-          "type": "string",
-          "description": "URL pointing at vendor docs for obtaining the credential."
-        },
-        "scopes": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "OAuth scopes; required when kind=='oauth'."
+        {
+          "type": "object",
+          "required": ["kind", "scopes"],
+          "properties": {
+            "kind": { "const": "oauth" },
+            "scopes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "docs": { "type": "string", "format": "uri" }
+          },
+          "additionalProperties": false
         }
-      }
+      ]
     },
     "files": {
       "type": "array",
-      "items": {"type": "string"},
       "minItems": 1,
-      "description": "Paths (relative to the manifest's directory) that `kaji add` copies."
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9_@.+-]+(?:/[A-Za-z0-9_@.+-]+)*$"
+      }
     },
     "tools": {
       "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
       "items": {
         "type": "object",
-        "required": ["name", "description"],
+        "required": ["name", "description", "risk"],
         "additionalProperties": false,
         "properties": {
-          "name": {"type": "string"},
-          "description": {"type": "string"},
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "description": { "type": "string", "minLength": 1 },
           "risk": {
             "enum": ["read", "write", "external_effect", "financial", "destructive", "admin"]
           }
         }
-      },
-      "minItems": 1
+      }
     },
     "extras": {
       "type": "array",
-      "items": {"type": "string"},
-      "description": "Extra peer/optional deps the integration requires (e.g. 'httpx')."
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
     },
     "peerDeps": {
       "type": "object",
-      "additionalProperties": {"type": "string"},
-      "description": "npm peer/optional dependencies the integration requires, keyed by package name to semver range (e.g. {\"better-sqlite3\": \"^9\"})."
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": { "type": "string", "minLength": 1 }
     }
   }
 }

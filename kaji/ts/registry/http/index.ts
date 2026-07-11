@@ -34,7 +34,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       description: "HTTP GET a URL and return the response body.",
       parameters: z.object({
         url: z.string().url(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
       }),
       risk: "read",
     },
@@ -54,7 +54,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       parameters: z.object({
         url: z.string().url(),
         body: z.unknown(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
       }),
       risk: "write",
     },
@@ -78,7 +78,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       parameters: z.object({
         url: z.string().url(),
         body: z.unknown(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
       }),
       risk: "write",
     },
@@ -101,7 +101,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       description: "HTTP DELETE a URL.",
       parameters: z.object({
         url: z.string().url(),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
       }),
       risk: "write",
     },

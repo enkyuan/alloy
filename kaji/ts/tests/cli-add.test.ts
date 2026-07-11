@@ -5,13 +5,36 @@
  * then a final case against the real registry shipped with the SDK.
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { add } from "@/cli/add";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const schemaRoot = join(__dirname, "..", "registry");
+
+function registryIndex(integrations: Record<string, string>): object {
+  return {
+    $schema: "./index.schema.json",
+    version: "0.1.0",
+    integrations: Object.fromEntries(
+      Object.entries(integrations).map(([name, manifest]) => [
+        name,
+        { manifest, stability: "experimental", runtimes: ["typescript"] },
+      ]),
+    ),
+  };
+}
 
 describe("kaji add", () => {
   let tmp: string;
@@ -24,12 +47,12 @@ describe("kaji add", () => {
     mkdirSync(join(registry, "demo-py"), { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify({
-        integrations: {
+      JSON.stringify(
+        registryIndex({
           "demo-ts": "demo-ts/manifest.json",
           "demo-py": "demo-py/manifest.json",
-        },
-      }),
+        }),
+      ),
     );
     writeFileSync(
       join(registry, "demo-ts/manifest.json"),
@@ -40,7 +63,7 @@ describe("kaji add", () => {
         description: "demo ts",
         auth: { kind: "env", env: "DEMO_API_KEY" },
         files: ["demo.ts"],
-        tools: [{ name: "ping", description: "ping" }],
+        tools: [{ name: "ping", description: "ping", risk: "read" }],
       }),
     );
     writeFileSync(join(registry, "demo-ts/demo.ts"), "export const x = 1;\n");
@@ -53,7 +76,7 @@ describe("kaji add", () => {
         description: "demo py",
         auth: { kind: "none" },
         files: ["demo.py"],
-        tools: [{ name: "noop", description: "noop" }],
+        tools: [{ name: "noop", description: "noop", risk: "read" }],
       }),
     );
     writeFileSync(join(registry, "demo-py/demo.py"), "# py\n");
@@ -64,6 +87,7 @@ describe("kaji add", () => {
     const out = join(tmp, "integrations");
     const code = await add(["demo-ts", "--out", out], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(0);
     expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
@@ -74,6 +98,7 @@ describe("kaji add", () => {
     const logs: string[] = [];
     const code = await add(["demo-py", "--out", out], {
       registryRoot: registry,
+      schemaRoot,
       log: (m) => logs.push(m),
     });
     expect(code).toBe(0);
@@ -84,6 +109,7 @@ describe("kaji add", () => {
   it("returns 1 on unknown name", async () => {
     const code = await add(["unknown", "--out", join(tmp, "integrations")], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
   });
@@ -94,6 +120,7 @@ describe("kaji add", () => {
     writeFileSync(join(out, "demo.ts"), "existing\n");
     const code = await add(["demo-ts", "--out", out], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
   });
@@ -104,9 +131,30 @@ describe("kaji add", () => {
     writeFileSync(join(out, "demo.ts"), "existing\n");
     const code = await add(["demo-ts", "--out", out, "--force"], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(0);
     expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
+  });
+
+  it("rejects a final destination symlink with --force without changing its victim", async () => {
+    const out = join(tmp, "integrations");
+    const victim = join(tmp, "victim.ts");
+    mkdirSync(out, { recursive: true });
+    writeFileSync(victim, "do not overwrite\n");
+    symlinkSync(victim, join(out, "demo.ts"));
+    const logs: string[] = [];
+
+    const code = await add(["demo-ts", "--out", out, "--force"], {
+      registryRoot: registry,
+      schemaRoot,
+      log: (message) => logs.push(message),
+    });
+
+    expect(code).toBe(1);
+    expect(readFileSync(victim, "utf8")).toBe("do not overwrite\n");
+    expect(lstatSync(join(out, "demo.ts")).isSymbolicLink()).toBe(true);
+    expect(logs.join("\n")).toMatch(/symlink/i);
   });
 
   it("rejects manifests with path-traversal in files[]", async () => {
@@ -114,7 +162,7 @@ describe("kaji add", () => {
     mkdirSync(evilDir, { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify({ integrations: { evil: "evil/manifest.json" } }),
+      JSON.stringify(registryIndex({ evil: "evil/manifest.json" })),
     );
     writeFileSync(
       join(evilDir, "manifest.json"),
@@ -125,11 +173,12 @@ describe("kaji add", () => {
         description: "evil",
         auth: { kind: "none" },
         files: ["../../../etc/foo.ts"],
-        tools: [{ name: "x", description: "x" }],
+        tools: [{ name: "x", description: "x", risk: "read" }],
       }),
     );
     const code = await add(["evil", "--out", join(tmp, "integrations")], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
   });
@@ -139,7 +188,7 @@ describe("kaji add", () => {
     mkdirSync(evilDir, { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify({ integrations: { "evil-abs": "evil-abs/manifest.json" } }),
+      JSON.stringify(registryIndex({ "evil-abs": "evil-abs/manifest.json" })),
     );
     writeFileSync(
       join(evilDir, "manifest.json"),
@@ -150,11 +199,12 @@ describe("kaji add", () => {
         description: "evil",
         auth: { kind: "none" },
         files: ["/etc/foo.ts"],
-        tools: [{ name: "x", description: "x" }],
+        tools: [{ name: "x", description: "x", risk: "read" }],
       }),
     );
     const code = await add(["evil-abs", "--out", join(tmp, "integrations")], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
   });
@@ -164,23 +214,24 @@ describe("kaji add", () => {
     mkdirSync(bad, { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify({ integrations: { "bad-auth": "bad-auth/manifest.json" } }),
+      JSON.stringify(registryIndex({ "bad-auth": "bad-auth/manifest.json" })),
     );
     writeFileSync(
       join(bad, "manifest.json"),
       JSON.stringify({
         name: "bad-auth",
         version: "0.1.0",
-        namespace: "bad-auth",
+        namespace: "bad_auth",
         description: "bad",
         auth: { kind: "magic" },
         files: ["bad.ts"],
-        tools: [{ name: "x", description: "x" }],
+        tools: [{ name: "x", description: "x", risk: "read" }],
       }),
     );
     writeFileSync(join(bad, "bad.ts"), "// bad\n");
     const code = await add(["bad-auth", "--out", join(tmp, "integrations")], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
   });
@@ -195,18 +246,18 @@ describe("kaji add", () => {
     mkdirSync(join(evilDir, "sub"), { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify({ integrations: { "sym-evil": "sym-evil/manifest.json" } }),
+      JSON.stringify(registryIndex({ "sym-evil": "sym-evil/manifest.json" })),
     );
     writeFileSync(
       join(evilDir, "manifest.json"),
       JSON.stringify({
         name: "sym-evil",
         version: "0.1.0",
-        namespace: "sym-evil",
+        namespace: "sym_evil",
         description: "evil",
         auth: { kind: "none" },
         files: ["sub/foo.ts"],
-        tools: [{ name: "x", description: "x" }],
+        tools: [{ name: "x", description: "x", risk: "read" }],
       }),
     );
     writeFileSync(join(evilDir, "sub/foo.ts"), "// evil\n");
@@ -219,6 +270,7 @@ describe("kaji add", () => {
 
     const code = await add(["sym-evil", "--out", out], {
       registryRoot: registry,
+      schemaRoot,
     });
     expect(code).toBe(1);
     // The file must NOT have been written to the symlink target.

@@ -38,6 +38,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "typecheck:registry": "tsc --noEmit --project tsconfig.registry.json",
     "format": "oxfmt --write \"**/*.ts\"",
     "format:check": "oxfmt --check \"**/*.ts\"",
     "test": "vitest run",
@@ -46,7 +47,7 @@
     "test:watch": "vitest",
     "check:integrations": "bun run scripts/check.ts",
     "clean": "rm -rf dist",
-    "validate:registry": "bun scripts/validate.ts"
+    "validate:registry": "bun run scripts/validate.ts"
   },
   "dependencies": {
     "ajv": "^8.20.0",

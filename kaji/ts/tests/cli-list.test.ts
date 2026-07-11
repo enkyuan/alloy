@@ -1,12 +1,46 @@
-/**
- * Tests for `kaji list-integrations`. Drives the handler against ephemeral
- * fixture registries on disk, matching the `cli.add.test.ts` style.
- */
-import { describe, expect, it, beforeEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+/** Tests for `kaji list-integrations` against ephemeral registries. */
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
 import { listIntegrations } from "@/cli/list";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const schemaRoot = join(here, "..", "registry");
+
+function registryIndex(integrations: Record<string, string>): object {
+  return {
+    $schema: "./index.schema.json",
+    version: "0.1.0",
+    integrations: Object.fromEntries(
+      Object.entries(integrations).map(([name, manifest]) => [
+        name,
+        { manifest, stability: "experimental", runtimes: ["typescript"] },
+      ]),
+    ),
+  };
+}
+
+function writeIntegration(root: string, name: string, description: string): void {
+  const integrationRoot = join(root, name);
+  mkdirSync(integrationRoot, { recursive: true });
+  writeFileSync(
+    join(integrationRoot, "manifest.json"),
+    JSON.stringify({
+      name,
+      version: "0.1.0",
+      namespace: name.replaceAll("-", "_"),
+      description,
+      auth: { kind: "none" },
+      files: ["index.ts"],
+      tools: [{ name: "run", description: "Run the integration.", risk: "read" }],
+    }),
+  );
+  writeFileSync(join(integrationRoot, "index.ts"), "// fixture\n");
+}
 
 describe("kaji list-integrations", () => {
   let registryRoot: string;
@@ -15,84 +49,108 @@ describe("kaji list-integrations", () => {
     registryRoot = mkdtempSync(join(tmpdir(), "kaji-list-"));
   });
 
-  it("prints every integration listed in index.json with its description", async () => {
-    mkdirSync(join(registryRoot, "echo"));
-    writeFileSync(
-      join(registryRoot, "echo", "manifest.json"),
-      JSON.stringify({ name: "echo", description: "Echo a string back." }),
-    );
-    mkdirSync(join(registryRoot, "weather"));
-    writeFileSync(
-      join(registryRoot, "weather", "manifest.json"),
-      JSON.stringify({ name: "weather", description: "Look up the weather." }),
-    );
+  afterEach(() => rmSync(registryRoot, { recursive: true, force: true }));
+
+  it("prints every validated index entry with its description", async () => {
+    writeIntegration(registryRoot, "echo", "Echo a string back.");
+    writeIntegration(registryRoot, "weather", "Look up the weather.");
     writeFileSync(
       join(registryRoot, "index.json"),
-      JSON.stringify({
-        version: "0.1.0",
-        integrations: {
+      JSON.stringify(
+        registryIndex({
           echo: "echo/manifest.json",
           weather: "weather/manifest.json",
-        },
-      }),
+        }),
+      ),
     );
 
     const lines: string[] = [];
-    const code = await listIntegrations([], { registryRoot, log: (m) => lines.push(m) });
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      log: (message) => lines.push(message),
+    });
     expect(code).toBe(0);
-    const out = lines.join("\n");
-    expect(out).toMatch(/echo\s+Echo a string back\./);
-    expect(out).toMatch(/weather\s+Look up the weather\./);
+    const output = lines.join("\n");
+    expect(output).toMatch(/echo\s+Echo a string back\./);
+    expect(output).toMatch(/weather\s+Look up the weather\./);
   });
 
-  it("returns 0 and a friendly note when index.json is missing", async () => {
-    const lines: string[] = [];
-    const code = await listIntegrations([], { registryRoot, log: (m) => lines.push(m) });
-    expect(code).toBe(0);
-    expect(lines.join("\n")).toMatch(/No integrations found/);
+  it("returns 1 when the packaged index is missing", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_INDEX at \/:/);
+    expect(stdout).toEqual([]);
   });
 
   it("returns 0 and a friendly note when index.json has zero integrations", async () => {
-    writeFileSync(
-      join(registryRoot, "index.json"),
-      JSON.stringify({ version: "0.1.0", integrations: {} }),
-    );
+    writeFileSync(join(registryRoot, "index.json"), JSON.stringify(registryIndex({})));
     const lines: string[] = [];
-    const code = await listIntegrations([], { registryRoot, log: (m) => lines.push(m) });
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      log: (message) => lines.push(message),
+    });
     expect(code).toBe(0);
     expect(lines.join("\n")).toMatch(/No integrations found/);
   });
 
-  it("exits 1 and reports the parse error when index.json is malformed JSON", async () => {
+  it("exits 1 and reports malformed index JSON", async () => {
     writeFileSync(join(registryRoot, "index.json"), "{not valid json");
     const stdout: string[] = [];
     const stderr: string[] = [];
     const code = await listIntegrations([], {
       registryRoot,
-      log: (m) => stdout.push(m),
-      err: (m) => stderr.push(m),
+      schemaRoot,
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
     });
     expect(code).toBe(1);
-    // Real corruption surfaces on stderr so the user can fix it; the
-    // friendly "No integrations found." message is reserved for missing /
-    // empty catalogs.
-    expect(stderr.join("\n")).toMatch(/Registry index is not valid JSON/);
+    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_INDEX at \/:/);
     expect(stdout.join("\n")).not.toMatch(/No integrations found/);
   });
 
-  it("falls back to the catalog key when a manifest is missing or unreadable", async () => {
+  it("exits 1 when an indexed manifest is missing", async () => {
     writeFileSync(
       join(registryRoot, "index.json"),
-      JSON.stringify({
-        version: "0.1.0",
-        integrations: { ghost: "ghost/manifest.json" },
-      }),
+      JSON.stringify(registryIndex({ ghost: "ghost/manifest.json" })),
     );
-    // ghost/manifest.json deliberately not created.
-    const lines: string[] = [];
-    const code = await listIntegrations([], { registryRoot, log: (m) => lines.push(m) });
-    expect(code).toBe(0);
-    // Catalog key surfaces, no crash; description is blank.
-    expect(lines.join("\n")).toMatch(/^ghost\b/m);
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(
+      /INVALID_INTEGRATION_INDEX at \/integrations\/ghost\/manifest/,
+    );
+    expect(stdout).toEqual([]);
+  });
+
+  it("exits 1 when an indexed manifest is corrupt", async () => {
+    mkdirSync(join(registryRoot, "broken"));
+    writeFileSync(join(registryRoot, "broken", "manifest.json"), "{not valid json");
+    writeFileSync(
+      join(registryRoot, "index.json"),
+      JSON.stringify(registryIndex({ broken: "broken/manifest.json" })),
+    );
+    const stderr: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(1);
+    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_MANIFEST at \/:/);
   });
 });

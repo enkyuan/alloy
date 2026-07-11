@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from kaji.cli import main
+from kaji.integrations import ManifestError
 
 
 def test_add_echo_copies_files(tmp_path: Path) -> None:
@@ -65,3 +66,20 @@ def test_list_integrations_json_emits_valid_object() -> None:
     echo = next(entry for entry in parsed if entry["name"] == "echo")
     assert echo["auth_kind"] == "none"
     assert "say" in echo["tools"]
+    assert echo["stability"] == "beta"
+    assert echo["runtimes"] == ["python", "typescript"]
+
+
+def test_list_integrations_returns_nonzero_for_corrupt_registry() -> None:
+    out = StringIO()
+    with (
+        patch(
+            "kaji.cli.list_integrations._list",
+            side_effect=ManifestError("invalid registry"),
+        ),
+        patch("sys.stdout", out),
+    ):
+        rc = main(["list-integrations"])
+
+    assert rc == 1
+    assert "Registry error" in out.getvalue()
