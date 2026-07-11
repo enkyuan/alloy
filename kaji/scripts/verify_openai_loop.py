@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = "gpt-5.4-mini"
 
 
-def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
+def run_command(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
     try:
         status = subprocess.run(
             command, cwd=cwd, env=environment, check=False
@@ -40,7 +40,7 @@ def main() -> int:
     environment["KAJI_LIVE_OPENAI_MODEL"] = model
 
     print(f"Running Python OpenAI live tool-loop with {model}", flush=True)
-    status = run(
+    status = run_command(
         [
             "uv",
             "run",
@@ -57,7 +57,7 @@ def main() -> int:
         return status
 
     print(f"Running TypeScript OpenAI live tool-loop with {model}", flush=True)
-    status = run(
+    status = run_command(
         [
             "bun",
             "run",

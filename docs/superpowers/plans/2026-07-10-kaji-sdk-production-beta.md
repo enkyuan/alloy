@@ -111,9 +111,9 @@ Do not publish those versions until Task 16 and every blocking criterion in sect
 | Unbounded tool fan-out | `planner.py:113-148` uses `asyncio.gather` | `planner.ts:159-175` maps into `Promise.allSettled` | One model response can saturate connections, memory, or downstream quotas |
 | Partial event delivery | Python centralizes `_emit`, but append and publish are separate at `runtime.py:150-153` | Four direct append/publish pairs in `runtime.ts:177-178,209-210,229-230,289-290` | Persisted-but-unpublished and duplicated-retry states are ambiguous |
 | Bus retains duplicate history | `infra/events/bus.py:21-45` | `events/bus.ts:14-106` | Store and bus both hold unbounded history; slow subscribers can grow memory indefinitely |
-| Integration schema is descriptive | both `registry/schema.json:28-50`; both `index.json` point at the manifest schema | `scripts/validate.ts`, `scripts/check.ts`, and CLI each validate differently | Invalid auth/index contracts can be accepted by one path and rejected by another |
+| Integration schema is descriptive | both `registry/schema.json:28-50`; both `index.json` point at the manifest schema | `scripts/validate_registry.ts`, `scripts/check_integration_sources.ts`, and CLI each validate differently | Invalid auth/index contracts can be accepted by one path and rejected by another |
 | Catalog network defaults fail open | n/a in stable Python core | `registry/http/index.ts:12-19` and seven direct `fetch()` calls in HTTP/Web | Missing allowlists, redirects, timeouts, cancellation, and response caps permit unsafe or unbounded I/O |
-| Release proof is broken | `.github/workflows/python.test.yml:61-62` calls a nonexistent wheel script | `.github/workflows/ts.test.yml:73-81` calls a nonexistent smoke script; `scripts/smoke.mts:16-23` falls back to source | Green source tests do not prove clean-install artifacts |
+| Release proof is broken | `.github/workflows/python.test.yml:61-62` calls a nonexistent wheel script | `.github/workflows/ts.test.yml:73-81` calls a nonexistent smoke script; `scripts/verify_api.mts:16-23` falls back to source | Green source tests do not prove clean-install artifacts |
 
 Validated ast-grep probes found:
 
@@ -1141,7 +1141,7 @@ but commit enkang/kaji-production-beta -m "fix(kaji): close approval and failure
 - Canonical package copies: `kaji/sdk/src/integrations/registry/schema.json`, `kaji/ts/registry/schema.json`
 - Both `registry/index.json` files and all manifests
 - Python `kaji/sdk/src/integrations/__init__.py:99-142`, CLI add/list tests, `test_manifest_registry.py`
-- TypeScript `scripts/validate.ts`, `scripts/check.ts`, `src/cli/add.ts`, `src/cli/list.ts:14-60`, `tests/manifest-validate.test.ts`, CLI tests
+- TypeScript `scripts/validate_registry.ts`, `scripts/check_integration_sources.ts`, `src/cli/add.ts`, `src/cli/list.ts:14-60`, `tests/manifest-validate.test.ts`, CLI tests
 - `kaji/ts/package.json` scripts
 
 **Step 1: Add failing schema-conformance tests in both SDKs.**
@@ -1370,8 +1370,8 @@ but commit enkang/kaji-production-beta -m "fix(ts): bound catalog integration I/
 
 - `kaji/contracts/parity/scenarios.json`
 - `kaji/contracts/parity/expected-normalized.json`
-- `kaji/sdk/scripts/export_contract_snapshots.py`
-- `kaji/ts/scripts/export-contract-snapshots.ts`
+- `kaji/sdk/scripts/export_parity.py`
+- `kaji/ts/scripts/export_parity.ts`
 - `kaji/scripts/check_sdk_parity.py`
 - `kaji/sdk/tests/test_cross_sdk_fixtures.py`
 - `kaji/ts/tests/cross-sdk-fixtures.test.ts`
@@ -1652,7 +1652,7 @@ but commit enkang/kaji-production-beta -m "test(kaji): guard runtime architectur
 
 - `kaji/sdk/LICENSE`
 - `kaji/ts/LICENSE`
-- `kaji/ts/scripts/smoke-installed.mts`
+- `kaji/ts/scripts/smoke_package.mts`
 - `kaji/scripts/verify_package_metadata.py`
 - `.github/workflows/kaji.beta.yml`
 - `.github/workflows/kaji.beta-publish.yml`
@@ -1660,8 +1660,8 @@ but commit enkang/kaji-production-beta -m "test(kaji): guard runtime architectur
 
 **Modify:**
 
-- `kaji/sdk/pyproject.toml`, `src/__init__.py`, `scripts/release_smoke.py`, `scripts/verify_wheel.py`
-- `kaji/ts/package.json`, `scripts/smoke.mts`
+- `kaji/sdk/pyproject.toml`, `src/__init__.py`, `scripts/release_smoke.py`, `scripts/verify_archives.py`
+- `kaji/ts/package.json`, `scripts/verify_api.mts`
 - `.github/workflows/python.test.yml:58-68`
 - `.github/workflows/ts.test.yml:67-81`
 - `.github/workflows/ts.lint.yml:24-39`
@@ -1674,9 +1674,9 @@ Python wheel and sdist must contain license, `py.typed`, integration contracts/c
 
 **Step 2: Repair current broken CI references.**
 
-- Python workflow calls the existing verifier (`scripts/verify_wheel.py`), not nonexistent `verify_wheel_contents.sh`.
-- TypeScript workflow calls the new `scripts/smoke-installed.mts`, not nonexistent `smoke-install.mts`.
-- `smoke.mts` loses the `src/` fallback; installed-package failure must fail.
+- Python workflow calls the existing verifier (`scripts/verify_archives.py`), not nonexistent `verify_wheel_contents.sh`.
+- TypeScript workflow calls the new `scripts/smoke_package.mts`, not nonexistent `smoke-install.mts`.
+- `verify_api.mts` loses the `src/` fallback; installed-package failure must fail.
 - Python venv creation uses the uv-selected supported interpreter, not a bare unrelated `python3`.
 
 **Step 3: Make package metadata self-contained and version-synchronized.**
@@ -1698,7 +1698,7 @@ uv run ty check src tests
 uv run pytest
 uv build
 uv run twine check dist/*
-uv run python scripts/verify_wheel.py
+uv run python scripts/verify_archives.py
 ```
 
 TypeScript:

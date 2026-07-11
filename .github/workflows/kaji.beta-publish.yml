@@ -297,7 +297,7 @@ jobs:
           bun --cwd kaji/ts run build
           python kaji/scripts/verify_npm_package.py \
             .artifacts/kaji-release/kaji-sdk-0.2.0-beta.1.tgz
-          python3 kaji/sdk/scripts/verify_wheel.py \
+          python3 kaji/sdk/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Generate SBOM
         uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d
@@ -467,7 +467,7 @@ jobs:
           --artifacts-dir .artifacts/kaji-release
       - name: Reverify Python archive contents against the clean checkout
         run: >-
-          python3 kaji/sdk/scripts/verify_wheel.py
+          python3 kaji/sdk/scripts/verify_archives.py
           .artifacts/kaji-release
       - name: Isolate Python distributions
         run: |

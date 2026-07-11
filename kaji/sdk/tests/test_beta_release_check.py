@@ -74,7 +74,7 @@ def test_beta_release_check_wraps_required_gates() -> None:
 
     for expected in [
         '"pytest", "-m", "not integration"',
-        '"scripts/typecheck_ty.py"',
+        '"scripts/check_types.py"',
         '"scripts/release_smoke.py"',
         '"package:smoke"',
         "live_provider_proof.py",

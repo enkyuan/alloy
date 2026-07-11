@@ -6,7 +6,7 @@
  * run a full agent turn — that requires a real API key.
  *
  * Run only from a clean project where the packed tarball is installed. The
- * release gate uses smoke-installed.mts to create that project.
+ * release gate uses smoke_package.mts to create that project.
  */
 
 const sdk = await import("@kaji/sdk");
@@ -40,15 +40,15 @@ const { MockProvider } = testing;
 const { OpenAIProvider: OpenAIProviderSubpath } = openaiSubpath;
 const { AnthropicProvider: AnthropicProviderSubpath } = anthropicSubpath;
 
-let failures = 0;
+let failureCount = 0;
 
-function ok(label: string) {
+function reportPass(label: string) {
   console.log(`  ok: ${label}`);
 }
 
-function fail(label: string, reason: string) {
+function reportFailure(label: string, reason: string) {
   console.error(`FAIL: ${label} — ${reason}`);
-  failures++;
+  failureCount++;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ function fail(label: string, reason: string) {
 // ---------------------------------------------------------------------------
 console.log("Checking main package exports...");
 
-const exports: [string, unknown][] = [
+const requiredExports: [string, unknown][] = [
   ["AgentBuilder", AgentBuilder],
   ["AgentRuntime", AgentRuntime],
   ["InMemoryEventStore", InMemoryEventStore],
@@ -79,31 +79,31 @@ const exports: [string, unknown][] = [
   ["VERSION", VERSION],
 ];
 
-for (const [name, value] of exports) {
+for (const [name, value] of requiredExports) {
   if (value == null) {
-    fail(name, "is null or undefined");
+    reportFailure(name, "is null or undefined");
   } else {
-    ok(name);
+    reportPass(name);
   }
 }
 
 console.log("\nChecking testing package exports...");
 if (MockProvider == null) {
-  fail("MockProvider", "is null or undefined");
+  reportFailure("MockProvider", "is null or undefined");
 } else {
-  ok("MockProvider");
+  reportPass("MockProvider");
 }
 
 console.log("\nChecking provider subpath exports...");
 if (OpenAIProviderSubpath == null) {
-  fail("@kaji/sdk/openai OpenAIProvider", "is null or undefined");
+  reportFailure("@kaji/sdk/openai OpenAIProvider", "is null or undefined");
 } else {
-  ok("@kaji/sdk/openai OpenAIProvider");
+  reportPass("@kaji/sdk/openai OpenAIProvider");
 }
 if (AnthropicProviderSubpath == null) {
-  fail("@kaji/sdk/anthropic AnthropicProvider", "is null or undefined");
+  reportFailure("@kaji/sdk/anthropic AnthropicProvider", "is null or undefined");
 } else {
-  ok("@kaji/sdk/anthropic AnthropicProvider");
+  reportPass("@kaji/sdk/anthropic AnthropicProvider");
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ try {
   await (p as any).generate([], []).catch((e: Error) => {
     throw e;
   });
-  fail("OpenAIProvider missing key", "no error thrown");
+  reportFailure("OpenAIProvider missing key", "no error thrown");
 } catch (e) {
   const msg = String(e).toLowerCase();
   if (
@@ -129,10 +129,10 @@ try {
     msg.includes("config") ||
     msg.includes("api")
   ) {
-    ok(`OpenAIProvider raises clear error: ${e}`);
+    reportPass(`OpenAIProvider raises clear error: ${e}`);
   } else {
     // A generic error is still OK for smoke purposes — we just confirm something throws
-    ok(`OpenAIProvider throws on empty key: ${e}`);
+    reportPass(`OpenAIProvider throws on empty key: ${e}`);
   }
 }
 
@@ -141,16 +141,16 @@ try {
 // ---------------------------------------------------------------------------
 console.log("\nChecking VERSION...");
 if (typeof VERSION !== "string" || VERSION.length === 0) {
-  fail("VERSION", `expected non-empty string, got ${JSON.stringify(VERSION)}`);
+  reportFailure("VERSION", `expected non-empty string, got ${JSON.stringify(VERSION)}`);
 } else {
-  ok(`VERSION = ${VERSION}`);
+  reportPass(`VERSION = ${VERSION}`);
 }
 
 // ---------------------------------------------------------------------------
 // Summary
 // ---------------------------------------------------------------------------
-if (failures > 0) {
-  console.error(`\nSmoke install: FAILED (${failures} failure(s))`);
+if (failureCount > 0) {
+  console.error(`\nSmoke install: FAILED (${failureCount} failure(s))`);
   process.exit(1);
 } else {
   console.log("\nSmoke install: PASSED");

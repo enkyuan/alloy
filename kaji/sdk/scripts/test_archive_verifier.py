@@ -214,7 +214,7 @@ def main() -> None:
     )
     wheel = find_one(dist_dir, "*.whl")
     sdist = find_one(dist_dir, "*.tar.gz")
-    verifier = sdk_root / "scripts/verify_wheel.py"
+    verifier = sdk_root / "scripts/verify_archives.py"
 
     with tempfile.TemporaryDirectory(prefix="kaji-archive-verifier-") as temporary:
         root = Path(temporary)

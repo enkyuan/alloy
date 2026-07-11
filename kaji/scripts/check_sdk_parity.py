@@ -20,8 +20,8 @@ SCENARIOS = KAJI / "contracts" / "parity" / "scenarios.json"
 EXPECTED = KAJI / "contracts" / "parity" / "expected-normalized.json"
 PYTHON_SDK = KAJI / "sdk"
 TYPESCRIPT_SDK = KAJI / "ts"
-PYTHON_EXPORTER = PYTHON_SDK / "scripts" / "export_contract_snapshots.py"
-TYPESCRIPT_EXPORTER = TYPESCRIPT_SDK / "scripts" / "export-contract-snapshots.ts"
+PYTHON_EXPORTER = PYTHON_SDK / "scripts" / "export_parity.py"
+TYPESCRIPT_EXPORTER = TYPESCRIPT_SDK / "scripts" / "export_parity.ts"
 ARTIFACTS = ROOT / ".artifacts" / "kaji-parity"
 TIMEOUT_SECONDS = 60
 

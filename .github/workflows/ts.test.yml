@@ -73,7 +73,7 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Build, pack, and test installed package
-        run: bun run build && bun scripts/smoke-installed.mts
+        run: bun run build && bun scripts/smoke_package.mts
 
   auth:
     name: ryo/auth

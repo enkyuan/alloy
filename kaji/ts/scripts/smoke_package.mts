@@ -1,12 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -24,7 +17,7 @@ const npmEnv = {
   npm_config_update_notifier: "false",
 };
 
-function run(
+function runCommand(
   command: string,
   args: string[],
   cwd = installRoot,
@@ -44,7 +37,7 @@ try {
   let tarball: string;
   if (requestedTarball === undefined) {
     const packed = JSON.parse(
-      run(
+      runCommand(
         "npm",
         ["pack", "--json", "--ignore-scripts", "--pack-destination", workdir],
         packageRoot,
@@ -58,8 +51,8 @@ try {
     if (!existsSync(tarball)) throw new Error(`supplied npm tarball does not exist: ${tarball}`);
   }
 
-  run("npm", ["init", "-y"]);
-  run("npm", [
+  runCommand("npm", ["init", "-y"]);
+  runCommand("npm", [
     "install",
     "--ignore-scripts",
     tarball,
@@ -67,7 +60,7 @@ try {
     "openai@6.42.0",
     "@anthropic-ai/sdk@0.104.1",
   ]);
-  run("npm", ["audit", "--omit=dev", "--audit-level=high"], installRoot, {
+  runCommand("npm", ["audit", "--omit=dev", "--audit-level=high"], installRoot, {
     ...npmEnv,
     npm_config_audit: "true",
   });
@@ -89,14 +82,14 @@ if (sdk.VERSION !== "0.2.0-beta.1" || !sdk.AgentRuntime || !testing.MockProvider
   writeFileSync(join(installRoot, "smoke.mjs"), esm);
   writeFileSync(join(installRoot, "smoke.cjs"), cjs);
 
-  const version = run(nodeBinary, ["--version"]).trim();
+  const version = runCommand(nodeBinary, ["--version"]).trim();
   const major = Number(/^v(\d+)/.exec(version)?.[1]);
   if (!Number.isInteger(major) || major < 22) {
     throw new Error(`package smoke requires Node >=22, received ${version}`);
   }
-  run(nodeBinary, ["smoke.mjs"]);
-  run(nodeBinary, ["smoke.cjs"]);
-  run(nodeBinary, [join(installRoot, "node_modules/.bin/kaji"), "--help"]);
+  runCommand(nodeBinary, ["smoke.mjs"]);
+  runCommand(nodeBinary, ["smoke.cjs"]);
+  runCommand(nodeBinary, [join(installRoot, "node_modules/.bin/kaji"), "--help"]);
 
   const docsPath = join(repositoryRoot, "docs/kaji/production-beta.md");
   const docs = readFileSync(docsPath, "utf8");
@@ -124,11 +117,9 @@ if (sdk.VERSION !== "0.2.0-beta.1" || !sdk.AgentRuntime || !testing.MockProvider
   );
   const tsc = join(packageRoot, "node_modules/typescript/bin/tsc");
   if (!existsSync(tsc)) throw new Error("pinned TypeScript compiler is missing");
-  run(nodeBinary, [tsc, "--project", "tsconfig.docs.json"]);
-  run(nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
-  console.log(
-    "PASS: exact npm tarball resolves ESM, CJS, subpaths, CLI, and docs quickstart",
-  );
+  runCommand(nodeBinary, [tsc, "--project", "tsconfig.docs.json"]);
+  runCommand(nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
+  console.log("PASS: exact npm tarball resolves ESM, CJS, subpaths, CLI, and docs quickstart");
 } finally {
   rmSync(workdir, { recursive: true, force: true });
 }

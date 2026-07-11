@@ -54,7 +54,7 @@
   },
   "files": ["LICENSE", "contracts", "dist", "registry"],
   "scripts": {
-    "prebuild": "bun run scripts/copy.ts",
+    "prebuild": "bun run scripts/prepare_registry.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
@@ -70,10 +70,10 @@
     "test:quickstart": "vitest run examples/minimal-agent/smoke.test.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
-    "check:integrations": "bun run scripts/check.ts",
+    "check:integrations": "bun run scripts/check_integration_sources.ts",
     "clean": "rm -rf dist",
-    "package:smoke": "bun run build && bun scripts/smoke-installed.mts",
-    "validate:registry": "bun run scripts/validate.ts"
+    "package:smoke": "bun run build && bun scripts/smoke_package.mts",
+    "validate:registry": "bun run scripts/validate_registry.ts"
   },
   "dependencies": {
     "ajv": "^8.20.0",

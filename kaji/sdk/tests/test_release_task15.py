@@ -30,10 +30,10 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
     ts = _read(".github/workflows/ts.test.yml")
     lint = _read(".github/workflows/ts.lint.yml")
 
-    assert "scripts/verify_wheel.py" in python
+    assert "scripts/verify_archives.py" in python
     assert 'python-version: "3.11"' in python
     assert 'python-version: "3.14"' in python
-    assert "scripts/smoke-installed.mts" in ts
+    assert "scripts/smoke_package.mts" in ts
     assert 'node-version: ["22", "24"]' in ts
     for command in (
         "bun run format:check",
@@ -61,7 +61,7 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
         '["bun", "x", "attw", "--pack", "."]',
         "verify_package_metadata.py",
         "verify_npm_package.py",
-        "smoke-installed.mts",
+        "smoke_package.mts",
         "Reverify final Python artifacts",
         '"package:smoke"',
         '"typecheck:registry"',
@@ -85,13 +85,13 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     ):
         assert expected in npm_verifier
 
-    installed_smoke = _read("kaji/ts/scripts/smoke-installed.mts")
+    package_smoke = _read("kaji/ts/scripts/smoke_package.mts")
     for expected in (
         '"openai@6.42.0"',
         '"@anthropic-ai/sdk@0.104.1"',
         '"audit", "--omit=dev", "--audit-level=high"',
     ):
-        assert expected in installed_smoke
+        assert expected in package_smoke
 
 
 def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None:
@@ -144,7 +144,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "npm access list packages",
         "verify_release_artifacts.py",
         "verify_npm_package.py",
-        "verify_wheel.py",
+        "verify_archives.py",
         "Rebuild and verify exact package contents against the clean checkout",
         "Reverify Python archive contents against the clean checkout",
         "Rebuild and verify npm archive contents against the clean checkout",

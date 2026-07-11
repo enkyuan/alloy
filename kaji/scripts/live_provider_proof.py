@@ -10,7 +10,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LIVE_OPENAI_GATE = Path(__file__).with_name("live_openai_tool_loop.py")
+OPENAI_LOOP_CHECK = Path(__file__).with_name("verify_openai_loop.py")
 
 
 def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
@@ -36,7 +36,7 @@ def main() -> int:
     openai_environment = environment.copy()
     openai_environment["KAJI_REQUIRE_LIVE_KEYS"] = "1"
     status = run(
-        [sys.executable, str(LIVE_OPENAI_GATE)],
+        [sys.executable, str(OPENAI_LOOP_CHECK)],
         cwd=ROOT,
         environment=openai_environment,
     )

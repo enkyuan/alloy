@@ -42,7 +42,7 @@
 - [ ] Add Python `EventTokenUsage` model and optional usage/cost fields.
 - [ ] Add Python tests that parse shared fixtures and reject negative values.
 - [ ] Add TS schema parity tests that parse the same fixtures.
-- [ ] Run Python event schema tests and `scripts/typecheck_ty.py`.
+- [ ] Run Python event schema tests and `scripts/check_types.py`.
 - [ ] Run TS event tests and `tsc --noEmit`.
 
 ## Task 3: Unify Integration Manifest Schema Contract

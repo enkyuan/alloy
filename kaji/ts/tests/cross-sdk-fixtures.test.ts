@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const SDK_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const EXPORTER = fileURLToPath(new URL("../scripts/export-contract-snapshots.ts", import.meta.url));
+const EXPORTER = fileURLToPath(new URL("../scripts/export_parity.ts", import.meta.url));
 const SCENARIOS = fileURLToPath(new URL("../../contracts/parity/scenarios.json", import.meta.url));
 const TOOLS = new URL("../../contracts/tools/", import.meta.url);
 const SNAPSHOT_KEYS = [

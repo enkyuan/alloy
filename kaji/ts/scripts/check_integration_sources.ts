@@ -9,19 +9,19 @@ import {
   loadRegistryIndex,
 } from "../src/integrations/registry-loader";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const registryRoot = join(here, "..", "registry");
+const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
+const registryRoot = join(scriptsDirectory, "..", "registry");
 const requiredHeaderPrefix = "// This is YOUR";
 
-async function main(): Promise<number> {
+async function checkIntegrationSources(): Promise<number> {
   try {
-    const index = await loadRegistryIndex(registryRoot);
-    const names = Object.keys(index.integrations).sort();
-    for (const name of names) {
-      const manifest = await loadManifest(registryRoot, name, { index });
+    const registryIndex = await loadRegistryIndex(registryRoot);
+    const integrationNames = Object.keys(registryIndex.integrations).sort();
+    for (const name of integrationNames) {
+      const manifest = await loadManifest(registryRoot, name, { index: registryIndex });
       for (const file of manifest.files.filter((candidate) => candidate.endsWith(".ts"))) {
-        const source = await readFile(join(manifest.root, file), "utf8");
-        if (!source.startsWith(requiredHeaderPrefix)) {
+        const sourceText = await readFile(join(manifest.root, file), "utf8");
+        if (!sourceText.startsWith(requiredHeaderPrefix)) {
           throw new Error(
             `${file} for integration '${name}' must start with '${requiredHeaderPrefix}...'`,
           );
@@ -29,7 +29,9 @@ async function main(): Promise<number> {
       }
       console.log(`  ✓ ${name}`);
     }
-    console.log(`\ncheck passed: ${names.length}/${names.length} integrations OK`);
+    console.log(
+      `\ncheck passed: ${integrationNames.length}/${integrationNames.length} integrations OK`,
+    );
     return 0;
   } catch (error) {
     console.error(`\ncheck FAILED: ${formatIntegrationError(error)}`);
@@ -37,4 +39,4 @@ async function main(): Promise<number> {
   }
 }
 
-process.exit(await main());
+process.exit(await checkIntegrationSources());

@@ -12,7 +12,7 @@ import pytest
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
-LIVE_GATE = REPO_ROOT / "kaji" / "scripts" / "live_openai_tool_loop.py"
+OPENAI_LOOP_CHECK = REPO_ROOT / "kaji" / "scripts" / "verify_openai_loop.py"
 
 
 def _load_root_script(name: str) -> ModuleType:
@@ -36,9 +36,9 @@ def _env_without_openai_key(*, require: bool = False) -> dict[str, str]:
     return env
 
 
-def test_live_gate_skips_cleanly_without_openai_key() -> None:
+def test_openai_loop_check_skips_cleanly_without_openai_key() -> None:
     proc = subprocess.run(
-        [sys.executable, str(LIVE_GATE)],
+        [sys.executable, str(OPENAI_LOOP_CHECK)],
         cwd=REPO_ROOT,
         env=_env_without_openai_key(),
         text=True,
@@ -52,9 +52,9 @@ def test_live_gate_skips_cleanly_without_openai_key() -> None:
     assert "Running TypeScript OpenAI live tool-loop" not in proc.stdout
 
 
-def test_live_gate_fails_without_key_when_required() -> None:
+def test_openai_loop_check_fails_without_key_when_required() -> None:
     proc = subprocess.run(
-        [sys.executable, str(LIVE_GATE)],
+        [sys.executable, str(OPENAI_LOOP_CHECK)],
         cwd=REPO_ROOT,
         env=_env_without_openai_key(require=True),
         text=True,
@@ -71,7 +71,7 @@ def test_live_gate_fails_without_key_when_required() -> None:
 @pytest.mark.parametrize(
     "script",
     [
-        "live_openai_tool_loop.py",
+        "verify_openai_loop.py",
         "live_provider_proof.py",
         "run_beta_benchmarks.py",
     ],
@@ -86,7 +86,9 @@ def test_root_script_runners_normalize_signal_exit_status(
         lambda *_args, **_kwargs: SimpleNamespace(returncode=-15),
     )
 
-    if script == "run_beta_benchmarks.py":
+    if script == "verify_openai_loop.py":
+        status = module.run_command(["tool"], cwd=REPO_ROOT, environment={})
+    elif script == "run_beta_benchmarks.py":
         status = module.run(["tool"])
     else:
         status = module.run(["tool"], cwd=REPO_ROOT, environment={})

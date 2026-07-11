@@ -12,7 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SDK_ROOT = REPO_ROOT / "kaji" / "sdk"
-EXPORTER = SDK_ROOT / "scripts" / "export_contract_snapshots.py"
+EXPORTER = SDK_ROOT / "scripts" / "export_parity.py"
 SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "scenarios.json"
 TOOLS = REPO_ROOT / "kaji" / "contracts" / "tools"
 SNAPSHOT_KEYS = {

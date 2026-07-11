@@ -47,7 +47,7 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def configure(dist_dir: Path) -> None:
+def load_archives(dist_dir: Path) -> None:
     """Load source metadata and select the first wheel and sdist in dist_dir."""
     global contracts_dir
     global expected_dist_info
@@ -421,7 +421,7 @@ def validate_requires_txt(data: bytes, label: str) -> None:
         fail(f"{label} dependencies differ from pyproject")
 
 
-def verify() -> None:
+def verify_archives() -> None:
     expected_source_bytes = {
         f"kaji/{path.relative_to(sdk_root / 'src').as_posix()}": path.read_bytes()
         for path in (sdk_root / "src").rglob("*")
@@ -734,8 +734,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    configure(args.dist_dir)
-    verify()
+    load_archives(args.dist_dir)
+    verify_archives()
     return 0
 
 

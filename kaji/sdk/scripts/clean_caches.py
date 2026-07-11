@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove generated Python artifacts from the SDK checkout."""
+"""Remove Python caches and generated analysis output from the SDK checkout."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import shutil
 
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
-CACHE_PATHS = (
+ROOT_CACHE_PATHS = (
     ".pytest_cache",
     ".ruff_cache",
     ".mypy_cache",
@@ -27,7 +27,7 @@ def remove_path(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def clean_generated(root: Path) -> None:
+def clean_caches(root: Path) -> None:
     """Remove caches under source/test trees and known project-root caches."""
     for tree_name in ("src", "tests", "scripts"):
         tree = root / tree_name
@@ -51,7 +51,7 @@ def clean_generated(root: Path) -> None:
                 if artifact.is_file() or artifact.is_symlink():
                     artifact.unlink(missing_ok=True)
 
-    for relative in CACHE_PATHS:
+    for relative in ROOT_CACHE_PATHS:
         remove_path(root / relative)
 
 
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    clean_generated(args.root.resolve())
+    clean_caches(args.root.resolve())
     return 0
 
 

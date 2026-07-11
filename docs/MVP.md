@@ -218,8 +218,8 @@ live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, cor
 For the live-gate credential modes specifically:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
@@ -229,7 +229,7 @@ command exits with `PASS: OpenAI live tool-loop readiness verified` while
 `OPENAI_API_KEY` is set:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 The same keyed proof can be included in the wrapper with
@@ -401,7 +401,7 @@ fixed and does not reflect real LLM outputs.
 
 | Package | Checks |
 |---------|--------|
-| `kaji/sdk` | `scripts/typecheck_ty.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
+| `kaji/sdk` | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
 | `kaji/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
 | `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed |
 
@@ -412,7 +412,7 @@ Python release packaging must also run:
 
 ```bash
 cd kaji/sdk
-uv run python scripts/clean_generated.py
+uv run python scripts/clean_caches.py
 uv run python scripts/release_smoke.py
 ```
 
@@ -678,7 +678,7 @@ Required checks:
 
 ```bash
 # Python SDK
-uv run python scripts/typecheck_ty.py
+uv run python scripts/check_types.py
 uv run ruff check src tests
 uv run pytest tests/test_quickstart.py tests/test_public_api.py -q
 

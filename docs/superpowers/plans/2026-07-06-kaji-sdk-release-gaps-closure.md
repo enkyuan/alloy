@@ -23,13 +23,13 @@
 
 ## File Structure
 
-- `kaji/scripts/live_openai_tool_loop.py`: existing root live readiness gate. Keep behavior; add tests around no-key and require-key modes.
+- `kaji/scripts/verify_openai_loop.py`: existing root live readiness gate. Keep behavior; add tests around no-key and require-key modes.
 - `kaji/sdk/tests/test_live_gate.py`: new Python subprocess tests for the root live gate's no-key behavior.
 - `kaji/sdk/pyproject.toml`: declare registry namespace packages so setuptools stops warning while preserving the current `src/` remap.
 - `kaji/sdk/src/integrations/registry/__init__.py`: new package marker for bundled registry data/modules.
 - `kaji/sdk/src/integrations/registry/echo/__init__.py`: new package marker for the echo registry module.
 - `kaji/sdk/tests/test_release_smoke.py`: extend release smoke script tests to assert registry package declarations.
-- `kaji/sdk/scripts/verify_wheel.py`: keep current wheel checks; add checks for registry `__init__.py` files if package markers are added.
+- `kaji/sdk/scripts/verify_archives.py`: keep current wheel checks; add checks for registry `__init__.py` files if package markers are added.
 - `kaji/ts/tests/cancellation.test.ts`: stop mutating private provider fields; use existing constructor hooks.
 - `kaji/RELEASE_MATRIX.md`: new cross-SDK release matrix covering stable, experimental, not ported, release gates, and manual provider matrix.
 - `kaji/sdk/README.md`, `kaji/ts/README.md`, `docs/MVP.md`: link to the release matrix and tighten release-gate wording.
@@ -38,12 +38,12 @@
 
 ## What Already Exists
 
-- `kaji/scripts/live_openai_tool_loop.py` already has correct skip/fail behavior and runs both live tool-loop tests.
+- `kaji/scripts/verify_openai_loop.py` already has correct skip/fail behavior and runs both live tool-loop tests.
 - `kaji/sdk/tests/integration/test_openai_tools.py` already asserts requested tool, completed tool, final assistant text, and no exhausted turn.
 - `kaji/ts/tests/integration/openai-tools.test.ts` already asserts the same live-readiness signal for TS.
 - `OpenAIProvider` and `AnthropicProvider` already expose internal constructor hooks for test-only client injection.
 - `kaji/sdk/scripts/release_smoke.py` already builds, verifies, installs, and smoke-tests the wheel.
-- `kaji/sdk/scripts/verify_wheel.py` already rejects cache files and stale renamed modules in wheels.
+- `kaji/sdk/scripts/verify_archives.py` already rejects cache files and stale renamed modules in wheels.
 
 ## NOT In Scope
 
@@ -61,7 +61,7 @@
 Developer release command
   |
   v
-kaji/scripts/live_openai_tool_loop.py
+kaji/scripts/verify_openai_loop.py
   |
   +-- no OPENAI_API_KEY ---------------------> SKIP, exit 0
   |
@@ -85,7 +85,7 @@ kaji/scripts/live_openai_tool_loop.py
 - Modify: `docs/MVP.md`
 
 **Interfaces:**
-- Consumes: `kaji/scripts/live_openai_tool_loop.py`
+- Consumes: `kaji/scripts/verify_openai_loop.py`
 - Produces: test coverage for no-key skip and require-key failure semantics.
 
 - [ ] **Step 1: Write failing tests for no-key script behavior**
@@ -102,7 +102,7 @@ from pathlib import Path
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
-LIVE_GATE = REPO_ROOT / "kaji" / "scripts" / "live_openai_tool_loop.py"
+LIVE_GATE = REPO_ROOT / "kaji" / "scripts" / "verify_openai_loop.py"
 
 
 def _env_without_openai_key(*, require: bool = False) -> dict[str, str]:
@@ -174,7 +174,7 @@ command exits with `PASS: OpenAI live tool-loop readiness verified` while
 `OPENAI_API_KEY` is set:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 ````
 
@@ -194,7 +194,7 @@ Expected: all selected tests pass.
 Run only when a real key is available:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Expected:
@@ -223,7 +223,7 @@ Expected: GitButler records only Task 1 files. If `but` is unavailable, stop and
 - Create: `kaji/sdk/src/integrations/registry/__init__.py`
 - Create: `kaji/sdk/src/integrations/registry/echo/__init__.py`
 - Modify: `kaji/sdk/pyproject.toml`
-- Modify: `kaji/sdk/scripts/verify_wheel.py`
+- Modify: `kaji/sdk/scripts/verify_archives.py`
 - Modify: `kaji/sdk/tests/test_release_smoke.py`
 
 **Interfaces:**
@@ -294,7 +294,7 @@ Insert those after `"kaji.integrations" = "src/integrations"`.
 
 - [ ] **Step 4: Extend wheel verification for registry package markers**
 
-In `kaji/sdk/scripts/verify_wheel.py`, inside the Python wheel inspection block after `schema_path`, add:
+In `kaji/sdk/scripts/verify_archives.py`, inside the Python wheel inspection block after `schema_path`, add:
 
 ```python
     package_markers = [
@@ -552,12 +552,12 @@ It does not mean every Python-only modality or infrastructure adapter is beta-re
 
 | Gate | Command | Required for beta |
 | --- | --- | --- |
-| Python unit/static | `cd kaji/sdk && uv run pytest -m "not integration" && uv run python scripts/typecheck_ty.py --output-format concise && uv run ruff check src tests` | Yes |
+| Python unit/static | `cd kaji/sdk && uv run pytest -m "not integration" && uv run python scripts/check_types.py --output-format concise && uv run ruff check src tests` | Yes |
 | Python wheel smoke | `cd kaji/sdk && uv run python scripts/release_smoke.py` | Yes |
 | TS unit/static/build | `cd kaji/ts && bun run test && node_modules/.bin/tsc --noEmit && bun run build` | Yes |
-| TS package smoke | `cd kaji/ts && bun run scripts/smoke.mts` | Yes |
-| No-key integration hygiene | `uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py` | Yes, proves skip hygiene only |
-| Keyed OpenAI live proof | `OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py` | Yes, proves live readiness |
+| TS package smoke | `cd kaji/ts && bun run scripts/verify_api.mts` | Yes |
+| No-key integration hygiene | `uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py` | Yes, proves skip hygiene only |
+| Keyed OpenAI live proof | `OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py` | Yes, proves live readiness |
 ```
 
 - [ ] **Step 2: Link the matrix from docs**
@@ -700,7 +700,7 @@ bun run test
 node_modules/.bin/tsc --noEmit
 bun run build
 bun run validate:registry
-bun run scripts/smoke.mts
+bun run scripts/verify_api.mts
 bun run test:integration
 ```
 
@@ -720,7 +720,7 @@ Run:
 ```bash
 cd kaji/sdk
 uv run pytest -m "not integration"
-uv run python scripts/typecheck_ty.py --output-format concise
+uv run python scripts/check_types.py --output-format concise
 uv run ruff check src tests
 uv run python scripts/release_smoke.py
 uv run pytest -m integration
@@ -739,8 +739,8 @@ Expected:
 Run:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Expected:
@@ -753,7 +753,7 @@ Expected:
 Run only with a real key:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Expected:
@@ -793,7 +793,7 @@ Expected: GitButler records only remaining coherent files from this plan. If pri
 | Live readiness gate | No key creates false confidence | No-key exits 0 with explicit skip; require-key exits 2 | `test_live_gate.py` |
 | Live readiness gate | Model never actually tested | Keyed command remains required release gate | manual keyed run |
 | Python wheel build | setuptools registry warning hides package drift | Declare registry packages and package dirs | `release_smoke.py` output |
-| Python wheel contents | Registry files missing after package config change | Verify index, schema, manifests, files, and package markers | `verify_wheel.py` |
+| Python wheel contents | Registry files missing after package config change | Verify index, schema, manifests, files, and package markers | `verify_archives.py` |
 | TS cancellation tests | Tests mutate private provider fields | Use constructor hooks only | `rg` no private mutation |
 | Public docs | Beta promise drifts into experimental surfaces | Formal release matrix and docs contract tests | Python + TS docs tests |
 | Worktree process | Changes pass locally but are not checkpointed | GitButler checkpoint after each task | `but diff`, `but commit` |
@@ -802,14 +802,14 @@ Expected: GitButler records only remaining coherent files from this plan. If pri
 
 ```text
 CODE PATHS                                           COVERAGE TARGET
-kaji/scripts/live_openai_tool_loop.py
+kaji/scripts/verify_openai_loop.py
   +-- no key, require off -------------------------- pytest subprocess
   +-- no key, require on --------------------------- pytest subprocess
   +-- key present, Python + TS live ---------------- manual keyed release gate
 
 kaji/sdk packaging
   +-- pyproject package list ----------------------- pytest static contract
-  +-- wheel registry files ------------------------- verify_wheel.py
+  +-- wheel registry files ------------------------- verify_archives.py
   +-- clean install smoke -------------------------- release_smoke.py
 
 kaji/ts cancellation tests

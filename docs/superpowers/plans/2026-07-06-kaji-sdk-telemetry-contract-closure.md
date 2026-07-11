@@ -323,7 +323,7 @@ Run:
 ```bash
 cd kaji/sdk
 uv run pytest tests/test_providers_costs.py -q
-uv run python scripts/typecheck_ty.py --output-format concise
+uv run python scripts/check_types.py --output-format concise
 
 cd ../ts
 bun run test tests/provider-cost.test.ts
@@ -584,7 +584,7 @@ Run:
 ```bash
 cd kaji/sdk
 uv run pytest tests/test_agents_runtime.py tests/test_providers_openai.py tests/test_providers_anthropic.py tests/test_events_schemas.py -q
-uv run python scripts/typecheck_ty.py --output-format concise
+uv run python scripts/check_types.py --output-format concise
 
 cd ../ts
 bun run test tests/runtime.test.ts tests/openai-provider.test.ts tests/anthropic-provider.test.ts tests/schema-parity.test.ts
@@ -760,7 +760,7 @@ bun run test tests/openai-provider.test.ts tests/anthropic-provider.test.ts test
 bun run build
 bun run test tests/public-declarations.test.ts
 node_modules/.bin/tsc --noEmit
-bun run scripts/smoke.mts
+bun run scripts/verify_api.mts
 ```
 
 - [ ] **Step 6: Checkpoint**
@@ -913,7 +913,7 @@ cd kaji/ts
 bun run test tests/openai-provider.test.ts tests/provider-factory.test.ts tests/public-declarations.test.ts
 node_modules/.bin/tsc --noEmit
 bun run build
-bun run scripts/smoke.mts
+bun run scripts/verify_api.mts
 ```
 
 - [ ] **Step 6: Checkpoint**
@@ -1039,7 +1039,7 @@ bun run test
 node_modules/.bin/tsc --noEmit
 bun run build
 bun run validate:registry
-bun run scripts/smoke.mts
+bun run scripts/verify_api.mts
 bun run test:integration
 ```
 
@@ -1055,7 +1055,7 @@ Expected:
 ```bash
 cd kaji/sdk
 uv run pytest -m "not integration"
-uv run python scripts/typecheck_ty.py --output-format concise
+uv run python scripts/check_types.py --output-format concise
 uv run ruff check src tests
 uv run python scripts/release_smoke.py
 ```
@@ -1070,8 +1070,8 @@ Expected:
 
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Expected:
@@ -1084,7 +1084,7 @@ Only run when a real key is intentionally supplied:
 
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-OPENAI_API_KEY="$OPENAI_API_KEY" KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY="$OPENAI_API_KEY" KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Expected:

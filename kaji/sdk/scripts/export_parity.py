@@ -1301,7 +1301,7 @@ def assert_json_value(value: Any, path: str = "") -> None:
     raise TypeError(f"non-JSON value {value_type.__name__} at {path or '/'}")
 
 
-async def export() -> dict[str, Any]:
+async def export_parity() -> dict[str, Any]:
     document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
     snapshots: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1333,7 +1333,7 @@ async def export() -> dict[str, Any]:
 
 def main() -> int:
     try:
-        payload = asyncio.run(export())
+        payload = asyncio.run(export_parity())
         sys.stdout.write(
             json.dumps(
                 payload,

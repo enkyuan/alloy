@@ -254,8 +254,8 @@ live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, cor
 For the live-gate credential modes specifically:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
@@ -265,7 +265,7 @@ command exits with `PASS: OpenAI live tool-loop readiness verified` while
 `OPENAI_API_KEY` is set:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
 The same keyed proof can be included in the wrapper with
@@ -361,14 +361,14 @@ shared with the TypeScript SDK.
 cd kaji/sdk
 uv sync                           # creates .venv, installs deps + dev group
 uv run pytest tests/              # no API keys required
-uv run python scripts/typecheck_ty.py  # static type check for the src/ remap
+uv run python scripts/check_types.py  # static type check for the src/ remap
 uv run ruff check src             # lint
 ```
 
 Release smoke checks the current `src/` package remap in an installed wheel:
 
 ```bash
-uv run python scripts/clean_generated.py
+uv run python scripts/clean_caches.py
 uv run python scripts/release_smoke.py
 ```
 

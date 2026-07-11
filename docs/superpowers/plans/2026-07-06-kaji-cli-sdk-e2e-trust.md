@@ -666,7 +666,7 @@ node dist/index.js doctor --cwd /private/tmp/kaji-cli-final-ts --json
 ```bash
 cd kaji/sdk
 .venv/bin/python -m pytest tests/cli/test_init.py tests/cli/test_gen.py tests/test_docs_sync.py tests/test_quickstart.py -q
-.venv/bin/python scripts/typecheck_ty.py --output-format concise
+.venv/bin/python scripts/check_types.py --output-format concise
 ```
 
 ```bash

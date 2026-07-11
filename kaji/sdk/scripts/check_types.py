@@ -21,17 +21,17 @@ from tempfile import TemporaryDirectory
 
 
 def main() -> int:
-    project = Path(__file__).resolve().parents[1]
-    src = project / "src"
-    ty = project / ".venv" / "bin" / "ty"
-    ty_cmd = [str(ty)] if ty.exists() else ["ty"]
+    sdk_root = Path(__file__).resolve().parents[1]
+    source_root = sdk_root / "src"
+    ty_binary = sdk_root / ".venv" / "bin" / "ty"
+    command = [str(ty_binary)] if ty_binary.exists() else ["ty"]
 
     with TemporaryDirectory(prefix="kaji-ty-") as tmp:
         shim_root = Path(tmp)
-        os.symlink(src, shim_root / "kaji", target_is_directory=True)
+        os.symlink(source_root, shim_root / "kaji", target_is_directory=True)
         return subprocess.call(
             [
-                *ty_cmd,
+                *command,
                 "check",
                 "--extra-search-path",
                 str(shim_root),
@@ -39,7 +39,7 @@ def main() -> int:
                 "tests",
                 *sys.argv[1:],
             ],
-            cwd=project,
+            cwd=sdk_root,
         )
 
 

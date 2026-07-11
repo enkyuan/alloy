@@ -226,11 +226,11 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     python_smoke = (
         REPO_ROOT / "kaji" / "sdk" / "scripts" / "smoke_install.py"
     ).read_text()
-    ts_smoke = (
-        REPO_ROOT / "kaji" / "ts" / "scripts" / "smoke-installed.mts"
-    ).read_text()
+    ts_smoke = (REPO_ROOT / "kaji" / "ts" / "scripts" / "smoke_package.mts").read_text()
     assert "installed-quickstart:python:start" in python_smoke
     assert "exec(compile(match.group(1)" in python_smoke
     assert "installed-quickstart:typescript:start" in ts_smoke
-    assert 'run(nodeBinary, [tsc, "--project", "tsconfig.docs.json"])' in ts_smoke
-    assert 'run(nodeBinary, ["compiled-docs/docs-quickstart.mjs"])' in ts_smoke
+    assert (
+        'runCommand(nodeBinary, [tsc, "--project", "tsconfig.docs.json"])' in ts_smoke
+    )
+    assert 'runCommand(nodeBinary, ["compiled-docs/docs-quickstart.mjs"])' in ts_smoke

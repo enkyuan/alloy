@@ -100,7 +100,7 @@ def run_no_key_live_skip(environment: dict[str, str]) -> None:
     ):
         child_environment.pop(key, None)
     run_checked(
-        [sys.executable, str(SCRIPTS / "live_openai_tool_loop.py")],
+        [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
         cwd=ROOT,
         environment=child_environment,
     )
@@ -114,7 +114,7 @@ def run_required_key_failure(environment: dict[str, str]) -> None:
     child_environment["KAJI_REQUIRE_LIVE_KEYS"] = "1"
     try:
         completed = subprocess.run(
-            [sys.executable, str(SCRIPTS / "live_openai_tool_loop.py")],
+            [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
             cwd=ROOT,
             env=child_environment,
             stdout=subprocess.PIPE,
@@ -240,7 +240,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "uv",
             "run",
             "python",
-            "scripts/typecheck_ty.py",
+            "scripts/check_types.py",
             "--output-format",
             "concise",
         ],
@@ -289,7 +289,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "python",
-                "scripts/typecheck_ty.py",
+                "scripts/check_types.py",
                 "--output-format",
                 "concise",
             ],
@@ -446,13 +446,13 @@ def run_release_checks(environment: dict[str, str]) -> None:
         run_in_dir(
             "Exact TypeScript artifact install smoke",
             TYPESCRIPT,
-            ["bun", "scripts/smoke-installed.mts", str(tarball)],
+            ["bun", "scripts/smoke_package.mts", str(tarball)],
             environment,
         )
         run_in_dir(
             "Reverify final Python artifacts",
             SDK,
-            ["uv", "run", "python", "scripts/verify_wheel.py", "dist"],
+            ["uv", "run", "python", "scripts/verify_archives.py", "dist"],
             environment,
         )
 

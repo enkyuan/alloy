@@ -16,7 +16,7 @@ import type {
 import { AnthropicProvider } from "@/providers/anthropic";
 import { normalizeProviderError, ProviderError } from "@/providers/errors";
 import { OpenAIProvider } from "@/providers/openai";
-import type { ApprovalRequestContext, TypedApprovalHandler } from "@/runtime/approval/types";
+import type { TypedApprovalHandler } from "@/runtime/approval/types";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { AgentRuntime, type TurnResult } from "@/runtime/runtime";
 import {
@@ -1154,7 +1154,7 @@ function assertJsonValue(value: unknown, path = ""): void {
   throw new TypeError(`non-JSON value ${typeof value} at ${path || "/"}`);
 }
 
-async function exportSnapshots(): Promise<JsonObject> {
+async function exportParity(): Promise<JsonObject> {
   const document = JSON.parse(readFileSync(SCENARIOS_URL, "utf8"));
   const seen = new Set<string>();
   const scenarios: JsonObject[] = [];
@@ -1191,7 +1191,7 @@ function sortJson(value: any): any {
 }
 
 try {
-  const payload = await exportSnapshots();
+  const payload = await exportParity();
   process.stdout.write(`${JSON.stringify(sortJson(payload))}\n`);
 } catch (error) {
   process.stderr.write(

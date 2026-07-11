@@ -44,12 +44,12 @@ def test_release_smoke_preserves_build_verify_install_order(
 
     module.release_smoke(Path("dist"))
 
-    assert commands[0] == [sys.executable, str(scripts / "clean_generated.py")]
+    assert commands[0] == [sys.executable, str(scripts / "clean_caches.py")]
     assert commands[1][:4] == ["uv", "build", "--sdist", "--wheel"]
     verify = [
         index
         for index, command in enumerate(commands)
-        if str(scripts / "verify_wheel.py") in command
+        if str(scripts / "verify_archives.py") in command
     ]
     archive = next(
         index
@@ -98,11 +98,12 @@ def test_installed_smoke_requires_the_missing_key_failure() -> None:
     assert "key checked at instantiation/call time" not in script
 
 
-def test_wheel_verifier_compares_all_packaged_contract_bytes() -> None:
-    script = (SDK_ROOT / "scripts" / "verify_wheel.py").read_text()
+def test_archive_verifier_compares_all_packaged_contract_bytes() -> None:
+    script = (SDK_ROOT / "scripts" / "verify_archives.py").read_text()
 
     assert "argparse.ArgumentParser" in script
-    assert "def configure(dist_dir: Path)" in script
+    assert "def load_archives(dist_dir: Path)" in script
+    assert "def verify_archives()" in script
     assert "tomllib.loads" in script
     assert "canonical_contracts" in script
     assert "packaged_contracts" in script
@@ -189,10 +190,10 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
     assert 'version: "0.11.25"' in setup_action
 
 
-def test_clean_generated_removes_project_caches_without_touching_venv(
+def test_clean_caches_removes_project_caches_without_touching_venv(
     tmp_path: Path,
 ) -> None:
-    module = _load_script("clean_generated.py")
+    module = _load_script("clean_caches.py")
     generated = [
         tmp_path / "src" / "package" / "__pycache__" / "module.pyc",
         tmp_path / "tests" / "case.pyc",
@@ -207,7 +208,7 @@ def test_clean_generated_removes_project_caches_without_touching_venv(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.touch()
 
-    module.clean_generated(tmp_path)
+    module.clean_caches(tmp_path)
 
     assert all(not path.exists() for path in generated)
     assert preserved.is_file()
@@ -222,7 +223,7 @@ def test_release_docs_reference_release_smoke() -> None:
     )
 
     assert "scripts/release_smoke.py" in combined
-    assert "scripts/clean_generated.py" in combined
+    assert "scripts/clean_caches.py" in combined
 
 
 def test_registry_namespace_packages_are_declared() -> None:

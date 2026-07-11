@@ -33,7 +33,7 @@ def venv_python(venv: Path) -> Path:
 def release_smoke(dist_dir: Path) -> None:
     dist_dir = dist_dir if dist_dir.is_absolute() else SDK_ROOT / dist_dir
 
-    run([sys.executable, str(SCRIPTS / "clean_generated.py")])
+    run([sys.executable, str(SCRIPTS / "clean_caches.py")])
     shutil.rmtree(SDK_ROOT / "build", ignore_errors=True)
     run(
         [
@@ -49,7 +49,7 @@ def release_smoke(dist_dir: Path) -> None:
             "--require-hashes",
         ]
     )
-    run([sys.executable, str(SCRIPTS / "verify_wheel.py"), str(dist_dir)])
+    run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
     run(
         [
             sys.executable,
@@ -126,7 +126,7 @@ def release_smoke(dist_dir: Path) -> None:
             )
             run([str(python), str(SCRIPTS / "smoke_install.py")])
 
-    run([sys.executable, str(SCRIPTS / "verify_wheel.py"), str(dist_dir)])
+    run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
     print("PASS: release smoke verified")
 
 
