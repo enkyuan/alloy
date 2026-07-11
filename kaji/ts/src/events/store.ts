@@ -1,75 +1,135 @@
-/**
- * Event store interface and in-memory backend, mirroring
- * `kaji.infra.events.store`. The append-only log is the source of truth;
- * session state is a projection (see `replaySession`).
- */
-import type { KajiEvent } from "@/events/schemas";
+import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
+import { structurallyEqualJson } from "@/events/json";
+import { EventType } from "@/events/types";
+import {
+  NewKajiEvent,
+  type NewKajiEvent as NewKajiEventType,
+  StoredKajiEvent,
+} from "@/events/schemas";
 
-/** Interface every persistent backend implements. */
-export interface EventStore {
-  /** Append an event to the store. */
-  append(event: KajiEvent): Promise<void>;
-  /** Retrieve all events for a session, ordered by time. */
-  getEvents(sessionId: string): Promise<KajiEvent[]>;
-  /**
-   * Subscribe to events for a session. The callback fires synchronously
-   * after each `append` for the given `sessionId`. Returns an unsubscribe
-   * function; call it to stop receiving events.
-   */
-  subscribe(sessionId: string, callback: (event: KajiEvent) => void): () => void;
+export interface AppendResult {
+  event: StoredKajiEvent;
+  inserted: boolean;
 }
 
-/**
- * In-memory event store for tests and simple deployments. Events live in a
- * per-session map and are lost on process exit.
- */
+export interface EventStore {
+  append(event: NewKajiEventType): Promise<AppendResult>;
+  getEvents(
+    sessionId: string,
+    options?: { afterSequence?: number; limit?: number },
+  ): Promise<StoredKajiEvent[]>;
+  lastSequence(sessionId: string): Promise<number>;
+}
+
+export interface InMemoryEventStoreOptions {
+  maxSessions?: number;
+  maxEventsPerSession?: number;
+}
+
+interface SessionLog {
+  events: StoredKajiEvent[];
+  closed: boolean;
+  lastAccess: number;
+}
+
+function draftOf(event: StoredKajiEvent): unknown {
+  const { sequence: _, ...draft } = event;
+  return draft;
+}
+
 export class InMemoryEventStore implements EventStore {
-  private readonly events = new Map<string, KajiEvent[]>();
-  private readonly listeners = new Map<string, Set<(event: KajiEvent) => void>>();
+  private readonly sessions = new Map<string, SessionLog>();
+  private readonly eventsById = new Map<string, StoredKajiEvent>();
+  private readonly maxSessions: number;
+  private readonly maxEventsPerSession: number;
+  private clock = 0;
 
-  async append(event: KajiEvent): Promise<void> {
-    // Fast path: runtime-emitted events have monotonically increasing
-    // timestamps, so the bucket stays sorted with a single `push`. Only
-    // re-sort when a caller (test fixture, replay tooling) backdates the
-    // timestamp.
-    const bucket = this.events.get(event.session_id);
-    if (bucket === undefined) {
-      this.events.set(event.session_id, [event]);
-    } else {
-      bucket.push(event);
+  constructor(options: InMemoryEventStoreOptions = {}) {
+    this.maxSessions = options.maxSessions ?? 1_000;
+    this.maxEventsPerSession = options.maxEventsPerSession ?? 10_000;
+    if (!Number.isInteger(this.maxSessions) || this.maxSessions <= 0) {
+      throw new RangeError("maxSessions must be a positive integer");
+    }
+    if (!Number.isInteger(this.maxEventsPerSession) || this.maxEventsPerSession <= 0) {
+      throw new RangeError("maxEventsPerSession must be a positive integer");
+    }
+  }
+
+  async append(input: NewKajiEventType): Promise<AppendResult> {
+    const event = NewKajiEvent.parse(input);
+    const existing = this.eventsById.get(event.id);
+    if (existing !== undefined) {
+      if (!structurallyEqualJson(draftOf(existing), event)) {
+        throw new EventIdConflictError(event.id);
+      }
+      return { event: existing, inserted: false };
+    }
+
+    let session = this.sessions.get(event.session_id);
+    if (session === undefined) {
+      this.admitSession(event.session_id);
+      session = { events: [], closed: false, lastAccess: ++this.clock };
+      this.sessions.set(event.session_id, session);
+    }
+    if (session.events.length >= this.maxEventsPerSession) {
+      throw new EventStoreCapacityError(
+        event.session_id,
+        `Session ${event.session_id} reached ${this.maxEventsPerSession} events`,
+      );
+    }
+
+    const stored = StoredKajiEvent.parse({ ...event, sequence: session.events.length + 1 });
+    session.events.push(stored);
+    session.closed = event.type === EventType.SESSION_CLOSED;
+    session.lastAccess = ++this.clock;
+    this.eventsById.set(stored.id, stored);
+    return { event: stored, inserted: true };
+  }
+
+  async getEvents(
+    sessionId: string,
+    options: { afterSequence?: number; limit?: number } = {},
+  ): Promise<StoredKajiEvent[]> {
+    const afterSequence = options.afterSequence ?? 0;
+    const limit = options.limit;
+    if (!Number.isInteger(afterSequence) || afterSequence < 0) {
+      throw new RangeError("afterSequence must be a non-negative integer");
+    }
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+      throw new RangeError("limit must be a non-negative integer");
+    }
+    const session = this.sessions.get(sessionId);
+    if (session === undefined || limit === 0) return [];
+    session.lastAccess = ++this.clock;
+    const start = Math.min(afterSequence, session.events.length);
+    return session.events.slice(start, limit === undefined ? undefined : start + limit);
+  }
+
+  async lastSequence(sessionId: string): Promise<number> {
+    const session = this.sessions.get(sessionId);
+    if (session === undefined) return 0;
+    session.lastAccess = ++this.clock;
+    return session.events.length;
+  }
+
+  private admitSession(sessionId: string): void {
+    if (this.sessions.size < this.maxSessions) return;
+    let candidate: [string, SessionLog] | undefined;
+    for (const entry of this.sessions) {
       if (
-        bucket.length > 1 &&
-        bucket[bucket.length - 1]!.timestamp < bucket[bucket.length - 2]!.timestamp
+        entry[1].closed &&
+        (candidate === undefined || entry[1].lastAccess < candidate[1].lastAccess)
       ) {
-        bucket.sort((a, b) => a.timestamp - b.timestamp);
+        candidate = entry;
       }
     }
-
-    // Notify listeners after the event is stored.
-    const subs = this.listeners.get(event.session_id);
-    if (subs !== undefined) {
-      for (const cb of subs) {
-        cb(event);
-      }
+    if (candidate === undefined) {
+      throw new EventStoreCapacityError(
+        sessionId,
+        `Cannot admit session ${sessionId}; ${this.maxSessions} active sessions are retained`,
+      );
     }
-  }
-
-  async getEvents(sessionId: string): Promise<KajiEvent[]> {
-    return [...(this.events.get(sessionId) ?? [])];
-  }
-
-  subscribe(sessionId: string, callback: (event: KajiEvent) => void): () => void {
-    let subs = this.listeners.get(sessionId);
-    if (subs === undefined) {
-      subs = new Set();
-      this.listeners.set(sessionId, subs);
-    }
-    subs.add(callback);
-    return () => {
-      subs!.delete(callback);
-      if (subs!.size === 0) {
-        this.listeners.delete(sessionId);
-      }
-    };
+    this.sessions.delete(candidate[0]);
+    for (const event of candidate[1].events) this.eventsById.delete(event.id);
   }
 }

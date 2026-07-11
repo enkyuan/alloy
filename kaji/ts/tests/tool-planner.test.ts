@@ -5,6 +5,7 @@ import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import { KajiEvent } from "@/events/schemas";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
+import { InMemoryEventCommitter } from "@/events/committer";
 
 describe("ToolPlanner", () => {
   it("emits lifecycle events on success", async () => {
@@ -137,33 +138,39 @@ describe("ToolPlanner", () => {
     const store = new InMemoryEventStore();
     const sessionId = "sess-event-handler-approval";
     const executor = vi.fn().mockResolvedValue({ ok: true });
-    const approvalHandler = new EventApprovalHandler(store, { timeoutMs: 250 });
+    const committer = new InMemoryEventCommitter(store);
+    const approvalHandler = new EventApprovalHandler(committer, { timeoutMs: 250 });
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const specs = new Map([
       ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
     ]);
 
-    store.subscribe(sessionId, (event) => {
-      if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === "c-typed") {
-        void store.append(
-          KajiEvent.parse({
-            type: EventType.TOOL_APPROVAL_APPROVED,
-            session_id: sessionId,
-            tool_name: "nuke",
-            tool_call_id: "c-typed",
-          }),
-        );
+    const observed = committer.subscribe(sessionId);
+    const approveRequest = (async () => {
+      for await (const event of observed) {
+        if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === "c-typed") {
+          await committer.commit(
+            KajiEvent.parse({
+              type: EventType.TOOL_APPROVAL_APPROVED,
+              session_id: sessionId,
+              tool_name: "nuke",
+              tool_call_id: "c-typed",
+            }),
+          );
+          return;
+        }
       }
-    });
+    })();
 
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
     const results = await planner.executeScatterGather(
       sessionId,
       [{ id: "c-typed", name: "nuke", arguments: {} }],
       async (e) => {
-        await store.append(e);
+        await committer.commit(e);
       },
     );
+    await approveRequest;
 
     const events = await store.getEvents(sessionId);
     expect(events.filter((e) => e.type === EventType.TOOL_APPROVAL_REQUESTED)).toHaveLength(1);

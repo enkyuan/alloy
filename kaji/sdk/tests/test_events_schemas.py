@@ -1,6 +1,8 @@
-import pytest
+import json
 import re
 from pathlib import Path
+
+import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from kaji.infra.events.replay import replay_session
@@ -8,14 +10,17 @@ from kaji.infra.events.schemas import (
     KajiEvent,
     AgentMessageCompleted,
     SessionCreated,
+    StoredKajiEvent,
     ToolCallCompleted,
     UserMessage,
+    require_stored_event,
 )
 from kaji.infra.events.types import EventType
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_ROOT = REPO_ROOT / "kaji" / "fixtures" / "events"
+CONFORMANCE_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
 
 
 def test_event_validation():
@@ -40,7 +45,11 @@ def test_event_validation():
 
 
 def test_event_serialization():
-    original = UserMessage(session_id="sess-1", content="Hello world")
+    original = UserMessage(
+        session_id="sess-1",
+        turn_id="turn-1",
+        content="Hello world",
+    )
 
     # Serialize to JSON
     json_str = original.model_dump_json()
@@ -55,6 +64,9 @@ def test_event_serialization():
     assert deserialized.session_id == "sess-1"
     assert deserialized.content == "Hello world"
     assert deserialized.id == original.id
+    assert deserialized.turn_id == "turn-1"
+    assert deserialized.sequence is None
+    assert '"sequence"' not in json_str
 
 
 def test_typescript_event_type_values_match_python():
@@ -116,17 +128,16 @@ def test_usage_event_fields_reject_negative_values(
 
 
 def test_session_replay():
-    events: list[KajiEvent] = [
-        SessionCreated(session_id="sess-1"),
-        UserMessage(session_id="sess-1", content="Hi!"),
-        AgentMessageCompleted(session_id="sess-1", content="Hello! How can I help?"),
+    drafts: list[KajiEvent] = [
+        SessionCreated(session_id="sess-1", sequence=1),
+        UserMessage(session_id="sess-1", content="Hi!", sequence=2),
+        AgentMessageCompleted(
+            session_id="sess-1",
+            content="Hello! How can I help?",
+            sequence=3,
+        ),
     ]
-
-    # ensure timestamp order by faking them
-    events[0].timestamp = 1.0
-    events[1].timestamp = 2.0
-    events[2].timestamp = 3.0
-
+    events: list[StoredKajiEvent] = [require_stored_event(event) for event in drafts]
     state = replay_session(events)
 
     assert state.session_id == "sess-1"
@@ -138,3 +149,19 @@ def test_session_replay():
 
     assert state.messages[1]["role"] == "assistant"
     assert state.messages[1]["content"] == "Hello! How can I help?"
+
+
+def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
+    fixture = json.loads(CONFORMANCE_FIXTURE.read_text())
+    session_payload = fixture["events"][0]
+    parsed = TypeAdapter(KajiEvent).validate_python(session_payload)
+    assert isinstance(parsed, SessionCreated)
+
+    stored = require_stored_event(parsed)
+    state = replay_session([stored])
+
+    assert stored.version == "1.0"
+    assert isinstance(stored.timestamp, float)
+    assert stored.sequence == 1
+    assert state.session_id == "session-1"
+    assert state.is_active is True

@@ -108,7 +108,7 @@ def test_contract_checker_reports_fixture_path_and_json_pointer(tmp_path: Path) 
     assert spec is not None and spec.loader is not None
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)
-    checker.CONTRACTS = contracts
+    setattr(checker, "CONTRACTS", contracts)
 
     with pytest.raises(checker.ContractError) as caught:
         checker.check_contracts()

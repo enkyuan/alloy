@@ -1,17 +1,35 @@
-"""EventStore protocol — the interface every persistent backend implements."""
+"""EventStore protocol -- the interface every persistent backend implements."""
 
-from typing import List, Protocol
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
-from kaji.infra.events.schemas import KajiEvent
+from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent
 
 
+@dataclass(frozen=True, slots=True)
+class AppendResult:
+    event: StoredKajiEvent
+    inserted: bool
+
+
+@runtime_checkable
 class EventStore(Protocol):
     """Interface for a persisted event log."""
 
-    async def append(self, event: KajiEvent) -> None:
-        """Append an event to the store."""
+    async def append(self, event: NewKajiEvent) -> AppendResult:
+        """Append a draft once and return its persisted representation."""
         ...
 
-    async def get_events(self, session_id: str) -> List[KajiEvent]:
-        """Retrieve all events for a session, ordered by time."""
+    async def get_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]:
+        """Return events strictly after the cursor in append order."""
+        ...
+
+    async def last_sequence(self, session_id: str) -> int:
+        """Return the latest session-local sequence, or zero when absent."""
         ...

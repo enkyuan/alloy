@@ -2,12 +2,12 @@
  * Tests for the approval handler infrastructure (Sub-Plan 1).
  *
  * Covers:
- * - EventStore.subscribe / unsubscribe
  * - EventApprovalHandler: grant, reject, timeout
  * - AutoApprovalHandler: allow, deny, allowAll
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryEventStore } from "@/events/store";
+import { InMemoryEventCommitter } from "@/events/committer";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
@@ -28,62 +28,14 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// EventStore.subscribe
-// ---------------------------------------------------------------------------
-
-describe("EventStore.subscribe", () => {
-  it("fires the callback when an event is appended for the subscribed session", async () => {
-    const store = new InMemoryEventStore();
-    const received: KajiEvent[] = [];
-
-    store.subscribe("session-a", (ev) => received.push(ev));
-
-    const event = KajiEvent.parse({
-      type: EventType.SESSION_CREATED,
-      session_id: "session-a",
-    });
-    await store.append(event);
-
-    expect(received).toHaveLength(1);
-    expect(received[0]!.type).toBe(EventType.SESSION_CREATED);
-  });
-
-  it("does not fire for a different session", async () => {
-    const store = new InMemoryEventStore();
-    const received: KajiEvent[] = [];
-
-    store.subscribe("session-a", (ev) => received.push(ev));
-
-    await store.append(
-      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "session-b" }),
-    );
-
-    expect(received).toHaveLength(0);
-  });
-
-  it("unsubscribe removes the listener", async () => {
-    const store = new InMemoryEventStore();
-    const received: KajiEvent[] = [];
-
-    const unsubscribe = store.subscribe("session-a", (ev) => received.push(ev));
-    unsubscribe();
-
-    await store.append(
-      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "session-a" }),
-    );
-
-    expect(received).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // EventApprovalHandler
 // ---------------------------------------------------------------------------
 
 describe("EventApprovalHandler", () => {
   it("grant flow: resolves granted:true when TOOL_APPROVAL_APPROVED is appended", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store);
+    const committer = new InMemoryEventCommitter(store);
+    const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-grant" });
     const ctx = { sessionId: "session-1" };
 
@@ -92,7 +44,7 @@ describe("EventApprovalHandler", () => {
     // Let the handler complete the REQUEST append and set up its subscription.
     await flushMicrotasks();
 
-    await store.append(
+    await committer.commit(
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_APPROVED,
         session_id: ctx.sessionId,
@@ -107,36 +59,43 @@ describe("EventApprovalHandler", () => {
 
   it("captures a synchronous approval appended by a request-event subscriber", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store);
+    const committer = new InMemoryEventCommitter(store);
+    const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-sync" });
     const ctx = { sessionId: "session-sync" };
 
-    store.subscribe(ctx.sessionId, (event) => {
-      if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === call.id) {
-        void store.append(
-          KajiEvent.parse({
-            type: EventType.TOOL_APPROVAL_APPROVED,
-            session_id: ctx.sessionId,
-            tool_name: call.name,
-            tool_call_id: call.id,
-          }),
-        );
+    const observed = committer.subscribe(ctx.sessionId);
+    const approveRequest = (async () => {
+      for await (const event of observed) {
+        if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === call.id) {
+          await committer.commit(
+            KajiEvent.parse({
+              type: EventType.TOOL_APPROVAL_APPROVED,
+              session_id: ctx.sessionId,
+              tool_name: call.name,
+              tool_call_id: call.id,
+            }),
+          );
+          return;
+        }
       }
-    });
+    })();
 
     await expect(handler.request(call, ctx)).resolves.toEqual({ granted: true });
+    await approveRequest;
   });
 
   it("reject flow: resolves granted:false with reason when TOOL_APPROVAL_REJECTED is appended", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store);
+    const committer = new InMemoryEventCommitter(store);
+    const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-reject" });
     const ctx = { sessionId: "session-2" };
 
     const decisionPromise = handler.request(call, ctx);
     await flushMicrotasks();
 
-    await store.append(
+    await committer.commit(
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_REJECTED,
         session_id: ctx.sessionId,
@@ -153,7 +112,9 @@ describe("EventApprovalHandler", () => {
 
   it("timeout: rejects with an error when no decision arrives within timeoutMs", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store, { timeoutMs: 50 });
+    const handler = new EventApprovalHandler(new InMemoryEventCommitter(store), {
+      timeoutMs: 50,
+    });
     const call = makeCall({ id: "call-timeout" });
     const ctx = { sessionId: "session-3" };
 
@@ -162,7 +123,8 @@ describe("EventApprovalHandler", () => {
 
   it("ignores events for a different tool_call_id", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store, { timeoutMs: 100 });
+    const committer = new InMemoryEventCommitter(store);
+    const handler = new EventApprovalHandler(committer, { timeoutMs: 100 });
     const call = makeCall({ id: "call-target" });
     const ctx = { sessionId: "session-4" };
 
@@ -170,7 +132,7 @@ describe("EventApprovalHandler", () => {
     await flushMicrotasks();
 
     // Append an APPROVED for a different call — should be ignored.
-    await store.append(
+    await committer.commit(
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_APPROVED,
         session_id: ctx.sessionId,
@@ -184,7 +146,9 @@ describe("EventApprovalHandler", () => {
 
   it("emits TOOL_APPROVAL_REQUESTED to the store", async () => {
     const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(store, { timeoutMs: 50 });
+    const handler = new EventApprovalHandler(new InMemoryEventCommitter(store), {
+      timeoutMs: 50,
+    });
     const call = makeCall({ id: "call-emit" });
     const ctx = { sessionId: "session-5", risk: "write" };
 

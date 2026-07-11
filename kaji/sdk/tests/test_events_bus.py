@@ -3,60 +3,77 @@ import asyncio
 import pytest
 
 from kaji.infra.events.bus import InMemoryEventBus
+from kaji.infra.events.errors import EventBufferOverflowError
 from kaji.infra.events.schemas import UserMessage
+from kaji.infra.events.store import InMemoryEventStore
+
+
+async def _close(stream: object) -> None:
+    close = getattr(stream, "aclose", None)
+    if close is not None:
+        await close()
+
+
+async def _stored(store: InMemoryEventStore, session_id: str, content: str):
+    return (
+        await store.append(UserMessage(session_id=session_id, content=content))
+    ).event
 
 
 @pytest.mark.asyncio
-async def test_in_memory_bus_replays_backlog_to_late_subscriber():
+async def test_in_memory_bus_is_live_only_and_does_not_duplicate_store_history() -> (
+    None
+):
+    store = InMemoryEventStore()
     bus = InMemoryEventBus()
-    await bus.publish(UserMessage(session_id="s1", content="a"))
-    await bus.publish(UserMessage(session_id="s1", content="b"))
+    old = await _stored(store, "s1", "old")
+    await bus.publish(old)
 
-    seen = []
-    async for event in bus.subscribe("s1"):
-        assert isinstance(event, UserMessage)
-        seen.append(event.content)
-        if len(seen) == 2:
-            break
+    stream = bus.subscribe("s1")
+    pending = asyncio.ensure_future(anext(stream))
+    await asyncio.sleep(0)
+    assert not pending.done()
 
-    assert seen == ["a", "b"]
+    live = await _stored(store, "s1", "live")
+    await bus.publish(live)
+    assert await pending is live
+    await _close(stream)
 
 
 @pytest.mark.asyncio
-async def test_in_memory_bus_fans_out_live_events():
+async def test_in_memory_bus_isolates_sessions() -> None:
+    store = InMemoryEventStore()
     bus = InMemoryEventBus()
-    received: list[str] = []
+    stream = bus.subscribe("s2")
+    pending = asyncio.ensure_future(anext(stream))
+    await asyncio.sleep(0)
 
-    async def consume():
-        async for event in bus.subscribe("s1"):
-            assert isinstance(event, UserMessage)
-            received.append(event.content)
-            if event.content == "stop":
-                break
+    await bus.publish(await _stored(store, "s1", "other"))
+    await asyncio.sleep(0)
+    assert not pending.done()
 
-    task = asyncio.create_task(consume())
-    await asyncio.sleep(0)  # let the subscriber attach
-    await bus.publish(UserMessage(session_id="s1", content="live"))
-    await bus.publish(UserMessage(session_id="s1", content="stop"))
-    await task
-
-    assert received == ["live", "stop"]
+    expected = await _stored(store, "s2", "expected")
+    await bus.publish(expected)
+    assert await pending is expected
+    await _close(stream)
 
 
 @pytest.mark.asyncio
-async def test_in_memory_bus_isolates_sessions_and_blocks_until_published():
-    """A subscriber sees only its own session, and blocks until one arrives."""
-    bus = InMemoryEventBus()
-    await bus.publish(UserMessage(session_id="s1", content="only-s1"))
+async def test_in_memory_bus_overflow_terminates_only_lagging_subscriber() -> None:
+    store = InMemoryEventStore()
+    bus = InMemoryEventBus(subscriber_queue_capacity=1)
+    stream = bus.subscribe("s1")
+    first_task = asyncio.ensure_future(anext(stream))
+    await asyncio.sleep(0)
 
-    async def consume():
-        async for event in bus.subscribe("s2"):
-            assert isinstance(event, UserMessage)
-            return event.content
+    first = await _stored(store, "s1", "one")
+    await bus.publish(first)
+    assert await first_task is first
+    await bus.publish(await _stored(store, "s1", "two"))
+    third = await _stored(store, "s1", "three")
+    await bus.publish(third)
 
-    task = asyncio.create_task(consume())
-    await asyncio.sleep(0.01)
-    assert not task.done()  # s1's event must not leak into s2
-
-    await bus.publish(UserMessage(session_id="s2", content="finally"))
-    assert await task == "finally"
+    with pytest.raises(EventBufferOverflowError) as caught:
+        await anext(stream)
+    assert caught.value.last_sequence == 1
+    assert caught.value.latest_sequence == 3

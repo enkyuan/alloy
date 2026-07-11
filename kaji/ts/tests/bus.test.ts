@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventBus, EventType } from "@/index";
+import { KajiEvent, StoredKajiEvent, EventBus, EventType } from "@/index";
+import type { StoredKajiEvent as StoredKajiEventType } from "@/events/schemas";
 
 function userMessage(sessionId: string, content: string) {
   return KajiEvent.parse({
@@ -40,7 +41,7 @@ describe("EventBus", () => {
     await sub.return?.();
   });
 
-  it("delivers session backlog to subscribers created after publish", async () => {
+  it("does not retain a duplicate history backlog", async () => {
     const bus = new EventBus();
 
     await bus.publish(userMessage("s1", "one"));
@@ -48,15 +49,20 @@ describe("EventBus", () => {
     const sub = bus.subscribe("s1");
     await bus.publish(userMessage("s1", "three"));
 
-    const first = await sub.next();
-    const second = await sub.next();
-    const third = await sub.next();
-    expect(
-      [first, second, third].map((r) =>
-        r.value?.type === EventType.USER_MESSAGE ? r.value.content : "",
-      ),
-    ).toEqual(["one", "two", "three"]);
+    const next = await sub.next();
+    expect(next.value?.type === EventType.USER_MESSAGE ? next.value.content : "").toBe("three");
 
+    await sub.return?.();
+  });
+
+  it("honors a stored-event afterSequence cursor", async () => {
+    const bus = new EventBus<StoredKajiEventType>();
+    const sub = bus.subscribe("s1", { afterSequence: 2 });
+
+    await bus.publish(StoredKajiEvent.parse({ ...userMessage("s1", "old"), sequence: 2 }));
+    await bus.publish(StoredKajiEvent.parse({ ...userMessage("s1", "new"), sequence: 3 }));
+
+    expect((await sub.next()).value?.sequence).toBe(3);
     await sub.return?.();
   });
 

@@ -8,8 +8,8 @@ import type { ModelProvider } from "@/providers/base";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
 import { ToolRegistry } from "@/tools/registry";
-import { EventBus } from "@/events/bus";
-import type { EventBusProtocol } from "@/events/protocols";
+import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
+import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
 
 /** Anything with a register(registry: ToolRegistry) method. */
@@ -18,9 +18,11 @@ export interface Integrable {
 }
 
 export interface AgentBuilderBuildOptions {
-  /** Defaults to a fresh `EventBus` instance. Any `EventBusProtocol` works. */
+  /** Canonical append + subscription boundary. */
+  committer?: EventCommitter;
+  /** @deprecated Supplying a bus opts into the experimental split adapter. */
   bus?: EventBusProtocol;
-  /** Defaults to a fresh `InMemoryEventStore` instance. */
+  /** Defaults to the injected committer's store, otherwise a fresh in-memory store. */
   store?: EventStore;
 }
 
@@ -72,8 +74,21 @@ export class AgentBuilder {
     if (!this._provider) {
       throw new Error("provider() must be called before build()");
     }
-    const bus = opts.bus ?? new EventBus();
-    const store = opts.store ?? new InMemoryEventStore();
+    let store: EventStore;
+    let committer: EventCommitter;
+    if (opts.committer !== undefined) {
+      if (opts.store !== undefined && opts.store !== opts.committer.store) {
+        throw new Error("AgentBuilder store must match the injected committer store");
+      }
+      store = opts.committer.store;
+      committer = opts.committer;
+    } else {
+      store = opts.store ?? new InMemoryEventStore();
+      committer =
+        opts.bus !== undefined
+          ? new SplitEventCommitter(store, opts.bus)
+          : new InMemoryEventCommitter(store);
+    }
 
     const registry = new ToolRegistry();
     for (const integration of this._integrations) {
@@ -92,8 +107,8 @@ export class AgentBuilder {
 
     return new AgentRuntime({
       provider: this._provider,
-      bus,
       store,
+      committer,
       systemPrompt: this._systemPrompt,
       strategy: this._strategy,
       tools: registry.listSpecs(),

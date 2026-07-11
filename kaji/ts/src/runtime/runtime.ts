@@ -7,9 +7,16 @@
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
 import type { EventBusProtocol } from "@/events/protocols";
-import { KajiEvent, type KajiEventInput } from "@/events/schemas";
+import type { EventCommitter } from "@/events/protocols";
+import {
+  KajiEvent,
+  type KajiEventInput,
+  type NewKajiEvent,
+  type StoredKajiEvent,
+} from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { EventStore } from "@/events/store";
+import { SplitEventCommitter } from "@/events/committer";
 import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
 import { replaySession } from "@/sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
@@ -28,7 +35,10 @@ export interface AgentStrategy {
 export interface AgentRuntimeOptions {
   provider: ModelProvider;
   store: EventStore;
-  bus: EventBusProtocol;
+  /** Canonical append + subscription boundary. */
+  committer?: EventCommitter;
+  /** @deprecated Pass `committer`; a bus implies the experimental split adapter. */
+  bus?: EventBusProtocol;
   systemPrompt?: string;
   strategy?: AgentStrategy;
   /**
@@ -79,13 +89,13 @@ export interface TurnOptions {
  *   returning tool calls; inspect `events` for `AGENT_TURN_EXHAUSTED`.
  * - `toolCallEvents` are `KajiEvent`s of type `TOOL_CALL_REQUESTED`, not
  *   provider-neutral `ToolCall` payloads. The name reflects the type.
- * - `events` is the full slice of events appended by this call.
+ * - `events` contains persisted events after this call's starting cursor.
  */
 export interface TurnResult {
   text: string;
   sessionId: string;
-  toolCallEvents: KajiEvent[];
-  events: KajiEvent[];
+  toolCallEvents: StoredKajiEvent[];
+  events: StoredKajiEvent[];
 }
 
 /**
@@ -101,7 +111,7 @@ type EventInputWithoutSession<T = KajiEventInput> = T extends unknown
 export class AgentRuntime {
   private readonly provider: ModelProvider;
   private readonly store: EventStore;
-  private readonly bus: EventBusProtocol;
+  private readonly committer: EventCommitter;
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly fixedTools: ToolSpec[] | undefined;
@@ -119,7 +129,16 @@ export class AgentRuntime {
   constructor(options: AgentRuntimeOptions) {
     this.provider = options.provider;
     this.store = options.store;
-    this.bus = options.bus;
+    if (options.committer !== undefined) {
+      if (options.committer.store !== options.store) {
+        throw new Error("AgentRuntime store must match the injected committer store");
+      }
+      this.committer = options.committer;
+    } else if (options.bus !== undefined) {
+      this.committer = new SplitEventCommitter(options.store, options.bus);
+    } else {
+      throw new Error("AgentRuntime requires an event committer or compatibility bus");
+    }
     this.systemPrompt = options.systemPrompt;
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this.fixedTools = options.tools;
@@ -152,6 +171,11 @@ export class AgentRuntime {
     return this.planner ?? this.buildPlanner(tools);
   }
 
+  /** Canonical application write path for event drafts. */
+  async appendEvent(event: NewKajiEvent): Promise<StoredKajiEvent> {
+    return this.committer.commit(event);
+  }
+
   /**
    * Run one full agent turn and return a structured result.
    *
@@ -161,21 +185,18 @@ export class AgentRuntime {
    */
   async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
     const sessionId = options.sessionId ?? defaultUuid();
-    const existing = await this.store.getEvents(sessionId);
-    if (existing.length === 0) {
+    const startSequence = await this.store.lastSequence(sessionId);
+    if (startSequence === 0) {
       const created = KajiEvent.parse({
         type: EventType.SESSION_CREATED,
         session_id: sessionId,
       });
-      await this.store.append(created);
-      await this.bus.publish(created);
+      await this.appendEvent(created);
     }
-    const snapshotLen = existing.length;
     await this.send(sessionId, prompt, {
       cancellationToken: options.cancellationToken,
     });
-    const all = await this.store.getEvents(sessionId);
-    const turnEvents = all.slice(snapshotLen);
+    const turnEvents = await this.store.getEvents(sessionId, { afterSequence: startSequence });
     const text = turnEvents
       .filter((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)
       .map((e) => ("content" in e ? (e.content as string) : ""))
@@ -190,8 +211,8 @@ export class AgentRuntime {
    * This is the idiomatic one-shot call:
    *   await runtime.send("s1", "What time is it?");
    *
-   * For more control (batch-append, replay, pre-seeding) append a USER_MESSAGE
-   * event to the store directly and call `runTurn()` separately.
+   * For more control (batch-append, replay, pre-seeding), call `appendEvent()`
+   * and then `runTurn()` separately.
    */
   async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
     const event = KajiEvent.parse({
@@ -199,17 +220,18 @@ export class AgentRuntime {
       session_id: sessionId,
       content,
     });
-    await this.store.append(event);
-    await this.bus.publish(event);
+    await this.appendEvent(event);
     await this.runTurn(sessionId, options);
   }
 
   /**
-   * Return the event log for `sessionId` in append order. Shortcut for
-   * `runtime.store.getEvents(sessionId)`.
+   * Return a cursor page of persisted events for `sessionId` in append order.
    */
-  async history(sessionId: string): Promise<KajiEvent[]> {
-    return this.store.getEvents(sessionId);
+  async history(
+    sessionId: string,
+    options: { afterSequence?: number; limit?: number } = {},
+  ): Promise<StoredKajiEvent[]> {
+    return this.store.getEvents(sessionId, { ...options, limit: options.limit ?? 1_024 });
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
@@ -219,8 +241,7 @@ export class AgentRuntime {
       input: EventInputWithoutSession<T>,
     ): Promise<void> => {
       const event = KajiEvent.parse({ ...input, session_id: sessionId });
-      await this.store.append(event);
-      await this.bus.publish(event);
+      await this.appendEvent(event);
     };
 
     await emit({ type: EventType.AGENT_REASONING_STARTED });
@@ -279,8 +300,7 @@ export class AgentRuntime {
             arguments: tc.args,
           })),
           async (event) => {
-            await this.store.append(event);
-            await this.bus.publish(event);
+            await this.appendEvent(event);
           },
         );
         // Loop: next iteration replays state including the new tool results.

@@ -4,7 +4,12 @@
  *
  * All file I/O happens here; `render.ts` is pure (no I/O).
  */
-import { KajiEvent } from "@/events/schemas";
+import {
+  KajiEvent,
+  StoredKajiEvent,
+  type KajiEvent as KajiEventType,
+  type StoredKajiEvent as StoredKajiEventType,
+} from "@/events/schemas";
 import { renderJson, renderSummary, renderTree } from "@/cli/render";
 import { readTextFile } from "@/cli/bun-io";
 
@@ -60,12 +65,18 @@ export async function replay(argv: string[], opts: ReplayOptions): Promise<numbe
     return 1;
   }
 
-  const events: KajiEvent[] = [];
+  const events: Array<KajiEventType | StoredKajiEventType> = [];
+  let nonBlankLines = 0;
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
+    nonBlankLines++;
     try {
-      const parsed = KajiEvent.safeParse(JSON.parse(trimmed));
+      const value: unknown = JSON.parse(trimmed);
+      const parsed =
+        value !== null && typeof value === "object" && "sequence" in value
+          ? StoredKajiEvent.safeParse(value)
+          : KajiEvent.safeParse(value);
       if (parsed.success) {
         events.push(parsed.data);
       }
@@ -73,6 +84,13 @@ export async function replay(argv: string[], opts: ReplayOptions): Promise<numbe
     } catch {
       // Skip non-JSON lines
     }
+  }
+
+  // A non-empty file that yields zero events is almost always the wrong file
+  // or a corrupt log, not a legitimately empty session — warn instead of
+  // silently succeeding with no output.
+  if (nonBlankLines > 0 && events.length === 0) {
+    err(`Warning: ${file} has ${nonBlankLines} line(s) but no parseable kaji events.`);
   }
 
   let filtered = events;

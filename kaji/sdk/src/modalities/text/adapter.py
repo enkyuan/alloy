@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.schemas import KajiEvent
+from kaji.infra.events.schemas import StoredKajiEvent
 from kaji.infra.events.store import EventStore, InMemoryEventStore
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
@@ -29,17 +28,26 @@ class TextSession:
     store: EventStore
     _sent: int = field(default=0, init=False)
 
-    async def send(self, content: str) -> list[KajiEvent]:
-        """Send text through the runtime and return the session event log."""
+    async def send(self, content: str) -> list[StoredKajiEvent]:
+        """Send text through the runtime and return only this turn's events."""
         if not content.strip():
             raise ValueError("content must not be empty")
-        await self.runtime.send(self.config.session_id, content)
+        result = await self.runtime.turn(content, session_id=self.config.session_id)
         self._sent += 1
-        return await self.events()
+        return result.events
 
-    async def events(self) -> list[KajiEvent]:
-        """Return all events recorded for this text session."""
-        return await self.store.get_events(self.config.session_id)
+    async def events(
+        self,
+        *,
+        after_sequence: int = 0,
+        limit: int = 1_024,
+    ) -> list[StoredKajiEvent]:
+        """Return a bounded cursor page of events for this text session."""
+        return await self.store.get_events(
+            self.config.session_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
 
 
 class TextModalityAdapter:
@@ -82,7 +90,7 @@ def _default_runtime(store: EventStore) -> AgentRuntime:
         raise ValueError(f"No tool executor configured for {name!r}")
 
     return AgentRuntime(
-        bus=InMemoryEventBus(),
+        bus=None,
         store=store,
         provider=get_provider("mock"),
         planner=ToolPlanner(executor=_missing_tool_executor),

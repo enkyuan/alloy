@@ -5,7 +5,7 @@ import pytest
 
 from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.schemas import (
-    KajiEvent,
+    StoredKajiEvent,
     UserMessage,
 )
 from kaji.infra.events.store import InMemoryEventStore
@@ -28,7 +28,7 @@ class MockEventBus(InMemoryEventBus):
     def __init__(self):
         self.published = []
 
-    async def publish(self, event: KajiEvent) -> str:
+    async def publish(self, event: StoredKajiEvent) -> str:
         self.published.append(event)
         return "mock-id"
 

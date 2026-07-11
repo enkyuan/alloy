@@ -82,6 +82,29 @@ asyncio.run(main())
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
 
+## Event journal contract
+
+`EventJournal` is the stable persistence boundary for runtime events. New
+events enter as `NewKajiEvent` values without a sequence; a successful commit
+returns a sequenced `StoredKajiEvent` directly. The lower-level
+`EventStore.append()` compatibility path returns `AppendResult(event, inserted)`
+so journals can suppress duplicate fanout. `AgentBuilder` uses
+`InMemoryEventJournal` by default so persistence and live delivery share one
+atomic, process-local path.
+
+`AgentRuntime.history()` and `TextSession.events()` return at most 1,024 stored
+events by default. Pass `after_sequence` and `limit` to page explicitly.
+
+`replay_session()` accepts stored, sequenced events only. Applications importing
+old unsequenced logs must opt into `replay_legacy_session()`, which emits
+`LegacyEventOrderingWarning` and uses stable timestamp/input order.
+
+`SplitEventJournal` is the experimental adapter for deployments with separate
+`EventStore` and `EventBus` implementations. Callers can distinguish
+`EventIdConflictError`, `EventStoreCapacityError`,
+`EventBufferOverflowError`, and `EventDeliveryError` when applying retry,
+resume, or backpressure policy.
+
 ## Prove it with a model
 
 OpenAI with `gpt-5.4-mini` is the recommended first live check because it is

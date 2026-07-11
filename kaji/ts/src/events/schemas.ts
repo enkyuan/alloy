@@ -7,17 +7,19 @@
  * id/version/timestamp/metadata defaults mirror the Python `default_factory`
  * fields, so constructing an event needs only its own payload plus session_id.
  */
-import { z } from "zod";
+import * as z from "zod";
 
 import { defaultUuid } from "@/internal/uuid";
 import { EventType } from "@/events/types";
+import { cloneAndFreezeJson, type DeepReadonly } from "@/events/json";
 
 /** Fields shared by every event. No provider- or voice-specific fields here. */
 const baseShape = {
   id: z.string().default(() => defaultUuid()),
-  version: z.string().default("1.0"),
+  version: z.literal("1.0").default("1.0"),
   timestamp: z.number().default(() => Date.now() / 1000),
   session_id: z.string(),
+  turn_id: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).default(() => ({})),
 };
 
@@ -205,3 +207,22 @@ export type KajiEventInput = z.input<typeof KajiEvent>;
 
 /** Base event fields, useful for typing helpers that touch any event. */
 export type BaseEvent = z.infer<typeof SessionCreated>;
+
+/** An event draft accepted by stores and committers. Drafts never carry sequence. */
+export const NewKajiEvent = KajiEvent;
+export type NewKajiEvent = KajiEvent;
+
+/** A persisted event. Stores assign a positive session-local sequence. */
+export type StoredKajiEvent = DeepReadonly<KajiEvent & { sequence: number }>;
+export const StoredKajiEvent = z
+  .object({ sequence: z.number().int().positive() })
+  .loose()
+  .transform((value, ctx): StoredKajiEvent => {
+    const { sequence, ...candidate } = value;
+    const parsed = KajiEvent.safeParse(candidate);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) ctx.addIssue({ ...issue });
+      return z.NEVER;
+    }
+    return cloneAndFreezeJson({ ...parsed.data, sequence });
+  });

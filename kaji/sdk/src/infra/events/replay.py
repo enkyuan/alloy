@@ -1,9 +1,12 @@
 from dataclasses import dataclass, field
+import warnings
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from kaji.infra.events.schemas import (
-    KajiEvent,
     EventType,
+    KajiEvent,
+    StoredKajiEvent,
+    require_stored_event,
 )
 
 
@@ -16,12 +19,38 @@ class SessionState:
     messages: List[Dict[str, Any]] = field(default_factory=list)
 
 
-def replay_session(events: Sequence[KajiEvent]) -> SessionState:
-    """Reconstruct session state by replaying a sequence of events.
+class LegacyEventOrderingWarning(UserWarning):
+    """A fully legacy event log was ordered by timestamp compatibility rules."""
 
-    The append-only event log is the source of truth. Events from
-    ``EventStore`` arrive in append order; out-of-order inputs (e.g.
-    constructed in tests) are sorted on the fly.
+
+def _legacy_timestamp_order(events: Sequence[KajiEvent]) -> list[KajiEvent]:
+    warnings.warn(
+        "replaying a legacy unsequenced event log; timestamp ordering is deprecated",
+        LegacyEventOrderingWarning,
+        stacklevel=2,
+    )
+    return [
+        event
+        for _, event in sorted(
+            enumerate(events),
+            key=lambda item: (item[1].timestamp, item[0]),
+        )
+    ]
+
+
+def _session_id(events: Sequence[KajiEvent | StoredKajiEvent]) -> str:
+    if not events:
+        raise ValueError("Cannot replay empty event log")
+    session_id = events[0].session_id
+    if any(event.session_id != session_id for event in events[1:]):
+        raise ValueError("Cannot replay events from mixed sessions")
+    return session_id
+
+
+def replay_session(events: Sequence[StoredKajiEvent]) -> SessionState:
+    """Reconstruct state from strictly sequenced persisted events.
+
+    Fully unsequenced historical logs must opt into ``replay_legacy_session``.
 
     ``TOOL_CALL_REQUESTED`` events are attached to the most recent
     ``assistant`` message as ``tool_calls`` entries so the projected history
@@ -29,19 +58,42 @@ def replay_session(events: Sequence[KajiEvent]) -> SessionState:
     OpenAI and Anthropic both reject ``role: tool`` messages whose originating
     assistant turn doesn't reference the matching call id.
     """
-    if not events:
-        raise ValueError("Cannot replay empty event log")
-
-    state = SessionState(session_id=events[0].session_id)
-    ordered: Iterable[KajiEvent] = events
-    if any(
-        events[i].timestamp < events[i - 1].timestamp for i in range(1, len(events))
+    session_id = _session_id(events)
+    raw_sequences = [getattr(event, "sequence", None) for event in events]
+    if any(sequence is None for sequence in raw_sequences) and any(
+        sequence is not None for sequence in raw_sequences
     ):
-        ordered = sorted(events, key=lambda e: e.timestamp)
+        raise ValueError("Cannot replay mixed sequenced and unsequenced events")
+    ordered = [require_stored_event(event) for event in events]
+    sequences = [event.sequence for event in ordered]
+    if len(sequences) != len(set(sequences)):
+        raise ValueError("Cannot replay duplicate event sequences")
+    if any(current <= previous for previous, current in zip(sequences, sequences[1:])):
+        raise ValueError("Cannot replay non-monotonic event sequences")
+    return _project_session(ordered, session_id=session_id)
+
+
+def replay_legacy_session(events: Sequence[KajiEvent]) -> SessionState:
+    """Replay a fully unsequenced legacy log with a visible warning."""
+    session_id = _session_id(events)
+    if any(event.sequence is not None for event in events):
+        raise ValueError("Legacy replay accepts only fully unsequenced event logs")
+    return _project_session(
+        _legacy_timestamp_order(events),
+        session_id=session_id,
+    )
+
+
+def _project_session(
+    events: Iterable[KajiEvent | StoredKajiEvent],
+    *,
+    session_id: str,
+) -> SessionState:
+    state = SessionState(session_id=session_id)
 
     last_assistant: Optional[Dict[str, Any]] = None
 
-    for event in ordered:
+    for event in events:
         if event.type == EventType.SESSION_CREATED:
             state.is_active = True
         elif event.type == EventType.SESSION_CLOSED:

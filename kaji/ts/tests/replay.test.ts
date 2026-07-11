@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventType, replaySession } from "@/index";
+import { KajiEvent, EventType, replayLegacySession } from "@/index";
 
 function ev(input: Record<string, unknown>) {
   return KajiEvent.parse(input);
 }
 
-describe("replaySession", () => {
+describe("replayLegacySession", () => {
   it("projects a conversation from the event log", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.USER_MESSAGE,
@@ -33,7 +33,7 @@ describe("replaySession", () => {
   });
 
   it("orders by timestamp and flips isActive on close", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CLOSED, session_id: "s1", timestamp: 9 }),
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
     ]);
@@ -41,7 +41,7 @@ describe("replaySession", () => {
   });
 
   it("treats a final transcript as a user message and records tool results", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TRANSCRIPT_FINAL,
@@ -71,7 +71,7 @@ describe("replaySession", () => {
   });
 
   it("preserves the real tool_call_id on tool messages (H3)", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TOOL_CALL_COMPLETED,
@@ -87,7 +87,7 @@ describe("replaySession", () => {
   });
 
   it("attaches requested tool calls to the preceding assistant message", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.AGENT_MESSAGE_COMPLETED,
@@ -121,7 +121,7 @@ describe("replaySession", () => {
   });
 
   it("synthesizes an assistant message for tool-only model output", () => {
-    const state = replaySession([
+    const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TOOL_CALL_REQUESTED,
@@ -157,6 +157,6 @@ describe("replaySession", () => {
   });
 
   it("throws on an empty log", () => {
-    expect(() => replaySession([])).toThrow(/empty event log/);
+    expect(() => replayLegacySession([])).toThrow(/empty event log/);
   });
 });

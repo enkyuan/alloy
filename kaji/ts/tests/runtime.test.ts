@@ -13,7 +13,7 @@ import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
 import { AgentBuilder } from "@/runtime/builder";
 import { ToolPolicy } from "@/tools/policy";
 import { clearTools, registerTool, toolSpecFromSchema } from "@/tools/registry";
-import { replaySession } from "@/sessions/replay";
+import { replayLegacySession } from "@/sessions/replay";
 import type { Message } from "@/sessions/replay";
 
 afterEach(() => clearTools());
@@ -46,7 +46,7 @@ describe("replaySession", () => {
       }),
     ];
 
-    const state = replaySession(events);
+    const state = replayLegacySession(events);
 
     expect(state.messages).toHaveLength(3);
     const assistantMsg = state.messages[1]!;
@@ -100,7 +100,7 @@ describe("replaySession", () => {
       }),
     ];
 
-    const state = replaySession(events);
+    const state = replayLegacySession(events);
 
     // user + assistant parent + failed tool + completed tool = provider-safe history.
     expect(state.messages).toHaveLength(4);

@@ -11,9 +11,11 @@ from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.state import SessionStateManager
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.tools.registry import ToolSpec
-from kaji.infra.events.protocols import EventBusProtocol
+from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.schemas import (
-    KajiEvent,
+    NewKajiEvent,
+    StoredKajiEvent,
     AgentMessageCompleted,
     AgentMessageDelta,
     AgentReasoningStarted,
@@ -46,8 +48,8 @@ class TurnResult:
 
     text: str
     session_id: str
-    tool_call_events: List[KajiEvent] = field(default_factory=list)
-    events: List[KajiEvent] = field(default_factory=list)
+    tool_call_events: List[StoredKajiEvent] = field(default_factory=list)
+    events: List[StoredKajiEvent] = field(default_factory=list)
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,7 @@ class AgentRuntime:
 
     def __init__(
         self,
-        bus: EventBusProtocol,
+        bus: Optional[EventBusProtocol],
         store: EventStore,
         provider: ModelProvider,
         planner: Optional[ToolPlanner] = None,
@@ -84,9 +86,18 @@ class AgentRuntime:
         policy: Optional[Any] = None,
         approval_handler: Optional[ApprovalHandler] = None,
         user_id: str = "agent",
+        journal: Optional[EventJournal] = None,
     ):
+        resolved_journal: EventJournal = journal or (
+            SplitEventJournal(store, bus)
+            if bus is not None
+            else InMemoryEventJournal(store)
+        )
+        if resolved_journal.store is not store:
+            raise ValueError("store must be the same object as journal.store")
         self.bus = bus
         self.store = store
+        self.journal = resolved_journal
         self.provider = provider
         self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
@@ -148,10 +159,12 @@ class AgentRuntime:
             specs=specs,
         )
 
-    async def _emit(self, event: KajiEvent) -> None:
-        """Commit an event to the source of truth and broadcast it."""
-        await self.store.append(event)
-        await self.bus.publish(event)
+    async def append_event(self, event: NewKajiEvent) -> StoredKajiEvent:
+        """Commit an event draft through the canonical journal boundary."""
+        return await self.journal.commit(event)
+
+    async def _emit(self, event: NewKajiEvent) -> None:
+        await self.append_event(event)
 
     async def turn(
         self,
@@ -177,19 +190,20 @@ class AgentRuntime:
             and the full ``events`` slice emitted by this call.
         """
         sid = session_id or uuid.uuid4().hex
-        existing = await self.store.get_events(sid)
-        if not existing:
+        start_sequence = await self.store.last_sequence(sid)
+        if start_sequence == 0:
             await self._emit(SessionCreated(session_id=sid))
-        snapshot_len = len(existing)
         await self.send(sid, prompt, cancellation_token=cancellation_token)
-        all_events = await self.store.get_events(sid)
-        turn_events = all_events[snapshot_len:]
+        turn_events = await self.store.get_events(
+            sid,
+            after_sequence=start_sequence,
+        )
         text = "".join(
             getattr(e, "content", "")
             for e in turn_events
             if e.type == EventType.AGENT_MESSAGE_COMPLETED
         )
-        tool_call_events: List[KajiEvent] = [
+        tool_call_events: List[StoredKajiEvent] = [
             e for e in turn_events if e.type == EventType.TOOL_CALL_REQUESTED
         ]
         return TurnResult(
@@ -211,18 +225,25 @@ class AgentRuntime:
 
             await runtime.send("s1", "What time is it?")
 
-        For more control (batch-append, replay, pre-seeding) call
-        ``store.append(UserMessage(...))`` and ``run_turn()`` separately.
+        For more control (batch-append, replay, pre-seeding), call
+        ``append_event(UserMessage(...))`` and ``run_turn()`` separately.
         """
         await self._emit(UserMessage(session_id=session_id, content=content))
         await self.run_turn(session_id, cancellation_token)
 
-    async def history(self, session_id: str) -> List[KajiEvent]:
-        """Return the event log for ``session_id`` in append order.
-
-        Shortcut for ``runtime.store.get_events(session_id)``.
-        """
-        return await self.store.get_events(session_id)
+    async def history(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int = 1_024,
+    ) -> List[StoredKajiEvent]:
+        """Return a bounded cursor page of persisted events in append order."""
+        return await self.store.get_events(
+            session_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
 
     async def run_turn(
         self, session_id: str, cancellation_token: Optional[CancellationToken] = None

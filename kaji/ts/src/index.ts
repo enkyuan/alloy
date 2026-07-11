@@ -15,13 +15,27 @@ export const VERSION = "0.1.0";
 
 // Events
 export { EventType } from "@/events/types";
-export { KajiEvent, type KajiEventInput, type BaseEvent } from "@/events/schemas";
+export {
+  KajiEvent,
+  NewKajiEvent,
+  StoredKajiEvent,
+  type KajiEventInput,
+  type BaseEvent,
+} from "@/events/schemas";
 export { EventBus } from "@/events/bus";
-export { type EventBusProtocol } from "@/events/protocols";
+export { type EventBusProtocol, type EventCommitter } from "@/events/protocols";
+export { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
+export {
+  EventBufferOverflowError,
+  EventDeliveryError,
+  EventIdConflictError,
+  EventStoreCapacityError,
+} from "@/events/errors";
 export { type EventStore, InMemoryEventStore } from "@/events/store";
 
 // Sessions
 export {
+  replayLegacySession,
   replaySession,
   type SessionState,
   type Message,

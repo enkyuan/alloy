@@ -1,9 +1,11 @@
 /**
  * Pure rendering functions for `kaji replay`. No file I/O here —
- * all renderers accept parsed KajiEvent[] and return a string.
+ * all renderers accept parsed event arrays and return a string.
  */
-import type { KajiEvent } from "@/events/schemas";
+import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
+
+type RenderableEvent = KajiEvent | StoredKajiEvent;
 
 const C = {
   reset: "\x1b[0m",
@@ -26,6 +28,14 @@ function fmtTimestamp(ts: number): string {
   return new Date(ts * 1000).toISOString();
 }
 
+function sequenceRange(events: readonly RenderableEvent[]): string {
+  const sequences = events.map((event) =>
+    "sequence" in event && typeof event.sequence === "number" ? event.sequence : undefined,
+  );
+  if (sequences.some((sequence) => sequence === undefined)) return "";
+  return `, seq=${sequences[0]}-${sequences[sequences.length - 1]}`;
+}
+
 function failureColor(errorMsg: string): string {
   const lc = errorMsg.toLowerCase();
   if (lc.includes("validation_error") || lc.includes("validation error")) return C.yellow;
@@ -36,21 +46,12 @@ function failureColor(errorMsg: string): string {
 
 interface SessionGroup {
   sessionId: string;
-  events: KajiEvent[];
+  events: RenderableEvent[];
 }
 
-function groupBySessions(events: KajiEvent[]): SessionGroup[] {
-  const map = new Map<string, KajiEvent[]>();
-  for (const e of events) {
-    const list = map.get(e.session_id) ?? [];
-    list.push(e);
-    map.set(e.session_id, list);
-  }
-  const groups: SessionGroup[] = [];
-  for (const [sessionId, evts] of map) {
-    groups.push({ sessionId, events: evts });
-  }
-  return groups;
+function groupBySessions(events: readonly RenderableEvent[]): SessionGroup[] {
+  const map = Map.groupBy(events, (e) => e.session_id);
+  return [...map].map(([sessionId, evts]) => ({ sessionId, events: evts }));
 }
 
 interface ToolCallInfo {
@@ -67,7 +68,7 @@ interface ToolCallInfo {
  * Render events as a human-readable turn tree grouped by session.
  * Events in a session are grouped into turns starting at each USER_MESSAGE.
  */
-export function renderTree(events: KajiEvent[]): string {
+export function renderTree(events: readonly RenderableEvent[]): string {
   if (events.length === 0) return "";
   const groups = groupBySessions(events);
   const lines: string[] = [];
@@ -78,12 +79,12 @@ export function renderTree(events: KajiEvent[]): string {
     const durationS = (lastTs - firstTs).toFixed(3);
     lines.push(
       `${C.bold}${C.cyan}Session ${sessionId}${C.reset} ` +
-        `${C.dim}(${durationS}s, ${sevents.length} events)${C.reset}`,
+        `${C.dim}(${durationS}s, ${sevents.length} events${sequenceRange(sevents)})${C.reset}`,
     );
 
     // Group into turns starting at each USER_MESSAGE
-    const turns: Array<{ startTs: number; events: KajiEvent[] }> = [];
-    let currentTurn: { startTs: number; events: KajiEvent[] } | null = null;
+    const turns: Array<{ startTs: number; events: RenderableEvent[] }> = [];
+    let currentTurn: { startTs: number; events: RenderableEvent[] } | null = null;
 
     for (const e of sevents) {
       if (e.type === EventType.USER_MESSAGE) {
@@ -261,7 +262,7 @@ export function renderTree(events: KajiEvent[]): string {
 /**
  * One-liner summary per session: turns, tool calls, errors, duration.
  */
-export function renderSummary(events: KajiEvent[]): string {
+export function renderSummary(events: readonly RenderableEvent[]): string {
   if (events.length === 0) return "";
   const groups = groupBySessions(events);
   const lines: string[] = [];
@@ -275,7 +276,8 @@ export function renderSummary(events: KajiEvent[]): string {
     const durationS = (lastTs - firstTs).toFixed(3);
     lines.push(
       `${C.bold}Session ${sessionId}${C.reset}  ` +
-        `turns=${turns}  tool_calls=${toolCalls}  errors=${errors}  duration=${durationS}s`,
+        `turns=${turns}  tool_calls=${toolCalls}  errors=${errors}  duration=${durationS}s` +
+        sequenceRange(sevents),
     );
   }
 
@@ -283,6 +285,6 @@ export function renderSummary(events: KajiEvent[]): string {
 }
 
 /** Raw JSON dump of the event array, indented for readability. */
-export function renderJson(events: KajiEvent[]): string {
+export function renderJson(events: readonly RenderableEvent[]): string {
   return JSON.stringify(events, null, 2);
 }

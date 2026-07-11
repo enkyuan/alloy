@@ -1,0 +1,106 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
+
+import { EventIdConflictError } from "@/events/errors";
+import {
+  KajiEvent,
+  NewKajiEvent,
+  StoredKajiEvent,
+  type StoredKajiEvent as StoredKajiEventType,
+} from "@/events/schemas";
+import { InMemoryEventStore } from "@/events/store";
+import { EventType } from "@/events/types";
+import { replayLegacySession, replaySession } from "@/sessions/replay";
+
+function message(id: string, sessionId = "s1", timestamp = 1) {
+  return KajiEvent.parse({
+    id,
+    type: EventType.USER_MESSAGE,
+    session_id: sessionId,
+    content: id,
+    timestamp,
+  });
+}
+
+const eventFixturePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../contracts/events/conformance.json",
+);
+
+describe("event ordering contract", () => {
+  it("distinguishes new and stored event validation", () => {
+    const draft = message("event-1");
+    expect(() => NewKajiEvent.parse({ ...draft, sequence: 1 })).toThrow();
+    expect(StoredKajiEvent.parse({ ...draft, sequence: 1 }).sequence).toBe(1);
+    expect(() => StoredKajiEvent.parse(draft)).toThrow();
+    expect(() => StoredKajiEvent.parse({ ...draft, sequence: 0 })).toThrow();
+    expect(() => StoredKajiEvent.parse({ ...draft, sequence: 1.5 })).toThrow();
+  });
+
+  it("persists the shared session-created conformance fixture", async () => {
+    const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as {
+      events: unknown[];
+    };
+    const expected = StoredKajiEvent.parse(fixture.events[0]);
+    const { sequence: _, ...draft } = expected;
+    const store = new InMemoryEventStore();
+
+    const result = await store.append(NewKajiEvent.parse(draft));
+
+    expect(result).toEqual({ event: expected, inserted: true });
+  });
+
+  it("assigns unique contiguous sequences to concurrent appends", async () => {
+    const store = new InMemoryEventStore();
+    const results = await Promise.all(
+      Array.from({ length: 50 }, (_, index) => store.append(message(`event-${index}`))),
+    );
+
+    expect(results.map(({ event }) => event.sequence)).toEqual(
+      Array.from({ length: 50 }, (_, index) => index + 1),
+    );
+  });
+
+  it("rejects duplicate ids with a different session", async () => {
+    const store = new InMemoryEventStore();
+    await store.append(message("same-id", "one"));
+    await expect(store.append(message("same-id", "two"))).rejects.toBeInstanceOf(
+      EventIdConflictError,
+    );
+  });
+
+  it("rejects mixed sessions and invalid sequence logs", () => {
+    const one = { ...message("one", "s1"), sequence: 1 };
+    const two = { ...message("two", "s2"), sequence: 2 };
+    expect(() => replaySession([one, two])).toThrow(/mixed sessions/);
+    expect(() => replaySession([one, message("legacy")] as StoredKajiEventType[])).toThrow(
+      /mixed sequenced/,
+    );
+    expect(() => replaySession([one, { ...message("duplicate"), sequence: 1 }])).toThrow(
+      /Duplicate/,
+    );
+    expect(() => replaySession([{ ...message("later"), sequence: 2 }, one])).toThrow(
+      /Non-monotonic/,
+    );
+    expect(() => replaySession([message("legacy")] as StoredKajiEventType[])).toThrow(
+      /requires stored events/,
+    );
+    expect(() => replayLegacySession([one])).toThrow(/only fully unsequenced/);
+  });
+
+  it("uses the named stable legacy ordering branch with a warning", () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const state = replayLegacySession([
+      message("second", "legacy", 2),
+      message("first", "legacy", 1),
+    ]);
+
+    expect(state.messages.map(({ content }) => content)).toEqual(["first", "second"]);
+    expect(warning).toHaveBeenCalledWith(
+      "Replaying legacy unsequenced events by timestamp and input order",
+    );
+    warning.mockRestore();
+  });
+});

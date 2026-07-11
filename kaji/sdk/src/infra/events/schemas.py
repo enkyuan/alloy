@@ -1,6 +1,17 @@
 import time
 import uuid
-from typing import Any, Dict, List, Literal, Optional, Union  # noqa: F401
+from typing import (  # noqa: F401
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    TypeAlias,
+    Union,
+    cast,
+    runtime_checkable,
+)
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,10 +25,16 @@ class BaseEvent(BaseModel):
     """
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    version: str = "1.0"
+    version: Literal["1.0"] = "1.0"
     timestamp: float = Field(default_factory=time.time)
-    session_id: str
+    session_id: str = Field(min_length=1)
+    turn_id: Optional[str] = Field(
+        default=None, min_length=1, exclude_if=lambda value: value is None
+    )
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    sequence: Optional[int] = Field(
+        default=None, ge=1, exclude_if=lambda value: value is None
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -198,3 +215,39 @@ KajiEvent = Union[
     CancellationRequested,
     CancellationCompleted,
 ]
+
+# Python keeps one discriminated event model family for compatibility. These
+# names make the persistence boundary explicit without duplicating that model
+# hierarchy. The checked cast in ``require_stored_event`` is the only way a
+# draft model becomes the distinct stored-event static type.
+NewKajiEvent: TypeAlias = KajiEvent
+
+
+@runtime_checkable
+class StoredKajiEvent(Protocol):
+    id: str
+    version: Literal["1.0"]
+    timestamp: float
+    session_id: str
+    turn_id: Optional[str]
+    metadata: Dict[str, Any]
+    type: EventType
+    sequence: int
+
+    def model_dump(self, **kwargs: Any) -> Dict[str, Any]: ...
+
+    def model_dump_json(self, **kwargs: Any) -> str: ...
+
+    def __getattr__(self, name: str) -> Any: ...
+
+
+def require_new_event(event: KajiEvent) -> NewKajiEvent:
+    if event.sequence is not None:
+        raise ValueError("new events must not carry a sequence")
+    return event
+
+
+def require_stored_event(event: KajiEvent | StoredKajiEvent) -> StoredKajiEvent:
+    if not isinstance(event.sequence, int) or event.sequence < 1:
+        raise ValueError("stored events require a positive sequence")
+    return cast(StoredKajiEvent, event)

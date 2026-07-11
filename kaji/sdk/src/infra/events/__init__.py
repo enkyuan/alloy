@@ -1,20 +1,52 @@
 from .bus import EventBus, InMemoryEventBus
-from .protocols import EventBusProtocol
-from .replay import replay_session, SessionState
-from .schemas import KajiEvent, BaseEvent, UserMessage
-from .store import EventStore, InMemoryEventStore
+from .errors import (
+    EventBufferOverflowError,
+    EventDeliveryError,
+    EventIdConflictError,
+    EventInfrastructureError,
+    EventStoreCapacityError,
+)
+from .journal import InMemoryEventJournal, SplitEventJournal
+from .protocols import EventBusProtocol, EventJournal
+from .replay import (
+    LegacyEventOrderingWarning,
+    SessionState,
+    replay_legacy_session,
+    replay_session,
+)
+from .schemas import (
+    BaseEvent,
+    KajiEvent,
+    NewKajiEvent,
+    StoredKajiEvent,
+    UserMessage,
+)
+from .store import AppendResult, EventStore, InMemoryEventStore
 from .types import EventType
 
 __all__ = [
     "EventType",
     "KajiEvent",
+    "NewKajiEvent",
+    "StoredKajiEvent",
     "BaseEvent",
     "UserMessage",
+    "AppendResult",
     "EventBus",
     "EventBusProtocol",
     "InMemoryEventBus",
+    "EventJournal",
+    "InMemoryEventJournal",
+    "SplitEventJournal",
     "EventStore",
     "InMemoryEventStore",
+    "EventInfrastructureError",
+    "EventIdConflictError",
+    "EventStoreCapacityError",
+    "EventBufferOverflowError",
+    "EventDeliveryError",
     "replay_session",
+    "replay_legacy_session",
     "SessionState",
+    "LegacyEventOrderingWarning",
 ]

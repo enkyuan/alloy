@@ -169,4 +169,23 @@ describe("kaji replay", () => {
     expect(code).toBe(1);
     expect(err).toMatch(/usage:/i);
   });
+
+  it("warns when the file has content but zero parseable events", async () => {
+    const garbagePath = join(tmpDir, "garbage.jsonl");
+    writeFileSync(garbagePath, "not json\nstill not json\n", "utf-8");
+
+    const { code, out, err } = await run([garbagePath]);
+    expect(code).toBe(0);
+    expect(out).toBe("");
+    expect(err).toMatch(/no parseable kaji events/i);
+  });
+
+  it("does not warn on a genuinely empty file", async () => {
+    const emptyPath = join(tmpDir, "empty.jsonl");
+    writeFileSync(emptyPath, "", "utf-8");
+
+    const { code, err } = await run([emptyPath]);
+    expect(code).toBe(0);
+    expect(err).toBe("");
+  });
 });

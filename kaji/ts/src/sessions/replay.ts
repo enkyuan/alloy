@@ -1,10 +1,10 @@
 /**
  * Session-state projection from the event log, mirroring
  * `kaji.infra.events.replay`. The append-only log is the source of truth;
- * `SessionState` is a read model derived by replaying events in time order.
+ * `SessionState` is a read model derived by replaying events in store order.
  */
 import { EventType } from "@/events/types";
-import type { KajiEvent } from "@/events/schemas";
+import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
 export interface MessageToolCall {
@@ -51,20 +51,67 @@ export interface SessionState {
 }
 
 /**
- * Reconstruct session state by replaying a sequence of events. Events from
- * `EventStore` arrive in append order; out-of-order inputs (e.g. constructed
- * in tests) are sorted on the fly. Throws on an empty log, matching Python.
+ * Reconstruct session state from stored events. Sequences must already be
+ * strictly monotonic. Use `replayLegacySession` for fully unsequenced logs.
  *
  * TOOL_CALL_REQUESTED events are attached to the most recent assistant message
  * so provider history includes the assistant-side tool call before the matching
  * role:tool result. OpenAI and Anthropic reject orphan tool-result messages.
  */
-export function replaySession(events: readonly KajiEvent[]): SessionState {
+export function replaySession(events: readonly StoredKajiEvent[]): SessionState {
   const first = events[0];
   if (first === undefined) {
     throw new Error("Cannot replay empty event log");
   }
 
+  if (events.some((event) => event.session_id !== first.session_id)) {
+    throw new Error("Cannot replay events from mixed sessions");
+  }
+
+  const sequenced = events.map((event) => "sequence" in event);
+  if (sequenced.some(Boolean) && !sequenced.every(Boolean)) {
+    throw new Error("Cannot replay mixed sequenced and unsequenced events");
+  }
+  if (!sequenced.every(Boolean)) {
+    throw new Error("Stable replay requires stored events with sequence");
+  }
+
+  const seen = new Set<number>();
+  let previous = 0;
+  for (const event of events) {
+    if (!Number.isInteger(event.sequence) || event.sequence <= 0) {
+      throw new Error("Stored event sequence must be a positive integer");
+    }
+    if (seen.has(event.sequence)) throw new Error(`Duplicate event sequence ${event.sequence}`);
+    if (event.sequence < previous) {
+      throw new Error(`Non-monotonic event sequence ${event.sequence} after ${previous}`);
+    }
+    seen.add(event.sequence);
+    previous = event.sequence;
+  }
+
+  return projectSession(events);
+}
+
+/** Compatibility entry point for fully unsequenced pre-beta logs. */
+export function replayLegacySession(events: readonly KajiEvent[]): SessionState {
+  const first = events[0];
+  if (first === undefined) throw new Error("Cannot replay empty event log");
+  if (events.some((event) => event.session_id !== first.session_id)) {
+    throw new Error("Cannot replay events from mixed sessions");
+  }
+  const sequenced = events.map((event) => "sequence" in event);
+  if (sequenced.some(Boolean) && !sequenced.every(Boolean)) {
+    throw new Error("Cannot replay mixed sequenced and unsequenced events");
+  }
+  if (sequenced.some(Boolean)) {
+    throw new Error("Legacy replay accepts only fully unsequenced events");
+  }
+  return projectSession(orderLegacyUnsequencedEvents(events));
+}
+
+function projectSession(ordered: readonly (KajiEvent | StoredKajiEvent)[]): SessionState {
+  const first = ordered[0]!;
   const state: SessionState = {
     sessionId: first.session_id,
     isActive: false,
@@ -75,14 +122,6 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
     totalTokens: { input: 0, output: 0 },
     totalCostUsd: 0,
   };
-
-  let ordered: readonly KajiEvent[] = events;
-  for (let i = 1; i < events.length; i++) {
-    if (events[i]!.timestamp < events[i - 1]!.timestamp) {
-      ordered = [...events].sort((a, b) => a.timestamp - b.timestamp);
-      break;
-    }
-  }
 
   let lastAssistant: Message | undefined;
 
@@ -168,6 +207,15 @@ export function replaySession(events: readonly KajiEvent[]): SessionState {
   }
 
   return state;
+}
+
+/** Compatibility only: new writes are always sequenced by the store. */
+export function orderLegacyUnsequencedEvents(events: readonly KajiEvent[]): KajiEvent[] {
+  console.warn("Replaying legacy unsequenced events by timestamp and input order");
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((left, right) => left.event.timestamp - right.event.timestamp || left.index - right.index)
+    .map(({ event }) => event);
 }
 
 /**

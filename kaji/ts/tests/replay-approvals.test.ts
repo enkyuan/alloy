@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { EventType } from "@/events/types";
 import { KajiEvent } from "@/events/schemas";
-import { replaySession } from "@/sessions/replay";
+import { replayLegacySession } from "@/sessions/replay";
 
 const SESSION_ID = "s1";
 
@@ -51,7 +51,7 @@ describe("replaySession approval projection", () => {
       }),
     ];
 
-    const state = replaySession(events);
+    const state = replayLegacySession(events);
     expect(state.approvedToolCallIds.has("c1")).toBe(true);
     expect(state.rejectedToolCallIds.has("c2")).toBe(true);
     expect(state.pendingApprovals.has("c3")).toBe(true);
@@ -60,7 +60,7 @@ describe("replaySession approval projection", () => {
   });
 
   it("defaults all three sets to empty when no approval events occur", () => {
-    const state = replaySession([makeEvent({ type: EventType.SESSION_CREATED })]);
+    const state = replayLegacySession([makeEvent({ type: EventType.SESSION_CREATED })]);
     expect(state.pendingApprovals.size).toBe(0);
     expect(state.approvedToolCallIds.size).toBe(0);
     expect(state.rejectedToolCallIds.size).toBe(0);

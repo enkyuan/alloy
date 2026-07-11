@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, runtime_checkable
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.protocols import EventBusProtocol
+from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.store.inmem import InMemoryEventStore
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
@@ -97,16 +97,26 @@ class AgentBuilder:
         *,
         bus: Optional[EventBusProtocol] = None,
         store: Optional[EventStore] = None,
+        journal: Optional[EventJournal] = None,
     ) -> AgentRuntime:
-        """Build the runtime. ``bus`` and ``store`` default to in-memory
-        implementations, suitable for embedded single-process agents.
+        """Build the runtime with a stable in-memory journal by default.
+
+        Passing ``bus`` opts into the experimental split store/bus adapter.
         """
         if self._provider is None:
             raise ValueError("provider() must be called before build()")
-        if bus is None:
-            bus = InMemoryEventBus()
-        if store is None:
-            store = InMemoryEventStore()
+        if journal is not None:
+            if store is not None and store is not journal.store:
+                raise ValueError("store must be the same object as journal.store")
+            store = journal.store
+        else:
+            if store is None:
+                store = InMemoryEventStore()
+            journal = (
+                SplitEventJournal(store, bus)
+                if bus is not None
+                else InMemoryEventJournal(store)
+            )
 
         registry = ToolRegistry()
         for integration in self._integrations:
@@ -131,6 +141,7 @@ class AgentBuilder:
         return AgentRuntime(
             bus=bus,
             store=store,
+            journal=journal,
             provider=self._provider,
             planner=planner,
             system_prompt=self._system_prompt,
