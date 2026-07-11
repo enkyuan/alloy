@@ -15,6 +15,7 @@ from .replay import (
     replay_session,
 )
 from .schemas import (
+    AgentTurnFailed,
     BaseEvent,
     KajiEvent,
     NewKajiEvent,
@@ -26,6 +27,7 @@ from .types import EventType
 
 __all__ = [
     "EventType",
+    "AgentTurnFailed",
     "KajiEvent",
     "NewKajiEvent",
     "StoredKajiEvent",

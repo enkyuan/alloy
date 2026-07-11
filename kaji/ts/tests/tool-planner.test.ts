@@ -229,6 +229,7 @@ describe("ToolPlanner", () => {
   it("emits exactly one approval request when EventApprovalHandler publishes request events", async () => {
     const store = new InMemoryEventStore();
     const sessionId = "sess-event-handler-approval";
+    const turnId = "turn-event-handler-approval";
     const executor = vi.fn().mockResolvedValue({ ok: true });
     const committer = new InMemoryEventCommitter(store);
     const approvalHandler = new EventApprovalHandler(committer, { timeoutMs: 250 });
@@ -245,6 +246,7 @@ describe("ToolPlanner", () => {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_APPROVED,
               session_id: sessionId,
+              turn_id: turnId,
               tool_name: "nuke",
               tool_call_id: "c-typed",
             }),
@@ -261,13 +263,46 @@ describe("ToolPlanner", () => {
       async (e) => {
         await committer.commit(e);
       },
+      turnId,
     );
     await approveRequest;
 
     const events = await store.getEvents(sessionId);
     expect(events.filter((e) => e.type === EventType.TOOL_APPROVAL_REQUESTED)).toHaveLength(1);
     expect(events.map((e) => e.type)).toContain(EventType.TOOL_APPROVAL_APPROVED);
+    expect(events.every((event) => event.turn_id === turnId)).toBe(true);
     expect(results[0]).toHaveProperty("result", { ok: true });
+  });
+
+  it("fails closed before invoking an event approval handler without a turn id", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const executor = vi.fn().mockResolvedValue({ ok: true });
+    const approvalHandler = new EventApprovalHandler(committer, { timeoutMs: 250 });
+    const request = vi.spyOn(approvalHandler, "request");
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const specs = new Map([
+      ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
+    ]);
+    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+
+    const results = await planner.executeScatterGather(
+      "sess-missing-turn",
+      [{ id: "c-missing-turn", name: "nuke", arguments: {} }],
+      async (event) => {
+        await committer.commit(event);
+      },
+    );
+
+    expect(request).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+    expect(results[0]).toMatchObject({
+      error: expect.stringContaining("non-empty turn identity"),
+    });
+    const events = await store.getEvents("sess-missing-turn");
+    expect(events.some((event) => event.type === EventType.TOOL_APPROVAL_REQUESTED)).toBe(false);
+    expect(events.some((event) => event.type === EventType.TOOL_APPROVAL_REJECTED)).toBe(true);
+    expect(events.some((event) => event.type === EventType.TOOL_CALL_FAILED)).toBe(true);
   });
 
   it("approval rejected skips execution", async () => {

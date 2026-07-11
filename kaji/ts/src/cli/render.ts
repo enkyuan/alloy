@@ -235,6 +235,7 @@ export function renderTree(events: readonly RenderableEvent[]): string {
           case EventType.MEMORY_RETRIEVAL_STARTED:
           case EventType.MEMORY_RETRIEVAL_COMPLETED:
           case EventType.AGENT_TURN_EXHAUSTED:
+          case EventType.AGENT_TURN_FAILED:
           case EventType.WORKFLOW_STARTED:
           case EventType.WORKFLOW_COMPLETED:
           case EventType.WORKFLOW_FAILED:
@@ -270,7 +271,9 @@ export function renderSummary(events: readonly RenderableEvent[]): string {
   for (const { sessionId, events: sevents } of groups) {
     const turns = sevents.filter((e) => e.type === EventType.USER_MESSAGE).length;
     const toolCalls = sevents.filter((e) => e.type === EventType.TOOL_CALL_REQUESTED).length;
-    const errors = sevents.filter((e) => e.type === EventType.TOOL_CALL_FAILED).length;
+    const errors = sevents.filter(
+      (e) => e.type === EventType.TOOL_CALL_FAILED || e.type === EventType.AGENT_TURN_FAILED,
+    ).length;
     const firstTs = sevents[0]!.timestamp;
     const lastTs = sevents[sevents.length - 1]!.timestamp;
     const durationS = (lastTs - firstTs).toFixed(3);

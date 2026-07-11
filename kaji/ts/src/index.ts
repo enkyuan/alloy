@@ -16,6 +16,7 @@ export const VERSION = "0.1.0";
 // Events
 export { EventType } from "@/events/types";
 export {
+  AgentTurnFailed,
   KajiEvent,
   NewKajiEvent,
   StoredKajiEvent,
@@ -137,6 +138,8 @@ export {
   type AgentRuntimeOptions,
   type AgentStrategy,
   type RunTurnOptions,
+  type TurnOptions,
+  type TurnResult,
 } from "@/runtime/runtime";
 export {
   CancellationError,
@@ -145,6 +148,11 @@ export {
   type CancellationTokenLike,
 } from "@/runtime/cancellation";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "@/runtime/builder";
+export {
+  InMemorySessionTurnCoordinator,
+  type ObservableCancellationToken,
+  type SessionTurnCoordinator,
+} from "@/runtime/session-turn-coordinator";
 export {
   generateText,
   streamText,
@@ -155,9 +163,12 @@ export {
 // Approval handlers
 export type {
   TypedApprovalHandler,
+  EventBackedApprovalHandler,
+  EventApprovalContext,
+  EventApprovalContext as ApprovalContext,
   ApprovalDecision,
-  ToolContext as ApprovalContext,
   ApprovalRequest,
+  ToolContext as TypedApprovalContext,
 } from "@/runtime/approval/types";
 export { EventApprovalHandler } from "@/runtime/approval/handler";
 export { AutoApprovalHandler, type AutoApprovalPolicy } from "@/runtime/approval/auto";

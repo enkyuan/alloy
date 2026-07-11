@@ -7,6 +7,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.schemas import (
+    AgentTurnFailed,
     KajiEvent,
     AgentMessageCompleted,
     SessionCreated,
@@ -165,3 +166,19 @@ def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
     assert stored.sequence == 1
     assert state.session_id == "session-1"
     assert state.is_active is True
+
+
+def test_shared_turn_failure_conformance_fixture_is_bounded_and_turn_scoped() -> None:
+    fixture = json.loads(CONFORMANCE_FIXTURE.read_text())
+    parsed = TypeAdapter(KajiEvent).validate_python(fixture["events"][2])
+
+    assert isinstance(parsed, AgentTurnFailed)
+    assert parsed.turn_id == "turn-1"
+    assert parsed.error == "Agent turn failed"
+
+    with pytest.raises(ValidationError):
+        TypeAdapter(AgentTurnFailed).validate_python(
+            {"session_id": "session-1", "error": "Agent turn failed"}
+        )
+    with pytest.raises(ValidationError):
+        AgentTurnFailed(session_id="session-1", turn_id="turn-1", error="x" * 201)

@@ -70,7 +70,8 @@ async def test_builder_uses_stable_journal_and_runtime_append_path() -> None:
     duplicate = await runtime.append_event(draft.model_copy(deep=True))
 
     assert stored.sequence == 1
-    assert duplicate is stored
+    assert duplicate == stored
+    assert duplicate is not stored
     assert [event.sequence for event in await runtime.history("seeded")] == [1]
 
 

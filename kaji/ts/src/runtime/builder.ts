@@ -11,6 +11,7 @@ import { ToolRegistry } from "@/tools/registry";
 import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
+import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -24,6 +25,8 @@ export interface AgentBuilderBuildOptions {
   bus?: EventBusProtocol;
   /** Defaults to the injected committer's store, otherwise a fresh in-memory store. */
   store?: EventStore;
+  /** Defaults to the process-local coordinator shared by this store object. */
+  turnCoordinator?: SessionTurnCoordinator;
 }
 
 export class AgentBuilder {
@@ -114,6 +117,7 @@ export class AgentBuilder {
       tools: registry.listSpecs(),
       policy: this._policy,
       planner,
+      ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });
   }
 }

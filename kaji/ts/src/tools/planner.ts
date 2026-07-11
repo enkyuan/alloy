@@ -18,6 +18,7 @@ import {
   type ValidationFailureFields,
 } from "@/tools/validation";
 import type {
+  EventBackedApprovalHandler,
   TypedApprovalHandler,
   ToolContext as ApprovalContext,
 } from "@/runtime/approval/types";
@@ -60,7 +61,10 @@ export type ApprovalHandler = (
 export type EmitFn = (event: KajiEvent) => Promise<void>;
 
 /** Either a legacy function-style handler or the new structured handler. */
-export type AnyApprovalHandler = ApprovalHandler | TypedApprovalHandler;
+export type AnyApprovalHandler =
+  | ApprovalHandler
+  | TypedApprovalHandler
+  | EventBackedApprovalHandler;
 
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
@@ -117,14 +121,16 @@ export class ToolPlanner {
     sessionId: string,
     toolCalls: ToolCallInstruction[],
     emit: EmitFn,
+    turnId?: string,
   ): Promise<ToolCallResult[]> {
-    return Promise.all(toolCalls.map((call) => this.executeSingle(sessionId, call, emit)));
+    return Promise.all(toolCalls.map((call) => this.executeSingle(sessionId, call, emit, turnId)));
   }
 
   private async executeSingle(
     sessionId: string,
     call: ToolCallInstruction,
     emit: EmitFn,
+    turnId?: string,
   ): Promise<ToolCallResult> {
     const toolName = call.name;
     const rawToolArgs: unknown = call.arguments;
@@ -161,12 +167,14 @@ export class ToolPlanner {
     const catalogName = spec?.catalogName;
     const aliases = catalogName ? [catalogName] : [];
     const metadata = catalogName ? { catalog_name: catalogName } : {};
+    const turnContext = turnId === undefined ? {} : { turn_id: turnId };
 
     // 1. Announce intent
     await emit(
       KajiEvent.parse({
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: sessionId,
+        ...turnContext,
         tool_name: toolName,
         tool_args: cloneToolExecutionArguments(toolName, toolArgs),
         tool_call_id: callId,
@@ -195,6 +203,7 @@ export class ToolPlanner {
         KajiEvent.parse({
           type: EventType.TOOL_CALL_FAILED,
           session_id: sessionId,
+          ...turnContext,
           tool_name: toolName,
           tool_call_id: callId,
           error: validationError.message,
@@ -218,6 +227,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
             session_id: sessionId,
+            ...turnContext,
             tool_name: toolName,
             tool_call_id: callId,
             error: errorMsg,
@@ -239,6 +249,7 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_REQUESTED,
               session_id: sessionId,
+              ...turnContext,
               tool_name: toolName,
               tool_call_id: callId,
               tool_args: cloneToolExecutionArguments(toolName, toolArgs),
@@ -257,8 +268,29 @@ export class ToolPlanner {
               cloneToolExecutionArguments(toolName, toolArgs),
               risk,
             );
+          } else if (this.approvalHandler.emitsApprovalRequest === true) {
+            if (turnId === undefined || turnId.length === 0) {
+              rejectedReason = "Event approval requires a non-empty turn identity";
+            } else {
+              const decision = await this.approvalHandler.request(
+                {
+                  id: callId,
+                  name: toolName,
+                  args: cloneToolExecutionArguments(toolName, toolArgs),
+                },
+                { sessionId, risk, turnId },
+              );
+              approved = decision.granted;
+              if (!approved && decision.reason) {
+                rejectedReason = decision.reason;
+              }
+            }
           } else {
-            const approvalCtx: ApprovalContext = { sessionId, risk };
+            const approvalCtx: ApprovalContext = {
+              sessionId,
+              risk,
+              ...(turnId === undefined ? {} : { turnId }),
+            };
             const decision = await this.approvalHandler.request(
               {
                 id: callId,
@@ -282,6 +314,7 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_REJECTED,
               session_id: sessionId,
+              ...turnContext,
               tool_name: toolName,
               tool_call_id: callId,
               reason,
@@ -295,6 +328,7 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_CALL_FAILED,
               session_id: sessionId,
+              ...turnContext,
               tool_name: toolName,
               tool_call_id: callId,
               error: errorMsg,
@@ -308,6 +342,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_APPROVAL_APPROVED,
             session_id: sessionId,
+            ...turnContext,
             tool_name: toolName,
             tool_call_id: callId,
             metadata,
@@ -320,6 +355,7 @@ export class ToolPlanner {
         KajiEvent.parse({
           type: EventType.TOOL_CALL_STARTED,
           session_id: sessionId,
+          ...turnContext,
           tool_name: toolName,
           tool_call_id: callId,
           metadata,
@@ -334,6 +370,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_CALL_COMPLETED,
             session_id: sessionId,
+            ...turnContext,
             tool_name: toolName,
             tool_call_id: callId,
             result,
@@ -347,6 +384,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
             session_id: sessionId,
+            ...turnContext,
             tool_name: toolName,
             tool_call_id: callId,
             error: errorMsg,

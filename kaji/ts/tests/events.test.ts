@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import type * as z from "zod";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
-import { KajiEvent, EventType } from "@/index";
+import { AgentTurnFailed, KajiEvent, EventType } from "@/index";
 
 describe("KajiEvent", () => {
   it("applies defaults for id, version, timestamp, metadata", () => {
@@ -50,5 +51,34 @@ describe("KajiEvent", () => {
       session_id: "s1",
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("requires bounded public errors and turn identity for terminal failures", () => {
+    expectTypeOf<z.input<typeof AgentTurnFailed>["turn_id"]>().toEqualTypeOf<string>();
+    expectTypeOf<z.output<typeof AgentTurnFailed>["turn_id"]>().toEqualTypeOf<string>();
+
+    expect(
+      AgentTurnFailed.parse({
+        type: EventType.AGENT_TURN_FAILED,
+        session_id: "s1",
+        turn_id: "turn-1",
+        error: "Agent turn failed",
+      }).error,
+    ).toBe("Agent turn failed");
+    expect(() =>
+      AgentTurnFailed.parse({
+        type: EventType.AGENT_TURN_FAILED,
+        session_id: "s1",
+        error: "Agent turn failed",
+      }),
+    ).toThrow();
+    expect(() =>
+      AgentTurnFailed.parse({
+        type: EventType.AGENT_TURN_FAILED,
+        session_id: "s1",
+        turn_id: "turn-1",
+        error: "x".repeat(201),
+      }),
+    ).toThrow();
   });
 });

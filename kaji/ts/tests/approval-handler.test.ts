@@ -5,13 +5,14 @@
  * - EventApprovalHandler: grant, reject, timeout
  * - AutoApprovalHandler: allow, deny, allowAll
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import { InMemoryEventStore } from "@/events/store";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { AutoApprovalHandler } from "@/runtime/approval/auto";
+import type { EventApprovalContext } from "@/runtime/approval/types";
 import type { ToolCall } from "@/providers/base";
 
 // ---------------------------------------------------------------------------
@@ -32,12 +33,21 @@ async function flushMicrotasks(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 describe("EventApprovalHandler", () => {
+  it("requires a non-empty turn id in its public and runtime context", async () => {
+    expectTypeOf<EventApprovalContext["turnId"]>().toEqualTypeOf<string>();
+    const handler = new EventApprovalHandler(new InMemoryEventCommitter(new InMemoryEventStore()));
+
+    await expect(
+      handler.request(makeCall(), { sessionId: "missing-turn" } as EventApprovalContext),
+    ).rejects.toThrow("requires a non-empty turnId");
+  });
+
   it("grant flow: resolves granted:true when TOOL_APPROVAL_APPROVED is appended", async () => {
     const store = new InMemoryEventStore();
     const committer = new InMemoryEventCommitter(store);
     const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-grant" });
-    const ctx = { sessionId: "session-1" };
+    const ctx = { sessionId: "session-1", turnId: "turn-1" };
 
     const decisionPromise = handler.request(call, ctx);
 
@@ -48,6 +58,7 @@ describe("EventApprovalHandler", () => {
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_APPROVED,
         session_id: ctx.sessionId,
+        turn_id: ctx.turnId,
         tool_name: call.name,
         tool_call_id: call.id,
       }),
@@ -62,7 +73,7 @@ describe("EventApprovalHandler", () => {
     const committer = new InMemoryEventCommitter(store);
     const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-sync" });
-    const ctx = { sessionId: "session-sync" };
+    const ctx = { sessionId: "session-sync", turnId: "turn-sync" };
 
     const observed = committer.subscribe(ctx.sessionId);
     const approveRequest = (async () => {
@@ -72,6 +83,7 @@ describe("EventApprovalHandler", () => {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_APPROVED,
               session_id: ctx.sessionId,
+              turn_id: ctx.turnId,
               tool_name: call.name,
               tool_call_id: call.id,
             }),
@@ -90,7 +102,7 @@ describe("EventApprovalHandler", () => {
     const committer = new InMemoryEventCommitter(store);
     const handler = new EventApprovalHandler(committer);
     const call = makeCall({ id: "call-reject" });
-    const ctx = { sessionId: "session-2" };
+    const ctx = { sessionId: "session-2", turnId: "turn-2" };
 
     const decisionPromise = handler.request(call, ctx);
     await flushMicrotasks();
@@ -99,6 +111,7 @@ describe("EventApprovalHandler", () => {
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_REJECTED,
         session_id: ctx.sessionId,
+        turn_id: ctx.turnId,
         tool_name: call.name,
         tool_call_id: call.id,
         reason: "Not authorized",
@@ -116,7 +129,7 @@ describe("EventApprovalHandler", () => {
       timeoutMs: 50,
     });
     const call = makeCall({ id: "call-timeout" });
-    const ctx = { sessionId: "session-3" };
+    const ctx = { sessionId: "session-3", turnId: "turn-3" };
 
     await expect(handler.request(call, ctx)).rejects.toThrow("timed out");
   }, 2000);
@@ -126,7 +139,7 @@ describe("EventApprovalHandler", () => {
     const committer = new InMemoryEventCommitter(store);
     const handler = new EventApprovalHandler(committer, { timeoutMs: 100 });
     const call = makeCall({ id: "call-target" });
-    const ctx = { sessionId: "session-4" };
+    const ctx = { sessionId: "session-4", turnId: "turn-4" };
 
     const decisionPromise = handler.request(call, ctx);
     await flushMicrotasks();
@@ -136,6 +149,7 @@ describe("EventApprovalHandler", () => {
       KajiEvent.parse({
         type: EventType.TOOL_APPROVAL_APPROVED,
         session_id: ctx.sessionId,
+        turn_id: ctx.turnId,
         tool_name: call.name,
         tool_call_id: "call-other",
       }),
@@ -144,13 +158,58 @@ describe("EventApprovalHandler", () => {
     await expect(decisionPromise).rejects.toThrow("timed out");
   }, 2000);
 
+  it("ignores stale or unscoped decisions for a turn-scoped request", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const handler = new EventApprovalHandler(committer, { timeoutMs: 500 });
+    const call = makeCall({ id: "call-reused" });
+    const ctx = { sessionId: "session-turn", turnId: "turn-current" };
+
+    for (const turnId of [undefined, "turn-stale"] as const) {
+      await committer.commit(
+        KajiEvent.parse({
+          type: EventType.TOOL_APPROVAL_REJECTED,
+          session_id: ctx.sessionId,
+          ...(turnId === undefined ? {} : { turn_id: turnId }),
+          tool_name: call.name,
+          tool_call_id: call.id,
+          reason: "stale decision",
+        }),
+      );
+    }
+    await committer.commit(
+      KajiEvent.parse({
+        type: EventType.TOOL_APPROVAL_REJECTED,
+        session_id: ctx.sessionId,
+        turn_id: ctx.turnId,
+        tool_name: "different_tool",
+        tool_call_id: call.id,
+        reason: "wrong tool decision",
+      }),
+    );
+
+    const decisionPromise = handler.request(call, ctx);
+    await flushMicrotasks();
+    await committer.commit(
+      KajiEvent.parse({
+        type: EventType.TOOL_APPROVAL_APPROVED,
+        session_id: ctx.sessionId,
+        turn_id: ctx.turnId,
+        tool_name: call.name,
+        tool_call_id: call.id,
+      }),
+    );
+
+    await expect(decisionPromise).resolves.toEqual({ granted: true });
+  });
+
   it("emits TOOL_APPROVAL_REQUESTED to the store", async () => {
     const store = new InMemoryEventStore();
     const handler = new EventApprovalHandler(new InMemoryEventCommitter(store), {
       timeoutMs: 50,
     });
     const call = makeCall({ id: "call-emit" });
-    const ctx = { sessionId: "session-5", risk: "write" };
+    const ctx = { sessionId: "session-5", risk: "write", turnId: "turn-5" };
 
     // Let the timeout fire naturally; check the emitted event afterwards.
     await expect(handler.request(call, ctx)).rejects.toThrow("timed out");
@@ -161,6 +220,7 @@ describe("EventApprovalHandler", () => {
     if (requestEvent?.type === EventType.TOOL_APPROVAL_REQUESTED) {
       expect(requestEvent.tool_call_id).toBe(call.id);
       expect(requestEvent.risk).toBe("write");
+      expect(requestEvent.turn_id).toBe(ctx.turnId);
     }
   }, 2000);
 });

@@ -8,6 +8,7 @@ from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.store.inmem import InMemoryEventStore
+from kaji.runtime.agents.coordinator import TurnCoordinator
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
@@ -54,6 +55,7 @@ class AgentBuilder:
         self._approval_handler: Optional[ApprovalHandler] = None
         self._system_prompt: str = "You are a helpful assistant."
         self._strategy: Optional[AgentStrategy] = None
+        self._coordinator: Optional[TurnCoordinator] = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -90,6 +92,15 @@ class AgentBuilder:
 
     def strategy(self, s: AgentStrategy) -> "AgentBuilder":
         self._strategy = s
+        return self
+
+    def coordinator(self, coordinator: TurnCoordinator) -> "AgentBuilder":
+        """Inject session-turn coordination shared with the built runtime.
+
+        The runtime otherwise uses the process-local coordinator shared by its
+        event store object.
+        """
+        self._coordinator = coordinator
         return self
 
     def build(
@@ -147,4 +158,5 @@ class AgentBuilder:
             system_prompt=self._system_prompt,
             strategy=self._strategy,
             tools=registry.list_specs(),
+            coordinator=self._coordinator,
         )

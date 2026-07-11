@@ -57,7 +57,8 @@ async def test_duplicate_id_is_idempotent_but_conflicting_payload_fails() -> Non
 
     assert inserted.inserted is True
     assert duplicate.inserted is False
-    assert duplicate.event is inserted.event
+    assert duplicate.event is not inserted.event
+    assert duplicate.event == inserted.event
     assert await store.last_sequence("s1") == 1
 
     with pytest.raises(EventIdConflictError) as caught:
@@ -65,6 +66,53 @@ async def test_duplicate_id_is_idempotent_but_conflicting_payload_fails() -> Non
             UserMessage(id="event-1", session_id="s1", content="different")
         )
     assert caught.value.code == "EVENT_ID_CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_store_deeply_isolates_drafts_append_results_and_reads() -> None:
+    store = InMemoryEventStore()
+    draft = UserMessage(
+        id="isolated",
+        session_id="s1",
+        turn_id="turn-original",
+        content="original",
+        metadata={"nested": {"value": "original"}},
+    )
+
+    inserted = await store.append(draft)
+    draft.turn_id = "turn-mutated-draft"
+    draft.metadata["nested"]["value"] = "mutated-draft"
+    inserted.event.turn_id = "turn-mutated-result"
+    inserted.event.metadata["nested"]["value"] = "mutated-result"
+
+    first_read = await store.get_events("s1")
+    assert first_read[0].turn_id == "turn-original"
+    assert first_read[0].metadata == {"nested": {"value": "original"}}
+
+    first_read[0].turn_id = "turn-mutated-read"
+    first_read[0].metadata["nested"]["value"] = "mutated-read"
+    second_read = await store.get_events("s1")
+
+    assert second_read[0].turn_id == "turn-original"
+    assert second_read[0].metadata == {"nested": {"value": "original"}}
+
+    duplicate = await store.append(
+        UserMessage(
+            id="isolated",
+            session_id="s1",
+            turn_id="turn-original",
+            timestamp=second_read[0].timestamp,
+            content="original",
+            metadata={"nested": {"value": "original"}},
+        )
+    )
+    assert duplicate.inserted is False
+    duplicate.event.turn_id = "turn-mutated-duplicate"
+    duplicate.event.metadata["nested"]["value"] = "mutated-duplicate"
+
+    final_read = await store.get_events("s1")
+    assert final_read[0].turn_id == "turn-original"
+    assert final_read[0].metadata == {"nested": {"value": "original"}}
 
 
 @pytest.mark.asyncio

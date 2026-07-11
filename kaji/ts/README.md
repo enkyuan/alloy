@@ -77,6 +77,12 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
 
+Runtimes that share the same `EventStore` also share a default per-store turn
+coordinator within the current process, so same-session turns serialize even
+when separate builders create the runtimes. Different stores do not block one
+another. This is not a distributed lock: multi-process deployments must inject
+a `SessionTurnCoordinator` backed by shared infrastructure.
+
 ## Prove it with a model
 
 OpenAI with `gpt-5.4-mini` is the recommended first live check because it is
@@ -168,6 +174,10 @@ const agent = new AgentBuilder()
 hosts, implement your own handler that talks to a web modal, Slack, or
 whatever your operator workflow needs.
 
+`EventApprovalHandler` requires a non-empty turn ID and accepts a decision only
+when `turn_id`, `tool_call_id`, and `tool_name` all match the pending request.
+Unscoped or stale backlog decisions are ignored.
+
 ## CLI
 
 ```
@@ -204,6 +214,7 @@ const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
 | `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
 | `ApprovalHandler`, `cliApprovalHandler` | Approval callback type + default stdin handler for dev / REPL |
+| `TypedApprovalHandler`, `EventApprovalHandler`, `AutoApprovalHandler` | Structured approval handlers: event-driven (publishes `TOOL_APPROVAL_REQUESTED` for a host UI to answer) and auto-decide by policy, as alternatives to `cliApprovalHandler` |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
 | `Integration`, `tool` | Integration helper for scoped tools |

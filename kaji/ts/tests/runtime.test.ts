@@ -7,7 +7,7 @@ import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import type { ModelProviderOptions } from "@/providers/base";
 import { MockProvider } from "@/providers/mock";
-import { CancellationToken } from "@/runtime/cancellation";
+import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { buildMessages } from "@/runtime/context";
 import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
 import { AgentBuilder } from "@/runtime/builder";
@@ -325,21 +325,20 @@ describe("AgentRuntime.runTurn", () => {
     expect(contents).toContain("It is 68F and sunny.");
   });
 
-  it("emits cancellation.completed when cancelled before the loop", async () => {
+  it("rejects cancellation before acquiring the session turn", async () => {
     const { store, runtime } = setup();
     const s = "s-cancel";
     await seed(store, s);
     const token = new CancellationToken();
     token.cancel();
-    await runtime.runTurn(s, { cancellationToken: token });
+    await expect(runtime.runTurn(s, { cancellationToken: token })).rejects.toBeInstanceOf(
+      CancellationError,
+    );
 
     const events = await store.getEvents(s);
     const types = events.map((e) => e.type);
-    expect(types).toContain(EventType.AGENT_REASONING_STARTED);
-    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
-    expect(types.indexOf(EventType.AGENT_REASONING_STARTED)).toBeLessThan(
-      types.indexOf(EventType.CANCELLATION_COMPLETED),
-    );
+    expect(types).not.toContain(EventType.AGENT_REASONING_STARTED);
+    expect(types).not.toContain(EventType.CANCELLATION_COMPLETED);
     expect(types).not.toContain(EventType.AGENT_MESSAGE_COMPLETED);
   });
 
@@ -477,7 +476,7 @@ describe("AgentRuntime.send", () => {
     expect(received[0]).toBe(EventType.USER_MESSAGE);
   });
 
-  it("forwards cancellationToken to runTurn", async () => {
+  it("does not append a user message when cancelled before send acquisition", async () => {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
     const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
@@ -486,11 +485,13 @@ describe("AgentRuntime.send", () => {
 
     const token = new CancellationToken();
     token.cancel();
-    await runtime.send(s, "hello", { cancellationToken: token });
+    await expect(runtime.send(s, "hello", { cancellationToken: token })).rejects.toBeInstanceOf(
+      CancellationError,
+    );
 
     const types = (await store.getEvents(s)).map((e) => e.type);
-    expect(types).toContain(EventType.USER_MESSAGE);
-    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types).not.toContain(EventType.USER_MESSAGE);
+    expect(types).not.toContain(EventType.CANCELLATION_COMPLETED);
   });
 });
 

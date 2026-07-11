@@ -38,6 +38,10 @@ class InMemoryEventStore:
     def _draft_payload(event: NewKajiEvent | StoredKajiEvent) -> dict[str, Any]:
         return event.model_dump(mode="json", exclude={"sequence"})
 
+    @staticmethod
+    def _copy_stored(event: StoredKajiEvent) -> StoredKajiEvent:
+        return require_stored_event(event.model_copy(deep=True))
+
     def _evict_closed_session(self) -> bool:
         for session_id, events in self._events.items():
             if events and events[-1].type == EventType.SESSION_CLOSED:
@@ -48,15 +52,16 @@ class InMemoryEventStore:
         return False
 
     async def append(self, event: NewKajiEvent) -> AppendResult:
-        draft = require_new_event(event)
+        # Draft models intentionally remain mutable for callers. Detach before
+        # waiting on the store lock so later caller mutation cannot alter the
+        # value that this append persists.
+        draft = require_new_event(event.model_copy(deep=True))
         async with self._lock:
             existing = self._events_by_id.get(draft.id)
             if existing is not None:
                 if self._draft_payload(existing) != self._draft_payload(draft):
                     raise EventIdConflictError(draft.id)
-                return AppendResult(
-                    event=require_stored_event(existing), inserted=False
-                )
+                return AppendResult(event=self._copy_stored(existing), inserted=False)
 
             bucket = self._events.get(draft.session_id)
             if bucket is None:
@@ -83,7 +88,7 @@ class InMemoryEventStore:
             bucket.append(stored)
             self._events_by_id[stored.id] = stored
             self._events.move_to_end(stored.session_id)
-            return AppendResult(event=stored, inserted=True)
+            return AppendResult(event=self._copy_stored(stored), inserted=True)
 
     async def get_events(
         self,
@@ -103,7 +108,7 @@ class InMemoryEventStore:
             self._events.move_to_end(session_id)
             start = min(after_sequence, len(bucket))
             stop = None if limit is None else start + limit
-            return [require_stored_event(event) for event in bucket[start:stop]]
+            return [self._copy_stored(event) for event in bucket[start:stop]]
 
     async def last_sequence(self, session_id: str) -> int:
         async with self._lock:

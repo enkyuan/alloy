@@ -52,6 +52,19 @@ describe("event ordering contract", () => {
     expect(result).toEqual({ event: expected, inserted: true });
   });
 
+  it("parses the shared turn-failure conformance fixture", () => {
+    const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as {
+      events: unknown[];
+    };
+    const failure = StoredKajiEvent.parse(fixture.events[2]);
+
+    expect(failure.type).toBe(EventType.AGENT_TURN_FAILED);
+    if (failure.type === EventType.AGENT_TURN_FAILED) {
+      expect(failure.turn_id).toBe("turn-1");
+      expect(failure.error).toBe("Agent turn failed");
+    }
+  });
+
   it("assigns unique contiguous sequences to concurrent appends", async () => {
     const store = new InMemoryEventStore();
     const results = await Promise.all(

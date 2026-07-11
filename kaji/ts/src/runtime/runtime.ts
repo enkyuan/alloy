@@ -21,10 +21,31 @@ import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
 import { replaySession } from "@/sessions/replay";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
-import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
+import { ToolPlanner, type AnyApprovalHandler, type ToolExecutor } from "@/tools/planner";
 import { defaultUuid } from "@/internal/uuid";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { buildMessages } from "@/runtime/context";
+import {
+  InMemorySessionTurnCoordinator,
+  type SessionTurnCoordinator,
+} from "@/runtime/session-turn-coordinator";
+
+const PUBLIC_TURN_FAILURE = "Agent turn failed";
+const DEFAULT_TURN_COORDINATORS = new WeakMap<EventStore, SessionTurnCoordinator>();
+
+function isCompatibleAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
+  );
+}
+
+function defaultTurnCoordinator(store: EventStore): SessionTurnCoordinator {
+  const existing = DEFAULT_TURN_COORDINATORS.get(store);
+  if (existing !== undefined) return existing;
+  const coordinator = new InMemorySessionTurnCoordinator();
+  DEFAULT_TURN_COORDINATORS.set(store, coordinator);
+  return coordinator;
+}
 
 /** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
 export interface AgentStrategy {
@@ -66,9 +87,14 @@ export interface AgentRuntimeOptions {
    * Scoped tool executor. Used by the default planner when `planner` is omitted.
    * Falls back to the global `executeTool` registry.
    */
-  toolExecutor?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  toolExecutor?: ToolExecutor;
   /** User identifier threaded into tool execution context. Defaults to "agent". */
   userId?: string;
+  /**
+   * Defaults to one process-local coordinator per store object. Inject a
+   * distributed implementation when runtimes span processes.
+   */
+  turnCoordinator?: SessionTurnCoordinator;
 }
 
 export interface RunTurnOptions {
@@ -94,6 +120,7 @@ export interface TurnOptions {
 export interface TurnResult {
   text: string;
   sessionId: string;
+  turnId: string;
   toolCallEvents: StoredKajiEvent[];
   events: StoredKajiEvent[];
 }
@@ -104,8 +131,8 @@ export interface TurnResult {
  * `Omit<Union, "session_id">` would collapse the union to shared keys and lose
  * per-variant fields like `content` or `delta`.
  */
-type EventInputWithoutSession<T = KajiEventInput> = T extends unknown
-  ? Omit<T, "session_id">
+type EventInputWithoutRuntimeContext<T = KajiEventInput> = T extends unknown
+  ? Omit<T, "session_id" | "turn_id">
   : never;
 
 export class AgentRuntime {
@@ -115,10 +142,11 @@ export class AgentRuntime {
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
   private readonly fixedTools: ToolSpec[] | undefined;
-  private readonly toolExecutor: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  private readonly toolExecutor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: AnyApprovalHandler | undefined;
   private readonly userId: string;
+  private readonly turnCoordinator: SessionTurnCoordinator;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -143,11 +171,11 @@ export class AgentRuntime {
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this.fixedTools = options.tools;
     this.userId = options.userId ?? "agent";
+    this.turnCoordinator = options.turnCoordinator ?? defaultTurnCoordinator(options.store);
     this.policy = options.policy;
     this.approvalHandler = options.approvalHandler;
     this.toolExecutor =
-      options.toolExecutor ??
-      ((name: string, args: Record<string, unknown>) => executeTool(this.userId, name, args));
+      options.toolExecutor ?? ((name, args) => executeTool(this.userId, name, args));
     // Planner resolution:
     //  1. Explicit planner wins.
     //  2. Otherwise, if tools are fixed at construction time, build once.
@@ -185,24 +213,30 @@ export class AgentRuntime {
    */
   async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
     const sessionId = options.sessionId ?? defaultUuid();
-    const startSequence = await this.store.lastSequence(sessionId);
-    if (startSequence === 0) {
-      const created = KajiEvent.parse({
-        type: EventType.SESSION_CREATED,
-        session_id: sessionId,
-      });
-      await this.appendEvent(created);
-    }
-    await this.send(sessionId, prompt, {
-      cancellationToken: options.cancellationToken,
+    const turnId = defaultUuid();
+    const token = options.cancellationToken ?? new CancellationToken();
+    return this.turnCoordinator.runExclusive(sessionId, token, async () => {
+      const startSequence = await this.store.lastSequence(sessionId);
+      if (startSequence === 0) {
+        const created = KajiEvent.parse({
+          type: EventType.SESSION_CREATED,
+          session_id: sessionId,
+          turn_id: turnId,
+        });
+        await this.appendEvent(created);
+      }
+      await this.sendUnlocked(sessionId, prompt, turnId, token);
+      const appended = await this.store.getEvents(sessionId, { afterSequence: startSequence });
+      const turnEvents = appended.filter((event) => event.turn_id === turnId);
+      const text = turnEvents
+        .filter((event) => event.type === EventType.AGENT_MESSAGE_COMPLETED)
+        .map((event) => ("content" in event ? (event.content as string) : ""))
+        .join("");
+      const toolCallEvents = turnEvents.filter(
+        (event) => event.type === EventType.TOOL_CALL_REQUESTED,
+      );
+      return { text, sessionId, turnId, toolCallEvents, events: turnEvents };
     });
-    const turnEvents = await this.store.getEvents(sessionId, { afterSequence: startSequence });
-    const text = turnEvents
-      .filter((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)
-      .map((e) => ("content" in e ? (e.content as string) : ""))
-      .join("");
-    const toolCallEvents = turnEvents.filter((e) => e.type === EventType.TOOL_CALL_REQUESTED);
-    return { text, sessionId, toolCallEvents, events: turnEvents };
   }
 
   /**
@@ -215,13 +249,28 @@ export class AgentRuntime {
    * and then `runTurn()` separately.
    */
   async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
+    const turnId = defaultUuid();
+    const token = options.cancellationToken ?? new CancellationToken();
+    await this.turnCoordinator.runExclusive(sessionId, token, () =>
+      this.sendUnlocked(sessionId, content, turnId, token),
+    );
+  }
+
+  private async sendUnlocked(
+    sessionId: string,
+    content: string,
+    turnId: string,
+    token: CancellationToken,
+  ): Promise<void> {
+    token.throwIfCancelled();
     const event = KajiEvent.parse({
       type: EventType.USER_MESSAGE,
       session_id: sessionId,
+      turn_id: turnId,
       content,
     });
     await this.appendEvent(event);
-    await this.runTurn(sessionId, options);
+    await this.runTurnUnlocked(sessionId, turnId, token);
   }
 
   /**
@@ -236,17 +285,28 @@ export class AgentRuntime {
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
     const token = options.cancellationToken ?? new CancellationToken();
+    const turnId = defaultUuid();
+    await this.turnCoordinator.runExclusive(sessionId, token, () =>
+      this.runTurnUnlocked(sessionId, turnId, token),
+    );
+  }
+
+  private async runTurnUnlocked(
+    sessionId: string,
+    turnId: string,
+    token: CancellationToken,
+  ): Promise<void> {
+    token.throwIfCancelled();
 
     const emit = async <T extends KajiEventInput>(
-      input: EventInputWithoutSession<T>,
+      input: EventInputWithoutRuntimeContext<T>,
     ): Promise<void> => {
-      const event = KajiEvent.parse({ ...input, session_id: sessionId });
+      const event = KajiEvent.parse({ ...input, session_id: sessionId, turn_id: turnId });
       await this.appendEvent(event);
     };
 
-    await emit({ type: EventType.AGENT_REASONING_STARTED });
-
     try {
+      await emit({ type: EventType.AGENT_REASONING_STARTED });
       const tools = this.fixedTools ?? listToolSpecs();
 
       for (let i = 0; i < this.maxToolIterations; i++) {
@@ -300,8 +360,9 @@ export class AgentRuntime {
             arguments: tc.args,
           })),
           async (event) => {
-            await this.appendEvent(event);
+            await this.appendEvent(KajiEvent.parse({ ...event, turn_id: turnId }));
           },
+          turnId,
         );
         // Loop: next iteration replays state including the new tool results.
         if (i === this.maxToolIterations - 1) {
@@ -318,9 +379,18 @@ export class AgentRuntime {
         }
       }
     } catch (error) {
-      if (error instanceof CancellationError || token.isCancelled) {
+      if (
+        error instanceof CancellationError ||
+        (token.isCancelled && isCompatibleAbortError(error))
+      ) {
         await emit({ type: EventType.CANCELLATION_COMPLETED });
         return;
+      }
+      try {
+        await emit({ type: EventType.AGENT_TURN_FAILED, error: PUBLIC_TURN_FAILURE });
+      } catch {
+        // Keep the operation failure as the public API result if recording its
+        // terminal event independently fails.
       }
       throw error;
     }

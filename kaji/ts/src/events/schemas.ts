@@ -25,7 +25,7 @@ const baseShape = {
 
 /** Helper: a strict event schema with the base fields plus a literal `type`. */
 function event<T extends z.ZodRawShape>(shape: T) {
-  return z.object({ ...baseShape, ...shape }).strict();
+  return z.object(baseShape).extend(shape).strict();
 }
 
 export const SessionCreated = event({
@@ -91,6 +91,12 @@ export const AgentTurnExhausted = event({
   max_iterations: z.number().int().nonnegative(),
   pending_tool_calls: z.array(z.record(z.string(), z.unknown())),
   reason: z.string().nullish(),
+});
+
+export const AgentTurnFailed = event({
+  type: z.literal(EventType.AGENT_TURN_FAILED),
+  turn_id: z.string().min(1),
+  error: z.string().min(1).max(200),
 });
 
 export const ToolCallRequested = event({
@@ -189,6 +195,7 @@ export const KajiEvent = z.discriminatedUnion("type", [
   AgentMessageDelta,
   AgentMessageCompleted,
   AgentTurnExhausted,
+  AgentTurnFailed,
   ToolCallRequested,
   ToolCallStarted,
   ToolCallCompleted,

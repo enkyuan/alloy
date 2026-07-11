@@ -13,6 +13,20 @@
     "turn_id": { "type": "string", "minLength": 1 },
     "metadata": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "agent.turn.failed" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "error"],
+        "properties": {
+          "error": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    }
+  ],
   "not": { "required": ["sequence"] },
   "additionalProperties": true
 }

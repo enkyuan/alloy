@@ -113,6 +113,12 @@ class AgentTurnExhausted(BaseEvent):
     reason: Optional[str] = None
 
 
+class AgentTurnFailed(BaseEvent):
+    type: Literal[EventType.AGENT_TURN_FAILED] = EventType.AGENT_TURN_FAILED
+    turn_id: str = Field(min_length=1)
+    error: str = Field(min_length=1, max_length=200)
+
+
 class ToolCallRequested(BaseEvent):
     type: Literal[EventType.TOOL_CALL_REQUESTED] = EventType.TOOL_CALL_REQUESTED
     tool_name: str
@@ -214,6 +220,7 @@ KajiEvent = Union[
     AgentMessageDelta,
     AgentMessageCompleted,
     AgentTurnExhausted,
+    AgentTurnFailed,
     ToolCallRequested,
     ToolCallStarted,
     ToolCallCompleted,

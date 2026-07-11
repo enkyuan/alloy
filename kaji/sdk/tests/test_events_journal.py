@@ -144,7 +144,8 @@ async def test_commit_deduplicates_without_second_live_notification() -> None:
     assert await first_live is first
 
     duplicate = await journal.commit(draft.model_copy(deep=True))
-    assert duplicate is first
+    assert duplicate == first
+    assert duplicate is not first
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(anext(stream), timeout=0.01)
     await _close(stream)
@@ -166,7 +167,9 @@ async def test_subscribe_handshake_has_no_backlog_live_gap_or_duplicates() -> No
     assert not live_task.done()
 
     store.release_backlog.set()
-    assert await backlog_task is first
+    backlog = await backlog_task
+    assert backlog == first
+    assert backlog is not first
     live = await live_task
     assert await anext(stream) is live
     await _close(stream)
@@ -308,7 +311,9 @@ async def test_split_subscription_joins_store_backlog_and_live_without_loss() ->
     first = await journal.commit(UserMessage(session_id="s1", content="backlog"))
 
     stream = journal.subscribe("s1")
-    assert await anext(stream) is first
+    backlog = await anext(stream)
+    assert backlog == first
+    assert backlog is not first
     second = await journal.commit(UserMessage(session_id="s1", content="live"))
     assert await anext(stream) is second
     await _close(stream)
@@ -322,7 +327,9 @@ async def test_split_subscription_supports_lazy_cursor_backed_bus_without_gap() 
     first = await journal.commit(UserMessage(session_id="s1", content="backlog"))
 
     stream = journal.subscribe("s1")
-    assert await anext(stream) is first
+    backlog = await anext(stream)
+    assert backlog == first
+    assert backlog is not first
     assert bus.started is False
 
     second = await journal.commit(UserMessage(session_id="s1", content="live"))

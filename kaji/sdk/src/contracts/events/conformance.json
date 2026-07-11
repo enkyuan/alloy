@@ -23,6 +23,17 @@
       "error_code": "INVALID_TOOL_ARGUMENTS",
       "retryable": false,
       "outcome": "not_started"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "type": "agent.turn.failed",
+      "version": "1.0",
+      "timestamp": 1767225602.0,
+      "session_id": "session-1",
+      "turn_id": "turn-1",
+      "sequence": 3,
+      "error": "Agent turn failed",
+      "metadata": {}
     }
   ]
 }

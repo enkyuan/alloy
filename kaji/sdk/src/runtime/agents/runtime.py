@@ -5,6 +5,10 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.coordinator import (
+    TurnCoordinator,
+    default_coordinator_for_store,
+)
 from kaji.runtime.agents.context import ContextBuilder
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from kaji.runtime.agents.prompts import SystemPrompt
@@ -20,6 +24,7 @@ from kaji.infra.events.schemas import (
     AgentMessageDelta,
     AgentReasoningStarted,
     AgentTurnExhausted,
+    AgentTurnFailed,
     CancellationCompleted,
     EventTokenUsage,
     SessionCreated,
@@ -43,16 +48,21 @@ class TurnResult:
             Named for the type honestly (not provider-neutral ``ToolCall``s).
         session_id: The session this turn ran against (auto-generated when
             no ``session_id`` was passed to ``turn``).
+        turn_id: The unique identifier shared by every event emitted by this
+            turn.
         events: Every event the runtime appended to the store this turn.
     """
 
     text: str
     session_id: str
+    turn_id: str
     tool_call_events: List[StoredKajiEvent] = field(default_factory=list)
     events: List[StoredKajiEvent] = field(default_factory=list)
 
 
 logger = logging.getLogger(__name__)
+
+_PUBLIC_TURN_FAILURE = "Agent turn failed"
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 
@@ -68,6 +78,10 @@ class AgentRuntime:
     ``execute_tool`` registry), ``policy``, and ``approval_handler``, the same
     lazy-build pattern as the TypeScript ``AgentRuntime``. Pass an explicit
     ``planner`` (e.g. from ``AgentBuilder``) to use a scoped registry instead.
+
+    Without an injected coordinator, runtimes sharing the same ``store``
+    object share one process-local coordinator. Different stores remain
+    independent; multi-process hosts must inject distributed coordination.
     """
 
     def __init__(
@@ -87,6 +101,7 @@ class AgentRuntime:
         approval_handler: Optional[ApprovalHandler] = None,
         user_id: str = "agent",
         journal: Optional[EventJournal] = None,
+        coordinator: Optional[TurnCoordinator] = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus)
@@ -98,6 +113,11 @@ class AgentRuntime:
         self.bus = bus
         self.store = store
         self.journal = resolved_journal
+        self.coordinator = (
+            coordinator
+            if coordinator is not None
+            else default_coordinator_for_store(store)
+        )
         self.provider = provider
         self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
@@ -166,6 +186,12 @@ class AgentRuntime:
     async def _emit(self, event: NewKajiEvent) -> None:
         await self.append_event(event)
 
+    async def _emit_for_turn(self, event: NewKajiEvent, turn_id: str) -> None:
+        """Attach the active turn identity without mutating event drafts."""
+        if event.turn_id != turn_id:
+            event = event.model_copy(update={"turn_id": turn_id})
+        await self._emit(event)
+
     async def turn(
         self,
         prompt: str,
@@ -190,14 +216,38 @@ class AgentRuntime:
             and the full ``events`` slice emitted by this call.
         """
         sid = session_id or uuid.uuid4().hex
-        start_sequence = await self.store.last_sequence(sid)
+        token = cancellation_token or CancellationToken()
+        async with self.coordinator.acquire(sid, token):
+            return await self._turn_unlocked(sid, prompt, token)
+
+    async def _turn_unlocked(
+        self,
+        session_id: str,
+        prompt: str,
+        cancellation_token: CancellationToken,
+    ) -> TurnResult:
+        """Run ``turn`` while the caller holds the session coordinator."""
+        cancellation_token.raise_if_cancelled()
+        turn_id = uuid.uuid4().hex
+        # Capture the cursor while holding the session lease. It bounds the
+        # read below; turn_id remains the authoritative result filter.
+        start_sequence = await self.store.last_sequence(session_id)
         if start_sequence == 0:
-            await self._emit(SessionCreated(session_id=sid))
-        await self.send(sid, prompt, cancellation_token=cancellation_token)
-        turn_events = await self.store.get_events(
-            sid,
+            await self._emit_for_turn(
+                SessionCreated(session_id=session_id),
+                turn_id,
+            )
+        await self._send_unlocked(
+            session_id,
+            prompt,
+            cancellation_token,
+            turn_id,
+        )
+        candidates = await self.store.get_events(
+            session_id,
             after_sequence=start_sequence,
         )
+        turn_events = [event for event in candidates if event.turn_id == turn_id]
         text = "".join(
             getattr(e, "content", "")
             for e in turn_events
@@ -208,7 +258,8 @@ class AgentRuntime:
         ]
         return TurnResult(
             text=text,
-            session_id=sid,
+            session_id=session_id,
+            turn_id=turn_id,
             tool_call_events=tool_call_events,
             events=turn_events,
         )
@@ -228,8 +279,29 @@ class AgentRuntime:
         For more control (batch-append, replay, pre-seeding), call
         ``append_event(UserMessage(...))`` and ``run_turn()`` separately.
         """
-        await self._emit(UserMessage(session_id=session_id, content=content))
-        await self.run_turn(session_id, cancellation_token)
+        token = cancellation_token or CancellationToken()
+        async with self.coordinator.acquire(session_id, token):
+            await self._send_unlocked(
+                session_id,
+                content,
+                token,
+                uuid.uuid4().hex,
+            )
+
+    async def _send_unlocked(
+        self,
+        session_id: str,
+        content: str,
+        cancellation_token: CancellationToken,
+        turn_id: str,
+    ) -> None:
+        """Append a user message and run while the session lease is held."""
+        cancellation_token.raise_if_cancelled()
+        await self._emit_for_turn(
+            UserMessage(session_id=session_id, content=content),
+            turn_id,
+        )
+        await self._run_turn_unlocked(session_id, cancellation_token, turn_id)
 
     async def history(
         self,
@@ -254,12 +326,51 @@ class AgentRuntime:
         ``session_id``. To send a message and run in one call, use ``send()``.
         """
         token = cancellation_token or CancellationToken()
+        async with self.coordinator.acquire(session_id, token):
+            await self._run_turn_unlocked(session_id, token, uuid.uuid4().hex)
 
-        await self._emit(AgentReasoningStarted(session_id=session_id))
+    async def _run_turn_unlocked(
+        self,
+        session_id: str,
+        token: CancellationToken,
+        turn_id: str,
+    ) -> None:
+        """Run the turn body and record any ordinary terminal failure."""
+        try:
+            await self._run_turn_body(session_id, token, turn_id)
+        except Exception:
+            try:
+                await self._emit_for_turn(
+                    AgentTurnFailed(
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        error=_PUBLIC_TURN_FAILURE,
+                    ),
+                    turn_id,
+                )
+            except Exception:
+                # The original operation failure is the public API result. A
+                # secondary journal failure must not replace it.
+                logger.exception("Failed to record terminal agent turn failure")
+            raise
+
+    async def _run_turn_body(
+        self,
+        session_id: str,
+        token: CancellationToken,
+        turn_id: str,
+    ) -> None:
+        """Run the ReAct loop while the caller holds the session lease."""
+        token.raise_if_cancelled()
+
+        async def emit_turn_event(event: NewKajiEvent) -> None:
+            await self._emit_for_turn(event, turn_id)
+
+        await emit_turn_event(AgentReasoningStarted(session_id=session_id))
 
         for iteration in range(self.strategy.max_iterations):
             if token.is_cancelled:
-                await self._emit(CancellationCompleted(session_id=session_id))
+                await emit_turn_event(CancellationCompleted(session_id=session_id))
                 return
 
             # 1. Materialize current session state from Event Log
@@ -312,7 +423,7 @@ class AgentRuntime:
                 ):
                     if chunk.delta:
                         full_response += chunk.delta
-                        await self._emit(
+                        await emit_turn_event(
                             AgentMessageDelta(session_id=session_id, delta=chunk.delta)
                         )
 
@@ -323,7 +434,9 @@ class AgentRuntime:
                     if chunk.cost_usd is not None:
                         stream_cost_usd = chunk.cost_usd
             except asyncio.CancelledError:
-                if not token.is_cancelled:
+                current = asyncio.current_task()
+                parent_cancelling = current is not None and current.cancelling() > 0
+                if parent_cancelling or not token.is_cancelled:
                     # Cancellation came from outside our token (parent task).
                     # Re-raise so the caller observes structured cancellation.
                     raise
@@ -331,7 +444,7 @@ class AgentRuntime:
                 # cancelled, we still want CancellationCompleted to reach
                 # observers before unwinding.
                 await asyncio.shield(
-                    self._emit(CancellationCompleted(session_id=session_id))
+                    emit_turn_event(CancellationCompleted(session_id=session_id))
                 )
                 return
 
@@ -343,7 +456,7 @@ class AgentRuntime:
                         input=stream_metrics.prompt_tokens,
                         output=stream_metrics.completion_tokens,
                     )
-                await self._emit(
+                await emit_turn_event(
                     AgentMessageCompleted(
                         session_id=session_id,
                         content=full_response,
@@ -358,13 +471,13 @@ class AgentRuntime:
 
             # 6. Execute tools concurrently (Scatter-Gather)
             await self.planner.execute_scatter_gather(
-                session_id, tool_calls, self._emit
+                session_id, tool_calls, emit_turn_event
             )
 
             # The planner has emitted ToolCallCompleted/Failed events.
             # The loop continues, which re-evaluates state including the new tool results.
             if iteration == self.strategy.max_iterations - 1:
-                await self._emit(
+                await emit_turn_event(
                     AgentTurnExhausted(
                         session_id=session_id,
                         max_iterations=self.strategy.max_iterations,

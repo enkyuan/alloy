@@ -103,6 +103,14 @@ atomic, process-local path.
 `AgentRuntime.history()` and `TextSession.events()` return at most 1,024 stored
 events by default. Pass `after_sequence` and `limit` to page explicitly.
 
+`AgentRuntime.turn()` returns a `TurnResult` with a unique `turn_id`. The
+default process-local `InMemoryTurnCoordinator` is shared by runtimes using the
+same `EventStore` object, serializing same-session turns while allowing
+different sessions and different stores to overlap. This is not a distributed
+lock. Multi-process deployments must inject a shared `TurnCoordinator` with
+`AgentBuilder.coordinator()`. Custom stores that cannot be weak-referenced must
+also inject a coordinator explicitly.
+
 `replay_session()` accepts stored, sequenced events only. Applications importing
 old unsequenced logs must opt into `replay_legacy_session()`, which emits
 `LegacyEventOrderingWarning` and uses stable timestamp/input order.
@@ -197,6 +205,7 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | --- | --- |
 | `AgentBuilder` | Fluent builder wiring provider + integrations + policy into `AgentRuntime` |
 | `AgentRuntime` | Provider-agnostic ReAct loop |
+| `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator` | Turn-scoped result and injectable same-session FIFO coordination |
 | `ToolSpec`, `ToolRegistry`, `ToolContext` | Tool definition, scoped registry, and execution context |
 | `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
 | `Integration` | Namespace-scoped tool bundle base class |

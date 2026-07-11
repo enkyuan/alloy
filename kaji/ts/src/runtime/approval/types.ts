@@ -8,6 +8,12 @@ import type { ToolCall } from "@/providers/base";
 export interface ToolContext {
   sessionId: string;
   risk?: string;
+  turnId?: string;
+}
+
+/** Correlation context required by event-backed approval handlers. */
+export interface EventApprovalContext extends ToolContext {
+  turnId: string;
 }
 
 export interface ApprovalDecision {
@@ -21,6 +27,11 @@ export interface ApprovalRequest {
 }
 
 export interface TypedApprovalHandler {
-  readonly emitsApprovalRequest?: boolean;
+  readonly emitsApprovalRequest?: false;
   request(call: ToolCall, ctx: ToolContext): Promise<ApprovalDecision>;
+}
+
+export interface EventBackedApprovalHandler {
+  readonly emitsApprovalRequest: true;
+  request(call: ToolCall, ctx: EventApprovalContext): Promise<ApprovalDecision>;
 }

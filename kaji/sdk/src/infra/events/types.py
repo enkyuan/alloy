@@ -18,6 +18,7 @@ class EventType(str, Enum):
     AGENT_MESSAGE_DELTA = "agent.message.delta"
     AGENT_MESSAGE_COMPLETED = "agent.message.completed"
     AGENT_TURN_EXHAUSTED = "agent.turn.exhausted"
+    AGENT_TURN_FAILED = "agent.turn.failed"
 
     TOOL_CALL_REQUESTED = "tool.call.requested"
     TOOL_CALL_STARTED = "tool.call.started"
