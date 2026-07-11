@@ -44,6 +44,7 @@ from kaji.infra.events.schemas import (
     UserMessage,
     event_defaults,
     require_stored_event,
+    revalidate_stored_event,
 )
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.types import EventType
@@ -393,11 +394,14 @@ class AgentRuntime:
         assert stored.sequence is not None
         async with self._projection_scope(stored.session_id):
             async with self._projection_lock(stored.session_id):
-                persisted = await self.store.get_events(
-                    stored.session_id,
-                    after_sequence=stored.sequence - 1,
-                    limit=1,
-                )
+                persisted = [
+                    revalidate_stored_event(item)
+                    for item in await self.store.get_events(
+                        stored.session_id,
+                        after_sequence=stored.sequence - 1,
+                        limit=1,
+                    )
+                ]
                 if len(persisted) != 1 or persisted[0].model_dump(
                     mode="json"
                 ) != stored.model_dump(mode="json"):
@@ -424,11 +428,14 @@ class AgentRuntime:
         """Collect a persisted suffix once, including externally appended gaps."""
         if sequence <= collector.cursor:
             return
-        suffix = await self.store.get_events(
-            collector.session_id,
-            after_sequence=collector.cursor,
-            limit=sequence - collector.cursor,
-        )
+        suffix = [
+            revalidate_stored_event(event)
+            for event in await self.store.get_events(
+                collector.session_id,
+                after_sequence=collector.cursor,
+                limit=sequence - collector.cursor,
+            )
+        ]
         for event in suffix:
             assert event.sequence is not None
             if event.sequence > sequence:
@@ -692,11 +699,14 @@ class AgentRuntime:
         limit: int = 1_024,
     ) -> List[StoredKajiEvent]:
         """Return a bounded cursor page of persisted events in append order."""
-        return await self.store.get_events(
-            session_id,
-            after_sequence=after_sequence,
-            limit=limit,
-        )
+        return [
+            revalidate_stored_event(event)
+            for event in await self.store.get_events(
+                session_id,
+                after_sequence=after_sequence,
+                limit=limit,
+            )
+        ]
 
     async def run_turn(
         self,

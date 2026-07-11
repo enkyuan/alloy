@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events.errors import EventBufferOverflowError
+from kaji.infra.events.errors import (
+    EventBufferOverflowError,
+    EventSchemaIncompatibleError,
+)
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.schemas import (
     AgentMessageCompleted,
@@ -17,8 +21,9 @@ from kaji.infra.events.schemas import (
     StoredKajiEvent,
     UserMessage,
     require_stored_event,
+    revalidate_stored_event,
 )
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.infra.events.store import EventStore, InMemoryEventStore
 from kaji.infra.events.store.base import AppendResult
 from kaji.infra.observability.protocols import Measurement
 from kaji.runtime.agents import CancellationToken, InMemoryTurnCoordinator
@@ -30,7 +35,7 @@ from kaji.runtime.agents.context import (
 )
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.runtime.agents.runtime import AgentRuntime
+from kaji.runtime.agents.runtime import AgentRuntime, _TurnEventCollector
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.determinism import Clock, IdScope
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
@@ -92,6 +97,29 @@ class _CountingStore(InMemoryEventStore):
         )
 
 
+class _RawSuffixStore:
+    def __init__(self, rows: list[StoredKajiEvent]) -> None:
+        self.rows = rows
+
+    async def append(self, event: NewKajiEvent) -> AppendResult:
+        del event
+        raise AssertionError("append is not used by this regression")
+
+    async def get_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]:
+        del session_id, after_sequence, limit
+        return self.rows
+
+    async def last_sequence(self, session_id: str) -> int:
+        del session_id
+        return 1
+
+
 class _Metrics:
     def __init__(self) -> None:
         self.max_subscriber_depth = 0
@@ -101,6 +129,69 @@ class _Metrics:
             self.max_subscriber_depth = max(
                 self.max_subscriber_depth, int(measurement.value)
             )
+
+
+def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
+    repo = Path(__file__).resolve().parents[3]
+    inventory = {
+        "kaji/sdk/src/modalities/text/adapter.py": (
+            ".get_events(",
+            1,
+            "revalidate_stored_event",
+        ),
+        "kaji/sdk/src/runtime/sessions/manager.py": (
+            ".get_events(",
+            1,
+            "replay_session",
+        ),
+        "kaji/sdk/src/runtime/sessions/projector.py": (
+            ".get_events(",
+            1,
+            "revalidate_stored_event",
+        ),
+        "kaji/sdk/src/infra/events/journal.py": (
+            ".get_events(",
+            2,
+            "revalidate_stored_event",
+        ),
+        "kaji/sdk/src/runtime/agents/state.py": (".get_events(", 1, "replay_session"),
+        "kaji/sdk/src/runtime/agents/planner.py": (
+            ".get_events(",
+            3,
+            "revalidate_stored_event",
+        ),
+        "kaji/sdk/src/runtime/agents/runtime.py": (
+            ".get_events(",
+            3,
+            "revalidate_stored_event",
+        ),
+        "kaji/ts/src/events/committer.ts": (".getEvents(", 2, "validateStoredEvent"),
+        "kaji/ts/src/runtime/approval/handler.ts": (
+            ".getEvents(",
+            1,
+            "validateStoredEvent",
+        ),
+        "kaji/ts/src/tools/planner.ts": (".getEvents(", 1, "validateStoredEvent"),
+        "kaji/ts/src/runtime/runtime.ts": (".getEvents(", 1, "validateStoredEvent"),
+        "kaji/ts/src/sessions/manager.ts": (".getEvents(", 1, "replaySession"),
+        "kaji/ts/src/sessions/projector.ts": (".getEvents(", 1, "validateStoredEvent"),
+    }
+
+    actual = set()
+    for source_root, pattern, suffix in (
+        (repo / "kaji" / "sdk" / "src", ".get_events(", "*.py"),
+        (repo / "kaji" / "ts" / "src", ".getEvents(", "*.ts"),
+    ):
+        for path in source_root.rglob(suffix):
+            if pattern in path.read_text():
+                actual.add(str(path.relative_to(repo)))
+
+    assert actual == set(inventory)
+
+    for relative, (call, count, boundary) in inventory.items():
+        source = (repo / relative).read_text()
+        assert source.count(call) == count, relative
+        assert boundary in source, relative
 
 
 def test_runtime_clock_seam_accepts_clock_protocol_only() -> None:
@@ -193,6 +284,126 @@ async def test_tool_iterations_have_one_initial_suffix_read_and_one_apply_per_in
     assert observed.applied_events == last_sequence == len(store.inserted_ids)
     assert await observed.sync(store) == 0
     assert observed.applied_events == last_sequence
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_field", ["id", "version", "timestamp"])
+async def test_projector_canonically_validates_custom_store_suffix_rows(
+    missing_field: str,
+) -> None:
+    first = revalidate_stored_event(
+        {
+            "id": "first",
+            "version": "1.0",
+            "timestamp": 0,
+            "type": "session.created",
+            "session_id": "session",
+            "sequence": 1,
+        }
+    )
+    row: dict[str, object] = {
+        "id": "second",
+        "version": "1.0",
+        "timestamp": 0,
+        "type": "user.message",
+        "session_id": "session",
+        "turn_id": "turn",
+        "content": "hello",
+        "sequence": 2,
+    }
+    row.pop(missing_field)
+    projector = SessionProjector("session")
+    store: EventStore = _RawSuffixStore([first, cast(StoredKajiEvent, row)])
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await projector.sync(store)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{missing_field}"
+    assert projector.cursor == 0
+    assert projector.applied_events == 0
+    assert projector.initialized is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_field", ["id", "version", "timestamp"])
+async def test_turn_collection_validates_complete_suffix_before_cursor_advance(
+    missing_field: str,
+) -> None:
+    first = revalidate_stored_event(
+        {
+            "id": "first",
+            "version": "1.0",
+            "timestamp": 0,
+            "type": "session.created",
+            "session_id": "session",
+            "sequence": 1,
+        }
+    )
+    row: dict[str, object] = {
+        "id": "second",
+        "version": "1.0",
+        "timestamp": 0,
+        "type": "user.message",
+        "session_id": "session",
+        "turn_id": "turn",
+        "content": "hello",
+        "sequence": 2,
+    }
+    row.pop(missing_field)
+    store: EventStore = _RawSuffixStore([first, cast(StoredKajiEvent, row)])
+
+    async def execute(_invocation: Any) -> dict[str, bool]:
+        return {"ok": True}
+
+    runtime = AgentRuntime(
+        bus=None,
+        store=store,
+        provider=_ToolLoopProvider(),
+        planner=ToolPlanner(execute),
+    )
+    collector = _TurnEventCollector("session", "turn", 0)
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await runtime._collect_turn_events_through(collector, 2)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{missing_field}"
+    assert collector.cursor == 0
+    assert collector.events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_field", ["id", "version", "timestamp"])
+async def test_runtime_history_canonically_validates_custom_store_rows(
+    missing_field: str,
+) -> None:
+    row: dict[str, object] = {
+        "id": "event",
+        "version": "1.0",
+        "timestamp": 0,
+        "type": "session.created",
+        "session_id": "session",
+        "sequence": 1,
+    }
+    row.pop(missing_field)
+    store: EventStore = _RawSuffixStore([cast(StoredKajiEvent, row)])
+
+    async def execute(_invocation: Any) -> dict[str, bool]:
+        return {"ok": True}
+
+    runtime = AgentRuntime(
+        bus=None,
+        store=store,
+        provider=_ToolLoopProvider(),
+        planner=ToolPlanner(execute),
+    )
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await runtime.history("session")
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{missing_field}"
 
 
 class _BarrierProvider:

@@ -27,6 +27,7 @@ from kaji.infra.events.schemas import (
     ToolCallStarted,
     event_defaults,
     require_stored_event,
+    revalidate_stored_event,
 )
 from kaji.infra.events.protocols import EventJournal
 from kaji.infra.events.types import EventType
@@ -292,11 +293,14 @@ class _ApprovalRequestGate:
         actual = stored.model_dump(mode="json", exclude={"sequence"})
         if actual != expected:
             raise ValueError("approval event emitter altered the canonical event")
-        persisted = await self._journal.store.get_events(
-            stored.session_id,
-            after_sequence=stored.sequence - 1,
-            limit=1,
-        )
+        persisted = [
+            revalidate_stored_event(item)
+            for item in await self._journal.store.get_events(
+                stored.session_id,
+                after_sequence=stored.sequence - 1,
+                limit=1,
+            )
+        ]
         if (
             len(persisted) != 1
             or persisted[0].sequence != stored.sequence
@@ -350,11 +354,14 @@ class _ApprovalRequestGate:
             raise ValueError("approval decision must follow its exact request sequence")
         if not self._matches_request(event):
             raise ValueError("approval decision correlation does not match its request")
-        persisted = await self._journal.store.get_events(
-            event.session_id,
-            after_sequence=event.sequence - 1,
-            limit=1,
-        )
+        persisted = [
+            revalidate_stored_event(item)
+            for item in await self._journal.store.get_events(
+                event.session_id,
+                after_sequence=event.sequence - 1,
+                limit=1,
+            )
+        ]
         if (
             len(persisted) != 1
             or persisted[0].sequence != event.sequence
@@ -404,11 +411,14 @@ class _ApprovalRequestGate:
             )
         )
         assert fence.sequence is not None
-        suffix = await self._journal.store.get_events(
-            requested.session_id,
-            after_sequence=requested.sequence,
-            limit=fence.sequence - requested.sequence,
-        )
+        suffix = [
+            revalidate_stored_event(event)
+            for event in await self._journal.store.get_events(
+                requested.session_id,
+                after_sequence=requested.sequence,
+                limit=fence.sequence - requested.sequence,
+            )
+        ]
         for event in suffix:
             if event.sequence is None or event.sequence > fence.sequence:
                 break

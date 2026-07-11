@@ -1,5 +1,10 @@
+from typing import cast
+
+import pytest
+
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.types import EventType
-from kaji.infra.events.schemas import UserMessage
+from kaji.infra.events.schemas import StoredKajiEvent, UserMessage
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.modalities.text import TextModalityAdapter, TextSession
 
@@ -22,6 +27,31 @@ class _RecordingStore(InMemoryEventStore):
             after_sequence=after_sequence,
             limit=limit,
         )
+
+
+class _RawStore(InMemoryEventStore):
+    def __init__(self, missing_field: str) -> None:
+        super().__init__()
+        self.missing_field = missing_field
+
+    async def get_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]:
+        del session_id, after_sequence, limit
+        row: dict[str, object] = {
+            "id": "event",
+            "version": "1.0",
+            "timestamp": 0,
+            "type": "session.created",
+            "session_id": "session",
+            "sequence": 1,
+        }
+        row.pop(self.missing_field)
+        return [cast(StoredKajiEvent, row)]
 
 
 def test_text_modality_adapter_create_session():
@@ -68,6 +98,22 @@ async def test_text_session_events_defaults_to_a_bounded_page() -> None:
 
     assert await session.events(after_sequence=10, limit=7) == []
     assert store.last_page_request == (10, 7)
+
+
+@pytest.mark.parametrize("missing_field", ["id", "version", "timestamp"])
+async def test_text_session_events_canonically_validate_custom_store_rows(
+    missing_field: str,
+) -> None:
+    session = TextModalityAdapter(store=_RawStore(missing_field)).open_session(
+        session_id="session",
+        user_id="user",
+    )
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await session.events()
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{missing_field}"
 
 
 async def test_text_session_send_returns_current_turn_after_large_history() -> None:

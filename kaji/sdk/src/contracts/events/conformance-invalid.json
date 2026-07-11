@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "cases": [
+    { "name": "missing-event-id", "kind": "new", "event": { "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/id" },
+    { "name": "missing-version", "kind": "new", "event": { "id": "e", "type": "session.created", "timestamp": 0, "session_id": "s" }, "path": "/version" },
+    { "name": "missing-timestamp", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "session_id": "s" }, "path": "/timestamp" },
+    { "name": "missing-session-id", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0 }, "path": "/session_id" },
+    { "name": "missing-event-type", "kind": "new", "event": { "id": "e", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/type" },
+    { "name": "empty-event-id", "kind": "new", "event": { "id": "", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/id" },
+    { "name": "empty-session-id", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "" }, "path": "/session_id" },
+    { "name": "empty-present-turn-id", "kind": "new", "event": { "id": "e", "type": "agent.reasoning.started", "version": "1.0", "timestamp": 0, "session_id": "s", "turn_id": "" }, "path": "/turn_id" },
+    { "name": "unknown-event-type", "kind": "new", "event": { "id": "e", "type": "unknown", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/type" },
+    { "name": "extra-field", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "extra": true }, "path": "/extra" },
+    { "name": "draft-has-sequence", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "sequence": 1 }, "path": "/sequence" },
+    { "name": "stored-missing-sequence", "kind": "stored", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/sequence" },
+    { "name": "unsafe-integral-number", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "metadata": { "n": 9007199254740992 } }, "path": "/metadata/n" }
+  ]
+}

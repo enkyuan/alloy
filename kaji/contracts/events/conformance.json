@@ -316,6 +316,189 @@
       "retryable": false,
       "outcome": "not_started",
       "metadata": {}
+    },
+    {
+      "id": "event-24",
+      "type": "user.message",
+      "version": "1.0",
+      "timestamp": 1767225623.0,
+      "session_id": "session-1",
+      "sequence": 24,
+      "content": "Hello",
+      "metadata": {}
+    },
+    {
+      "id": "event-25",
+      "type": "user.audio.chunk",
+      "version": "1.0",
+      "timestamp": 1767225624.0,
+      "session_id": "session-1",
+      "sequence": 25,
+      "chunk_size_bytes": 4,
+      "metadata": {}
+    },
+    {
+      "id": "event-26",
+      "type": "transcript.partial",
+      "version": "1.0",
+      "timestamp": 1767225625.0,
+      "session_id": "session-1",
+      "sequence": 26,
+      "text": "Hel",
+      "metadata": {}
+    },
+    {
+      "id": "event-27",
+      "type": "transcript.final",
+      "version": "1.0",
+      "timestamp": 1767225626.0,
+      "session_id": "session-1",
+      "sequence": 27,
+      "text": "Hello",
+      "metadata": {}
+    },
+    {
+      "id": "event-28",
+      "type": "memory.retrieval.started",
+      "version": "1.0",
+      "timestamp": 1767225627.0,
+      "session_id": "session-1",
+      "sequence": 28,
+      "query": "contract",
+      "metadata": {}
+    },
+    {
+      "id": "event-29",
+      "type": "memory.retrieval.completed",
+      "version": "1.0",
+      "timestamp": 1767225628.0,
+      "session_id": "session-1",
+      "sequence": 29,
+      "query": "contract",
+      "documents": [{ "id": "doc-1", "score": 0.5 }],
+      "metadata": {}
+    },
+    {
+      "id": "event-30",
+      "type": "agent.reasoning.started",
+      "version": "1.0",
+      "timestamp": 1767225629.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 30,
+      "metadata": {}
+    },
+    {
+      "id": "event-31",
+      "type": "agent.message.delta",
+      "version": "1.0",
+      "timestamp": 1767225630.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 31,
+      "delta": "Hi",
+      "metadata": {}
+    },
+    {
+      "id": "event-32",
+      "type": "agent.message.completed",
+      "version": "1.0",
+      "timestamp": 1767225631.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 32,
+      "content": "Hi",
+      "tokens": null,
+      "cost_usd": null,
+      "metadata": {}
+    },
+    {
+      "id": "event-33",
+      "type": "agent.turn.exhausted",
+      "version": "1.0",
+      "timestamp": 1767225632.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 33,
+      "max_iterations": 5,
+      "pending_tool_calls": [{ "id": "call-pending" }],
+      "reason": null,
+      "metadata": {}
+    },
+    {
+      "id": "event-34",
+      "type": "tool.call.started",
+      "version": "1.0",
+      "timestamp": 1767225633.0,
+      "session_id": "session-1",
+      "turn_id": "turn-started",
+      "sequence": 34,
+      "tool_call_id": "call-started",
+      "tool_name": "lookup",
+      "metadata": {}
+    },
+    {
+      "id": "event-35",
+      "type": "workflow.started",
+      "version": "1.0",
+      "timestamp": 1767225634.0,
+      "session_id": "session-1",
+      "sequence": 35,
+      "workflow_name": "fixture",
+      "metadata": {}
+    },
+    {
+      "id": "event-36",
+      "type": "workflow.completed",
+      "version": "1.0",
+      "timestamp": 1767225635.0,
+      "session_id": "session-1",
+      "sequence": 36,
+      "workflow_name": "fixture",
+      "result": { "ok": true },
+      "metadata": {}
+    },
+    {
+      "id": "event-37",
+      "type": "workflow.failed",
+      "version": "1.0",
+      "timestamp": 1767225636.0,
+      "session_id": "session-1",
+      "sequence": 37,
+      "workflow_name": "fixture",
+      "error": "fixture failed",
+      "metadata": {}
+    },
+    {
+      "id": "event-38",
+      "type": "cancellation.requested",
+      "version": "1.0",
+      "timestamp": 1767225637.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 38,
+      "reason": "operator requested cancellation",
+      "metadata": {}
+    },
+    {
+      "id": "event-39",
+      "type": "cancellation.completed",
+      "version": "1.0",
+      "timestamp": 1767225638.0,
+      "session_id": "session-1",
+      "turn_id": "turn-2",
+      "sequence": 39,
+      "metadata": {}
+    },
+    {
+      "id": "event-40",
+      "type": "session.closed",
+      "version": "1.0",
+      "timestamp": 1767225639.0,
+      "session_id": "session-1",
+      "sequence": 40,
+      "reason": "fixture complete",
+      "metadata": {}
     }
   ]
 }

@@ -198,11 +198,14 @@ class InMemoryEventJournal:
             last_sequence=after_sequence,
         )
         async with self._lock:
-            backlog = await self.store.get_events(
-                session_id,
-                after_sequence=after_sequence,
-                limit=self.subscriber_queue_capacity + 1,
-            )
+            backlog = [
+                revalidate_stored_event(event)
+                for event in await self.store.get_events(
+                    session_id,
+                    after_sequence=after_sequence,
+                    limit=self.subscriber_queue_capacity + 1,
+                )
+            ]
             record_metric(
                 self._metrics,
                 "kaji.subscriber.lag_events",
@@ -270,13 +273,22 @@ class _SplitJournalSubscription:
                 self._backlog_index += 1
             else:
                 try:
-                    stored = require_stored_event(await anext(self._live))
-                except EventBufferOverflowError as exc:
-                    if exc.last_sequence < self._last_sequence:
+                    candidate = await anext(self._live)
+                    stored = revalidate_stored_event(candidate)
+                except BaseException as error:
+                    try:
+                        await self.aclose()
+                    except BaseException:
+                        # Cleanup must not replace the ingress or cancellation error.
+                        pass
+                    if (
+                        isinstance(error, EventBufferOverflowError)
+                        and error.last_sequence < self._last_sequence
+                    ):
                         raise EventBufferOverflowError(
                             last_sequence=self._last_sequence,
-                            latest_sequence=exc.latest_sequence,
-                        ) from exc
+                            latest_sequence=error.latest_sequence,
+                        ) from error
                     raise
             assert stored.sequence is not None
             if stored.sequence <= self._last_sequence:
@@ -470,11 +482,14 @@ class SplitEventJournal:
                 if not isinstance(candidate, EventSubscription):
                     raise TypeError("event subscriptions must implement aclose()")
                 live = candidate
-                backlog = await self.store.get_events(
-                    session_id,
-                    after_sequence=after_sequence,
-                    limit=self.subscriber_queue_capacity + 1,
-                )
+                backlog = [
+                    revalidate_stored_event(event)
+                    for event in await self.store.get_events(
+                        session_id,
+                        after_sequence=after_sequence,
+                        limit=self.subscriber_queue_capacity + 1,
+                    )
+                ]
                 record_metric(
                     self._metrics,
                     "kaji.subscriber.lag_events",

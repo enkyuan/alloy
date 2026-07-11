@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import TypeAdapter, ValidationError
 
 from kaji.infra.events.replay import replay_session
@@ -18,14 +19,37 @@ from kaji.infra.events.schemas import (
     ToolCallStarted,
     ToolApprovalRejected,
     UserMessage,
+    event_defaults,
     require_stored_event,
+    validate_new_event_python,
+    validate_stored_event_python,
 )
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.types import EventType
+from kaji.runtime.determinism import SYSTEM_CLOCK
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES_ROOT = REPO_ROOT / "kaji" / "fixtures" / "events"
 CONFORMANCE_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
+INVALID_CONFORMANCE_FIXTURE = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "conformance-invalid.json"
+)
+NEW_EVENT_SCHEMA = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json"
+)
+STORED_EVENT_SCHEMA = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json"
+)
+
+
+class _FixedIds:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def next(self, scope: object) -> str:
+        del scope
+        return self.value
 
 
 def test_event_validation():
@@ -47,6 +71,144 @@ def test_event_validation():
         TypeAdapter(SessionCreated).validate_python(
             {"session_id": "test-123", "random_field": "foo"}
         )
+
+
+def test_wire_validation_runs_before_constructor_defaults() -> None:
+    constructed = SessionCreated(session_id="s")
+    assert constructed.id
+    assert constructed.version == "1.0"
+    assert constructed.timestamp > 0
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        validate_new_event_python({"type": "session.created", "session_id": "s"})
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == "/id"
+
+
+def test_injected_event_id_defaults_are_validated() -> None:
+    with event_defaults(_FixedIds("custom-event-id"), SYSTEM_CLOCK):
+        event = SessionCreated(session_id="s")
+    assert event.id == "custom-event-id"
+    assert event.version == "1.0"
+    assert event.timestamp > 0
+
+    with event_defaults(_FixedIds(""), SYSTEM_CLOCK):
+        with pytest.raises(ValidationError):
+            SessionCreated(session_id="s")
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload"),
+    [
+        ("agent.message.completed", {"content": "done"}),
+        (
+            "tool.call.completed",
+            {
+                "turn_id": "turn",
+                "tool_name": "tool",
+                "tool_call_id": "call",
+                "result": {"ok": True},
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "usage",
+    [
+        {"tokens": {"input": 1, "output": 2}, "cost_usd": 0.25},
+        {"tokens": None, "cost_usd": None},
+        {},
+    ],
+    ids=["populated", "null", "omitted"],
+)
+def test_usage_fields_match_canonical_and_runtime_wire_validation(
+    event_type: str,
+    payload: dict[str, object],
+    usage: dict[str, object],
+) -> None:
+    base = {
+        "id": "event",
+        "version": "1.0",
+        "timestamp": 0,
+        "type": event_type,
+        "session_id": "session",
+        **payload,
+        **usage,
+    }
+    for stored, schema_path, runtime_validator in (
+        (False, NEW_EVENT_SCHEMA, validate_new_event_python),
+        (True, STORED_EVENT_SCHEMA, validate_stored_event_python),
+    ):
+        document = {**base, **({"sequence": 1} if stored else {})}
+        schema = json.loads(schema_path.read_text())
+        canonical = Draft202012Validator(schema, format_checker=FormatChecker())
+        assert canonical.is_valid(document)
+        assert runtime_validator(document).type.value == event_type
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload", "bounded_field"),
+    [
+        ("agent.turn.failed", {"turn_id": "turn"}, "error"),
+        (
+            "tool.call.failed",
+            {"turn_id": "turn", "tool_name": "tool", "tool_call_id": "call"},
+            "error",
+        ),
+        (
+            "tool.approval.rejected",
+            {
+                "turn_id": "turn",
+                "tool_name": "tool",
+                "tool_call_id": "call",
+                "error_code": "APPROVAL_REJECTED",
+            },
+            "reason",
+        ),
+    ],
+)
+def test_astral_text_boundaries_match_canonical_and_runtime_wire_validation(
+    event_type: str,
+    payload: dict[str, object],
+    bounded_field: str,
+) -> None:
+    base = {
+        "id": "event",
+        "version": "1.0",
+        "timestamp": 0,
+        "type": event_type,
+        "session_id": "session",
+        **payload,
+    }
+    for stored, schema_path, runtime_validator in (
+        (False, NEW_EVENT_SCHEMA, validate_new_event_python),
+        (True, STORED_EVENT_SCHEMA, validate_stored_event_python),
+    ):
+        schema = json.loads(schema_path.read_text())
+        canonical = Draft202012Validator(schema, format_checker=FormatChecker())
+        sequence = {"sequence": 1} if stored else {}
+        accepted = {**base, bounded_field: "😀" * 200, **sequence}
+        assert canonical.is_valid(accepted)
+        runtime_validator(accepted)
+
+        rejected = {**base, bounded_field: "😀" * 201, **sequence}
+        assert not canonical.is_valid(rejected)
+        with pytest.raises(EventSchemaIncompatibleError) as raised:
+            runtime_validator(rejected)
+        assert raised.value.path == f"/{bounded_field}"
+
+
+def test_invalid_wire_fixtures_have_stable_json_pointers() -> None:
+    fixtures = json.loads(INVALID_CONFORMANCE_FIXTURE.read_text())["cases"]
+    for case in fixtures:
+        validator = (
+            validate_stored_event_python
+            if case["kind"] == "stored"
+            else validate_new_event_python
+        )
+        with pytest.raises(EventSchemaIncompatibleError) as raised:
+            validator(case["event"])
+        assert raised.value.path == case["path"], case["name"]
 
 
 def test_event_serialization():
@@ -158,20 +320,25 @@ def test_session_replay():
 
 def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
     fixture = json.loads(CONFORMANCE_FIXTURE.read_text())
-    parsed = [
-        TypeAdapter(KajiEvent).validate_python(payload) for payload in fixture["events"]
-    ]
+    parsed = [validate_stored_event_python(payload) for payload in fixture["events"]]
+    drafts = []
+    for payload in fixture["events"]:
+        draft = dict(payload)
+        draft.pop("sequence")
+        drafts.append(validate_new_event_python(draft))
     assert isinstance(parsed[0], SessionCreated)
+    assert {event.type for event in drafts} == set(EventType)
 
-    stored = [require_stored_event(event) for event in parsed]
+    stored = parsed
     state = replay_session(stored)
 
-    assert len(stored) == 23
-    assert [event.sequence for event in stored] == list(range(1, 24))
+    assert len(stored) == 40
+    assert [event.sequence for event in stored] == list(range(1, 41))
+    assert {event.type for event in stored} == set(EventType)
     assert all(event.version == "1.0" for event in stored)
     assert all(isinstance(event.timestamp, float) for event in stored)
     assert state.session_id == "session-1"
-    assert state.is_active is True
+    assert state.is_active is False
     assert state.pending_approvals == set()
 
 

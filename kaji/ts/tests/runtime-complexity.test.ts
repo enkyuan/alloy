@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { InMemoryEventCommitter } from "@/events/committer";
-import { KajiEvent } from "@/events/schemas";
-import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
+import { InMemoryEventStore, type EventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 import {
   safeRequest,
@@ -76,6 +76,20 @@ class CountingStore extends InMemoryEventStore {
     });
     return super.getEvents(sessionId, options);
   }
+}
+
+function rawStore(rows: StoredKajiEvent[]): EventStore {
+  return {
+    async append() {
+      throw new Error("append is not used by this regression");
+    },
+    async getEvents() {
+      return rows;
+    },
+    async lastSequence() {
+      return rows.length;
+    },
+  };
 }
 
 class BarrierProvider implements ModelProvider {
@@ -294,6 +308,69 @@ describe("deterministic runtime complexity gates", () => {
     expect(projector.appliedEvents).toBe(5);
     expect(projector.lastSequence).toBe(5);
   });
+
+  it.each(["id", "version", "timestamp"])(
+    "canonically validates custom-store suffix rows missing %s",
+    async (missingField) => {
+      const first = StoredKajiEvent.parse({
+        id: "first",
+        version: "1.0",
+        timestamp: 0,
+        type: EventType.SESSION_CREATED,
+        session_id: "session",
+        sequence: 1,
+      });
+      const row: Record<string, unknown> = {
+        id: "second",
+        version: "1.0",
+        timestamp: 0,
+        type: EventType.USER_MESSAGE,
+        session_id: "session",
+        turn_id: "turn",
+        content: "hello",
+        sequence: 2,
+      };
+      delete row[missingField];
+      const store = rawStore([first, row as unknown as StoredKajiEvent]);
+      const projector = new SessionProjector("session");
+      const collected: StoredKajiEvent[] = [];
+
+      await expect(projector.sync(store, (event) => collected.push(event))).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${missingField}`,
+      });
+      expect(projector.lastSequence).toBe(0);
+      expect(projector.appliedEvents).toBe(0);
+      expect(projector.initialized).toBe(false);
+      expect(collected).toEqual([]);
+    },
+  );
+
+  it.each(["id", "version", "timestamp"])(
+    "canonically validates public history rows missing %s",
+    async (missingField) => {
+      const row: Record<string, unknown> = {
+        id: "event",
+        version: "1.0",
+        timestamp: 0,
+        type: EventType.SESSION_CREATED,
+        session_id: "session",
+        sequence: 1,
+      };
+      delete row[missingField];
+      const store = rawStore([row as unknown as StoredKajiEvent]);
+      const runtime = new AgentRuntime({
+        provider: new BarrierProvider(0),
+        store,
+        committer: new InMemoryEventCommitter(store),
+      });
+
+      await expect(runtime.history("session")).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${missingField}`,
+      });
+    },
+  );
 
   it("serializes 25 same-session provider calls and permits cross-session overlap", async () => {
     const sameProvider = new BarrierProvider(25);

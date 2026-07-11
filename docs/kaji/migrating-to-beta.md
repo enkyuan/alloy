@@ -271,6 +271,25 @@ Before, callers could sort unsequenced events by timestamp and read an entire
 session. After, new events are drafts until committed; stored events have a
 contiguous sequence and turn events share one turn ID.
 
+The frozen `1.0` wire definition requires serialized rows to carry `id`,
+`type`, `version`, `timestamp`, and `session_id`; stored rows also require a
+positive `sequence`. IDs are opaque non-empty strings, not UUID-only. Unknown
+fields and fields belonging to a different event variant are rejected instead
+of being ignored or coerced.
+
+Durable integral numbers, including integral floating-point values, must stay
+within the I-JSON range `-9,007,199,254,740,991` through
+`9,007,199,254,740,991`. The former pre-beta acceptance of `2**53` is removed;
+finite non-integral values remain valid. Check an existing stored-event log
+without modifying it before promotion:
+
+```console
+uv run --project kaji/sdk python kaji/scripts/check_event_migration.py path/to/events.jsonl
+```
+
+The preflight reports every incompatible line with
+`EVENT_SCHEMA_INCOMPATIBLE` and a normalized JSON Pointer, then exits non-zero.
+
 <!-- docs-test:python-cursor-before:start -->
 ```python
 import asyncio

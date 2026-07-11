@@ -4,6 +4,7 @@ import {
   MAX_DURABLE_TOOL_ARGUMENT_BYTES,
   StoredKajiEvent,
   durableToolArgumentsSize,
+  validateStoredEvent,
 } from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
 import { logRedactedFailure } from "@/internal/safe-logging";
@@ -893,10 +894,12 @@ export class ToolPlanner {
     if (this.approvalCommitter === undefined || throughSequence <= requestSequence) {
       return undefined;
     }
-    const events = await this.approvalCommitter.store.getEvents(sessionId, {
-      afterSequence: requestSequence,
-      limit: throughSequence - requestSequence,
-    });
+    const events = (
+      await this.approvalCommitter.store.getEvents(sessionId, {
+        afterSequence: requestSequence,
+        limit: throughSequence - requestSequence,
+      })
+    ).map(validateStoredEvent);
     for (const event of events.sort((left, right) => left.sequence - right.sequence)) {
       if (event.sequence > throughSequence) break;
       if (

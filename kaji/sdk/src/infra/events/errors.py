@@ -11,6 +11,16 @@ class EventInfrastructureError(RuntimeError):
     code: str
 
 
+class EventSchemaIncompatibleError(EventInfrastructureError):
+    """A serialized event does not satisfy the frozen wire schema."""
+
+    code = "EVENT_SCHEMA_INCOMPATIBLE"
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        super().__init__(f"event schema is incompatible at {path}")
+
+
 class EventIdConflictError(EventInfrastructureError):
     code = "EVENT_ID_CONFLICT"
 

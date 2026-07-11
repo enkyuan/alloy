@@ -1,3 +1,12 @@
+export class EventSchemaIncompatibleError extends Error {
+  readonly code = "EVENT_SCHEMA_INCOMPATIBLE";
+
+  constructor(readonly path: string) {
+    super(`Event schema is incompatible at ${path}`);
+    this.name = "EventSchemaIncompatibleError";
+  }
+}
+
 export class EventIdConflictError extends Error {
   readonly code = "EVENT_ID_CONFLICT";
 

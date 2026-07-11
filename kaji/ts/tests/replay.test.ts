@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { KajiEvent, EventType, replayLegacySession } from "@/index";
+import { EventSchemaIncompatibleError } from "@/events/errors";
 
 function ev(input: Record<string, unknown>) {
   const type = input.type;
@@ -99,11 +100,10 @@ describe("replayLegacySession", () => {
     [1.0, "1"],
     [-0.0, "0"],
     [1e-6, "0.000001"],
-    [1e-7, "1e-7"],
-    [1e20, "100000000000000000000"],
-    [1e21, "1e+21"],
+    [1.25e-7, "1.25e-7"],
+    [4503599627370495.5, "4503599627370495.5"],
     [Number.MAX_SAFE_INTEGER, "9007199254740991"],
-    [2 ** 53, "9007199254740992"],
+    [Number.MIN_SAFE_INTEGER, "-9007199254740991"],
     ["café", '"café"'],
     [[1, false, null], "[1,false,null]"],
     [{ nested: { ok: true } }, '{"nested":{"ok":true}}'],
@@ -128,7 +128,7 @@ describe("replayLegacySession", () => {
     ["Date", new Date(0)],
     ["Map", new Map([["visible", true]])],
   ])("rejects non-plain %s tool results", (_label, result) => {
-    expect(() =>
+    try {
       replayLegacySession([
         ev({
           type: EventType.TOOL_CALL_COMPLETED,
@@ -138,14 +138,18 @@ describe("replayLegacySession", () => {
           result,
           timestamp: 1,
         }),
-      ]),
-    ).toThrow(/non-plain object/);
+      ]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/result");
+    }
   });
 
   it("rejects symbol-keyed tool-result objects", () => {
     const result = { visible: true, [Symbol("hidden")]: false };
 
-    expect(() =>
+    try {
       replayLegacySession([
         ev({
           type: EventType.TOOL_CALL_COMPLETED,
@@ -155,12 +159,16 @@ describe("replayLegacySession", () => {
           result,
           timestamp: 1,
         }),
-      ]),
-    ).toThrow(/object keys must be strings/);
+      ]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/result");
+    }
   });
 
   it("rejects an exact integer represented outside the Number domain", () => {
-    expect(() =>
+    try {
       replayLegacySession([
         ev({
           type: EventType.TOOL_CALL_COMPLETED,
@@ -170,8 +178,31 @@ describe("replayLegacySession", () => {
           result: 9007199254740993n,
           timestamp: 1,
         }),
-      ]),
-    ).toThrow(/non-JSON value bigint/);
+      ]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/result");
+    }
+  });
+
+  it.each([2 ** 53, -(2 ** 53)])("rejects unsafe integral number %s", (result) => {
+    try {
+      replayLegacySession([
+        ev({
+          type: EventType.TOOL_CALL_COMPLETED,
+          session_id: "s-json-invalid",
+          tool_name: "fixture",
+          tool_call_id: "call-json-invalid",
+          result,
+          timestamp: 1,
+        }),
+      ]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/result");
+    }
   });
 
   it("attaches requested tool calls to the preceding assistant message", () => {

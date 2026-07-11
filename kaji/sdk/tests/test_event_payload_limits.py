@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from kaji.infra.events.bus import InMemoryEventBus
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.schemas import (
@@ -107,7 +108,10 @@ def test_closed_event_validation_helpers_redact_oversized_tool_arguments(
 ) -> None:
     secret = f"sk-{encoding}-event-helper-secret"
     payload = {
+        "id": "event",
         "type": EventType.TOOL_CALL_REQUESTED,
+        "version": "1.0",
+        "timestamp": 1.0,
         "session_id": "session",
         "turn_id": "turn",
         "tool_name": "tool",
@@ -119,8 +123,9 @@ def test_closed_event_validation_helpers_redact_oversized_tool_arguments(
         "sequence": 1,
     }
     if encoding == "json":
-        with pytest.raises(ValidationError) as captured:
+        with pytest.raises(EventSchemaIncompatibleError) as captured:
             validate_event_json(json.dumps(payload))
+        assert captured.value.path == "/tool_args"
     else:
         with pytest.raises(ValidationError) as captured:
             validate_event_python(payload)
@@ -131,8 +136,8 @@ def test_closed_event_validation_helpers_redact_oversized_tool_arguments(
 
 
 def test_durable_tool_argument_size_uses_shared_number_policy_at_boundary() -> None:
-    empty = {"numbers": [1.0, -0.0, 1e-7, 1e20], "value": ""}
-    canonical = '{"numbers":[1,0,1e-7,100000000000000000000],"value":""}'
+    empty = {"numbers": [1.0, -0.0, 1.25e-7, 4503599627370495.5], "value": ""}
+    canonical = '{"numbers":[1,0,1.25e-7,4503599627370495.5],"value":""}'
     assert durable_tool_arguments_size(empty) == len(canonical.encode())
 
     exact = {
@@ -312,9 +317,10 @@ async def test_store_revalidates_tool_arguments_after_model_mutation(
     )
     event.tool_args["secret"] = secret + "x" * 70_000
 
-    with pytest.raises(ValidationError) as captured:
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         await InMemoryEventStore().append(event)
 
+    assert captured.value.path == "/tool_args"
     assert secret not in str(captured.value)
 
 
@@ -331,9 +337,10 @@ async def test_bus_revalidates_tool_arguments_after_model_mutation() -> None:
     )
     event.tool_args["secret"] = secret + "x" * 70_000
 
-    with pytest.raises(ValidationError) as captured:
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         await InMemoryEventBus().publish(require_stored_event(event))
 
+    assert captured.value.path == "/tool_args"
     assert secret not in str(captured.value)
 
 
@@ -345,8 +352,9 @@ class _ForgedToolCallRequested(BaseEvent):
 async def test_store_rejects_forged_base_event_subclass() -> None:
     forged = _ForgedToolCallRequested(session_id="session", turn_id="turn")
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         await InMemoryEventStore().append(cast(Any, forged))
+    assert captured.value.path == "/tool_name"
 
 
 class _NeverAppendStore:
@@ -391,8 +399,9 @@ async def test_journals_revalidate_before_custom_store_append(split: bool) -> No
         else InMemoryEventJournal(typed_store)
     )
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         await journal.commit(event)
+    assert captured.value.path == "/tool_args"
     assert store.append_calls == 0
 
 
@@ -408,9 +417,10 @@ def test_replay_revalidates_mutated_stored_tool_arguments() -> None:
     )
     event.tool_args["secret"] = secret + "x" * 70_000
 
-    with pytest.raises(ValidationError) as captured:
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         replay_session([require_stored_event(event)])
 
+    assert captured.value.path == "/tool_args"
     assert secret not in str(captured.value)
 
 
@@ -421,5 +431,6 @@ def test_replay_rejects_forged_base_event_subclass() -> None:
         sequence=1,
     )
 
-    with pytest.raises(ValidationError):
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
         replay_session([cast(StoredKajiEvent, forged)])
+    assert captured.value.path == "/tool_name"

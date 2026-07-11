@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.replay import (
     ApprovalKey,
@@ -19,6 +20,7 @@ from kaji.infra.events.replay import (
 )
 from kaji.infra.events.schemas import (
     KajiEvent,
+    StoredKajiEvent,
     ToolCallFailed,
     ToolApprovalApproved,
     ToolApprovalRejected,
@@ -40,7 +42,11 @@ from kaji.runtime.agents.context import (
     ToolInvocation,
     TurnContext,
 )
-from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
+from kaji.runtime.agents.planner import (
+    JournalEventEmitter,
+    ToolPlanner,
+    _ApprovalRequestGate,
+)
 from kaji.runtime.providers.mock import MockProvider
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.policies import ToolPolicy
@@ -66,6 +72,95 @@ def _context(
         db=None,
         metadata={},
     )
+
+
+class _MalformedApprovalReadStore(InMemoryEventStore):
+    def __init__(self, missing_field: str, corrupt_read: int) -> None:
+        super().__init__()
+        self.missing_field = missing_field
+        self.corrupt_read = corrupt_read
+        self.reads = 0
+
+    async def get_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]:
+        events = await super().get_events(
+            session_id,
+            after_sequence=after_sequence,
+            limit=limit,
+        )
+        self.reads += 1
+        if self.reads != self.corrupt_read:
+            return events
+        rows = [event.model_dump(mode="python") for event in events]
+        rows[-1].pop(self.missing_field)
+        return cast(list[StoredKajiEvent], rows)
+
+
+@pytest.mark.parametrize("missing_field", ["id", "version", "timestamp"])
+@pytest.mark.parametrize(
+    ("operation", "corrupt_read"),
+    [("request", 1), ("observe", 2), ("fence", 3)],
+)
+@pytest.mark.asyncio
+async def test_approval_store_reads_validate_before_correlation_side_effects(
+    missing_field: str,
+    operation: str,
+    corrupt_read: int,
+) -> None:
+    store = _MalformedApprovalReadStore(missing_field, corrupt_read)
+    journal = InMemoryEventJournal(store)
+
+    async def observe(_event: StoredKajiEvent) -> None:
+        raise AssertionError("malformed decisions must not be observed")
+
+    gate = _ApprovalRequestGate(
+        ToolApprovalRequested(
+            session_id="session",
+            turn_id="turn",
+            tool_name="charge",
+            tool_call_id="call",
+            tool_args={},
+            risk="destructive",
+        ),
+        journal,
+        journal.commit,
+        observe,
+    )
+
+    if operation == "request":
+        action = gate.request()
+    else:
+        await gate.request()
+        if operation == "observe":
+            decision = await journal.commit(
+                ToolApprovalApproved(
+                    session_id="session",
+                    turn_id="turn",
+                    tool_name="charge",
+                    tool_call_id="call",
+                )
+            )
+            action = gate.observe(decision)
+        else:
+            gate.seal()
+            action = gate.resolve_framework_loss(
+                ApprovalDecision(False, "timeout", "Tool approval timed out")
+            )
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await action
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{missing_field}"
+    if operation == "request":
+        assert gate.requested is False
+    else:
+        assert gate.observed_decision() is None
 
 
 async def _execute(

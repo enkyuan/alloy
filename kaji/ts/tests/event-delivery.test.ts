@@ -4,6 +4,7 @@ import {
   EventBufferOverflowError,
   EventDeliveryError,
   EventIdConflictError,
+  EventSchemaIncompatibleError,
   EventStoreCapacityError,
 } from "@/events/errors";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
@@ -103,6 +104,30 @@ class FailingReadStore extends InMemoryEventStore {
   }
 }
 
+class RawBacklogStore extends InMemoryEventStore {
+  constructor(private readonly row: Record<string, unknown>) {
+    super();
+  }
+
+  override async getEvents(): Promise<StoredKajiEvent[]> {
+    return [this.row as unknown as StoredKajiEvent];
+  }
+
+  override async lastSequence(): Promise<number> {
+    return this.row.sequence as number;
+  }
+}
+
+class RawAppendStore extends InMemoryEventStore {
+  constructor(private readonly row: Record<string, unknown>) {
+    super();
+  }
+
+  override async append(): Promise<AppendResult> {
+    return { event: this.row as unknown as StoredKajiEvent, inserted: true };
+  }
+}
+
 class TrackingLiveBus extends FlakyBus {
   closedSubscriptions = 0;
   lastSubscribeOptions: EventBusSubscribeOptions | undefined;
@@ -134,6 +159,31 @@ class OverflowingLiveBus extends TrackingLiveBus {
     const parent = super.subscribe(_sessionId, options);
     return {
       next: () => Promise.reject(new EventBufferOverflowError(0, 4)),
+      return: () => parent.return!(),
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  }
+}
+
+class RawLiveBus extends TrackingLiveBus {
+  constructor(private readonly row: Record<string, unknown>) {
+    super();
+  }
+
+  override subscribe(
+    _sessionId: string,
+    options: EventBusSubscribeOptions = {},
+  ): AsyncIterableIterator<StoredKajiEvent> {
+    const parent = super.subscribe(_sessionId, options);
+    let delivered = false;
+    return {
+      next: async () => {
+        if (delivered) return new Promise<IteratorResult<StoredKajiEvent>>(() => undefined);
+        delivered = true;
+        return { value: this.row as unknown as StoredKajiEvent, done: false };
+      },
       return: () => parent.return!(),
       [Symbol.asyncIterator]() {
         return this;
@@ -299,6 +349,46 @@ describe("event delivery", () => {
     ).subscribers;
     expect(subscribers.size).toBe(0);
   });
+
+  it.each(["id", "version", "timestamp"])(
+    "validates a stable custom-store backlog row missing %s before attachment",
+    async (field) => {
+      const row: Record<string, unknown> = { ...message("raw-stable"), sequence: 8 };
+      delete row[field];
+      const committer = new InMemoryEventCommitter(new RawBacklogStore(row));
+      const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+      await expect(subscription.next()).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${field}`,
+      } satisfies Partial<EventSchemaIncompatibleError>);
+      expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+      const subscribers = (committer as unknown as { subscribers: Map<string, Set<unknown>> })
+        .subscribers;
+      expect(subscribers.size).toBe(0);
+    },
+  );
+
+  it.each(["id", "version", "timestamp"])(
+    "validates a stable custom-store live result missing %s before fanout",
+    async (field) => {
+      const row: Record<string, unknown> = { ...message("raw-stable-live"), sequence: 8 };
+      delete row[field];
+      const committer = new InMemoryEventCommitter(new RawAppendStore(row));
+      const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+      await expect(committer.commit(message("live-input"))).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${field}`,
+      } satisfies Partial<EventSchemaIncompatibleError>);
+      expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+      const subscribers = (committer as unknown as { subscribers: Map<string, Set<unknown>> })
+        .subscribers;
+      expect(subscribers.size).toBe(1);
+      await subscription.return?.();
+      expect(subscribers.size).toBe(0);
+    },
+  );
 
   it("bounds the stable backlog snapshot before attaching live delivery", async () => {
     const store = new PagingStore();
@@ -528,6 +618,62 @@ describe("event delivery", () => {
 
     expect(bus.closedSubscriptions).toBe(1);
   });
+
+  it.each(["id", "version", "timestamp"])(
+    "validates a split custom-store backlog row missing %s before delivery",
+    async (field) => {
+      const row: Record<string, unknown> = { ...message("raw-split"), sequence: 8 };
+      delete row[field];
+      const bus = new TrackingLiveBus();
+      const committer = new SplitEventCommitter(new RawBacklogStore(row), bus);
+      const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+      await expect(subscription.next()).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${field}`,
+      } satisfies Partial<EventSchemaIncompatibleError>);
+      expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+      expect(bus.closedSubscriptions).toBe(1);
+    },
+  );
+
+  it.each(["id", "version", "timestamp"])(
+    "validates a split custom-store live result missing %s before publication",
+    async (field) => {
+      const row: Record<string, unknown> = { ...message("raw-split-live"), sequence: 8 };
+      delete row[field];
+      const bus = new TrackingLiveBus();
+      const committer = new SplitEventCommitter(new RawAppendStore(row), bus);
+      const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+      await expect(committer.commit(message("live-input"))).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${field}`,
+      } satisfies Partial<EventSchemaIncompatibleError>);
+      expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+      expect(bus.published).toEqual([]);
+      await subscription.return?.();
+      expect(bus.closedSubscriptions).toBe(1);
+    },
+  );
+
+  it.each(["id", "version", "timestamp"])(
+    "validates a split live bus row missing %s before cursor advancement",
+    async (field) => {
+      const row: Record<string, unknown> = { ...message("raw-split-bus"), sequence: 8 };
+      delete row[field];
+      const bus = new RawLiveBus(row);
+      const committer = new SplitEventCommitter(new InMemoryEventStore(), bus);
+      const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+      await expect(subscription.next()).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${field}`,
+      } satisfies Partial<EventSchemaIncompatibleError>);
+      expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+      expect(bus.closedSubscriptions).toBe(1);
+    },
+  );
 
   it("translates live overflow to the delivered backlog cursor", async () => {
     const store = new InMemoryEventStore();

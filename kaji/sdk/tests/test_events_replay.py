@@ -1,5 +1,6 @@
 import pytest
 
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.replay import (
     LegacyEventOrderingWarning,
     replay_legacy_session,
@@ -81,11 +82,10 @@ def test_replay_session_projects_failed_tool_call() -> None:
         (1.0, "1"),
         (-0.0, "0"),
         (1e-6, "0.000001"),
-        (1e-7, "1e-7"),
-        (1e20, "100000000000000000000"),
-        (1e21, "1e+21"),
+        (1.25e-7, "1.25e-7"),
+        (4503599627370495.5, "4503599627370495.5"),
         (9007199254740991, "9007199254740991"),
-        (9007199254740992, "9007199254740992"),
+        (-9007199254740991, "-9007199254740991"),
         ("café", '"café"'),
         ([1, False, None], "[1,false,null]"),
         ({"nested": {"ok": True}}, '{"nested":{"ok":true}}'),
@@ -116,18 +116,16 @@ def test_replay_renders_every_json_tool_result_canonically(
 
 
 @pytest.mark.parametrize(
-    ("result", "message"),
+    "result",
     [
-        (
-            9007199254740993,
-            "integer is not exactly representable as a finite IEEE-754 number",
-        ),
-        ((1, 2), "non-JSON value tuple"),
+        9007199254740992,
+        -9007199254740992,
+        float(9007199254740992),
+        float(-9007199254740992),
+        (1, 2),
     ],
 )
-def test_replay_rejects_values_outside_the_shared_json_domain(
-    result: object, message: str
-) -> None:
+def test_replay_rejects_values_outside_the_shared_json_domain(result: object) -> None:
     events = _stored(
         ToolCallCompleted(
             session_id="s-json-invalid",
@@ -139,8 +137,9 @@ def test_replay_rejects_values_outside_the_shared_json_domain(
         )
     )
 
-    with pytest.raises(TypeError, match=message):
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
         replay_session(events)
+    assert raised.value.path == "/result"
 
 
 def test_replay_session_empty_log_raises() -> None:
@@ -176,13 +175,6 @@ def test_fully_legacy_replay_uses_stable_timestamp_and_input_index_order() -> No
         (
             [
                 UserMessage(session_id="s1", content="one", sequence=1),
-                UserMessage(session_id="s1", content="two"),
-            ],
-            "mixed sequenced and unsequenced",
-        ),
-        (
-            [
-                UserMessage(session_id="s1", content="one", sequence=1),
                 UserMessage(session_id="s1", content="two", sequence=1),
             ],
             "duplicate event sequences",
@@ -203,13 +195,55 @@ def test_replay_rejects_ambiguous_or_invalid_logs(
         replay_session(events)  # ty: ignore[invalid-argument-type]
 
 
+@pytest.mark.parametrize(
+    ("legacy", "field", "value", "path"),
+    [
+        (False, "session_id", None, "/session_id"),
+        (False, "session_id", "", "/session_id"),
+        (False, "sequence", None, "/sequence"),
+        (True, "session_id", None, "/session_id"),
+        (True, "session_id", "", "/session_id"),
+        (True, "sequence", 2, "/sequence"),
+    ],
+)
+def test_replay_validates_each_wire_row_before_log_invariants(
+    legacy: bool,
+    field: str,
+    value: object,
+    path: str,
+) -> None:
+    first = UserMessage(
+        session_id="s1",
+        content="one",
+        sequence=None if legacy else 1,
+    ).model_dump(mode="json")
+    second = UserMessage(
+        session_id="s1",
+        content="two",
+        sequence=None if legacy else 2,
+    ).model_dump(mode="json")
+    if value is None:
+        second.pop(field)
+    else:
+        second[field] = value
+
+    replay = replay_legacy_session if legacy else replay_session
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        replay([first, second])  # type: ignore[arg-type]
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == path
+
+
 def test_stable_replay_rejects_a_fully_unsequenced_legacy_log() -> None:
     events = [UserMessage(session_id="s1", content="legacy")]
-    with pytest.raises(ValueError, match="positive sequence"):
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
         replay_session(events)  # ty: ignore[invalid-argument-type]
+    assert raised.value.path == "/sequence"
 
 
 def test_legacy_replay_rejects_sequenced_events() -> None:
     events = [UserMessage(session_id="s1", content="stored", sequence=1)]
-    with pytest.raises(ValueError, match="only fully unsequenced"):
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
         replay_legacy_session(events)
+    assert raised.value.path == "/sequence"

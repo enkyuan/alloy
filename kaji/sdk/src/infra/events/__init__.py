@@ -4,6 +4,7 @@ from .errors import (
     EventDeliveryError,
     EventIdConflictError,
     EventInfrastructureError,
+    EventSchemaIncompatibleError,
     EventStoreCapacityError,
 )
 from .journal import InMemoryEventJournal, SplitEventJournal
@@ -25,6 +26,10 @@ from .schemas import (
     UserMessage,
     validate_event_json,
     validate_event_python,
+    validate_new_event_json,
+    validate_new_event_python,
+    validate_stored_event_json,
+    validate_stored_event_python,
 )
 from .store import AppendResult, EventStore, InMemoryEventStore
 from .types import EventType
@@ -40,6 +45,10 @@ __all__ = [
     "UserMessage",
     "validate_event_json",
     "validate_event_python",
+    "validate_new_event_json",
+    "validate_new_event_python",
+    "validate_stored_event_json",
+    "validate_stored_event_python",
     "AppendResult",
     "EventBus",
     "EventBusProtocol",
@@ -51,6 +60,7 @@ __all__ = [
     "InMemoryEventStore",
     "EventInfrastructureError",
     "EventIdConflictError",
+    "EventSchemaIncompatibleError",
     "EventStoreCapacityError",
     "EventBufferOverflowError",
     "EventDeliveryError",

@@ -9,9 +9,10 @@ import { structurallyEqualJson } from "@/events/json";
 import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
 import {
   type KajiEvent,
-  NewKajiEvent,
   type NewKajiEvent as NewKajiEventType,
-  StoredKajiEvent,
+  type StoredKajiEvent,
+  validateNewEvent,
+  validateStoredEvent,
 } from "@/events/schemas";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
@@ -110,10 +111,12 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
     if (this.closed) return { value: undefined, done: true };
     try {
       if (this.backlog === undefined) {
-        const backlog = await this.store.getEvents(this.sessionId, {
-          afterSequence: this.cursor,
-          limit: this.subscriberCapacity + 1,
-        });
+        const backlog = (
+          await this.store.getEvents(this.sessionId, {
+            afterSequence: this.cursor,
+            limit: this.subscriberCapacity + 1,
+          })
+        ).map(validateStoredEvent);
         recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
         if (backlog.length > this.subscriberCapacity) {
           recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
@@ -136,7 +139,7 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
           await this.close();
           return { value: undefined, done: true };
         }
-        const event = StoredKajiEvent.parse(candidate.value);
+        const event = validateStoredEvent(candidate.value);
         if (event.sequence <= this.cursor) continue;
         this.cursor = event.sequence;
         return { value: event, done: false };
@@ -196,7 +199,7 @@ export class InMemoryEventCommitter implements EventCommitter {
   }
 
   commit(event: NewKajiEventType): Promise<StoredKajiEvent> {
-    const validated = NewKajiEvent.parse(structuredClone(event));
+    const validated = validateNewEvent(structuredClone(event));
     return this.serial.run(async () => {
       let result;
       try {
@@ -208,7 +211,7 @@ export class InMemoryEventCommitter implements EventCommitter {
         }
         throw new EventDeliveryError("append", validated.id, false, { cause });
       }
-      const stored = StoredKajiEvent.parse(structuredClone(result.event));
+      const stored = validateStoredEvent(structuredClone(result.event));
       if (result.inserted) {
         for (const subscriber of this.subscribers.get(stored.session_id) ?? []) {
           subscriber.push(stored);
@@ -240,10 +243,12 @@ export class InMemoryEventCommitter implements EventCommitter {
     );
     const ready = this.serial.run(async () => {
       try {
-        const backlog = await this.store.getEvents(sessionId, {
-          afterSequence,
-          limit: this.subscriberCapacity + 1,
-        });
+        const backlog = (
+          await this.store.getEvents(sessionId, {
+            afterSequence,
+            limit: this.subscriberCapacity + 1,
+          })
+        ).map(validateStoredEvent);
         recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
         if (backlog.length > this.subscriberCapacity) {
           recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
@@ -295,7 +300,7 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   commit(input: NewKajiEventType): Promise<StoredKajiEvent> {
-    const event = NewKajiEvent.parse(structuredClone(input));
+    const event = validateNewEvent(structuredClone(input));
     return this.serial.run(() => this.commitUnlocked(event));
   }
 
@@ -327,7 +332,7 @@ export class SplitEventCommitter implements EventCommitter {
       }
       throw new EventDeliveryError("append", event.id, false, { cause });
     }
-    const stored = StoredKajiEvent.parse(structuredClone(result.event));
+    const stored = validateStoredEvent(structuredClone(result.event));
     if (!result.inserted) return stored;
     if (this.hasPendingForSession(stored.session_id)) {
       this.pending.set(stored.id, stored);

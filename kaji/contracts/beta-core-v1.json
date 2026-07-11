@@ -7,7 +7,13 @@
     "crossSessionTurns": "concurrent",
     "maxToolIterations": 5,
     "contextWindowTurns": 32,
-    "contextWindowCharacters": 100000
+    "contextWindowCharacters": 100000,
+    "turnTimeoutMs": 120000,
+    "providerCancellationGraceMs": 5000,
+    "providerTextMaxBytes": 262144,
+    "providerToolArgumentsMaxBytes": 65536,
+    "providerResponseMaxBytes": 524288,
+    "providerToolCallsMax": 64
   },
   "tools": {
     "schemaDraft": "2020-12",
@@ -27,6 +33,8 @@
     "warmProjection": "cursor_suffix",
     "subscriberQueueCapacity": 1024,
     "maxDurableToolArgumentBytes": 65536,
+    "maxDurableToolResultBytes": 65536,
+    "maxDurableEventBytes": 1048576,
     "inMemoryStoreMaxSessions": 1000,
     "inMemoryStoreMaxEventsPerSession": 10000,
     "overflow": "typed_error"

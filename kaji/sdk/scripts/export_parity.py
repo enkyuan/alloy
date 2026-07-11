@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator, Mapping, cast
 
 from pydantic import TypeAdapter
 
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.replay import ApprovalKey, SessionState, replay_session
 from kaji.infra.events.schemas import (
@@ -653,10 +654,15 @@ JSON_REPLAY_RESULTS: dict[str, Any] = {
     "json-number": 7.5,
     "json-integral-float": 1.0,
     "json-negative-zero": -0.0,
-    "json-exponent-boundaries": [1e-6, 1e-7, 1e20, 1e21],
+    "json-exponent-boundaries": [
+        1e-6,
+        1.25e-7,
+        4503599627370495.5,
+        -4503599627370495.5,
+    ],
     "json-numeric-keys": {"2": "two", "10": "ten"},
     "json-safe-integer-boundary": 9007199254740991,
-    "json-unrepresentable-integer": 9007199254740993,
+    "json-unrepresentable-integer": 9007199254740992,
     "json-utf16-keys": {"\ue000": "bmp", "\U00010000": "astral"},
     "json-string": "café",
     "json-array": [1, False, None],
@@ -710,14 +716,14 @@ def run_replay(scenario: dict[str, Any]) -> dict[str, Any]:
     if fixture == "json-unrepresentable-integer":
         try:
             replay_session(events)
-        except TypeError as error:
-            if "integer is not exactly representable" not in str(error):
+        except EventSchemaIncompatibleError as error:
+            if error.path != "/result":
                 raise
         else:
             raise RuntimeError("unrepresentable integer was accepted by replay")
         snapshot["result"] = {
             "event_count": len(events),
-            "rejection": "integer_not_exactly_representable",
+            "rejection": "integer_outside_i_json_safe_range",
         }
         return snapshot
     state = replay_session(events)

@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import pytest
 
@@ -7,11 +8,12 @@ from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.errors import (
     EventBufferOverflowError,
     EventDeliveryError,
+    EventSchemaIncompatibleError,
     EventStoreCapacityError,
 )
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.infra.events.schemas import StoredKajiEvent, UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.infra.events.store import AppendResult, InMemoryEventStore
 
 
 async def _close(stream: object) -> None:
@@ -55,6 +57,36 @@ class _BlockingReadStore(InMemoryEventStore):
 class _FailingReadStore(InMemoryEventStore):
     async def get_events(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("read unavailable")
+
+
+class _RawBacklogStore(InMemoryEventStore):
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__()
+        self.row = row
+
+    async def get_events(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]:
+        _ = session_id, after_sequence, limit
+        return [cast(StoredKajiEvent, self.row)]
+
+    async def last_sequence(self, session_id: str) -> int:
+        _ = session_id
+        return cast(int, self.row["sequence"])
+
+
+class _RawAppendStore(InMemoryEventStore):
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__()
+        self.row = row
+
+    async def append(self, event: object) -> AppendResult:
+        _ = event
+        return AppendResult(event=cast(StoredKajiEvent, self.row), inserted=True)
 
 
 class _AlwaysFailBus(InMemoryEventBus):
@@ -117,8 +149,10 @@ class _TrackingLiveStream:
 class _TrackingBus:
     def __init__(self) -> None:
         self.subscription: _TrackingLiveStream | None = None
+        self.published: list[StoredKajiEvent] = []
 
     async def publish(self, event: StoredKajiEvent) -> str:
+        self.published.append(event)
         return str(event.sequence)
 
     def subscribe(
@@ -130,6 +164,92 @@ class _TrackingBus:
         _ = session_id, after_sequence
         self.subscription = _TrackingLiveStream()
         return self.subscription
+
+
+class _RawLiveStream(_TrackingLiveStream):
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__()
+        self._row = row
+        self._delivered = False
+
+    async def __anext__(self) -> StoredKajiEvent:
+        if self._delivered:
+            raise StopAsyncIteration
+        self._delivered = True
+        return cast(StoredKajiEvent, self._row)
+
+
+class _RawLiveBus(_TrackingBus):
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__()
+        self._row = row
+
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.subscription = _RawLiveStream(self._row)
+        return self.subscription
+
+
+class _FailingLiveStream(_TrackingLiveStream):
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self._error = error
+
+    async def __anext__(self) -> StoredKajiEvent:
+        raise self._error
+
+    async def aclose(self) -> None:
+        self.closed = True
+        raise RuntimeError("close unavailable")
+
+
+class _FailingLiveBus(_TrackingBus):
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self._error = error
+
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.subscription = _FailingLiveStream(self._error)
+        return self.subscription
+
+
+class _CloseFailingRawLiveStream(_RawLiveStream):
+    async def aclose(self) -> None:
+        self.closed = True
+        raise RuntimeError("close unavailable")
+
+
+class _CloseFailingRawLiveBus(_RawLiveBus):
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.subscription = _CloseFailingRawLiveStream(self._row)
+        return self.subscription
+
+
+def _raw_stored_message() -> dict[str, Any]:
+    return UserMessage(
+        id="raw-backlog",
+        session_id="s1",
+        content="raw",
+        timestamp=1,
+        sequence=8,
+    ).model_dump(mode="json")
 
 
 @pytest.mark.asyncio
@@ -302,6 +422,132 @@ async def test_subscription_rejects_backlog_larger_than_its_hard_capacity() -> N
     assert caught.value.latest_sequence == 3
 
 
+@pytest.mark.parametrize("field", ["id", "version", "timestamp"])
+@pytest.mark.parametrize("split", [False, True], ids=["stable", "split"])
+@pytest.mark.asyncio
+async def test_custom_store_subscription_validates_backlog_before_attachment(
+    field: str,
+    split: bool,
+) -> None:
+    row = _raw_stored_message()
+    row.pop(field)
+    store = _RawBacklogStore(row)
+    bus = _TrackingBus()
+    journal = SplitEventJournal(store, bus) if split else InMemoryEventJournal(store)
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await journal.open_subscription("s1", after_sequence=7)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == f"/{field}"
+    if split:
+        assert bus.subscription is not None
+        assert bus.subscription.closed is True
+    else:
+        assert cast(Any, journal)._subscribers == {}
+
+
+@pytest.mark.parametrize("field", ["id", "version", "timestamp"])
+@pytest.mark.asyncio
+async def test_split_subscription_validates_live_rows_before_cursor_advance(
+    field: str,
+) -> None:
+    row = _raw_stored_message()
+    row.pop(field)
+    bus = _RawLiveBus(row)
+    subscription = await SplitEventJournal(
+        InMemoryEventStore(),
+        bus,
+    ).open_subscription("s1", after_sequence=7)
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await anext(subscription)
+
+    assert raised.value.path == f"/{field}"
+    assert cast(Any, subscription)._last_sequence == 7
+    assert bus.subscription is not None
+    assert bus.subscription.closed is True
+
+
+@pytest.mark.asyncio
+async def test_split_subscription_preserves_schema_error_when_cleanup_fails() -> None:
+    row = _raw_stored_message()
+    row.pop("id")
+    bus = _CloseFailingRawLiveBus(row)
+    subscription = await SplitEventJournal(
+        InMemoryEventStore(),
+        bus,
+    ).open_subscription("s1", after_sequence=7)
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await anext(subscription)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == "/id"
+    assert cast(Any, subscription)._last_sequence == 7
+    assert bus.subscription is not None
+    assert bus.subscription.closed is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        EventSchemaIncompatibleError("/id"),
+        asyncio.CancelledError(),
+    ],
+    ids=["typed", "cancelled"],
+)
+@pytest.mark.asyncio
+async def test_split_subscription_closes_when_live_read_fails(
+    error: BaseException,
+) -> None:
+    bus = _FailingLiveBus(error)
+    subscription = await SplitEventJournal(
+        InMemoryEventStore(),
+        bus,
+    ).open_subscription("s1", after_sequence=7)
+
+    with pytest.raises(type(error)) as raised:
+        await anext(subscription)
+
+    assert raised.value is error
+    assert cast(Any, subscription)._last_sequence == 7
+    assert bus.subscription is not None
+    assert bus.subscription.closed is True
+
+
+@pytest.mark.parametrize("field", ["id", "version", "timestamp"])
+@pytest.mark.parametrize("split", [False, True], ids=["stable", "split"])
+@pytest.mark.asyncio
+async def test_custom_store_live_result_is_validated_before_fanout(
+    field: str,
+    split: bool,
+) -> None:
+    row = _raw_stored_message()
+    row.pop(field)
+    store = _RawAppendStore(row)
+    bus = _TrackingBus()
+    journal = SplitEventJournal(store, bus) if split else InMemoryEventJournal(store)
+    subscription = await journal.open_subscription("s1", after_sequence=7)
+
+    with pytest.raises(EventSchemaIncompatibleError) as raised:
+        await journal.commit(UserMessage(session_id="s1", content="live"))
+
+    assert raised.value.path == f"/{field}"
+    if split:
+        assert cast(Any, subscription)._last_sequence == 7
+        assert bus.published == []
+    else:
+        assert cast(Any, subscription)._subscriber.last_sequence == 7
+        assert cast(Any, subscription)._subscriber.queue.empty()
+    await subscription.aclose()
+    if split:
+        assert bus.subscription is not None
+        assert bus.subscription.closed is True
+    else:
+        assert cast(Any, journal)._subscribers == {}
+
+
 @pytest.mark.asyncio
 async def test_split_subscription_joins_store_backlog_and_live_without_loss() -> None:
     store = InMemoryEventStore()
@@ -336,7 +582,9 @@ async def test_split_subscription_supports_lazy_cursor_backed_bus_without_gap() 
 
     second = await journal.commit(UserMessage(session_id="s1", content="live"))
     assert bus.started is False
-    assert await anext(stream) is second
+    delivered = await anext(stream)
+    assert delivered == second
+    assert delivered is not second
     assert bus.started is True
 
     await _close(stream)

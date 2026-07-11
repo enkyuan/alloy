@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InMemoryEventCommitter } from "@/events/committer";
 import type { EventCommitter } from "@/events/protocols";
-import { KajiEvent } from "@/events/schemas";
+import { KajiEvent, type StoredKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 import type { ToolCall } from "@/providers/base";
@@ -10,6 +10,24 @@ import { AutoApprovalHandler } from "@/runtime/approval/auto";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { requestLegacyApproval, type ApprovalRequestContext } from "@/runtime/approval/types";
 import { replaySession } from "@/sessions/replay";
+
+class MalformedReadStore extends InMemoryEventStore {
+  constructor(private readonly missingField: string) {
+    super();
+  }
+
+  override async getEvents(
+    sessionId: string,
+    options: { afterSequence?: number; limit?: number } = {},
+  ): Promise<StoredKajiEvent[]> {
+    const events = await super.getEvents(sessionId, options);
+    return events.map((event) => {
+      const row = structuredClone(event) as Record<string, unknown>;
+      delete row[this.missingField];
+      return row as unknown as StoredKajiEvent;
+    });
+  }
+}
 
 function makeCall(overrides: Partial<ToolCall> = {}): ToolCall {
   return { id: "call-1", name: "my_tool", args: {}, ...overrides };
@@ -93,6 +111,24 @@ async function decideAfterRequest(
 }
 
 describe("EventApprovalHandler", () => {
+  it.each(["id", "version", "timestamp"])(
+    "canonically validates persisted requests missing %s before correlation",
+    async (missingField) => {
+      const store = new MalformedReadStore(missingField);
+      const committer = new InMemoryEventCommitter(store);
+      const call = makeCall({ id: `malformed-${missingField}` });
+      const context = makeContext(committer, call, {
+        sessionId: `malformed-${missingField}`,
+      });
+
+      await expect(new EventApprovalHandler().request(call, context)).rejects.toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${missingField}`,
+      });
+      expect(await store.lastSequence(context.execution.sessionId)).toBe(1);
+    },
+  );
+
   it("subscribes before using the runtime emitter and returns recorded approval", async () => {
     const inner = new InMemoryEventCommitter(new InMemoryEventStore());
     let subscribed = false;

@@ -1,5 +1,5 @@
 /** Event-backed approval waiter using the runtime's canonical committer/emitter. */
-import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
+import { KajiEvent, StoredKajiEvent, validateStoredEvent } from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
 import { EventType } from "@/events/types";
 import type { ToolCall } from "@/providers/base";
@@ -153,10 +153,12 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
       ) {
         throw new TypeError("Approval emitter did not return the stored request event");
       }
-      const [canonicalRequest] = await context.committer.store.getEvents(execution.sessionId, {
-        afterSequence: stored.sequence - 1,
-        limit: 1,
-      });
+      const [canonicalRequest] = (
+        await context.committer.store.getEvents(execution.sessionId, {
+          afterSequence: stored.sequence - 1,
+          limit: 1,
+        })
+      ).map(validateStoredEvent);
       if (
         canonicalRequest?.id !== stored.id ||
         canonicalRequest.sequence !== stored.sequence ||

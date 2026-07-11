@@ -2,6 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaji.dev/contracts/feature-tiers-v1.json",
   "contractVersion": "1.0.0",
+  "cliCommands": {
+    "python": {
+      "stable": ["add", "init", "list-integrations"],
+      "experimental": ["doctor", "gen", "info", "secret", "upgrade"]
+    },
+    "typescript": {
+      "stable": ["add", "init", "list-integrations", "replay"],
+      "experimental": []
+    }
+  },
   "stable": [
     { "id": "agent-builder", "surface": "Agent builder" },
     { "id": "runtime-turn-loop", "surface": "Runtime turn loop" },

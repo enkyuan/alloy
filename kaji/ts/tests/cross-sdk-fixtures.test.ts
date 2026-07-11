@@ -104,7 +104,8 @@ describe("cross-SDK fixture exporter", () => {
       "replay-json-number": "7.5",
       "replay-json-integral-float": "1",
       "replay-json-negative-zero": "0",
-      "replay-json-exponent-boundaries": "[0.000001,1e-7,100000000000000000000,1e+21]",
+      "replay-json-exponent-boundaries":
+        "[0.000001,1.25e-7,4503599627370495.5,-4503599627370495.5]",
       "replay-json-numeric-keys": '{"10":"ten","2":"two"}',
       "replay-json-safe-integer-boundary": "9007199254740991",
       "replay-json-utf16-keys": '{"\u{10000}":"astral","\ue000":"bmp"}',
@@ -113,7 +114,7 @@ describe("cross-SDK fixture exporter", () => {
     });
     expect(snapshots.get("replay-json-unrepresentable-integer")!.result).toEqual({
       event_count: 3,
-      rejection: "integer_not_exactly_representable",
+      rejection: "integer_outside_i_json_safe_range",
     });
 
     const referenced = contract.scenarios

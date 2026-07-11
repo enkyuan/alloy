@@ -7,9 +7,22 @@ import math
 from typing import Any
 
 
+MAX_SAFE_INTEGER = 9_007_199_254_740_991
+
+
+def _is_unsafe_integral_number(value: int | float) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return abs(value) > MAX_SAFE_INTEGER
+    return math.isfinite(value) and value.is_integer() and abs(value) > MAX_SAFE_INTEGER
+
+
 def _canonical_float(value: float, subject: str) -> str:
     if not math.isfinite(value):
         raise ValueError(f"{subject} contains a non-finite number")
+    if _is_unsafe_integral_number(value):
+        raise TypeError(f"{subject} contains an integer outside the I-JSON safe range")
     if value == 0:
         return "0"
 
@@ -41,17 +54,9 @@ def _canonical_float(value: float, subject: str) -> str:
 
 
 def _canonical_integer(value: int, subject: str) -> str:
-    try:
-        number = float(value)
-    except OverflowError as error:
-        raise TypeError(
-            f"{subject} integer is not exactly representable as a finite IEEE-754 number"
-        ) from error
-    if not math.isfinite(number) or int(number) != value:
-        raise TypeError(
-            f"{subject} integer is not exactly representable as a finite IEEE-754 number"
-        )
-    return _canonical_float(number, subject)
+    if _is_unsafe_integral_number(value):
+        raise TypeError(f"{subject} contains an integer outside the I-JSON safe range")
+    return _canonical_float(float(value), subject)
 
 
 def _utf16_sort_key(value: str) -> bytes:
@@ -111,4 +116,4 @@ def canonical_json(value: Any, *, subject: str = "JSON value") -> str:
     return encode(value, set())
 
 
-__all__ = ["canonical_json"]
+__all__ = ["MAX_SAFE_INTEGER", "canonical_json"]

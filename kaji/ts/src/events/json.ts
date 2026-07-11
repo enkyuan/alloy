@@ -6,6 +6,8 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown
       ? { readonly [TKey in keyof T]: DeepReadonly<T[TKey]> }
       : T;
 
+export const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+
 /** Clone a JSON-safe value and freeze every object and array in the clone. */
 export function cloneAndFreezeJson<T>(value: T): DeepReadonly<T> {
   return cloneJsonValue(value, new WeakSet()) as DeepReadonly<T>;
@@ -45,6 +47,9 @@ export function canonicalJsonValue(value: unknown, subject = "JSON value"): stri
         return JSON.stringify(item);
       case "number":
         if (!Number.isFinite(item)) throw new TypeError(`${subject} contains a non-finite number`);
+        if (Number.isInteger(item) && !Number.isSafeInteger(item)) {
+          throw new TypeError(`${subject} contains an integer outside the I-JSON safe range`);
+        }
         return Object.is(item, -0) ? "0" : item.toString();
       case "object": {
         if (ancestors.has(item)) throw new TypeError(`${subject} must be acyclic`);
@@ -114,7 +119,9 @@ export function canonicalJsonValue(value: unknown, subject = "JSON value"): stri
 function cloneJsonValue(value: unknown, ancestors: WeakSet<object>): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new TypeError("Event values must be JSON-safe");
+    if (!Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value))) {
+      throw new TypeError("Event values must be JSON-safe");
+    }
     return value;
   }
   if (Array.isArray(value)) {

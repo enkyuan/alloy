@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { EventSchemaIncompatibleError } from "@/events/errors";
 import {
   KajiEvent,
   MAX_DURABLE_TOOL_ARGUMENT_BYTES,
@@ -61,8 +62,8 @@ describe.each([
 });
 
 it("uses the shared number policy for boundary decisions", () => {
-  const empty = { numbers: [1, -0, 1e-7, 1e20], value: "" };
-  const canonical = '{"numbers":[1,0,1e-7,100000000000000000000],"value":""}';
+  const empty = { numbers: [1, -0, 1.25e-7, 4503599627370495.5], value: "" };
+  const canonical = '{"numbers":[1,0,1.25e-7,4503599627370495.5],"value":""}';
   expect(durableToolArgumentsSize(empty)).toBe(new TextEncoder().encode(canonical).byteLength);
   const exact = {
     ...empty,
@@ -185,5 +186,8 @@ it.each([
   if (!("tool_args" in event)) throw new Error("expected a tool argument event");
   (event.tool_args as Record<string, unknown>).secret = "x".repeat(70_000);
 
-  await expect(new InMemoryEventStore().append(event)).rejects.toThrow("65536 serialized bytes");
+  await expect(new InMemoryEventStore().append(event)).rejects.toMatchObject({
+    code: "EVENT_SCHEMA_INCOMPATIBLE",
+    path: "/tool_args",
+  } satisfies Partial<EventSchemaIncompatibleError>);
 });

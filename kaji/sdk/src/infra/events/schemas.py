@@ -1,5 +1,9 @@
-from contextvars import ContextVar
 from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import lru_cache
+from importlib import resources
+import json
+import re
 from typing import (  # noqa: F401
     Annotated,
     Any,
@@ -14,8 +18,20 @@ from typing import (  # noqa: F401
     runtime_checkable,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
+from jsonschema.protocols import Validator as JsonSchemaValidator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.json import canonical_json
 from kaji.infra.events.types import EventType
 from kaji.runtime.determinism import (
@@ -31,6 +47,7 @@ _EVENT_ID_FACTORY: ContextVar[IdFactory] = ContextVar(
 )
 _EVENT_CLOCK: ContextVar[Clock] = ContextVar("kaji_event_clock", default=SYSTEM_CLOCK)
 MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024
+_REQUIRED_WIRE_FIELDS = ("id", "version", "timestamp", "type", "session_id")
 
 
 def durable_tool_arguments_size(value: Dict[str, Any]) -> int:
@@ -57,6 +74,12 @@ def _event_wall_time() -> float:
     return _EVENT_CLOCK.get().now_wall_seconds()
 
 
+def _bounded_unicode_text(value: str, field: str) -> str:
+    if len(value) > 200:
+        raise ValueError(f"{field} must contain at most 200 Unicode code points")
+    return value
+
+
 @contextmanager
 def event_defaults(id_factory: IdFactory, clock: Clock):
     """Scope Pydantic event defaults to one async task/runtime operation."""
@@ -75,19 +98,29 @@ class BaseEvent(BaseModel):
     No provider-specific or voice-specific fields in the base type.
     """
 
-    id: str = Field(default_factory=_next_event_id)
+    id: str = Field(
+        default_factory=_next_event_id,
+        min_length=1,
+        validate_default=True,
+    )
     version: Literal["1.0"] = "1.0"
     timestamp: float = Field(default_factory=_event_wall_time)
     session_id: str = Field(min_length=1)
     turn_id: Optional[str] = Field(
         default=None, min_length=1, exclude_if=lambda value: value is None
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: Dict[str, JsonValue] = Field(default_factory=dict)
     sequence: Optional[int] = Field(
         default=None, ge=1, exclude_if=lambda value: value is None
     )
 
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _metadata_is_durable_json(cls, value: Any) -> Any:
+        canonical_json(value, subject="event metadata")
+        return value
 
 
 class SessionCreated(BaseEvent):
@@ -159,7 +192,7 @@ class AgentMessageCompleted(BaseEvent):
 
 class AgentTurnExhausted(BaseEvent):
     type: Literal[EventType.AGENT_TURN_EXHAUSTED] = EventType.AGENT_TURN_EXHAUSTED
-    max_iterations: int
+    max_iterations: int = Field(ge=0)
     pending_tool_calls: List[Dict[str, Any]]
     reason: Optional[str] = None
 
@@ -167,7 +200,12 @@ class AgentTurnExhausted(BaseEvent):
 class AgentTurnFailed(BaseEvent):
     type: Literal[EventType.AGENT_TURN_FAILED] = EventType.AGENT_TURN_FAILED
     turn_id: str = Field(min_length=1)
-    error: str = Field(min_length=1, max_length=200)
+    error: str = Field(min_length=1)
+
+    @field_validator("error")
+    @classmethod
+    def _bounded_error(cls, value: str) -> str:
+        return _bounded_unicode_text(value, "error")
 
 
 class ToolCallRequested(BaseEvent):
@@ -207,7 +245,7 @@ class ToolCallFailed(BaseEvent):
     turn_id: str = Field(min_length=1)
     tool_name: str = Field(min_length=1)
     tool_call_id: str = Field(min_length=1)
-    error: str = Field(min_length=1, max_length=200)
+    error: str = Field(min_length=1)
     error_code: Optional[str] = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -220,6 +258,11 @@ class ToolCallFailed(BaseEvent):
     outcome: Optional[Literal["not_started", "failed", "unknown"]] = Field(
         default=None, exclude_if=lambda value: value is None
     )
+
+    @field_validator("error")
+    @classmethod
+    def _bounded_error(cls, value: str) -> str:
+        return _bounded_unicode_text(value, "error")
 
 
 class ToolApprovalRequested(BaseEvent):
@@ -256,14 +299,14 @@ class ToolApprovalRejected(BaseEvent):
         "TOOL_CANCELLED",
         "APPROVAL_UNAVAILABLE",
     ]
-    reason: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1)
 
     @field_validator("reason")
     @classmethod
     def _reason_has_content(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("approval rejection reason must not be blank")
-        return value
+        return _bounded_unicode_text(value, "reason")
 
 
 class WorkflowStarted(BaseEvent):
@@ -329,14 +372,183 @@ _EVENT_ADAPTER = TypeAdapter(
 )
 
 
+def _json_pointer(parts: Any) -> str:
+    encoded = [str(part).replace("~", "~0").replace("/", "~1") for part in parts]
+    return "/" + "/".join(encoded) if encoded else "/"
+
+
+def _load_wire_schema(filename: str) -> dict[str, Any]:
+    package_file = resources.files("kaji.contracts.events").joinpath(filename)
+    return json.loads(package_file.read_text(encoding="utf-8"))
+
+
+_NEW_EVENT_SCHEMA = _load_wire_schema("new-kaji-event-v1.schema.json")
+_STORED_EVENT_SCHEMA = _load_wire_schema("stored-kaji-event-v1.schema.json")
+_NEW_EVENT_VALIDATOR = Draft202012Validator(
+    _NEW_EVENT_SCHEMA, format_checker=FormatChecker()
+)
+_STORED_EVENT_VALIDATOR = Draft202012Validator(
+    _STORED_EVENT_SCHEMA, format_checker=FormatChecker()
+)
+
+
+def _schema_def_name(event_type: str) -> str:
+    head, *tail = event_type.split(".")
+    return head + "".join(part.title() for part in tail)
+
+
+@lru_cache(maxsize=50)
+def _variant_validator(stored: bool, event_type: str) -> JsonSchemaValidator:
+    schema = _STORED_EVENT_SCHEMA if stored else _NEW_EVENT_SCHEMA
+    selected = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": schema["$defs"],
+        "$ref": f"#/$defs/{_schema_def_name(event_type)}",
+    }
+    return Draft202012Validator(selected, format_checker=FormatChecker())
+
+
+def _flatten_schema_errors(
+    error: JsonSchemaValidationError,
+) -> list[JsonSchemaValidationError]:
+    flattened = [error]
+    for child in error.context:
+        flattened.extend(_flatten_schema_errors(child))
+    return flattened
+
+
+def _schema_error_pointer(error: JsonSchemaValidationError) -> str:
+    parts = list(error.absolute_path)
+    if error.validator == "required" and isinstance(error.instance, dict):
+        missing = next(
+            (field for field in error.validator_value if field not in error.instance),
+            None,
+        )
+        if missing is not None:
+            parts.append(missing)
+    elif error.validator in {"additionalProperties", "unevaluatedProperties"}:
+        unexpected = sorted(set(re.findall(r"'([^']+)'", error.message)))
+        if unexpected:
+            parts.append(unexpected[0])
+    return _json_pointer(parts)
+
+
+def _first_schema_error_pointer(value: dict[str, Any], *, stored: bool) -> str | None:
+    validator = _STORED_EVENT_VALIDATOR if stored else _NEW_EVENT_VALIDATOR
+    errors = list(validator.iter_errors(value))
+    if not errors:
+        return None
+
+    event_type = value.get("type")
+    if isinstance(event_type, str) and event_type in {item.value for item in EventType}:
+        selected_errors = list(
+            _variant_validator(stored, event_type).iter_errors(value)
+        )
+        if selected_errors:
+            errors = selected_errors
+
+    candidates = [
+        (_schema_error_pointer(item), list(item.absolute_schema_path))
+        for error in errors
+        for item in _flatten_schema_errors(error)
+        if item.validator not in {"allOf", "oneOf", "unevaluatedProperties"}
+    ]
+    if not candidates:
+        return "/"
+    return min(candidates, key=lambda item: (item[0] == "/", item[0], item[1]))[0]
+
+
+def _wire_preflight(value: object, *, stored: bool) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise EventSchemaIncompatibleError("/")
+    document = cast(dict[str, Any], value)
+    for field in _REQUIRED_WIRE_FIELDS:
+        if field not in document:
+            raise EventSchemaIncompatibleError(f"/{field}")
+    for field in ("id", "session_id", "turn_id"):
+        if field in document and document[field] == "":
+            raise EventSchemaIncompatibleError(f"/{field}")
+    if stored and "sequence" not in document:
+        raise EventSchemaIncompatibleError("/sequence")
+    if not stored and "sequence" in document:
+        raise EventSchemaIncompatibleError("/sequence")
+    event_type = document.get("type")
+    if event_type not in {item.value for item in EventType}:
+        raise EventSchemaIncompatibleError("/type")
+    schema = _STORED_EVENT_SCHEMA if stored else _NEW_EVENT_SCHEMA
+    variant = schema["$defs"][_schema_def_name(cast(str, event_type))]
+    allowed = set(schema["$defs"]["base"]["properties"])
+    allowed.update(variant["allOf"][1]["properties"])
+    unexpected = sorted(set(document) - allowed)
+    if unexpected:
+        raise EventSchemaIncompatibleError(_json_pointer([unexpected[0]]))
+    return document
+
+
+def _pydantic_error_pointer(error: ValidationError) -> str:
+    location = list(error.errors(include_input=False)[0]["loc"])
+    if location and location[0] in {item.value for item in EventType}:
+        location.pop(0)
+    return _json_pointer(location)
+
+
+def _validate_wire_event(value: object, *, stored: bool) -> KajiEvent:
+    document = _wire_preflight(value, stored=stored)
+    schema_path = _first_schema_error_pointer(document, stored=stored)
+    if schema_path is not None:
+        raise EventSchemaIncompatibleError(schema_path)
+    try:
+        canonical_json(document, subject="event")
+        return _EVENT_ADAPTER.validate_python(document)
+    except EventSchemaIncompatibleError:
+        raise
+    except ValidationError as error:
+        raise EventSchemaIncompatibleError(_pydantic_error_pointer(error)) from None
+    except (TypeError, ValueError):
+        raise EventSchemaIncompatibleError("/") from None
+
+
 def validate_event_python(value: object) -> KajiEvent:
-    """Validate a Python value against the closed Kaji event union."""
+    """Construct an event through the closed union, applying authoring defaults."""
     return _EVENT_ADAPTER.validate_python(value)
 
 
 def validate_event_json(value: str | bytes | bytearray) -> KajiEvent:
-    """Validate JSON against the closed Kaji event union."""
-    return _EVENT_ADAPTER.validate_json(value)
+    """Validate a serialized event without applying missing wire-field defaults."""
+    try:
+        document = json.loads(value)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        raise EventSchemaIncompatibleError("/") from None
+    return _validate_wire_event(
+        document,
+        stored=isinstance(document, dict) and "sequence" in document,
+    )
+
+
+def validate_new_event_python(value: object) -> "NewKajiEvent":
+    """Validate an untouched new-event mapping against the frozen wire contract."""
+    return require_new_event(_validate_wire_event(value, stored=False))
+
+
+def validate_stored_event_python(value: object) -> "StoredKajiEvent":
+    """Validate an untouched stored-event mapping against the frozen wire contract."""
+    return require_stored_event(_validate_wire_event(value, stored=True))
+
+
+def validate_new_event_json(value: str | bytes | bytearray) -> "NewKajiEvent":
+    try:
+        document = json.loads(value)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        raise EventSchemaIncompatibleError("/") from None
+    return validate_new_event_python(document)
+
+
+def validate_stored_event_json(value: str | bytes | bytearray) -> "StoredKajiEvent":
+    try:
+        document = json.loads(value)
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError):
+        raise EventSchemaIncompatibleError("/") from None
+    return validate_stored_event_python(document)
 
 
 # Python keeps one discriminated event model family for compatibility. These
@@ -370,12 +582,10 @@ def require_new_event(event: KajiEvent) -> NewKajiEvent:
     return event
 
 
-def revalidate_new_event(event: KajiEvent) -> NewKajiEvent:
+def revalidate_new_event(event: object) -> NewKajiEvent:
     """Detach and fully revalidate a mutable draft at a durable boundary."""
-    if not isinstance(event, BaseEvent):
-        raise TypeError("new events must be validated Kaji event models")
-    validated = validate_event_python(event.model_dump(mode="python"))
-    return require_new_event(validated)
+    value = event.model_dump(mode="python") if isinstance(event, BaseEvent) else event
+    return validate_new_event_python(value)
 
 
 def require_stored_event(event: KajiEvent | StoredKajiEvent) -> StoredKajiEvent:
@@ -385,10 +595,8 @@ def require_stored_event(event: KajiEvent | StoredKajiEvent) -> StoredKajiEvent:
 
 
 def revalidate_stored_event(
-    event: KajiEvent | StoredKajiEvent,
+    event: object,
 ) -> StoredKajiEvent:
     """Detach and fully revalidate a store result before replay or delivery."""
-    if not isinstance(event, BaseEvent):
-        raise TypeError("stored events must be validated Kaji event models")
-    validated = validate_event_python(event.model_dump(mode="python"))
-    return require_stored_event(validated)
+    value = event.model_dump(mode="python") if isinstance(event, BaseEvent) else event
+    return validate_stored_event_python(value)

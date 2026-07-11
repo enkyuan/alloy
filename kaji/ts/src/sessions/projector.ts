@@ -1,5 +1,5 @@
 import type { EventStore } from "@/events/store";
-import type { StoredKajiEvent } from "@/events/schemas";
+import { validateStoredEvent, type StoredKajiEvent } from "@/events/schemas";
 import { applyEvent, createSessionState, type SessionState } from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
@@ -18,6 +18,10 @@ export class SessionProjector {
   }
 
   apply(event: StoredKajiEvent): void {
+    this.applyValidated(validateStoredEvent(event));
+  }
+
+  private applyValidated(event: StoredKajiEvent): void {
     if (event.session_id !== this.sessionId) {
       throw new Error("Cannot project events from mixed sessions");
     }
@@ -31,12 +35,14 @@ export class SessionProjector {
   }
 
   async sync(store: EventStore, onApplied?: (event: StoredKajiEvent) => void): Promise<number> {
-    const events = await store.getEvents(this.sessionId, {
-      afterSequence: this.lastSequence,
-    });
+    const events = (
+      await store.getEvents(this.sessionId, {
+        afterSequence: this.lastSequence,
+      })
+    ).map(validateStoredEvent);
     recordMetric(this.metrics, "kaji.replay.input_events", events.length, {});
     for (const event of events) {
-      this.apply(event);
+      this.applyValidated(event);
       onApplied?.(event);
     }
     this.initialized = true;

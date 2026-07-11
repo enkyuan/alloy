@@ -2,9 +2,10 @@ import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
 import { structurallyEqualJson } from "@/events/json";
 import { EventType } from "@/events/types";
 import {
-  NewKajiEvent,
   type NewKajiEvent as NewKajiEventType,
-  StoredKajiEvent,
+  type StoredKajiEvent,
+  validateNewEvent,
+  validateStoredEvent,
 } from "@/events/schemas";
 
 export interface AppendResult {
@@ -40,7 +41,7 @@ function draftOf(event: StoredKajiEvent): unknown {
 }
 
 function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
-  return StoredKajiEvent.parse(structuredClone(event));
+  return validateStoredEvent(structuredClone(event));
 }
 
 export class InMemoryEventStore implements EventStore {
@@ -62,7 +63,7 @@ export class InMemoryEventStore implements EventStore {
   }
 
   async append(input: NewKajiEventType): Promise<AppendResult> {
-    const event = NewKajiEvent.parse(structuredClone(input));
+    const event = validateNewEvent(structuredClone(input));
     const existing = this.eventsById.get(event.id);
     if (existing !== undefined) {
       if (!structurallyEqualJson(draftOf(existing), event)) {
@@ -84,7 +85,7 @@ export class InMemoryEventStore implements EventStore {
       );
     }
 
-    const stored = StoredKajiEvent.parse({ ...event, sequence: session.events.length + 1 });
+    const stored = validateStoredEvent({ ...event, sequence: session.events.length + 1 });
     session.events.push(stored);
     session.closed = event.type === EventType.SESSION_CLOSED;
     session.lastAccess = ++this.clock;

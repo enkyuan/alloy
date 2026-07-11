@@ -5,7 +5,12 @@
  */
 import { EventType } from "@/events/types";
 import { canonicalJsonValue } from "@/events/json";
-import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
+import {
+  type KajiEvent,
+  type StoredKajiEvent,
+  validateNewEvent,
+  validateStoredEvent,
+} from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
 export interface MessageToolCall {
@@ -87,26 +92,19 @@ export function createSessionState(sessionId: string): SessionState {
  * role:tool result. OpenAI and Anthropic reject orphan tool-result messages.
  */
 export function replaySession(events: readonly StoredKajiEvent[]): SessionState {
-  const first = events[0];
+  const validated = events.map(validateStoredEvent);
+  const first = validated[0];
   if (first === undefined) {
     throw new Error("Cannot replay empty event log");
   }
 
-  if (events.some((event) => event.session_id !== first.session_id)) {
+  if (validated.some((event) => event.session_id !== first.session_id)) {
     throw new Error("Cannot replay events from mixed sessions");
-  }
-
-  const sequenced = events.map((event) => "sequence" in event);
-  if (sequenced.some(Boolean) && !sequenced.every(Boolean)) {
-    throw new Error("Cannot replay mixed sequenced and unsequenced events");
-  }
-  if (!sequenced.every(Boolean)) {
-    throw new Error("Stable replay requires stored events with sequence");
   }
 
   const seen = new Set<number>();
   let previous = 0;
-  for (const event of events) {
+  for (const event of validated) {
     if (!Number.isInteger(event.sequence) || event.sequence <= 0) {
       throw new Error("Stored event sequence must be a positive integer");
     }
@@ -119,26 +117,20 @@ export function replaySession(events: readonly StoredKajiEvent[]): SessionState 
   }
 
   const state = createSessionState(first.session_id);
-  for (const event of events) applyEvent(state, event);
+  for (const event of validated) applyEvent(state, event);
   return state;
 }
 
 /** Compatibility entry point for fully unsequenced pre-beta logs. */
 export function replayLegacySession(events: readonly KajiEvent[]): SessionState {
-  const first = events[0];
+  const validated = events.map(validateNewEvent);
+  const first = validated[0];
   if (first === undefined) throw new Error("Cannot replay empty event log");
-  if (events.some((event) => event.session_id !== first.session_id)) {
+  if (validated.some((event) => event.session_id !== first.session_id)) {
     throw new Error("Cannot replay events from mixed sessions");
   }
-  const sequenced = events.map((event) => "sequence" in event);
-  if (sequenced.some(Boolean) && !sequenced.every(Boolean)) {
-    throw new Error("Cannot replay mixed sequenced and unsequenced events");
-  }
-  if (sequenced.some(Boolean)) {
-    throw new Error("Legacy replay accepts only fully unsequenced events");
-  }
   const state = createSessionState(first.session_id);
-  for (const event of orderLegacyUnsequencedEvents(events)) applyKajiEvent(state, event);
+  for (const event of orderLegacyUnsequencedEvents(validated)) applyKajiEvent(state, event);
   return state;
 }
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import re
 import sys
@@ -32,6 +33,7 @@ REQUIRED_JSON = {
     "errors/error-codes.json",
     "errors/provider-normalization.json",
     "events/conformance.json",
+    "events/conformance-invalid.json",
     "events/new-kaji-event-v1.schema.json",
     "events/stored-kaji-event-v1.schema.json",
     "integrations/conformance-invalid.json",
@@ -50,6 +52,21 @@ APPROVAL_FAILURE_RETRYABILITY = {
     "APPROVAL_UNAVAILABLE": False,
 }
 EXPECTED_TOOL_RISKS = ["read", "write", "external_effect", "destructive", "admin"]
+REQUIRED_EVENT_NEGATIVE_CASES = {
+    "missing-event-id",
+    "missing-version",
+    "missing-timestamp",
+    "missing-session-id",
+    "missing-event-type",
+    "empty-event-id",
+    "empty-session-id",
+    "empty-present-turn-id",
+    "unknown-event-type",
+    "extra-field",
+    "draft-has-sequence",
+    "stored-missing-sequence",
+    "unsafe-integral-number",
+}
 
 
 class ContractError(RuntimeError):
@@ -110,20 +127,19 @@ def check_tool_risk_vocabulary(documents: dict[str, dict[str, Any]]) -> None:
         "events/new-kaji-event-v1.schema.json",
         "events/stored-kaji-event-v1.schema.json",
     ):
-        approval_rule = next(
-            (
-                rule
-                for rule in documents[relative]["allOf"]
-                if rule.get("if", {}).get("properties", {}).get("type", {}).get("const")
-                == "tool.approval.requested"
-            ),
-            None,
+        approval_rule = (
+            documents[relative].get("$defs", {}).get("toolApprovalRequested")
         )
-        if approval_rule is None:
-            raise fail(CONTRACTS / relative, "/allOf", "missing approval request rule")
+        if not isinstance(approval_rule, dict):
+            raise fail(
+                CONTRACTS / relative,
+                "/$defs/toolApprovalRequested",
+                "missing approval request variant",
+            )
+        payload = approval_rule["allOf"][1]
         locations[relative] = (
-            "/allOf/tool.approval.requested/then/properties/risk/enum",
-            approval_rule["then"]["properties"]["risk"]["enum"],
+            "/$defs/toolApprovalRequested/allOf/1/properties/risk/enum",
+            payload["properties"]["risk"]["enum"],
         )
 
     for relative, (location, actual) in locations.items():
@@ -391,14 +407,231 @@ def error_codes(documents: dict[str, dict[str, Any]]) -> set[str]:
     return set(codes)
 
 
+def runtime_event_types() -> set[str]:
+    python_source = (
+        ROOT / "kaji" / "sdk" / "src" / "infra" / "events" / "types.py"
+    ).read_text()
+    typescript_source = (
+        ROOT / "kaji" / "ts" / "src" / "events" / "types.ts"
+    ).read_text()
+    python_types = set(
+        re.findall(r'^\s+[A-Z_]+\s*=\s*"([^"]+)"', python_source, re.MULTILINE)
+    )
+    typescript_types = set(
+        re.findall(r'^\s+[A-Z_]+:\s*"([^"]+)"', typescript_source, re.MULTILINE)
+    )
+    if python_types != typescript_types:
+        raise fail(
+            ROOT / "kaji",
+            "/events/EventType",
+            f"runtime EventType drift; python={sorted(python_types)}, typescript={sorted(typescript_types)}",
+        )
+    return python_types
+
+
+def _event_schema_def_name(event_type: str) -> str:
+    head, *tail = event_type.split(".")
+    return head + "".join(part.title() for part in tail)
+
+
+def _event_schema_union_discriminants(path: Path, schema: dict[str, Any]) -> list[str]:
+    union = schema.get("oneOf")
+    definitions = schema.get("$defs")
+    if not isinstance(union, list) or not union:
+        raise fail(path, "/oneOf", "expected a non-empty event union")
+    if not isinstance(definitions, dict):
+        raise fail(path, "/$defs", "expected event definitions")
+
+    discriminants: list[str] = []
+    prefix = "#/$defs/"
+    for index, member in enumerate(union):
+        location = f"/oneOf/{index}"
+        if (
+            not isinstance(member, dict)
+            or set(member) != {"$ref"}
+            or not isinstance(member["$ref"], str)
+            or not member["$ref"].startswith(prefix)
+        ):
+            raise fail(path, location, "expected one local event-variant reference")
+        definition_name = member["$ref"][len(prefix) :]
+        variant = definitions.get(definition_name)
+        try:
+            event_type = variant["allOf"][1]["properties"]["type"]["const"]
+        except (KeyError, IndexError, TypeError):
+            raise fail(
+                path,
+                location,
+                "event union member requires one literal type discriminant",
+            ) from None
+        if not isinstance(event_type, str) or not event_type:
+            raise fail(path, location, "event type discriminant must be non-empty")
+        discriminants.append(event_type)
+    return discriminants
+
+
+def _event_schema_for_parity(
+    path: Path, schema: dict[str, Any], *, stored: bool
+) -> dict[str, Any]:
+    normalized = deepcopy(schema)
+    normalized.pop("$id", None)
+    normalized.pop("title", None)
+    definitions = normalized.get("$defs")
+    union = normalized.get("oneOf")
+    if not isinstance(definitions, dict) or not isinstance(union, list):
+        raise fail(path, "/", "event schema requires $defs and oneOf")
+    base = definitions.get("base")
+    if not isinstance(base, dict):
+        raise fail(path, "/$defs/base", "missing event base definition")
+    properties = base.get("properties")
+    required = base.get("required")
+    if not isinstance(properties, dict) or not isinstance(required, list):
+        raise fail(path, "/$defs/base", "event base requires properties and required")
+
+    if stored:
+        if properties.pop("sequence", None) != {"$ref": "#/$defs/positiveInteger"}:
+            raise fail(
+                path,
+                "/$defs/base/properties/sequence",
+                "stored events require the canonical sequence definition",
+            )
+        if required.count("sequence") != 1:
+            raise fail(
+                path,
+                "/$defs/base/required",
+                "stored events must require sequence exactly once",
+            )
+        base["required"] = [field for field in required if field != "sequence"]
+    elif "sequence" in properties or "sequence" in required:
+        raise fail(
+            path,
+            "/$defs/base",
+            "new events must not define or require sequence",
+        )
+    return normalized
+
+
+def check_event_schema_structure(
+    new_schema: dict[str, Any],
+    stored_schema: dict[str, Any],
+    event_types: set[str],
+) -> None:
+    schemas = (
+        (CONTRACTS / "events" / "new-kaji-event-v1.schema.json", new_schema),
+        (CONTRACTS / "events" / "stored-kaji-event-v1.schema.json", stored_schema),
+    )
+    for path, schema in schemas:
+        discriminants = _event_schema_union_discriminants(path, schema)
+        actual = set(discriminants)
+        if len(discriminants) != len(actual) or actual != event_types:
+            raise fail(
+                path,
+                "/oneOf",
+                "oneOf discriminants must exactly match runtime EventType; "
+                f"missing={sorted(event_types - actual)}, "
+                f"extra={sorted(actual - event_types)}",
+            )
+
+    new_structure = _event_schema_for_parity(schemas[0][0], new_schema, stored=False)
+    stored_structure = _event_schema_for_parity(
+        schemas[1][0], stored_schema, stored=True
+    )
+    if new_structure != stored_structure:
+        raise fail(
+            schemas[1][0],
+            "/",
+            "new/stored event schema structural parity differs beyond sequence",
+        )
+
+
+def _flatten_validation_errors(error: ValidationError) -> list[ValidationError]:
+    result = [error]
+    for child in error.context:
+        result.extend(_flatten_validation_errors(child))
+    return result
+
+
+def _normalized_event_error(error: ValidationError) -> str:
+    parts = list(error.absolute_path)
+    if error.validator == "required" and isinstance(error.instance, dict):
+        missing = next(
+            (field for field in error.validator_value if field not in error.instance),
+            None,
+        )
+        if missing is not None:
+            parts.append(missing)
+    elif error.validator in {"additionalProperties", "unevaluatedProperties"}:
+        unexpected = sorted(set(re.findall(r"'([^']+)'", error.message)))
+        if unexpected:
+            parts.append(unexpected[0])
+    return pointer(parts)
+
+
+def event_validation_pointer(
+    schema: dict[str, Any], value: Any, *, stored: bool, event_types: set[str]
+) -> str | None:
+    if not isinstance(value, dict):
+        return "/"
+    for field in ("id", "version", "timestamp", "type", "session_id"):
+        if field not in value:
+            return f"/{field}"
+    for field in ("id", "session_id", "turn_id"):
+        if value.get(field) == "":
+            return f"/{field}"
+    if stored and "sequence" not in value:
+        return "/sequence"
+    if not stored and "sequence" in value:
+        return "/sequence"
+    event_type = value.get("type")
+    if event_type not in event_types:
+        return "/type"
+
+    variant = schema["$defs"][_event_schema_def_name(event_type)]
+    allowed = set(schema["$defs"]["base"]["properties"])
+    allowed.update(variant["allOf"][1]["properties"])
+    unexpected = sorted(set(value) - allowed)
+    if unexpected:
+        return pointer([unexpected[0]])
+
+    validator = Draft202012Validator(
+        {
+            "$schema": DRAFT_2020_12,
+            "$defs": schema["$defs"],
+            "$ref": f"#/$defs/{_event_schema_def_name(event_type)}",
+        },
+        format_checker=FormatChecker(),
+    )
+    errors = list(validator.iter_errors(value))
+    if not errors:
+        return None
+    candidates = [
+        _normalized_event_error(item)
+        for error in errors
+        for item in _flatten_validation_errors(error)
+        if item.validator not in {"allOf", "oneOf", "unevaluatedProperties"}
+    ]
+    return min(candidates, key=lambda item: (item == "/", item)) if candidates else "/"
+
+
 def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
     path = CONTRACTS / "events" / "conformance.json"
     events = documents["events/conformance.json"].get("events")
     if not isinstance(events, list) or not events:
         raise fail(path, "/events", "expected a non-empty array")
 
+    event_types = runtime_event_types()
+    fixture_types = {event.get("type") for event in events if isinstance(event, dict)}
+    if fixture_types != event_types:
+        raise fail(
+            path,
+            "/events",
+            "event fixture coverage mismatch; "
+            f"missing={sorted(event_types - fixture_types)}, "
+            f"extra={sorted(fixture_types - event_types)}",
+        )
+
     new_schema = documents["events/new-kaji-event-v1.schema.json"]
     stored_schema = documents["events/stored-kaji-event-v1.schema.json"]
+    check_event_schema_structure(new_schema, stored_schema, event_types)
     new_validator = Draft202012Validator(new_schema, format_checker=FormatChecker())
     stored_validator = Draft202012Validator(
         stored_schema, format_checker=FormatChecker()
@@ -597,6 +830,63 @@ def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
                     f"/events/{failure_index}/error_code",
                     "approval-coded tool failure has no matching rejection",
                 )
+
+    invalid_path = CONTRACTS / "events" / "conformance-invalid.json"
+    invalid_cases = documents["events/conformance-invalid.json"].get("cases")
+    if not isinstance(invalid_cases, list) or not invalid_cases:
+        raise fail(invalid_path, "/cases", "expected a non-empty array")
+    names: set[str] = set()
+    for index, case in enumerate(invalid_cases):
+        location = f"/cases/{index}"
+        if not isinstance(case, dict) or set(case) != {
+            "name",
+            "kind",
+            "event",
+            "path",
+        }:
+            raise fail(invalid_path, location, "invalid event fixture envelope")
+        name = case["name"]
+        if not isinstance(name, str) or not name or name in names:
+            raise fail(
+                invalid_path, f"{location}/name", "expected a unique non-empty name"
+            )
+        names.add(name)
+        kind = case["kind"]
+        if kind not in {"new", "stored"}:
+            raise fail(invalid_path, f"{location}/kind", "expected new or stored")
+        expected_path = case["path"]
+        if (
+            not isinstance(expected_path, str)
+            or not expected_path.startswith("/")
+            or re.search(r"~(?:[^01]|$)", expected_path) is not None
+        ):
+            raise fail(
+                invalid_path, f"{location}/path", "expected a normalized JSON pointer"
+            )
+        schema = stored_schema if kind == "stored" else new_schema
+        actual_path = event_validation_pointer(
+            schema,
+            case["event"],
+            stored=kind == "stored",
+            event_types=event_types,
+        )
+        if actual_path is None:
+            raise fail(
+                invalid_path, f"{location}/event", "expected event to fail validation"
+            )
+        if actual_path != expected_path:
+            raise fail(
+                invalid_path,
+                f"{location}/path",
+                f"expected {expected_path!r}, normalized first error is {actual_path!r}",
+            )
+    missing_required = REQUIRED_EVENT_NEGATIVE_CASES - names
+    if missing_required:
+        raise fail(
+            invalid_path,
+            "/cases",
+            "missing required negative cases: " + ", ".join(sorted(missing_required)),
+        )
 
 
 def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
@@ -917,6 +1207,94 @@ def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
     return result
 
 
+def check_cli_command_tiers(document: dict[str, Any]) -> None:
+    path = CONTRACTS / "feature-tiers-v1.json"
+    matrix = document.get("cliCommands")
+    if not isinstance(matrix, dict) or set(matrix) != {"python", "typescript"}:
+        raise fail(path, "/cliCommands", "expected python and typescript command tiers")
+
+    python_commands: set[str] = set()
+    for source in (ROOT / "kaji" / "sdk" / "src" / "cli").glob("*.py"):
+        python_commands.update(
+            re.findall(r'\.add_parser\(\s*["\']([^"\']+)["\']', source.read_text())
+        )
+    typescript_source = (ROOT / "kaji" / "ts" / "src" / "cli" / "index.ts").read_text()
+    command_block = typescript_source.split("export const COMMANDS", 1)[1].split(
+        "\n};", 1
+    )[0]
+    typescript_commands = {
+        quoted or bare
+        for quoted, bare in re.findall(
+            r'^  (?:(?:"([^"]+)")|([a-z][\w-]*)):\s*\{',
+            command_block,
+            re.MULTILINE,
+        )
+    }
+    actual = {"python": python_commands, "typescript": typescript_commands}
+
+    for runtime, commands in actual.items():
+        tiers = matrix[runtime]
+        if not isinstance(tiers, dict) or set(tiers) != {"stable", "experimental"}:
+            raise fail(
+                path,
+                f"/cliCommands/{runtime}",
+                "expected stable and experimental arrays",
+            )
+        classified: set[str] = set()
+        for tier in ("stable", "experimental"):
+            values = tiers[tier]
+            if (
+                not isinstance(values, list)
+                or not all(isinstance(value, str) and value for value in values)
+                or values != sorted(set(values))
+            ):
+                raise fail(
+                    path,
+                    f"/cliCommands/{runtime}/{tier}",
+                    "expected sorted unique command names",
+                )
+            overlap = classified.intersection(values)
+            if overlap:
+                raise fail(
+                    path,
+                    f"/cliCommands/{runtime}/{tier}",
+                    f"commands classified twice: {sorted(overlap)}",
+                )
+            classified.update(values)
+        if classified != commands:
+            raise fail(
+                path,
+                f"/cliCommands/{runtime}",
+                f"command coverage mismatch; missing={sorted(commands - classified)}, extra={sorted(classified - commands)}",
+            )
+
+
+def check_beta_limits(document: dict[str, Any]) -> None:
+    path = CONTRACTS / "beta-core-v1.json"
+    expected = {
+        "runtime": {
+            "turnTimeoutMs": 120_000,
+            "providerCancellationGraceMs": 5_000,
+            "providerTextMaxBytes": 262_144,
+            "providerToolArgumentsMaxBytes": 65_536,
+            "providerResponseMaxBytes": 524_288,
+            "providerToolCallsMax": 64,
+        },
+        "events": {
+            "maxDurableToolArgumentBytes": 65_536,
+            "maxDurableToolResultBytes": 65_536,
+            "maxDurableEventBytes": 1_048_576,
+        },
+    }
+    for section, fields in expected.items():
+        actual = document.get(section)
+        if not isinstance(actual, dict):
+            raise fail(path, f"/{section}", "expected an object")
+        for field, value in fields.items():
+            if actual.get(field) != value:
+                raise fail(path, f"/{section}/{field}", f"expected {value}")
+
+
 def _registry_entries() -> dict[str, dict[str, Any]]:
     entries: dict[str, dict[str, Any]] = {}
     for path in REGISTRY_INDEXES:
@@ -1034,6 +1412,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     beta_path = CONTRACTS / "beta-core-v1.json"
     if documents["beta-core-v1.json"].get("contractVersion") != "1.0.0":
         raise fail(beta_path, "/contractVersion", "expected 1.0.0")
+    check_beta_limits(documents["beta-core-v1.json"])
     check_tool_risk_vocabulary(documents)
     codes = error_codes(documents)
     check_events(documents, codes)
@@ -1041,6 +1420,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_integrations(documents, codes)
     check_parity(documents)
     check_packaged_contracts()
+    check_cli_command_tiers(documents["feature-tiers-v1.json"])
     return documents, feature_sets(documents["feature-tiers-v1.json"])
 
 

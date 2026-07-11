@@ -14,9 +14,9 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import ValidationError
 
 from kaji.infra.events.bus import EventBus
+from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.schemas import validate_event_json
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.observability.protocols import TraceSink, start_span
@@ -793,14 +793,20 @@ async def test_kimi_stream_failures_do_not_retain_response_payload(
         assert "response redacted" in caplog.text
 
 
+@pytest.mark.parametrize(
+    "after_sequence",
+    [0, 1],
+    ids=["no-partial-yield", "no-cursor-advance"],
+)
 @pytest.mark.asyncio
-async def test_redis_bus_deserialization_failure_is_redacted(
+async def test_redis_bus_rejects_an_entire_batch_before_yielding(
     caplog: pytest.LogCaptureFixture,
+    after_sequence: int,
 ) -> None:
     secret = "sk-event-stream-payload-secret"
-    raw = json.dumps(
+    invalid = json.dumps(
         {
-            "id": "event",
+            "id": "event-2",
             "version": "1.0",
             "timestamp": 1.0,
             "type": "tool.call.requested",
@@ -810,35 +816,150 @@ async def test_redis_bus_deserialization_failure_is_redacted(
             "tool_call_id": "call",
             "tool_args": {"secret": secret + "x" * 70_000},
             "metadata": {},
+            "sequence": 2,
+        }
+    )
+    valid = json.dumps(
+        {
+            "id": "event-1",
+            "version": "1.0",
+            "timestamp": 1.0,
+            "type": "tool.call.requested",
+            "session_id": "session",
+            "turn_id": "turn",
+            "tool_name": "tool",
+            "tool_call_id": "call-1",
+            "tool_args": {},
+            "metadata": {},
             "sequence": 1,
         }
     )
 
-    with pytest.raises(ValidationError) as direct:
-        validate_event_json(raw)
+    with pytest.raises(EventSchemaIncompatibleError) as direct:
+        validate_event_json(invalid)
+    assert direct.value.path == "/tool_args"
     assert secret not in str(direct.value)
     assert len(str(direct.value)) < 2_000
 
     class Redis:
-        calls = 0
+        def __init__(self) -> None:
+            self.calls: list[dict[str, str]] = []
+
+        async def xread(
+            self,
+            streams: dict[str, str],
+            **_kwargs: object,
+        ) -> list[list[object]]:
+            self.calls.append(streams)
+            if len(self.calls) > 1:
+                raise AssertionError("incompatible batches must not advance")
+            return [
+                [
+                    b"stream",
+                    [
+                        (b"1-0", {b"payload": valid.encode()}),
+                        (b"2-0", {b"payload": invalid.encode()}),
+                    ],
+                ]
+            ]
+
+    redis = Redis()
+    caplog.set_level(logging.ERROR)
+    with patch(
+        "kaji.infra.realtime.redis.get_redis_stream_client",
+        new=AsyncMock(return_value=redis),
+    ):
+        stream = EventBus().subscribe("session", after_sequence=after_sequence)
+        with pytest.raises(EventSchemaIncompatibleError) as raised:
+            await anext(stream)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == "/tool_args"
+    assert redis.calls == [{"kaji:events:session": "0"}]
+    assert secret not in caplog.text
+    assert "payload and details redacted" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {b"payload": b"\xff"},
+        {},
+    ],
+    ids=["malformed-utf8", "missing-payload"],
+)
+@pytest.mark.asyncio
+async def test_redis_bus_normalizes_malformed_payloads(
+    data: dict[bytes, bytes],
+) -> None:
+    class Redis:
+        def __init__(self) -> None:
+            self.calls = 0
 
         async def xread(self, *_args: object, **_kwargs: object):
             self.calls += 1
-            if self.calls == 1:
-                return [[b"stream", [(b"1-0", {b"payload": raw.encode()})]]]
-            raise RuntimeError("stop after redaction assertion")
+            if self.calls > 1:
+                raise AssertionError("incompatible batches must not advance")
+            return [[b"stream", [(b"1-0", data)]]]
 
-    caplog.set_level(logging.ERROR)
+    redis = Redis()
+    raw_client = AsyncMock(return_value=redis)
+    decoded_client = AsyncMock(
+        side_effect=AssertionError("stream payloads require the raw Redis client")
+    )
+    with (
+        patch(
+            "kaji.infra.realtime.redis.get_redis_stream_client",
+            new=raw_client,
+        ),
+        patch(
+            "kaji.infra.realtime.redis.get_redis_client",
+            new=decoded_client,
+        ),
+    ):
+        stream = EventBus().subscribe("session")
+        with pytest.raises(EventSchemaIncompatibleError) as raised:
+            await anext(stream)
+
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == "/"
+    assert redis.calls == 1
+    raw_client.assert_awaited_once_with()
+    decoded_client.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_redis_bus_rejects_cross_session_rows() -> None:
+    raw = json.dumps(
+        {
+            "id": "event",
+            "version": "1.0",
+            "timestamp": 1.0,
+            "type": "tool.call.requested",
+            "session_id": "other-session",
+            "turn_id": "turn",
+            "tool_name": "tool",
+            "tool_call_id": "call",
+            "tool_args": {},
+            "metadata": {},
+            "sequence": 1,
+        }
+    ).encode()
+
+    class Redis:
+        async def xread(self, *_args: object, **_kwargs: object):
+            return [[b"stream", [(b"1-0", {b"payload": raw})]]]
+
     with patch(
-        "kaji.infra.realtime.redis.get_redis_client",
+        "kaji.infra.realtime.redis.get_redis_stream_client",
         new=AsyncMock(return_value=Redis()),
     ):
         stream = EventBus().subscribe("session")
-        with pytest.raises(RuntimeError, match="stop after redaction"):
+        with pytest.raises(EventSchemaIncompatibleError) as raised:
             await anext(stream)
 
-    assert secret not in caplog.text
-    assert "payload and details redacted" in caplog.text
+    assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert raised.value.path == "/session_id"
 
 
 def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() -> None:

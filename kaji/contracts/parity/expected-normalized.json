@@ -3716,7 +3716,7 @@
           {
             "id": "json-event-3",
             "metadata": {},
-            "result": [1e-6, 1e-7, 1e20, 1e21],
+            "result": [1e-6, 1.25e-7, 4503599627370495.5, -4503599627370495.5],
             "sequence": 3,
             "session_id": "session-json",
             "tool_call_id": "call-json",
@@ -3739,7 +3739,7 @@
               "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
             },
             {
-              "content": "[0.000001,1e-7,100000000000000000000,1e+21]",
+              "content": "[0.000001,1.25e-7,4503599627370495.5,-4503599627370495.5]",
               "name": "fixture",
               "role": "tool",
               "tool_call_id": "call-json"
@@ -3751,7 +3751,7 @@
         },
         "result": {
           "event_count": 3,
-          "tool_content": "[0.000001,1e-7,100000000000000000000,1e+21]"
+          "tool_content": "[0.000001,1.25e-7,4503599627370495.5,-4503599627370495.5]"
         }
       }
     },
@@ -3889,7 +3889,7 @@
         "provider_requests": [],
         "provider_responses": [],
         "replay": {},
-        "result": { "event_count": 3, "rejection": "integer_not_exactly_representable" }
+        "result": { "event_count": 3, "rejection": "integer_outside_i_json_safe_range" }
       }
     },
     {

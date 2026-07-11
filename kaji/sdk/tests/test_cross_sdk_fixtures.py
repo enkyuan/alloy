@@ -99,7 +99,7 @@ def test_python_exporter_is_byte_stable_and_covers_every_scenario() -> None:
         "replay-json-number": "7.5",
         "replay-json-integral-float": "1",
         "replay-json-negative-zero": "0",
-        "replay-json-exponent-boundaries": "[0.000001,1e-7,100000000000000000000,1e+21]",
+        "replay-json-exponent-boundaries": "[0.000001,1.25e-7,4503599627370495.5,-4503599627370495.5]",
         "replay-json-numeric-keys": '{"10":"ten","2":"two"}',
         "replay-json-safe-integer-boundary": "9007199254740991",
         "replay-json-utf16-keys": '{"\U00010000":"astral","\ue000":"bmp"}',
@@ -108,7 +108,7 @@ def test_python_exporter_is_byte_stable_and_covers_every_scenario() -> None:
     }
     assert snapshots["replay-json-unrepresentable-integer"]["result"] == {
         "event_count": 3,
-        "rejection": "integer_not_exactly_representable",
+        "rejection": "integer_outside_i_json_safe_range",
     }
 
     referenced = {

@@ -19,7 +19,10 @@ export {
   AgentTurnFailed,
   KajiEvent,
   NewKajiEvent,
+  SessionCreated,
   StoredKajiEvent,
+  validateNewEvent,
+  validateStoredEvent,
   type KajiEventInput,
   type BaseEvent,
 } from "@/events/schemas";
@@ -35,6 +38,7 @@ export {
   EventBufferOverflowError,
   EventDeliveryError,
   EventIdConflictError,
+  EventSchemaIncompatibleError,
   EventStoreCapacityError,
 } from "@/events/errors";
 export { type EventStore, InMemoryEventStore } from "@/events/store";

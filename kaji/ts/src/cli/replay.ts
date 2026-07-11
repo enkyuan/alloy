@@ -5,8 +5,8 @@
  * All file I/O happens here; `render.ts` is pure (no I/O).
  */
 import {
-  KajiEvent,
-  StoredKajiEvent,
+  validateNewEvent,
+  validateStoredEvent,
   type KajiEvent as KajiEventType,
   type StoredKajiEvent as StoredKajiEventType,
 } from "@/events/schemas";
@@ -75,11 +75,9 @@ export async function replay(argv: string[], opts: ReplayOptions): Promise<numbe
       const value: unknown = JSON.parse(trimmed);
       const parsed =
         value !== null && typeof value === "object" && "sequence" in value
-          ? StoredKajiEvent.safeParse(value)
-          : KajiEvent.safeParse(value);
-      if (parsed.success) {
-        events.push(parsed.data);
-      }
+          ? validateStoredEvent(value)
+          : validateNewEvent(value);
+      events.push(parsed);
       // Silently skip invalid / unrecognised event shapes
     } catch {
       // Skip non-JSON lines

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from kaji.infra.events.schemas import StoredKajiEvent
+from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
 from kaji.infra.events.store import EventStore, InMemoryEventStore
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
@@ -43,11 +43,14 @@ class TextSession:
         limit: int = 1_024,
     ) -> list[StoredKajiEvent]:
         """Return a bounded cursor page of events for this text session."""
-        return await self.store.get_events(
-            self.config.session_id,
-            after_sequence=after_sequence,
-            limit=limit,
-        )
+        return [
+            revalidate_stored_event(event)
+            for event in await self.store.get_events(
+                self.config.session_id,
+                after_sequence=after_sequence,
+                limit=limit,
+            )
+        ]
 
 
 class TextModalityAdapter:

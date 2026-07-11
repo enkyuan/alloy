@@ -101,13 +101,8 @@ def replay_session(
     OpenAI and Anthropic both reject ``role: tool`` messages whose originating
     assistant turn doesn't reference the matching call id.
     """
-    session_id = _session_id(events)
-    raw_sequences = [getattr(event, "sequence", None) for event in events]
-    if any(sequence is None for sequence in raw_sequences) and any(
-        sequence is not None for sequence in raw_sequences
-    ):
-        raise ValueError("Cannot replay mixed sequenced and unsequenced events")
     ordered = [revalidate_stored_event(event) for event in events]
+    session_id = _session_id(ordered)
     record_metric(metrics_sink, "kaji.replay.input_events", len(ordered))
     sequences = [event.sequence for event in ordered]
     if len(sequences) != len(set(sequences)):
@@ -126,10 +121,8 @@ def replay_legacy_session(
     metrics_sink: MetricsSink = NOOP_METRICS,
 ) -> SessionState:
     """Replay a fully unsequenced legacy log with a visible warning."""
-    session_id = _session_id(events)
-    if any(event.sequence is not None for event in events):
-        raise ValueError("Legacy replay accepts only fully unsequenced event logs")
     validated = [revalidate_new_event(event) for event in events]
+    session_id = _session_id(validated)
     state = SessionState(session_id=session_id)
     record_metric(metrics_sink, "kaji.replay.input_events", len(validated))
     for event in _legacy_timestamp_order(validated):

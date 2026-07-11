@@ -202,11 +202,19 @@ from kaji.runtime.agents import AgentStrategy, ContextWindow
 | Tool iterations per turn | 5 | `AgentStrategy(max_iterations=...)` | `.strategy({ maxToolIterations: ... })` |
 | Complete context turns | 32 | `.context_window(ContextWindow(max_turns=...))` | `.contextWindow({ maxTurns: ..., maxCharacters: ... })` |
 | Context characters | 100,000 | `ContextWindow(max_characters=...)` | `contextWindow.maxCharacters` |
+| Turn work timeout | 120 seconds | Runtime turn limits | Runtime turn limits |
+| Provider cancellation grace | 5 seconds | Runtime turn limits | Runtime turn limits |
+| Provider text | 262,144 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
+| Provider tool arguments | 65,536 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
+| Provider response | 524,288 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
+| Provider tool calls | 64 | Runtime provider limits | Runtime provider limits |
 | Parallel tool handlers | 4 | `ToolExecutionLimits(max_parallel=...)` | `.toolExecutionLimits({ maxParallel: ... })` |
 | Tool queue-to-completion timeout | 30 seconds | `ToolExecutionLimits(timeout_seconds=...)` | `.toolExecutionLimits({ timeoutMs: ... })` |
 | Approval timeout | 300 seconds | `ToolExecutionLimits(approval_timeout_seconds=...)` | `.toolExecutionLimits({ approvalTimeoutMs: ... })` |
 | Subscriber queue | 1,024 events | `InMemoryEventJournal(subscriber_queue_capacity=...)` | `new InMemoryEventCommitter(store, { subscriberCapacity: ... })` |
 | Durable tool arguments | 65,536 UTF-8 bytes | Not overridable in beta | Not overridable in beta |
+| Durable tool results | 65,536 UTF-8 bytes | Not overridable in beta | Not overridable in beta |
+| Durable event | 1,048,576 UTF-8 bytes | Not overridable in beta | Not overridable in beta |
 | In-memory sessions | 1,000 | `InMemoryEventStore(max_sessions=...)` | `new InMemoryEventStore({ maxSessions: ... })` |
 | Events per in-memory session | 10,000 | `InMemoryEventStore(max_events_per_session=...)` | `new InMemoryEventStore({ maxEventsPerSession: ... })` |
 | History page | 1,024 events | `history(..., limit=...)` | `history(..., { limit: ... })` |

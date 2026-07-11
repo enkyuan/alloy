@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { StoredKajiEvent } from "@/events/schemas";
+import { StoredKajiEvent, validateStoredEvent } from "@/events/schemas";
 import { replaySession } from "@/sessions/replay";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,10 +19,18 @@ describe("production-beta contract", () => {
       sameSessionTurns: "serialized",
       maxToolIterations: 5,
       contextWindowTurns: 32,
+      turnTimeoutMs: 120_000,
+      providerCancellationGraceMs: 5_000,
+      providerTextMaxBytes: 262_144,
+      providerToolArgumentsMaxBytes: 65_536,
+      providerResponseMaxBytes: 524_288,
+      providerToolCallsMax: 64,
     });
     expect(contract.tools).toMatchObject({ maxConcurrency: 4, timeoutMs: 30_000 });
     expect(contract.events).toMatchObject({
       subscriberQueueCapacity: 1024,
+      maxDurableToolResultBytes: 65_536,
+      maxDurableEventBytes: 1_048_576,
       inMemoryStoreMaxEventsPerSession: 10_000,
     });
   });
@@ -33,9 +41,10 @@ describe("production-beta contract", () => {
 
   it("parses and replays every canonical approval lifecycle fixture row", () => {
     const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as { events: unknown[] };
-    const events = fixture.events.map((event) => StoredKajiEvent.parse(event));
-    expect(events).toHaveLength(23);
+    const events = fixture.events.map(validateStoredEvent);
+    expect(events).toHaveLength(40);
     const state = replaySession(events);
+    expect(state.isActive).toBe(false);
     expect(state.pendingApprovals.size).toBe(0);
     expect(state.approvedApprovals.size).toBe(1);
     expect(state.rejectedApprovals.size).toBe(4);

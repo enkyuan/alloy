@@ -11,6 +11,7 @@ import type { EventCommitter } from "@/events/protocols";
 import {
   KajiEvent,
   StoredKajiEvent,
+  validateStoredEvent,
   type KajiEventInput,
   type NewKajiEvent,
 } from "@/events/schemas";
@@ -615,7 +616,9 @@ export class AgentRuntime {
     sessionId: string,
     options: { afterSequence?: number; limit?: number } = {},
   ): Promise<StoredKajiEvent[]> {
-    return this.store.getEvents(sessionId, { ...options, limit: options.limit ?? 1_024 });
+    return (
+      await this.store.getEvents(sessionId, { ...options, limit: options.limit ?? 1_024 })
+    ).map(validateStoredEvent);
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {

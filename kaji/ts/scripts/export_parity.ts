@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 
 import { InMemoryEventCommitter } from "@/events/committer";
+import { EventSchemaIncompatibleError } from "@/events/errors";
 import { KajiEvent, StoredKajiEvent, type StoredKajiEvent as StoredEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { Clock, IdFactory, IdScope } from "@/internal/uuid";
@@ -639,10 +640,10 @@ const JSON_REPLAY_RESULTS: Record<string, unknown> = {
   "json-number": 7.5,
   "json-integral-float": 1.0,
   "json-negative-zero": -0.0,
-  "json-exponent-boundaries": [1e-6, 1e-7, 1e20, 1e21],
+  "json-exponent-boundaries": [1e-6, 1.25e-7, 4503599627370495.5, -4503599627370495.5],
   "json-numeric-keys": { 2: "two", 10: "ten" },
   "json-safe-integer-boundary": Number.MAX_SAFE_INTEGER,
-  "json-unrepresentable-integer": 9007199254740993n,
+  "json-unrepresentable-integer": 2 ** 53,
   "json-utf16-keys": { "\ue000": "bmp", "\u{10000}": "astral" },
   "json-string": "café",
   "json-array": [1, false, null],
@@ -693,12 +694,12 @@ function runReplay(scenario: JsonObject): JsonObject {
     try {
       replaySession(events);
     } catch (error) {
-      if (!(error instanceof TypeError) || !error.message.includes("non-JSON value bigint")) {
+      if (!(error instanceof EventSchemaIncompatibleError) || error.path !== "/result") {
         throw error;
       }
       snapshot.result = {
         event_count: events.length,
-        rejection: "integer_not_exactly_representable",
+        rejection: "integer_outside_i_json_safe_range",
       };
       return snapshot;
     }

@@ -8,10 +8,14 @@
  * fields, so constructing an event needs only its own payload plus session_id.
  */
 import * as z from "zod";
+import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
 import { defaultUuid } from "@/internal/uuid";
+import { EventSchemaIncompatibleError } from "@/events/errors";
 import { EventType } from "@/events/types";
 import { canonicalJsonValue, cloneAndFreezeJson, type DeepReadonly } from "@/events/json";
+import newEventSchema from "../../contracts/events/new-kaji-event-v1.schema.json";
+import storedEventSchema from "../../contracts/events/stored-kaji-event-v1.schema.json";
 
 export const MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024;
 
@@ -19,7 +23,23 @@ export function durableToolArgumentsSize(value: Record<string, unknown>): number
   return new TextEncoder().encode(canonicalJsonValue(value, "tool arguments")).byteLength;
 }
 
-const durableToolArguments = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+const durableJsonValue = z.unknown().superRefine((value, ctx) => {
+  try {
+    canonicalJsonValue(value, "event value");
+  } catch {
+    ctx.addIssue({ code: "custom", message: "event value must contain only JSON values" });
+  }
+});
+
+const durableJsonObject = z.record(z.string(), durableJsonValue).superRefine((value, ctx) => {
+  try {
+    canonicalJsonValue(value, "event value");
+  } catch {
+    ctx.addIssue({ code: "custom", message: "event value must contain only JSON values" });
+  }
+});
+
+const durableToolArguments = durableJsonObject.superRefine((value, ctx) => {
   let size: number;
   try {
     size = durableToolArgumentsSize(value);
@@ -36,14 +56,23 @@ const durableToolArguments = z.record(z.string(), z.unknown()).superRefine((valu
 });
 
 /** Fields shared by every event. No provider- or voice-specific fields here. */
+const nonEmptyId = z.string().min(1);
 const baseShape = {
-  id: z.string().default(() => defaultUuid()),
+  id: nonEmptyId.default(() => defaultUuid()),
   version: z.literal("1.0").default("1.0"),
   timestamp: z.number().default(() => Date.now() / 1000),
-  session_id: z.string(),
-  turn_id: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).default(() => ({})),
+  session_id: nonEmptyId,
+  turn_id: nonEmptyId.optional(),
+  metadata: durableJsonObject.default(() => ({})),
 };
+
+function maxUnicodeCodePoints(field: string) {
+  return (value: string, ctx: z.RefinementCtx): void => {
+    if (Array.from(value).length > 200) {
+      ctx.addIssue({ code: "custom", message: `${field} must contain at most 200 characters` });
+    }
+  };
+}
 
 /** Helper: a strict event schema with the base fields plus a literal `type`. */
 function event<T extends z.ZodRawShape>(shape: T) {
@@ -104,8 +133,9 @@ export const AgentMessageCompleted = event({
   content: z.string(),
   tokens: z
     .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
-    .optional(),
-  cost_usd: z.number().nonnegative().optional(),
+    .strict()
+    .nullish(),
+  cost_usd: z.number().nonnegative().nullish(),
 });
 
 export const AgentTurnExhausted = event({
@@ -118,7 +148,7 @@ export const AgentTurnExhausted = event({
 export const AgentTurnFailed = event({
   type: z.literal(EventType.AGENT_TURN_FAILED),
   turn_id: z.string().min(1),
-  error: z.string().min(1).max(200),
+  error: z.string().min(1).superRefine(maxUnicodeCodePoints("error")),
 });
 
 export const ToolCallRequested = event({
@@ -144,8 +174,9 @@ export const ToolCallCompleted = event({
   result: z.unknown(),
   tokens: z
     .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
-    .optional(),
-  cost_usd: z.number().nonnegative().optional(),
+    .strict()
+    .nullish(),
+  cost_usd: z.number().nonnegative().nullish(),
 });
 
 export const ToolCallFailed = event({
@@ -153,13 +184,7 @@ export const ToolCallFailed = event({
   turn_id: z.string().min(1),
   tool_name: z.string().min(1),
   tool_call_id: z.string().min(1),
-  error: z
-    .string()
-    .min(1)
-    .refine(
-      (value) => Array.from(value).length <= 200,
-      "error must contain at most 200 characters",
-    ),
+  error: z.string().min(1).superRefine(maxUnicodeCodePoints("error")),
   error_code: z.string().optional(),
   error_path: z.string().optional(),
   retryable: z.boolean().optional(),
@@ -197,10 +222,7 @@ export const ToolApprovalRejected = event({
     .string()
     .min(1)
     .refine((value) => value.trim().length > 0, "reason must not be blank")
-    .refine(
-      (value) => Array.from(value).length <= 200,
-      "reason must contain at most 200 characters",
-    ),
+    .superRefine(maxUnicodeCodePoints("reason")),
 });
 
 export const WorkflowStarted = event({
@@ -285,3 +307,127 @@ export const StoredKajiEvent = z
     }
     return cloneAndFreezeJson({ ...parsed.data, sequence });
   });
+
+const EVENT_TYPES = new Set<string>(Object.values(EventType));
+const wireAjv = new Ajv2020({ allErrors: true, strict: false });
+const newWireValidator = wireAjv.compile(newEventSchema as object);
+const storedWireValidator = wireAjv.compile(storedEventSchema as object);
+const variantValidators = new Map<string, ValidateFunction>();
+
+function pointerSegment(value: PropertyKey): string {
+  return String(value).replaceAll("~", "~0").replaceAll("/", "~1");
+}
+
+function schemaDefName(eventType: string): string {
+  const [head, ...tail] = eventType.split(".");
+  return `${head!}${tail.map((part) => part[0]!.toUpperCase() + part.slice(1)).join("")}`;
+}
+
+function selectedWireValidator(stored: boolean, eventType: string): ValidateFunction {
+  const key = `${stored ? "stored" : "new"}:${eventType}`;
+  const existing = variantValidators.get(key);
+  if (existing !== undefined) return existing;
+  const schema = (stored ? storedEventSchema : newEventSchema) as {
+    $defs: Record<string, unknown>;
+  };
+  const compiled = wireAjv.compile({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $defs: schema.$defs,
+    $ref: `#/$defs/${schemaDefName(eventType)}`,
+  });
+  variantValidators.set(key, compiled);
+  return compiled;
+}
+
+function schemaErrorPointer(error: ErrorObject): string {
+  if (error.keyword === "required") {
+    return `${error.instancePath}/${pointerSegment(error.params.missingProperty as string)}`;
+  }
+  if (error.keyword === "unevaluatedProperties" || error.keyword === "additionalProperties") {
+    const property =
+      (error.params.unevaluatedProperty as string | undefined) ??
+      (error.params.additionalProperty as string | undefined);
+    if (property !== undefined) return `${error.instancePath}/${pointerSegment(property)}`;
+  }
+  return error.instancePath || "/";
+}
+
+function firstSchemaErrorPointer(errors: ErrorObject[] | null | undefined): string {
+  const pointers = (errors ?? [])
+    .filter((error) => error.keyword !== "allOf" && error.keyword !== "oneOf")
+    .map(schemaErrorPointer)
+    .sort(
+      (left, right) => Number(left === "/") - Number(right === "/") || left.localeCompare(right),
+    );
+  return pointers[0] ?? "/";
+}
+
+function wirePreflight(value: unknown, stored: boolean): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new EventSchemaIncompatibleError("/");
+  }
+  const document = value as Record<string, unknown>;
+  for (const field of ["id", "version", "timestamp", "type", "session_id"] as const) {
+    if (!(field in document)) throw new EventSchemaIncompatibleError(`/${field}`);
+  }
+  for (const field of ["id", "session_id", "turn_id"] as const) {
+    if (document[field] === "") throw new EventSchemaIncompatibleError(`/${field}`);
+  }
+  if (stored && !("sequence" in document)) throw new EventSchemaIncompatibleError("/sequence");
+  if (!stored && "sequence" in document) throw new EventSchemaIncompatibleError("/sequence");
+  if (typeof document.type !== "string" || !EVENT_TYPES.has(document.type)) {
+    throw new EventSchemaIncompatibleError("/type");
+  }
+  return document;
+}
+
+function zodIssuePointer(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (issue === undefined || issue.path.length === 0) return "/";
+  const path = [...issue.path];
+  if (typeof path[0] === "string" && EVENT_TYPES.has(path[0])) path.shift();
+  return `/${path.map(pointerSegment).join("/")}`;
+}
+
+function validateWireEvent(value: unknown, stored: boolean): KajiEvent {
+  const document = wirePreflight(value, stored);
+  const validator = stored ? storedWireValidator : newWireValidator;
+  const eventType = document.type as string;
+  if (!validator(document)) {
+    const selected = selectedWireValidator(stored, eventType);
+    selected(document);
+    throw new EventSchemaIncompatibleError(
+      firstSchemaErrorPointer(selected.errors ?? validator.errors),
+    );
+  }
+  try {
+    canonicalJsonValue(document, "event");
+  } catch {
+    for (const [field, item] of Object.entries(document)) {
+      try {
+        canonicalJsonValue(item, "event");
+      } catch {
+        throw new EventSchemaIncompatibleError(`/${pointerSegment(field)}`);
+      }
+    }
+    throw new EventSchemaIncompatibleError("/");
+  }
+  const candidate = stored
+    ? Object.fromEntries(Object.entries(document).filter(([key]) => key !== "sequence"))
+    : document;
+  const parsed = KajiEvent.safeParse(candidate);
+  if (!parsed.success) throw new EventSchemaIncompatibleError(zodIssuePointer(parsed.error));
+  return parsed.data;
+}
+
+/** Validate an untouched new-event mapping before constructor defaults can run. */
+export function validateNewEvent(value: unknown): NewKajiEvent {
+  return validateWireEvent(value, false);
+}
+
+/** Validate an untouched stored-event mapping before constructor defaults can run. */
+export function validateStoredEvent(value: unknown): StoredKajiEvent {
+  const event = validateWireEvent(value, true);
+  const sequence = (value as { sequence: number }).sequence;
+  return cloneAndFreezeJson({ ...event, sequence });
+}

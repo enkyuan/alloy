@@ -8,6 +8,24 @@ import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { UnclassifiedToolRiskError, UnknownToolError, type ToolSpec } from "@/tools/registry";
 
+class MalformedPlannerReadStore extends InMemoryEventStore {
+  constructor(private readonly missingField: string) {
+    super();
+  }
+
+  override async getEvents(
+    sessionId: string,
+    options: { afterSequence?: number; limit?: number } = {},
+  ): Promise<Array<ReturnType<typeof StoredKajiEvent.parse>>> {
+    const events = await super.getEvents(sessionId, options);
+    return events.map((event) => {
+      const row = structuredClone(event) as Record<string, unknown>;
+      delete row[this.missingField];
+      return row as ReturnType<typeof StoredKajiEvent.parse>;
+    });
+  }
+}
+
 const TURN_CONTEXT = {
   principalId: "test",
   requestId: "request",
@@ -386,6 +404,53 @@ describe("ToolPlanner", () => {
     expect(events.every((event) => event.turn_id === turnId)).toBe(true);
     expect(results[0]).toHaveProperty("result", { ok: true });
   });
+
+  it.each(["id", "version", "timestamp"])(
+    "canonically validates authoritative approval rows missing %s",
+    async (missingField) => {
+      const store = new MalformedPlannerReadStore(missingField);
+      const committer = new InMemoryEventCommitter(store);
+      const executor = vi.fn().mockResolvedValue({ ok: true });
+      const planner = new ToolPlanner({
+        executor,
+        policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
+        approvalHandler: {
+          request: vi.fn(async () => ({ granted: true as const, code: "approved" as const })),
+        },
+        approvalCommitter: committer,
+        specs: new Map([
+          [
+            "ship",
+            {
+              name: "ship",
+              description: "ship",
+              parameters: {},
+              risk: "destructive" as const,
+            },
+          ],
+        ]),
+      });
+
+      let rejected: unknown;
+      try {
+        await executePlanner(
+          planner,
+          "malformed-approval",
+          [{ id: "call", name: "ship", arguments: {} }],
+          bindEmitterToCommitter((event) => committer.commit(event), committer),
+        );
+      } catch (error) {
+        rejected = error;
+      }
+
+      expect(rejected).toBeInstanceOf(AggregateError);
+      expect((rejected as AggregateError).errors[0]).toMatchObject({
+        code: "EVENT_SCHEMA_INCOMPATIBLE",
+        path: `/${missingField}`,
+      });
+      expect(executor).not.toHaveBeenCalled();
+    },
+  );
 
   it("fails closed before invoking an event approval handler without the runtime committer", async () => {
     const store = new InMemoryEventStore();

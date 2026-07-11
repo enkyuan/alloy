@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
-import { EventIdConflictError } from "@/events/errors";
+import { EventIdConflictError, EventSchemaIncompatibleError } from "@/events/errors";
 import {
   KajiEvent,
   NewKajiEvent,
@@ -88,19 +88,68 @@ describe("event ordering contract", () => {
     const one = { ...message("one", "s1"), sequence: 1 };
     const two = { ...message("two", "s2"), sequence: 2 };
     expect(() => replaySession([one, two])).toThrow(/mixed sessions/);
-    expect(() => replaySession([one, message("legacy")] as StoredKajiEventType[])).toThrow(
-      /mixed sequenced/,
-    );
     expect(() => replaySession([one, { ...message("duplicate"), sequence: 1 }])).toThrow(
       /Duplicate/,
     );
     expect(() => replaySession([{ ...message("later"), sequence: 2 }, one])).toThrow(
       /Non-monotonic/,
     );
-    expect(() => replaySession([message("legacy")] as StoredKajiEventType[])).toThrow(
-      /requires stored events/,
-    );
-    expect(() => replayLegacySession([one])).toThrow(/only fully unsequenced/);
+    try {
+      replaySession([message("legacy")] as StoredKajiEventType[]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/sequence");
+    }
+    try {
+      replayLegacySession([one]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/sequence");
+    }
+  });
+
+  it.each([
+    [false, "session_id", undefined, "/session_id"],
+    [false, "session_id", "", "/session_id"],
+    [false, "sequence", undefined, "/sequence"],
+    [true, "session_id", undefined, "/session_id"],
+    [true, "session_id", "", "/session_id"],
+    [true, "sequence", 2, "/sequence"],
+  ] as const)(
+    "validates every wire row before log invariants (legacy=%s, %s)",
+    (legacy, field, value, path) => {
+      const rows: Record<string, unknown>[] = [
+        { ...message("one"), ...(legacy ? {} : { sequence: 1 }) },
+        { ...message("two"), ...(legacy ? {} : { sequence: 2 }) },
+      ];
+      if (value === undefined) delete rows[1]![field];
+      else rows[1]![field] = value;
+
+      const replay = () =>
+        legacy
+          ? replayLegacySession(rows as unknown as ReturnType<typeof message>[])
+          : replaySession(rows as unknown as StoredKajiEventType[]);
+      try {
+        replay();
+        throw new Error("expected incompatible event");
+      } catch (error) {
+        expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+        expect(error).toMatchObject({ code: "EVENT_SCHEMA_INCOMPATIBLE", path });
+      }
+    },
+  );
+
+  it("rejects mixed sequenced and unsequenced rows as a schema incompatibility", () => {
+    const one = { ...message("one"), sequence: 1 };
+    try {
+      replaySession([one, message("legacy")] as StoredKajiEventType[]);
+      throw new Error("expected incompatible event");
+    } catch (error) {
+      expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
+      expect((error as EventSchemaIncompatibleError).path).toBe("/sequence");
+    }
   });
 
   it("uses the named stable legacy ordering branch with a warning", () => {

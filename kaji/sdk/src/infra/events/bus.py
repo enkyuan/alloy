@@ -1,14 +1,17 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from dataclasses import dataclass
 
-from kaji.infra.events.errors import EventBufferOverflowError
+from kaji.infra.events.errors import (
+    EventBufferOverflowError,
+    EventSchemaIncompatibleError,
+)
 from kaji.infra.events.schemas import (
     StoredKajiEvent,
     revalidate_stored_event,
-    validate_event_json,
+    validate_stored_event_json,
 )
 from kaji.infra.observability.protocols import (
     MetricsSink,
@@ -185,9 +188,9 @@ class EventBus:
         after_sequence: int = 0,
     ) -> AsyncGenerator[StoredKajiEvent, None]:
         """Subscribe to events for a specific session."""
-        from kaji.infra.realtime.redis import get_redis_client
+        from kaji.infra.realtime.redis import get_redis_stream_client
 
-        redis = await get_redis_client()
+        redis = await get_redis_stream_client()
         stream_key = self._get_stream_key(session_id)
         current_id = last_id
 
@@ -202,34 +205,58 @@ class EventBus:
                 await asyncio.sleep(0)
                 continue
 
-            for _, messages in streams:
-                for message_id, data in messages:
-                    current_id = (
-                        message_id.decode()
-                        if isinstance(message_id, bytes)
-                        else message_id
-                    )
+            raw_messages = [
+                (message_id, data)
+                for _, messages in streams
+                for message_id, data in messages
+            ]
+            if not raw_messages:
+                await asyncio.sleep(0)
+                continue
 
-                    payload_raw = data.get(b"payload") or data.get("payload")
-                    if not payload_raw:
-                        continue
+            try:
+                staged: list[tuple[bytes | str, StoredKajiEvent]] = []
+                for message_id, data in raw_messages:
+                    payload_raw = None
+                    if isinstance(data, Mapping):
+                        payload_raw = data.get(b"payload")
+                        if payload_raw is None:
+                            payload_raw = data.get("payload")
+                    if isinstance(payload_raw, str):
+                        try:
+                            payload = payload_raw.encode("utf-8")
+                        except UnicodeEncodeError:
+                            raise EventSchemaIncompatibleError("/") from None
+                    elif isinstance(payload_raw, (bytes, bytearray)):
+                        payload = bytes(payload_raw)
+                    else:
+                        raise EventSchemaIncompatibleError("/")
 
-                    payload_json = (
-                        payload_raw.decode()
-                        if isinstance(payload_raw, bytes)
-                        else payload_raw
-                    )
+                    event = validate_stored_event_json(payload)
+                    if event.session_id != session_id:
+                        raise EventSchemaIncompatibleError("/session_id")
+                    staged.append((message_id, event))
 
+                final_message_id = staged[-1][0]
+                if isinstance(final_message_id, bytes):
                     try:
-                        event = revalidate_stored_event(
-                            validate_event_json(payload_json)
-                        )
-                        assert event.sequence is not None
-                        if event.sequence > after_sequence:
-                            yield event
-                    except Exception as error:
-                        logger.error(
-                            "Failed to deserialize event from stream "
-                            "(%s; payload and details redacted)",
-                            type(error).__name__,
-                        )
+                        next_id = final_message_id.decode("utf-8")
+                    except UnicodeDecodeError:
+                        raise EventSchemaIncompatibleError("/") from None
+                elif isinstance(final_message_id, str):
+                    next_id = final_message_id
+                else:
+                    raise EventSchemaIncompatibleError("/")
+            except EventSchemaIncompatibleError as error:
+                logger.error(
+                    "Failed to deserialize event from stream "
+                    "(%s; payload and details redacted)",
+                    type(error).__name__,
+                )
+                raise
+
+            current_id = next_id
+            for _, event in staged:
+                assert event.sequence is not None
+                if event.sequence > after_sequence:
+                    yield event

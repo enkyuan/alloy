@@ -2,191 +2,955 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaji.dev/contracts/events/new-kaji-event-v1.schema.json",
   "title": "New Kaji event",
-  "type": "object",
-  "required": ["id", "type", "version", "timestamp", "session_id"],
-  "properties": {
-    "id": { "type": "string", "format": "uuid" },
-    "type": { "type": "string", "minLength": 1 },
-    "version": { "const": "1.0" },
-    "timestamp": { "type": "number" },
-    "session_id": { "type": "string", "minLength": 1 },
-    "turn_id": { "type": "string", "minLength": 1 },
-    "metadata": { "type": "object" }
-  },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "type": { "const": "agent.turn.failed" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "error"],
-        "properties": {
-          "error": { "type": "string", "minLength": 1, "maxLength": 200 }
-        }
-      }
+  "$defs": {
+    "nonEmptyId": {
+      "type": "string",
+      "minLength": 1
     },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.call.requested" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "tool_name", "tool_call_id", "tool_args"],
-        "properties": {
-          "turn_id": { "type": "string", "minLength": 1 },
-          "tool_name": { "type": "string", "minLength": 1 },
-          "tool_call_id": { "type": "string", "minLength": 1 },
-          "tool_args": { "type": "object", "x-maxSerializedBytes": 65536 }
-        }
-      }
+    "safeInteger": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
     },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.call.completed" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "tool_name", "tool_call_id", "result"],
-        "properties": {
-          "turn_id": { "type": "string", "minLength": 1 },
-          "tool_name": { "type": "string", "minLength": 1 },
-          "tool_call_id": { "type": "string", "minLength": 1 }
+    "positiveInteger": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/safeInteger"
+        },
+        {
+          "minimum": 1
         }
-      }
+      ]
     },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.call.started" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "tool_name", "tool_call_id"],
-        "properties": {
-          "turn_id": { "type": "string", "minLength": 1 },
-          "tool_name": { "type": "string", "minLength": 1 },
-          "tool_call_id": { "type": "string", "minLength": 1 }
+    "nonNegativeInteger": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/safeInteger"
+        },
+        {
+          "minimum": 0
         }
-      }
+      ]
     },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.call.failed" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "tool_name", "tool_call_id", "error"],
-        "properties": {
-          "turn_id": { "type": "string", "minLength": 1 },
-          "tool_name": { "type": "string", "minLength": 1 },
-          "tool_call_id": { "type": "string", "minLength": 1 },
-          "error": { "type": "string", "minLength": 1, "maxLength": 200 }
+    "jsonNumber": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/safeInteger"
+        },
+        {
+          "type": "number",
+          "not": {
+            "type": "integer"
+          }
         }
-      }
+      ]
     },
-    {
-      "if": {
-        "properties": {
-          "type": {
-            "enum": [
-              "tool.approval.requested",
-              "tool.approval.approved",
-              "tool.approval.rejected"
-            ]
+    "nonNegativeNumber": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/jsonNumber"
+        },
+        {
+          "minimum": 0
+        }
+      ]
+    },
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/jsonNumber"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
           }
         },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["turn_id", "tool_name", "tool_call_id"],
-        "properties": {
-          "turn_id": { "type": "string", "minLength": 1 },
-          "tool_name": { "type": "string", "minLength": 1 },
-          "tool_call_id": { "type": "string", "minLength": 1 }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.approval.requested" } },
-        "required": ["type"]
-      },
-      "then": {
-        "required": ["tool_args", "risk"],
-        "properties": {
-          "tool_args": { "type": "object", "x-maxSerializedBytes": 65536 },
-          "risk": {
-            "enum": [
-              "read",
-              "write",
-              "external_effect",
-              "destructive",
-              "admin"
-            ]
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
           }
+        }
+      ]
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/jsonValue"
+      }
+    },
+    "tokenUsage": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/nonNegativeInteger"
         },
-        "not": {
-          "anyOf": [
-            { "required": ["error_code"] },
-            { "required": ["reason"] },
-            { "required": ["retryable"] },
-            { "required": ["outcome"] }
-          ]
+        "output": {
+          "$ref": "#/$defs/nonNegativeInteger"
         }
-      }
-    },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.approval.approved" } },
-        "required": ["type"]
       },
-      "then": {
-        "not": {
-          "anyOf": [
-            { "required": ["error_code"] },
-            { "required": ["reason"] },
-            { "required": ["risk"] },
-            { "required": ["tool_args"] },
-            { "required": ["retryable"] },
-            { "required": ["outcome"] }
-          ]
+      "required": [
+        "input",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "base": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyId"
+        },
+        "version": {
+          "const": "1.0"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/jsonNumber"
+        },
+        "session_id": {
+          "$ref": "#/$defs/nonEmptyId"
+        },
+        "turn_id": {
+          "$ref": "#/$defs/nonEmptyId"
+        },
+        "metadata": {
+          "$ref": "#/$defs/jsonObject"
         }
-      }
-    },
-    {
-      "if": {
-        "properties": { "type": { "const": "tool.approval.rejected" } },
-        "required": ["type"]
       },
-      "then": {
-        "required": ["error_code", "reason"],
-        "properties": {
-          "error_code": {
-            "enum": [
-              "APPROVAL_REJECTED",
-              "APPROVAL_TIMEOUT",
-              "TOOL_CANCELLED",
-              "APPROVAL_UNAVAILABLE"
-            ]
+      "required": [
+        "id",
+        "version",
+        "timestamp",
+        "session_id"
+      ]
+    },
+    "sessionCreated": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.created"
+            }
           },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200,
-            "pattern": "\\S"
-          }
-        },
-        "not": {
-          "anyOf": [
-            { "required": ["risk"] },
-            { "required": ["tool_args"] },
-            { "required": ["retryable"] },
-            { "required": ["outcome"] }
+          "required": [
+            "type"
           ]
         }
-      }
+      ],
+      "unevaluatedProperties": false
+    },
+    "sessionClosed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "session.closed"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "userMessage": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "user.message"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "userAudioChunk": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "user.audio.chunk"
+            },
+            "chunk_size_bytes": {
+              "$ref": "#/$defs/safeInteger"
+            }
+          },
+          "required": [
+            "type",
+            "chunk_size_bytes"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "transcriptPartial": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "transcript.partial"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "transcriptFinal": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "transcript.final"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "memoryRetrievalStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "memory.retrieval.started"
+            },
+            "query": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "query"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "memoryRetrievalCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "memory.retrieval.completed"
+            },
+            "query": {
+              "type": "string"
+            },
+            "documents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/jsonObject"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "query",
+            "documents"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agentReasoningStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent.reasoning.started"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agentMessageDelta": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent.message.delta"
+            },
+            "delta": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "delta"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agentMessageCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent.message.completed"
+            },
+            "content": {
+              "type": "string"
+            },
+            "tokens": {
+              "oneOf": [
+                { "$ref": "#/$defs/tokenUsage" },
+                { "type": "null" }
+              ]
+            },
+            "cost_usd": {
+              "oneOf": [
+                { "$ref": "#/$defs/nonNegativeNumber" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agentTurnExhausted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent.turn.exhausted"
+            },
+            "max_iterations": {
+              "$ref": "#/$defs/nonNegativeInteger"
+            },
+            "pending_tool_calls": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/jsonObject"
+              }
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "max_iterations",
+            "pending_tool_calls"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "agentTurnFailed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "agent.turn.failed"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "error": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "error"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCallRequested": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.call.requested"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_args": {
+              "$ref": "#/$defs/jsonObject",
+              "x-maxSerializedBytes": 65536
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_args",
+            "tool_call_id"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCallStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.call.started"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCallCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.call.completed"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "result": {
+              "$ref": "#/$defs/jsonValue"
+            },
+            "tokens": {
+              "oneOf": [
+                { "$ref": "#/$defs/tokenUsage" },
+                { "type": "null" }
+              ]
+            },
+            "cost_usd": {
+              "oneOf": [
+                { "$ref": "#/$defs/nonNegativeNumber" },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id",
+            "result"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolCallFailed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.call.failed"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "error": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "error_code": {
+              "type": "string"
+            },
+            "error_path": {
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "outcome": {
+              "enum": [
+                "not_started",
+                "failed",
+                "unknown"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id",
+            "error"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolApprovalRequested": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.approval.requested"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_args": {
+              "$ref": "#/$defs/jsonObject",
+              "x-maxSerializedBytes": 65536
+            },
+            "risk": {
+              "enum": [
+                "read",
+                "write",
+                "external_effect",
+                "destructive",
+                "admin"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id",
+            "tool_args",
+            "risk"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolApprovalApproved": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.approval.approved"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "toolApprovalRejected": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "tool.approval.rejected"
+            },
+            "turn_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_name": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "tool_call_id": {
+              "$ref": "#/$defs/nonEmptyId"
+            },
+            "error_code": {
+              "enum": [
+                "APPROVAL_REJECTED",
+                "APPROVAL_TIMEOUT",
+                "TOOL_CANCELLED",
+                "APPROVAL_UNAVAILABLE"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "\\S"
+            }
+          },
+          "required": [
+            "type",
+            "turn_id",
+            "tool_name",
+            "tool_call_id",
+            "error_code",
+            "reason"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "workflowStarted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "workflow.started"
+            },
+            "workflow_name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "workflow_name"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "workflowCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "workflow.completed"
+            },
+            "workflow_name": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/$defs/jsonValue"
+            }
+          },
+          "required": [
+            "type",
+            "workflow_name",
+            "result"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "workflowFailed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "workflow.failed"
+            },
+            "workflow_name": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "workflow_name",
+            "error"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "cancellationRequested": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "cancellation.requested"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "reason"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "cancellationCompleted": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/base"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "cancellation.completed"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ],
+      "unevaluatedProperties": false
     }
-  ],
-  "not": { "required": ["sequence"] },
-  "additionalProperties": true
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/sessionCreated"
+    },
+    {
+      "$ref": "#/$defs/sessionClosed"
+    },
+    {
+      "$ref": "#/$defs/userMessage"
+    },
+    {
+      "$ref": "#/$defs/userAudioChunk"
+    },
+    {
+      "$ref": "#/$defs/transcriptPartial"
+    },
+    {
+      "$ref": "#/$defs/transcriptFinal"
+    },
+    {
+      "$ref": "#/$defs/memoryRetrievalStarted"
+    },
+    {
+      "$ref": "#/$defs/memoryRetrievalCompleted"
+    },
+    {
+      "$ref": "#/$defs/agentReasoningStarted"
+    },
+    {
+      "$ref": "#/$defs/agentMessageDelta"
+    },
+    {
+      "$ref": "#/$defs/agentMessageCompleted"
+    },
+    {
+      "$ref": "#/$defs/agentTurnExhausted"
+    },
+    {
+      "$ref": "#/$defs/agentTurnFailed"
+    },
+    {
+      "$ref": "#/$defs/toolCallRequested"
+    },
+    {
+      "$ref": "#/$defs/toolCallStarted"
+    },
+    {
+      "$ref": "#/$defs/toolCallCompleted"
+    },
+    {
+      "$ref": "#/$defs/toolCallFailed"
+    },
+    {
+      "$ref": "#/$defs/toolApprovalRequested"
+    },
+    {
+      "$ref": "#/$defs/toolApprovalApproved"
+    },
+    {
+      "$ref": "#/$defs/toolApprovalRejected"
+    },
+    {
+      "$ref": "#/$defs/workflowStarted"
+    },
+    {
+      "$ref": "#/$defs/workflowCompleted"
+    },
+    {
+      "$ref": "#/$defs/workflowFailed"
+    },
+    {
+      "$ref": "#/$defs/cancellationRequested"
+    },
+    {
+      "$ref": "#/$defs/cancellationCompleted"
+    }
+  ]
 }
