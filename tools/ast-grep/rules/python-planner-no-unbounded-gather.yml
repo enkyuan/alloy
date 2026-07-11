@@ -1,0 +1,10 @@
+id: python-planner-no-unbounded-gather
+language: Python
+severity: error
+message: Route planner fan-out through the bounded tool execution controller.
+files:
+  - "kaji/sdk/src/runtime/agents/planner.py"
+rule:
+  any:
+    - pattern: asyncio.gather($$$ARGS)
+    - pattern: gather($$$ARGS)

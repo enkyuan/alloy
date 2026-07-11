@@ -60,3 +60,4 @@ class GenerateResponse(BaseModel):
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
     metadata: Optional[ModelMetadata] = None
     metrics: Optional[TokenMetrics] = None
+    cost_usd: Optional[float] = None

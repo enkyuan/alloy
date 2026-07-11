@@ -1,0 +1,17 @@
+id: python-runtime-no-replay-in-loop
+valid:
+  - |
+      state = self._projector_for(session_id).state
+      for iteration in range(limit):
+          messages = build_context(state)
+  - |
+      for event in committed:
+          projector.apply(event)
+invalid:
+  - |
+      for iteration in range(limit):
+          state = await load_state(store, session_id)
+  - |
+      while pending:
+          events = await self.store.get_events(session_id)
+          state = replay_session(events)

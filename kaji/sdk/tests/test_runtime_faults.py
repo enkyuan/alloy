@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
 from dataclasses import fields
 import math
 from types import SimpleNamespace
@@ -9,9 +10,11 @@ from typing import Any
 import pytest
 
 from kaji.infra.events.store.inmem import InMemoryEventStore
+from kaji.infra.events.replay import replay_session
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.builder import AgentBuilder
+from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
     ToolInvocation,
@@ -33,6 +36,7 @@ from kaji.runtime.tools.idempotency import (
     ToolIdempotencyFailure,
 )
 from kaji.runtime.tools.registry import ToolSpec
+from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from tests.helpers.mock_provider import MockProvider
 
 
@@ -1257,3 +1261,71 @@ async def test_ledger_claim_operational_error_is_sanitized_and_terminal(
     assert secret in caplog.text
     assert started is False
     assert executed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mid_stream",
+    [
+        pytest.param(False, id="before-output"),
+        pytest.param(True, id="mid-stream"),
+    ],
+)
+async def test_provider_fault_is_single_terminal_replayable_and_releases_runtime(
+    mid_stream: bool,
+) -> None:
+    secret = "provider-private-secret"
+
+    class FailThenRecoverProvider:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate(self, *_args: Any, **_kwargs: Any) -> GenerateResponse:
+            return GenerateResponse(text="")
+
+        async def generate_stream(
+            self, *_args: Any, **_kwargs: Any
+        ) -> AsyncGenerator[ModelResponseChunk, None]:
+            self.calls += 1
+            if self.calls == 1:
+                if mid_stream:
+                    yield ModelResponseChunk(delta="partial")
+                raise RuntimeError(secret)
+            yield ModelResponseChunk(delta="recovered")
+
+    provider = FailThenRecoverProvider()
+    coordinator = InMemoryTurnCoordinator()
+    store = InMemoryEventStore()
+    runtime = (
+        AgentBuilder().provider(provider).coordinator(coordinator).build(store=store)
+    )
+
+    with pytest.raises(RuntimeError, match=secret):
+        await runtime.turn("first", session_id="provider-fault")
+
+    failed_history = await store.get_events("provider-fault")
+    failure_events = [
+        event for event in failed_history if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(failure_events) == 1
+    failed_turn_id = failure_events[0].turn_id
+    assert secret not in failure_events[0].model_dump_json()
+    assert not any(
+        event.type == EventType.AGENT_MESSAGE_COMPLETED
+        and event.turn_id == failed_turn_id
+        for event in failed_history
+    )
+    deltas = [
+        event
+        for event in failed_history
+        if event.type == EventType.AGENT_MESSAGE_DELTA
+        and event.turn_id == failed_turn_id
+    ]
+    assert [event.delta for event in deltas] == (["partial"] if mid_stream else [])
+    replay_session(failed_history)
+    assert coordinator.entry_count == coordinator.waiter_count == 0
+
+    recovered = await runtime.turn("second", session_id="provider-fault")
+    assert recovered.text == "recovered"
+    replay_session(await store.get_events("provider-fault"))
+    assert coordinator.entry_count == coordinator.waiter_count == 0

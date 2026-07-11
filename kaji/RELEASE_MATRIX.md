@@ -88,6 +88,7 @@ When available, the ast-grep step guards the Python SDK/service boundary, core p
 | Gate | Command | Required for beta |
 | --- | --- | --- |
 | Non-keyed beta gate bundle | `bash kaji/scripts/beta-release-check.sh` | Yes, aggregates non-keyed gates |
+| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py` | Yes, compares 59 offline deterministic scenarios |
 | Python unit/static | `cd kaji/sdk && uv run pytest -m "not integration" && uv run python scripts/typecheck_ty.py --output-format concise && uv run ruff check src tests` | Yes |
 | Python wheel smoke | `cd kaji/sdk && bash scripts/release_smoke.sh` | Yes |
 | TS unit/static/build | `cd kaji/ts && bun run test && node_modules/.bin/tsc --noEmit && bun run build` | Yes |

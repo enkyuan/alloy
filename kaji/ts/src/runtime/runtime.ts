@@ -29,7 +29,7 @@ import {
 } from "@/tools/planner";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
-import { defaultUuid } from "@/internal/uuid";
+import { systemClock, systemIdFactory, type Clock, type IdFactory } from "@/internal/uuid";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import {
   DEFAULT_CONTEXT_WINDOW,
@@ -146,6 +146,10 @@ export interface AgentRuntimeOptions {
   traceSink?: TraceSink;
   /** Injectable monotonic clock for deterministic latency tests. */
   monotonicNow?: () => number;
+  /** Scoped identifier source used for every runtime and event identifier. */
+  idFactory?: IdFactory;
+  /** Wall and monotonic clock used by runtime events and timing. */
+  clock?: Clock;
 }
 
 export interface RunTurnOptions {
@@ -218,6 +222,8 @@ export class AgentRuntime {
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
   private readonly monotonicNow: () => number;
+  private readonly idFactory: IdFactory;
+  private readonly clock: Clock;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -237,7 +243,9 @@ export class AgentRuntime {
     this.provider = options.provider;
     this.metrics = options.metricsSink ?? NOOP_METRICS;
     this.trace = options.traceSink ?? NOOP_TRACE;
-    this.monotonicNow = options.monotonicNow ?? (() => globalThis.performance.now());
+    this.idFactory = options.idFactory ?? systemIdFactory;
+    this.clock = options.clock ?? systemClock;
+    this.monotonicNow = options.monotonicNow ?? (() => this.clock.nowMonotonic());
     this.store = options.store;
     if (options.committer !== undefined) {
       if (options.committer.store !== options.store) {
@@ -313,6 +321,8 @@ export class AgentRuntime {
       metricsSink: this.metrics,
       traceSink: this.trace,
       monotonicNow: this.monotonicNow,
+      idFactory: this.idFactory,
+      clock: this.clock,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
       executionController: this.toolExecutionController,
     });
@@ -334,8 +344,8 @@ export class AgentRuntime {
       ...(context?.metadata ?? {}),
     };
     const principalId = context?.principalId ?? fallback?.principalId;
-    const requestId = context?.requestId ?? fallback?.requestId ?? defaultUuid();
-    const traceId = context?.traceId ?? fallback?.traceId ?? defaultUuid();
+    const requestId = context?.requestId ?? fallback?.requestId ?? this.idFactory.next("request");
+    const traceId = context?.traceId ?? fallback?.traceId ?? this.idFactory.next("trace");
     const deadlineMs = context?.deadlineMs ?? fallback?.deadlineMs;
     const db = context?.db ?? fallback?.db;
     assertNonEmptyContextId(requestId, "requestId");
@@ -348,6 +358,14 @@ export class AgentRuntime {
       ...(deadlineMs === undefined ? {} : { deadlineMs }),
       ...(db === undefined ? {} : { db }),
       metadata: snapshotContextMetadata(metadata),
+    });
+  }
+
+  private event<T extends KajiEventInput>(input: T): KajiEvent {
+    return KajiEvent.parse({
+      ...input,
+      id: this.idFactory.next("event"),
+      timestamp: this.clock.nowWallSeconds(),
     });
   }
 
@@ -494,8 +512,8 @@ export class AgentRuntime {
    * Errors from the underlying loop propagate unchanged.
    */
   async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
-    const sessionId = options.sessionId ?? defaultUuid();
-    const turnId = defaultUuid();
+    const sessionId = options.sessionId ?? this.idFactory.next("session");
+    const turnId = this.idFactory.next("turn");
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
     return this.runCoordinated(sessionId, token, () =>
@@ -505,7 +523,7 @@ export class AgentRuntime {
         this.turnEventCollectors.set(turnId, turnEvents);
         try {
           if (projector.lastSequence === 0) {
-            const created = KajiEvent.parse({
+            const created = this.event({
               type: EventType.SESSION_CREATED,
               session_id: sessionId,
               turn_id: turnId,
@@ -539,7 +557,7 @@ export class AgentRuntime {
    * and then `runTurn()` separately.
    */
   async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
-    const turnId = defaultUuid();
+    const turnId = this.idFactory.next("turn");
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
     await this.runCoordinated(sessionId, token, () =>
@@ -558,7 +576,7 @@ export class AgentRuntime {
     context: ResolvedTurnContext,
   ): Promise<void> {
     token.throwIfCancelled();
-    const event = KajiEvent.parse({
+    const event = this.event({
       type: EventType.USER_MESSAGE,
       session_id: sessionId,
       turn_id: turnId,
@@ -580,7 +598,7 @@ export class AgentRuntime {
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
     const token = options.cancellationToken ?? new CancellationToken();
-    const turnId = defaultUuid();
+    const turnId = this.idFactory.next("turn");
     const context = this.resolveTurnContext(options.context);
     await this.runCoordinated(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
@@ -611,7 +629,7 @@ export class AgentRuntime {
     const emit = async <T extends KajiEventInput>(
       input: EventInputWithoutRuntimeContext<T>,
     ): Promise<void> => {
-      const event = KajiEvent.parse({ ...input, session_id: sessionId, turn_id: turnId });
+      const event = this.event({ ...input, session_id: sessionId, turn_id: turnId });
       await this.appendEvent(event);
     };
 

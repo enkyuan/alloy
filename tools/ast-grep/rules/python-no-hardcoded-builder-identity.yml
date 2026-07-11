@@ -1,0 +1,25 @@
+id: python-no-hardcoded-builder-identity
+language: Python
+severity: error
+message: Tool identity must come from TurnContext, never a builder literal.
+files:
+  - "kaji/sdk/src/runtime/agents/builder.py"
+  - "kaji/sdk/src/runtime/agents/runtime.py"
+rule:
+  any:
+    - pattern: $REGISTRY.execute("builder", $$$ARGS)
+    - pattern: execute_tool("builder", $$$ARGS)
+    - all:
+        - pattern: ToolExecutionContext($$$ARGS)
+        - has:
+            pattern:
+              context: ToolExecutionContext(principal_id="builder")
+              selector: keyword_argument
+            stopBy: end
+    - all:
+        - pattern: TurnContext($$$ARGS)
+        - has:
+            pattern:
+              context: TurnContext(principal_id="builder")
+              selector: keyword_argument
+            stopBy: end

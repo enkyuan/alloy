@@ -5,7 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
-import uuid
 import warnings
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Type
 
@@ -17,6 +16,7 @@ from kaji.runtime.tools.errors import (
     UnclassifiedToolRiskError,
 )
 from kaji.runtime.tools.validation import ToolSchemaValidator
+from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 ToolHandler = Callable[
     [ToolExecutionContext, Dict[str, Any]], Awaitable[Dict[str, Any]]
@@ -158,10 +158,11 @@ class ToolRegistry:
         runtime = AgentRuntime(..., tools=registry.list_specs())
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, id_factory: IdFactory | None = None) -> None:
         self._specs: Dict[str, ToolSpec] = {}
         self._handlers: Dict[str, ToolHandler] = {}
         self._validators: Dict[str, tuple[ToolSpec, ToolSchemaValidator]] = {}
+        self._id_factory = id_factory or SYSTEM_ID_FACTORY
 
     def register(self, spec: ToolSpec) -> Callable[[ToolHandler], ToolHandler]:
         """Decorator to register a tool handler on this registry instance."""
@@ -195,7 +196,9 @@ class ToolRegistry:
         db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute a tool registered on this registry instance."""
-        resolved = _coerce_invocation(invocation, tool_name, tool_args, db)
+        resolved = _coerce_invocation(
+            invocation, tool_name, tool_args, db, self._id_factory
+        )
         spec = self._specs.get(resolved.name)
         handler = self._handlers.get(resolved.name)
         if spec is None or handler is None:
@@ -233,6 +236,7 @@ def _coerce_invocation(
     tool_name: str | None,
     tool_args: Dict[str, Any] | None,
     db: Any | None,
+    id_factory: IdFactory,
 ) -> ToolInvocation:
     if isinstance(invocation, ToolInvocation):
         if tool_name is not None or tool_args is not None or db is not None:
@@ -250,16 +254,16 @@ def _coerce_invocation(
             stacklevel=3,
         )
         _legacy_execute_warned = True
-    turn_id = uuid.uuid4().hex
-    call_id = uuid.uuid4().hex
+    turn_id = id_factory.next("turn")
+    call_id = id_factory.next("tool_call")
     from kaji.runtime.agents.cancellation import CancellationToken  # noqa: PLC0415
 
     context = ToolExecutionContext(
         principal_id=invocation,
         session_id=turn_id,
         turn_id=turn_id,
-        request_id=uuid.uuid4().hex,
-        trace_id=uuid.uuid4().hex,
+        request_id=id_factory.next("request"),
+        trace_id=id_factory.next("trace"),
         tool_call_id=call_id,
         idempotency_key=f"{turn_id}:{call_id}",
         cancellation_token=CancellationToken(),

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { withRetry } from "@/providers/base";
+import {
+  withRetry,
+  type ModelProvider,
+  type ModelResponse,
+  type ModelResponseChunk,
+} from "@/providers/base";
 import { AnthropicProvider } from "@/providers/anthropic";
 import { OpenAIProvider } from "@/providers/openai";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
@@ -8,7 +13,10 @@ import { AgentBuilder } from "@/runtime/builder";
 import { AgentRuntime } from "@/runtime/runtime";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore } from "@/events/store";
+import { EventType } from "@/events/types";
 import { MockProvider } from "@/providers/mock";
+import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import { replaySession } from "@/sessions/replay";
 import { ToolExecutionController } from "@/tools/execution";
 import {
   IdempotencyCapacityError,
@@ -118,6 +126,69 @@ describe("tool idempotency ledger", () => {
       wallClock.mockRestore();
       monotonic.mockRestore();
     }
+  });
+});
+
+describe("provider fault matrix", () => {
+  it.each([
+    { label: "before-output", midStream: false },
+    { label: "mid-stream", midStream: true },
+  ])("keeps a $label fault single-terminal, replayable, and recoverable", async ({ midStream }) => {
+    const secret = "provider-private-secret";
+    let calls = 0;
+    const provider: ModelProvider = {
+      async generate(): Promise<ModelResponse> {
+        return { content: "", toolCalls: [] };
+      },
+      async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+        calls++;
+        if (calls === 1) {
+          if (midStream) yield { delta: "partial", toolCalls: [] };
+          throw new Error(secret);
+        }
+        yield { delta: "recovered", toolCalls: [] };
+      },
+    };
+    const store = new InMemoryEventStore();
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      turnCoordinator: coordinator,
+      tools: [],
+    });
+
+    await expect(runtime.turn("first", { sessionId: "provider-fault" })).rejects.toThrow(secret);
+    const failedHistory = await store.getEvents("provider-fault");
+    const failures = failedHistory.filter(({ type }) => type === EventType.AGENT_TURN_FAILED);
+    expect(failures).toHaveLength(1);
+    const failedTurnId = failures[0]!.turn_id;
+    expect(JSON.stringify(failures[0])).not.toContain(secret);
+    expect(
+      failedHistory.some(
+        (event) =>
+          event.type === EventType.AGENT_MESSAGE_COMPLETED && event.turn_id === failedTurnId,
+      ),
+    ).toBe(false);
+    expect(
+      failedHistory
+        .filter(
+          (event) => event.type === EventType.AGENT_MESSAGE_DELTA && event.turn_id === failedTurnId,
+        )
+        .map((event) => ("delta" in event ? event.delta : undefined)),
+    ).toEqual(midStream ? ["partial"] : []);
+    expect(() => replaySession(failedHistory)).not.toThrow();
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+
+    await expect(runtime.turn("second", { sessionId: "provider-fault" })).resolves.toMatchObject({
+      text: "recovered",
+    });
+    const recoveredHistory = await store.getEvents("provider-fault");
+    expect(() => replaySession(recoveredHistory)).not.toThrow();
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
   });
 });
 

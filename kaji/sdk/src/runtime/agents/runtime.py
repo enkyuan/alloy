@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import time
-import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -43,6 +42,7 @@ from kaji.infra.events.schemas import (
     EventTokenUsage,
     SessionCreated,
     UserMessage,
+    event_defaults,
     require_stored_event,
 )
 from kaji.infra.events.store import EventStore
@@ -64,6 +64,25 @@ from kaji.runtime.providers.types import TokenMetrics
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
+from kaji.runtime.determinism import (
+    Clock,
+    IdFactory,
+    SYSTEM_CLOCK,
+    SYSTEM_ID_FACTORY,
+)
+
+
+class _CallableMonotonicClock:
+    """Compatibility adapter for the pre-beta ``clock=callable`` seam."""
+
+    def __init__(self, monotonic: Callable[[], float]) -> None:
+        self._monotonic = monotonic
+
+    def now_wall_seconds(self) -> float:
+        return time.time()
+
+    def now_monotonic(self) -> float:
+        return self._monotonic()
 
 
 @dataclass(frozen=True)
@@ -163,7 +182,8 @@ class AgentRuntime:
         tool_idempotency_ledger: ToolIdempotencyLedger | None = None,
         metrics_sink: MetricsSink = NOOP_METRICS,
         trace_sink: TraceSink = NOOP_TRACE,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Clock | Callable[[], float] | None = None,
+        id_factory: IdFactory | None = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus, metrics_sink=metrics_sink)
@@ -183,7 +203,14 @@ class AgentRuntime:
         self.provider = provider
         self._metrics = metrics_sink
         self._trace = trace_sink
-        self._clock = clock
+        self._id_factory = id_factory or SYSTEM_ID_FACTORY
+        if clock is None:
+            self._clock_source: Clock = SYSTEM_CLOCK
+        elif isinstance(clock, Clock):
+            self._clock_source = clock
+        else:
+            self._clock_source = _CallableMonotonicClock(clock)
+        self._clock = self._clock_source.now_monotonic
         self._default_context = default_context
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
@@ -247,6 +274,7 @@ class AgentRuntime:
                 or ToolExecutionController(
                     limits=tool_execution_limits,
                     ledger=tool_idempotency_ledger,
+                    clock=self._clock,
                     metrics_sink=metrics_sink,
                     trace_sink=trace_sink,
                 )
@@ -285,6 +313,8 @@ class AgentRuntime:
             approval_handler=approval_handler,
             specs=specs,
             controller=controller,
+            id_factory=self._id_factory,
+            clock=self._clock_source,
         )
 
     async def drain_tools(self, timeout: float) -> list[str]:
@@ -295,11 +325,11 @@ class AgentRuntime:
         default = self._default_context
         if context is None:
             return (
-                default.refresh_generated_ids()
+                default.refresh_generated_ids(self._id_factory)
                 if default is not None
-                else TurnContext()
+                else TurnContext(id_factory=self._id_factory)
             )
-        resolved_context = context.refresh_generated_ids()
+        resolved_context = context.refresh_generated_ids(self._id_factory)
         if default is None:
             return resolved_context
         metadata = dict(default.metadata)
@@ -315,6 +345,7 @@ class AgentRuntime:
             ),
             db=resolved_context.db if resolved_context.db is not None else default.db,
             metadata=metadata,
+            id_factory=self._id_factory,
         )
 
     async def append_event(self, event: NewKajiEvent) -> StoredKajiEvent:
@@ -526,31 +557,32 @@ class AgentRuntime:
             ``TurnResult`` with ``text``, ``session_id``, ``tool_call_events``,
             and the full ``events`` slice emitted by this call.
         """
-        sid = session_id or uuid.uuid4().hex
-        token = cancellation_token or CancellationToken()
-        resolved_context = self._resolve_turn_context(context)
-        async with self._turn_scope(sid, token):
-            async with self._projection_scope(sid):
-                projector = await self._sync_projection(sid)
-                turn_id = uuid.uuid4().hex
-                collector = _TurnEventCollector(
-                    session_id=sid,
-                    turn_id=turn_id,
-                    cursor=projector.cursor,
-                )
-                self._turn_event_collectors[turn_id] = collector
-                try:
-                    return await self._turn_unlocked(
-                        sid,
-                        prompt,
-                        token,
-                        turn_id,
-                        projector,
-                        collector.events,
-                        resolved_context,
+        with event_defaults(self._id_factory, self._clock_source):
+            sid = session_id or self._id_factory.next("session")
+            token = cancellation_token or CancellationToken()
+            resolved_context = self._resolve_turn_context(context)
+            async with self._turn_scope(sid, token):
+                async with self._projection_scope(sid):
+                    projector = await self._sync_projection(sid)
+                    turn_id = self._id_factory.next("turn")
+                    collector = _TurnEventCollector(
+                        session_id=sid,
+                        turn_id=turn_id,
+                        cursor=projector.cursor,
                     )
-                finally:
-                    self._turn_event_collectors.pop(turn_id, None)
+                    self._turn_event_collectors[turn_id] = collector
+                    try:
+                        return await self._turn_unlocked(
+                            sid,
+                            prompt,
+                            token,
+                            turn_id,
+                            projector,
+                            collector.events,
+                            resolved_context,
+                        )
+                    finally:
+                        self._turn_event_collectors.pop(turn_id, None)
 
     async def _turn_unlocked(
         self,
@@ -612,18 +644,19 @@ class AgentRuntime:
         For more control (batch-append, replay, pre-seeding), call
         ``append_event(UserMessage(...))`` and ``run_turn()`` separately.
         """
-        token = cancellation_token or CancellationToken()
-        resolved_context = self._resolve_turn_context(context)
-        async with self._turn_scope(session_id, token):
-            async with self._projection_scope(session_id):
-                await self._sync_projection(session_id)
-                await self._send_unlocked(
-                    session_id,
-                    content,
-                    token,
-                    uuid.uuid4().hex,
-                    resolved_context,
-                )
+        with event_defaults(self._id_factory, self._clock_source):
+            token = cancellation_token or CancellationToken()
+            resolved_context = self._resolve_turn_context(context)
+            async with self._turn_scope(session_id, token):
+                async with self._projection_scope(session_id):
+                    await self._sync_projection(session_id)
+                    await self._send_unlocked(
+                        session_id,
+                        content,
+                        token,
+                        self._id_factory.next("turn"),
+                        resolved_context,
+                    )
 
     async def _send_unlocked(
         self,
@@ -672,17 +705,18 @@ class AgentRuntime:
         The event log must already contain at least one ``UserMessage`` for
         ``session_id``. To send a message and run in one call, use ``send()``.
         """
-        token = cancellation_token or CancellationToken()
-        resolved_context = self._resolve_turn_context(context)
-        async with self._turn_scope(session_id, token):
-            async with self._projection_scope(session_id):
-                await self._sync_projection(session_id)
-                await self._run_turn_unlocked(
-                    session_id,
-                    token,
-                    uuid.uuid4().hex,
-                    resolved_context,
-                )
+        with event_defaults(self._id_factory, self._clock_source):
+            token = cancellation_token or CancellationToken()
+            resolved_context = self._resolve_turn_context(context)
+            async with self._turn_scope(session_id, token):
+                async with self._projection_scope(session_id):
+                    await self._sync_projection(session_id)
+                    await self._run_turn_unlocked(
+                        session_id,
+                        token,
+                        self._id_factory.next("turn"),
+                        resolved_context,
+                    )
 
     async def _run_turn_unlocked(
         self,

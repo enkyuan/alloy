@@ -16,6 +16,7 @@ import type { ContextWindow, TurnContext } from "@/runtime/context";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { MetricsSink, TraceSink } from "@/observability";
+import type { Clock, IdFactory } from "@/internal/uuid";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -47,6 +48,8 @@ export class AgentBuilder {
   private _metricsSink: MetricsSink | undefined;
   private _traceSink: TraceSink | undefined;
   private _monotonicNow: (() => number) | undefined;
+  private _idFactory: IdFactory | undefined;
+  private _clock: Clock | undefined;
 
   provider(p: ModelProvider): this {
     this._provider = p;
@@ -121,6 +124,16 @@ export class AgentBuilder {
     return this;
   }
 
+  idFactory(factory: IdFactory): this {
+    this._idFactory = factory;
+    return this;
+  }
+
+  clock(clock: Clock): this {
+    this._clock = clock;
+    return this;
+  }
+
   build(opts: AgentBuilderBuildOptions = {}): AgentRuntime {
     if (!this._provider) {
       throw new Error("provider() must be called before build()");
@@ -141,7 +154,7 @@ export class AgentBuilder {
           : new InMemoryEventCommitter(store, { metricsSink: this._metricsSink });
     }
 
-    const registry = new ToolRegistry();
+    const registry = new ToolRegistry(undefined, this._idFactory);
     for (const integration of this._integrations) {
       integration.register(registry);
     }
@@ -149,12 +162,15 @@ export class AgentBuilder {
     const specs = new Map(
       registry.listSpecs({ enabledOnly: false }).map((spec) => [spec.name, spec]),
     );
+    const clock = this._clock;
+    const monotonicNow =
+      this._monotonicNow ?? (clock === undefined ? undefined : () => clock.nowMonotonic());
     const executionController = new ToolExecutionController({
       limits: this._toolExecutionLimits,
       ledger: this._toolIdempotencyLedger,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow: this._monotonicNow,
+      monotonicNow,
     });
     const planner = new ToolPlanner({
       executor: (name, args, context) => registry.execute(name, args, context),
@@ -163,7 +179,9 @@ export class AgentBuilder {
       approvalCommitter: committer,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow: this._monotonicNow,
+      monotonicNow,
+      idFactory: this._idFactory,
+      clock: this._clock,
       specs,
       executionController,
     });
@@ -180,7 +198,9 @@ export class AgentBuilder {
       defaultContext: this._defaultContext,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow: this._monotonicNow,
+      monotonicNow,
+      idFactory: this._idFactory,
+      clock: this._clock,
       ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });

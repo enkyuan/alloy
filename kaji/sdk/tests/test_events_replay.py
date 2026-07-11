@@ -72,6 +72,77 @@ def test_replay_session_projects_failed_tool_call() -> None:
     assert "boom" in tool_messages[0]["content"]
 
 
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (True, "true"),
+        (None, "null"),
+        (7.5, "7.5"),
+        (1.0, "1"),
+        (-0.0, "0"),
+        (1e-6, "0.000001"),
+        (1e-7, "1e-7"),
+        (1e20, "100000000000000000000"),
+        (1e21, "1e+21"),
+        (9007199254740991, "9007199254740991"),
+        (9007199254740992, "9007199254740992"),
+        ("café", '"café"'),
+        ([1, False, None], "[1,false,null]"),
+        ({"nested": {"ok": True}}, '{"nested":{"ok":true}}'),
+        ({"2": "two", "10": "ten"}, '{"10":"ten","2":"two"}'),
+        (
+            {"\ue000": "bmp", "\U00010000": "astral"},
+            '{"\U00010000":"astral","\ue000":"bmp"}',
+        ),
+    ],
+)
+def test_replay_renders_every_json_tool_result_canonically(
+    result: object, expected: str
+) -> None:
+    state = replay_session(
+        _stored(
+            ToolCallCompleted(
+                session_id="s-json",
+                turn_id="turn-json",
+                tool_name="fixture",
+                tool_call_id="call-json",
+                result=result,
+                sequence=1,
+            )
+        )
+    )
+
+    assert state.messages[-1]["content"] == expected
+
+
+@pytest.mark.parametrize(
+    ("result", "message"),
+    [
+        (
+            9007199254740993,
+            "integer is not exactly representable as a finite IEEE-754 number",
+        ),
+        ((1, 2), "non-JSON value tuple"),
+    ],
+)
+def test_replay_rejects_values_outside_the_shared_json_domain(
+    result: object, message: str
+) -> None:
+    events = _stored(
+        ToolCallCompleted(
+            session_id="s-json-invalid",
+            turn_id="turn-json-invalid",
+            tool_name="fixture",
+            tool_call_id="call-json-invalid",
+            result=result,
+            sequence=1,
+        )
+    )
+
+    with pytest.raises(TypeError, match=message):
+        replay_session(events)
+
+
 def test_replay_session_empty_log_raises() -> None:
     with pytest.raises(ValueError, match="empty event log"):
         replay_session([])

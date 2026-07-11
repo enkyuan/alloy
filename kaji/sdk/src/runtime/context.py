@@ -8,7 +8,8 @@ from dataclasses import dataclass, field
 import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
-import uuid
+
+from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 if TYPE_CHECKING:
     from kaji.runtime.agents.cancellation import CancellationToken
@@ -142,6 +143,7 @@ class TurnContext:
     metadata: Mapping[str, Any]
     _request_id_generated: bool = field(repr=False, compare=False)
     _trace_id_generated: bool = field(repr=False, compare=False)
+    _id_factory: IdFactory = field(repr=False, compare=False)
 
     def __init__(
         self,
@@ -151,11 +153,15 @@ class TurnContext:
         deadline_monotonic: float | None = None,
         db: Any | None = None,
         metadata: Mapping[str, Any] | None = None,
+        id_factory: IdFactory | None = None,
     ) -> None:
+        resolved_factory = id_factory or SYSTEM_ID_FACTORY
         request_generated = request_id is _GENERATED_ID
         trace_generated = trace_id is _GENERATED_ID
-        resolved_request = uuid.uuid4().hex if request_generated else request_id
-        resolved_trace = uuid.uuid4().hex if trace_generated else trace_id
+        resolved_request = (
+            resolved_factory.next("request") if request_generated else request_id
+        )
+        resolved_trace = resolved_factory.next("trace") if trace_generated else trace_id
         object.__setattr__(self, "principal_id", _normalized_principal(principal_id))
         object.__setattr__(
             self, "request_id", _required_identifier("request_id", resolved_request)
@@ -174,8 +180,9 @@ class TurnContext:
         )
         object.__setattr__(self, "_request_id_generated", request_generated)
         object.__setattr__(self, "_trace_id_generated", trace_generated)
+        object.__setattr__(self, "_id_factory", resolved_factory)
 
-    def refresh_generated_ids(self) -> TurnContext:
+    def refresh_generated_ids(self, id_factory: IdFactory | None = None) -> TurnContext:
         """Clone a builder default, refreshing only auto-generated IDs."""
         return TurnContext(
             principal_id=self.principal_id,
@@ -186,6 +193,7 @@ class TurnContext:
             deadline_monotonic=self.deadline_monotonic,
             db=self.db,
             metadata=_copy_metadata_snapshot(self.metadata),
+            id_factory=id_factory or self._id_factory,
         )
 
 

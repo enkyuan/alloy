@@ -92,6 +92,88 @@ describe("replayLegacySession", () => {
     expect(tool?.toolCallId).toBe("call_abc");
   });
 
+  it.each([
+    [true, "true"],
+    [null, "null"],
+    [7.5, "7.5"],
+    [1.0, "1"],
+    [-0.0, "0"],
+    [1e-6, "0.000001"],
+    [1e-7, "1e-7"],
+    [1e20, "100000000000000000000"],
+    [1e21, "1e+21"],
+    [Number.MAX_SAFE_INTEGER, "9007199254740991"],
+    [2 ** 53, "9007199254740992"],
+    ["café", '"café"'],
+    [[1, false, null], "[1,false,null]"],
+    [{ nested: { ok: true } }, '{"nested":{"ok":true}}'],
+    [{ 2: "two", 10: "ten" }, '{"10":"ten","2":"two"}'],
+    [{ "\ue000": "bmp", "\u{10000}": "astral" }, '{"\u{10000}":"astral","\ue000":"bmp"}'],
+  ])("renders JSON tool result %j canonically", (result, expected) => {
+    const state = replayLegacySession([
+      ev({
+        type: EventType.TOOL_CALL_COMPLETED,
+        session_id: "s-json",
+        tool_name: "fixture",
+        tool_call_id: "call-json",
+        result,
+        timestamp: 1,
+      }),
+    ]);
+
+    expect(state.messages.at(-1)?.content).toBe(expected);
+  });
+
+  it.each([
+    ["Date", new Date(0)],
+    ["Map", new Map([["visible", true]])],
+  ])("rejects non-plain %s tool results", (_label, result) => {
+    expect(() =>
+      replayLegacySession([
+        ev({
+          type: EventType.TOOL_CALL_COMPLETED,
+          session_id: "s-json-invalid",
+          tool_name: "fixture",
+          tool_call_id: "call-json-invalid",
+          result,
+          timestamp: 1,
+        }),
+      ]),
+    ).toThrow(/non-plain object/);
+  });
+
+  it("rejects symbol-keyed tool-result objects", () => {
+    const result = { visible: true, [Symbol("hidden")]: false };
+
+    expect(() =>
+      replayLegacySession([
+        ev({
+          type: EventType.TOOL_CALL_COMPLETED,
+          session_id: "s-json-invalid",
+          tool_name: "fixture",
+          tool_call_id: "call-json-invalid",
+          result,
+          timestamp: 1,
+        }),
+      ]),
+    ).toThrow(/object keys must be strings/);
+  });
+
+  it("rejects an exact integer represented outside the Number domain", () => {
+    expect(() =>
+      replayLegacySession([
+        ev({
+          type: EventType.TOOL_CALL_COMPLETED,
+          session_id: "s-json-invalid",
+          tool_name: "fixture",
+          tool_call_id: "call-json-invalid",
+          result: 9007199254740993n,
+          timestamp: 1,
+        }),
+      ]),
+    ).toThrow(/non-JSON value bigint/);
+  });
+
   it("attaches requested tool calls to the preceding assistant message", () => {
     const state = replayLegacySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),

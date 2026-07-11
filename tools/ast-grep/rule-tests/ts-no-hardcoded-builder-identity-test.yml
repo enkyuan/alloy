@@ -1,0 +1,19 @@
+id: ts-no-hardcoded-builder-identity
+valid:
+  - |
+      await registry.execute(name, args, context);
+  - |
+      return executeTool(name, args, context);
+  - |
+      logger("builder", name, args);
+invalid:
+  - |
+      await registry.execute("builder", name, args);
+  - |
+      return executeTool("builder", name, args);
+  - |
+      executor("builder", name, args);
+  - |
+      this.toolExecutor("builder", name, args);
+  - |
+      toolRegistry.execute("builder", name, args);

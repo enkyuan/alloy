@@ -1,0 +1,4577 @@
+{
+  "scenarios": [
+    {
+      "id": "text-one-turn",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-text",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "hello",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-text",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-text",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "hello back",
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-text",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "hello back",
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-text",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": ["provider:start:0", "provider:end:0"],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "hello", "role": "user" }
+            ],
+            "tools": []
+          }
+        ],
+        "provider_responses": [{ "content": "hello back", "tool_calls": [] }],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-text", "text": "hello back", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "text-multi-turn",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-multi",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "first",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-multi",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-multi",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "first reply",
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-multi",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "first reply",
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-multi",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          },
+          {
+            "content": "second",
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-multi",
+            "turn_id": "turn-2",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-multi",
+            "turn_id": "turn-2",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "second reply",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-multi",
+            "turn_id": "turn-2",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "second reply",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-multi",
+            "turn_id": "turn-2",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "first", "role": "user" }
+            ],
+            "tools": []
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "first", "role": "user" },
+              { "content": "first reply", "role": "assistant" },
+              { "content": "second", "role": "user" }
+            ],
+            "tools": []
+          }
+        ],
+        "provider_responses": [
+          { "content": "first reply", "tool_calls": [] },
+          { "content": "second reply", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-multi", "text": "first reply", "turn_id": "turn-1" },
+            { "session_id": "session-multi", "text": "second reply", "turn_id": "turn-2" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "one-tool",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "use echo",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-tool",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-tool",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "result": { "arguments": { "value": 1 }, "tool": "fixture_tool" },
+            "sequence": 6,
+            "session_id": "session-tool",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "tool done",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "tool done",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-tool",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "use echo", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "use echo", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "{\"arguments\":{\"value\":1},\"tool\":\"fixture_tool\"}",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "tool done", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-tool", "text": "tool done", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "parallel-tools-reverse",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "run both",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-parallel",
+            "tool_args": {},
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-parallel",
+            "tool_args": {},
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-parallel",
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-parallel",
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "result": { "arguments": {}, "tool": "first_tool" },
+            "sequence": 8,
+            "session_id": "session-parallel",
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-09",
+            "metadata": {},
+            "result": { "arguments": {}, "tool": "second_tool" },
+            "sequence": 9,
+            "session_id": "session-parallel",
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "tools done",
+            "id": "event-11",
+            "metadata": {},
+            "sequence": 11,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "tools done",
+            "id": "event-12",
+            "metadata": {},
+            "sequence": 12,
+            "session_id": "session-parallel",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:first",
+          "tool:start:second",
+          "tool:end:second",
+          "tool:end:first",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "run both", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "first_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              },
+              {
+                "description": "fixture tool",
+                "name": "second_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "run both", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": {}, "id": "call-first", "name": "first_tool" },
+                  { "arguments": {}, "id": "call-second", "name": "second_tool" }
+                ]
+              },
+              {
+                "content": "{\"arguments\":{},\"tool\":\"first_tool\"}",
+                "name": "first_tool",
+                "role": "tool",
+                "tool_call_id": "call-first"
+              },
+              {
+                "content": "{\"arguments\":{},\"tool\":\"second_tool\"}",
+                "name": "second_tool",
+                "role": "tool",
+                "tool_call_id": "call-second"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "first_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              },
+              {
+                "description": "fixture tool",
+                "name": "second_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [
+              { "arguments": {}, "id": "call-first", "name": "first_tool" },
+              { "arguments": {}, "id": "call-second", "name": "second_tool" }
+            ]
+          },
+          { "content": "tools done", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-parallel", "text": "tools done", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "sequential-tools",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "run both",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-sequential",
+            "tool_args": {},
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-sequential",
+            "tool_args": {},
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-sequential",
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-sequential",
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "result": { "arguments": {}, "tool": "first_tool" },
+            "sequence": 8,
+            "session_id": "session-sequential",
+            "tool_call_id": "call-first",
+            "tool_name": "first_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-09",
+            "metadata": {},
+            "result": { "arguments": {}, "tool": "second_tool" },
+            "sequence": 9,
+            "session_id": "session-sequential",
+            "tool_call_id": "call-second",
+            "tool_name": "second_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "tools done",
+            "id": "event-11",
+            "metadata": {},
+            "sequence": 11,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "tools done",
+            "id": "event-12",
+            "metadata": {},
+            "sequence": 12,
+            "session_id": "session-sequential",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:first",
+          "tool:end:first",
+          "tool:start:second",
+          "tool:end:second",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "run both", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "first_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              },
+              {
+                "description": "fixture tool",
+                "name": "second_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "run both", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": {}, "id": "call-first", "name": "first_tool" },
+                  { "arguments": {}, "id": "call-second", "name": "second_tool" }
+                ]
+              },
+              {
+                "content": "{\"arguments\":{},\"tool\":\"first_tool\"}",
+                "name": "first_tool",
+                "role": "tool",
+                "tool_call_id": "call-first"
+              },
+              {
+                "content": "{\"arguments\":{},\"tool\":\"second_tool\"}",
+                "name": "second_tool",
+                "role": "tool",
+                "tool_call_id": "call-second"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "first_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              },
+              {
+                "description": "fixture tool",
+                "name": "second_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [
+              { "arguments": {}, "id": "call-first", "name": "first_tool" },
+              { "arguments": {}, "id": "call-second", "name": "second_tool" }
+            ]
+          },
+          { "content": "tools done", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-sequential", "text": "tools done", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "max-iteration-exhaustion",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-exhausted",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "keep calling",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-exhausted",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-exhausted",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-exhausted",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-exhausted",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "result": { "arguments": { "value": 1 }, "tool": "fixture_tool" },
+            "sequence": 6,
+            "session_id": "session-exhausted",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-exhausted",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-exhausted",
+            "tool_args": { "value": 2 },
+            "tool_call_id": "call-2",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-exhausted",
+            "tool_call_id": "call-2",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-10",
+            "metadata": {},
+            "result": { "arguments": { "value": 2 }, "tool": "fixture_tool" },
+            "sequence": 10,
+            "session_id": "session-exhausted",
+            "tool_call_id": "call-2",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-11",
+            "max_iterations": 2,
+            "metadata": {},
+            "pending_tool_calls": [
+              { "arguments": { "value": 2 }, "id": "call-2", "name": "fixture_tool" }
+            ],
+            "reason": "max_iterations",
+            "sequence": 11,
+            "session_id": "session-exhausted",
+            "turn_id": "turn-1",
+            "type": "agent.turn.exhausted",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1",
+          "tool:start:fixture",
+          "tool:end:fixture"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "keep calling", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "keep calling", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "{\"arguments\":{\"value\":1},\"tool\":\"fixture_tool\"}",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 2 }, "id": "call-2", "name": "fixture_tool" }]
+          }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-exhausted", "text": "", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "policy-deny",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "denied",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-deny",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool not permitted",
+            "error_code": "TOOL_NOT_ALLOWED",
+            "id": "event-05",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": false,
+            "sequence": 5,
+            "session_id": "session-deny",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-deny",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "denied", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "denied", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool not permitted",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-deny", "text": "handled", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "missing-risk",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "error": {
+            "code": "UNCLASSIFIED_TOOL_RISK",
+            "message": "Enabled tools require an explicit risk classification",
+            "outcome": "not_started",
+            "path": "/risk",
+            "retryable": false
+          }
+        }
+      }
+    },
+    {
+      "id": "approval-reject",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "write",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-approval-reject",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 5,
+            "session_id": "session-approval-reject",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "error_code": "APPROVAL_REJECTED",
+            "id": "event-06",
+            "metadata": {},
+            "reason": "Fixture rejected",
+            "sequence": 6,
+            "session_id": "session-approval-reject",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.rejected",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool approval rejected",
+            "error_code": "APPROVAL_REJECTED",
+            "id": "event-07",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": false,
+            "sequence": 7,
+            "session_id": "session-approval-reject",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-approval-reject",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool approval rejected",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-approval-reject", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "approval-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "write",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-approval-timeout",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 5,
+            "session_id": "session-approval-timeout",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "error_code": "APPROVAL_TIMEOUT",
+            "id": "event-06",
+            "metadata": {},
+            "reason": "Fixture timed out",
+            "sequence": 6,
+            "session_id": "session-approval-timeout",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.rejected",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool approval timed out",
+            "error_code": "APPROVAL_TIMEOUT",
+            "id": "event-07",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": true,
+            "sequence": 7,
+            "session_id": "session-approval-timeout",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-approval-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool approval timed out",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-approval-timeout", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "approval-unavailable",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "write",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-approval-unavailable",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 5,
+            "session_id": "session-approval-unavailable",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "error_code": "APPROVAL_UNAVAILABLE",
+            "id": "event-06",
+            "metadata": {},
+            "reason": "No approval handler registered",
+            "sequence": 6,
+            "session_id": "session-approval-unavailable",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.rejected",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool approval unavailable",
+            "error_code": "APPROVAL_UNAVAILABLE",
+            "id": "event-07",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": false,
+            "sequence": 7,
+            "session_id": "session-approval-unavailable",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-approval-unavailable",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool approval unavailable",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-approval-unavailable", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "approval-external-recorded",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "write",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-approval-external",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 5,
+            "session_id": "session-approval-external",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-approval-external",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.approval.approved",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-approval-external",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-08",
+            "metadata": {},
+            "result": { "arguments": { "value": 1 }, "tool": "fixture_tool" },
+            "sequence": 8,
+            "session_id": "session-approval-external",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 10,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-11",
+            "metadata": {},
+            "sequence": 11,
+            "session_id": "session-approval-external",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "write", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "{\"arguments\":{\"value\":1},\"tool\":\"fixture_tool\"}",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-approval-external", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "executor-error",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "fail",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-error",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-error",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool execution failed",
+            "error_code": "TOOL_EXECUTION_FAILED",
+            "id": "event-06",
+            "metadata": {},
+            "outcome": "unknown",
+            "retryable": false,
+            "sequence": 6,
+            "session_id": "session-error",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-error",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "fail", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "fail", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool execution failed",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [{ "session_id": "session-error", "text": "handled", "turn_id": "turn-1" }]
+        }
+      }
+    },
+    {
+      "id": "queue-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "timeout",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-queue-timeout",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool execution timed out",
+            "error_code": "TOOL_TIMEOUT",
+            "id": "event-05",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": true,
+            "sequence": 5,
+            "session_id": "session-queue-timeout",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool execution timed out",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-queue-timeout", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "started-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "timeout",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-started-timeout",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-started-timeout",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool execution timed out",
+            "error_code": "TOOL_TIMEOUT",
+            "id": "event-06",
+            "metadata": {},
+            "outcome": "unknown",
+            "retryable": false,
+            "sequence": 6,
+            "session_id": "session-started-timeout",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-started-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool execution timed out",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-started-timeout", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cancellation-before-start",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "cancel",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-cancel-before",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool execution cancelled",
+            "error_code": "TOOL_CANCELLED",
+            "id": "event-05",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": true,
+            "sequence": 5,
+            "session_id": "session-cancel-before",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-cancel-before",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "cancel", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "cancel", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool execution cancelled",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-cancel-before", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cancellation-after-start",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "cancel",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-cancel-after",
+            "tool_args": { "value": 1 },
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-cancel-after",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.started",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool execution cancelled",
+            "error_code": "TOOL_CANCELLED",
+            "id": "event-06",
+            "metadata": {},
+            "outcome": "unknown",
+            "retryable": false,
+            "sequence": 6,
+            "session_id": "session-cancel-after",
+            "tool_call_id": "call-1",
+            "tool_name": "fixture_tool",
+            "turn_id": "turn-1",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "handled",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "handled",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "session-cancel-after",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:0",
+          "provider:end:0",
+          "tool:start:fixture",
+          "tool:end:fixture",
+          "provider:start:1",
+          "provider:end:1"
+        ],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "cancel", "role": "user" }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          },
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "cancel", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }
+                ]
+              },
+              {
+                "content": "Error: Tool execution cancelled",
+                "name": "fixture_tool",
+                "role": "tool",
+                "tool_call_id": "call-1"
+              }
+            ],
+            "tools": [
+              {
+                "description": "fixture tool",
+                "name": "fixture_tool",
+                "parameters": {
+                  "additionalProperties": false,
+                  "properties": { "value": { "type": "integer" } },
+                  "type": "object"
+                }
+              }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "",
+            "tool_calls": [{ "arguments": { "value": 1 }, "id": "call-1", "name": "fixture_tool" }]
+          },
+          { "content": "handled", "tool_calls": [] }
+        ],
+        "replay": {},
+        "result": {
+          "turns": [
+            { "session_id": "session-cancel-after", "text": "handled", "turn_id": "turn-1" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "schema-valid-nested",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": { "accepted": true, "fixture": "nested object, format, and bounded array" }
+      }
+    },
+    {
+      "id": "schema-valid-const-bounds",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": { "accepted": true, "fixture": "const and number bounds" }
+      }
+    },
+    {
+      "id": "schema-valid-union",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": { "accepted": true, "fixture": "union branch" }
+      }
+    },
+    {
+      "id": "schema-valid-ref",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": { "accepted": true, "fixture": "local reference" }
+      }
+    },
+    {
+      "id": "schema-invalid-nested-required",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed required validation at /profile",
+            "outcome": "not_started",
+            "path": "/profile",
+            "retryable": false
+          },
+          "fixture": "nested required"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-nested-extra",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed additionalProperties validation at /profile",
+            "outcome": "not_started",
+            "path": "/profile",
+            "retryable": false
+          },
+          "fixture": "nested additional property"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-top-extra",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed additionalProperties validation at /",
+            "outcome": "not_started",
+            "path": "/",
+            "retryable": false
+          },
+          "fixture": "top-level additional property"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-const",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed const validation at /mode",
+            "outcome": "not_started",
+            "path": "/mode",
+            "retryable": false
+          },
+          "fixture": "const"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-enum",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed enum validation at /mode",
+            "outcome": "not_started",
+            "path": "/mode",
+            "retryable": false
+          },
+          "fixture": "enum"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-number-min",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed minimum validation at /count",
+            "outcome": "not_started",
+            "path": "/count",
+            "retryable": false
+          },
+          "fixture": "number minimum"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-number-max",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed maximum validation at /count",
+            "outcome": "not_started",
+            "path": "/count",
+            "retryable": false
+          },
+          "fixture": "number maximum"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-string-min",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed minLength validation at /slug",
+            "outcome": "not_started",
+            "path": "/slug",
+            "retryable": false
+          },
+          "fixture": "string minimum length"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-string-max",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed maxLength validation at /slug",
+            "outcome": "not_started",
+            "path": "/slug",
+            "retryable": false
+          },
+          "fixture": "string maximum length"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-pattern",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed pattern validation at /slug",
+            "outcome": "not_started",
+            "path": "/slug",
+            "retryable": false
+          },
+          "fixture": "string pattern"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-array-min",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed minItems validation at /ids",
+            "outcome": "not_started",
+            "path": "/ids",
+            "retryable": false
+          },
+          "fixture": "array minimum items"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-array-max",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed maxItems validation at /ids",
+            "outcome": "not_started",
+            "path": "/ids",
+            "retryable": false
+          },
+          "fixture": "array maximum items"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-array-item",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed type validation at /ids/1",
+            "outcome": "not_started",
+            "path": "/ids/1",
+            "retryable": false
+          },
+          "fixture": "array item"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-email",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed format validation at /email",
+            "outcome": "not_started",
+            "path": "/email",
+            "retryable": false
+          },
+          "fixture": "email format"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-uri",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed format validation at /url",
+            "outcome": "not_started",
+            "path": "/url",
+            "retryable": false
+          },
+          "fixture": "uri format"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-union",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed oneOf validation at /target",
+            "outcome": "not_started",
+            "path": "/target",
+            "retryable": false
+          },
+          "fixture": "union branches"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-ref",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_ARGUMENTS",
+            "message": "Tool arguments failed minimum validation at /value",
+            "outcome": "not_started",
+            "path": "/value",
+            "retryable": false
+          },
+          "fixture": "local reference"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-type-declaration",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_SCHEMA",
+            "message": "Tool schema failed schema validation at /type",
+            "outcome": "not_started",
+            "path": "/type",
+            "retryable": false
+          },
+          "fixture": "invalid type declaration"
+        }
+      }
+    },
+    {
+      "id": "schema-invalid-required-declaration",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "accepted": false,
+          "error": {
+            "code": "INVALID_TOOL_SCHEMA",
+            "message": "Tool schema failed schema validation at /required",
+            "outcome": "not_started",
+            "path": "/required",
+            "retryable": false
+          },
+          "fixture": "invalid required declaration"
+        }
+      }
+    },
+    {
+      "id": "replay-approval-and-failures",
+      "snapshot": {
+        "events": [
+          {
+            "id": "replay-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-replay",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-replay",
+            "turn_id": "turn-replay",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-3",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-replay",
+            "tool_args": { "q": "café" },
+            "tool_call_id": "call-ok",
+            "tool_name": "lookup",
+            "turn_id": "turn-replay",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-4",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 4,
+            "session_id": "session-replay",
+            "tool_args": { "q": "café" },
+            "tool_call_id": "call-ok",
+            "tool_name": "lookup",
+            "turn_id": "turn-replay",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-5",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "session-replay",
+            "tool_call_id": "call-ok",
+            "tool_name": "lookup",
+            "turn_id": "turn-replay",
+            "type": "tool.approval.approved",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-6",
+            "metadata": {},
+            "result": { "a": [2], "z": 1 },
+            "sequence": 6,
+            "session_id": "session-replay",
+            "tool_call_id": "call-ok",
+            "tool_name": "lookup",
+            "turn_id": "turn-replay",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-7",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "session-replay",
+            "tool_args": { "value": 3 },
+            "tool_call_id": "call-failed",
+            "tool_name": "write",
+            "turn_id": "turn-replay",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "replay-event-8",
+            "metadata": {},
+            "risk": "write",
+            "sequence": 8,
+            "session_id": "session-replay",
+            "tool_args": { "value": 3 },
+            "tool_call_id": "call-failed",
+            "tool_name": "write",
+            "turn_id": "turn-replay",
+            "type": "tool.approval.requested",
+            "version": "1.0"
+          },
+          {
+            "error_code": "APPROVAL_TIMEOUT",
+            "id": "replay-event-9",
+            "metadata": {},
+            "reason": "Fixture timed out",
+            "sequence": 9,
+            "session_id": "session-replay",
+            "tool_call_id": "call-failed",
+            "tool_name": "write",
+            "turn_id": "turn-replay",
+            "type": "tool.approval.rejected",
+            "version": "1.0"
+          },
+          {
+            "error": "Tool approval timed out",
+            "error_code": "APPROVAL_TIMEOUT",
+            "id": "replay-event-10",
+            "metadata": {},
+            "outcome": "not_started",
+            "retryable": true,
+            "sequence": 10,
+            "session_id": "session-replay",
+            "tool_call_id": "call-failed",
+            "tool_name": "write",
+            "turn_id": "turn-replay",
+            "type": "tool.call.failed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [
+            { "tool_call_id": "call-ok", "tool_name": "lookup", "turn_id": "turn-replay" }
+          ],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [
+                { "arguments": { "q": "café" }, "id": "call-ok", "name": "lookup" },
+                { "arguments": { "value": 3 }, "id": "call-failed", "name": "write" }
+              ]
+            },
+            {
+              "content": "{\"a\":[2],\"z\":1}",
+              "name": "lookup",
+              "role": "tool",
+              "tool_call_id": "call-ok"
+            },
+            {
+              "content": "Error: Tool approval timed out",
+              "name": "write",
+              "role": "tool",
+              "tool_call_id": "call-failed"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [
+            {
+              "error_code": "APPROVAL_TIMEOUT",
+              "tool_call_id": "call-failed",
+              "tool_name": "write",
+              "turn_id": "turn-replay"
+            }
+          ],
+          "session_id": "session-replay"
+        },
+        "result": { "event_count": 10 }
+      }
+    },
+    {
+      "id": "replay-json-boolean",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": true,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            { "content": "true", "name": "fixture", "role": "tool", "tool_call_id": "call-json" }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "true" }
+      }
+    },
+    {
+      "id": "replay-json-null",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": null,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            { "content": "null", "name": "fixture", "role": "tool", "tool_call_id": "call-json" }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "null" }
+      }
+    },
+    {
+      "id": "replay-json-number",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": 7.5,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            { "content": "7.5", "name": "fixture", "role": "tool", "tool_call_id": "call-json" }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "7.5" }
+      }
+    },
+    {
+      "id": "replay-json-integral-float",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": 1.0,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            { "content": "1", "name": "fixture", "role": "tool", "tool_call_id": "call-json" }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "1" }
+      }
+    },
+    {
+      "id": "replay-json-negative-zero",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": -0.0,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            { "content": "0", "name": "fixture", "role": "tool", "tool_call_id": "call-json" }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "0" }
+      }
+    },
+    {
+      "id": "replay-json-exponent-boundaries",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": [1e-6, 1e-7, 1e20, 1e21],
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "[0.000001,1e-7,100000000000000000000,1e+21]",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": {
+          "event_count": 3,
+          "tool_content": "[0.000001,1e-7,100000000000000000000,1e+21]"
+        }
+      }
+    },
+    {
+      "id": "replay-json-numeric-keys",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": { "10": "ten", "2": "two" },
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "{\"10\":\"ten\",\"2\":\"two\"}",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "{\"10\":\"ten\",\"2\":\"two\"}" }
+      }
+    },
+    {
+      "id": "replay-json-safe-integer-boundary",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": 9007199254740991,
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "9007199254740991",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "9007199254740991" }
+      }
+    },
+    {
+      "id": "replay-json-unrepresentable-integer",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": { "event_count": 3, "rejection": "integer_not_exactly_representable" }
+      }
+    },
+    {
+      "id": "replay-json-utf16-keys",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": { "": "bmp", "𐀀": "astral" },
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "{\"𐀀\":\"astral\",\"\":\"bmp\"}",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "{\"𐀀\":\"astral\",\"\":\"bmp\"}" }
+      }
+    },
+    {
+      "id": "replay-json-string",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": "café",
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "\"café\"",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "\"café\"" }
+      }
+    },
+    {
+      "id": "replay-json-array",
+      "snapshot": {
+        "events": [
+          {
+            "id": "json-event-1",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-json",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-2",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-json",
+            "tool_args": {},
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.requested",
+            "version": "1.0"
+          },
+          {
+            "id": "json-event-3",
+            "metadata": {},
+            "result": [1, false, null],
+            "sequence": 3,
+            "session_id": "session-json",
+            "tool_call_id": "call-json",
+            "tool_name": "fixture",
+            "turn_id": "turn-json",
+            "type": "tool.call.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {
+          "approved_approvals": [],
+          "is_active": true,
+          "messages": [
+            {
+              "content": "",
+              "role": "assistant",
+              "tool_calls": [{ "arguments": {}, "id": "call-json", "name": "fixture" }]
+            },
+            {
+              "content": "[1,false,null]",
+              "name": "fixture",
+              "role": "tool",
+              "tool_call_id": "call-json"
+            }
+          ],
+          "pending_approvals": [],
+          "rejected_approvals": [],
+          "session_id": "session-json"
+        },
+        "result": { "event_count": 3, "tool_content": "[1,false,null]" }
+      }
+    },
+    {
+      "id": "same-session-serialization",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "same",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "first",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "same",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "same",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "reply:first",
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "same",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "reply:first",
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "same",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          },
+          {
+            "content": "second",
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 6,
+            "session_id": "same",
+            "turn_id": "turn-2",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 7,
+            "session_id": "same",
+            "turn_id": "turn-2",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "reply:second",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 8,
+            "session_id": "same",
+            "turn_id": "turn-2",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "reply:second",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 9,
+            "session_id": "same",
+            "turn_id": "turn-2",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:first",
+          "provider:end:first",
+          "provider:start:second",
+          "provider:end:second"
+        ],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "active_before_release": 1,
+          "max_active": 1,
+          "texts": ["reply:first", "reply:second"]
+        }
+      }
+    },
+    {
+      "id": "cross-session-overlap",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "left",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "left",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "left",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "left",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "reply:left",
+            "id": "event-07",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "left",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "reply:left",
+            "id": "event-08",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "left",
+            "turn_id": "turn-1",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "right",
+            "turn_id": "turn-2",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "right",
+            "id": "event-05",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "right",
+            "turn_id": "turn-2",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-06",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "right",
+            "turn_id": "turn-2",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "reply:right",
+            "id": "event-09",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "right",
+            "turn_id": "turn-2",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "content": "reply:right",
+            "id": "event-10",
+            "metadata": {},
+            "sequence": 5,
+            "session_id": "right",
+            "turn_id": "turn-2",
+            "type": "agent.message.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [
+          "provider:start:left",
+          "provider:start:right",
+          "provider:end:left",
+          "provider:end:right"
+        ],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "active_before_release": 2,
+          "max_active": 2,
+          "texts": ["reply:left", "reply:right"]
+        }
+      }
+    },
+    {
+      "id": "openai-non-stream",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "system", "role": "system" },
+              { "content": "lookup", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "q": "old" }, "id": "prior-call", "name": "lookup" }
+                ]
+              },
+              { "content": "{\"ok\":true}", "role": "tool", "tool_call_id": "prior-call" }
+            ],
+            "model": "gpt-5.4-mini",
+            "stream": false,
+            "tools": [
+              { "description": "Lookup", "name": "lookup", "parameters": { "type": "object" } }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "provider text",
+            "cost_usd": 1.725e-5,
+            "provider_error": {
+              "action": "request",
+              "code": "PROVIDER_NETWORK_ERROR",
+              "retryable": true,
+              "service": "openai",
+              "status": null,
+              "type": "network"
+            },
+            "tokens": { "input": 5, "output": 3 },
+            "tool_calls": [
+              { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+              {
+                "arguments": { "__parse_error": "invalid JSON" },
+                "id": "call-bad",
+                "name": "lookup"
+              }
+            ]
+          }
+        ],
+        "replay": {},
+        "result": {
+          "content": "provider text",
+          "cost_usd": 1.725e-5,
+          "provider_error": {
+            "action": "request",
+            "code": "PROVIDER_NETWORK_ERROR",
+            "retryable": true,
+            "service": "openai",
+            "status": null,
+            "type": "network"
+          },
+          "tokens": { "input": 5, "output": 3 },
+          "tool_calls": [
+            { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+            { "arguments": { "__parse_error": "invalid JSON" }, "id": "call-bad", "name": "lookup" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "openai-stream",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "system", "role": "system" },
+              { "content": "lookup", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "q": "old" }, "id": "prior-call", "name": "lookup" }
+                ]
+              },
+              { "content": "{\"ok\":true}", "role": "tool", "tool_call_id": "prior-call" }
+            ],
+            "model": "gpt-5.4-mini",
+            "stream": true,
+            "tools": [
+              { "description": "Lookup", "name": "lookup", "parameters": { "type": "object" } }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "provider text",
+            "cost_usd": 1.725e-5,
+            "provider_error": {
+              "action": "stream",
+              "code": "PROVIDER_NETWORK_ERROR",
+              "retryable": true,
+              "service": "openai",
+              "status": null,
+              "type": "network"
+            },
+            "tokens": { "input": 5, "output": 3 },
+            "tool_calls": [
+              { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+              {
+                "arguments": { "__parse_error": "invalid JSON" },
+                "id": "call-bad",
+                "name": "lookup"
+              }
+            ]
+          }
+        ],
+        "replay": {},
+        "result": {
+          "content": "provider text",
+          "cost_usd": 1.725e-5,
+          "provider_error": {
+            "action": "stream",
+            "code": "PROVIDER_NETWORK_ERROR",
+            "retryable": true,
+            "service": "openai",
+            "status": null,
+            "type": "network"
+          },
+          "tokens": { "input": 5, "output": 3 },
+          "tool_calls": [
+            { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+            { "arguments": { "__parse_error": "invalid JSON" }, "id": "call-bad", "name": "lookup" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "anthropic-non-stream",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "lookup", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "q": "old" }, "id": "prior-call", "name": "lookup" }
+                ]
+              },
+              { "content": "{\"ok\":true}", "role": "tool", "tool_call_id": "prior-call" }
+            ],
+            "model": "claude-sonnet-4-6",
+            "stream": false,
+            "system": "system",
+            "tools": [
+              { "description": "Lookup", "name": "lookup", "parameters": { "type": "object" } }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "provider text",
+            "cost_usd": 6e-5,
+            "provider_error": {
+              "action": "request",
+              "code": "PROVIDER_NETWORK_ERROR",
+              "retryable": true,
+              "service": "anthropic",
+              "status": null,
+              "type": "network"
+            },
+            "tokens": { "input": 5, "output": 3 },
+            "tool_calls": [{ "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" }]
+          }
+        ],
+        "replay": {},
+        "result": {
+          "content": "provider text",
+          "cost_usd": 6e-5,
+          "provider_error": {
+            "action": "request",
+            "code": "PROVIDER_NETWORK_ERROR",
+            "retryable": true,
+            "service": "anthropic",
+            "status": null,
+            "type": "network"
+          },
+          "tokens": { "input": 5, "output": 3 },
+          "tool_calls": [{ "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" }]
+        }
+      }
+    },
+    {
+      "id": "anthropic-stream",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "lookup", "role": "user" },
+              {
+                "content": "",
+                "role": "assistant",
+                "tool_calls": [
+                  { "arguments": { "q": "old" }, "id": "prior-call", "name": "lookup" }
+                ]
+              },
+              { "content": "{\"ok\":true}", "role": "tool", "tool_call_id": "prior-call" }
+            ],
+            "model": "claude-sonnet-4-6",
+            "stream": true,
+            "system": "system",
+            "tools": [
+              { "description": "Lookup", "name": "lookup", "parameters": { "type": "object" } }
+            ]
+          }
+        ],
+        "provider_responses": [
+          {
+            "content": "provider text",
+            "cost_usd": 6e-5,
+            "provider_error": {
+              "action": "stream",
+              "code": "PROVIDER_NETWORK_ERROR",
+              "retryable": true,
+              "service": "anthropic",
+              "status": null,
+              "type": "network"
+            },
+            "tokens": { "input": 5, "output": 3 },
+            "tool_calls": [
+              { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+              {
+                "arguments": { "__parse_error": "invalid JSON" },
+                "id": "call-bad",
+                "name": "lookup"
+              }
+            ]
+          }
+        ],
+        "replay": {},
+        "result": {
+          "content": "provider text",
+          "cost_usd": 6e-5,
+          "provider_error": {
+            "action": "stream",
+            "code": "PROVIDER_NETWORK_ERROR",
+            "retryable": true,
+            "service": "anthropic",
+            "status": null,
+            "type": "network"
+          },
+          "tokens": { "input": 5, "output": 3 },
+          "tool_calls": [
+            { "arguments": { "q": "new" }, "id": "call-ok", "name": "lookup" },
+            { "arguments": { "__parse_error": "invalid JSON" }, "id": "call-bad", "name": "lookup" }
+          ]
+        }
+      }
+    }
+  ],
+  "version": "1.0.0"
+}

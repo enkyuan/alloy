@@ -70,31 +70,21 @@ run_required_key_failure() {
   printf '%s\n' "$output"
 }
 
-run_optional_ast_grep() {
-  section "ast-grep structural audit"
-
-  if command -v sg >/dev/null 2>&1; then
-    (
-      cd "$ROOT"
-      sg scan --config sgconfig.yml kaji
-    )
-  else
-    echo "SKIP: ast-grep CLI not installed; use 'bun run audit:ast-grep' when package resolution is available."
-  fi
-}
-
 require_command bun "TypeScript SDK release gates"
+require_command uv "cross-SDK parity and Python SDK release gates"
 
 run_no_key_live_skip
 run_required_key_failure
-run_optional_ast_grep
+
+run_in_dir "ast-grep structural audit" "$ROOT" bun run audit:ast-grep
+
+run_in_dir "Cross-SDK behavioral parity" "$ROOT" uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py
+run_in_dir "Deterministic complexity and quick benchmark smoke" "$ROOT" bash kaji/scripts/run-beta-benchmarks.sh --quick
 
 run_in_dir "TypeScript unit tests" "$ROOT/kaji/ts" bun run test
 run_in_dir "TypeScript typecheck" "$ROOT/kaji/ts" bun run typecheck
 run_in_dir "TypeScript build" "$ROOT/kaji/ts" bun run build
 run_in_dir "TypeScript package smoke" "$ROOT/kaji/ts" bun run scripts/smoke.mts
-
-require_command uv "Python SDK release gates"
 
 run_in_dir "Python unit tests" "$ROOT/kaji/sdk" uv run pytest -m "not integration"
 run_in_dir "Python typecheck" "$ROOT/kaji/sdk" uv run python scripts/typecheck_ty.py --output-format concise

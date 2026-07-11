@@ -16,8 +16,14 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "audit:ast-grep": "bun x -p @ast-grep/cli sg scan --config sgconfig.yml kaji",
+    "ast-grep:test": "sg test -t tools/ast-grep/rule-tests --skip-snapshot-tests",
+    "ast-grep:scan": "sg scan --config sgconfig.yml kaji",
+    "audit:ast-grep": "bun run ast-grep:test && bun run ast-grep:scan",
     "audit:kaji-beta": "bash kaji/scripts/beta-release-check.sh",
+    "benchmark:kaji-beta": "bash kaji/scripts/run-beta-benchmarks.sh --quick",
+    "benchmark:kaji-beta:full": "bash kaji/scripts/run-beta-benchmarks.sh --full",
+    "soak:kaji-beta": "bash kaji/scripts/run-beta-soak.sh --minutes 30",
+    "parity": "uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py",
     "prepare": "husky",
     "docker:up": "docker compose -f docker/ryo/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/ryo/docker-compose.yml down",
@@ -25,6 +31,7 @@
     "docker:logs": "docker compose -f docker/ryo/docker-compose.yml logs -f"
   },
   "devDependencies": {
+    "@ast-grep/cli": "0.44.1",
     "turbo": "^2.5.0",
     "husky": "^9.1.0",
     "oxlint": "^1.1.0",

@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 import inspect
 import logging
 import math
-import uuid
 import warnings
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
@@ -24,6 +23,7 @@ from kaji.infra.events.schemas import (
     ToolCallRequested,
     ToolCallStarted,
     require_stored_event,
+    event_defaults,
 )
 from kaji.infra.events.protocols import EventJournal
 from kaji.infra.events.types import EventType
@@ -58,6 +58,12 @@ from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
 from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 from kaji.runtime.tools.registry import ToolSpec, _snapshot_tool_spec
 from kaji.runtime.tools.validation import ToolSchemaValidator
+from kaji.runtime.determinism import (
+    Clock,
+    IdFactory,
+    SYSTEM_CLOCK,
+    SYSTEM_ID_FACTORY,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -419,6 +425,8 @@ class ToolPlanner:
         controller: ToolExecutionController | None = None,
         execution_limits: ToolExecutionLimits | None = None,
         idempotency_ledger: ToolIdempotencyLedger | None = None,
+        id_factory: IdFactory | None = None,
+        clock: Clock | None = None,
     ):
         if controller is not None and (
             execution_limits is not None or idempotency_ledger is not None
@@ -433,12 +441,37 @@ class ToolPlanner:
             name: _snapshot_tool_spec(spec) for name, spec in (specs or {}).items()
         }
         self._schema_validator = ToolSchemaValidator(self._specs)
+        self._id_factory = id_factory or SYSTEM_ID_FACTORY
+        self._clock = clock or SYSTEM_CLOCK
         self.controller = controller or ToolExecutionController(
             limits=execution_limits,
             ledger=idempotency_ledger,
+            clock=self._clock.now_monotonic,
         )
 
     async def execute_scatter_gather(
+        self,
+        session_id: str,
+        tool_calls: List[Dict[str, Any]],
+        emit_event: Callable[[Any], Awaitable[Any]],
+        *,
+        turn_id: str,
+        turn_context: TurnContext,
+        cancellation_token: CancellationToken,
+        approval_journal: EventJournal | None = None,
+    ) -> List[Dict[str, Any]]:
+        with event_defaults(self._id_factory, self._clock):
+            return await self._execute_scatter_gather(
+                session_id,
+                tool_calls,
+                emit_event,
+                turn_id=turn_id,
+                turn_context=turn_context,
+                cancellation_token=cancellation_token,
+                approval_journal=approval_journal,
+            )
+
+    async def _execute_scatter_gather(
         self,
         session_id: str,
         tool_calls: List[Dict[str, Any]],
@@ -462,6 +495,7 @@ class ToolPlanner:
             deadline_monotonic=turn_context.deadline_monotonic,
             db=turn_context.db,
             metadata=_copy_metadata_snapshot(turn_context.metadata),
+            id_factory=self._id_factory,
         )
         if resolved_context.principal_id is None:
             raise MissingToolIdentityError()
@@ -591,7 +625,7 @@ class ToolPlanner:
 
             raw_call_id = call.get("id")
             if raw_call_id is None:
-                call_id = uuid.uuid4().hex
+                call_id = self._id_factory.next("tool_call")
             elif not isinstance(raw_call_id, str) or not raw_call_id.strip():
                 raise ValueError("tool call id must be a non-empty string")
             else:

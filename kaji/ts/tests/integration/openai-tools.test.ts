@@ -65,11 +65,15 @@ describe.skipIf(!hasKey("OPENAI_API_KEY"))("OpenAI agent tool loop (live)", () =
     );
 
     const eventTypes = result.events.map((event) => event.type);
-    expect(eventTypes).toContain(EventType.TOOL_CALL_REQUESTED);
-    expect(eventTypes).toContain(EventType.TOOL_CALL_COMPLETED);
+    const requested = result.events.filter((event) => event.type === EventType.TOOL_CALL_REQUESTED);
+    const completed = result.events.filter((event) => event.type === EventType.TOOL_CALL_COMPLETED);
+    expect(requested).toHaveLength(1);
+    expect(completed).toHaveLength(1);
+    expect(requested[0]!.tool_call_id).toBe(completed[0]!.tool_call_id);
     expect(eventTypes).toContain(EventType.AGENT_MESSAGE_COMPLETED);
+    expect(eventTypes).not.toContain(EventType.TOOL_CALL_FAILED);
     expect(eventTypes).not.toContain(EventType.AGENT_TURN_EXHAUSTED);
-    expect(result.toolCallEvents.length).toBeGreaterThanOrEqual(1);
+    expect(result.toolCallEvents).toHaveLength(1);
     expect(result.text).toContain(marker);
   });
 });

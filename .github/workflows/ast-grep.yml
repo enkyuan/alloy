@@ -1,0 +1,48 @@
+name: test / ast-grep
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/ast-grep.yml"
+  pull_request:
+    paths:
+      - "kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/ast-grep.yml"
+
+jobs:
+  structural-guards:
+    name: ast-grep structural guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: .
+          bun-version: 1.3.11
+          install-args: --frozen-lockfile
+
+      - name: Test structural rules
+        shell: bash
+        run: |
+          output="$(bun run ast-grep:test 2>&1)"
+          printf '%s\n' "$output"
+          if [[ "$output" != *"test result: ok. 8 passed; 0 failed;"* ]]; then
+            printf 'Expected all eight ast-grep rule tests to execute successfully.\n' >&2
+            exit 1
+          fi
+
+      - name: Scan Kaji sources
+        run: bun run ast-grep:scan

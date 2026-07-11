@@ -1,0 +1,10 @@
+id: ts-planner-no-unbounded-tool-map
+language: TypeScript
+severity: error
+message: Route mapped tool fan-out through the fixed-size worker pool.
+files:
+  - "kaji/ts/src/tools/planner.ts"
+rule:
+  any:
+    - pattern: Promise.all($CALLS.map($CALLBACK))
+    - pattern: Promise.allSettled($CALLS.map($CALLBACK))

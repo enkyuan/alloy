@@ -16,6 +16,7 @@ import pytest
 
 import kaji
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.providers.openai import OpenAIProvider
 
 
@@ -54,6 +55,7 @@ async def test_openai_agent_executes_tool_and_finishes() -> None:
         kaji.AgentBuilder()
         .provider(OpenAIProvider(api_key=api_key, model=model))
         .integration(EchoProbeIntegration())
+        .default_context(TurnContext(principal_id="openai-live"))
         .system_prompt(
             "You are testing SDK tool execution. You must call the "
             "`probe_echo_probe` tool exactly once with the marker from the "
@@ -72,14 +74,23 @@ async def test_openai_agent_executes_tool_and_finishes() -> None:
 
     types = [event.type for event in result.events]
 
-    assert EventType.TOOL_CALL_REQUESTED in types, (
+    requested = [
+        event for event in result.events if event.type == EventType.TOOL_CALL_REQUESTED
+    ]
+    completed_tools = [
+        event for event in result.events if event.type == EventType.TOOL_CALL_COMPLETED
+    ]
+
+    assert len(requested) == 1, (
         "OpenAI did not request the probe tool. The SDK live-readiness "
         "test requires a real model tool call, not just text generation."
     )
-    assert EventType.TOOL_CALL_COMPLETED in types, (
+    assert len(completed_tools) == 1, (
         "OpenAI did not complete the probe tool call. The SDK live-readiness "
         "test requires a real model tool call, not just text generation."
     )
+    assert requested[0].tool_call_id == completed_tools[0].tool_call_id
+    assert EventType.TOOL_CALL_FAILED not in types
     assert EventType.AGENT_TURN_EXHAUSTED not in types, (
         "OpenAI requested tools but the runtime exhausted the tool loop before final text."
     )
@@ -90,9 +101,7 @@ async def test_openai_agent_executes_tool_and_finishes() -> None:
         if event.type == EventType.AGENT_MESSAGE_COMPLETED
     ]
     assert completed, "OpenAI completed the tool call but did not produce final text"
-    assert result.tool_call_events, (
-        "OpenAI completed a tool event without a requested-call event"
-    )
+    assert len(result.tool_call_events) == 1
     assert any(marker in content for content in completed), (
         "OpenAI final text did not mention the probe marker returned by the tool"
     )

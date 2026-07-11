@@ -268,13 +268,55 @@ export function orderLegacyUnsequencedEvents(events: readonly KajiEvent[]): Kaji
 }
 
 /**
- * Render a tool result as message content. Objects are JSON-encoded (the Python
- * SDK uses `str()`, which yields an unparseable repr; JSON is the useful TS
- * equivalent); primitives fall back to `String`.
+ * Serialize a JSON value with the cross-SDK replay policy.
+ *
+ * Arrays retain their order; plain string-keyed objects use UTF-16 lexical
+ * key order; strings retain Unicode text; and numbers use the finite IEEE-754
+ * domain with ECMAScript's shortest round-trip spelling and fixed/exponent
+ * boundaries. Unsupported values, including BigInt and non-plain objects,
+ * fail instead of being silently coerced or omitted.
  */
 function stringifyResult(result: unknown): string {
-  if (result !== null && typeof result === "object") {
-    return JSON.stringify(result);
+  if (result === null) return "null";
+
+  switch (typeof result) {
+    case "boolean":
+      return result ? "true" : "false";
+    case "string":
+      return JSON.stringify(result);
+    case "number":
+      if (!Number.isFinite(result)) {
+        throw new TypeError("tool result contains a non-finite number");
+      }
+      return Object.is(result, -0) ? "0" : result.toString();
+    case "object":
+      if (Object.getOwnPropertySymbols(result).length > 0) {
+        throw new TypeError("tool result JSON object keys must be strings");
+      }
+      if (Array.isArray(result)) {
+        return `[${Array.from(result, (item) => stringifyResult(item)).join(",")}]`;
+      }
+      if (
+        Object.getPrototypeOf(result) !== Object.prototype &&
+        Object.getPrototypeOf(result) !== null
+      ) {
+        throw new TypeError("tool result contains a non-plain object");
+      }
+      const keys = Object.getOwnPropertyNames(result);
+      for (const key of keys) {
+        const descriptor = Object.getOwnPropertyDescriptor(result, key);
+        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+          throw new TypeError("tool result JSON object properties must be enumerable data values");
+        }
+      }
+      return `{${keys
+        .sort()
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${stringifyResult((result as Record<string, unknown>)[key])}`,
+        )
+        .join(",")}}`;
+    default:
+      throw new TypeError(`tool result contains non-JSON value ${typeof result}`);
   }
-  return String(result);
 }

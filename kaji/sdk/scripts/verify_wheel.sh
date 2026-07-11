@@ -123,7 +123,10 @@ with zipfile.ZipFile(wheel) as zf:
     if not integrations:
         fail("registry index declares no integrations")
 
-    for name, manifest_rel in sorted(integrations.items()):
+    for name, entry in sorted(integrations.items()):
+        manifest_rel = entry.get("manifest") if isinstance(entry, dict) else entry
+        if not isinstance(manifest_rel, str) or not manifest_rel:
+            fail(f"{name}: registry entry has no manifest path")
         manifest_path = registry_path(registry_root, manifest_rel)
         if manifest_path not in names:
             fail(f"{name}: manifest {manifest_rel} missing from wheel")

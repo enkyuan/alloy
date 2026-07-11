@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { ProviderAPIError, ProviderConfigError } from "@/providers/errors";
+import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "@/providers/errors";
 import { AnthropicProvider } from "@/providers/anthropic";
 import { TestAnthropicProvider } from "./helpers/provider-clients";
 
@@ -21,6 +21,20 @@ function makeProvider(client?: unknown) {
 // ---------------------------------------------------------------------------
 
 describe("AnthropicProvider message formatting (via captured params)", () => {
+  it("does not create the vendor client during construction", () => {
+    let createCalls = 0;
+    class LazyProbeProvider extends AnthropicProvider {
+      protected override async createClient(): Promise<Anthropic> {
+        createCalls++;
+        throw new Error("should not be called");
+      }
+    }
+
+    new LazyProbeProvider({ apiKey: "fixture" });
+
+    expect(createCalls).toBe(0);
+  });
+
   it("extracts system messages to the top-level system param", async () => {
     const captured: any = {};
 
@@ -254,11 +268,25 @@ describe("AnthropicProvider.generate", () => {
     expect(caught).toBeInstanceOf(ProviderAPIError);
     expect(caught).toMatchObject({
       service: "anthropic",
-      action: "api call",
+      action: "request",
       statusCode: 529,
       responseText: "try later",
     });
     expect((caught as ProviderAPIError).cause).toBe(error);
+  });
+
+  it("classifies network-coded client failures", async () => {
+    const error = Object.assign(new Error("connection reset"), { code: "ECONNRESET" });
+    const provider = makeProvider({
+      messages: { create: vi.fn().mockRejectedValue(error) },
+    });
+
+    const caught = await provider
+      .generate([{ role: "user", content: "hi" }], [])
+      .catch((cause) => cause);
+
+    expect(caught).toBeInstanceOf(ProviderConnectionError);
+    expect(caught).toMatchObject({ service: "anthropic", action: "request", cause: error });
   });
 });
 

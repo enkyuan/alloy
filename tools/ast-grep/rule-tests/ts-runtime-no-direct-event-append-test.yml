@@ -1,0 +1,13 @@
+id: ts-runtime-no-direct-event-append
+valid:
+  - |
+      const stored = await this.committer.commit(event);
+  - |
+      events.push(event);
+invalid:
+  - |
+      await this.store.append(event);
+  - |
+      return this.bus.publish(event);
+  - |
+      this.committer.store.append(event);

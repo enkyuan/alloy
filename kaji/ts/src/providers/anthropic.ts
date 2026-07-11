@@ -223,7 +223,7 @@ export class AnthropicProvider implements ModelProvider {
       return { content, toolCalls, usage, costUsd };
     } catch (error) {
       throwIfCancellationRequested(options?.cancellationToken);
-      throw providerAPIErrorFromUnknown("anthropic", error);
+      throw providerAPIErrorFromUnknown("anthropic", error, "request");
     }
   }
 
@@ -300,7 +300,7 @@ export class AnthropicProvider implements ModelProvider {
       }
     } catch (error) {
       throwIfCancellationRequested(options?.cancellationToken);
-      throw providerAPIErrorFromUnknown("anthropic", error);
+      throw providerAPIErrorFromUnknown("anthropic", error, "stream");
     }
   }
 }

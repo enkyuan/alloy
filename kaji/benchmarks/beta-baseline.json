@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "status": "uncalibrated",
+  "runner": {
+    "imageDigest": null,
+    "os": null,
+    "arch": null,
+    "cpuModel": null,
+    "cpuCount": null,
+    "ramMiB": null
+  },
+  "versions": {
+    "python": null,
+    "node": null,
+    "bun": null
+  },
+  "dependencyLockHash": null,
+  "calibrationCommit": null,
+  "calibratedAt": null,
+  "medians": {
+    "python": {},
+    "typescript": {}
+  },
+  "rawSamples": {
+    "python": {},
+    "typescript": {}
+  }
+}

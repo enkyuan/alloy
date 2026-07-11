@@ -1,0 +1,20 @@
+id: python-runtime-no-replay-in-loop
+language: Python
+severity: error
+message: Load/project session state once, then apply committed events incrementally.
+files:
+  - "kaji/sdk/src/runtime/agents/runtime.py"
+rule:
+  all:
+    - any:
+        - pattern: await load_state($$$ARGS)
+        - pattern: await $OWNER.load_state($$$ARGS)
+        - pattern: replay_session($$$ARGS)
+        - pattern: await self.store.get_events($$$ARGS)
+        - pattern: await self._sync_projection($$$ARGS)
+        - pattern: await $PROJECTOR.sync(self.store)
+    - inside:
+        stopBy: end
+        any:
+          - kind: for_statement
+          - kind: while_statement

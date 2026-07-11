@@ -50,6 +50,8 @@ packages = [
     "kaji.contracts",
     "kaji.contracts.errors",
     "kaji.contracts.events",
+    "kaji.contracts.integrations",
+    "kaji.contracts.parity",
     "kaji.contracts.tools",
     "kaji.core",
     "kaji.infra",
@@ -81,6 +83,8 @@ kaji = "src"
 "kaji.contracts" = "src/contracts"
 "kaji.contracts.errors" = "src/contracts/errors"
 "kaji.contracts.events" = "src/contracts/events"
+"kaji.contracts.integrations" = "src/contracts/integrations"
+"kaji.contracts.parity" = "src/contracts/parity"
 "kaji.contracts.tools" = "src/contracts/tools"
 "kaji.core" = "src/core"
 "kaji.infra" = "src/infra"
@@ -110,6 +114,8 @@ kaji = ["py.typed", "integrations/registry/**/*"]
 "kaji.contracts" = ["*.json", "*.md"]
 "kaji.contracts.errors" = ["*.json"]
 "kaji.contracts.events" = ["*.json"]
+"kaji.contracts.integrations" = ["*.json"]
+"kaji.contracts.parity" = ["*.json"]
 "kaji.contracts.tools" = ["*.json"]
 
 [dependency-groups]

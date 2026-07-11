@@ -217,6 +217,7 @@ export {
   type CancellationTokenLike,
 } from "@/runtime/cancellation";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "@/runtime/builder";
+export type { Clock, IdFactory, IdScope, UuidFactory } from "@/internal/uuid";
 export {
   InMemorySessionTurnCoordinator,
   type ObservableCancellationToken,

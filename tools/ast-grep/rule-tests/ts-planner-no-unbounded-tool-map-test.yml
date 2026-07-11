@@ -1,0 +1,11 @@
+id: ts-planner-no-unbounded-tool-map
+valid:
+  - |
+      const results = await controller.executeBatch(calls);
+  - |
+      await Promise.all(workers);
+invalid:
+  - |
+      await Promise.all(calls.map((call) => execute(call)));
+  - |
+      const settled = await Promise.allSettled(toolCalls.map(executeSingle));

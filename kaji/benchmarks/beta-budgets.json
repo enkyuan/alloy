@@ -1,0 +1,21 @@
+{
+  "replay10k": {
+    "maxMedianMs": 1000,
+    "maxPeakMiB": 128
+  },
+  "crossSession100": {
+    "maxMedianMs": 5000
+  },
+  "sameSession25": {
+    "maxActive": 1
+  },
+  "toolBatch100": {
+    "maxActive": 4
+  },
+  "regressionPercent": 20,
+  "soak": {
+    "durationMinutes": 30,
+    "minimumTurns": 10000,
+    "maxLateWindowHeapGrowthPercent": 5
+  }
+}

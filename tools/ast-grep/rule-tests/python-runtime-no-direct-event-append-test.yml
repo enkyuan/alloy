@@ -1,0 +1,17 @@
+id: python-runtime-no-direct-event-append
+valid:
+  - |
+      stored = await self.journal.commit(event)
+  - |
+      events.append(event)
+invalid:
+  - |
+      await self.store.append(event)
+  - |
+      await self.bus.publish(event)
+  - |
+      return await self.journal.store.append(event)
+  - |
+      await self.store.append(stream, event)
+  - |
+      await self.bus.publish(topic, event)

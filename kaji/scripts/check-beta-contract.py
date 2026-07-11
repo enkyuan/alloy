@@ -29,6 +29,9 @@ REQUIRED_JSON = {
     "events/conformance.json",
     "events/new-kaji-event-v1.schema.json",
     "events/stored-kaji-event-v1.schema.json",
+    "parity/expected-normalized.json",
+    "parity/scenarios.json",
+    "parity/scenarios.schema.json",
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
@@ -94,6 +97,14 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
     for path in paths:
         relative = path.relative_to(CONTRACTS).as_posix()
         document = load_json(path)
+        if relative == "parity/scenarios.json":
+            if document.get("$schema") != "./scenarios.schema.json":
+                raise fail(path, "/$schema", "expected './scenarios.schema.json'")
+            documents[relative] = document
+            continue
+        if relative == "parity/expected-normalized.json":
+            documents[relative] = document
+            continue
         if document.get("$schema") != DRAFT_2020_12:
             raise fail(path, "/$schema", f"expected {DRAFT_2020_12!r}")
         error = check_schema(document)
@@ -112,6 +123,171 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
             schema_ids[schema_id] = path
         documents[relative] = document
     return documents
+
+
+def check_parity(documents: dict[str, dict[str, Any]]) -> None:
+    scenarios_path = CONTRACTS / "parity" / "scenarios.json"
+    expected_path = CONTRACTS / "parity" / "expected-normalized.json"
+    scenarios = documents["parity/scenarios.json"]
+    schema = documents["parity/scenarios.schema.json"]
+    validate_instance(scenarios_path, "/", schema, scenarios)
+
+    normalization = scenarios["normalization"]
+    required_normalization = {
+        "stripKeys": ["timestamp", "duration_ms"],
+        "replaceKeys": {
+            "request_id": "<request>",
+            "trace_id": "<trace>",
+        },
+        "preserveKeys": [
+            "id",
+            "sequence",
+            "turn_id",
+            "tool_call_id",
+            "error_code",
+        ],
+    }
+    if normalization != required_normalization:
+        raise fail(
+            scenarios_path,
+            "/normalization",
+            "normalization must remain the production-beta allowlist",
+        )
+
+    rows = scenarios["scenarios"]
+    scenario_ids = [row["id"] for row in rows]
+    if len(scenario_ids) != len(set(scenario_ids)):
+        raise fail(scenarios_path, "/scenarios", "scenario ids must be unique")
+    controls = set(scenarios["controlSets"])
+    for index, row in enumerate(rows):
+        control = row.get("controls")
+        if control is not None and control not in controls:
+            raise fail(
+                scenarios_path,
+                f"/scenarios/{index}/controls",
+                f"unknown control set {control!r}",
+            )
+
+    referenced_tool_cases = {
+        (row["fixtureFile"], row["fixture"])
+        for row in rows
+        if row["kind"] == "tool-schema"
+    }
+    canonical_tool_cases = {
+        (filename, case["name"])
+        for filename in ("conformance-valid.json", "conformance-invalid.json")
+        for case in documents[f"tools/{filename}"]["cases"]
+    }
+    if referenced_tool_cases != canonical_tool_cases:
+        missing = sorted(canonical_tool_cases - referenced_tool_cases)
+        extra = sorted(referenced_tool_cases - canonical_tool_cases)
+        raise fail(
+            scenarios_path,
+            "/scenarios",
+            f"tool fixture coverage mismatch; missing={missing}, extra={extra}",
+        )
+
+    expected = documents["parity/expected-normalized.json"]
+    if expected.get("version") != scenarios["version"]:
+        raise fail(expected_path, "/version", "must match scenario contract version")
+    snapshots = expected.get("scenarios")
+    if not isinstance(snapshots, list):
+        raise fail(expected_path, "/scenarios", "expected an array")
+    expected_ids = [item.get("id") for item in snapshots if isinstance(item, dict)]
+    if expected_ids != scenario_ids:
+        raise fail(
+            expected_path,
+            "/scenarios",
+            "snapshot ids must exactly match scenario file order",
+        )
+    snapshot_keys = {
+        "events",
+        "operation_trace",
+        "provider_requests",
+        "provider_responses",
+        "replay",
+        "result",
+    }
+    known_error_codes = set(documents["errors/error-codes.json"]["codes"])
+    for index, item in enumerate(snapshots):
+        if not isinstance(item, dict) or set(item) != {"id", "snapshot"}:
+            raise fail(
+                expected_path, f"/scenarios/{index}", "invalid scenario envelope"
+            )
+        snapshot = item["snapshot"]
+        if not isinstance(snapshot, dict) or set(snapshot) != snapshot_keys:
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot",
+                "incomplete snapshot envelope",
+            )
+        result = snapshot["result"]
+        if not isinstance(result, dict):
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result",
+                "expected an object",
+            )
+        provider_error = result.get("provider_error")
+        if provider_error is None:
+            continue
+        required_error_keys = {
+            "type",
+            "code",
+            "service",
+            "action",
+            "status",
+            "retryable",
+        }
+        if (
+            not isinstance(provider_error, dict)
+            or set(provider_error) != required_error_keys
+        ):
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result/provider_error",
+                "invalid normalized provider error envelope",
+            )
+        if provider_error["code"] not in known_error_codes:
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result/provider_error/code",
+                f"unknown code {provider_error['code']!r}",
+            )
+        if provider_error["type"] not in {
+            "api",
+            "auth",
+            "config",
+            "network",
+            "rate_limit",
+        }:
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result/provider_error/type",
+                f"unknown provider error type {provider_error['type']!r}",
+            )
+        for field in ("service", "action"):
+            if not isinstance(provider_error[field], str) or not provider_error[field]:
+                raise fail(
+                    expected_path,
+                    f"/scenarios/{index}/snapshot/result/provider_error/{field}",
+                    "expected a non-empty string",
+                )
+        status = provider_error["status"]
+        if status is not None and (
+            not isinstance(status, int) or isinstance(status, bool)
+        ):
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result/provider_error/status",
+                "expected an integer or null",
+            )
+        if not isinstance(provider_error["retryable"], bool):
+            raise fail(
+                expected_path,
+                f"/scenarios/{index}/snapshot/result/provider_error/retryable",
+                "expected a boolean",
+            )
 
 
 def check_packaged_contracts() -> None:
@@ -535,6 +711,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     codes = error_codes(documents)
     check_events(documents, codes)
     check_tools(documents, codes)
+    check_parity(documents)
     check_packaged_contracts()
     return documents, feature_sets(documents["feature-tiers-v1.json"])
 

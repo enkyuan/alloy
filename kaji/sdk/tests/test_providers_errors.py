@@ -4,12 +4,15 @@ from kaji.runtime.providers.errors import (
     ClassifyHTTPError,
     ProviderAPIError,
     ProviderConfigError,
+    ProviderError,
     ServiceErrorToDetail,
     ServiceErrorToHTTPStatus,
     ServiceAPIError,
     ServiceAuthError,
     ServiceNetworkError,
     ServiceRateLimitError,
+    normalize_provider_error,
+    provider_error_from_exception,
 )
 
 
@@ -66,3 +69,54 @@ def test_service_error_to_detail_masks_internals():
 def test_provider_errors_accept_message_only_constructors():
     assert isinstance(ProviderConfigError("missing key"), ProviderConfigError)
     assert isinstance(ProviderAPIError("bad response"), ProviderAPIError)
+
+
+def test_provider_transport_error_has_stable_network_semantics() -> None:
+    error = provider_error_from_exception(
+        service="openai",
+        action="stream",
+        error=OSError("private transport detail"),
+    )
+
+    assert isinstance(error, ServiceNetworkError)
+    assert isinstance(error, ProviderError)
+    assert normalize_provider_error(error) == {
+        "type": "network",
+        "code": "PROVIDER_NETWORK_ERROR",
+        "service": "openai",
+        "action": "stream",
+        "status": None,
+        "retryable": True,
+    }
+
+
+def test_vendor_connection_error_is_classified_without_importing_vendor_sdk() -> None:
+    class APIConnectionError(Exception):
+        pass
+
+    error = provider_error_from_exception(
+        service="anthropic",
+        action="request",
+        error=APIConnectionError("private vendor detail"),
+    )
+
+    assert isinstance(error, ServiceNetworkError)
+    assert normalize_provider_error(error)["code"] == "PROVIDER_NETWORK_ERROR"
+
+
+def test_provider_http_error_normalization_preserves_status_and_retryability() -> None:
+    error = ClassifyHTTPError(
+        service="anthropic",
+        action="request",
+        status_code=429,
+        response_text="private response",
+    )
+
+    assert normalize_provider_error(error) == {
+        "type": "rate_limit",
+        "code": "PROVIDER_RATE_LIMITED",
+        "service": "anthropic",
+        "action": "request",
+        "status": 429,
+        "retryable": True,
+    }

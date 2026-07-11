@@ -54,6 +54,20 @@ def test_anthropic_provider_registered_and_loadable():
     assert AnthropicProvider is not None
 
 
+def test_anthropic_provider_constructor_does_not_create_vendor_client():
+    from kaji.runtime.providers.anthropic import AnthropicProvider
+
+    with (
+        patch(_PATCH) as settings,
+        patch("kaji.runtime.providers.anthropic.import_module") as import_module,
+    ):
+        settings.return_value = MagicMock()
+        provider = AnthropicProvider(api_key="fixture", model="claude-sonnet-4-6")
+
+    assert provider._client is None
+    import_module.assert_not_called()
+
+
 def test_anthropic_provider_requires_api_key():
     from kaji.runtime.providers.anthropic import AnthropicProvider
 
@@ -183,6 +197,23 @@ async def test_anthropic_generate_returns_normalized_response():
     assert result.metrics is not None
     assert result.metrics.prompt_tokens == 5
     assert result.metrics.completion_tokens == 3
+    assert result.cost_usd == 0.00006
+
+
+@pytest.mark.asyncio
+async def test_anthropic_generate_omits_cost_without_usage() -> None:
+    provider = _provider()
+    fake_client = MagicMock()
+    fake_client.messages.create = AsyncMock(
+        return_value=SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Hello!")]
+        )
+    )
+    provider._client = fake_client
+
+    result = await provider.generate([{"role": "user", "content": "hi"}])
+
+    assert result.cost_usd is None
 
 
 @pytest.mark.asyncio

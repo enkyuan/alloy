@@ -1,0 +1,17 @@
+id: ts-registry-no-direct-fetch
+valid:
+  - |
+      const response = await safeRequest(url, init, context, policy, transport);
+  - |
+      const response = await transport.request(target, init);
+invalid:
+  - |
+      const response = await fetch(url, init);
+  - |
+      return globalThis.fetch(url);
+  - |
+      window.fetch(url);
+  - |
+      await self.fetch(url, init);
+  - |
+      return global.fetch(url, init);

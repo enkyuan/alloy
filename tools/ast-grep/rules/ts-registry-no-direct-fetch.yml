@@ -1,0 +1,13 @@
+id: ts-registry-no-direct-fetch
+language: TypeScript
+severity: error
+message: Route registry network calls through the bounded, SSRF-aware safeRequest helper.
+files:
+  - "kaji/ts/registry/**/*.ts"
+rule:
+  any:
+    - pattern: fetch($$$ARGS)
+    - pattern: global.fetch($$$ARGS)
+    - pattern: globalThis.fetch($$$ARGS)
+    - pattern: window.fetch($$$ARGS)
+    - pattern: self.fetch($$$ARGS)

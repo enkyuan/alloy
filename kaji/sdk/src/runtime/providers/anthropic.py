@@ -208,6 +208,15 @@ class AnthropicProvider(ModelProvider):
             tool_calls=cast(Any, tool_calls),
             metadata=metadata,
             metrics=metrics,
+            cost_usd=(
+                calculate_cost_usd(
+                    self.model_name,
+                    metrics.prompt_tokens,
+                    metrics.completion_tokens,
+                )
+                if usage is not None
+                else None
+            ),
         )
 
     async def generate_stream(

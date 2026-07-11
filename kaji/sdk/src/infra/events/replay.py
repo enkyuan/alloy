@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 from copy import deepcopy
+import json
+import math
 import warnings
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -45,6 +47,100 @@ class SessionState:
 
 class LegacyEventOrderingWarning(UserWarning):
     """A fully legacy event log was ordered by timestamp compatibility rules."""
+
+
+def _canonical_float(value: float) -> str:
+    """Render one finite IEEE-754 value with ECMAScript JSON number spelling."""
+    if not math.isfinite(value):
+        raise ValueError("tool result contains a non-finite number")
+    if value == 0:
+        return "0"
+
+    source = repr(abs(value)).lower()
+    coefficient, marker, raw_exponent = source.partition("e")
+    exponent = int(raw_exponent) if marker else 0
+    whole, point, fraction = coefficient.partition(".")
+    digits = (whole + fraction).lstrip("0")
+    scale = exponent - (len(fraction) if point else 0)
+    while digits.endswith("0"):
+        digits = digits[:-1]
+        scale += 1
+
+    decimal_exponent = len(digits) + scale - 1
+    sign = "-" if value < 0 else ""
+    if -6 <= decimal_exponent < 21:
+        decimal_point = decimal_exponent + 1
+        if decimal_point <= 0:
+            body = "0." + ("0" * -decimal_point) + digits
+        elif decimal_point >= len(digits):
+            body = digits + ("0" * (decimal_point - len(digits)))
+        else:
+            body = digits[:decimal_point] + "." + digits[decimal_point:]
+        return sign + body
+
+    mantissa = digits[0] + (("." + digits[1:]) if len(digits) > 1 else "")
+    exponent_sign = "+" if decimal_exponent >= 0 else ""
+    return f"{sign}{mantissa}e{exponent_sign}{decimal_exponent}"
+
+
+def _utf16_sort_key(value: str) -> bytes:
+    """Match ECMAScript's lexicographic UTF-16 object-key ordering."""
+    return value.encode("utf-16-be", errors="surrogatepass")
+
+
+def _canonical_integer(value: int) -> str:
+    """Render an integer only when the shared IEEE-754 number domain preserves it."""
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise TypeError(
+            "tool result integer is not exactly representable as a finite IEEE-754 number"
+        ) from error
+    if not math.isfinite(number) or int(number) != value:
+        raise TypeError(
+            "tool result integer is not exactly representable as a finite IEEE-754 number"
+        )
+    return _canonical_float(number)
+
+
+def _canonical_replay_json(value: Any) -> str:
+    """Serialize a JSON value with the cross-SDK replay policy.
+
+    Lists retain their order, object keys use UTF-16 lexical order, strings
+    retain Unicode text, and numbers use the finite IEEE-754 domain with
+    ECMAScript's shortest round-trip spelling and fixed/exponent boundaries.
+    Python integers must round-trip through that number domain exactly.
+    Unsupported values, including tuples, fail instead of being coerced.
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, int):
+        return _canonical_integer(value)
+    if isinstance(value, float):
+        return _canonical_float(value)
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical_replay_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        keys: list[str] = []
+        for key in value:
+            if not isinstance(key, str):
+                raise TypeError("tool result JSON object keys must be strings")
+            keys.append(key)
+        return (
+            "{"
+            + ",".join(
+                json.dumps(key, ensure_ascii=False)
+                + ":"
+                + _canonical_replay_json(value[key])
+                for key in sorted(keys, key=_utf16_sort_key)
+            )
+            + "}"
+        )
+    raise TypeError(f"tool result contains non-JSON value {type(value).__name__}")
 
 
 def _legacy_timestamp_order(events: Sequence[KajiEvent]) -> list[KajiEvent]:
@@ -194,11 +290,12 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
             state.pending_approvals.remove(approval)
             state.rejected_approvals[approval] = event.error_code
     elif event.type == EventType.TOOL_CALL_COMPLETED:
+        content = _canonical_replay_json(event.result)
         state.messages.append(
             {
                 "role": "tool",
                 "name": event.tool_name,
-                "content": str(event.result),
+                "content": content,
                 "tool_call_id": event.tool_call_id,
             }
         )

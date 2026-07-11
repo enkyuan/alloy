@@ -1,5 +1,5 @@
-import time
-import uuid
+from contextvars import ContextVar
+from contextlib import contextmanager
 from typing import (  # noqa: F401
     Any,
     Dict,
@@ -16,6 +16,38 @@ from typing import (  # noqa: F401
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kaji.infra.events.types import EventType
+from kaji.runtime.determinism import (
+    Clock,
+    IdFactory,
+    SYSTEM_CLOCK,
+    SYSTEM_ID_FACTORY,
+)
+
+
+_EVENT_ID_FACTORY: ContextVar[IdFactory] = ContextVar(
+    "kaji_event_id_factory", default=SYSTEM_ID_FACTORY
+)
+_EVENT_CLOCK: ContextVar[Clock] = ContextVar("kaji_event_clock", default=SYSTEM_CLOCK)
+
+
+def _next_event_id() -> str:
+    return _EVENT_ID_FACTORY.get().next("event")
+
+
+def _event_wall_time() -> float:
+    return _EVENT_CLOCK.get().now_wall_seconds()
+
+
+@contextmanager
+def event_defaults(id_factory: IdFactory, clock: Clock):
+    """Scope Pydantic event defaults to one async task/runtime operation."""
+    id_token = _EVENT_ID_FACTORY.set(id_factory)
+    clock_token = _EVENT_CLOCK.set(clock)
+    try:
+        yield
+    finally:
+        _EVENT_CLOCK.reset(clock_token)
+        _EVENT_ID_FACTORY.reset(id_token)
 
 
 class BaseEvent(BaseModel):
@@ -24,9 +56,9 @@ class BaseEvent(BaseModel):
     No provider-specific or voice-specific fields in the base type.
     """
 
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str = Field(default_factory=_next_event_id)
     version: Literal["1.0"] = "1.0"
-    timestamp: float = Field(default_factory=time.time)
+    timestamp: float = Field(default_factory=_event_wall_time)
     session_id: str = Field(min_length=1)
     turn_id: Optional[str] = Field(
         default=None, min_length=1, exclude_if=lambda value: value is None

@@ -3,7 +3,13 @@ import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
 import { EventType } from "@/events/types";
 import type { EventCommitter } from "@/events/protocols";
-import { defaultUuid } from "@/internal/uuid";
+import {
+  systemClock,
+  systemIdFactory,
+  type Clock,
+  type IdFactory,
+  type UuidFactory,
+} from "@/internal/uuid";
 import type {
   ApprovalDecision,
   ApprovalRejectionCode,
@@ -116,7 +122,10 @@ export interface ToolPlannerOptions {
   policy?: ToolPolicy;
   approvalHandler?: AnyApprovalHandler;
   specs?: ReadonlyMap<string, ToolSpec>;
-  uuid?: () => string;
+  /** @deprecated Prefer the scoped `idFactory` seam. */
+  uuid?: UuidFactory;
+  idFactory?: IdFactory;
+  clock?: Clock;
   executionController?: ToolExecutionController;
   executionLimits?: Partial<ToolExecutionLimits>;
   idempotencyLedger?: ToolIdempotencyLedger;
@@ -329,7 +338,9 @@ export class ToolPlanner {
   readonly approvalCommitter: EventCommitter | undefined;
   private readonly specs: Map<string, ToolSpec>;
   private readonly schemaValidator: ToolSchemaValidator;
-  private readonly uuid: () => string;
+  private readonly idFactory: IdFactory;
+  private readonly nextToolCallId: UuidFactory;
+  private readonly clock: Clock;
   private readonly now: () => number;
   readonly executionController: ToolExecutionController;
 
@@ -358,14 +369,16 @@ export class ToolPlanner {
       [...(opts.specs ?? new Map())].map(([name, spec]) => [name, snapshotToolSpec(spec)]),
     );
     this.schemaValidator = new ToolSchemaValidator(this.specs);
-    this.uuid = opts.uuid ?? defaultUuid;
-    this.now = opts.now ?? Date.now;
+    this.idFactory = opts.idFactory ?? systemIdFactory;
+    this.nextToolCallId = opts.uuid ?? (() => this.idFactory.next("tool_call"));
+    this.clock = opts.clock ?? systemClock;
+    this.now = opts.now ?? (() => this.clock.nowWallSeconds() * 1000);
     this.executionController =
       opts.executionController ??
       new ToolExecutionController({
         limits: opts.executionLimits,
         ledger: opts.idempotencyLedger,
-        monotonicNow: opts.monotonicNow,
+        monotonicNow: opts.monotonicNow ?? (() => this.clock.nowMonotonic()),
         metricsSink: opts.metricsSink,
         traceSink: opts.traceSink,
       });
@@ -386,11 +399,11 @@ export class ToolPlanner {
   ): Promise<ToolCallResult[]> {
     if (turnContext?.principalId === undefined) throw new MissingToolIdentityError();
     assertNonEmptyContextId(sessionId, "sessionId");
-    const resolvedTurnId = turnId ?? this.uuid();
+    const resolvedTurnId = turnId ?? this.idFactory.next("turn");
     assertNonEmptyContextId(resolvedTurnId, "turnId");
     const principalId = normalizePrincipalId(turnContext.principalId);
-    const requestId = turnContext.requestId ?? this.uuid();
-    const traceId = turnContext.traceId ?? this.uuid();
+    const requestId = turnContext.requestId ?? this.idFactory.next("request");
+    const traceId = turnContext.traceId ?? this.idFactory.next("trace");
     assertNonEmptyContextId(requestId, "requestId");
     assertNonEmptyContextId(traceId, "traceId");
     assertValidDeadline(turnContext.deadlineMs);
@@ -546,7 +559,7 @@ export class ToolPlanner {
   ): NormalizedCall[] {
     const ids = new Set<string>();
     return toolCalls.map((instruction) => {
-      const id = instruction.id ?? this.uuid();
+      const id = instruction.id ?? this.nextToolCallId();
       assertNonEmptyContextId(id, "toolCallId");
       if (ids.has(id)) throw new TypeError(`Duplicate toolCallId: ${id}`);
       ids.add(id);
@@ -584,7 +597,7 @@ export class ToolPlanner {
   }
 
   private requestedEvent(sessionId: string, turnId: string, call: NormalizedCall): KajiEvent {
-    return KajiEvent.parse({
+    return this.event({
       type: EventType.TOOL_CALL_REQUESTED,
       session_id: sessionId,
       turn_id: turnId,
@@ -652,7 +665,7 @@ export class ToolPlanner {
         return stored;
       };
       const requestEvent = () =>
-        KajiEvent.parse({
+        this.event({
           type: EventType.TOOL_APPROVAL_REQUESTED,
           session_id: sessionId,
           turn_id: turnId,
@@ -671,7 +684,7 @@ export class ToolPlanner {
       };
       const emitDecision = async (decision: ApprovalDecision): Promise<StoredKajiEvent> => {
         const event = decision.granted
-          ? KajiEvent.parse({
+          ? this.event({
               type: EventType.TOOL_APPROVAL_APPROVED,
               session_id: sessionId,
               turn_id: turnId,
@@ -679,7 +692,7 @@ export class ToolPlanner {
               tool_call_id: call.id,
               metadata: call.metadata,
             })
-          : KajiEvent.parse({
+          : this.event({
               type: EventType.TOOL_APPROVAL_REJECTED,
               session_id: sessionId,
               turn_id: turnId,
@@ -949,7 +962,7 @@ export class ToolPlanner {
         exclusive: call.spec.parallel_safe !== true,
         onStarted: async () => {
           await emit(
-            KajiEvent.parse({
+            this.event({
               type: EventType.TOOL_CALL_STARTED,
               session_id: sessionId,
               turn_id: turnId,
@@ -982,7 +995,7 @@ export class ToolPlanner {
     draft: TerminalDraft,
   ): KajiEvent {
     if (draft.status === "completed") {
-      return KajiEvent.parse({
+      return this.event({
         type: EventType.TOOL_CALL_COMPLETED,
         session_id: sessionId,
         turn_id: turnId,
@@ -992,7 +1005,7 @@ export class ToolPlanner {
         metadata: call.metadata,
       });
     }
-    return KajiEvent.parse({
+    return this.event({
       type: EventType.TOOL_CALL_FAILED,
       session_id: sessionId,
       turn_id: turnId,
@@ -1004,6 +1017,14 @@ export class ToolPlanner {
       ...(draft.error_path === undefined ? {} : { error_path: draft.error_path }),
       ...(draft.retryable === undefined ? {} : { retryable: draft.retryable }),
       ...(draft.outcome === undefined ? {} : { outcome: draft.outcome }),
+    });
+  }
+
+  private event(input: object): KajiEvent {
+    return KajiEvent.parse({
+      ...input,
+      id: this.idFactory.next("event"),
+      timestamp: this.clock.nowWallSeconds(),
     });
   }
 }

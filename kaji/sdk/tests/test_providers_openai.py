@@ -27,6 +27,20 @@ def test_openai_provider_registered_and_loadable():
     assert OpenAIProvider is not None
 
 
+def test_openai_provider_constructor_does_not_create_vendor_client():
+    with (
+        patch("kaji.runtime.providers.openai.get_settings") as settings,
+        patch("kaji.runtime.providers.openai.import_module") as import_module,
+    ):
+        settings.return_value = SimpleNamespace()
+        provider = OpenAIProvider(
+            api_key="fixture", model="gpt-5.4-mini", base_url="https://fixture.invalid"
+        )
+
+    assert provider._client is None
+    import_module.assert_not_called()
+
+
 def test_openai_provider_requires_api_key():
     with patch("kaji.core.config.settings.OPENAI_API_KEY", None):
         with pytest.raises(ProviderConfigError, match="OPENAI_API_KEY"):
@@ -169,6 +183,26 @@ async def test_openai_generate_translates_tools_and_parses_response():
     assert result.metadata is not None
     assert result.metrics.total_tokens == 5
     assert result.metadata.provider_name == "openai"
+    assert result.cost_usd == 0.00001125
+
+
+@pytest.mark.asyncio
+async def test_openai_generate_omits_cost_without_usage() -> None:
+    async def fake_create(**_kwargs):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content="hello", tool_calls=[]))
+            ]
+        )
+
+    provider = OpenAIProvider(api_key="test-key")
+    provider._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+
+    result = await provider.generate(messages=[{"role": "user", "content": "hi"}])
+
+    assert result.cost_usd is None
 
 
 @pytest.mark.asyncio

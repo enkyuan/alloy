@@ -5,7 +5,7 @@
  */
 import * as z from "zod";
 
-import { defaultUuid } from "@/internal/uuid";
+import { systemIdFactory, type IdFactory } from "@/internal/uuid";
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
 import {
   TOOL_ARGUMENT_VALIDATOR,
@@ -307,9 +307,14 @@ export class ToolRegistry {
   private readonly specs = new Map<string, ToolSpec>();
   private readonly handlers = new Map<string, ToolHandler>();
   private readonly schemaValidator: ToolSchemaValidator;
+  private readonly idFactory: IdFactory;
 
-  constructor(schemaValidator: ToolSchemaValidator = new ToolSchemaValidator()) {
+  constructor(
+    schemaValidator: ToolSchemaValidator = new ToolSchemaValidator(),
+    idFactory: IdFactory = systemIdFactory,
+  ) {
     this.schemaValidator = schemaValidator;
+    this.idFactory = idFactory;
   }
 
   register(spec: ToolSpec, handler: ToolHandler): this;
@@ -344,7 +349,7 @@ export class ToolRegistry {
     db?: unknown,
   ): Promise<Record<string, unknown>>;
   async execute(...args: unknown[]): Promise<Record<string, unknown>> {
-    const { toolName, toolArgs, context, legacy } = parseExecutionCall(args);
+    const { toolName, toolArgs, context, legacy } = parseExecutionCall(args, this.idFactory);
     if (legacy) warnLegacyExecute();
     const handler = this.handlers.get(toolName);
     if (handler === undefined) {
@@ -389,15 +394,19 @@ function warnLegacyExecute(): void {
   console.warn("[kaji] execute(userId, name, args, db) is deprecated; pass ToolExecutionContext");
 }
 
-function legacyExecutionContext(principalId: string, db: unknown): ToolExecutionContext {
-  const turnId = defaultUuid();
-  const toolCallId = defaultUuid();
+function legacyExecutionContext(
+  principalId: string,
+  db: unknown,
+  idFactory: IdFactory,
+): ToolExecutionContext {
+  const turnId = idFactory.next("turn");
+  const toolCallId = idFactory.next("tool_call");
   return {
     principalId,
     sessionId: turnId,
     turnId,
-    requestId: defaultUuid(),
-    traceId: defaultUuid(),
+    requestId: idFactory.next("request"),
+    traceId: idFactory.next("trace"),
     toolCallId,
     idempotencyKey: `${turnId}:${toolCallId}`,
     signal: new AbortController().signal,
@@ -448,7 +457,7 @@ function invalidExecutionCall(): TypeError {
   );
 }
 
-function parseExecutionCall(args: readonly unknown[]): ParsedExecutionCall {
+function parseExecutionCall(args: readonly unknown[], idFactory: IdFactory): ParsedExecutionCall {
   if (args.length === 3 && isNonEmptyString(args[0]) && isObjectRecord(args[1])) {
     if (!isObjectRecord(args[2])) throw invalidExecutionCall();
     return {
@@ -468,7 +477,7 @@ function parseExecutionCall(args: readonly unknown[]): ParsedExecutionCall {
     return {
       toolName: args[1],
       toolArgs: args[2],
-      context: snapshotToolExecutionContext(legacyExecutionContext(args[0], args[3])),
+      context: snapshotToolExecutionContext(legacyExecutionContext(args[0], args[3], idFactory)),
       legacy: true,
     };
   }

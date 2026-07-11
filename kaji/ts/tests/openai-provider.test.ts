@@ -5,7 +5,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
 
-import { ProviderAPIError, ProviderConfigError } from "@/providers/errors";
+import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "@/providers/errors";
 import { OpenAIProvider } from "@/providers/openai";
 import { toOpenAIChatMessages } from "@/providers/openai-format";
 import type { ProviderMessage } from "@/providers/base";
@@ -90,6 +90,20 @@ describe("toOpenAIChatMessages", () => {
 // ---------------------------------------------------------------------------
 
 describe("OpenAIProvider.generate", () => {
+  it("does not create the vendor client during construction", () => {
+    let createCalls = 0;
+    class LazyProbeProvider extends OpenAIProvider {
+      protected override async createClient(): Promise<OpenAI> {
+        createCalls++;
+        throw new Error("should not be called");
+      }
+    }
+
+    new LazyProbeProvider({ apiKey: "fixture" });
+
+    expect(createCalls).toBe(0);
+  });
+
   it("throws a config error when apiKey is empty", () => {
     expect(() => new OpenAIProvider({ apiKey: "" })).toThrow(ProviderConfigError);
     expect(() => new OpenAIProvider({ apiKey: "   " })).toThrow(/API key is not configured/);
@@ -259,11 +273,25 @@ describe("OpenAIProvider.generate", () => {
     expect(caught).toBeInstanceOf(ProviderAPIError);
     expect(caught).toMatchObject({
       service: "openai",
-      action: "api call",
+      action: "request",
       statusCode: 429,
       responseText: "too many requests",
     });
     expect((caught as ProviderAPIError).cause).toBe(error);
+  });
+
+  it("classifies network-coded client failures", async () => {
+    const error = Object.assign(new Error("connection reset"), { code: "ECONNRESET" });
+    const provider = makeProvider({
+      chat: { completions: { create: vi.fn().mockRejectedValue(error) } },
+    });
+
+    const caught = await provider
+      .generate([{ role: "user", content: "hi" }], [])
+      .catch((cause) => cause);
+
+    expect(caught).toBeInstanceOf(ProviderConnectionError);
+    expect(caught).toMatchObject({ service: "openai", action: "request", cause: error });
   });
 });
 

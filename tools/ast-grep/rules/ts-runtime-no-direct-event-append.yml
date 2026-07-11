@@ -1,0 +1,14 @@
+id: ts-runtime-no-direct-event-append
+language: TypeScript
+severity: error
+message: Commit runtime events through the canonical EventCommitter, never its store or bus directly.
+files:
+  - "kaji/ts/src/runtime/**/*.ts"
+rule:
+  any:
+    - pattern: this.store.append($EVENT)
+    - pattern: this._store.append($EVENT)
+    - pattern: this.bus.publish($EVENT)
+    - pattern: this._bus.publish($EVENT)
+    - pattern: this.committer.store.append($EVENT)
+    - pattern: this._committer.store.append($EVENT)

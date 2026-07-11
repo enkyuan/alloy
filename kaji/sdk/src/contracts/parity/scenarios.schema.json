@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/parity/scenarios.schema.json",
+  "type": "object",
+  "required": ["$schema", "version", "normalization", "controlSets", "scenarios"],
+  "properties": {
+    "$schema": { "const": "./scenarios.schema.json" },
+    "version": { "const": "1.0.0" },
+    "normalization": {
+      "type": "object",
+      "required": ["stripKeys", "replaceKeys", "preserveKeys"],
+      "properties": {
+        "stripKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+        "replaceKeys": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "preserveKeys": { "type": "array", "uniqueItems": true, "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "controlSets": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/controls" }
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/runtime" },
+          { "$ref": "#/$defs/toolSchema" },
+          { "$ref": "#/$defs/replay" },
+          { "$ref": "#/$defs/concurrency" },
+          { "$ref": "#/$defs/providerAdapter" }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "idQueue": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "controls": {
+      "type": "object",
+      "required": ["wallSeconds", "monotonic", "ids"],
+      "properties": {
+        "wallSeconds": { "type": "number" },
+        "monotonic": { "type": "number" },
+        "ids": {
+          "type": "object",
+          "required": ["event", "session", "turn", "request", "trace", "tool_call"],
+          "properties": {
+            "event": { "$ref": "#/$defs/idQueue" },
+            "session": { "$ref": "#/$defs/idQueue" },
+            "turn": { "$ref": "#/$defs/idQueue" },
+            "request": { "$ref": "#/$defs/idQueue" },
+            "trace": { "$ref": "#/$defs/idQueue" },
+            "tool_call": { "$ref": "#/$defs/idQueue" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "base": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "kind": { "type": "string" }
+      }
+    },
+    "runtime": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture", "controls", "input", "schedule"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "runtime" },
+            "fixture": {
+              "enum": [
+                "text-one-turn", "text-multi-turn", "one-tool",
+                "parallel-tools-reverse", "sequential-tools", "max-iteration-exhaustion",
+                "policy-deny", "missing-risk", "approval-reject", "approval-timeout",
+                "approval-unavailable", "approval-external-recorded", "executor-error",
+                "queue-timeout", "started-timeout", "cancellation-before-start",
+                "cancellation-after-start"
+              ]
+            },
+            "controls": { "type": "string", "minLength": 1 },
+            "input": {
+              "type": "object",
+              "required": ["session_id", "prompts"],
+              "properties": {
+                "session_id": { "type": "string", "minLength": 1 },
+                "prompts": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            },
+            "schedule": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "toolSchema": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixtureFile", "fixture"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "tool-schema" },
+            "fixtureFile": { "enum": ["conformance-valid.json", "conformance-invalid.json"] },
+            "fixture": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "replay": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture", "controls"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "replay" },
+            "fixture": {
+              "enum": [
+                "approvals-completed-failed",
+                "json-boolean",
+                "json-null",
+                "json-number",
+                "json-integral-float",
+                "json-negative-zero",
+                "json-exponent-boundaries",
+                "json-numeric-keys",
+                "json-safe-integer-boundary",
+                "json-unrepresentable-integer",
+                "json-utf16-keys",
+                "json-string",
+                "json-array"
+              ]
+            },
+            "controls": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "concurrency": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture", "controls", "release"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "concurrency" },
+            "fixture": { "enum": ["same-session-serialized", "cross-session-overlap"] },
+            "controls": { "type": "string", "minLength": 1 },
+            "release": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "providerAdapter": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "provider", "mode", "fixture"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "provider-adapter" },
+            "provider": { "enum": ["openai", "anthropic"] },
+            "mode": { "enum": ["non-stream", "stream"] },
+            "fixture": { "const": "message-tool-result-usage-malformed-error" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

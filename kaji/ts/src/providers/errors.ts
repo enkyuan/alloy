@@ -31,14 +31,14 @@ export class ProviderConfigError extends ProviderError {
 }
 
 export class ProviderAPIError extends ProviderError {
-  constructor(message: string, options: Omit<ProviderErrorOptions, "action"> = {}) {
-    super(message, { ...options, action: "api call" });
+  constructor(message: string, options: ProviderErrorOptions = {}) {
+    super(message, { ...options, action: options.action ?? "api call" });
   }
 }
 
 export class ProviderConnectionError extends ProviderError {
-  constructor(message: string, options: Omit<ProviderErrorOptions, "action"> = {}) {
-    super(message, { ...options, action: "connect" });
+  constructor(message: string, options: ProviderErrorOptions = {}) {
+    super(message, { ...options, action: options.action ?? "connect" });
   }
 }
 
@@ -81,20 +81,116 @@ function errorResponseText(error: unknown): string | undefined {
   return undefined;
 }
 
-export function providerAPIErrorFromUnknown(service: string, error: unknown): ProviderAPIError {
-  if (error instanceof ProviderAPIError) return error;
-  if (error instanceof ProviderError) {
-    return new ProviderAPIError(error.message, {
-      service: error.service,
-      statusCode: error.statusCode,
-      responseText: error.responseText,
+const NETWORK_ERROR_CODES = new Set([
+  "EAI_AGAIN",
+  "ECONNABORTED",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "ETIMEDOUT",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const NETWORK_ERROR_TYPE_NAMES = new Set([
+  "APIConnectionError",
+  "APIConnectionTimeoutError",
+  "APITimeoutError",
+]);
+
+function isNetworkError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? error.code : undefined;
+  const constructorName = error.constructor?.name;
+  return (
+    (typeof code === "string" && NETWORK_ERROR_CODES.has(code)) ||
+    (typeof constructorName === "string" && NETWORK_ERROR_TYPE_NAMES.has(constructorName))
+  );
+}
+
+export function providerAPIErrorFromUnknown(
+  service: string,
+  error: unknown,
+  action = "request",
+): ProviderError {
+  if (error instanceof ProviderError) return error;
+  if (isNetworkError(error)) {
+    return new ProviderConnectionError(`${service} ${action} failed due to a network error`, {
+      service,
+      action,
       cause: error,
     });
   }
-  return new ProviderAPIError(`${service} request failed: ${errorMessage(error)}`, {
+  return new ProviderAPIError(`${service} ${action} failed: ${errorMessage(error)}`, {
     service,
+    action,
     statusCode: errorStatusCode(error),
     responseText: errorResponseText(error),
     cause: error,
   });
+}
+
+export interface NormalizedProviderError {
+  type: "api" | "auth" | "config" | "network" | "rate_limit";
+  code:
+    | "PROVIDER_API_ERROR"
+    | "PROVIDER_AUTH_ERROR"
+    | "PROVIDER_CONFIG_ERROR"
+    | "PROVIDER_NETWORK_ERROR"
+    | "PROVIDER_RATE_LIMITED";
+  service: string;
+  action: string;
+  status: number | null;
+  retryable: boolean;
+}
+
+export function normalizeProviderError(error: ProviderError): NormalizedProviderError {
+  const status = error.statusCode ?? null;
+  if (error instanceof ProviderConfigError) {
+    return {
+      type: "config",
+      code: "PROVIDER_CONFIG_ERROR",
+      service: error.service,
+      action: error.action,
+      status,
+      retryable: false,
+    };
+  }
+  if (error instanceof ProviderConnectionError) {
+    return {
+      type: "network",
+      code: "PROVIDER_NETWORK_ERROR",
+      service: error.service,
+      action: error.action,
+      status,
+      retryable: true,
+    };
+  }
+  if (error instanceof ProviderRateLimitedError || status === 429) {
+    return {
+      type: "rate_limit",
+      code: "PROVIDER_RATE_LIMITED",
+      service: error.service,
+      action: error.action,
+      status,
+      retryable: true,
+    };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      type: "auth",
+      code: "PROVIDER_AUTH_ERROR",
+      service: error.service,
+      action: error.action,
+      status,
+      retryable: false,
+    };
+  }
+  return {
+    type: "api",
+    code: "PROVIDER_API_ERROR",
+    service: error.service,
+    action: error.action,
+    status,
+    retryable: status !== null && status >= 500,
+  };
 }

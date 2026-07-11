@@ -1,0 +1,12 @@
+id: python-planner-no-unbounded-gather
+valid:
+  - |
+      results = await controller.execute_batch(calls)
+  - |
+      for call in calls:
+          results.append(await controller.execute(call))
+invalid:
+  - |
+      results = await asyncio.gather(*tasks, return_exceptions=True)
+  - |
+      results = await gather(*(run(call) for call in calls))

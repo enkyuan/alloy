@@ -1,3 +1,17 @@
+export type UuidFactory = () => string;
+
+export type IdScope = "event" | "session" | "turn" | "request" | "trace" | "tool_call";
+
+export interface IdFactory {
+  next(scope: IdScope): string;
+}
+
+export interface Clock {
+  nowWallSeconds(): number;
+  /** Monotonic milliseconds, matching `performance.now()`. */
+  nowMonotonic(): number;
+}
+
 /**
  * Generate a uuid-shaped id.
  *
@@ -16,3 +30,12 @@ export function defaultUuid(): string {
       .padStart(bytes * 2, "0");
   return `${hex(4)}-${hex(2)}-${hex(2)}-${hex(2)}-${hex(6)}`;
 }
+
+export const systemIdFactory: IdFactory = Object.freeze({
+  next: (_scope: IdScope) => defaultUuid(),
+});
+
+export const systemClock: Clock = Object.freeze({
+  nowWallSeconds: () => Date.now() / 1000,
+  nowMonotonic: () => globalThis.performance.now(),
+});

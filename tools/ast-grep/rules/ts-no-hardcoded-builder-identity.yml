@@ -1,0 +1,13 @@
+id: ts-no-hardcoded-builder-identity
+language: TypeScript
+severity: error
+message: Tool identity must come from TurnContext, never a builder literal.
+files:
+  - "kaji/ts/src/runtime/builder.ts"
+  - "kaji/ts/src/runtime/runtime.ts"
+rule:
+  any:
+    - pattern: $REGISTRY.execute("builder", $$$ARGS)
+    - pattern: executeTool("builder", $$$ARGS)
+    - pattern: executor("builder", $$$ARGS)
+    - pattern: this.toolExecutor("builder", $$$ARGS)

@@ -192,7 +192,7 @@ export class OpenAIProvider implements ModelProvider {
       };
     } catch (error) {
       throwIfCancellationRequested(options?.cancellationToken);
-      throw providerAPIErrorFromUnknown("openai", error);
+      throw providerAPIErrorFromUnknown("openai", error, "request");
     }
   }
 
@@ -277,7 +277,7 @@ export class OpenAIProvider implements ModelProvider {
       }
     } catch (error) {
       throwIfCancellationRequested(options?.cancellationToken);
-      throw providerAPIErrorFromUnknown("openai", error);
+      throw providerAPIErrorFromUnknown("openai", error, "stream");
     }
   }
 }

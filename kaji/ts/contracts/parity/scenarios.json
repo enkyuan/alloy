@@ -1,0 +1,91 @@
+{
+  "$schema": "./scenarios.schema.json",
+  "version": "1.0.0",
+  "normalization": {
+    "stripKeys": ["timestamp", "duration_ms"],
+    "replaceKeys": { "request_id": "<request>", "trace_id": "<trace>" },
+    "preserveKeys": ["id", "sequence", "turn_id", "tool_call_id", "error_code"]
+  },
+  "controlSets": {
+    "default": {
+      "wallSeconds": 1700000000,
+      "monotonic": 1000,
+      "ids": {
+        "event": [
+          "event-01", "event-02", "event-03", "event-04", "event-05", "event-06", "event-07", "event-08",
+          "event-09", "event-10", "event-11", "event-12", "event-13", "event-14", "event-15", "event-16",
+          "event-17", "event-18", "event-19", "event-20", "event-21", "event-22", "event-23", "event-24",
+          "event-25", "event-26", "event-27", "event-28", "event-29", "event-30", "event-31", "event-32"
+        ],
+        "session": ["session-generated-1", "session-generated-2", "session-generated-3", "session-generated-4"],
+        "turn": ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5", "turn-6", "turn-7", "turn-8"],
+        "request": ["request-1", "request-2", "request-3", "request-4", "request-5", "request-6", "request-7", "request-8"],
+        "trace": ["trace-1", "trace-2", "trace-3", "trace-4", "trace-5", "trace-6", "trace-7", "trace-8"],
+        "tool_call": ["call-generated-1", "call-generated-2", "call-generated-3", "call-generated-4"]
+      }
+    }
+  },
+  "scenarios": [
+    { "id": "text-one-turn", "kind": "runtime", "fixture": "text-one-turn", "controls": "default", "input": { "session_id": "session-text", "prompts": ["hello"] }, "schedule": [] },
+    { "id": "text-multi-turn", "kind": "runtime", "fixture": "text-multi-turn", "controls": "default", "input": { "session_id": "session-multi", "prompts": ["first", "second"] }, "schedule": [] },
+    { "id": "one-tool", "kind": "runtime", "fixture": "one-tool", "controls": "default", "input": { "session_id": "session-tool", "prompts": ["use echo"] }, "schedule": [] },
+    { "id": "parallel-tools-reverse", "kind": "runtime", "fixture": "parallel-tools-reverse", "controls": "default", "input": { "session_id": "session-parallel", "prompts": ["run both"] }, "schedule": ["second", "first"] },
+    { "id": "sequential-tools", "kind": "runtime", "fixture": "sequential-tools", "controls": "default", "input": { "session_id": "session-sequential", "prompts": ["run both"] }, "schedule": ["first", "second"] },
+    { "id": "max-iteration-exhaustion", "kind": "runtime", "fixture": "max-iteration-exhaustion", "controls": "default", "input": { "session_id": "session-exhausted", "prompts": ["keep calling"] }, "schedule": [] },
+    { "id": "policy-deny", "kind": "runtime", "fixture": "policy-deny", "controls": "default", "input": { "session_id": "session-deny", "prompts": ["denied"] }, "schedule": [] },
+    { "id": "missing-risk", "kind": "runtime", "fixture": "missing-risk", "controls": "default", "input": { "session_id": "session-risk", "prompts": ["unclassified"] }, "schedule": [] },
+    { "id": "approval-reject", "kind": "runtime", "fixture": "approval-reject", "controls": "default", "input": { "session_id": "session-approval-reject", "prompts": ["write"] }, "schedule": [] },
+    { "id": "approval-timeout", "kind": "runtime", "fixture": "approval-timeout", "controls": "default", "input": { "session_id": "session-approval-timeout", "prompts": ["write"] }, "schedule": [] },
+    { "id": "approval-unavailable", "kind": "runtime", "fixture": "approval-unavailable", "controls": "default", "input": { "session_id": "session-approval-unavailable", "prompts": ["write"] }, "schedule": [] },
+    { "id": "approval-external-recorded", "kind": "runtime", "fixture": "approval-external-recorded", "controls": "default", "input": { "session_id": "session-approval-external", "prompts": ["write"] }, "schedule": [] },
+    { "id": "executor-error", "kind": "runtime", "fixture": "executor-error", "controls": "default", "input": { "session_id": "session-error", "prompts": ["fail"] }, "schedule": [] },
+    { "id": "queue-timeout", "kind": "runtime", "fixture": "queue-timeout", "controls": "default", "input": { "session_id": "session-queue-timeout", "prompts": ["timeout"] }, "schedule": [] },
+    { "id": "started-timeout", "kind": "runtime", "fixture": "started-timeout", "controls": "default", "input": { "session_id": "session-started-timeout", "prompts": ["timeout"] }, "schedule": [] },
+    { "id": "cancellation-before-start", "kind": "runtime", "fixture": "cancellation-before-start", "controls": "default", "input": { "session_id": "session-cancel-before", "prompts": ["cancel"] }, "schedule": [] },
+    { "id": "cancellation-after-start", "kind": "runtime", "fixture": "cancellation-after-start", "controls": "default", "input": { "session_id": "session-cancel-after", "prompts": ["cancel"] }, "schedule": [] },
+
+    { "id": "schema-valid-nested", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "nested object, format, and bounded array" },
+    { "id": "schema-valid-const-bounds", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "const and number bounds" },
+    { "id": "schema-valid-union", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "union branch" },
+    { "id": "schema-valid-ref", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "local reference" },
+    { "id": "schema-invalid-nested-required", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "nested required" },
+    { "id": "schema-invalid-nested-extra", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "nested additional property" },
+    { "id": "schema-invalid-top-extra", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "top-level additional property" },
+    { "id": "schema-invalid-const", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "const" },
+    { "id": "schema-invalid-enum", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "enum" },
+    { "id": "schema-invalid-number-min", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "number minimum" },
+    { "id": "schema-invalid-number-max", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "number maximum" },
+    { "id": "schema-invalid-string-min", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "string minimum length" },
+    { "id": "schema-invalid-string-max", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "string maximum length" },
+    { "id": "schema-invalid-pattern", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "string pattern" },
+    { "id": "schema-invalid-array-min", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "array minimum items" },
+    { "id": "schema-invalid-array-max", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "array maximum items" },
+    { "id": "schema-invalid-array-item", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "array item" },
+    { "id": "schema-invalid-email", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "email format" },
+    { "id": "schema-invalid-uri", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "uri format" },
+    { "id": "schema-invalid-union", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "union branches" },
+    { "id": "schema-invalid-ref", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "local reference" },
+    { "id": "schema-invalid-type-declaration", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "invalid type declaration" },
+    { "id": "schema-invalid-required-declaration", "kind": "tool-schema", "fixtureFile": "conformance-invalid.json", "fixture": "invalid required declaration" },
+
+    { "id": "replay-approval-and-failures", "kind": "replay", "fixture": "approvals-completed-failed", "controls": "default" },
+    { "id": "replay-json-boolean", "kind": "replay", "fixture": "json-boolean", "controls": "default" },
+    { "id": "replay-json-null", "kind": "replay", "fixture": "json-null", "controls": "default" },
+    { "id": "replay-json-number", "kind": "replay", "fixture": "json-number", "controls": "default" },
+    { "id": "replay-json-integral-float", "kind": "replay", "fixture": "json-integral-float", "controls": "default" },
+    { "id": "replay-json-negative-zero", "kind": "replay", "fixture": "json-negative-zero", "controls": "default" },
+    { "id": "replay-json-exponent-boundaries", "kind": "replay", "fixture": "json-exponent-boundaries", "controls": "default" },
+    { "id": "replay-json-numeric-keys", "kind": "replay", "fixture": "json-numeric-keys", "controls": "default" },
+    { "id": "replay-json-safe-integer-boundary", "kind": "replay", "fixture": "json-safe-integer-boundary", "controls": "default" },
+    { "id": "replay-json-unrepresentable-integer", "kind": "replay", "fixture": "json-unrepresentable-integer", "controls": "default" },
+    { "id": "replay-json-utf16-keys", "kind": "replay", "fixture": "json-utf16-keys", "controls": "default" },
+    { "id": "replay-json-string", "kind": "replay", "fixture": "json-string", "controls": "default" },
+    { "id": "replay-json-array", "kind": "replay", "fixture": "json-array", "controls": "default" },
+    { "id": "same-session-serialization", "kind": "concurrency", "fixture": "same-session-serialized", "controls": "default", "release": ["first", "second"] },
+    { "id": "cross-session-overlap", "kind": "concurrency", "fixture": "cross-session-overlap", "controls": "default", "release": ["left", "right"] },
+    { "id": "openai-non-stream", "kind": "provider-adapter", "provider": "openai", "mode": "non-stream", "fixture": "message-tool-result-usage-malformed-error" },
+    { "id": "openai-stream", "kind": "provider-adapter", "provider": "openai", "mode": "stream", "fixture": "message-tool-result-usage-malformed-error" },
+    { "id": "anthropic-non-stream", "kind": "provider-adapter", "provider": "anthropic", "mode": "non-stream", "fixture": "message-tool-result-usage-malformed-error" },
+    { "id": "anthropic-stream", "kind": "provider-adapter", "provider": "anthropic", "mode": "stream", "fixture": "message-tool-result-usage-malformed-error" }
+  ]
+}

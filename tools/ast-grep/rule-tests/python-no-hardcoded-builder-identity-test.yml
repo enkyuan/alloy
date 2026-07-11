@@ -1,0 +1,23 @@
+id: python-no-hardcoded-builder-identity
+valid:
+  - |
+      return await registry.execute(invocation)
+  - |
+      context = TurnContext(principal_id=principal_id)
+invalid:
+  - |
+      return await registry.execute("builder", name, args)
+  - |
+      context = ToolExecutionContext(
+          principal_id="builder",
+          session_id=session_id,
+      )
+  - |
+      context = TurnContext(principal_id="builder", request_id=request_id)
+  - |
+      context = ToolExecutionContext(
+          session_id=session_id,
+          principal_id="builder",
+      )
+  - |
+      context = TurnContext(request_id=request_id, principal_id="builder")

@@ -1,0 +1,14 @@
+id: python-runtime-no-direct-event-append
+language: Python
+severity: error
+message: Commit runtime events through the canonical EventJournal, never its store or bus directly.
+files:
+  - "kaji/sdk/src/runtime/**/*.py"
+rule:
+  any:
+    - pattern: self.store.append($$$ARGS)
+    - pattern: self._store.append($$$ARGS)
+    - pattern: self.bus.publish($$$ARGS)
+    - pattern: self._bus.publish($$$ARGS)
+    - pattern: self.journal.store.append($$$ARGS)
+    - pattern: self._journal.store.append($$$ARGS)

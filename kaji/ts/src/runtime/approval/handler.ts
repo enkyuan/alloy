@@ -10,6 +10,7 @@ import type {
   EventBackedApprovalHandler,
 } from "@/runtime/approval/types";
 import { snapshotToolExecutionContext } from "@/runtime/context";
+import { systemClock, systemIdFactory, type Clock, type IdFactory } from "@/internal/uuid";
 
 function decisionCode(errorCode: string): ApprovalRejectionCode {
   if (errorCode === "APPROVAL_TIMEOUT") return "timeout";
@@ -21,14 +22,20 @@ function decisionCode(errorCode: string): ApprovalRejectionCode {
 export interface EventApprovalHandlerOptions {
   /** Wall-clock source for absolute ToolExecutionContext deadlines. */
   now?: () => number;
+  idFactory?: IdFactory;
+  clock?: Clock;
 }
 
 export class EventApprovalHandler implements EventBackedApprovalHandler {
   readonly approvalRequestOwner = "handler" as const;
   private readonly now: () => number;
+  private readonly idFactory: IdFactory;
+  private readonly clock: Clock;
 
   constructor(options: EventApprovalHandlerOptions = {}) {
-    this.now = options.now ?? Date.now;
+    this.idFactory = options.idFactory ?? systemIdFactory;
+    this.clock = options.clock ?? systemClock;
+    this.now = options.now ?? (() => this.clock.nowWallSeconds() * 1000);
   }
 
   async request(call: ToolCall, context: ApprovalRequestContext): Promise<ApprovalDecision> {
@@ -124,6 +131,8 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
 
     try {
       const request = KajiEvent.parse({
+        id: this.idFactory.next("event"),
+        timestamp: this.clock.nowWallSeconds(),
         type: EventType.TOOL_APPROVAL_REQUESTED,
         session_id: execution.sessionId,
         turn_id: execution.turnId,

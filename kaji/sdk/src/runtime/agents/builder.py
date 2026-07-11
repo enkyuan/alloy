@@ -25,6 +25,7 @@ from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
+from kaji.runtime.determinism import Clock, IdFactory
 
 
 @runtime_checkable
@@ -72,6 +73,8 @@ class AgentBuilder:
         self._tool_idempotency_ledger: ToolIdempotencyLedger | None = None
         self._metrics_sink: MetricsSink = NOOP_METRICS
         self._trace_sink: TraceSink = NOOP_TRACE
+        self._id_factory: IdFactory | None = None
+        self._clock: Clock | None = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -145,6 +148,16 @@ class AgentBuilder:
         self._trace_sink = sink
         return self
 
+    def id_factory(self, factory: IdFactory) -> "AgentBuilder":
+        """Inject scoped identifiers for deterministic execution."""
+        self._id_factory = factory
+        return self
+
+    def clock(self, clock: Clock) -> "AgentBuilder":
+        """Inject wall and monotonic time for deterministic execution."""
+        self._clock = clock
+        return self
+
     def build(
         self,
         *,
@@ -171,7 +184,7 @@ class AgentBuilder:
                 else InMemoryEventJournal(store, metrics_sink=self._metrics_sink)
             )
 
-        registry = ToolRegistry()
+        registry = ToolRegistry(id_factory=self._id_factory)
         for integration in self._integrations:
             integration.register(registry)
 
@@ -186,6 +199,7 @@ class AgentBuilder:
             ledger=self._tool_idempotency_ledger,
             metrics_sink=self._metrics_sink,
             trace_sink=self._trace_sink,
+            **({"clock": self._clock.now_monotonic} if self._clock else {}),
         )
         planner = ToolPlanner(
             executor=_executor,
@@ -193,6 +207,8 @@ class AgentBuilder:
             approval_handler=self._approval_handler,
             specs=specs,
             controller=controller,
+            id_factory=self._id_factory,
+            clock=self._clock,
         )
 
         return AgentRuntime(
@@ -210,4 +226,6 @@ class AgentBuilder:
             tool_execution_controller=controller,
             metrics_sink=self._metrics_sink,
             trace_sink=self._trace_sink,
+            id_factory=self._id_factory,
+            clock=self._clock,
         )

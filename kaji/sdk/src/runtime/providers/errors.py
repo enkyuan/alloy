@@ -9,6 +9,7 @@ LLM-provider-specific subclasses on top.
 from __future__ import annotations
 
 import httpx
+from typing import TypedDict
 
 from kaji.core.errors import (
     ServiceAPIError,
@@ -39,7 +40,20 @@ __all__ = [
     "ServiceNetworkError",
     "ServiceRateLimitError",
     "provider_error_from_exception",
+    "normalize_provider_error",
+    "NormalizedProviderError",
 ]
+
+
+class NormalizedProviderError(TypedDict):
+    """Stable semantic provider failure shape used at SDK boundaries."""
+
+    type: str
+    code: str
+    service: str
+    action: str
+    status: int | None
+    retryable: bool
 
 
 class ProviderError(ServiceError):
@@ -80,19 +94,22 @@ class ProviderAPIError(ProviderError):
         message: str,
         *,
         service: str = "provider",
+        action: str = "api call",
         status_code: int | None = None,
         response_text: str | None = None,
+        cause: Exception | None = None,
     ) -> None:
         super().__init__(
             message,
             service=service,
-            action="api call",
+            action=action,
             status_code=status_code,
             response_text=response_text,
+            cause=cause,
         )
 
 
-class ProviderConnectionError(ServiceNetworkError):
+class ProviderConnectionError(ProviderError, ServiceNetworkError):
     """Raised when the connection to a provider fails."""
 
     def __init__(
@@ -100,11 +117,12 @@ class ProviderConnectionError(ServiceNetworkError):
         message: str,
         *,
         service: str = "provider",
+        action: str = "connect",
         cause: Exception | None = None,
     ) -> None:
         super().__init__(
             service=service,
-            action="connect",
+            action=action,
             message=message,
             cause=cause,
         )
@@ -139,6 +157,17 @@ def _extract_response_text(error: Exception) -> str | None:
     return None
 
 
+def _is_network_error(error: Exception) -> bool:
+    vendor_type_names = {
+        "APIConnectionError",
+        "APIConnectionTimeoutError",
+        "APITimeoutError",
+    }
+    return isinstance(
+        error, (ConnectionError, OSError, TimeoutError, httpx.RequestError)
+    ) or any(cls.__name__ in vendor_type_names for cls in type(error).__mro__)
+
+
 def provider_error_from_exception(
     *,
     service: str,
@@ -158,16 +187,42 @@ def provider_error_from_exception(
             response_text=_extract_response_text(error),
         )
 
-    if isinstance(error, (ConnectionError, OSError, TimeoutError, httpx.RequestError)):
-        return ServiceNetworkError(
+    if _is_network_error(error):
+        return ProviderConnectionError(
+            f"{service} {action} failed due to a network error",
             service=service,
             action=action,
-            message=f"{service} {action} failed due to a network error",
             cause=error,
         )
 
     return ProviderAPIError(
         f"{service} {action} failed: {error}",
         service=service,
+        action=action,
         response_text=_extract_response_text(error),
+        cause=error,
     )
+
+
+def normalize_provider_error(error: ServiceError) -> NormalizedProviderError:
+    """Return provider-neutral classification without exposing private messages."""
+    status = error.status_code
+    if isinstance(error, ProviderConfigError):
+        error_type, code, retryable = "config", "PROVIDER_CONFIG_ERROR", False
+    elif isinstance(error, ServiceAuthError):
+        error_type, code, retryable = "auth", "PROVIDER_AUTH_ERROR", False
+    elif isinstance(error, ServiceRateLimitError):
+        error_type, code, retryable = "rate_limit", "PROVIDER_RATE_LIMITED", True
+    elif isinstance(error, ServiceNetworkError):
+        error_type, code, retryable = "network", "PROVIDER_NETWORK_ERROR", True
+    else:
+        error_type, code = "api", "PROVIDER_API_ERROR"
+        retryable = status is not None and status >= 500
+    return {
+        "type": error_type,
+        "code": code,
+        "service": error.service,
+        "action": error.action,
+        "status": status,
+        "retryable": retryable,
+    }

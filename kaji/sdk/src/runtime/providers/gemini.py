@@ -28,6 +28,7 @@ from kaji.runtime.providers._translate import (
     format_messages_gemini,
     split_system_for_gemini,
 )
+from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +314,7 @@ class GeminiProvider(ModelProvider):
 
     def __init__(self, **kwargs):
         api_key = kwargs.get("api_key")
+        self._id_factory: IdFactory = kwargs.get("id_factory") or SYSTEM_ID_FACTORY
         self.service = (
             GeminiService(api_key=api_key)
             if api_key is not None
@@ -359,11 +361,13 @@ class GeminiProvider(ModelProvider):
 
         tool_calls = []
         for fc in function_calls:
-            import uuid
-
             args = dict(fc.args) if fc.args else {}
             tool_calls.append(
-                {"id": str(uuid.uuid4()), "name": fc.name, "arguments": args}
+                {
+                    "id": self._id_factory.next("tool_call"),
+                    "name": fc.name,
+                    "arguments": args,
+                }
             )
 
         metadata = ModelMetadata(provider_name="gemini", model_name=self.service.model)
@@ -389,8 +393,6 @@ class GeminiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
-        import uuid
-
         from kaji.runtime.tools.function_calls import (
             extract_response_function_calls,
         )
@@ -425,7 +427,11 @@ class GeminiProvider(ModelProvider):
             for fc in extract_response_function_calls(chunk):
                 args = dict(fc.args) if fc.args else {}
                 tool_calls.append(
-                    {"id": str(uuid.uuid4()), "name": fc.name, "arguments": args}
+                    {
+                        "id": self._id_factory.next("tool_call"),
+                        "name": fc.name,
+                        "arguments": args,
+                    }
                 )
 
             if delta or tool_calls:
