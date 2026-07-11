@@ -68,6 +68,7 @@ async def main():
         kaji.AgentBuilder()
         .provider(kaji.get_provider("openai"))  # reads OPENAI_API_KEY
         .integration(WeatherIntegration())
+        .default_context(kaji.TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
         .build()
     )
@@ -81,6 +82,13 @@ asyncio.run(main())
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
+
+Tool-capable turns require a caller identity. Supply a `TurnContext` per turn,
+or configure an explicit builder `default_context` as above. Each handler
+receives an immutable `ToolExecutionContext` through `ToolInvocation` (with
+`ToolContext` retained as a compatibility alias). Missing identity raises
+`MissingToolIdentityError`; enabled tools without an explicit risk raise
+`UnclassifiedToolRiskError` before registration or execution.
 
 Tool schemas use Draft 2020-12 JSON Schema with format checking. Both
 `ToolPlanner` and direct `ToolRegistry.execute()` calls validate before a

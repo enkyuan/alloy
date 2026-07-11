@@ -5,9 +5,12 @@
  */
 import * as z from "zod";
 
+import { defaultUuid } from "@/internal/uuid";
+import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
 import {
   TOOL_ARGUMENT_VALIDATOR,
   ToolArgumentValidationError,
+  ToolSchemaValidationError,
   ToolSchemaValidator,
   addToolSchema,
   assertToolArgumentsJsonSafe,
@@ -32,6 +35,25 @@ export type ToolParameters = JSONSchema | z.ZodType;
 
 /** Risk level for a tool, used by ToolPolicy to gate execution. */
 export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
+const TOOL_RISKS = new Set<ToolRisk>([
+  "read",
+  "write",
+  "external_effect",
+  "financial",
+  "destructive",
+  "admin",
+]);
+
+export class UnclassifiedToolRiskError extends Error {
+  readonly code = "UNCLASSIFIED_TOOL_RISK" as const;
+  readonly retryable = false;
+  readonly outcome = "not_started" as const;
+
+  constructor(readonly toolName: string) {
+    super("Enabled tools require an explicit risk classification");
+    this.name = "UnclassifiedToolRiskError";
+  }
+}
 
 /** Definition of a tool exposed to the LLM. */
 export interface ToolSpec {
@@ -41,9 +63,8 @@ export interface ToolSpec {
   readonly catalogName?: string;
   readonly tags?: readonly string[];
   readonly enabled?: boolean;
-  /** Risk classification for policy enforcement and approval routing.
-   * undefined = unclassified, treated as "read" by default policies. */
-  readonly risk?: ToolRisk;
+  /** Risk classification for policy enforcement and approval routing. */
+  readonly risk: ToolRisk;
   readonly [TOOL_ARGUMENT_VALIDATOR]?: ToolArgumentValidator;
 }
 
@@ -58,6 +79,7 @@ export function setToolArgumentValidator<T extends ToolSpec>(
 }
 
 export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
+  assertToolRisk(spec);
   const snapshot = setToolArgumentValidator<ToolSpec>(
     {
       name: spec.name,
@@ -66,11 +88,25 @@ export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
       ...(spec.catalogName !== undefined ? { catalogName: spec.catalogName } : {}),
       ...(spec.tags !== undefined ? { tags: Object.freeze([...spec.tags]) } : {}),
       ...(spec.enabled !== undefined ? { enabled: spec.enabled } : {}),
-      ...(spec.risk !== undefined ? { risk: spec.risk } : {}),
+      risk: spec.risk,
     },
     spec[TOOL_ARGUMENT_VALIDATOR],
   );
   return Object.freeze(snapshot);
+}
+
+function assertToolRisk(spec: ToolSpec): void {
+  if (spec.risk === undefined) {
+    if (spec.enabled !== false) throw new UnclassifiedToolRiskError(spec.name);
+    return;
+  }
+  if (!TOOL_RISKS.has(spec.risk)) throw ToolSchemaValidationError.invalidRisk(spec.name);
+}
+
+/** Fail closed when a planner attempts to execute a spec without a known risk. */
+export function assertClassifiedToolSpec(spec: ToolSpec): void {
+  if (spec.risk === undefined) throw new UnclassifiedToolRiskError(spec.name);
+  if (!TOOL_RISKS.has(spec.risk)) throw ToolSchemaValidationError.invalidRisk(spec.name);
 }
 
 /**
@@ -78,22 +114,20 @@ export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
  * touch a database (the default for an embedded SDK) receive `undefined`. A
  * host that needs persistence injects its own handle here.
  */
-export interface ToolContext {
-  userId: string;
-  db?: unknown;
-}
+/** @deprecated Use ToolExecutionContext. */
+export type ToolContext = ToolExecutionContext;
 
-/** A tool handler: receives the context and validated args, returns a result. */
+/** A tool handler: receives validated args and canonical execution context. */
 export type ToolHandler = (
-  ctx: ToolContext,
   args: Record<string, unknown>,
+  context: ToolExecutionContext,
 ) => Promise<Record<string, unknown>>;
 
 /** Metadata attached to a handler by `tool(meta, fn)`. */
 export interface ToolMeta {
   description: string;
   parameters: ToolParameters;
-  risk?: ToolRisk;
+  risk: ToolRisk;
   tags?: string[];
   enabled?: boolean;
 }
@@ -173,7 +207,7 @@ function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
       name,
       description: meta.description,
       parameters: toolParametersToJSONSchema(meta.parameters),
-      ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+      risk: meta.risk,
       ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
       ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
     },
@@ -201,12 +235,18 @@ function filterSpecs(all: ToolSpec[], options: ListToolSpecsOptions): ToolSpec[]
  * Build a tool spec from a Zod schema while preserving its complete validation
  * schema, including nested constraints and references.
  */
-export function toolSpecFromSchema(name: string, description: string, schema: z.ZodType): ToolSpec {
+export function toolSpecFromSchema(
+  name: string,
+  description: string,
+  schema: z.ZodType,
+  risk: ToolRisk,
+): ToolSpec {
   return setToolArgumentValidator(
     {
       name,
       description,
       parameters: schemaParameters(schema),
+      risk,
     },
     toolArgumentValidator(schema),
   );
@@ -223,12 +263,21 @@ export function toolSpecFromSchema(name: string, description: string, schema: z.
  * @example
  * ```ts
  * const registry = new ToolRegistry();
- * registry.register({ name: "ping", description: "...", parameters: {} }, async (_ctx, _args) => ({ pong: true }));
- * const planner = new ToolPlanner({
- *   executor: (name, args) => registry.execute("user-1", name, args),
- *   specs: new Map(registry.listSpecs().map((s) => [s.name, s])),
+ * registry.register(
+ *   { name: "ping", description: "...", parameters: {}, risk: "read" },
+ *   async (_args, context) => ({ pong: true, principalId: context.principalId }),
+ * );
+ * await registry.execute("ping", {}, {
+ *   principalId: "user-1",
+ *   sessionId: "session-1",
+ *   turnId: "turn-1",
+ *   requestId: "request-1",
+ *   traceId: "trace-1",
+ *   toolCallId: "call-1",
+ *   idempotencyKey: "session-1:call-1",
+ *   signal: new AbortController().signal,
+ *   metadata: {},
  * });
- * const runtime = new AgentRuntime({ ..., tools: registry.listSpecs(), planner });
  * ```
  */
 export class ToolRegistry {
@@ -260,11 +309,20 @@ export class ToolRegistry {
   }
 
   async execute(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<Record<string, unknown>>;
+  /** @deprecated Pass (toolName, toolArgs, ToolExecutionContext). */
+  async execute(
     userId: string,
     toolName: string,
     toolArgs: Record<string, unknown>,
     db?: unknown,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<Record<string, unknown>>;
+  async execute(...args: unknown[]): Promise<Record<string, unknown>> {
+    const { toolName, toolArgs, context, legacy } = parseExecutionCall(args);
+    if (legacy) warnLegacyExecute();
     const handler = this.handlers.get(toolName);
     if (handler === undefined) {
       throw new UnknownToolError(toolName);
@@ -285,10 +343,9 @@ export class ToolRegistry {
         throw new Error(`Tool validation receipt could not be claimed: ${toolName}`);
       }
     }
-    const context = { userId, db };
     if (receipt !== undefined) attachValidationReceipt(context, receipt);
     try {
-      return await handler(context, executionArgs);
+      return await handler(executionArgs, context);
     } finally {
       if (receipt !== undefined) revokeValidationReceipt(receipt);
     }
@@ -299,6 +356,100 @@ export class ToolRegistry {
     this.handlers.clear();
     clearToolSchemas(this.schemaValidator);
   }
+}
+
+let warnedLegacyExecute = false;
+
+function warnLegacyExecute(): void {
+  if (warnedLegacyExecute) return;
+  warnedLegacyExecute = true;
+  console.warn("[kaji] execute(userId, name, args, db) is deprecated; pass ToolExecutionContext");
+}
+
+function legacyExecutionContext(principalId: string, db: unknown): ToolExecutionContext {
+  const turnId = defaultUuid();
+  const toolCallId = defaultUuid();
+  return {
+    principalId,
+    sessionId: turnId,
+    turnId,
+    requestId: defaultUuid(),
+    traceId: defaultUuid(),
+    toolCallId,
+    idempotencyKey: `${turnId}:${toolCallId}`,
+    signal: new AbortController().signal,
+    db,
+    metadata: {},
+  };
+}
+
+interface ParsedExecutionCall {
+  readonly toolName: string;
+  readonly toolArgs: Record<string, unknown>;
+  readonly context: ToolExecutionContext;
+  readonly legacy: boolean;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+const CONTEXT_ONLY_KEYS = new Set([
+  "principalId",
+  "sessionId",
+  "turnId",
+  "requestId",
+  "traceId",
+  "toolCallId",
+  "idempotencyKey",
+  "deadlineMs",
+  "signal",
+  "metadata",
+  "db",
+]);
+
+function hasContextOnlyKey(value: Record<string, unknown>): boolean {
+  for (const key of CONTEXT_ONLY_KEYS) {
+    if (key in value) return true;
+  }
+  return false;
+}
+
+function invalidExecutionCall(): TypeError {
+  return new TypeError(
+    "execute expects (toolName, toolArgs, ToolExecutionContext) or deprecated (userId, toolName, toolArgs, db?)",
+  );
+}
+
+function parseExecutionCall(args: readonly unknown[]): ParsedExecutionCall {
+  if (args.length === 3 && isNonEmptyString(args[0]) && isObjectRecord(args[1])) {
+    if (!isObjectRecord(args[2])) throw invalidExecutionCall();
+    return {
+      toolName: args[0],
+      toolArgs: args[1],
+      context: snapshotToolExecutionContext(args[2] as unknown as ToolExecutionContext),
+      legacy: false,
+    };
+  }
+  if (
+    (args.length === 3 || args.length === 4) &&
+    isNonEmptyString(args[0]) &&
+    isNonEmptyString(args[1]) &&
+    isObjectRecord(args[2]) &&
+    !hasContextOnlyKey(args[2])
+  ) {
+    return {
+      toolName: args[1],
+      toolArgs: args[2],
+      context: snapshotToolExecutionContext(legacyExecutionContext(args[0], args[3])),
+      legacy: true,
+    };
+  }
+  throw invalidExecutionCall();
 }
 
 /** Thrown when a tool is requested by name but not registered. */
@@ -329,12 +480,22 @@ export function listToolSpecs(options: ListToolSpecsOptions = {}): ToolSpec[] {
 
 /** Execute a registered tool call from the process-default registry. */
 export async function executeTool(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  context: ToolExecutionContext,
+): Promise<Record<string, unknown>>;
+/** @deprecated Pass (toolName, toolArgs, ToolExecutionContext). */
+export async function executeTool(
   userId: string,
   toolName: string,
   toolArgs: Record<string, unknown>,
   db?: unknown,
-): Promise<Record<string, unknown>> {
-  return defaultRegistry.execute(userId, toolName, toolArgs, db);
+): Promise<Record<string, unknown>>;
+export async function executeTool(...args: unknown[]): Promise<Record<string, unknown>> {
+  const execute = defaultRegistry.execute as (
+    ...values: unknown[]
+  ) => Promise<Record<string, unknown>>;
+  return execute.apply(defaultRegistry, args);
 }
 
 /** Clear the process-default registry. Primarily for tests. */

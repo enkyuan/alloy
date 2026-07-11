@@ -26,10 +26,16 @@ import { defaultUuid } from "@/internal/uuid";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import {
   DEFAULT_CONTEXT_WINDOW,
+  MissingToolIdentityError,
+  assertNonEmptyContextId,
+  assertValidDeadline,
   buildContext,
+  normalizePrincipalId,
+  snapshotContextMetadata,
   validateContextWindow,
   type ContextDiagnostics,
   type ContextWindow,
+  type TurnContext,
 } from "@/runtime/context";
 import {
   InMemorySessionTurnCoordinator,
@@ -98,8 +104,8 @@ export interface AgentRuntimeOptions {
    * Falls back to the global `executeTool` registry.
    */
   toolExecutor?: ToolExecutor;
-  /** User identifier threaded into tool execution context. Defaults to "agent". */
-  userId?: string;
+  /** Explicit defaults for a single-tenant application. */
+  defaultContext?: TurnContext;
   /**
    * Defaults to one process-local coordinator per store object. Inject a
    * distributed implementation when runtimes span processes.
@@ -111,12 +117,20 @@ export interface AgentRuntimeOptions {
 
 export interface RunTurnOptions {
   cancellationToken?: CancellationToken;
+  context?: TurnContext;
 }
 
 export interface TurnOptions {
   /** Existing session to reuse; a fresh UUID is generated when omitted. */
   sessionId?: string;
   cancellationToken?: CancellationToken;
+  context?: TurnContext;
+}
+
+interface ResolvedTurnContext extends TurnContext {
+  readonly requestId: string;
+  readonly traceId: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -157,7 +171,7 @@ export class AgentRuntime {
   private readonly toolExecutor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: AnyApprovalHandler | undefined;
-  private readonly userId: string;
+  private readonly defaultContext: TurnContext | undefined;
   private readonly turnCoordinator: SessionTurnCoordinator;
   private readonly contextWindow: Readonly<ContextWindow>;
   private readonly projectionCacheCapacity: number;
@@ -189,7 +203,21 @@ export class AgentRuntime {
     this.systemPrompt = options.systemPrompt;
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
     this.fixedTools = options.tools;
-    this.userId = options.userId ?? "agent";
+    if (options.defaultContext === undefined) {
+      this.defaultContext = undefined;
+    } else {
+      const context = options.defaultContext;
+      if (context.requestId !== undefined) assertNonEmptyContextId(context.requestId, "requestId");
+      if (context.traceId !== undefined) assertNonEmptyContextId(context.traceId, "traceId");
+      assertValidDeadline(context.deadlineMs);
+      this.defaultContext = Object.freeze({
+        ...context,
+        ...(context.principalId === undefined
+          ? {}
+          : { principalId: normalizePrincipalId(context.principalId) }),
+        metadata: snapshotContextMetadata(context.metadata),
+      });
+    }
     this.turnCoordinator = options.turnCoordinator ?? defaultTurnCoordinator(options.store);
     this.projectionCacheCapacity = Math.max(1, options.store.maxSessions ?? 1_000);
     const contextWindow = options.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
@@ -198,7 +226,7 @@ export class AgentRuntime {
     this.policy = options.policy;
     this.approvalHandler = options.approvalHandler;
     this.toolExecutor =
-      options.toolExecutor ?? ((name, args) => executeTool(this.userId, name, args));
+      options.toolExecutor ?? ((name, args, context) => executeTool(name, args, context));
     // Planner resolution:
     //  1. Explicit planner wins.
     //  2. Otherwise, if tools are fixed at construction time, build once.
@@ -220,6 +248,30 @@ export class AgentRuntime {
 
   private resolvePlanner(tools: ToolSpec[]): ToolPlanner {
     return this.planner ?? this.buildPlanner(tools);
+  }
+
+  private resolveTurnContext(context?: TurnContext): ResolvedTurnContext {
+    const fallback = this.defaultContext;
+    const metadata = {
+      ...(fallback?.metadata ?? {}),
+      ...(context?.metadata ?? {}),
+    };
+    const principalId = context?.principalId ?? fallback?.principalId;
+    const requestId = context?.requestId ?? fallback?.requestId ?? defaultUuid();
+    const traceId = context?.traceId ?? fallback?.traceId ?? defaultUuid();
+    const deadlineMs = context?.deadlineMs ?? fallback?.deadlineMs;
+    const db = context?.db ?? fallback?.db;
+    assertNonEmptyContextId(requestId, "requestId");
+    assertNonEmptyContextId(traceId, "traceId");
+    assertValidDeadline(deadlineMs);
+    return Object.freeze({
+      ...(principalId === undefined ? {} : { principalId: normalizePrincipalId(principalId) }),
+      requestId,
+      traceId,
+      ...(deadlineMs === undefined ? {} : { deadlineMs }),
+      ...(db === undefined ? {} : { db }),
+      metadata: snapshotContextMetadata(metadata),
+    });
   }
 
   /** Canonical application write path for event drafts. */
@@ -338,6 +390,7 @@ export class AgentRuntime {
     const sessionId = options.sessionId ?? defaultUuid();
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
+    const context = this.resolveTurnContext(options.context);
     return this.turnCoordinator.runExclusive(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         const projector = await this.syncProjection(sessionId);
@@ -352,7 +405,7 @@ export class AgentRuntime {
             });
             await this.appendEvent(created);
           }
-          await this.sendUnlocked(sessionId, prompt, turnId, token);
+          await this.sendUnlocked(sessionId, prompt, turnId, token, context);
           const resultEvents = turnEvents.map(cloneStoredEvent);
           const text = resultEvents
             .filter((event) => event.type === EventType.AGENT_MESSAGE_COMPLETED)
@@ -381,10 +434,11 @@ export class AgentRuntime {
   async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
+    const context = this.resolveTurnContext(options.context);
     await this.turnCoordinator.runExclusive(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
-        await this.sendUnlocked(sessionId, content, turnId, token);
+        await this.sendUnlocked(sessionId, content, turnId, token, context);
       }),
     );
   }
@@ -394,6 +448,7 @@ export class AgentRuntime {
     content: string,
     turnId: string,
     token: CancellationToken,
+    context: ResolvedTurnContext,
   ): Promise<void> {
     token.throwIfCancelled();
     const event = KajiEvent.parse({
@@ -403,7 +458,7 @@ export class AgentRuntime {
       content,
     });
     await this.appendEvent(event);
-    await this.runTurnUnlocked(sessionId, turnId, token);
+    await this.runTurnUnlocked(sessionId, turnId, token, context);
   }
 
   /**
@@ -419,10 +474,11 @@ export class AgentRuntime {
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
     const token = options.cancellationToken ?? new CancellationToken();
     const turnId = defaultUuid();
+    const context = this.resolveTurnContext(options.context);
     await this.turnCoordinator.runExclusive(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
-        await this.runTurnUnlocked(sessionId, turnId, token);
+        await this.runTurnUnlocked(sessionId, turnId, token, context);
       }),
     );
   }
@@ -431,6 +487,7 @@ export class AgentRuntime {
     sessionId: string,
     turnId: string,
     token: CancellationToken,
+    turnContext: ResolvedTurnContext,
   ): Promise<void> {
     token.throwIfCancelled();
 
@@ -443,6 +500,9 @@ export class AgentRuntime {
 
     try {
       const tools = this.fixedTools ?? listToolSpecs();
+      if (tools.length > 0 && turnContext.principalId === undefined) {
+        throw new MissingToolIdentityError();
+      }
 
       for (let i = 0; i < this.maxToolIterations; i++) {
         token.throwIfCancelled();
@@ -452,9 +512,12 @@ export class AgentRuntime {
         await emit({ type: EventType.AGENT_REASONING_STARTED });
 
         const state = this.projectorFor(sessionId).state;
-        const context = buildContext(state.messages, this.systemPrompt, this.contextWindow);
-        this.contextDiagnosticsBySession.set(sessionId, Object.freeze({ ...context.diagnostics }));
-        const messages = context.messages;
+        const providerContext = buildContext(state.messages, this.systemPrompt, this.contextWindow);
+        this.contextDiagnosticsBySession.set(
+          sessionId,
+          Object.freeze({ ...providerContext.diagnostics }),
+        );
+        const messages = providerContext.messages;
 
         let content = "";
         const toolCalls: ToolCall[] = [];
@@ -492,6 +555,8 @@ export class AgentRuntime {
           break;
         }
 
+        if (turnContext.principalId === undefined) throw new MissingToolIdentityError();
+
         await this.resolvePlanner(tools).executeScatterGather(
           sessionId,
           toolCalls.map((tc) => ({
@@ -503,6 +568,8 @@ export class AgentRuntime {
             await this.appendEvent(KajiEvent.parse({ ...event, turn_id: turnId }));
           },
           turnId,
+          turnContext,
+          token.signal,
         );
         // Loop: next iteration replays state including the new tool results.
         if (i === this.maxToolIterations - 1) {

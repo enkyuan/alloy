@@ -9,6 +9,8 @@ import pytest
 
 from kaji.infra.events.schemas import KajiEvent, ToolCallFailed
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
@@ -17,6 +19,19 @@ from kaji.runtime.tools.registry import ToolSpec
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_DEFAULT_SPECS = {
+    name: ToolSpec(name=name, description=name, parameters={}, risk="read")
+    for name in ("blocked", "other_tool", "search", "tool_a", "tool_b")
+}
+
+
+def _planner(executor: AsyncMock, **kwargs: Any) -> ToolPlanner:
+    async def execute(invocation: Any) -> Any:
+        return await executor(invocation)
+
+    kwargs.setdefault("specs", _DEFAULT_SPECS)
+    return ToolPlanner(execute, **kwargs)
 
 
 async def _collect(
@@ -29,7 +44,14 @@ async def _collect(
     async def emit(event: KajiEvent) -> None:
         emitted.append(event)
 
-    results = await planner.execute_scatter_gather(session_id, calls, emit)
+    results = await planner.execute_scatter_gather(
+        session_id,
+        calls,
+        emit,
+        turn_id="test-turn",
+        turn_context=TurnContext(principal_id="test-principal"),
+        cancellation_token=CancellationToken(),
+    )
     return emitted, results
 
 
@@ -45,7 +67,7 @@ def _types(events: List[KajiEvent]) -> List[str]:
 @pytest.mark.asyncio
 async def test_planner_emits_lifecycle_on_success():
     executor = AsyncMock(return_value={"ok": True})
-    planner = ToolPlanner(executor=executor)
+    planner = _planner(executor)
 
     emitted, results = await _collect(
         planner, "sess-1", [{"id": "c1", "name": "search", "arguments": {"q": "x"}}]
@@ -61,26 +83,41 @@ async def test_planner_emits_lifecycle_on_success():
 
 @pytest.mark.asyncio
 async def test_planner_emits_failed_on_executor_error():
-    executor = AsyncMock(side_effect=RuntimeError("boom"))
-    planner = ToolPlanner(executor=executor)
+    secret = "sk-handler-secret-must-not-escape"
+    executor = AsyncMock(side_effect=RuntimeError(secret))
+    planner = _planner(
+        executor,
+        specs={
+            "bad": ToolSpec(name="bad", description="bad", parameters={}, risk="read")
+        },
+    )
 
     emitted, results = await _collect(
         planner, "sess-1", [{"id": "c2", "name": "bad", "arguments": {}}]
     )
 
     assert EventType.TOOL_CALL_FAILED in _types(emitted)
-    assert "error" in results[0]
-    assert "boom" in results[0]["error"]
+    assert results[0] == {
+        "id": "c2",
+        "name": "bad",
+        "error": "Tool execution failed",
+        "error_code": "TOOL_EXECUTION_FAILED",
+        "retryable": False,
+        "outcome": "failed",
+    }
+    assert secret not in " ".join(event.model_dump_json() for event in emitted)
 
 
 @pytest.mark.parametrize("bad_args", [[], "not-object", None])
 @pytest.mark.asyncio
 async def test_planner_rejects_non_object_arguments_before_executor(bad_args):
     executor = AsyncMock(return_value={"ok": True})
-    planner = ToolPlanner(executor=executor)
+    planner = _planner(executor)
 
     emitted, results = await _collect(
-        planner, "sess-bad-args", [{"id": "bad-args", "name": "search", "arguments": bad_args}]
+        planner,
+        "sess-bad-args",
+        [{"id": "bad-args", "name": "search", "arguments": bad_args}],
     )
 
     executor.assert_not_called()
@@ -102,7 +139,7 @@ async def test_planner_rejects_non_object_arguments_before_executor(bad_args):
 async def test_planner_redacts_provider_parse_error_before_recording() -> None:
     secret = "sk-provider-output-must-not-appear"
     executor = AsyncMock(return_value={"ok": True})
-    planner = ToolPlanner(executor=executor)
+    planner = _planner(executor)
 
     emitted, results = await _collect(
         planner,
@@ -127,7 +164,7 @@ async def test_planner_redacts_provider_parse_error_before_recording() -> None:
 @pytest.mark.asyncio
 async def test_planner_generates_call_id_when_absent():
     executor = AsyncMock(return_value={})
-    planner = ToolPlanner(executor=executor)
+    planner = _planner(executor)
 
     emitted, _ = await _collect(
         planner, "sess-1", [{"name": "search", "arguments": {}}]
@@ -146,9 +183,10 @@ async def test_planner_includes_catalog_name_metadata_when_available():
             catalog_name="weather.get_weather",
             description="d",
             parameters={},
+            risk="read",
         )
     }
-    planner = ToolPlanner(executor=executor, specs=specs)
+    planner = _planner(executor, specs=specs)
 
     emitted, _ = await _collect(
         planner,
@@ -167,7 +205,7 @@ async def test_planner_includes_catalog_name_metadata_when_available():
 @pytest.mark.asyncio
 async def test_planner_deny_blocks_before_started():
     executor = AsyncMock(return_value={})
-    planner = ToolPlanner(executor=executor, policy=ToolPolicy(denied={"blocked"}))
+    planner = _planner(executor, policy=ToolPolicy(denied={"blocked"}))
 
     emitted, results = await _collect(
         planner, "sess-deny", [{"id": "d1", "name": "blocked", "arguments": {}}]
@@ -184,8 +222,17 @@ async def test_planner_deny_blocks_before_started():
 @pytest.mark.asyncio
 async def test_planner_allow_list_permits_listed_tool():
     executor = AsyncMock(return_value={"x": 1})
-    planner = ToolPlanner(
-        executor=executor, policy=ToolPolicy(allowed={"allowed_tool"})
+    planner = _planner(
+        executor,
+        policy=ToolPolicy(allowed={"allowed_tool"}),
+        specs={
+            "allowed_tool": ToolSpec(
+                name="allowed_tool",
+                description="d",
+                parameters={},
+                risk="read",
+            )
+        },
     )
 
     emitted, _ = await _collect(
@@ -205,10 +252,11 @@ async def test_planner_allow_list_accepts_catalog_name_alias():
             catalog_name="weather.get_weather",
             description="d",
             parameters={},
+            risk="read",
         )
     }
-    planner = ToolPlanner(
-        executor=executor,
+    planner = _planner(
+        executor,
         policy=ToolPolicy(allowed={"weather.get_weather"}),
         specs=specs,
     )
@@ -232,10 +280,11 @@ async def test_planner_deny_list_blocks_catalog_name_alias():
             catalog_name="weather.get_weather",
             description="d",
             parameters={},
+            risk="read",
         )
     }
-    planner = ToolPlanner(
-        executor=executor,
+    planner = _planner(
+        executor,
         policy=ToolPolicy(denied={"weather.get_weather"}),
         specs=specs,
     )
@@ -257,7 +306,7 @@ async def test_planner_deny_list_blocks_catalog_name_alias():
 @pytest.mark.asyncio
 async def test_planner_allow_list_blocks_unlisted_tool():
     executor = AsyncMock(return_value={})
-    planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"search"}))
+    planner = _planner(executor, policy=ToolPolicy(allowed={"search"}))
 
     emitted, results = await _collect(
         planner,
@@ -285,8 +334,8 @@ async def test_planner_approval_approved_proceeds():
     }
     policy = ToolPolicy(require_approval_for={"destructive"})
     approval_handler = AsyncMock(return_value=True)
-    planner = ToolPlanner(
-        executor=executor, policy=policy, approval_handler=approval_handler, specs=specs
+    planner = _planner(
+        executor, policy=policy, approval_handler=approval_handler, specs=specs
     )
 
     emitted, results = await _collect(
@@ -310,8 +359,8 @@ async def test_planner_approval_rejected_skips_execution():
     }
     policy = ToolPolicy(require_approval_for={"financial"})
     approval_handler = AsyncMock(return_value=False)
-    planner = ToolPlanner(
-        executor=executor, policy=policy, approval_handler=approval_handler, specs=specs
+    planner = _planner(
+        executor, policy=policy, approval_handler=approval_handler, specs=specs
     )
 
     emitted, results = await _collect(
@@ -329,6 +378,50 @@ async def test_planner_approval_rejected_skips_execution():
 
 
 @pytest.mark.asyncio
+async def test_planner_closes_approval_handler_exceptions_without_secret_leak(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    emitted: List[KajiEvent] = []
+    executor = AsyncMock()
+    secret = "sk-approval-secret"
+
+    async def approval_handler(_name, _args, _risk):
+        raise RuntimeError(secret)
+
+    spec = ToolSpec(name="search", description="search", parameters={}, risk="read")
+    planner = _planner(
+        executor,
+        policy=ToolPolicy(require_approval_for={"read"}),
+        approval_handler=approval_handler,
+        specs={"search": spec},
+    )
+
+    emitted, results = await _collect(
+        planner,
+        "session",
+        [{"id": "call", "name": "search", "arguments": {}}],
+    )
+
+    executor.assert_not_awaited()
+    assert _types(emitted) == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_APPROVAL_REQUESTED,
+        EventType.TOOL_APPROVAL_REJECTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    assert results[0] == {
+        "id": "call",
+        "name": "search",
+        "error": "Tool approval unavailable",
+        "error_code": "APPROVAL_UNAVAILABLE",
+        "retryable": False,
+        "outcome": "not_started",
+    }
+    assert secret not in " ".join(event.model_dump_json() for event in emitted)
+    assert secret in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_planner_no_approval_handler_rejects_by_default():
     executor = AsyncMock(return_value={})
     specs = {
@@ -337,7 +430,7 @@ async def test_planner_no_approval_handler_rejects_by_default():
         )
     }
     policy = ToolPolicy(require_approval_for={"admin"})
-    planner = ToolPlanner(executor=executor, policy=policy, specs=specs)
+    planner = _planner(executor, policy=policy, specs=specs)
 
     emitted, results = await _collect(
         planner, "sess-no-handler", [{"id": "nh1", "name": "add_user", "arguments": {}}]
@@ -357,7 +450,7 @@ async def test_planner_low_risk_tool_skips_approval_gate():
         "search": ToolSpec(name="search", description="d", parameters={}, risk="read")
     }
     policy = ToolPolicy(require_approval_for={"destructive"})
-    planner = ToolPlanner(executor=executor, policy=policy, specs=specs)
+    planner = _planner(executor, policy=policy, specs=specs)
 
     emitted, _ = await _collect(
         planner, "sess-low-risk", [{"id": "lr1", "name": "search", "arguments": {}}]
@@ -376,11 +469,9 @@ async def test_planner_low_risk_tool_skips_approval_gate():
 async def test_planner_scatter_gather_runs_both_calls():
     call_log: list[str] = []
 
-    async def executor(name: str, args: dict) -> dict:
-        call_log.append(name)
-        return {"name": name}
+    executor = AsyncMock(side_effect=lambda invocation: {"name": invocation.name})
 
-    planner = ToolPlanner(executor=executor)
+    planner = _planner(executor)
     emitted, results = await _collect(
         planner,
         "sess-scatter",
@@ -390,6 +481,7 @@ async def test_planner_scatter_gather_runs_both_calls():
         ],
     )
 
+    call_log = [call.args[0].name for call in executor.await_args_list]
     assert sorted(call_log) == ["tool_a", "tool_b"]
     assert len(results) == 2
     completed_types = [

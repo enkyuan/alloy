@@ -11,6 +11,7 @@ from kaji.infra.events.schemas import (
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
@@ -169,7 +170,6 @@ async def test_agent_runtime_tool_loop_end_to_end():
         executed.append(name)
         return {"ok": True}
 
-    planner = ToolPlanner(executor=executor)
     provider = _RegistryMockProvider()
 
     tools = [
@@ -177,15 +177,17 @@ async def test_agent_runtime_tool_loop_end_to_end():
             name="lookup",
             description="Look something up.",
             parameters={"type": "object", "properties": {}, "required": []},
+            risk="read",
         )
     ]
+    planner = ToolPlanner(executor=executor, specs={"lookup": tools[0]})
 
     runtime = AgentRuntime(
         bus=bus, store=store, provider=provider, planner=planner, tools=tools
     )
 
     await store.append(UserMessage(session_id="tool-1", content="Use a tool"))
-    await runtime.run_turn("tool-1")
+    await runtime.run_turn("tool-1", context=TurnContext(principal_id="test-principal"))
 
     events = await store.get_events("tool-1")
     types = [e.type for e in events]
@@ -237,23 +239,25 @@ async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
                 tool_calls=[{"id": "loop-1", "name": "lookup", "arguments": {}}],
             )
 
+    lookup_spec = ToolSpec(
+        name="lookup",
+        description="Look something up.",
+        parameters={"type": "object", "properties": {}, "required": []},
+        risk="read",
+    )
     runtime = AgentRuntime(
         bus=bus,
         store=store,
         provider=AlwaysToolProvider(),
-        planner=ToolPlanner(executor=executor),
-        tools=[
-            ToolSpec(
-                name="lookup",
-                description="Look something up.",
-                parameters={"type": "object", "properties": {}, "required": []},
-            )
-        ],
+        planner=ToolPlanner(executor=executor, specs={"lookup": lookup_spec}),
+        tools=[lookup_spec],
         strategy=AgentStrategy(max_iterations=2),
     )
 
     await store.append(UserMessage(session_id="exhaust-1", content="Use a tool"))
-    await runtime.run_turn("exhaust-1")
+    await runtime.run_turn(
+        "exhaust-1", context=TurnContext(principal_id="test-principal")
+    )
 
     events = await store.get_events("exhaust-1")
     exhausted = [e for e in events if e.type == EventType.AGENT_TURN_EXHAUSTED]

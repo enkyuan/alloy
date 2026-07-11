@@ -320,6 +320,7 @@ describe("AgentRuntime incremental projection", () => {
       name: "noop",
       description: "No operation",
       parameters: { type: "object", additionalProperties: false },
+      risk: "read",
     };
     const runtime = new AgentRuntime({
       provider,
@@ -327,6 +328,7 @@ describe("AgentRuntime incremental projection", () => {
       committer: new InMemoryEventCommitter(store),
       tools: [spec],
       toolExecutor: async () => ({ ok: true }),
+      defaultContext: { principalId: "test" },
       strategy: { maxToolIterations: 10 },
     });
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "runtime" }));
@@ -556,6 +558,7 @@ describe("AgentRuntime incremental projection", () => {
       name: "ownership",
       description: "Ownership probe",
       parameters: { type: "object" },
+      risk: "read",
     };
     const owner = ownershipProvider();
     const capture = ownershipCaptureProvider();
@@ -565,6 +568,7 @@ describe("AgentRuntime incremental projection", () => {
       committer: new InMemoryEventCommitter(store),
       tools: [spec],
       toolExecutor: async () => ({ ok: true }),
+      defaultContext: { principalId: "test" },
     });
     const runtimeB = new AgentRuntime({
       provider: capture.provider,
@@ -572,6 +576,7 @@ describe("AgentRuntime incremental projection", () => {
       committer: new InMemoryEventCommitter(store),
       tools: [spec],
       toolExecutor: async () => ({ ok: true }),
+      defaultContext: { principalId: "test" },
     });
 
     const result = await runtimeA.turn("go", { sessionId: "ownership" });

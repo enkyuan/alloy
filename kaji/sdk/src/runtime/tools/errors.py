@@ -7,7 +7,11 @@ from typing import Any, ClassVar, Literal
 
 from jsonschema.exceptions import SchemaError, ValidationError
 
-ToolValidationCode = Literal["INVALID_TOOL_SCHEMA", "INVALID_TOOL_ARGUMENTS"]
+ToolValidationCode = Literal[
+    "INVALID_TOOL_SCHEMA",
+    "INVALID_TOOL_ARGUMENTS",
+    "UNCLASSIFIED_TOOL_RISK",
+]
 
 
 def json_pointer(path: Iterable[object]) -> str:
@@ -91,6 +95,27 @@ class ToolSchemaValidationError(ToolValidationError):
             tool_name,
             path,
             _bounded_message("Tool schema", "schema", path),
+        )
+
+    @classmethod
+    def invalid_risk(cls, tool_name: str) -> ToolSchemaValidationError:
+        return cls(
+            tool_name,
+            "/risk",
+            "Tool schema failed risk validation at /risk",
+        )
+
+
+class UnclassifiedToolRiskError(ToolValidationError):
+    """Raised when an enabled tool omits its required risk classification."""
+
+    code: ClassVar[Literal["UNCLASSIFIED_TOOL_RISK"]] = "UNCLASSIFIED_TOOL_RISK"
+
+    def __init__(self, tool_name: str) -> None:
+        super().__init__(
+            tool_name,
+            "/risk",
+            "Enabled tools require an explicit risk classification",
         )
 
 

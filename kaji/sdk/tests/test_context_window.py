@@ -22,6 +22,7 @@ from kaji.runtime.agents.context import (
     ContextIntegrityError,
     ContextWindow,
     ContextWindowOverflowError,
+    TurnContext,
     build_context,
 )
 from kaji.runtime.agents.planner import ToolPlanner
@@ -573,6 +574,7 @@ async def test_runtime_reads_one_cursor_suffix_per_ten_iteration_turn() -> None:
         name="noop",
         description="No operation",
         parameters={"type": "object", "additionalProperties": False},
+        risk="read",
     )
 
     async def execute(_name: str, _arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -585,6 +587,7 @@ async def test_runtime_reads_one_cursor_suffix_per_ten_iteration_turn() -> None:
         planner=ToolPlanner(executor=execute, specs={"noop": spec}),
         tools=[spec],
         strategy=AgentStrategy(max_iterations=10),
+        default_context=TurnContext(principal_id="test-principal"),
     )
     await store.append(SessionCreated(session_id="runtime"))
     await store.append(UserMessage(session_id="runtime", content="first"))
@@ -736,6 +739,7 @@ async def test_mutations_cannot_cross_store_projection_or_result_boundaries() ->
         name="ownership",
         description="Ownership probe",
         parameters={"type": "object"},
+        risk="read",
     )
 
     async def execute(_name: str, _arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -748,6 +752,7 @@ async def test_mutations_cannot_cross_store_projection_or_result_boundaries() ->
         provider=provider_a,
         planner=ToolPlanner(executor=execute, specs={spec.name: spec}),
         tools=[spec],
+        default_context=TurnContext(principal_id="test-principal"),
     )
     provider_b = _OwnershipCaptureProvider()
     runtime_b = AgentRuntime(
@@ -756,6 +761,7 @@ async def test_mutations_cannot_cross_store_projection_or_result_boundaries() ->
         provider=provider_b,
         planner=ToolPlanner(executor=execute, specs={spec.name: spec}),
         tools=[spec],
+        default_context=TurnContext(principal_id="test-principal"),
     )
 
     result = await runtime_a.turn("go", session_id="ownership")

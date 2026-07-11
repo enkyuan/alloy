@@ -3,7 +3,8 @@
  * Controls which tools may run and which require explicit approval before
  * execution, keyed on tool name and risk classification.
  */
-import type { ToolRisk } from "@/tools/registry";
+import { UnclassifiedToolRiskError, type ToolRisk } from "@/tools/registry";
+import { ToolSchemaValidationError } from "@/tools/validation";
 
 export type { ToolRisk };
 
@@ -16,7 +17,7 @@ const RISK_LEVELS = [
   "destructive",
   "admin",
 ] as const;
-const RISK_RANK: Record<string, number> = Object.fromEntries(RISK_LEVELS.map((r, i) => [r, i]));
+const RISK_RANK = new Map<ToolRisk, number>(RISK_LEVELS.map((risk, rank) => [risk, rank]));
 
 /** Thrown by `ToolPolicy.enforce` when a tool call is not permitted. */
 export class ToolPolicyViolation extends Error {
@@ -28,22 +29,26 @@ export class ToolPolicyViolation extends Error {
 
 export interface ToolPolicyOptions {
   /** Explicit allowlist. When undefined, all tools not in `denied` are allowed. */
-  allowed?: Set<string>;
+  allowed?: ReadonlySet<string>;
   /** Tools that are always blocked, even if in `allowed`. */
-  denied?: Set<string>;
+  denied?: ReadonlySet<string>;
   /** Risk levels that require explicit approval before the tool runs. */
-  requireApprovalFor?: Set<ToolRisk>;
+  requireApprovalFor?: ReadonlySet<ToolRisk>;
 }
 
 export class ToolPolicy {
   private readonly allowed: Set<string> | undefined;
   private readonly denied: Set<string>;
-  readonly requireApprovalFor: Set<ToolRisk>;
+  readonly requireApprovalFor: ReadonlySet<ToolRisk>;
 
   constructor(opts: ToolPolicyOptions = {}) {
-    this.allowed = opts.allowed;
-    this.denied = opts.denied ?? new Set();
-    this.requireApprovalFor = opts.requireApprovalFor ?? new Set();
+    const requireApprovalFor = new Set(opts.requireApprovalFor ?? []);
+    for (const risk of requireApprovalFor) {
+      if (!RISK_RANK.has(risk)) throw ToolSchemaValidationError.invalidRisk("ToolPolicy");
+    }
+    this.allowed = opts.allowed === undefined ? undefined : new Set(opts.allowed);
+    this.denied = new Set(opts.denied ?? []);
+    this.requireApprovalFor = requireApprovalFor;
   }
 
   /** Returns true when the tool is not denied and (if an allowlist exists) is in it. */
@@ -74,21 +79,20 @@ export class ToolPolicy {
   /**
    * Returns true when the tool's effective risk level is at or above the
    * minimum rank in `requireApprovalFor`. So `requireApprovalFor: {"destructive"}`
-   * also catches `"admin"`. Unknown risk strings fall back to literal
-   * membership so a typo doesn't fail-open. `undefined` risk is treated as
-   * `"read"` (lowest rank), matching Python behaviour.
+   * also catches `"admin"`. Enabled tools must carry a known risk; missing
+   * and unknown classifications fail instead of defaulting to `read`.
    */
   requiresApproval(_toolName: string, risk: ToolRisk | undefined): boolean {
+    if (risk === undefined) throw new UnclassifiedToolRiskError(_toolName);
+    const rank = RISK_RANK.get(risk);
+    if (rank === undefined) throw ToolSchemaValidationError.invalidRisk(_toolName);
     if (this.requireApprovalFor.size === 0) return false;
-    const effectiveRisk: string = risk ?? "read";
-    if (!(effectiveRisk in RISK_RANK)) {
-      return this.requireApprovalFor.has(effectiveRisk as ToolRisk);
-    }
     let floor = Infinity;
     for (const r of this.requireApprovalFor) {
-      if (r in RISK_RANK && RISK_RANK[r]! < floor) floor = RISK_RANK[r]!;
+      const approvalRank = RISK_RANK.get(r);
+      if (approvalRank !== undefined && approvalRank < floor) floor = approvalRank;
     }
-    if (floor === Infinity) return this.requireApprovalFor.has(effectiveRisk as ToolRisk);
-    return RISK_RANK[effectiveRisk]! >= floor;
+    if (floor === Infinity) return this.requireApprovalFor.has(risk);
+    return rank >= floor;
   }
 }

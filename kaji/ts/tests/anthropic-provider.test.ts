@@ -174,6 +174,7 @@ describe("AnthropicProvider message formatting (via captured params)", () => {
           catalogName: "weather.getWeather",
           description: "Get weather",
           parameters: {},
+          risk: "read",
         },
       ],
     );

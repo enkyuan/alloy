@@ -44,6 +44,7 @@ async def test_quickstart_agent_builder_path() -> None:
         kaji.AgentBuilder()
         .provider(MockProvider())
         .integration(WeatherIntegration())
+        .default_context(kaji.TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
         .build(bus=bus, store=store)
     )
@@ -71,6 +72,7 @@ async def test_quickstart_event_inspection() -> None:
         kaji.AgentBuilder()
         .provider(MockProvider())
         .integration(WeatherIntegration())
+        .default_context(kaji.TurnContext(principal_id="quickstart"))
         .build(bus=bus, store=store)
     )
 

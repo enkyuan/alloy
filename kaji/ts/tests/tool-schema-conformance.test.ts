@@ -37,6 +37,7 @@ function specFor(testCase: ConformanceCase): ToolSpec {
     name: "fixture_tool",
     description: testCase.name,
     parameters: testCase.schema,
+    risk: "read",
   };
 }
 
@@ -72,6 +73,7 @@ describe("shared tool-schema conformance", () => {
             name: "unsafe_schema",
             description: "unsafe schema",
             parameters: unsafe.build(),
+            risk: "read",
           },
           handler,
         ),
@@ -89,6 +91,7 @@ describe("shared tool-schema conformance", () => {
             name: "unsafe_schema",
             description: "valid retry",
             parameters: { type: "object" },
+            risk: "read",
           },
           handler,
         ),
@@ -134,6 +137,8 @@ describe("shared tool-schema conformance", () => {
         async (event) => {
           events.push(event);
         },
+        "turn-1",
+        { principalId: "test", requestId: "request", traceId: "trace" },
       );
 
       expect(executor).not.toHaveBeenCalled();
@@ -209,6 +214,7 @@ describe("shared tool-schema conformance", () => {
             name: "fixture_tool",
             description: "valid replacement",
             parameters: { type: "object" },
+            risk: "read",
           },
           handler,
         ),
@@ -226,6 +232,7 @@ describe("shared tool-schema conformance", () => {
         required: ["value"],
         properties: { value: { type: "string" } },
       },
+      risk: "read",
     };
     expect(() => new ToolSchemaValidator(new Map([[spec.name, spec]]))).toThrowError(
       expect.objectContaining({ code: "INVALID_TOOL_SCHEMA", path: "/" }),
@@ -242,7 +249,12 @@ describe("shared tool-schema conformance", () => {
 
   it("rejects every JSON-unsafe class through the public async validator", async () => {
     const validator = new ToolSchemaValidator(
-      new Map([["fixture_tool", { name: "fixture_tool", description: "safety", parameters: {} }]]),
+      new Map([
+        [
+          "fixture_tool",
+          { name: "fixture_tool", description: "safety", parameters: {}, risk: "read" },
+        ],
+      ]),
     );
     const sparse = new Array(1) as unknown[];
     const accessor: Record<string, unknown> = {};
@@ -289,7 +301,7 @@ describe("shared tool-schema conformance", () => {
     unsafe.extra = unsafe;
     const handler = vi.fn().mockResolvedValue({ should: "not run" });
     const registry = new ToolRegistry().register(
-      { name: "array_expando", description: "array expando", parameters: {} },
+      { name: "array_expando", description: "array expando", parameters: {}, risk: "read" },
       handler,
     );
 
@@ -312,6 +324,7 @@ describe("shared tool-schema conformance", () => {
               type: "object",
               properties: { token: { type: "string", pattern: "^allowed$" } },
             },
+            risk: "read",
           },
         ],
       ]),

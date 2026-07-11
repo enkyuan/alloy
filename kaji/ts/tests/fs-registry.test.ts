@@ -9,9 +9,19 @@ import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createFsIntegration } from "../registry/fs/index";
-import type { ToolContext } from "@/index";
+import type { ToolExecutionContext } from "@/index";
 
-const ctx: ToolContext = { userId: "_" };
+const ctx: ToolExecutionContext = {
+  principalId: "_",
+  sessionId: "test-session",
+  turnId: "test-turn",
+  requestId: "test-request",
+  traceId: "test-trace",
+  toolCallId: "test-call",
+  idempotencyKey: "test-session:test-call",
+  signal: new AbortController().signal,
+  metadata: {},
+};
 
 describe("fs integration: sandbox path handling", () => {
   let tmpRoot: string;
@@ -27,12 +37,12 @@ describe("fs integration: sandbox path handling", () => {
 
   it("allows ordinary paths within root", async () => {
     const { read } = createFsIntegration({ root: tmpRoot });
-    await expect(read.handler(ctx, { path: "inside.txt" })).resolves.toEqual({ content: "inside" });
+    await expect(read.handler({ path: "inside.txt" }, ctx)).resolves.toEqual({ content: "inside" });
   });
 
   it("blocks lexical paths that escape the root", async () => {
     const { read } = createFsIntegration({ root: tmpRoot });
-    await expect(read.handler(ctx, { path: "../../etc/passwd" })).rejects.toThrow(
+    await expect(read.handler({ path: "../../etc/passwd" }, ctx)).rejects.toThrow(
       /escape.*sandbox/i,
     );
   });
@@ -53,7 +63,7 @@ describe("fs integration: list", () => {
 
   it("lists files in the temp directory", async () => {
     const { list } = createFsIntegration({ root: tmpRoot });
-    const result = await list.handler(ctx, { path: "." });
+    const result = await list.handler({ path: "." }, ctx);
 
     expect(result).toHaveProperty("entries");
     const entries = result["entries"] as { name: string; isDir: boolean }[];
@@ -77,7 +87,7 @@ describe("fs integration: read", () => {
 
   it("reads a file that was written in setup", async () => {
     const { read } = createFsIntegration({ root: tmpRoot });
-    const result = await read.handler(ctx, { path: "greeting.txt" });
+    const result = await read.handler({ path: "greeting.txt" }, ctx);
 
     expect(result).toEqual({ content: "Hello from test!" });
   });
@@ -89,7 +99,7 @@ describe("fs integration: read", () => {
       await symlink(join(outside, "secret.txt"), join(tmpRoot, "secret-link.txt"));
       const { read } = createFsIntegration({ root: tmpRoot });
 
-      await expect(read.handler(ctx, { path: "secret-link.txt" })).rejects.toThrow(
+      await expect(read.handler({ path: "secret-link.txt" }, ctx)).rejects.toThrow(
         /escape.*sandbox/i,
       );
     } finally {
@@ -112,7 +122,7 @@ describe("fs integration: write", () => {
   it("creates a file and returns byte count", async () => {
     const { write } = createFsIntegration({ root: tmpRoot });
     const content = "Written by test";
-    const result = await write.handler(ctx, { path: "output.txt", content });
+    const result = await write.handler({ path: "output.txt", content }, ctx);
 
     expect(result).toEqual({ written: content.length });
 
@@ -122,7 +132,7 @@ describe("fs integration: write", () => {
 
   it("blocks lexical paths that escape the root on write", async () => {
     const { write } = createFsIntegration({ root: tmpRoot });
-    await expect(write.handler(ctx, { path: "../../tmp/evil", content: "bad" })).rejects.toThrow(
+    await expect(write.handler({ path: "../../tmp/evil", content: "bad" }, ctx)).rejects.toThrow(
       /escape.*sandbox/i,
     );
   });
@@ -134,7 +144,7 @@ describe("fs integration: write", () => {
       const { write } = createFsIntegration({ root: tmpRoot });
 
       await expect(
-        write.handler(ctx, { path: "linkdir/evil.txt", content: "bad" }),
+        write.handler({ path: "linkdir/evil.txt", content: "bad" }, ctx),
       ).rejects.toThrow(/escape.*sandbox/i);
       await expect(readFile(join(outside, "evil.txt"), "utf8")).rejects.toThrow();
     } finally {
@@ -149,7 +159,7 @@ describe("fs integration: write", () => {
       const { write } = createFsIntegration({ root: tmpRoot });
 
       await expect(
-        write.handler(ctx, { path: "missing-link.txt", content: "bad" }),
+        write.handler({ path: "missing-link.txt", content: "bad" }, ctx),
       ).rejects.toThrow(/escape.*sandbox/i);
       await expect(readFile(join(outside, "missing.txt"), "utf8")).rejects.toThrow();
     } finally {
@@ -172,7 +182,7 @@ describe("fs integration: glob", () => {
 
   it("returns files matching a pattern", async () => {
     const { glob } = createFsIntegration({ root: tmpRoot });
-    const result = await glob.handler(ctx, { pattern: "**/*.txt" });
+    const result = await glob.handler({ pattern: "**/*.txt" }, ctx);
 
     expect(result).toEqual({ matches: ["visible.txt"] });
   });
@@ -184,7 +194,7 @@ describe("fs integration: glob", () => {
       await symlink(join(outside, "secret.txt"), join(tmpRoot, "secret-link.txt"));
       const { glob } = createFsIntegration({ root: tmpRoot });
 
-      const result = await glob.handler(ctx, { pattern: "**/*" });
+      const result = await glob.handler({ pattern: "**/*" }, ctx);
       const matches = result["matches"] as string[];
       expect(matches).not.toContain("secret-link.txt");
     } finally {

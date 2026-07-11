@@ -5,10 +5,20 @@
  * behaviours that kaji/ts/registry/http/index.ts ships.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolContext } from "@/index";
+import type { ToolExecutionContext } from "@/index";
 import { createHttpIntegration } from "../registry/http/index";
 
-const ctx: ToolContext = { userId: "_" };
+const ctx: ToolExecutionContext = {
+  principalId: "_",
+  sessionId: "test-session",
+  turnId: "test-turn",
+  requestId: "test-request",
+  traceId: "test-trace",
+  toolCallId: "test-call",
+  idempotencyKey: "test-session:test-call",
+  signal: new AbortController().signal,
+  metadata: {},
+};
 
 describe("http integration: fetch", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -29,7 +39,7 @@ describe("http integration: fetch", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createHttpIntegration();
-    const result = await tool.handler(ctx, { url: "https://example.com" });
+    const result = await tool.handler({ url: "https://example.com" }, ctx);
 
     expect(result).toEqual({ status: 200, body: "Hello, world!" });
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -40,7 +50,7 @@ describe("http integration: fetch", () => {
   it("SSRF block: throws when host is not in allowedHosts", async () => {
     const { fetch: tool } = createHttpIntegration({ allowedHosts: ["example.com"] });
 
-    await expect(tool.handler(ctx, { url: "https://evil.internal" })).rejects.toThrow(
+    await expect(tool.handler({ url: "https://evil.internal" }, ctx)).rejects.toThrow(
       /SSRF protection/i,
     );
 
@@ -54,7 +64,7 @@ describe("http integration: fetch", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createHttpIntegration({ allowedHosts: ["example.com"] });
-    const result = await tool.handler(ctx, { url: "https://example.com/path" });
+    const result = await tool.handler({ url: "https://example.com/path" }, ctx);
 
     expect(result).toMatchObject({ status: 200 });
   });
@@ -66,7 +76,7 @@ describe("http integration: fetch", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createHttpIntegration(); // no allowedHosts
-    await expect(tool.handler(ctx, { url: "https://any.internal.host" })).resolves.toMatchObject({
+    await expect(tool.handler({ url: "https://any.internal.host" }, ctx)).resolves.toMatchObject({
       status: 200,
     });
   });
@@ -91,10 +101,13 @@ describe("http integration: post", () => {
 
   it("sends JSON body with correct Content-Type header", async () => {
     const { post: tool } = createHttpIntegration();
-    const result = await tool.handler(ctx, {
-      url: "https://api.example.com/items",
-      body: { name: "widget" },
-    });
+    const result = await tool.handler(
+      {
+        url: "https://api.example.com/items",
+        body: { name: "widget" },
+      },
+      ctx,
+    );
 
     expect(result).toMatchObject({ status: 201 });
     expect(capturedInit?.method).toBe("POST");
@@ -108,7 +121,7 @@ describe("http integration: post", () => {
   it("SSRF block on post: throws when host is not in allowedHosts", async () => {
     const { post: tool } = createHttpIntegration({ allowedHosts: ["safe.example.com"] });
 
-    await expect(tool.handler(ctx, { url: "https://evil.com/steal", body: {} })).rejects.toThrow(
+    await expect(tool.handler({ url: "https://evil.com/steal", body: {} }, ctx)).rejects.toThrow(
       /SSRF protection/i,
     );
 

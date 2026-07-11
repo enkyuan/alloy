@@ -44,6 +44,7 @@ def one_tool():
         name="weather",
         description="Get the weather for a city.",
         parameters={"type": "object", "properties": {}, "required": []},
+        risk="read",
     )
     _TOOL_SPECS[spec.name] = spec
     try:

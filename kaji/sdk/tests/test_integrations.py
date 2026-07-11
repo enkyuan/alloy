@@ -14,7 +14,9 @@ from kaji.runtime.tools.registry import (
 
 # --- helpers ---
 
-_DUMMY_SPEC = ToolSpec(name="bar", description="A test tool", parameters={})
+_DUMMY_SPEC = ToolSpec(
+    name="bar", description="A test tool", parameters={}, risk="read"
+)
 
 
 async def _dummy_handler(ctx: ToolContext, args: dict) -> dict:
@@ -32,8 +34,8 @@ class MultiToolIntegration(Integration):
     namespace = "svc"
 
     def tools(self) -> List[Tuple[ToolSpec, ToolHandler]]:
-        spec_a = ToolSpec(name="alpha", description="alpha", parameters={})
-        spec_b = ToolSpec(name="beta", description="beta", parameters={})
+        spec_a = ToolSpec(name="alpha", description="alpha", parameters={}, risk="read")
+        spec_b = ToolSpec(name="beta", description="beta", parameters={}, risk="read")
         return [(spec_a, _dummy_handler), (spec_b, _dummy_handler)]
 
 
@@ -155,7 +157,9 @@ def test_tool_decorator_rejects_missing_parameters():
 def test_manual_tools_override_still_works():
     """A subclass that manually overrides tools() is unaffected by the decorator scan."""
 
-    custom_spec = ToolSpec(name="custom_op", description="Custom", parameters={})
+    custom_spec = ToolSpec(
+        name="custom_op", description="Custom", parameters={}, risk="read"
+    )
 
     class ManualIntegration(Integration):
         namespace = "manual"

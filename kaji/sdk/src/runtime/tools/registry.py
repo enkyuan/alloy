@@ -5,13 +5,31 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, replace
 import re
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
+import uuid
+import warnings
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Type
 
 from pydantic import BaseModel
 
+from kaji.runtime.context import ToolExecutionContext, ToolInvocation
+from kaji.runtime.tools.errors import (
+    ToolSchemaValidationError,
+    UnclassifiedToolRiskError,
+)
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
-ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
+ToolHandler = Callable[
+    [ToolExecutionContext, Dict[str, Any]], Awaitable[Dict[str, Any]]
+]
+
+# Risk classification for policy enforcement and approval routing. Values
+# match policies.RISK_LEVELS, ordered from least to most sensitive.
+ToolRisk = Literal[
+    "read", "write", "external_effect", "financial", "destructive", "admin"
+]
+_TOOL_RISKS = frozenset(
+    ("read", "write", "external_effect", "financial", "destructive", "admin")
+)
 
 
 @dataclass(frozen=True)
@@ -24,11 +42,15 @@ class ToolSpec:
     catalog_name: Optional[str] = None
     tags: tuple[str, ...] = ()
     enabled: bool = True
-    # Risk classification for policy enforcement and approval routing.
-    # Recognised values: "read", "write", "external_effect", "financial",
-    # "destructive", "admin". None means unclassified (treated as "read" by
-    # default policies).
-    risk: Optional[str] = None
+    risk: Optional[ToolRisk] = None
+
+    def __post_init__(self) -> None:
+        if self.risk is None:
+            if self.enabled:
+                raise UnclassifiedToolRiskError(self.name)
+            return
+        if self.risk not in _TOOL_RISKS:
+            raise ToolSchemaValidationError.invalid_risk(self.name)
 
 
 def _snapshot_tool_spec(spec: ToolSpec) -> ToolSpec:
@@ -40,17 +62,9 @@ def _snapshot_tool_spec(spec: ToolSpec) -> ToolSpec:
     )
 
 
-@dataclass(frozen=True)
-class ToolContext:
-    """Execution context for registered tools.
-
-    ``db`` is optional: tools that don't touch the database (the default for an
-    embedded SDK) receive ``None``. Server/worker call paths inject a real
-    session when persistence is needed.
-    """
-
-    user_id: str
-    db: Optional[Any] = None
+# Compatibility name for pre-beta handlers. New code should use the more
+# precise ToolExecutionContext public type.
+ToolContext = ToolExecutionContext
 
 
 def provider_safe_tool_name(
@@ -87,11 +101,20 @@ def _filter_specs(
 
 
 def tool_spec_from_model(
-    name: str, description: str, model: Type[BaseModel]
+    name: str,
+    description: str,
+    model: Type[BaseModel],
+    *,
+    risk: ToolRisk | None = None,
 ) -> ToolSpec:
     """Create a tool spec from a Pydantic model."""
     parameters = model.model_json_schema(mode="validation")
-    return ToolSpec(name=name, description=description, parameters=parameters)
+    return ToolSpec(
+        name=name,
+        description=description,
+        parameters=parameters,
+        risk=risk,
+    )
 
 
 class UnknownToolError(ValueError):
@@ -115,7 +138,9 @@ class ToolRegistry:
 
         registry = ToolRegistry()
 
-        @registry.register(ToolSpec(name="ping", description="...", parameters={}))
+        @registry.register(
+            ToolSpec(name="ping", description="...", parameters={}, risk="read")
+        )
         async def ping(ctx: ToolContext, args: dict) -> dict:
             return {"pong": True}
 
@@ -153,23 +178,25 @@ class ToolRegistry:
 
     async def execute(
         self,
-        user_id: str,
-        tool_name: str,
-        tool_args: Dict[str, Any],
+        invocation: ToolInvocation | str,
+        tool_name: str | None = None,
+        tool_args: Dict[str, Any] | None = None,
         db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute a tool registered on this registry instance."""
-        spec = self._specs.get(tool_name)
-        handler = self._handlers.get(tool_name)
+        resolved = _coerce_invocation(invocation, tool_name, tool_args, db)
+        spec = self._specs.get(resolved.name)
+        handler = self._handlers.get(resolved.name)
         if spec is None or handler is None:
-            raise UnknownToolError(tool_name)
-        cached = self._validators.get(tool_name)
+            raise UnknownToolError(resolved.name)
+        cached = self._validators.get(resolved.name)
         if cached is None or cached[0] is not spec:
-            cached = (spec, ToolSchemaValidator({tool_name: spec}))
-            self._validators[tool_name] = cached
-        cached[1].validate(tool_name, tool_args)
-        ctx = ToolContext(user_id=user_id, db=db)
-        return await handler(ctx, tool_args)
+            cached = (spec, ToolSchemaValidator({resolved.name: spec}))
+            self._validators[resolved.name] = cached
+        execution_context = resolved.context.validated_snapshot()
+        execution_args = deepcopy(dict(resolved.arguments))
+        cached[1].validate(resolved.name, execution_args)
+        return await handler(execution_context, execution_args)
 
     def clear(self) -> None:
         """Clear this registry. Primarily for tests."""
@@ -186,6 +213,50 @@ _default_registry = ToolRegistry()
 # into these dicts. They are the default registry's private storage.
 _TOOL_SPECS: Dict[str, ToolSpec] = _default_registry._specs
 _TOOL_HANDLERS: Dict[str, ToolHandler] = _default_registry._handlers
+
+_legacy_execute_warned = False
+
+
+def _coerce_invocation(
+    invocation: ToolInvocation | str,
+    tool_name: str | None,
+    tool_args: Dict[str, Any] | None,
+    db: Any | None,
+) -> ToolInvocation:
+    if isinstance(invocation, ToolInvocation):
+        if tool_name is not None or tool_args is not None or db is not None:
+            raise TypeError("ToolInvocation cannot be combined with legacy arguments")
+        return invocation
+    if not isinstance(invocation, str) or not isinstance(tool_name, str):
+        raise TypeError("execute() requires ToolInvocation")
+    if tool_args is None:
+        raise TypeError("legacy execute() requires tool arguments")
+    global _legacy_execute_warned
+    if not _legacy_execute_warned:
+        warnings.warn(
+            "execute(user_id, name, args, db) is deprecated; pass ToolInvocation",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        _legacy_execute_warned = True
+    turn_id = uuid.uuid4().hex
+    call_id = uuid.uuid4().hex
+    from kaji.runtime.agents.cancellation import CancellationToken  # noqa: PLC0415
+
+    context = ToolExecutionContext(
+        principal_id=invocation,
+        session_id=turn_id,
+        turn_id=turn_id,
+        request_id=uuid.uuid4().hex,
+        trace_id=uuid.uuid4().hex,
+        tool_call_id=call_id,
+        idempotency_key=f"{turn_id}:{call_id}",
+        cancellation_token=CancellationToken(),
+        deadline_monotonic=None,
+        db=db,
+        metadata={},
+    )
+    return ToolInvocation(name=tool_name, arguments=tool_args, context=context)
 
 
 def register_tool(spec: ToolSpec):
@@ -207,10 +278,10 @@ def clear_tools() -> None:
 
 
 async def execute_tool(
-    user_id: str,
-    tool_name: str,
-    tool_args: Dict[str, Any],
+    invocation: ToolInvocation | str,
+    tool_name: str | None = None,
+    tool_args: Dict[str, Any] | None = None,
     db: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Execute a registered tool call against the process-default registry."""
-    return await _default_registry.execute(user_id, tool_name, tool_args, db=db)
+    return await _default_registry.execute(invocation, tool_name, tool_args, db=db)

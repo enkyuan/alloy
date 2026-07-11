@@ -28,7 +28,7 @@ class EchoProbeIntegration {
         },
         risk: "read",
       },
-      async (_ctx, args) => ({
+      async (args) => ({
         marker: String(args.marker),
         source: "kaji-live-tool-loop",
       }),
@@ -51,6 +51,7 @@ describe.skipIf(!hasKey("OPENAI_API_KEY"))("OpenAI agent tool loop (live)", () =
         }),
       )
       .integration(new EchoProbeIntegration())
+      .defaultContext({ principalId: "openai-live" })
       .systemPrompt(
         "You are testing SDK tool execution. You must call the `probe_echo_probe` " +
           "tool exactly once with the marker from the user message before giving a final answer.",

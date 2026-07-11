@@ -182,7 +182,12 @@ describe("AgentRuntime.runTurn", () => {
   function setup() {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
-    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+      defaultContext: { principalId: "test" },
+    });
     return { store, bus, runtime };
   }
 
@@ -243,7 +248,7 @@ describe("AgentRuntime.runTurn", () => {
     const s = "s-tool";
     await seed(store, s);
     registerTool(
-      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() }), "read"),
       async () => ({ tempF: 68 }),
     );
     await runtime.runTurn(s);
@@ -262,7 +267,7 @@ describe("AgentRuntime.runTurn", () => {
     const s = "s-two-iter";
     await seed(store, s);
     registerTool(
-      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() }), "read"),
       async () => ({ tempF: 68 }),
     );
     await runtime.runTurn(s);
@@ -283,7 +288,7 @@ describe("AgentRuntime.runTurn", () => {
     const { store, runtime } = setup();
     const s = "s-fail";
     await seed(store, s);
-    registerTool(toolSpecFromSchema("bad", "fails", z.object({})), async () => {
+    registerTool(toolSpecFromSchema("bad", "fails", z.object({}), "read"), async () => {
       throw new Error("boom");
     });
     await runtime.runTurn(s);
@@ -313,10 +318,15 @@ describe("AgentRuntime.runTurn", () => {
         }
       },
     };
-    const runtime = new AgentRuntime({ provider: mixedProvider, store, bus });
+    const runtime = new AgentRuntime({
+      provider: mixedProvider,
+      store,
+      bus,
+      defaultContext: { principalId: "test" },
+    });
     const s = "s-mixed";
     await seed(store, s);
-    registerTool(toolSpecFromSchema("get_weather", "weather", z.object({})), async () => ({
+    registerTool(toolSpecFromSchema("get_weather", "weather", z.object({}), "read"), async () => ({
       tempF: 68,
     }));
 
@@ -416,10 +426,15 @@ describe("AgentRuntime.runTurn", () => {
         yield { delta: "", toolCalls: [{ id: "x", name: "loop", args: {} }] };
       },
     };
-    const runtime = new AgentRuntime({ provider: alwaysToolProvider, store, bus });
+    const runtime = new AgentRuntime({
+      provider: alwaysToolProvider,
+      store,
+      bus,
+      defaultContext: { principalId: "test" },
+    });
     const s = "s-exhaust";
     await seed(store, s);
-    registerTool(toolSpecFromSchema("loop", "always called", z.object({})), async () => ({
+    registerTool(toolSpecFromSchema("loop", "always called", z.object({}), "read"), async () => ({
       ok: true,
     }));
 
@@ -517,13 +532,19 @@ describe("AgentStrategy.maxToolIterations", () => {
       },
     };
     const strategy: AgentStrategy = { maxToolIterations: 3 };
-    const runtime = new AgentRuntime({ provider: countingProvider, store, bus, strategy });
+    const runtime = new AgentRuntime({
+      provider: countingProvider,
+      store,
+      bus,
+      strategy,
+      defaultContext: { principalId: "test" },
+    });
     const s = "s-strategy";
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
     await store.append(
       KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: s, content: "go" }),
     );
-    registerTool(toolSpecFromSchema("noop", "no-op", z.object({})), async () => ({}));
+    registerTool(toolSpecFromSchema("noop", "no-op", z.object({}), "read"), async () => ({}));
 
     await runtime.runTurn(s);
 
@@ -554,11 +575,12 @@ describe("AgentRuntime policy via ToolPlanner", () => {
       store,
       bus,
       policy: new ToolPolicy({ denied: new Set(["get_weather"]) }),
+      defaultContext: { principalId: "test" },
     });
     const s = "s-policy-deny";
     await seed(store, s);
     registerTool(
-      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+      toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() }), "read"),
       async () => ({ tempF: 68 }),
     );
 
@@ -587,6 +609,7 @@ describe("AgentRuntime policy via ToolPlanner", () => {
         },
       ],
       toolExecutor: async () => ({ tempF: 68 }),
+      defaultContext: { principalId: "test" },
     });
     const s = "s-policy-approve";
     await seed(store, s);
@@ -620,6 +643,7 @@ describe("AgentRuntime policy via ToolPlanner", () => {
         },
       ],
       toolExecutor: async () => ({ tempF: 68 }),
+      defaultContext: { principalId: "test" },
     });
     const s = "s-policy-typed-approve";
     await seed(store, s);
@@ -641,7 +665,7 @@ describe("AgentBuilder policy", () => {
     class WeatherIntegration {
       register(registry: import("@/tools/registry").ToolRegistry): void {
         registry.register(
-          toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() })),
+          toolSpecFromSchema("get_weather", "weather", z.object({ city: z.string() }), "read"),
           async () => ({ tempF: 68 }),
         );
       }
@@ -650,6 +674,7 @@ describe("AgentBuilder policy", () => {
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .integration(new WeatherIntegration())
+      .defaultContext({ principalId: "test" })
       .policy(new ToolPolicy({ denied: new Set(["get_weather"]) }))
       .build({ bus, store });
 

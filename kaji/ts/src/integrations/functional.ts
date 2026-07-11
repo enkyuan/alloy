@@ -21,12 +21,12 @@ import {
   setToolArgumentValidator,
   toolArgumentValidator,
   type ToolHandler,
-  type ToolContext,
   type ToolMeta,
   type ToolRegistry,
   type ToolSpec,
   toolParametersToJSONSchema,
 } from "@/tools/registry";
+import type { ToolExecutionContext } from "@/runtime/context";
 import {
   cloneToolExecutionArguments,
   consumeValidationReceipt,
@@ -38,7 +38,10 @@ type ArgsOf<P> = P extends z.ZodType ? z.input<P> : Record<string, unknown>;
 /** Signature accepted by `functionTool`. Zod validates the provider arguments,
  * but its defaults, coercions, and transformations are deliberately discarded.
  * The second context parameter may be ignored and matches registry handlers. */
-export type FunctionToolHandler<P> = (args: ArgsOf<P>, context: ToolContext) => Promise<unknown>;
+export type FunctionToolHandler<P> = (
+  args: ArgsOf<P>,
+  context: ToolExecutionContext,
+) => Promise<unknown>;
 
 /** Tool packaged with its spec + adapter handler, registrable like an Integration. */
 export class BoundTool {
@@ -94,14 +97,14 @@ export function functionTool<P extends z.ZodType | Record<string, unknown>>(
       name,
       description: meta.description,
       parameters: toolParametersToJSONSchema(meta.parameters as never),
-      ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+      risk: meta.risk,
       ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
       ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
     },
     argumentValidator,
   );
 
-  const adapter: ToolHandler = async (context, args) => {
+  const adapter: ToolHandler = async (args, context) => {
     let executionArgs = args;
     if (
       argumentValidator !== undefined &&

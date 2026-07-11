@@ -11,6 +11,7 @@ from kaji.infra.events.schemas import UserMessage
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.builder import AgentBuilder
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolContext, ToolRegistry, ToolSpec
@@ -26,7 +27,7 @@ class PingIntegration:
     """Minimal integration that registers a 'ping' tool via decorator pattern."""
 
     def register(self, registry: ToolRegistry) -> None:
-        spec = ToolSpec(name="ping", description="Ping", parameters={})
+        spec = ToolSpec(name="ping", description="Ping", parameters={}, risk="read")
 
         @registry.register(spec)
         async def _ping(ctx: ToolContext, args: dict) -> dict:
@@ -38,7 +39,7 @@ class MultiIntegration:
 
     def register(self, registry: ToolRegistry) -> None:
         for name in ("alpha", "beta"):
-            spec = ToolSpec(name=name, description=name, parameters={})
+            spec = ToolSpec(name=name, description=name, parameters={}, risk="read")
 
             # Use a default arg to capture loop variable
             def _make_handler(tool_name: str) -> Any:
@@ -93,6 +94,7 @@ def test_builder_registers_integration_tools() -> None:
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
+        .default_context(TurnContext(principal_id="test"))
         .build(bus=bus, store=store)
     )
     tool_names = [spec.name for spec in runtime.tools]
@@ -127,6 +129,7 @@ async def test_builder_tool_executes_via_scoped_registry() -> None:
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
+        .default_context(TurnContext(principal_id="test"))
         .build(bus=bus, store=store)
     )
 
@@ -155,6 +158,7 @@ async def test_builder_deny_policy_blocks_tool() -> None:
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
+        .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(denied={"ping"}))
         .build(bus=bus, store=store)
     )
@@ -204,6 +208,7 @@ async def test_builder_approval_handler_approves_tool() -> None:
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
+        .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(require_approval_for={"read"}))
         .approval_handler(_approve)
         .build(bus=bus, store=store)
@@ -232,6 +237,7 @@ async def test_builder_approval_handler_rejection_is_terminal() -> None:
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
+        .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(require_approval_for={"read"}))
         .approval_handler(_reject)
         .build(bus=bus, store=store)
@@ -260,7 +266,9 @@ async def test_runtime_without_explicit_planner_completes_turn() -> None:
     from kaji.runtime.tools.registry import ToolSpec, clear_tools, register_tool
 
     clear_tools()
-    spec = ToolSpec(name="noop", description="Does nothing.", parameters={})
+    spec = ToolSpec(
+        name="noop", description="Does nothing.", parameters={}, risk="read"
+    )
 
     @register_tool(spec)
     async def _noop(ctx, args: dict) -> dict:
@@ -277,6 +285,7 @@ async def test_runtime_without_explicit_planner_completes_turn() -> None:
         store=store,
         provider=MockProvider(),
         tools=list_tool_specs(),
+        default_context=TurnContext(principal_id="test"),
     )
 
     await store.append(UserMessage(session_id=session_id, content="go"))

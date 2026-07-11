@@ -9,7 +9,7 @@ from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.store.inmem import InMemoryEventStore
 from kaji.runtime.agents.coordinator import TurnCoordinator
-from kaji.runtime.agents.context import ContextWindow
+from kaji.runtime.agents.context import ContextWindow, ToolInvocation, TurnContext
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
@@ -58,6 +58,7 @@ class AgentBuilder:
         self._strategy: Optional[AgentStrategy] = None
         self._coordinator: Optional[TurnCoordinator] = None
         self._context_window: ContextWindow | None = None
+        self._default_context: TurnContext | None = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -110,6 +111,11 @@ class AgentBuilder:
         self._context_window = window
         return self
 
+    def default_context(self, context: TurnContext) -> "AgentBuilder":
+        """Configure explicit defaults for single-tenant applications."""
+        self._default_context = context
+        return self
+
     def build(
         self,
         *,
@@ -140,11 +146,8 @@ class AgentBuilder:
         for integration in self._integrations:
             integration.register(registry)
 
-        # ToolPlanner requires an executor callable, not a registry directly.
-        # Wrap registry.execute so the planner can dispatch calls into the
-        # scoped registry rather than the global module-level registry.
-        async def _executor(tool_name: str, args: dict) -> dict:
-            return await registry.execute("builder", tool_name, args)
+        async def _executor(invocation: ToolInvocation) -> dict:
+            return await registry.execute(invocation)
 
         # Build a specs mapping so the planner can look up risk per tool.
         specs = {spec.name: spec for spec in registry.list_specs(enabled_only=False)}
@@ -167,4 +170,5 @@ class AgentBuilder:
             tools=registry.list_specs(),
             coordinator=self._coordinator,
             context_window=self._context_window,
+            default_context=self._default_context,
         )

@@ -45,6 +45,7 @@ describe("echo registry template", () => {
       {
         description: "a",
         parameters: z.object({ message: z.string() }),
+        risk: "read",
       },
       async ({ message }) => ({ message }),
     );
@@ -52,6 +53,7 @@ describe("echo registry template", () => {
       {
         description: "b",
         parameters: z.object({ message: z.string() }),
+        risk: "read",
       },
       async ({ message }) => ({ message }),
     );

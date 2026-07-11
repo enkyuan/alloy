@@ -12,7 +12,7 @@ import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
 import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
-import type { ContextWindow } from "@/runtime/context";
+import type { ContextWindow, TurnContext } from "@/runtime/context";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -38,6 +38,7 @@ export class AgentBuilder {
   private _systemPrompt = "You are a helpful assistant.";
   private _strategy: AgentStrategy | undefined;
   private _contextWindow: ContextWindow | undefined;
+  private _defaultContext: TurnContext | undefined;
 
   provider(p: ModelProvider): this {
     this._provider = p;
@@ -80,6 +81,12 @@ export class AgentBuilder {
     return this;
   }
 
+  /** Configure explicit defaults for a single-tenant application. */
+  defaultContext(context: TurnContext): this {
+    this._defaultContext = context;
+    return this;
+  }
+
   build(opts: AgentBuilderBuildOptions = {}): AgentRuntime {
     if (!this._provider) {
       throw new Error("provider() must be called before build()");
@@ -109,7 +116,7 @@ export class AgentBuilder {
       registry.listSpecs({ enabledOnly: false }).map((spec) => [spec.name, spec]),
     );
     const planner = new ToolPlanner({
-      executor: (name, args) => registry.execute("builder", name, args),
+      executor: (name, args, context) => registry.execute(name, args, context),
       policy: this._policy,
       approvalHandler: this._approvalHandler,
       specs,
@@ -124,6 +131,7 @@ export class AgentBuilder {
       tools: registry.listSpecs(),
       policy: this._policy,
       planner,
+      defaultContext: this._defaultContext,
       ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });

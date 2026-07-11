@@ -12,9 +12,9 @@ from pydantic import BaseModel
 from kaji.runtime.tools.registry import (
     ToolHandler,
     ToolRegistry,
+    ToolRisk,
     ToolSpec,
     provider_safe_tool_name,
-    tool_spec_from_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def tool(
     *,
     description: str,
     parameters: Union[Dict[str, Any], Type[BaseModel]],
-    risk: Optional[str] = None,
+    risk: Optional[ToolRisk] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
 ) -> Callable[[Any], Any]:
@@ -42,7 +42,7 @@ def tool(
     subclass; the model is converted to JSON Schema at registration time.
     """
     if isinstance(parameters, type) and issubclass(parameters, BaseModel):
-        parameters_schema = tool_spec_from_model("_", "_", parameters).parameters
+        parameters_schema = parameters.model_json_schema(mode="validation")
     else:
         parameters_schema = parameters
 

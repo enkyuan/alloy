@@ -21,6 +21,7 @@ def test_spec_to_neutral_shape():
         catalog_name="catalog.safe.t",
         description="d",
         parameters={"type": "object"},
+        risk="read",
     )
     assert spec_to_neutral(spec) == {
         "name": "catalog_safe_t",
@@ -30,7 +31,9 @@ def test_spec_to_neutral_shape():
 
 
 def test_build_tools_payload_is_flat_neutral_list(monkeypatch):
-    specs = [ToolSpec(name="a", description="A", parameters={"type": "object"})]
+    specs = [
+        ToolSpec(name="a", description="A", parameters={"type": "object"}, risk="read")
+    ]
     monkeypatch.setattr("kaji.runtime.tools.payload.list_tool_specs", lambda: specs)
     payload = build_tools_payload()
     # Flat list of {name, description, parameters} — NOT wrapped in
@@ -42,8 +45,8 @@ def test_build_tools_payload_is_flat_neutral_list(monkeypatch):
 
 def test_build_tools_payload_filters_by_allowed_names(monkeypatch):
     specs = [
-        ToolSpec(name="a", description="A", parameters={}),
-        ToolSpec(name="b", description="B", parameters={}),
+        ToolSpec(name="a", description="A", parameters={}, risk="read"),
+        ToolSpec(name="b", description="B", parameters={}, risk="read"),
     ]
     monkeypatch.setattr("kaji.runtime.tools.payload.list_tool_specs", lambda: specs)
     payload = build_tools_payload(allowed_names=["b"])

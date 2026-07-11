@@ -11,6 +11,7 @@ const numericSpec: ToolSpec = {
     properties: { price: { type: "number" } },
     required: ["price"],
   },
+  risk: "read",
 };
 
 const integerSpec: ToolSpec = {
@@ -21,9 +22,11 @@ const integerSpec: ToolSpec = {
     properties: { n: { type: "integer" } },
     required: ["n"],
   },
+  risk: "read",
 };
 
 const noopEmit = async () => {};
+const turnContext = { principalId: "test", requestId: "request", traceId: "trace" };
 
 function makePlanner(spec: ToolSpec): ToolPlanner {
   return new ToolPlanner({
@@ -58,7 +61,9 @@ describe("ToolPlanner argument validation", () => {
       const executor = vi.fn();
       const planner = new ToolPlanner({
         executor,
-        specs: new Map([["unsafe", { name: "unsafe", description: "unsafe", parameters: {} }]]),
+        specs: new Map([
+          ["unsafe", { name: "unsafe", description: "unsafe", parameters: {}, risk: "read" }],
+        ]),
       });
       const events: Array<{ type: string; tool_args?: unknown }> = [];
 
@@ -68,6 +73,8 @@ describe("ToolPlanner argument validation", () => {
         async (event) => {
           events.push(event);
         },
+        "turn",
+        turnContext,
       );
 
       expect(executor).not.toHaveBeenCalled();
@@ -102,13 +109,17 @@ describe("ToolPlanner argument validation", () => {
     const executor = vi.fn();
     const planner = new ToolPlanner({
       executor,
-      specs: new Map([["unsafe", { name: "unsafe", description: "unsafe", parameters: {} }]]),
+      specs: new Map([
+        ["unsafe", { name: "unsafe", description: "unsafe", parameters: {}, risk: "read" }],
+      ]),
     });
 
     const result = await planner.executeScatterGather(
       "session-1",
       [{ id: "unsafe-accessor", name: "unsafe", arguments: args }],
       async () => {},
+      "turn",
+      turnContext,
     );
 
     expect(reads).toBe(0);
@@ -130,6 +141,7 @@ describe("ToolPlanner argument validation", () => {
         required: ["value"],
         properties: { value: { type: "string" } },
       },
+      risk: "read",
     };
     const specs = new Map([[spec.name, spec]]);
     const planner = new ToolPlanner({ executor: async (_name, args) => args, specs });
@@ -141,11 +153,15 @@ describe("ToolPlanner argument validation", () => {
       "session-1",
       [{ id: "snapshot-1", name: "snapshot", arguments: { value: "stable" } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
     const rejected = await planner.executeScatterGather(
       "session-1",
       [{ id: "snapshot-2", name: "snapshot", arguments: { value: 1 } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
 
     expect(accepted[0]).toHaveProperty("result", { value: "stable" });
@@ -161,6 +177,8 @@ describe("ToolPlanner argument validation", () => {
       "session-1",
       [{ id: "c1", name: "price_check", arguments: { price: Number.NaN } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect(out[0]).toMatchObject({
       error: "Tool arguments failed JSON safety validation at /price",
@@ -183,6 +201,8 @@ describe("ToolPlanner argument validation", () => {
         },
       ],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect(out[0]).toMatchObject({
       error: "Tool arguments failed JSON safety validation at /price",
@@ -205,6 +225,8 @@ describe("ToolPlanner argument validation", () => {
         },
       ],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect(out[0]).toMatchObject({
       error: "Tool arguments failed JSON safety validation at /price",
@@ -221,6 +243,8 @@ describe("ToolPlanner argument validation", () => {
       "session-1",
       [{ id: "c4", name: "count_check", arguments: { n: Number.NaN } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect(out[0]).toMatchObject({
       error: "Tool arguments failed JSON safety validation at /n",
@@ -237,6 +261,8 @@ describe("ToolPlanner argument validation", () => {
       "session-1",
       [{ id: "c5", name: "price_check", arguments: { price: 42 } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect("result" in out[0]!).toBe(true);
   });
@@ -247,6 +273,8 @@ describe("ToolPlanner argument validation", () => {
       "session-1",
       [{ id: "c6", name: "count_check", arguments: { n: 7 } }],
       noopEmit,
+      "turn",
+      turnContext,
     );
     expect("result" in out[0]!).toBe(true);
   });

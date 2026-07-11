@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Iterable
+
+from kaji.runtime.tools.errors import (
+    ToolSchemaValidationError,
+    UnclassifiedToolRiskError,
+)
 
 
 # Ordered from least to most sensitive. Used for threshold comparisons.
@@ -34,9 +39,12 @@ class ToolPolicy:
         denied: set[str] | None = None,
         require_approval_for: set[str] | None = None,
     ) -> None:
-        self.allowed = allowed
-        self.denied = denied or set()
-        self.require_approval_for: set[str] = require_approval_for or set()
+        self.allowed = None if allowed is None else frozenset(allowed)
+        self.denied = frozenset(denied or ())
+        approval_risks = frozenset(require_approval_for or ())
+        if any(risk not in _RISK_RANK for risk in approval_risks):
+            raise ToolSchemaValidationError.invalid_risk("ToolPolicy")
+        self.require_approval_for: frozenset[str] = approval_risks
 
     def is_allowed(self, tool_name: str) -> bool:
         if tool_name in self.denied:
@@ -62,31 +70,23 @@ class ToolPolicy:
         if not self.is_allowed_any(names):
             raise ToolPolicyViolation(f"Tool not permitted: {tool_name}")
 
-    def requires_approval(self, tool_name: str, risk: Optional[str]) -> bool:
+    def requires_approval(self, tool_name: str, risk: str | None) -> bool:
         """Return True if this tool needs human approval before execution.
 
         ``require_approval_for`` acts as a *floor*: any tool whose risk is at
         or above the minimum rank in the set requires approval. So
         ``require_approval_for={"destructive"}`` also captures ``"admin"``
-        because ``"admin"`` ranks higher. Unknown or unclassified risk
-        (``None``) is treated as ``"read"`` (lowest rank) and will not trigger
-        approval unless ``"read"`` is explicitly listed.
+        because ``"admin"`` ranks higher. Risk is mandatory for enabled tools;
+        unclassified and unknown values fail instead of defaulting to ``read``.
         """
+        if risk is None:
+            raise UnclassifiedToolRiskError(tool_name)
+        if risk not in _RISK_RANK:
+            raise ToolSchemaValidationError.invalid_risk(tool_name)
         if not self.require_approval_for:
             return False
-        effective_risk = risk or "read"
-        # Unknown risk strings fall back to literal-membership semantics so we
-        # don't silently fail-open on a typo.
-        if effective_risk not in _RISK_RANK:
-            return effective_risk in self.require_approval_for
-        floor = (
-            min(_RISK_RANK[r] for r in self.require_approval_for if r in _RISK_RANK)
-            if any(r in _RISK_RANK for r in self.require_approval_for)
-            else None
-        )
-        if floor is None:
-            return effective_risk in self.require_approval_for
-        return _RISK_RANK[effective_risk] >= floor
+        floor = min(_RISK_RANK[r] for r in self.require_approval_for)
+        return _RISK_RANK[risk] >= floor
 
 
 class ToolPolicyViolation(PermissionError):

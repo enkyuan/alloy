@@ -7,7 +7,8 @@ import pytest
 from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
-from kaji.runtime.agents import AgentBuilder
+from kaji.runtime.agents import AgentBuilder, TurnContext
+from kaji.runtime.tools.errors import UnclassifiedToolRiskError
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.mock import MockProvider
 
@@ -55,11 +56,16 @@ async def test_turn_reuses_existing_session_id():
 
 
 @pytest.mark.asyncio
-async def test_turn_emits_tool_call_requested_event():
-    # mock fires one call, then falls through to terminal text on second turn.
-    runtime, _ = _build(MockProvider(tool_call={"name": "ping", "args": {}}))
-    result = await runtime.turn("call ping")
-    assert any(e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events)
+async def test_turn_rejects_unadvertised_tool_before_request_event():
+    runtime, store = _build(MockProvider(tool_call={"name": "ping", "args": {}}))
+    with pytest.raises(UnclassifiedToolRiskError):
+        await runtime.turn(
+            "call ping",
+            session_id="unadvertised",
+            context=TurnContext(principal_id="test-principal"),
+        )
+    events = await store.get_events("unadvertised")
+    assert all(event.type != EventType.TOOL_CALL_REQUESTED for event in events)
 
 
 @pytest.mark.asyncio

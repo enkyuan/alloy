@@ -5,7 +5,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import (
@@ -15,9 +15,16 @@ from kaji.runtime.agents.coordinator import (
 from kaji.runtime.agents.context import (
     ContextDiagnostics,
     ContextWindow,
+    MissingToolIdentityError,
+    TurnContext,
     build_context,
 )
-from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
+from kaji.runtime.agents.planner import (
+    ApprovalHandler,
+    LegacyToolExecutor,
+    ToolExecutor,
+    ToolPlanner,
+)
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.tools.registry import ToolSpec
@@ -72,8 +79,6 @@ logger = logging.getLogger(__name__)
 
 _PUBLIC_TURN_FAILURE = "Agent turn failed"
 
-ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
-
 
 def _copy_stored_event(event: StoredKajiEvent) -> StoredKajiEvent:
     return require_stored_event(event.model_copy(deep=True))
@@ -108,13 +113,13 @@ class AgentRuntime:
         rag: Optional[Any] = None,
         rag_top_k: int = 5,
         # Optional wiring for the default planner (ignored when planner is given)
-        tool_executor: Optional[ToolExecutor] = None,
+        tool_executor: Optional[ToolExecutor | LegacyToolExecutor] = None,
         policy: Optional[Any] = None,
         approval_handler: Optional[ApprovalHandler] = None,
-        user_id: str = "agent",
         journal: Optional[EventJournal] = None,
         coordinator: Optional[TurnCoordinator] = None,
         context_window: ContextWindow | None = None,
+        default_context: TurnContext | None = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus)
@@ -132,7 +137,7 @@ class AgentRuntime:
             else default_coordinator_for_store(store)
         )
         self.provider = provider
-        self._user_id = user_id
+        self._default_context = default_context
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         self.context_window = context_window or ContextWindow()
@@ -182,7 +187,7 @@ class AgentRuntime:
     def _build_planner(
         self,
         *,
-        tool_executor: Optional[ToolExecutor],
+        tool_executor: Optional[ToolExecutor | LegacyToolExecutor],
         policy: Optional[Any],
         approval_handler: Optional[ApprovalHandler],
     ) -> ToolPlanner:
@@ -192,8 +197,11 @@ class AgentRuntime:
         # lives in the global tool registry.
         from kaji.runtime.tools.registry import execute_tool  # noqa: PLC0415
 
-        executor: ToolExecutor = tool_executor or (
-            lambda name, args: execute_tool(self._user_id, name, args)
+        async def default_executor(invocation: Any) -> Any:
+            return await execute_tool(invocation)
+
+        executor: ToolExecutor | LegacyToolExecutor = (
+            tool_executor if tool_executor is not None else default_executor
         )
         specs = {spec.name: spec for spec in self.tools}
         return ToolPlanner(
@@ -201,6 +209,32 @@ class AgentRuntime:
             policy=policy,
             approval_handler=approval_handler,
             specs=specs,
+        )
+
+    def _resolve_turn_context(self, context: TurnContext | None) -> TurnContext:
+        default = self._default_context
+        if context is None:
+            return (
+                default.refresh_generated_ids()
+                if default is not None
+                else TurnContext()
+            )
+        resolved_context = context.refresh_generated_ids()
+        if default is None:
+            return resolved_context
+        metadata = dict(default.metadata)
+        metadata.update(resolved_context.metadata)
+        return TurnContext(
+            principal_id=resolved_context.principal_id or default.principal_id,
+            request_id=resolved_context.request_id,
+            trace_id=resolved_context.trace_id,
+            deadline_monotonic=(
+                resolved_context.deadline_monotonic
+                if resolved_context.deadline_monotonic is not None
+                else default.deadline_monotonic
+            ),
+            db=resolved_context.db if resolved_context.db is not None else default.db,
+            metadata=metadata,
         )
 
     async def append_event(self, event: NewKajiEvent) -> StoredKajiEvent:
@@ -308,6 +342,7 @@ class AgentRuntime:
         *,
         session_id: Optional[str] = None,
         cancellation_token: Optional[CancellationToken] = None,
+        context: TurnContext | None = None,
     ) -> TurnResult:
         """Run one full agent turn and return a structured result.
 
@@ -327,6 +362,7 @@ class AgentRuntime:
         """
         sid = session_id or uuid.uuid4().hex
         token = cancellation_token or CancellationToken()
+        resolved_context = self._resolve_turn_context(context)
         async with self.coordinator.acquire(sid, token):
             async with self._projection_scope(sid):
                 projector = await self._sync_projection(sid)
@@ -341,6 +377,7 @@ class AgentRuntime:
                         turn_id,
                         projector,
                         turn_events,
+                        resolved_context,
                     )
                 finally:
                     self._turn_event_collectors.pop(turn_id, None)
@@ -353,6 +390,7 @@ class AgentRuntime:
         turn_id: str,
         projector: SessionProjector,
         turn_events: list[StoredKajiEvent],
+        context: TurnContext,
     ) -> TurnResult:
         """Run ``turn`` while the caller holds the session coordinator."""
         cancellation_token.raise_if_cancelled()
@@ -366,6 +404,7 @@ class AgentRuntime:
             prompt,
             cancellation_token,
             turn_id,
+            context,
         )
         result_events = [_copy_stored_event(event) for event in turn_events]
         text = "".join(
@@ -391,6 +430,8 @@ class AgentRuntime:
         session_id: str,
         content: str,
         cancellation_token: Optional[CancellationToken] = None,
+        *,
+        context: TurnContext | None = None,
     ) -> None:
         """Append a user message and immediately run the agent turn.
 
@@ -402,6 +443,7 @@ class AgentRuntime:
         ``append_event(UserMessage(...))`` and ``run_turn()`` separately.
         """
         token = cancellation_token or CancellationToken()
+        resolved_context = self._resolve_turn_context(context)
         async with self.coordinator.acquire(session_id, token):
             async with self._projection_scope(session_id):
                 await self._sync_projection(session_id)
@@ -410,6 +452,7 @@ class AgentRuntime:
                     content,
                     token,
                     uuid.uuid4().hex,
+                    resolved_context,
                 )
 
     async def _send_unlocked(
@@ -418,6 +461,7 @@ class AgentRuntime:
         content: str,
         cancellation_token: CancellationToken,
         turn_id: str,
+        context: TurnContext,
     ) -> None:
         """Append a user message and run while the session lease is held."""
         cancellation_token.raise_if_cancelled()
@@ -425,7 +469,12 @@ class AgentRuntime:
             UserMessage(session_id=session_id, content=content),
             turn_id,
         )
-        await self._run_turn_unlocked(session_id, cancellation_token, turn_id)
+        await self._run_turn_unlocked(
+            session_id,
+            cancellation_token,
+            turn_id,
+            context,
+        )
 
     async def history(
         self,
@@ -442,7 +491,11 @@ class AgentRuntime:
         )
 
     async def run_turn(
-        self, session_id: str, cancellation_token: Optional[CancellationToken] = None
+        self,
+        session_id: str,
+        cancellation_token: Optional[CancellationToken] = None,
+        *,
+        context: TurnContext | None = None,
     ) -> None:
         """Run the core ReAct-style agent loop for a given session.
 
@@ -450,20 +503,27 @@ class AgentRuntime:
         ``session_id``. To send a message and run in one call, use ``send()``.
         """
         token = cancellation_token or CancellationToken()
+        resolved_context = self._resolve_turn_context(context)
         async with self.coordinator.acquire(session_id, token):
             async with self._projection_scope(session_id):
                 await self._sync_projection(session_id)
-                await self._run_turn_unlocked(session_id, token, uuid.uuid4().hex)
+                await self._run_turn_unlocked(
+                    session_id,
+                    token,
+                    uuid.uuid4().hex,
+                    resolved_context,
+                )
 
     async def _run_turn_unlocked(
         self,
         session_id: str,
         token: CancellationToken,
         turn_id: str,
+        context: TurnContext,
     ) -> None:
         """Run the turn body and record any ordinary terminal failure."""
         try:
-            await self._run_turn_body(session_id, token, turn_id)
+            await self._run_turn_body(session_id, token, turn_id, context)
         except Exception:
             try:
                 await self._emit_for_turn(
@@ -485,9 +545,16 @@ class AgentRuntime:
         session_id: str,
         token: CancellationToken,
         turn_id: str,
+        turn_context: TurnContext,
     ) -> None:
         """Run the ReAct loop while the caller holds the session lease."""
         token.raise_if_cancelled()
+        if (
+            self.strategy.allow_tool_calls
+            and self.tools
+            and turn_context.principal_id is None
+        ):
+            raise MissingToolIdentityError()
 
         async def emit_turn_event(event: NewKajiEvent) -> None:
             await self._emit_for_turn(event, turn_id)
@@ -603,9 +670,19 @@ class AgentRuntime:
             if not tool_calls or not self.strategy.allow_tool_calls:
                 break
 
+            if turn_context.principal_id is None:
+                # A provider must not bypass identity enforcement by returning
+                # an unadvertised tool call.
+                raise MissingToolIdentityError()
+
             # 6. Execute tools concurrently (Scatter-Gather)
             await self.planner.execute_scatter_gather(
-                session_id, tool_calls, emit_turn_event
+                session_id,
+                tool_calls,
+                emit_turn_event,
+                turn_id=turn_id,
+                turn_context=turn_context,
+                cancellation_token=token,
             )
 
             # The planner has emitted ToolCallCompleted/Failed events.

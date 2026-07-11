@@ -6,9 +6,15 @@ const noopSpec: ToolSpec = {
   name: "noop",
   description: "x",
   parameters: { type: "object" },
+  risk: "read",
 };
 
 const noopEmit = async () => {};
+const turnContext = {
+  principalId: "test",
+  requestId: "request",
+  traceId: "trace",
+};
 
 describe("ToolPlanner uuid injection", () => {
   it("uses an injected uuid factory for missing call ids", async () => {
@@ -23,6 +29,8 @@ describe("ToolPlanner uuid injection", () => {
       "s1",
       [{ name: "noop", arguments: {} }],
       noopEmit,
+      "turn",
+      turnContext,
     );
 
     expect((out[0] as { id: string }).id).toBe("fixed-1");
@@ -44,6 +52,8 @@ describe("ToolPlanner uuid injection", () => {
         { name: "noop", arguments: {} },
       ],
       noopEmit,
+      "turn",
+      turnContext,
     );
 
     const ids = out.map((r) => (r as { id: string }).id);
@@ -65,6 +75,8 @@ describe("ToolPlanner uuid injection", () => {
       "s1",
       [{ id: "caller-id", name: "noop", arguments: {} }],
       noopEmit,
+      "turn",
+      turnContext,
     );
 
     expect((out[0] as { id: string }).id).toBe("caller-id");
@@ -81,6 +93,8 @@ describe("ToolPlanner uuid injection", () => {
       "s1",
       [{ name: "noop", arguments: {} }],
       noopEmit,
+      "turn",
+      turnContext,
     );
 
     const id = (out[0] as { id: string }).id;

@@ -3,6 +3,7 @@
 from kaji.runtime.tools.errors import (
     ToolArgumentValidationError,
     ToolSchemaValidationError,
+    UnclassifiedToolRiskError,
 )
 from kaji.runtime.tools.payload import (
     build_tools_payload,
@@ -26,4 +27,5 @@ __all__ = [
     "ToolRetriever",
     "ToolSchemaValidationError",
     "ToolSchemaValidator",
+    "UnclassifiedToolRiskError",
 ]

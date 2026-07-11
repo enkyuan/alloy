@@ -53,7 +53,7 @@ class WeatherIntegration extends Integration {
       parameters: z.object({ city: z.string() }),
       risk: "read",
     },
-    async (_ctx, args) => ({ city: args.city, tempF: 68 }),
+    async (args, _context) => ({ city: args.city, tempF: 68 }),
   );
 }
 
@@ -61,6 +61,7 @@ const runtime = new AgentBuilder()
   .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
   .integration(new WeatherIntegration())
   .systemPrompt("You are a weather assistant.")
+  .defaultContext({ principalId: "weather-app" })
   .build();
 
 const result = await runtime.turn("Weather in Seattle?");
@@ -196,11 +197,29 @@ import { executeTool, registerTool, toolSpecFromSchema } from "@kaji/sdk";
 import { z } from "zod";
 
 registerTool(
-  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
-  async (ctx, args) => ({ city: args.city, tempF: 68 }),
+  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() }), "read"),
+  async (args, context) => ({
+    principalId: context.principalId,
+    city: args.city,
+    tempF: 68,
+  }),
 );
 
-const result = await executeTool("user-1", "get_weather", { city: "Seattle" });
+const result = await executeTool(
+  "get_weather",
+  { city: "Seattle" },
+  {
+    principalId: "user-1",
+    sessionId: "session-1",
+    turnId: "turn-1",
+    requestId: "request-1",
+    traceId: "trace-1",
+    toolCallId: "call-1",
+    idempotencyKey: "session-1:call-1",
+    signal: new AbortController().signal,
+    metadata: {},
+  },
+);
 ```
 
 ## What's exported

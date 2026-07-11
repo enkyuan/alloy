@@ -6,14 +6,38 @@ import { InMemoryEventStore } from "@/events/store";
 import { KajiEvent } from "@/events/schemas";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { InMemoryEventCommitter } from "@/events/committer";
+import { UnclassifiedToolRiskError, UnknownToolError, type ToolSpec } from "@/tools/registry";
+
+const TURN_CONTEXT = {
+  principalId: "test",
+  requestId: "request",
+  traceId: "trace",
+};
+
+function specsFor(...names: string[]): Map<string, ToolSpec> {
+  return new Map(
+    names.map((name) => [name, { name, description: name, parameters: {}, risk: "read" }]),
+  );
+}
+
+function executePlanner(
+  planner: ToolPlanner,
+  sessionId: Parameters<ToolPlanner["executeScatterGather"]>[0],
+  calls: Parameters<ToolPlanner["executeScatterGather"]>[1],
+  emit: Parameters<ToolPlanner["executeScatterGather"]>[2],
+  turnId = "test-turn",
+) {
+  return planner.executeScatterGather(sessionId, calls, emit, turnId, TURN_CONTEXT);
+}
 
 describe("ToolPlanner", () => {
   it("emits lifecycle events on success", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
 
-    const planner = new ToolPlanner({ executor });
-    await planner.executeScatterGather(
+    const planner = new ToolPlanner({ executor, specs: specsFor("search") });
+    await executePlanner(
+      planner,
       "sess-1",
       [{ id: "call-1", name: "search", arguments: { q: "test" } }],
       async (e) => {
@@ -33,8 +57,10 @@ describe("ToolPlanner", () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockRejectedValue(new Error("tool exploded"));
 
-    const planner = new ToolPlanner({ executor });
-    const results = await planner.executeScatterGather(
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const planner = new ToolPlanner({ executor, specs: specsFor("broken") });
+    const results = await executePlanner(
+      planner,
       "sess-1",
       [{ id: "call-2", name: "broken", arguments: {} }],
       async (e) => {
@@ -42,17 +68,31 @@ describe("ToolPlanner", () => {
       },
     );
 
-    expect(results[0]).toHaveProperty("error", "Error: tool exploded");
-    expect(emitted.some((e) => e.type === EventType.TOOL_CALL_FAILED)).toBe(true);
+    expect(results[0]).toMatchObject({
+      error: "Tool execution failed",
+      error_code: "TOOL_EXECUTION_FAILED",
+      retryable: false,
+      outcome: "failed",
+    });
+    expect(emitted.find((e) => e.type === EventType.TOOL_CALL_FAILED)).toMatchObject({
+      error: "Tool execution failed",
+      error_code: "TOOL_EXECUTION_FAILED",
+      retryable: false,
+      outcome: "failed",
+    });
+    expect(JSON.stringify({ emitted, results })).not.toContain("tool exploded");
+    expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: "tool exploded" }));
+    logged.mockRestore();
   });
 
   it("rejects non-object arguments before executor", async () => {
     for (const badArgs of [[], "not-object", null]) {
       const emitted: any[] = [];
       const executor = vi.fn().mockResolvedValue({ ok: true });
-      const planner = new ToolPlanner({ executor });
+      const planner = new ToolPlanner({ executor, specs: specsFor("search") });
 
-      const results = await planner.executeScatterGather(
+      const results = await executePlanner(
+        planner,
         "sess-bad-args",
         [{ id: "bad-args", name: "search", arguments: badArgs as any }],
         async (e) => {
@@ -80,10 +120,11 @@ describe("ToolPlanner", () => {
   it("redacts provider parse-error details before recording validation failure", async () => {
     const emitted: any[] = [];
     const executor = vi.fn();
-    const planner = new ToolPlanner({ executor });
+    const planner = new ToolPlanner({ executor, specs: specsFor("search") });
     const secret = "sk-secret-value-that-must-not-appear";
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-parse-error",
       [
         {
@@ -115,8 +156,11 @@ describe("ToolPlanner", () => {
 
   it("generates a call ID when none is provided", async () => {
     const emitted: any[] = [];
-    const planner = new ToolPlanner({ executor: vi.fn().mockResolvedValue("ok") });
-    await planner.executeScatterGather("sess-1", [{ name: "search", arguments: {} }], async (e) => {
+    const planner = new ToolPlanner({
+      executor: vi.fn().mockResolvedValue("ok"),
+      specs: specsFor("search"),
+    });
+    await executePlanner(planner, "sess-1", [{ name: "search", arguments: {} }], async (e) => {
       emitted.push(e);
     });
     const started = emitted.find((e) => e.type === EventType.TOOL_CALL_STARTED);
@@ -134,12 +178,14 @@ describe("ToolPlanner", () => {
           catalogName: "weather.getWeather",
           description: "weather",
           parameters: {},
+          risk: "read" as const,
         },
       ],
     ]);
 
     const planner = new ToolPlanner({ executor, specs });
-    await planner.executeScatterGather(
+    await executePlanner(
+      planner,
       "sess-catalog",
       [{ id: "cat-1", name: "weather_getWeather", arguments: {} }],
       async (e) => {
@@ -161,7 +207,8 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-approval",
       [{ id: "c1", name: "nuke", arguments: {} }],
       async (e) => {
@@ -207,7 +254,8 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-isolation",
       [{ id: "c-isolation", name: "nuke", arguments: original }],
       async (event) => {
@@ -221,7 +269,11 @@ describe("ToolPlanner", () => {
     );
 
     expect(results[0]).toHaveProperty("result", { value: "validated" });
-    expect(executor).toHaveBeenCalledWith("nuke", { nested: { value: "validated" } });
+    expect(executor).toHaveBeenCalledWith(
+      "nuke",
+      { nested: { value: "validated" } },
+      expect.objectContaining({ principalId: "test" }),
+    );
     expect(approvalHandler).toHaveBeenCalledOnce();
     expect(original).toEqual({ nested: { value: "validated" } });
   });
@@ -257,7 +309,8 @@ describe("ToolPlanner", () => {
     })();
 
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       sessionId,
       [{ id: "c-typed", name: "nuke", arguments: {} }],
       async (e) => {
@@ -292,6 +345,8 @@ describe("ToolPlanner", () => {
       async (event) => {
         await committer.commit(event);
       },
+      undefined,
+      TURN_CONTEXT,
     );
 
     expect(request).not.toHaveBeenCalled();
@@ -319,7 +374,8 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-reject",
       [{ id: "c2", name: "charge", arguments: {} }],
       async (e) => {
@@ -339,9 +395,10 @@ describe("ToolPlanner", () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
     const policy = new ToolPolicy({ denied: new Set(["blocked"]) });
-    const planner = new ToolPlanner({ executor, policy });
+    const planner = new ToolPlanner({ executor, policy, specs: specsFor("blocked") });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-deny",
       [{ id: "c-deny", name: "blocked", arguments: {} }],
       async (e) => {
@@ -359,9 +416,16 @@ describe("ToolPlanner", () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
     const policy = new ToolPolicy({ allowed: new Set(["allowed_tool"]) });
-    const planner = new ToolPlanner({ executor, policy });
+    const specs = new Map([
+      [
+        "allowed_tool",
+        { name: "allowed_tool", description: "allowed", parameters: {}, risk: "read" as const },
+      ],
+    ]);
+    const planner = new ToolPlanner({ executor, policy, specs });
 
-    await planner.executeScatterGather(
+    await executePlanner(
+      planner,
       "sess-allow",
       [{ id: "c-allow", name: "allowed_tool", arguments: {} }],
       async (e) => {
@@ -385,12 +449,14 @@ describe("ToolPlanner", () => {
           catalogName: "weather.getWeather",
           description: "weather",
           parameters: {},
+          risk: "read" as const,
         },
       ],
     ]);
     const planner = new ToolPlanner({ executor, policy, specs });
 
-    await planner.executeScatterGather(
+    await executePlanner(
+      planner,
       "sess-allow-catalog",
       [{ id: "catalog-allow", name: "weather_getWeather", arguments: {} }],
       async (e) => {
@@ -414,12 +480,14 @@ describe("ToolPlanner", () => {
           catalogName: "weather.getWeather",
           description: "weather",
           parameters: {},
+          risk: "read" as const,
         },
       ],
     ]);
     const planner = new ToolPlanner({ executor, policy, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-deny-catalog",
       [{ id: "catalog-deny", name: "weather_getWeather", arguments: {} }],
       async (e) => {
@@ -435,7 +503,7 @@ describe("ToolPlanner", () => {
     expect(results[0]).toHaveProperty("error", "Tool not permitted: weather_getWeather");
   });
 
-  it("unclassified risk skips approval gate", async () => {
+  it("read risk skips a destructive approval gate", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
 
@@ -445,7 +513,8 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, specs });
 
-    await planner.executeScatterGather(
+    await executePlanner(
+      planner,
       "sess-no-approval",
       [{ id: "c3", name: "search", arguments: {} }],
       async (e) => {
@@ -456,6 +525,192 @@ describe("ToolPlanner", () => {
     const types = emitted.map((e) => e.type);
     expect(types).not.toContain(EventType.TOOL_APPROVAL_REQUESTED);
     expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
+  });
+
+  it("rejects empty and duplicate call ids for the whole batch before emission", async () => {
+    for (const calls of [
+      [
+        { id: "ok", name: "search", arguments: {} },
+        { id: "   ", name: "search", arguments: {} },
+      ],
+      [
+        { id: "duplicate", name: "search", arguments: {} },
+        { id: "duplicate", name: "search", arguments: {} },
+      ],
+    ]) {
+      const emit = vi.fn(async () => {});
+      const executor = vi.fn();
+      const planner = new ToolPlanner({ executor, specs: specsFor("search") });
+
+      await expect(executePlanner(planner, "session", calls, emit)).rejects.toThrow();
+      expect(emit).not.toHaveBeenCalled();
+      expect(executor).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects duplicate generated ids before emission", async () => {
+    const emit = vi.fn(async () => {});
+    const planner = new ToolPlanner({
+      executor: vi.fn(),
+      specs: specsFor("search"),
+      uuid: () => "duplicate",
+    });
+
+    await expect(
+      executePlanner(
+        planner,
+        "session",
+        [
+          { name: "search", arguments: {} },
+          { name: "search", arguments: {} },
+        ],
+        emit,
+      ),
+    ).rejects.toThrow();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("requires every direct-planner call to have a classified spec before emission", async () => {
+    const emit = vi.fn(async () => {});
+    const executor = vi.fn();
+    const missing = new ToolPlanner({ executor, specs: specsFor("known") });
+
+    await expect(
+      executePlanner(
+        missing,
+        "session",
+        [
+          { id: "known", name: "known", arguments: {} },
+          { id: "missing", name: "missing", arguments: {} },
+        ],
+        emit,
+      ),
+    ).rejects.toBeInstanceOf(UnknownToolError);
+    expect(emit).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+
+    const unclassifiedSpec = {
+      name: "disabled",
+      description: "disabled",
+      parameters: {},
+      enabled: false,
+    } as ToolSpec;
+    const unclassified = new ToolPlanner({
+      executor,
+      specs: new Map([[unclassifiedSpec.name, unclassifiedSpec]]),
+    });
+    await expect(
+      executePlanner(
+        unclassified,
+        "session",
+        [{ id: "disabled", name: "disabled", arguments: {} }],
+        emit,
+      ),
+    ).rejects.toBeInstanceOf(UnclassifiedToolRiskError);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects classified disabled specs before lifecycle emission", async () => {
+    const emit = vi.fn(async () => {});
+    const executor = vi.fn();
+    const spec: ToolSpec = {
+      name: "disabled",
+      description: "disabled",
+      parameters: {},
+      risk: "read",
+      enabled: false,
+    };
+    const planner = new ToolPlanner({ executor, specs: new Map([[spec.name, spec]]) });
+
+    await expect(
+      executePlanner(
+        planner,
+        "session",
+        [{ id: "disabled", name: "disabled", arguments: {} }],
+        emit,
+      ),
+    ).rejects.toThrow();
+    expect(emit).not.toHaveBeenCalled();
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it("closes approval-handler exceptions without leaking their cause", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn();
+    const secret = "sk-approval-secret";
+    const approvalHandler = vi.fn().mockRejectedValue(new Error(secret));
+    const planner = new ToolPlanner({
+      executor,
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["read"]) }),
+      approvalHandler,
+      specs: specsFor("search"),
+    });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const results = await executePlanner(
+      planner,
+      "session",
+      [{ id: "call", name: "search", arguments: {} }],
+      async (event) => {
+        emitted.push(event);
+      },
+    );
+
+    expect(executor).not.toHaveBeenCalled();
+    expect(emitted.map((event) => event.type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_APPROVAL_REQUESTED,
+      EventType.TOOL_APPROVAL_REJECTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(results[0]).toMatchObject({
+      error: "Tool approval unavailable",
+      error_code: "APPROVAL_UNAVAILABLE",
+      retryable: false,
+      outcome: "not_started",
+    });
+    expect(JSON.stringify({ emitted, results })).not.toContain(secret);
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  it("validates planner execution context before lifecycle emission", async () => {
+    const planner = new ToolPlanner({ executor: vi.fn(), specs: specsFor("search") });
+    const call = [{ id: "call", name: "search", arguments: {} }];
+    const invalidInvocations: Array<(emit: (event: any) => Promise<void>) => Promise<unknown>> = [
+      (emit) => planner.executeScatterGather(" ", call, emit, "turn", TURN_CONTEXT),
+      (emit) => planner.executeScatterGather("session", call, emit, " ", TURN_CONTEXT),
+      (emit) =>
+        planner.executeScatterGather("session", call, emit, "turn", {
+          ...TURN_CONTEXT,
+          principalId: " ",
+        }),
+      (emit) =>
+        planner.executeScatterGather("session", call, emit, "turn", {
+          ...TURN_CONTEXT,
+          requestId: " ",
+        }),
+      (emit) =>
+        planner.executeScatterGather("session", call, emit, "turn", {
+          ...TURN_CONTEXT,
+          traceId: " ",
+        }),
+      (emit) =>
+        planner.executeScatterGather("session", call, emit, "turn", {
+          ...TURN_CONTEXT,
+          deadlineMs: Number.POSITIVE_INFINITY,
+        }),
+      (emit) =>
+        planner.executeScatterGather("session", call, emit, "turn", TURN_CONTEXT, {
+          aborted: false,
+        } as AbortSignal),
+    ];
+
+    for (const invoke of invalidInvocations) {
+      const emit = vi.fn(async () => {});
+      await expect(invoke(emit)).rejects.toThrow();
+      expect(emit).not.toHaveBeenCalled();
+    }
   });
 
   it("no approval handler rejects by default (fail-safe)", async () => {
@@ -471,7 +726,8 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await executePlanner(
+      planner,
       "sess-no-handler",
       [{ id: "c4", name: "add_user", arguments: {} }],
       async (e) => {

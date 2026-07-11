@@ -3,6 +3,12 @@ from copy import deepcopy
 import json
 from typing import Any, Dict, List, Optional, Sequence
 
+from kaji.runtime.context import (
+    MissingToolIdentityError as MissingToolIdentityError,
+    ToolExecutionContext as ToolExecutionContext,
+    ToolInvocation as ToolInvocation,
+    TurnContext as TurnContext,
+)
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.infra.events.replay import SessionState
 

@@ -5,7 +5,23 @@
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { defaultUuid } from "@/internal/uuid";
-import { snapshotToolSpec, type ToolSpec } from "@/tools/registry";
+import {
+  MissingToolIdentityError,
+  assertAbortSignal,
+  assertNonEmptyContextId,
+  assertValidDeadline,
+  normalizePrincipalId,
+  snapshotContextMetadata,
+  snapshotToolExecutionContext,
+  type ToolExecutionContext,
+  type TurnContext,
+} from "@/runtime/context";
+import {
+  UnknownToolError,
+  assertClassifiedToolSpec,
+  snapshotToolSpec,
+  type ToolSpec,
+} from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import {
   ToolArgumentValidationError,
@@ -15,7 +31,6 @@ import {
   validateToolArgumentsForExecution,
   validationFailureFields,
   withValidationReceiptScope,
-  type ValidationFailureFields,
 } from "@/tools/validation";
 import type {
   EventBackedApprovalHandler,
@@ -25,19 +40,6 @@ import type {
 
 function isJsonObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-const ERROR_MSG_MAX = 200;
-
-/** Return a log-safe error string. Includes class name and a length-capped message. */
-function sanitizeError(err: unknown): string {
-  if (err instanceof Error) {
-    const msg =
-      err.message.length > ERROR_MSG_MAX ? err.message.slice(0, ERROR_MSG_MAX) + "…" : err.message;
-    return msg ? `${err.name}: ${msg}` : err.name;
-  }
-  const s = String(err);
-  return s.length > ERROR_MSG_MAX ? s.slice(0, ERROR_MSG_MAX) + "…" : s;
 }
 
 /** A single tool call instruction from the LLM. */
@@ -50,9 +52,21 @@ export interface ToolCallInstruction {
 /** Result of a single tool call execution. */
 export type ToolCallResult =
   | { id: string; name: string; result: unknown }
-  | ({ id: string; name: string; error: string } & Partial<ValidationFailureFields>);
+  | {
+      id: string;
+      name: string;
+      error: string;
+      error_code?: string;
+      error_path?: string;
+      retryable?: false;
+      outcome?: "not_started" | "failed";
+    };
 
-export type ToolExecutor = (name: string, args: Record<string, unknown>) => Promise<unknown>;
+export type ToolExecutor = (
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+  context: ToolExecutionContext,
+) => Promise<unknown>;
 export type ApprovalHandler = (
   name: string,
   args: Record<string, unknown>,
@@ -116,21 +130,80 @@ export class ToolPlanner {
    * `TOOL_CALL_FAILED` so `replaySession` projects the outcome into
    * model-visible history, preventing the agent from re-requesting the same
    * tool indefinitely.
+   *
+   * The whole batch is validated before lifecycle events begin.
    */
   async executeScatterGather(
     sessionId: string,
     toolCalls: ToolCallInstruction[],
     emit: EmitFn,
     turnId?: string,
+    turnContext?: TurnContext,
+    signal: AbortSignal = new AbortController().signal,
   ): Promise<ToolCallResult[]> {
-    return Promise.all(toolCalls.map((call) => this.executeSingle(sessionId, call, emit, turnId)));
+    if (turnContext?.principalId === undefined) throw new MissingToolIdentityError();
+    assertNonEmptyContextId(sessionId, "sessionId");
+    const resolvedTurnId = turnId ?? this.uuid();
+    assertNonEmptyContextId(resolvedTurnId, "turnId");
+    const principalId = normalizePrincipalId(turnContext.principalId);
+    const requestId = turnContext.requestId ?? this.uuid();
+    const traceId = turnContext.traceId ?? this.uuid();
+    assertNonEmptyContextId(requestId, "requestId");
+    assertNonEmptyContextId(traceId, "traceId");
+    assertValidDeadline(turnContext.deadlineMs);
+    assertAbortSignal(signal);
+    const resolvedTurnContext = Object.freeze({
+      principalId,
+      requestId,
+      traceId,
+      ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
+      ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
+      metadata: snapshotContextMetadata(turnContext.metadata),
+    });
+    const callIds = new Set<string>();
+    const preparedCalls = toolCalls.map((call) => {
+      const id = call.id ?? this.uuid();
+      assertNonEmptyContextId(id, "toolCallId");
+      if (callIds.has(id)) throw new TypeError(`Duplicate toolCallId: ${id}`);
+      callIds.add(id);
+      return { ...call, id };
+    });
+    for (const call of preparedCalls) {
+      const spec = this.specs.get(call.name);
+      if (spec === undefined) throw new UnknownToolError(call.name);
+      assertClassifiedToolSpec(spec);
+      if (spec.enabled === false) throw new UnknownToolError(call.name);
+    }
+    return Promise.all(
+      preparedCalls.map((call) =>
+        this.executeSingle(
+          sessionId,
+          call,
+          emit,
+          resolvedTurnId,
+          resolvedTurnContext,
+          signal,
+          turnId !== undefined && turnId.length > 0,
+        ),
+      ),
+    );
   }
 
   private async executeSingle(
     sessionId: string,
     call: ToolCallInstruction,
     emit: EmitFn,
-    turnId?: string,
+    turnId: string,
+    turnContext: Readonly<{
+      principalId: string;
+      requestId: string;
+      traceId: string;
+      deadlineMs?: number;
+      db?: unknown;
+      metadata: Readonly<Record<string, unknown>>;
+    }>,
+    signal: AbortSignal,
+    turnIdProvided: boolean,
   ): Promise<ToolCallResult> {
     const toolName = call.name;
     const rawToolArgs: unknown = call.arguments;
@@ -161,20 +234,33 @@ export class ToolPlanner {
         toolArgs = { __parse_error: "invalid arguments" };
       }
     }
-    const callId = call.id ?? this.uuid();
-    const spec = this.specs.get(toolName);
-    const risk = spec?.risk;
-    const catalogName = spec?.catalogName;
+    const callId = call.id!;
+    const executionContext = snapshotToolExecutionContext({
+      principalId: turnContext.principalId,
+      sessionId,
+      turnId,
+      requestId: turnContext.requestId,
+      traceId: turnContext.traceId,
+      toolCallId: callId,
+      idempotencyKey: `${sessionId}:${callId}`,
+      signal,
+      ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
+      ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
+      metadata: turnContext.metadata,
+    });
+    const spec = this.specs.get(toolName)!;
+    const risk = spec.risk;
+    const catalogName = spec.catalogName;
     const aliases = catalogName ? [catalogName] : [];
     const metadata = catalogName ? { catalog_name: catalogName } : {};
-    const turnContext = turnId === undefined ? {} : { turn_id: turnId };
+    const eventTurnContext = { turn_id: turnId };
 
     // 1. Announce intent
     await emit(
       KajiEvent.parse({
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: sessionId,
-        ...turnContext,
+        ...eventTurnContext,
         tool_name: toolName,
         tool_args: cloneToolExecutionArguments(toolName, toolArgs),
         tool_call_id: callId,
@@ -203,7 +289,7 @@ export class ToolPlanner {
         KajiEvent.parse({
           type: EventType.TOOL_CALL_FAILED,
           session_id: sessionId,
-          ...turnContext,
+          ...eventTurnContext,
           tool_name: toolName,
           tool_call_id: callId,
           error: validationError.message,
@@ -227,7 +313,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
             session_id: sessionId,
-            ...turnContext,
+            ...eventTurnContext,
             tool_name: toolName,
             tool_call_id: callId,
             error: errorMsg,
@@ -249,11 +335,11 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_REQUESTED,
               session_id: sessionId,
-              ...turnContext,
+              ...eventTurnContext,
               tool_name: toolName,
               tool_call_id: callId,
               tool_args: cloneToolExecutionArguments(toolName, toolArgs),
-              risk: risk ?? null,
+              risk,
               metadata,
             }),
           );
@@ -262,47 +348,82 @@ export class ToolPlanner {
         let approved = false;
         let rejectedReason = "Rejected by approval handler";
         if (this.approvalHandler !== undefined) {
-          if (typeof this.approvalHandler === "function") {
-            approved = await this.approvalHandler(
-              toolName,
-              cloneToolExecutionArguments(toolName, toolArgs),
-              risk,
-            );
-          } else if (this.approvalHandler.emitsApprovalRequest === true) {
-            if (turnId === undefined || turnId.length === 0) {
-              rejectedReason = "Event approval requires a non-empty turn identity";
+          try {
+            if (typeof this.approvalHandler === "function") {
+              approved = await this.approvalHandler(
+                toolName,
+                cloneToolExecutionArguments(toolName, toolArgs),
+                risk,
+              );
+            } else if (this.approvalHandler.emitsApprovalRequest === true) {
+              if (!turnIdProvided) {
+                rejectedReason = "Event approval requires a non-empty turn identity";
+              } else {
+                const decision = await this.approvalHandler.request(
+                  {
+                    id: callId,
+                    name: toolName,
+                    args: cloneToolExecutionArguments(toolName, toolArgs),
+                  },
+                  { sessionId, risk, turnId },
+                );
+                approved = decision.granted;
+                if (!approved && decision.reason) {
+                  rejectedReason = decision.reason;
+                }
+              }
             } else {
+              const approvalCtx: ApprovalContext = {
+                sessionId,
+                risk,
+                turnId,
+              };
               const decision = await this.approvalHandler.request(
                 {
                   id: callId,
                   name: toolName,
                   args: cloneToolExecutionArguments(toolName, toolArgs),
                 },
-                { sessionId, risk, turnId },
+                approvalCtx,
               );
               approved = decision.granted;
               if (!approved && decision.reason) {
                 rejectedReason = decision.reason;
               }
             }
-          } else {
-            const approvalCtx: ApprovalContext = {
-              sessionId,
-              risk,
-              ...(turnId === undefined ? {} : { turnId }),
+          } catch (error) {
+            console.error(error);
+            const reason = "Approval handler unavailable";
+            const errorMsg = "Tool approval unavailable";
+            const failure = {
+              error_code: "APPROVAL_UNAVAILABLE" as const,
+              retryable: false as const,
+              outcome: "not_started" as const,
             };
-            const decision = await this.approvalHandler.request(
-              {
-                id: callId,
-                name: toolName,
-                args: cloneToolExecutionArguments(toolName, toolArgs),
-              },
-              approvalCtx,
+            await emit(
+              KajiEvent.parse({
+                type: EventType.TOOL_APPROVAL_REJECTED,
+                session_id: sessionId,
+                ...eventTurnContext,
+                tool_name: toolName,
+                tool_call_id: callId,
+                reason,
+                metadata,
+              }),
             );
-            approved = decision.granted;
-            if (!approved && decision.reason) {
-              rejectedReason = decision.reason;
-            }
+            await emit(
+              KajiEvent.parse({
+                type: EventType.TOOL_CALL_FAILED,
+                session_id: sessionId,
+                ...eventTurnContext,
+                tool_name: toolName,
+                tool_call_id: callId,
+                error: errorMsg,
+                metadata,
+                ...failure,
+              }),
+            );
+            return { id: callId, name: toolName, error: errorMsg, ...failure };
           }
         }
 
@@ -314,7 +435,7 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_APPROVAL_REJECTED,
               session_id: sessionId,
-              ...turnContext,
+              ...eventTurnContext,
               tool_name: toolName,
               tool_call_id: callId,
               reason,
@@ -328,7 +449,7 @@ export class ToolPlanner {
             KajiEvent.parse({
               type: EventType.TOOL_CALL_FAILED,
               session_id: sessionId,
-              ...turnContext,
+              ...eventTurnContext,
               tool_name: toolName,
               tool_call_id: callId,
               error: errorMsg,
@@ -342,7 +463,7 @@ export class ToolPlanner {
           KajiEvent.parse({
             type: EventType.TOOL_APPROVAL_APPROVED,
             session_id: sessionId,
-            ...turnContext,
+            ...eventTurnContext,
             tool_name: toolName,
             tool_call_id: callId,
             metadata,
@@ -355,7 +476,7 @@ export class ToolPlanner {
         KajiEvent.parse({
           type: EventType.TOOL_CALL_STARTED,
           session_id: sessionId,
-          ...turnContext,
+          ...eventTurnContext,
           tool_name: toolName,
           tool_call_id: callId,
           metadata,
@@ -364,13 +485,13 @@ export class ToolPlanner {
 
       // 5. Execute
       try {
-        const execute = () => this.executor(toolName, toolArgs);
+        const execute = () => this.executor(toolName, toolArgs, executionContext);
         const result = await withValidationReceiptScope(validationReceipt, execute);
         await emit(
           KajiEvent.parse({
             type: EventType.TOOL_CALL_COMPLETED,
             session_id: sessionId,
-            ...turnContext,
+            ...eventTurnContext,
             tool_name: toolName,
             tool_call_id: callId,
             result,
@@ -379,19 +500,26 @@ export class ToolPlanner {
         );
         return { id: callId, name: toolName, result };
       } catch (err) {
-        const errorMsg = sanitizeError(err);
+        console.error(err);
+        const errorMsg = "Tool execution failed";
+        const failure = {
+          error_code: "TOOL_EXECUTION_FAILED" as const,
+          retryable: false as const,
+          outcome: "failed" as const,
+        };
         await emit(
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
             session_id: sessionId,
-            ...turnContext,
+            ...eventTurnContext,
             tool_name: toolName,
             tool_call_id: callId,
             error: errorMsg,
             metadata,
+            ...failure,
           }),
         );
-        return { id: callId, name: toolName, error: errorMsg };
+        return { id: callId, name: toolName, error: errorMsg, ...failure };
       }
     } finally {
       revokeValidationReceipt(validationReceipt);

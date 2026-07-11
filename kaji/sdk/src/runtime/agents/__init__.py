@@ -8,6 +8,10 @@ from kaji.runtime.agents.context import (
     ContextIntegrityError,
     ContextWindow,
     ContextWindowOverflowError,
+    MissingToolIdentityError,
+    ToolExecutionContext,
+    ToolInvocation,
+    TurnContext,
 )
 from kaji.runtime.agents.history import HistoryStore, InMemoryHistoryStore
 from kaji.runtime.agents.planner import ToolPlanner
@@ -26,7 +30,11 @@ __all__ = [
     "HistoryStore",
     "InMemoryTurnCoordinator",
     "InMemoryHistoryStore",
+    "MissingToolIdentityError",
+    "ToolExecutionContext",
+    "ToolInvocation",
     "ToolPlanner",
     "TurnCoordinator",
     "TurnResult",
+    "TurnContext",
 ]

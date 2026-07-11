@@ -20,8 +20,8 @@ function makeInfra() {
 /** A minimal integration that registers a single "ping" tool. */
 class PingIntegration implements Integrable {
   register(registry: ToolRegistry): void {
-    const spec: ToolSpec = { name: "ping", description: "Ping", parameters: {} };
-    const handler: ToolHandler = async (_ctx, _args) => ({ pong: true });
+    const spec: ToolSpec = { name: "ping", description: "Ping", parameters: {}, risk: "read" };
+    const handler: ToolHandler = async (_args, _context) => ({ pong: true });
     registry.register(spec, handler);
   }
 }
@@ -71,6 +71,7 @@ describe("AgentBuilder", () => {
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .integration(new PingIntegration())
+      .defaultContext({ principalId: "test" })
       .build({ bus, store });
 
     await runtime.runTurn(sessionId);

@@ -58,6 +58,7 @@ describe("generateText", () => {
             properties: { city: { type: "string" } },
             required: ["city"],
           },
+          risk: "read",
         },
       ],
     });

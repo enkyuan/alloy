@@ -56,6 +56,7 @@ export {
   type ToolParameters,
   type ListToolSpecsOptions,
   ToolRegistry,
+  UnclassifiedToolRiskError,
   UnknownToolError,
   registerTool,
   listToolSpecs,
@@ -168,8 +169,11 @@ export {
   ContextIntegrityError,
   ContextWindowOverflowError,
   DEFAULT_CONTEXT_WINDOW,
+  MissingToolIdentityError,
   type ContextDiagnostics,
   type ContextWindow,
+  type ToolExecutionContext,
+  type TurnContext,
 } from "@/runtime/context";
 export {
   CancellationError,

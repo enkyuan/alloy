@@ -1,5 +1,9 @@
 import pytest
 
+from kaji.runtime.tools.errors import (
+    ToolSchemaValidationError,
+    UnclassifiedToolRiskError,
+)
 from kaji.runtime.tools.idempotency import (
     ToolIdempotencyGuard,
     build_tool_idempotency_key,
@@ -56,10 +60,10 @@ def test_no_approval_required_for_lower_risk():
     assert policy.requires_approval("write_doc", "write") is False
 
 
-def test_unclassified_risk_treated_as_read():
+def test_unclassified_risk_fails_closed():
     policy = ToolPolicy(require_approval_for={"destructive"})
-    # None risk → treated as "read" → not in approval set
-    assert policy.requires_approval("search", None) is False
+    with pytest.raises(UnclassifiedToolRiskError):
+        policy.requires_approval("search", None)
 
 
 def test_requires_approval_false_when_no_set_configured():
@@ -74,3 +78,17 @@ def test_existing_allow_deny_still_work_with_risk_fields():
     assert policy.is_allowed("search") is True
     assert policy.is_allowed("delete") is False
     assert policy.requires_approval("charge", "financial") is True
+
+
+def test_approval_risks_are_validated_and_snapshotted() -> None:
+    configured = {"destructive"}
+    policy = ToolPolicy(require_approval_for=configured)
+    configured.clear()
+    configured.add("read")
+
+    assert policy.requires_approval("search", "read") is False
+    assert policy.requires_approval("delete", "destructive") is True
+
+    with pytest.raises(ToolSchemaValidationError) as raised:
+        ToolPolicy(require_approval_for={"typo"})
+    assert raised.value.code == "INVALID_TOOL_SCHEMA"

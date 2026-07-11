@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ToolPolicy, ToolPolicyViolation } from "@/tools/policy";
+import { UnclassifiedToolRiskError } from "@/tools/registry";
+import { ToolSchemaValidationError } from "@/tools/validation";
 
 describe("ToolPolicy", () => {
   it("allowlist permits listed tools and blocks others", () => {
@@ -28,9 +30,45 @@ describe("ToolPolicy", () => {
   it("requiresApproval returns false for lower risk or no set configured", () => {
     const withSet = new ToolPolicy({ requireApprovalFor: new Set(["destructive", "admin"]) });
     expect(withSet.requiresApproval("search", "read")).toBe(false);
-    expect(withSet.requiresApproval("search", undefined)).toBe(false);
+    expect(() => withSet.requiresApproval("search", undefined)).toThrow(UnclassifiedToolRiskError);
 
     const noSet = new ToolPolicy();
     expect(noSet.requiresApproval("delete_all", "destructive")).toBe(false);
+  });
+
+  it("snapshots caller-owned sets", () => {
+    const allowed = new Set(["search"]);
+    const denied = new Set(["delete"]);
+    const requireApprovalFor = new Set(["write"] as const);
+    const policy = new ToolPolicy({ allowed, denied, requireApprovalFor });
+
+    allowed.clear();
+    allowed.add("delete");
+    denied.clear();
+    requireApprovalFor.clear();
+
+    expect(policy.isAllowed("search")).toBe(true);
+    expect(policy.isAllowed("delete")).toBe(false);
+    expect(policy.requiresApproval("update", "write")).toBe(true);
+  });
+
+  it("rejects unknown approval risks during construction", () => {
+    expect(
+      () =>
+        new ToolPolicy({
+          requireApprovalFor: new Set(["typo"]) as unknown as Set<"read">,
+        }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "INVALID_TOOL_SCHEMA",
+        path: "/risk",
+      }),
+    );
+    expect(
+      () =>
+        new ToolPolicy({
+          requireApprovalFor: new Set(["typo"]) as unknown as Set<"read">,
+        }),
+    ).toThrow(ToolSchemaValidationError);
   });
 });

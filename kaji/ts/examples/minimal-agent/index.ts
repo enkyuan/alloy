@@ -38,6 +38,7 @@ export async function runAgent(provider = providerFromEnv()): Promise<void> {
   const runtime = new AgentBuilder()
     .provider(provider)
     .tool(getWeather)
+    .defaultContext({ principalId: "minimal-agent" })
     .systemPrompt("You are a weather assistant.")
     .build({ bus: new EventBus(), store: new InMemoryEventStore() });
 

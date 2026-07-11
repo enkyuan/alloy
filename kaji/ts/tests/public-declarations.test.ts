@@ -22,6 +22,15 @@ describe("public declarations", () => {
       .filter((file) => file.endsWith(".d.ts") || file.endsWith(".d.cts"))
       .map((file) => readFileSync(resolve(dist, file), "utf8"))
       .join("\n");
+    expect(declarationGraph).toContain("interface TurnContext");
+    expect(declarationGraph).toContain("interface ToolExecutionContext");
+    expect(declarationGraph).toContain(
+      "type ToolExecutor = (name: string, args: Readonly<Record<string, unknown>>, context: ToolExecutionContext)",
+    );
+    expect(declarationGraph).toContain("readonly risk: ToolRisk");
+    expect(declarationGraph).toContain(
+      "type ToolHandler = (args: Record<string, unknown>, context: ToolExecutionContext)",
+    );
     expect(declarationGraph).not.toContain("ToolValidationReceipt");
     expect(declarationGraph).not.toContain("claim(receipt");
     expect(declarationGraph).not.toContain("claimActive(");

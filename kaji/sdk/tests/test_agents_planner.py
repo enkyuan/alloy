@@ -8,8 +8,24 @@ from kaji.infra.events.schemas import (
     ToolCallStarted,
 )
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
+
+
+_TURN_CONTEXT = TurnContext(principal_id="test-principal")
+
+
+async def _execute(planner, session_id, calls, emit):
+    return await planner.execute_scatter_gather(
+        session_id,
+        calls,
+        emit,
+        turn_id="test-turn",
+        turn_context=_TURN_CONTEXT,
+        cancellation_token=CancellationToken(),
+    )
 
 
 @pytest.mark.asyncio
@@ -22,8 +38,16 @@ async def test_tool_planner_emits_lifecycle_on_success():
     async def executor(name: str, args: dict):
         return {"ok": True, "name": name, "args": args}
 
-    planner = ToolPlanner(executor=executor)
-    await planner.execute_scatter_gather(
+    planner = ToolPlanner(
+        executor=executor,
+        specs={
+            "search": ToolSpec(
+                name="search", description="search", parameters={}, risk="read"
+            )
+        },
+    )
+    await _execute(
+        planner,
         "sess-1",
         [{"id": "call-1", "name": "search", "arguments": {"q": "test"}}],
         emit,
@@ -49,14 +73,29 @@ async def test_tool_planner_emits_failure_event():
     async def executor(_name: str, _args: dict):
         raise RuntimeError("tool exploded")
 
-    planner = ToolPlanner(executor=executor)
-    results = await planner.execute_scatter_gather(
+    planner = ToolPlanner(
+        executor=executor,
+        specs={
+            "broken": ToolSpec(
+                name="broken", description="broken", parameters={}, risk="read"
+            )
+        },
+    )
+    results = await _execute(
+        planner,
         "sess-1",
         [{"id": "call-2", "name": "broken", "arguments": {}}],
         emit,
     )
 
-    assert results[0]["error"] == "RuntimeError: tool exploded"
+    assert results[0] == {
+        "id": "call-2",
+        "name": "broken",
+        "error": "Tool execution failed",
+        "error_code": "TOOL_EXECUTION_FAILED",
+        "retryable": False,
+        "outcome": "failed",
+    }
     assert any(event.type == EventType.TOOL_CALL_FAILED for event in emitted)
     assert isinstance(
         next(event for event in emitted if event.type == EventType.TOOL_CALL_FAILED),
@@ -74,8 +113,16 @@ async def test_tool_planner_generates_call_id_when_missing():
     async def _ok_executor(_name: str, _args: dict) -> str:
         return "ok"
 
-    planner = ToolPlanner(executor=_ok_executor)
-    await planner.execute_scatter_gather(
+    planner = ToolPlanner(
+        executor=_ok_executor,
+        specs={
+            "search": ToolSpec(
+                name="search", description="search", parameters={}, risk="read"
+            )
+        },
+    )
+    await _execute(
+        planner,
         "sess-1",
         [{"name": "search", "arguments": {}}],
         emit,
@@ -111,7 +158,8 @@ async def test_approval_approved_proceeds_to_execution():
         approval_handler=approve,
         specs={"nuke": spec},
     )
-    results = await planner.execute_scatter_gather(
+    results = await _execute(
+        planner,
         "sess-approval",
         [{"id": "c1", "name": "nuke", "arguments": {}}],
         emit,
@@ -150,7 +198,8 @@ async def test_approval_rejected_skips_execution():
         approval_handler=reject,
         specs={"charge": spec},
     )
-    results = await planner.execute_scatter_gather(
+    results = await _execute(
+        planner,
         "sess-reject",
         [{"id": "c2", "name": "charge", "arguments": {}}],
         emit,
@@ -182,7 +231,8 @@ async def test_no_approval_needed_for_unclassified_risk():
         policy=policy,
         specs={"search": spec},
     )
-    await planner.execute_scatter_gather(
+    await _execute(
+        planner,
         "sess-no-approval",
         [{"id": "c3", "name": "search", "arguments": {}}],
         emit,
@@ -214,7 +264,8 @@ async def test_no_approval_handler_rejects_by_default():
         approval_handler=None,
         specs={"add_user": spec},
     )
-    results = await planner.execute_scatter_gather(
+    results = await _execute(
+        planner,
         "sess-no-handler",
         [{"id": "c4", "name": "add_user", "arguments": {}}],
         emit,
@@ -256,7 +307,8 @@ async def test_policy_denied_tool_skips_execution_and_approval():
         specs={"delete": spec},
     )
 
-    results = await planner.execute_scatter_gather(
+    results = await _execute(
+        planner,
         "sess-denied",
         [{"id": "c5", "name": "delete", "arguments": {}}],
         emit,
@@ -281,9 +333,18 @@ async def test_policy_allowlist_blocks_unlisted_tool():
         called["executor"] = True
         return {"ok": True}
 
-    planner = ToolPlanner(executor=executor, policy=ToolPolicy(allowed={"search"}))
+    planner = ToolPlanner(
+        executor=executor,
+        policy=ToolPolicy(allowed={"search"}),
+        specs={
+            "charge": ToolSpec(
+                name="charge", description="charge", parameters={}, risk="financial"
+            )
+        },
+    )
 
-    results = await planner.execute_scatter_gather(
+    results = await _execute(
+        planner,
         "sess-allowlist",
         [{"id": "c6", "name": "charge", "arguments": {}}],
         emit,

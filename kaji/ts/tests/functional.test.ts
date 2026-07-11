@@ -7,12 +7,26 @@ import {
   EventType,
   functionTool,
   InMemoryEventStore,
-  type ToolContext,
+  type ToolExecutionContext,
   ToolPlanner,
   ToolRegistry,
   ToolSchemaValidator,
 } from "@/index";
 import { MockProvider } from "@/testing";
+
+function toolContext(principalId: string): ToolExecutionContext {
+  return {
+    principalId,
+    sessionId: "direct-session",
+    turnId: "direct-turn",
+    requestId: "direct-request",
+    traceId: "direct-trace",
+    toolCallId: "direct-call",
+    idempotencyKey: "direct-session:direct-call",
+    signal: new AbortController().signal,
+    metadata: {},
+  };
+}
 
 describe("functionTool", () => {
   it("produces a BoundTool with the handler name", () => {
@@ -20,7 +34,7 @@ describe("functionTool", () => {
       return { city, tempF: 68 };
     }
     const bound = functionTool(
-      { description: "weather", parameters: z.object({ city: z.string() }) },
+      { description: "weather", parameters: z.object({ city: z.string() }), risk: "read" },
       getWeather,
     );
     expect(bound).toBeInstanceOf(BoundTool);
@@ -33,6 +47,7 @@ describe("functionTool", () => {
       {
         name: "search",
         description: "search",
+        risk: "read",
         parameters: z.object({ query: z.string(), limit: z.number().optional() }),
       },
       async () => [],
@@ -45,7 +60,7 @@ describe("functionTool", () => {
 
   it("registers with namespace prefix", () => {
     const bound = functionTool(
-      { name: "ping", description: "ping", parameters: z.object({}) },
+      { name: "ping", description: "ping", parameters: z.object({}), risk: "read" },
       async () => "pong",
     );
     const registry = new ToolRegistry();
@@ -62,11 +77,16 @@ describe("functionTool", () => {
       {
         name: "echo",
         description: "echo",
+        risk: "read",
         parameters: z.object({ message: z.string() }),
       },
       async ({ message }) => ({ echoed: message }),
     );
-    const runtime = new AgentBuilder().provider(new MockProvider()).tool(echo).build({ store });
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider())
+      .tool(echo)
+      .defaultContext({ principalId: "test" })
+      .build({ store });
     await runtime.send("s1", "hello");
     const events = await runtime.history("s1");
     const types = events.map((e) => e.type);
@@ -80,6 +100,7 @@ describe("functionTool", () => {
       {
         name: "exact_once",
         description: "exact once",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             validationCalls += 1;
@@ -96,6 +117,7 @@ describe("functionTool", () => {
         }),
       )
       .tool(bound)
+      .defaultContext({ principalId: "test" })
       .build();
 
     await runtime.send("session-exact-once", "run");
@@ -110,11 +132,12 @@ describe("functionTool", () => {
       {
         name: "add",
         description: "add",
+        risk: "read",
         parameters: z.object({ x: z.number(), y: z.number() }),
       },
       async ({ x, y }) => ({ sum: x + y }),
     );
-    const result = await bound.handler({ userId: "_" } as any, { x: 2, y: 3 });
+    const result = await bound.handler({ x: 2, y: 3 }, toolContext("_"));
     expect(result).toEqual({ sum: 5 });
   });
 
@@ -134,13 +157,14 @@ describe("functionTool", () => {
           coerced: unknown;
           transformed: string;
         },
-        context: ToolContext,
+        context: ToolExecutionContext,
       ) => ({ args, context }),
     );
     const bound = functionTool(
       {
         name: "validation_only",
         description: "validation only",
+        risk: "read",
         parameters: z.object({
           required: z.string(),
           defaulted: z.string().default("generated"),
@@ -154,10 +178,11 @@ describe("functionTool", () => {
       handler,
     );
 
-    const result = await bound.handler({ userId: "user-1" }, original);
+    const directContext = toolContext("user-1");
+    const result = await bound.handler(original, directContext);
 
-    expect(result).toEqual({ args: original, context: { userId: "user-1" } });
-    expect(handler).toHaveBeenCalledWith(original, { userId: "user-1" });
+    expect(result).toEqual({ args: original, context: directContext });
+    expect(handler).toHaveBeenCalledWith(original, directContext);
     expect(handler.mock.calls[0]![0]).not.toBe(original);
     expect(transformCalls).toBe(1);
 
@@ -165,13 +190,13 @@ describe("functionTool", () => {
     bound.register(registry);
     await expect(registry.execute("user-2", "fn_validation_only", original)).resolves.toEqual({
       args: original,
-      context: { userId: "user-2", db: undefined },
+      context: expect.objectContaining({ principalId: "user-2" }),
     });
     expect(transformCalls).toBe(2);
     expect(handler.mock.calls[1]![0]).not.toBe(original);
 
     const planner = new ToolPlanner({
-      executor: (name, args) => registry.execute("user-3", name, args),
+      executor: (name, args, context) => registry.execute(name, args, context),
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
     const events: Array<{ type: string }> = [];
@@ -181,6 +206,8 @@ describe("functionTool", () => {
       async (event) => {
         events.push(event);
       },
+      "turn-1",
+      { principalId: "user-3" },
     );
 
     expect(plannerResult[0]).toMatchObject({ result: { args: original } });
@@ -201,6 +228,7 @@ describe("functionTool", () => {
       {
         name: "flapping",
         description: "flapping",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             refinementCalls += 1;
@@ -225,6 +253,8 @@ describe("functionTool", () => {
       async (event) => {
         events.push(event);
       },
+      "turn-1",
+      { principalId: "user-1" },
     );
 
     expect(refinementCalls).toBe(1);
@@ -249,6 +279,7 @@ describe("functionTool", () => {
       {
         name: "bound_executor",
         description: "bound executor",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             validationCalls += 1;
@@ -261,7 +292,7 @@ describe("functionTool", () => {
     const registry = new ToolRegistry();
     bound.register(registry);
     const planner = new ToolPlanner({
-      executor: registry.execute.bind(registry, "user-1"),
+      executor: (name, args, context) => registry.execute(name, args, context),
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
@@ -269,6 +300,8 @@ describe("functionTool", () => {
       "session-1",
       [{ id: "call-1", name: "fn_bound_executor", arguments: { value: "x" } }],
       async () => {},
+      "turn-1",
+      { principalId: "user-1" },
     );
 
     expect(validationCalls).toBe(1);
@@ -291,6 +324,7 @@ describe("functionTool", () => {
       {
         name: "isolated_async",
         description: "isolated async validation",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(async (value) => {
             refinementCalls += 1;
@@ -305,7 +339,7 @@ describe("functionTool", () => {
     const registry = new ToolRegistry();
     bound.register(registry);
     const planner = new ToolPlanner({
-      executor: registry.execute.bind(registry, "user-1"),
+      executor: (name, args, context) => registry.execute(name, args, context),
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
@@ -313,6 +347,8 @@ describe("functionTool", () => {
       "session-1",
       [{ id: "call-1", name: "fn_isolated_async", arguments: original }],
       async () => {},
+      "turn-1",
+      { principalId: "user-1" },
     );
     await started;
     original.value = 123;
@@ -343,6 +379,7 @@ describe("functionTool", () => {
       {
         name: "invocation_bound",
         description: "invocation-bound validation",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             refinementCalls += 1;
@@ -355,10 +392,10 @@ describe("functionTool", () => {
     const registry = new ToolRegistry();
     bound.register(registry);
     const planner = new ToolPlanner({
-      executor: async (name, args) => {
+      executor: async (name, args, context) => {
         executorStarted();
         await release;
-        return registry.execute("planned-user", name, args);
+        return registry.execute(name, args, context);
       },
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
@@ -367,6 +404,8 @@ describe("functionTool", () => {
       "session-1",
       [{ id: "call-1", name: "fn_invocation_bound", arguments: original }],
       async () => {},
+      "turn-1",
+      { principalId: "planned-user" },
     );
     await started;
     await expect(
@@ -385,7 +424,12 @@ describe("functionTool", () => {
     const schema = z.object({ value: z.string() });
     const handler = vi.fn(async () => ({ ok: true }));
     const bound = functionTool(
-      { name: "parser_snapshot", description: "parser snapshot", parameters: schema },
+      {
+        name: "parser_snapshot",
+        description: "parser snapshot",
+        parameters: schema,
+        risk: "read",
+      },
       handler,
     );
     const registry = new ToolRegistry();
@@ -406,6 +450,7 @@ describe("functionTool", () => {
       {
         name: "public_validator",
         description: "public validator",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             refinementCalls += 1;
@@ -432,6 +477,7 @@ describe("functionTool", () => {
       {
         name: "delayed",
         description: "delayed",
+        risk: "read",
         parameters: z.object({
           value: z.string().refine(() => {
             validationCalls += 1;
@@ -469,6 +515,8 @@ describe("functionTool", () => {
       "session-1",
       [{ id: "call-1", name: "fn_delayed", arguments: args }],
       async () => {},
+      "turn-1",
+      { principalId: "user-1" },
     );
     const replay = await delayed;
 
@@ -486,6 +534,7 @@ describe("functionTool", () => {
       {
         name: "refined",
         description: "refined",
+        risk: "read",
         parameters: z.object({
           required: z.string(),
           approved: z.string().refine(async (value) => value === "yes"),
@@ -494,9 +543,9 @@ describe("functionTool", () => {
       handler,
     );
 
-    await expect(bound.handler({ userId: "user-1" }, { approved: "yes" })).rejects.toThrow();
+    await expect(bound.handler({ approved: "yes" }, toolContext("user-1"))).rejects.toThrow();
     await expect(
-      bound.handler({ userId: "user-1" }, { required: "present", approved: "no" }),
+      bound.handler({ required: "present", approved: "no" }, toolContext("user-1")),
     ).rejects.toThrow();
     expect(handler).not.toHaveBeenCalled();
 
@@ -520,6 +569,8 @@ describe("functionTool", () => {
       async (event) => {
         events.push(event);
       },
+      "turn-1",
+      { principalId: "user-1" },
     );
 
     expect(executor).not.toHaveBeenCalled();

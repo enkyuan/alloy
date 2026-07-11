@@ -34,6 +34,7 @@ describe("MockProvider", () => {
     "get_weather",
     "Look up weather",
     z.object({ city: z.string() }),
+    "read",
   );
 
   it("requests the first tool when no tool result is in history", async () => {

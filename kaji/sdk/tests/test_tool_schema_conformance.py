@@ -10,6 +10,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallStarted
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.errors import (
     ToolArgumentValidationError,
@@ -28,11 +30,19 @@ INVALID_CASES = json.loads((CONTRACTS_ROOT / "conformance-invalid.json").read_te
 ]
 
 
+def _planner(executor: AsyncMock, **kwargs: Any) -> ToolPlanner:
+    async def execute(invocation: Any) -> Any:
+        return await executor(invocation)
+
+    return ToolPlanner(execute, **kwargs)
+
+
 def _spec(case: dict[str, Any]) -> ToolSpec:
     return ToolSpec(
         name="fixture_tool",
         description=case["name"],
         parameters=case["schema"],
+        risk="read",
     )
 
 
@@ -83,7 +93,7 @@ async def test_shared_invalid_arguments_never_start_or_execute(
     case: dict[str, Any],
 ) -> None:
     executor = AsyncMock(return_value={"should": "not run"})
-    planner = ToolPlanner(executor, specs={"fixture_tool": _spec(case)})
+    planner = _planner(executor, specs={"fixture_tool": _spec(case)})
     events: list[KajiEvent] = []
 
     async def emit(event: KajiEvent) -> None:
@@ -99,6 +109,9 @@ async def test_shared_invalid_arguments_never_start_or_execute(
             }
         ],
         emit,
+        turn_id="test-turn",
+        turn_context=TurnContext(principal_id="test-principal"),
+        cancellation_token=CancellationToken(),
     )
 
     executor.assert_not_awaited()
@@ -189,6 +202,7 @@ def test_argument_error_is_bounded_and_does_not_echo_rejected_value() -> None:
                     "type": "object",
                     "properties": {"token": {"type": "string", "pattern": "^allowed$"}},
                 },
+                risk="read",
             )
         }
     )
@@ -213,6 +227,7 @@ def test_validator_owns_a_defensive_schema_snapshot() -> None:
                 name="fixture_tool",
                 description="snapshot",
                 parameters=schema,
+                risk="read",
             )
         }
     )
@@ -265,6 +280,7 @@ async def test_registry_list_specs_returns_copy_safe_schemas() -> None:
             name="fixture_tool",
             description="snapshot",
             parameters=_integer_object_schema(),
+            risk="read",
         )
     )(handler)
 
@@ -289,10 +305,11 @@ async def test_planner_snapshots_source_specs_at_construction() -> None:
             name="fixture_tool",
             description="snapshot",
             parameters=schema,
+            risk="read",
         )
     }
     executor = AsyncMock(return_value={"should": "not run"})
-    planner = ToolPlanner(executor, specs=specs)
+    planner = _planner(executor, specs=specs)
     events: list[KajiEvent] = []
 
     async def emit(event: KajiEvent) -> None:
@@ -311,6 +328,9 @@ async def test_planner_snapshots_source_specs_at_construction() -> None:
             }
         ],
         emit,
+        turn_id="test-turn",
+        turn_context=TurnContext(principal_id="test-principal"),
+        cancellation_token=CancellationToken(),
     )
 
     executor.assert_not_awaited()

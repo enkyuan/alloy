@@ -38,8 +38,19 @@ describe("AgentRuntime.turn", () => {
   });
 
   it("emits TOOL_CALL_REQUESTED when the model calls a tool", async () => {
-    const { runtime } = build(new MockProvider({ toolCall: { name: "ping", args: {} } }));
-    const r = await runtime.turn("call ping");
+    const store = new InMemoryEventStore();
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ toolCall: { name: "ping", args: {} } }))
+      .integration({
+        register(registry) {
+          registry.register(
+            { name: "ping", description: "ping", parameters: {}, risk: "read" },
+            async () => ({ pong: true }),
+          );
+        },
+      })
+      .build({ bus: new EventBus(), store });
+    const r = await runtime.turn("call ping", { context: { principalId: "test" } });
     expect(r.toolCallEvents.some((e) => e.type === EventType.TOOL_CALL_REQUESTED)).toBe(true);
   });
 

@@ -6,7 +6,12 @@ import { ToolRegistry } from "@/tools/registry";
 import type { ToolHandler, ToolSpec } from "@/tools/registry";
 
 const dummyHandler: ToolHandler = async (_ctx, _args) => ({ ok: true });
-const dummySpec: ToolSpec = { name: "bar", description: "A test tool", parameters: {} };
+const dummySpec: ToolSpec = {
+  name: "bar",
+  description: "A test tool",
+  parameters: {},
+  risk: "read",
+};
 
 class FooIntegration extends Integration {
   readonly namespace = "foo";
@@ -19,8 +24,8 @@ class MultiToolIntegration extends Integration {
   readonly namespace = "svc";
   tools(): [ToolSpec, ToolHandler][] {
     return [
-      [{ name: "alpha", description: "alpha", parameters: {} }, dummyHandler],
-      [{ name: "beta", description: "beta", parameters: {} }, dummyHandler],
+      [{ name: "alpha", description: "alpha", parameters: {}, risk: "read" }, dummyHandler],
+      [{ name: "beta", description: "beta", parameters: {}, risk: "read" }, dummyHandler],
     ];
   }
 }
@@ -113,10 +118,11 @@ describe("Integration", () => {
   it("validates Zod metadata with byte-equivalent isolated arguments", async () => {
     let transformCalls = 0;
     const original = { amount: "42", label: "lowercase" };
-    const implementation = vi.fn(async (_ctx, args) => ({ args }));
+    const implementation = vi.fn(async (args) => ({ args }));
     const handler = tool(
       {
         description: "Validate only",
+        risk: "read",
         parameters: z.object({
           amount: z.coerce.number(),
           label: z.string().transform((value) => {
@@ -127,11 +133,21 @@ describe("Integration", () => {
       },
       implementation,
     );
-    const context = { userId: "user-1" };
+    const context = {
+      principalId: "user-1",
+      sessionId: "direct-session",
+      turnId: "direct-turn",
+      requestId: "direct-request",
+      traceId: "direct-trace",
+      toolCallId: "direct-call",
+      idempotencyKey: "direct-session:direct-call",
+      signal: new AbortController().signal,
+      metadata: {},
+    };
 
-    await expect(handler(context, original)).resolves.toEqual({ args: original });
-    expect(implementation).toHaveBeenCalledWith(context, original);
-    expect(implementation.mock.calls[0]![1]).not.toBe(original);
+    await expect(handler(original, context)).resolves.toEqual({ args: original });
+    expect(implementation).toHaveBeenCalledWith(original, context);
+    expect(implementation.mock.calls[0]![0]).not.toBe(original);
     expect(transformCalls).toBe(1);
 
     const registry = new ToolRegistry();
@@ -140,11 +156,16 @@ describe("Integration", () => {
       args: original,
     });
     expect(transformCalls).toBe(2);
-    expect(implementation.mock.calls[1]![1]).not.toBe(original);
+    expect(implementation.mock.calls[1]![0]).not.toBe(original);
   });
 
   it("manual tools() override still works", () => {
-    const customSpec: ToolSpec = { name: "custom_op", description: "Custom", parameters: {} };
+    const customSpec: ToolSpec = {
+      name: "custom_op",
+      description: "Custom",
+      parameters: {},
+      risk: "read",
+    };
 
     class ManualIntegration extends Integration {
       readonly namespace = "manual";

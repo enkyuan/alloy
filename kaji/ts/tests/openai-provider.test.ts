@@ -235,6 +235,7 @@ describe("OpenAIProvider.generate", () => {
           catalogName: "weather.getWeather",
           description: "Get weather",
           parameters: {},
+          risk: "read",
         },
       ],
     );

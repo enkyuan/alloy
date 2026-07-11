@@ -4,11 +4,17 @@ The class-based ``Integration`` path remains the right shape for namespaced,
 multi-tool bundles. This module adds a lightweight alternative for the common
 case of "I have one async function; expose it as a tool."
 
-    @tool
-    async def get_weather(city: str) -> dict:
-        return {"city": city, "tempF": 68}
+    @function_tool(risk="read")
+    async def get_weather(context: ToolExecutionContext, city: str) -> dict:
+        return {"city": city, "principal": context.principal_id, "tempF": 68}
 
-    runtime = AgentBuilder().provider(p).tool(get_weather).build()
+    runtime = (
+        AgentBuilder()
+        .provider(p)
+        .tool(get_weather)
+        .default_context(TurnContext(principal_id="weather-app"))
+        .build()
+    )
 
 The handler's type hints are introspected to build a Pydantic model, which is
 then converted to JSON Schema the same way ``@tool(parameters=Model)`` does.
@@ -23,12 +29,13 @@ from typing import Any, Callable, Dict, Optional, Type, Union, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.tools.registry import (
     ToolHandler,
     ToolRegistry,
+    ToolRisk,
     ToolSpec,
     provider_safe_tool_name,
-    tool_spec_from_model,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,18 +74,43 @@ class BoundTool:
         registry.register(prefixed)(self.handler)
 
 
-def _model_from_signature(fn: Callable[..., Any], model_name: str) -> Type[BaseModel]:
+def _context_parameter(fn: Callable[..., Any]) -> str | None:
+    """Find an explicit context parameter without exception-based probing."""
+    parameters = [
+        parameter
+        for parameter in inspect.signature(fn).parameters.values()
+        if parameter.name != "self"
+    ]
+    if not parameters:
+        return None
+    hints = get_type_hints(fn)
+    first = parameters[0]
+    if first.name == "ctx" or hints.get(first.name) is ToolExecutionContext:
+        return first.name
+    if any(
+        hints.get(parameter.name) is ToolExecutionContext
+        for parameter in parameters[1:]
+    ):
+        raise TypeError(
+            "ToolExecutionContext must be the first function tool parameter"
+        )
+    return None
+
+
+def _model_from_signature(
+    fn: Callable[..., Any], model_name: str, context_parameter: str | None
+) -> Type[BaseModel]:
     """Build a Pydantic model from the handler's annotated parameters.
 
-    Skips ``self`` (for methods) and ``ctx`` (the legacy ToolContext parameter).
-    Raises ``TypeError`` if a parameter has no annotation; we fail loudly rather
-    than guess.
+    Skips ``self`` and the explicitly detected execution-context parameter.
+    Raises ``TypeError`` if a tool argument has no annotation; we fail loudly
+    rather than guess.
     """
     sig = inspect.signature(fn)
     hints = get_type_hints(fn)
     fields: Dict[str, Any] = {}
     for name, param in sig.parameters.items():
-        if name in ("self", "ctx"):
+        if name == "self" or name == context_parameter:
             continue
         if name not in hints:
             fn_name = getattr(fn, "__name__", repr(fn))
@@ -95,23 +127,28 @@ def _model_from_signature(fn: Callable[..., Any], model_name: str) -> Type[BaseM
     )
 
 
-def _wrap_handler(fn: Callable[..., Any]) -> ToolHandler:
-    """Adapt ``fn(arg1, arg2, ...)`` into the ``(ctx, args_dict)`` shape the
-    registry expects.
+def _wrap_handler(fn: Callable[..., Any], context_parameter: str | None) -> ToolHandler:
+    """Adapt a typed function into the registry's ``(context, args)`` shape.
 
     The wrapper unpacks ``args_dict`` as keyword arguments and normalises the
     return value: non-dict results (primitives, lists, models) are wrapped as
     ``{"result": ...}`` so the tool log carries a JSON-serialisable object.
     """
     sig = inspect.signature(fn)
-    param_names = [n for n in sig.parameters if n not in ("self", "ctx")]
+    param_names = [
+        name for name in sig.parameters if name != "self" and name != context_parameter
+    ]
 
-    async def adapter(ctx: Any, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def adapter(
+        context: ToolExecutionContext, args: Dict[str, Any]
+    ) -> Dict[str, Any]:
         kwargs = {name: args[name] for name in param_names if name in args}
+        if context_parameter is not None:
+            kwargs[context_parameter] = context
         result = await fn(**kwargs)
         return result if isinstance(result, dict) else {"result": result}
 
-    return adapter  # type: ignore[return-value]
+    return adapter
 
 
 def function_tool(
@@ -119,7 +156,7 @@ def function_tool(
     *,
     description: Optional[str] = None,
     parameters: Optional[Union[Dict[str, Any], Type[BaseModel]]] = None,
-    risk: Optional[str] = None,
+    risk: Optional[ToolRisk] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
     namespace: str = "fn",
@@ -128,7 +165,7 @@ def function_tool(
 
     Usage::
 
-        @function_tool
+        @function_tool(risk="read")
         async def get_weather(city: str) -> dict:
             return {"city": city, "tempF": 68}
 
@@ -141,12 +178,13 @@ def function_tool(
 
     def make(fn: Callable[..., Any]) -> BoundTool:
         fn_name: str = getattr(fn, "__name__", "<anonymous>")
+        context_parameter = _context_parameter(fn)
         params_schema: Dict[str, Any]
         if parameters is None:
-            model = _model_from_signature(fn, f"{fn_name}__Args")
-            params_schema = tool_spec_from_model("_", "_", model).parameters
+            model = _model_from_signature(fn, f"{fn_name}__Args", context_parameter)
+            params_schema = model.model_json_schema(mode="validation")
         elif isinstance(parameters, type) and issubclass(parameters, BaseModel):
-            params_schema = tool_spec_from_model("_", "_", parameters).parameters
+            params_schema = parameters.model_json_schema(mode="validation")
         else:
             params_schema = (
                 parameters  # already Dict[str, Any] per the Union guard above
@@ -160,7 +198,11 @@ def function_tool(
             tags=tags,
             enabled=enabled,
         )
-        return BoundTool(spec=spec, handler=_wrap_handler(fn), namespace=namespace)
+        return BoundTool(
+            spec=spec,
+            handler=_wrap_handler(fn, context_parameter),
+            namespace=namespace,
+        )
 
     # Support both bare ``@tool`` and parameterised ``@tool(...)`` forms.
     if _fn is not None:

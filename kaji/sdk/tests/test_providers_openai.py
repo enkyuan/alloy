@@ -3,6 +3,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.providers.errors import (
     ProviderConfigError,
@@ -81,6 +83,7 @@ async def test_openai_bad_json_tool_args_fail_closed_in_planner():
                 name="n",
                 description="No-op.",
                 parameters={"type": "object", "properties": {}, "required": []},
+                risk="read",
             )
         },
     )
@@ -91,7 +94,14 @@ async def test_openai_bad_json_tool_args_fail_closed_in_planner():
     async def emit(event):
         emitted.append(event)
 
-    await planner.execute_scatter_gather("s1", [call], emit)
+    await planner.execute_scatter_gather(
+        "s1",
+        [call],
+        emit,
+        turn_id="test-turn",
+        turn_context=TurnContext(principal_id="test-principal"),
+        cancellation_token=CancellationToken(),
+    )
 
     assert executed is False
     assert emitted[-1].type.value == "tool.call.failed"

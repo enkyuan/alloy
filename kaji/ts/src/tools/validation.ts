@@ -5,7 +5,10 @@ import addFormats from "ajv-formats";
 import { cloneAndFreezeJson, structurallyEqualJson } from "@/events/json";
 import type { JSONSchema, ToolSpec } from "@/tools/registry";
 
-export type ToolValidationCode = "INVALID_TOOL_SCHEMA" | "INVALID_TOOL_ARGUMENTS";
+export type ToolValidationCode =
+  | "INVALID_TOOL_SCHEMA"
+  | "INVALID_TOOL_ARGUMENTS"
+  | "UNCLASSIFIED_TOOL_RISK";
 export type ToolExecutionOutcome = "not_started";
 export type ToolArgumentValidator = (toolName: string, args: unknown) => Promise<void>;
 export const TOOL_ARGUMENT_VALIDATOR = Symbol("kaji.tool_argument_validator");
@@ -323,6 +326,14 @@ export class ToolSchemaValidationError extends ToolValidationError {
       toolName,
       path,
       boundedMessage("Tool schema", "JSON safety", path),
+    );
+  }
+
+  static invalidRisk(toolName: string): ToolSchemaValidationError {
+    return new ToolSchemaValidationError(
+      toolName,
+      "/risk",
+      "Tool schema failed risk validation at /risk",
     );
   }
 }

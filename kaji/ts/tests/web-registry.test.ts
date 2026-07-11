@@ -5,10 +5,20 @@
  * importing the implementation consumers receive.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolContext } from "@/index";
+import type { ToolExecutionContext } from "@/index";
 import { createWebIntegration } from "../registry/web/index";
 
-const ctx: ToolContext = { userId: "_" };
+const ctx: ToolExecutionContext = {
+  principalId: "_",
+  sessionId: "test-session",
+  turnId: "test-turn",
+  requestId: "test-request",
+  traceId: "test-trace",
+  toolCallId: "test-call",
+  idempotencyKey: "test-session:test-call",
+  signal: new AbortController().signal,
+  metadata: {},
+};
 
 describe("web integration: fetch (reader mode)", () => {
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -38,7 +48,7 @@ describe("web integration: fetch (reader mode)", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createWebIntegration();
-    const result = await tool.handler(ctx, { url: "https://example.com" });
+    const result = await tool.handler({ url: "https://example.com" }, ctx);
 
     expect(result["url"]).toBe("https://example.com");
     const text = result["text"] as string;
@@ -59,7 +69,7 @@ describe("web integration: fetch (reader mode)", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createWebIntegration();
-    const result = await tool.handler(ctx, { url: "https://example.com" });
+    const result = await tool.handler({ url: "https://example.com" }, ctx);
 
     expect(result["title"]).toBe("My Great Page");
   });
@@ -72,7 +82,7 @@ describe("web integration: fetch (reader mode)", () => {
     } as Partial<Response>);
 
     const { fetch: tool } = createWebIntegration();
-    const result = await tool.handler(ctx, { url: "https://example.com" });
+    const result = await tool.handler({ url: "https://example.com" }, ctx);
     const text = result["text"] as string;
 
     expect(text).toBe("lots of whitespace");
@@ -89,7 +99,7 @@ describe("web integration: search", () => {
     delete process.env["BRAVE_API_KEY"];
 
     const { search: tool } = createWebIntegration();
-    await expect(tool.handler(ctx, { query: "test query", count: 5 })).rejects.toThrow(
+    await expect(tool.handler({ query: "test query", count: 5 }, ctx)).rejects.toThrow(
       /BRAVE_API_KEY not set/i,
     );
   });
@@ -106,7 +116,7 @@ describe("web integration: search", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const { search: tool } = createWebIntegration({ braveApiKey: "test-api-key" });
-    const result = await tool.handler(ctx, { query: "hello", count: 1 });
+    const result = await tool.handler({ query: "hello", count: 1 }, ctx);
 
     expect(result["results"]).toHaveLength(1);
     const firstResult = (result["results"] as { title: string }[])[0];
@@ -128,7 +138,7 @@ describe("web integration: search", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     const { search } = createWebIntegration({ braveApiKey: "test-api-key" });
-    await search.handler(ctx, { query: "hello" });
+    await search.handler({ query: "hello" }, ctx);
 
     expect(mockFetch).toHaveBeenCalledOnce();
     expect(mockFetch.mock.calls[0]?.[0]).toContain("q=hello&count=5");

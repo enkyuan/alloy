@@ -11,7 +11,7 @@ import pytest
 
 from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.store import InMemoryEventStore
-from kaji.runtime.agents import AgentBuilder
+from kaji.runtime.agents import AgentBuilder, TurnContext
 from kaji.runtime.integrations import function_tool
 from kaji.runtime.providers.mock import MockProvider
 
@@ -27,6 +27,7 @@ async def test_function_tool_runs_through_turn():
         AgentBuilder()
         .provider(MockProvider(reply="It is 68F in Seattle."))
         .tool(get_weather)
+        .default_context(TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
         .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
     )
@@ -42,10 +43,11 @@ async def test_function_tool_drives_a_tool_call():
         AgentBuilder()
         .provider(
             MockProvider(
-                tool_call={"name": "fn.get_weather", "args": {"city": "Seattle"}}
+                tool_call={"name": "fn_get_weather", "args": {"city": "Seattle"}}
             )
         )
         .tool(get_weather)
+        .default_context(TurnContext(principal_id="quickstart"))
         .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
     )
     result = await runtime.turn("What is the weather?")

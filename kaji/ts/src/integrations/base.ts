@@ -34,7 +34,7 @@ import {
  */
 export function tool(meta: ToolMeta, handler: ToolHandler): ToolHandler {
   const argumentValidator = toolArgumentValidator(meta.parameters);
-  const adapter: ToolHandler = async (context, args) => {
+  const adapter: ToolHandler = async (args, context) => {
     let executionArgs = args;
     if (
       argumentValidator !== undefined &&
@@ -44,7 +44,7 @@ export function tool(meta: ToolMeta, handler: ToolHandler): ToolHandler {
       executionArgs = cloneToolExecutionArguments(toolName, args);
       await validateIsolatedToolArguments(toolName, executionArgs, argumentValidator);
     }
-    return handler(context, executionArgs);
+    return handler(executionArgs, context);
   };
   (adapter as TaggedHandler)[TOOL_META] = meta;
   if (argumentValidator !== undefined) {
@@ -75,7 +75,7 @@ export abstract class Integration {
             name: key,
             description: meta.description,
             parameters: toolParametersToJSONSchema(meta.parameters),
-            ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+            risk: meta.risk,
             ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
             ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
           },
