@@ -134,12 +134,14 @@ export type { OpenAIProviderOptions, RetryOptions } from "@/providers/openai";
 export { AnthropicProvider } from "@/providers/anthropic";
 export type { AnthropicProviderOptions } from "@/providers/anthropic";
 export {
+  normalizeProviderError,
   ProviderAPIError,
   ProviderConfigError,
   ProviderConnectionError,
   ProviderError,
   ProviderRateLimitedError,
 } from "@/providers/errors";
+export type { NormalizedProviderError } from "@/providers/errors";
 export { lookupCost, calculateCostUsd } from "@/providers/costs";
 export type { ModelCostEntry } from "@/providers/costs";
 export { getProvider, registerProvider } from "@/providers/registry";
