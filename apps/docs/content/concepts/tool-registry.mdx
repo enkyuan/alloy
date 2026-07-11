@@ -59,7 +59,7 @@ Pass tools to the runtime via `AgentBuilder().tool(...)`. For a hand-written
 spec, use `ToolSpec` and `register_tool` (Python) or `registerTool` (TS).
 
 Every enabled spec requires one closed risk value: `read`, `write`,
-`external_effect`, `financial`, `destructive`, or `admin`. A runtime turn that
+`external_effect`, `destructive`, or `admin`. A runtime turn that
 can execute a tool also requires `TurnContext.principal_id` (Python) or
 `TurnContext.principalId` (TypeScript). Missing risk or identity fails before
 the handler starts.

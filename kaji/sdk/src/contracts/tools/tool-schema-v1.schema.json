@@ -10,7 +10,7 @@
     "description": { "type": "string", "minLength": 1 },
     "parameters": { "type": "object" },
     "risk": {
-      "enum": ["read", "write", "external_effect", "financial", "destructive", "admin"]
+      "enum": ["read", "write", "external_effect", "destructive", "admin"]
     },
     "parallel_safe": { "type": "boolean", "default": false },
     "timeout_ms": { "type": "integer", "minimum": 1 }

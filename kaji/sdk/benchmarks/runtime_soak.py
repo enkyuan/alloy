@@ -319,7 +319,7 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
             name="charge",
             description="offline approval tool",
             parameters={"type": "object", "additionalProperties": True},
-            risk="financial",
+            risk="destructive",
         ),
     }
 
@@ -333,7 +333,7 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
     )
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=approval_bridge,
         specs=specs,
         controller=controller,

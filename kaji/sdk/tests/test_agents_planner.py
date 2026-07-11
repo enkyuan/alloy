@@ -198,9 +198,9 @@ async def test_approval_rejected_skips_execution():
     async def reject(_name, _args, _risk):
         return False
 
-    policy = ToolPolicy(require_approval_for={"financial"})
+    policy = ToolPolicy(require_approval_for={"destructive"})
     spec = ToolSpec(
-        name="charge", description="charge card", parameters={}, risk="financial"
+        name="charge", description="charge card", parameters={}, risk="destructive"
     )
     planner = ToolPlanner(
         executor=executor,
@@ -355,7 +355,7 @@ async def test_policy_allowlist_blocks_unlisted_tool():
         policy=ToolPolicy(allowed={"search"}),
         specs={
             "charge": ToolSpec(
-                name="charge", description="charge", parameters={}, risk="financial"
+                name="charge", description="charge", parameters={}, risk="destructive"
             )
         },
     )

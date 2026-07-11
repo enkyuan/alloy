@@ -49,6 +49,7 @@ APPROVAL_FAILURE_RETRYABILITY = {
     "TOOL_CANCELLED": True,
     "APPROVAL_UNAVAILABLE": False,
 }
+EXPECTED_TOOL_RISKS = ["read", "write", "external_effect", "destructive", "admin"]
 
 
 class ContractError(RuntimeError):
@@ -90,6 +91,48 @@ def check_schema(schema: Any) -> SchemaError | None:
     except SchemaError as exc:
         return exc
     return None
+
+
+def check_tool_risk_vocabulary(documents: dict[str, dict[str, Any]]) -> None:
+    locations = {
+        "tools/tool-schema-v1.schema.json": (
+            "/properties/risk/enum",
+            documents["tools/tool-schema-v1.schema.json"]["properties"]["risk"]["enum"],
+        ),
+        "integrations/manifest.schema.json": (
+            "/properties/tools/items/properties/risk/enum",
+            documents["integrations/manifest.schema.json"]["properties"]["tools"][
+                "items"
+            ]["properties"]["risk"]["enum"],
+        ),
+    }
+    for relative in (
+        "events/new-kaji-event-v1.schema.json",
+        "events/stored-kaji-event-v1.schema.json",
+    ):
+        approval_rule = next(
+            (
+                rule
+                for rule in documents[relative]["allOf"]
+                if rule.get("if", {}).get("properties", {}).get("type", {}).get("const")
+                == "tool.approval.requested"
+            ),
+            None,
+        )
+        if approval_rule is None:
+            raise fail(CONTRACTS / relative, "/allOf", "missing approval request rule")
+        locations[relative] = (
+            "/allOf/tool.approval.requested/then/properties/risk/enum",
+            approval_rule["then"]["properties"]["risk"]["enum"],
+        )
+
+    for relative, (location, actual) in locations.items():
+        if actual != EXPECTED_TOOL_RISKS:
+            raise fail(
+                CONTRACTS / relative,
+                location,
+                f"expected canonical tool risks {EXPECTED_TOOL_RISKS!r}",
+            )
 
 
 def load_contract_documents() -> dict[str, dict[str, Any]]:
@@ -991,6 +1034,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     beta_path = CONTRACTS / "beta-core-v1.json"
     if documents["beta-core-v1.json"].get("contractVersion") != "1.0.0":
         raise fail(beta_path, "/contractVersion", "expected 1.0.0")
+    check_tool_risk_vocabulary(documents)
     codes = error_codes(documents)
     check_events(documents, codes)
     check_tools(documents, codes)

@@ -17,10 +17,10 @@ the beta contract.
 
 Every enabled tool requires one explicit risk:
 
-`read`, `write`, `external_effect`, `financial`, `destructive`, or `admin`.
+`read`, `write`, `external_effect`, `destructive`, or `admin`.
 
-The `financial` tier is intentional for money-moving operations; it is not a
-reference to a removed integration. Unknown or omitted risk fails closed.
+Money-moving operations are `destructive`. Unknown or omitted risk fails
+closed.
 
 A text-only turn may omit principal context. A turn that can execute a tool
 must supply `TurnContext.principal_id` or `TurnContext.principalId`, either per

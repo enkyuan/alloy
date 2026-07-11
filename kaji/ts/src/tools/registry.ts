@@ -34,15 +34,8 @@ export type JSONSchema = Readonly<Record<string, unknown>>;
 export type ToolParameters = JSONSchema | z.ZodType;
 
 /** Risk level for a tool, used by ToolPolicy to gate execution. */
-export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
-const TOOL_RISKS = new Set<ToolRisk>([
-  "read",
-  "write",
-  "external_effect",
-  "financial",
-  "destructive",
-  "admin",
-]);
+export type ToolRisk = "read" | "write" | "external_effect" | "destructive" | "admin";
+const TOOL_RISKS = new Set<ToolRisk>(["read", "write", "external_effect", "destructive", "admin"]);
 
 export class UnclassifiedToolRiskError extends Error {
   readonly code = "UNCLASSIFIED_TOOL_RISK" as const;

@@ -427,11 +427,16 @@ describe("ToolPlanner", () => {
     const executor = vi.fn();
     const approvalHandler = vi.fn().mockResolvedValue(false);
 
-    const policy = new ToolPolicy({ requireApprovalFor: new Set(["financial"]) });
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const specs = new Map([
       [
         "charge",
-        { name: "charge", description: "charge card", parameters: {}, risk: "financial" as const },
+        {
+          name: "charge",
+          description: "charge card",
+          parameters: {},
+          risk: "destructive" as const,
+        },
       ],
     ]);
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });

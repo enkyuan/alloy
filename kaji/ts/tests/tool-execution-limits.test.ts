@@ -799,9 +799,9 @@ describe("bounded tool execution", () => {
     cases.push({
       id: "approval-rejected",
       planner: new ToolPlanner({
-        policy: new ToolPolicy({ requireApprovalFor: new Set(["financial"]) }),
+        policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
         approvalHandler: async () => false,
-        specs: new Map([["tool", spec("tool", { risk: "financial" })]]),
+        specs: new Map([["tool", spec("tool", { risk: "destructive" })]]),
         executor: async () => ({ ok: true }),
       }),
     });

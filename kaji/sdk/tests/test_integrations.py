@@ -104,7 +104,7 @@ def test_tool_decorator_namespace_prefix():
         @tool(
             description="Make a payment",
             parameters={},
-            risk="financial",
+            risk="destructive",
         )
         async def make_payment(self, ctx: ToolContext, args: dict) -> dict:
             return {}

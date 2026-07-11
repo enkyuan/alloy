@@ -87,7 +87,7 @@
           },
           "description": { "type": "string", "minLength": 1 },
           "risk": {
-            "enum": ["read", "write", "external_effect", "financial", "destructive", "admin"]
+            "enum": ["read", "write", "external_effect", "destructive", "admin"]
           }
         }
       }

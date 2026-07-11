@@ -87,14 +87,14 @@ async def _execute(
     )
     planner = ToolPlanner(
         executor,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=handler,
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
         controller=controller,
@@ -143,14 +143,14 @@ async def _start_external_approval(
 
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=EventApprovalHandler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
         controller=controller,
@@ -331,14 +331,14 @@ async def test_external_rejection_is_not_duplicated_by_planner() -> None:
 
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=EventApprovalHandler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
     )
@@ -396,7 +396,7 @@ async def test_external_decision_uses_runtime_journal_emitter_and_tri_key() -> N
             tool_name="charge",
             tool_call_id="call",
             tool_args={"amount": 5},
-            risk="financial",
+            risk="destructive",
         )
         emitted.append(event)
         return await journal.commit(event)
@@ -406,7 +406,7 @@ async def test_external_decision_uses_runtime_journal_emitter_and_tri_key() -> N
 
     request_context = ApprovalRequestContext(
         tool_context=tool_context,
-        risk="financial",
+        risk="destructive",
         arguments=call.arguments,
         journal=journal,
         request=request,
@@ -472,7 +472,7 @@ async def test_event_handler_ignores_matching_decision_before_exact_request() ->
                 tool_name="charge",
                 tool_call_id="call",
                 tool_args={"amount": 5},
-                risk="financial",
+                risk="destructive",
             )
         )
 
@@ -481,7 +481,7 @@ async def test_event_handler_ignores_matching_decision_before_exact_request() ->
 
     context = ApprovalRequestContext(
         tool_context=tool_context,
-        risk="financial",
+        risk="destructive",
         arguments=call.arguments,
         journal=journal,
         request=request,
@@ -542,7 +542,7 @@ async def test_handler_cannot_mutate_or_duplicate_canonical_request() -> None:
     assert len(requests) == 1
     assert isinstance(requests[0], ToolApprovalRequested)
     assert requests[0].tool_args == {"amount": 5}
-    assert requests[0].risk == "financial"
+    assert requests[0].risk == "destructive"
     assert requests[0].metadata == {}
     assert len(duplicate_errors) == 1
     assert isinstance(duplicate_errors[0], RuntimeError)
@@ -587,14 +587,14 @@ async def test_cancellation_resistant_handler_is_owned_until_it_settles() -> Non
 
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=ResistantHandler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
         controller=controller,
@@ -710,14 +710,14 @@ async def test_framework_timeout_fence_selects_lower_sequence_external_decision(
     emitter = JournalEventEmitter(journal, before_commit=pause_fence)
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=EventApprovalHandler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
         controller=ToolExecutionController(
@@ -821,14 +821,14 @@ async def test_observed_decision_overrides_mismatched_unrecorded_return(
 
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=Handler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
     )
@@ -879,14 +879,14 @@ async def test_mismatched_approval_journal_and_emitter_are_rejected() -> None:
 
     planner = ToolPlanner(
         execute,
-        policy=ToolPolicy(require_approval_for={"financial"}),
+        policy=ToolPolicy(require_approval_for={"destructive"}),
         approval_handler=Handler(),
         specs={
             "charge": ToolSpec(
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
         },
     )
@@ -966,7 +966,7 @@ async def test_approval_subscription_closes_exactly_once_and_fails_unclosable() 
                 tool_name="charge",
                 tool_call_id="call",
                 tool_args={},
-                risk="financial",
+                risk="destructive",
             )
         )
 
@@ -975,7 +975,7 @@ async def test_approval_subscription_closes_exactly_once_and_fails_unclosable() 
 
     context = ApprovalRequestContext(
         tool_context=tool_context,
-        risk="financial",
+        risk="destructive",
         arguments={},
         journal=journal,  # type: ignore[arg-type]
         request=request,
@@ -1009,7 +1009,7 @@ async def test_approval_subscription_closes_exactly_once_and_fails_unclosable() 
 
     broken_context = ApprovalRequestContext(
         tool_context=tool_context,
-        risk="financial",
+        risk="destructive",
         arguments={},
         journal=BrokenJournal(),  # type: ignore[arg-type]
         request=request,
@@ -1028,7 +1028,7 @@ async def test_external_decision_is_once_and_contiguous_in_turn_result() -> None
                 name="charge",
                 description="charge",
                 parameters={},
-                risk="financial",
+                risk="destructive",
             )
 
             @registry.register(spec)
@@ -1044,7 +1044,7 @@ async def test_external_decision_is_once_and_contiguous_in_turn_result() -> None
         AgentBuilder()
         .provider(MockProvider(tool_call={"name": "charge", "args": {}}))
         .integration(ChargeIntegration())
-        .policy(ToolPolicy(require_approval_for={"financial"}))
+        .policy(ToolPolicy(require_approval_for={"destructive"}))
         .approval_handler(EventApprovalHandler())
         .build(store=store, journal=journal)
     )
@@ -1123,7 +1123,7 @@ def test_replay_approval_keys_are_tri_keyed_and_incremental_matches_cold() -> No
             tool_name="charge",
             tool_call_id="same-call",
             tool_args={},
-            risk="financial",
+            risk="destructive",
         ),
         ToolApprovalRequested(
             session_id="session",
@@ -1131,7 +1131,7 @@ def test_replay_approval_keys_are_tri_keyed_and_incremental_matches_cold() -> No
             tool_name="refund",
             tool_call_id="same-call",
             tool_args={},
-            risk="financial",
+            risk="destructive",
         ),
         ToolApprovalApproved(
             session_id="session",
@@ -1195,7 +1195,7 @@ def test_approval_decision_and_context_invariants_are_bounded() -> None:
             tool_name="charge",
             tool_call_id="call",
             tool_args={},
-            risk="financial",
+            risk="destructive",
         )
         return await journal.commit(event)
 

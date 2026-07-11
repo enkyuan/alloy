@@ -40,9 +40,7 @@ _MAX_REASON_LENGTH = 200
 _APPROVAL_CODES = frozenset(
     {"approved", "rejected", "timeout", "cancelled", "unavailable"}
 )
-_RISKS = frozenset(
-    {"read", "write", "external_effect", "financial", "destructive", "admin"}
-)
+_RISKS = frozenset({"read", "write", "external_effect", "destructive", "admin"})
 _legacy_handler_warned = False
 
 

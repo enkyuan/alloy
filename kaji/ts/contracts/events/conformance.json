@@ -170,7 +170,7 @@
       "tool_call_id": "call-timeout",
       "tool_name": "send_payment",
       "tool_args": { "amount": 10 },
-      "risk": "financial",
+      "risk": "destructive",
       "metadata": {}
     },
     {

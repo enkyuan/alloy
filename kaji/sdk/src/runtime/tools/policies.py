@@ -11,7 +11,7 @@ from kaji.runtime.tools.errors import (
 
 
 # Ordered from least to most sensitive. Used for threshold comparisons.
-RISK_LEVELS = ("read", "write", "external_effect", "financial", "destructive", "admin")
+RISK_LEVELS = ("read", "write", "external_effect", "destructive", "admin")
 _RISK_RANK: dict[str, int] = {r: i for i, r in enumerate(RISK_LEVELS)}
 
 

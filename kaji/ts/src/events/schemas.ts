@@ -172,7 +172,7 @@ export const ToolApprovalRequested = event({
   tool_name: z.string().min(1),
   tool_call_id: z.string().min(1),
   tool_args: durableToolArguments,
-  risk: z.enum(["read", "write", "external_effect", "financial", "destructive", "admin"]),
+  risk: z.enum(["read", "write", "external_effect", "destructive", "admin"]),
 });
 
 export const ToolApprovalApproved = event({

@@ -257,7 +257,7 @@ Introduced by the integrations/toolgen design doc. This entire layer sits above 
 | --- | --- | --- | --- |
 | `Integration` base class / protocol | Done (Python + TS) | — | — |
 | Namespaced tool names (`gmail.search_emails`) | Done (Python + TS) | — | — |
-| Risk classification (`read`, `write`, `external_effect`, `financial`, `destructive`, `admin`) | Done (`ToolSpec.risk`, Python + TS) | — | — |
+| Risk classification (`read`, `write`, `external_effect`, `destructive`, `admin`) | Done (`ToolSpec.risk`, Python + TS) | — | — |
 | `ToolPolicy` upgrade (risk-driven, not just allow/deny) | Done (Python + TS) | — | — |
 | Approval events (`approval.requested/approved/rejected`) | Done (Python + TS via `ToolPlanner`) | — | — |
 | `AgentBuilder` facade | Done (Python + TS) | — | — |

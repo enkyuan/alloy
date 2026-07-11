@@ -9,14 +9,7 @@ import { ToolSchemaValidationError } from "@/tools/validation";
 export type { ToolRisk };
 
 /** Ordered from least to most sensitive. Used for threshold comparisons. */
-const RISK_LEVELS = [
-  "read",
-  "write",
-  "external_effect",
-  "financial",
-  "destructive",
-  "admin",
-] as const;
+const RISK_LEVELS = ["read", "write", "external_effect", "destructive", "admin"] as const;
 const RISK_RANK = new Map<ToolRisk, number>(RISK_LEVELS.map((risk, rank) => [risk, rank]));
 
 /** Thrown by `ToolPolicy.enforce` when a tool call is not permitted. */

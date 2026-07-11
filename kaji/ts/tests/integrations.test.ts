@@ -74,7 +74,7 @@ describe("Integration", () => {
       {
         description: "Make a payment",
         parameters: { amount: { type: "number" } },
-        risk: "financial",
+        risk: "destructive",
       },
       async (_ctx, _args) => ({ ok: true }),
     );
@@ -93,7 +93,7 @@ describe("Integration", () => {
         {
           description: "Make a payment",
           parameters: z.object({ amount: z.number() }),
-          risk: "financial",
+          risk: "destructive",
         },
         async (_ctx, _args) => ({ paid: true }),
       );
@@ -111,7 +111,7 @@ describe("Integration", () => {
       properties: { amount: { type: "number" } },
       required: ["amount"],
     });
-    expect(spec.risk).toBe("financial");
+    expect(spec.risk).toBe("destructive");
     expect(typeof handler).toBe("function");
   });
 

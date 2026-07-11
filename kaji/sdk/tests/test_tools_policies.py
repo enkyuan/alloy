@@ -56,6 +56,7 @@ def test_requires_approval_when_risk_in_set():
 
 def test_no_approval_required_for_lower_risk():
     policy = ToolPolicy(require_approval_for={"destructive", "admin"})
+    assert policy.requires_approval("external", "external_effect") is False
     assert policy.requires_approval("search", "read") is False
     assert policy.requires_approval("write_doc", "write") is False
 
@@ -73,11 +74,11 @@ def test_requires_approval_false_when_no_set_configured():
 
 def test_existing_allow_deny_still_work_with_risk_fields():
     policy = ToolPolicy(
-        allowed={"search"}, denied={"delete"}, require_approval_for={"financial"}
+        allowed={"search"}, denied={"delete"}, require_approval_for={"destructive"}
     )
     assert policy.is_allowed("search") is True
     assert policy.is_allowed("delete") is False
-    assert policy.requires_approval("charge", "financial") is True
+    assert policy.requires_approval("charge", "destructive") is True
 
 
 def test_approval_risks_are_validated_and_snapshotted() -> None:

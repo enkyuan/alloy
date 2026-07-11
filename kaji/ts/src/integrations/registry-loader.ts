@@ -5,16 +5,12 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
+import type { ToolRisk } from "@/tools/registry";
+
 export type IntegrationValidationCode = "INTEGRATION_SCHEMA_INVALID";
 export type IntegrationStability = "experimental" | "beta";
 export type IntegrationRuntime = "python" | "typescript";
-export type IntegrationToolRisk =
-  | "read"
-  | "write"
-  | "external_effect"
-  | "financial"
-  | "destructive"
-  | "admin";
+export type IntegrationToolRisk = ToolRisk;
 
 export interface NormalizedIntegrationValidationError {
   code: IntegrationValidationCode;

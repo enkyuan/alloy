@@ -52,7 +52,7 @@ class AgentBuilder:
             AgentBuilder()
             .provider(anthropic_provider)
             .integration(StripeIntegration(api_key=...))
-            .policy(ToolPolicy(require_approval_for={"financial"}))
+            .policy(ToolPolicy(require_approval_for={"destructive"}))
             .approval_handler(my_approval_handler)
             .system_prompt("You are a payment assistant.")
             .build(bus=bus, store=store)

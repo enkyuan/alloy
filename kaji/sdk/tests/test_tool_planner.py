@@ -402,10 +402,10 @@ async def test_planner_approval_rejected_skips_execution():
     executor = AsyncMock(return_value={})
     specs = {
         "charge": ToolSpec(
-            name="charge", description="d", parameters={}, risk="financial"
+            name="charge", description="d", parameters={}, risk="destructive"
         )
     }
-    policy = ToolPolicy(require_approval_for={"financial"})
+    policy = ToolPolicy(require_approval_for={"destructive"})
     approval_handler = AsyncMock(return_value=False)
     planner = _planner(
         executor, policy=policy, approval_handler=approval_handler, specs=specs
@@ -536,3 +536,46 @@ async def test_planner_batch_runs_both_calls():
         e.type for e in emitted if e.type == EventType.TOOL_CALL_COMPLETED
     ]
     assert len(completed_types) == 2
+
+
+@pytest.mark.asyncio
+async def test_planner_broken_emit_does_not_drop_sibling_result():
+    """Regression test: asyncio.gather's default behavior would cancel the
+    whole batch the instant "broken"'s TOOL_CALL_REQUESTED emit raises,
+    discarding "ok"'s already-computed result. return_exceptions=True must
+    let every call finish and report the failure without losing sibling
+    outcomes. TOOL_CALL_REQUESTED is emitted outside _execute_single's own
+    try/except (which only wraps the executor call), so a raise there
+    reaches execute_batch, unlike a raise during TOOL_CALL_COMPLETED.
+    """
+    executor = AsyncMock(return_value={"done": True})
+    planner = _planner(executor)
+    emitted: List[KajiEvent] = []
+
+    async def emit(event: KajiEvent) -> None:
+        if (
+            event.type == EventType.TOOL_CALL_REQUESTED
+            and event.tool_call_id == "broken"
+        ):
+            raise RuntimeError("store.append failed")
+        emitted.append(event)
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        await planner.execute_batch(
+            "sess-partial-failure",
+            [
+                {"id": "ok", "name": "search", "arguments": {}},
+                {"id": "broken", "name": "search", "arguments": {}},
+            ],
+            emit,
+            turn_id="test-turn",
+            turn_context=TurnContext(principal_id="test-principal"),
+            cancellation_token=CancellationToken(),
+        )
+
+    assert "1 of 2 tool call(s) failed" in str(exc_info.value)
+    # "ok" ran to completion and was recorded even though "broken" failed
+    # before ever reaching the executor.
+    executor.assert_awaited_once()
+    completed = [e for e in emitted if e.type == EventType.TOOL_CALL_COMPLETED]
+    assert any(e.tool_call_id == "ok" for e in completed)

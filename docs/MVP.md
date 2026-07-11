@@ -602,7 +602,7 @@ interface IntegrationManifest {
   tools: Array<{
     name: string;
     description: string;
-    risk: "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
+    risk: "read" | "write" | "external_effect" | "destructive" | "admin";
   }>;
 }
 ```

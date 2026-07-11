@@ -228,9 +228,7 @@ class ToolApprovalRequested(BaseEvent):
     tool_name: str = Field(min_length=1)
     tool_call_id: str = Field(min_length=1)
     tool_args: Dict[str, Any]
-    risk: Literal[
-        "read", "write", "external_effect", "financial", "destructive", "admin"
-    ]
+    risk: Literal["read", "write", "external_effect", "destructive", "admin"]
 
     @field_validator("tool_args", mode="before")
     @classmethod

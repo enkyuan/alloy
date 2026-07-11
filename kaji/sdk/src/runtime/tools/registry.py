@@ -24,12 +24,8 @@ ToolHandler = Callable[
 
 # Risk classification for policy enforcement and approval routing. Values
 # match policies.RISK_LEVELS, ordered from least to most sensitive.
-ToolRisk = Literal[
-    "read", "write", "external_effect", "financial", "destructive", "admin"
-]
-_TOOL_RISKS = frozenset(
-    ("read", "write", "external_effect", "financial", "destructive", "admin")
-)
+ToolRisk = Literal["read", "write", "external_effect", "destructive", "admin"]
+_TOOL_RISKS = frozenset(("read", "write", "external_effect", "destructive", "admin"))
 
 
 @dataclass(frozen=True)

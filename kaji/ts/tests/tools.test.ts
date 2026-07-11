@@ -603,13 +603,13 @@ describe("AgentRuntime with ToolPolicy", () => {
     expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
   });
 
-  it("emits TOOL_APPROVAL_REJECTED and TOOL_CALL_FAILED for financial-risk tools with no approval handler", async () => {
+  it("emits TOOL_APPROVAL_REJECTED and TOOL_CALL_FAILED for destructive-risk tools with no approval handler", async () => {
     // When no approvalHandler is configured, the planner emits TOOL_APPROVAL_REJECTED
     // (for approval-aware consumers) AND TOOL_CALL_FAILED (so replaySession projects
     // the outcome into model history and the loop terminates cleanly).
     const store = new InMemoryEventStore();
     const bus = new EventBus();
-    const policy = new ToolPolicy({ requireApprovalFor: new Set(["financial"]) });
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
@@ -621,7 +621,7 @@ describe("AgentRuntime with ToolPolicy", () => {
     const s = "s-policy-approval";
     await seed(store, s);
     registerTool(
-      { name: "charge_card", description: "charges a card", parameters: {}, risk: "financial" },
+      { name: "charge_card", description: "charges a card", parameters: {}, risk: "destructive" },
       async () => ({ charged: true }),
     );
 

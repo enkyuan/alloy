@@ -120,7 +120,6 @@
               "read",
               "write",
               "external_effect",
-              "financial",
               "destructive",
               "admin"
             ]
