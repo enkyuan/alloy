@@ -12,6 +12,7 @@ import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
 import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import type { ContextWindow } from "@/runtime/context";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -36,6 +37,7 @@ export class AgentBuilder {
   private _approvalHandler: AnyApprovalHandler | undefined;
   private _systemPrompt = "You are a helpful assistant.";
   private _strategy: AgentStrategy | undefined;
+  private _contextWindow: ContextWindow | undefined;
 
   provider(p: ModelProvider): this {
     this._provider = p;
@@ -70,6 +72,11 @@ export class AgentBuilder {
 
   strategy(s: AgentStrategy): this {
     this._strategy = s;
+    return this;
+  }
+
+  contextWindow(window: ContextWindow): this {
+    this._contextWindow = window;
     return this;
   }
 
@@ -117,6 +124,7 @@ export class AgentBuilder {
       tools: registry.listSpecs(),
       policy: this._policy,
       planner,
+      ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });
   }

@@ -11,6 +11,7 @@ from .protocols import EventBusProtocol, EventJournal
 from .replay import (
     LegacyEventOrderingWarning,
     SessionState,
+    apply_event,
     replay_legacy_session,
     replay_session,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "EventDeliveryError",
     "replay_session",
     "replay_legacy_session",
+    "apply_event",
     "SessionState",
     "LegacyEventOrderingWarning",
 ]

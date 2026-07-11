@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from copy import deepcopy
 import warnings
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from kaji.infra.events.schemas import (
     EventType,
@@ -17,6 +18,12 @@ class SessionState:
     session_id: str
     is_active: bool = False
     messages: List[Dict[str, Any]] = field(default_factory=list)
+    _last_assistant_index: Optional[int] = field(
+        default=None,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
 
 class LegacyEventOrderingWarning(UserWarning):
@@ -70,7 +77,10 @@ def replay_session(events: Sequence[StoredKajiEvent]) -> SessionState:
         raise ValueError("Cannot replay duplicate event sequences")
     if any(current <= previous for previous, current in zip(sequences, sequences[1:])):
         raise ValueError("Cannot replay non-monotonic event sequences")
-    return _project_session(ordered, session_id=session_id)
+    state = SessionState(session_id=session_id)
+    for event in ordered:
+        apply_event(state, event)
+    return state
 
 
 def replay_legacy_session(events: Sequence[KajiEvent]) -> SessionState:
@@ -78,71 +88,72 @@ def replay_legacy_session(events: Sequence[KajiEvent]) -> SessionState:
     session_id = _session_id(events)
     if any(event.sequence is not None for event in events):
         raise ValueError("Legacy replay accepts only fully unsequenced event logs")
-    return _project_session(
-        _legacy_timestamp_order(events),
-        session_id=session_id,
-    )
-
-
-def _project_session(
-    events: Iterable[KajiEvent | StoredKajiEvent],
-    *,
-    session_id: str,
-) -> SessionState:
     state = SessionState(session_id=session_id)
-
-    last_assistant: Optional[Dict[str, Any]] = None
-
-    for event in events:
-        if event.type == EventType.SESSION_CREATED:
-            state.is_active = True
-        elif event.type == EventType.SESSION_CLOSED:
-            state.is_active = False
-        elif event.type == EventType.USER_MESSAGE:
-            state.messages.append({"role": "user", "content": event.content})
-            last_assistant = None
-        elif event.type == EventType.AGENT_MESSAGE_COMPLETED:
-            msg: Dict[str, Any] = {"role": "assistant", "content": event.content}
-            state.messages.append(msg)
-            last_assistant = msg
-        elif event.type == EventType.TRANSCRIPT_FINAL:
-            # For voice sessions, final transcript acts as a user message
-            state.messages.append({"role": "user", "content": event.text})
-            last_assistant = None
-        elif event.type == EventType.TOOL_CALL_REQUESTED:
-            # Synthesise an assistant turn when the model produced tool calls
-            # with no text — otherwise the next role:tool message has no
-            # parent assistant turn to reference its tool_call_id.
-            if last_assistant is None:
-                last_assistant = {"role": "assistant", "content": "", "tool_calls": []}
-                state.messages.append(last_assistant)
-            last_assistant.setdefault("tool_calls", []).append(
-                {
-                    "id": event.tool_call_id,
-                    "name": event.tool_name,
-                    "arguments": event.tool_args,
-                }
-            )
-        elif event.type == EventType.TOOL_CALL_COMPLETED:
-            state.messages.append(
-                {
-                    "role": "tool",
-                    "name": event.tool_name,
-                    "content": str(event.result),
-                    "tool_call_id": event.tool_call_id,
-                }
-            )
-        elif event.type == EventType.TOOL_CALL_FAILED:
-            # Record the failure as a tool message too, so the agent loop sees
-            # the error in history and can react, instead of re-requesting the
-            # same tool every iteration until it hits max_iterations.
-            state.messages.append(
-                {
-                    "role": "tool",
-                    "name": event.tool_name,
-                    "content": f"Error: {event.error}",
-                    "tool_call_id": event.tool_call_id,
-                }
-            )
-
+    for event in _legacy_timestamp_order(events):
+        _apply_event(state, event)
     return state
+
+
+def apply_event(state: SessionState, event: StoredKajiEvent) -> None:
+    """Apply one persisted event to an existing session projection in place."""
+    stored = require_stored_event(event)
+    if stored.session_id != state.session_id:
+        raise ValueError("Cannot project events from mixed sessions")
+    _apply_event(state, stored)
+
+
+def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> None:
+    if event.type == EventType.SESSION_CREATED:
+        state.is_active = True
+    elif event.type == EventType.SESSION_CLOSED:
+        state.is_active = False
+    elif event.type == EventType.AGENT_REASONING_STARTED:
+        # Each reasoning event begins one provider-output batch. Parallel tool
+        # requests after it share an assistant message; the next batch does not.
+        state._last_assistant_index = None
+    elif event.type == EventType.USER_MESSAGE:
+        state.messages.append({"role": "user", "content": event.content})
+        state._last_assistant_index = None
+    elif event.type == EventType.AGENT_MESSAGE_COMPLETED:
+        state.messages.append({"role": "assistant", "content": event.content})
+        state._last_assistant_index = len(state.messages) - 1
+    elif event.type == EventType.TRANSCRIPT_FINAL:
+        # For voice sessions, final transcript acts as a user message.
+        state.messages.append({"role": "user", "content": event.text})
+        state._last_assistant_index = None
+    elif event.type == EventType.TOOL_CALL_REQUESTED:
+        # Synthesise an assistant turn when the model produced tool calls with
+        # no text. Retaining its index makes repeated one-event application O(1).
+        if state._last_assistant_index is None:
+            state.messages.append(
+                {"role": "assistant", "content": "", "tool_calls": []}
+            )
+            state._last_assistant_index = len(state.messages) - 1
+        last_assistant = state.messages[state._last_assistant_index]
+        last_assistant.setdefault("tool_calls", []).append(
+            {
+                "id": event.tool_call_id,
+                "name": event.tool_name,
+                "arguments": deepcopy(event.tool_args),
+            }
+        )
+    elif event.type == EventType.TOOL_CALL_COMPLETED:
+        state.messages.append(
+            {
+                "role": "tool",
+                "name": event.tool_name,
+                "content": str(event.result),
+                "tool_call_id": event.tool_call_id,
+            }
+        )
+    elif event.type == EventType.TOOL_CALL_FAILED:
+        # Keep failures in provider history so the model can react instead of
+        # repeating the same call until max_iterations.
+        state.messages.append(
+            {
+                "role": "tool",
+                "name": event.tool_name,
+                "content": f"Error: {event.error}",
+                "tool_call_id": event.tool_call_id,
+            }
+        )

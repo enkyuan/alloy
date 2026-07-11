@@ -9,6 +9,7 @@ from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.store.inmem import InMemoryEventStore
 from kaji.runtime.agents.coordinator import TurnCoordinator
+from kaji.runtime.agents.context import ContextWindow
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
@@ -56,6 +57,7 @@ class AgentBuilder:
         self._system_prompt: str = "You are a helpful assistant."
         self._strategy: Optional[AgentStrategy] = None
         self._coordinator: Optional[TurnCoordinator] = None
+        self._context_window: ContextWindow | None = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -101,6 +103,11 @@ class AgentBuilder:
         event store object.
         """
         self._coordinator = coordinator
+        return self
+
+    def context_window(self, window: ContextWindow) -> "AgentBuilder":
+        """Bound provider history without splitting conversational turns."""
+        self._context_window = window
         return self
 
     def build(
@@ -159,4 +166,5 @@ class AgentBuilder:
             strategy=self._strategy,
             tools=registry.list_specs(),
             coordinator=self._coordinator,
+            context_window=self._context_window,
         )

@@ -38,10 +38,12 @@ export { type EventStore, InMemoryEventStore } from "@/events/store";
 export {
   replayLegacySession,
   replaySession,
+  applyEvent,
   type SessionState,
   type Message,
   type SessionTokens,
 } from "@/sessions/replay";
+export { SessionProjector } from "@/sessions/projector";
 export { SessionManager } from "@/sessions/manager";
 export { type SessionRecord, type SessionStore, InMemorySessionStore } from "@/sessions/store";
 
@@ -162,6 +164,13 @@ export {
   type TurnOptions,
   type TurnResult,
 } from "@/runtime/runtime";
+export {
+  ContextIntegrityError,
+  ContextWindowOverflowError,
+  DEFAULT_CONTEXT_WINDOW,
+  type ContextDiagnostics,
+  type ContextWindow,
+} from "@/runtime/context";
 export {
   CancellationError,
   CancellationToken,

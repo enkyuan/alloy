@@ -50,6 +50,22 @@ export interface SessionState {
   totalCostUsd: number;
 }
 
+const lastAssistants = new WeakMap<SessionState, Message>();
+
+/** Create an empty projection for incremental application. */
+export function createSessionState(sessionId: string): SessionState {
+  return {
+    sessionId,
+    isActive: false,
+    messages: [],
+    pendingApprovals: new Set<string>(),
+    approvedToolCallIds: new Set<string>(),
+    rejectedToolCallIds: new Set<string>(),
+    totalTokens: { input: 0, output: 0 },
+    totalCostUsd: 0,
+  };
+}
+
 /**
  * Reconstruct session state from stored events. Sequences must already be
  * strictly monotonic. Use `replayLegacySession` for fully unsequenced logs.
@@ -90,7 +106,9 @@ export function replaySession(events: readonly StoredKajiEvent[]): SessionState 
     previous = event.sequence;
   }
 
-  return projectSession(events);
+  const state = createSessionState(first.session_id);
+  for (const event of events) applyEvent(state, event);
+  return state;
 }
 
 /** Compatibility entry point for fully unsequenced pre-beta logs. */
@@ -107,106 +125,110 @@ export function replayLegacySession(events: readonly KajiEvent[]): SessionState 
   if (sequenced.some(Boolean)) {
     throw new Error("Legacy replay accepts only fully unsequenced events");
   }
-  return projectSession(orderLegacyUnsequencedEvents(events));
+  const state = createSessionState(first.session_id);
+  for (const event of orderLegacyUnsequencedEvents(events)) applyKajiEvent(state, event);
+  return state;
 }
 
-function projectSession(ordered: readonly (KajiEvent | StoredKajiEvent)[]): SessionState {
-  const first = ordered[0]!;
-  const state: SessionState = {
-    sessionId: first.session_id,
-    isActive: false,
-    messages: [],
-    pendingApprovals: new Set<string>(),
-    approvedToolCallIds: new Set<string>(),
-    rejectedToolCallIds: new Set<string>(),
-    totalTokens: { input: 0, output: 0 },
-    totalCostUsd: 0,
-  };
+/** Apply one persisted event to an existing session projection in place. */
+export function applyEvent(state: SessionState, event: StoredKajiEvent): void {
+  if (event.session_id !== state.sessionId) {
+    throw new Error("Cannot project events from mixed sessions");
+  }
+  applyKajiEvent(state, event);
+}
 
-  let lastAssistant: Message | undefined;
-
-  for (const event of ordered) {
-    switch (event.type) {
-      case EventType.SESSION_CREATED:
-        state.isActive = true;
-        break;
-      case EventType.SESSION_CLOSED:
-        state.isActive = false;
-        break;
-      case EventType.USER_MESSAGE:
-        state.messages.push({ role: "user", content: event.content });
-        lastAssistant = undefined;
-        break;
-      case EventType.AGENT_MESSAGE_COMPLETED:
-        lastAssistant = { role: "assistant", content: event.content };
+function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent): void {
+  switch (event.type) {
+    case EventType.SESSION_CREATED:
+      state.isActive = true;
+      break;
+    case EventType.SESSION_CLOSED:
+      state.isActive = false;
+      break;
+    case EventType.AGENT_REASONING_STARTED:
+      // One explicit provider-output/tool batch starts here. Parallel calls
+      // share the following assistant; the next iteration gets a fresh one.
+      lastAssistants.delete(state);
+      break;
+    case EventType.USER_MESSAGE:
+      state.messages.push({ role: "user", content: event.content });
+      lastAssistants.delete(state);
+      break;
+    case EventType.AGENT_MESSAGE_COMPLETED:
+      {
+        const lastAssistant = { role: "assistant", content: event.content } as Message;
         state.messages.push(lastAssistant);
-        if (event.tokens) {
-          state.totalTokens.input += event.tokens.input;
-          state.totalTokens.output += event.tokens.output;
-        }
-        if (event.cost_usd) {
-          state.totalCostUsd += event.cost_usd;
-        }
-        break;
-      case EventType.TRANSCRIPT_FINAL:
-        // For voice sessions, the final transcript acts as a user message.
-        state.messages.push({ role: "user", content: event.text });
-        lastAssistant = undefined;
-        break;
-      case EventType.TOOL_CALL_REQUESTED:
+        lastAssistants.set(state, lastAssistant);
+      }
+      if (event.tokens) {
+        state.totalTokens.input += event.tokens.input;
+        state.totalTokens.output += event.tokens.output;
+      }
+      if (event.cost_usd) {
+        state.totalCostUsd += event.cost_usd;
+      }
+      break;
+    case EventType.TRANSCRIPT_FINAL:
+      // For voice sessions, the final transcript acts as a user message.
+      state.messages.push({ role: "user", content: event.text });
+      lastAssistants.delete(state);
+      break;
+    case EventType.TOOL_CALL_REQUESTED:
+      {
+        let lastAssistant = lastAssistants.get(state);
         if (lastAssistant === undefined) {
           lastAssistant = { role: "assistant", content: "", toolCalls: [] };
           state.messages.push(lastAssistant);
+          lastAssistants.set(state, lastAssistant);
         }
         lastAssistant.toolCalls ??= [];
         lastAssistant.toolCalls.push({
           id: event.tool_call_id,
           name: event.tool_name,
-          args: event.tool_args,
+          args: structuredClone(event.tool_args),
         });
-        break;
-      case EventType.TOOL_CALL_COMPLETED:
-        state.messages.push({
-          role: "tool",
-          name: event.tool_name,
-          content: stringifyResult(event.result),
-          // H3: carry the real tool_call_id through so buildMessages can
-          // reference it; a real provider rejects a tool result whose id does
-          // not match the originating request.
-          toolCallId: event.tool_call_id,
-        });
-        break;
-      case EventType.TOOL_CALL_FAILED:
-        // Record the failure as a tool message so the agent loop sees the error
-        // in history and can react, instead of re-requesting the same tool on
-        // every iteration until maxToolIterations is exhausted. Matches Python.
-        state.messages.push({
-          role: "tool",
-          name: event.tool_name,
-          content: `Error: ${event.error}`,
-          toolCallId: event.tool_call_id,
-        });
-        break;
-      case EventType.TOOL_APPROVAL_REQUESTED:
-        state.pendingApprovals.add(event.tool_call_id);
-        break;
-      case EventType.TOOL_APPROVAL_APPROVED:
-        state.pendingApprovals.delete(event.tool_call_id);
-        state.approvedToolCallIds.add(event.tool_call_id);
-        break;
-      case EventType.TOOL_APPROVAL_REJECTED:
-        state.pendingApprovals.delete(event.tool_call_id);
-        state.rejectedToolCallIds.add(event.tool_call_id);
-        break;
-      // NOTE: AGENT_MESSAGE_DELTA and TOOL_CALL_STARTED are intentionally NOT
-      // projected. Deltas are transient, and STARTED does not carry provider
-      // history data beyond the preceding TOOL_CALL_REQUESTED event.
-      default:
-        break;
-    }
+      }
+      break;
+    case EventType.TOOL_CALL_COMPLETED:
+      state.messages.push({
+        role: "tool",
+        name: event.tool_name,
+        content: stringifyResult(event.result),
+        // H3: carry the real tool_call_id through so buildMessages can
+        // reference it; a real provider rejects a tool result whose id does
+        // not match the originating request.
+        toolCallId: event.tool_call_id,
+      });
+      break;
+    case EventType.TOOL_CALL_FAILED:
+      // Record the failure as a tool message so the agent loop sees the error
+      // in history and can react, instead of re-requesting the same tool on
+      // every iteration until maxToolIterations is exhausted. Matches Python.
+      state.messages.push({
+        role: "tool",
+        name: event.tool_name,
+        content: `Error: ${event.error}`,
+        toolCallId: event.tool_call_id,
+      });
+      break;
+    case EventType.TOOL_APPROVAL_REQUESTED:
+      state.pendingApprovals.add(event.tool_call_id);
+      break;
+    case EventType.TOOL_APPROVAL_APPROVED:
+      state.pendingApprovals.delete(event.tool_call_id);
+      state.approvedToolCallIds.add(event.tool_call_id);
+      break;
+    case EventType.TOOL_APPROVAL_REJECTED:
+      state.pendingApprovals.delete(event.tool_call_id);
+      state.rejectedToolCallIds.add(event.tool_call_id);
+      break;
+    // NOTE: AGENT_MESSAGE_DELTA and TOOL_CALL_STARTED are intentionally NOT
+    // projected. Deltas are transient, and STARTED does not carry provider
+    // history data beyond the preceding TOOL_CALL_REQUESTED event.
+    default:
+      break;
   }
-
-  return state;
 }
 
 /** Compatibility only: new writes are always sequenced by the store. */

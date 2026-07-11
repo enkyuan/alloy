@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import uuid
+from collections import OrderedDict
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
@@ -9,10 +12,13 @@ from kaji.runtime.agents.coordinator import (
     TurnCoordinator,
     default_coordinator_for_store,
 )
-from kaji.runtime.agents.context import ContextBuilder
+from kaji.runtime.agents.context import (
+    ContextDiagnostics,
+    ContextWindow,
+    build_context,
+)
 from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.runtime.agents.state import SessionStateManager
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
@@ -29,11 +35,13 @@ from kaji.infra.events.schemas import (
     EventTokenUsage,
     SessionCreated,
     UserMessage,
+    require_stored_event,
 )
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import TokenMetrics
+from kaji.runtime.sessions.projector import SessionProjector
 
 
 @dataclass(frozen=True)
@@ -65,6 +73,10 @@ logger = logging.getLogger(__name__)
 _PUBLIC_TURN_FAILURE = "Agent turn failed"
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
+
+
+def _copy_stored_event(event: StoredKajiEvent) -> StoredKajiEvent:
+    return require_stored_event(event.model_copy(deep=True))
 
 
 class AgentRuntime:
@@ -102,6 +114,7 @@ class AgentRuntime:
         user_id: str = "agent",
         journal: Optional[EventJournal] = None,
         coordinator: Optional[TurnCoordinator] = None,
+        context_window: ContextWindow | None = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus)
@@ -122,7 +135,18 @@ class AgentRuntime:
         self._user_id = user_id
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
-        self.state_manager = SessionStateManager(store)
+        self.context_window = context_window or ContextWindow()
+        store_capacity = getattr(store, "max_sessions", 1_000)
+        self._projection_cache_capacity = (
+            store_capacity
+            if isinstance(store_capacity, int) and store_capacity > 0
+            else 1_000
+        )
+        self._projectors: OrderedDict[str, SessionProjector] = OrderedDict()
+        self._projection_locks: dict[str, asyncio.Lock] = {}
+        self._active_projection_sessions: dict[str, int] = {}
+        self._turn_event_collectors: dict[str, list[StoredKajiEvent]] = {}
+        self._context_diagnostics: dict[str, ContextDiagnostics] = {}
         # Tools surfaced to the provider each turn. Empty by default, so a
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
@@ -180,17 +204,103 @@ class AgentRuntime:
         )
 
     async def append_event(self, event: NewKajiEvent) -> StoredKajiEvent:
-        """Commit an event draft through the canonical journal boundary."""
-        return await self.journal.commit(event)
+        """Commit an event and immediately advance its cached projection."""
+        async with self._projection_scope(event.session_id):
+            return await self._append_event_scoped(event)
 
-    async def _emit(self, event: NewKajiEvent) -> None:
-        await self.append_event(event)
+    async def _append_event_scoped(self, event: NewKajiEvent) -> StoredKajiEvent:
+        projector = self._projector_for(event.session_id)
+        async with self._projection_lock(event.session_id):
+            if not projector.initialized:
+                await projector.sync(self.store)
+            stored = await self.journal.commit(event)
+            if stored.sequence == projector.cursor + 1:
+                projector.apply(stored)
+            elif stored.sequence > projector.cursor:
+                # Another canonical writer committed between this runtime's
+                # suffix read and commit. Pull the detected gap plus this event.
+                await projector.sync(self.store)
+            collector = (
+                self._turn_event_collectors.get(stored.turn_id)
+                if stored.turn_id is not None
+                else None
+            )
+            if collector is not None:
+                collector.append(_copy_stored_event(stored))
+            return _copy_stored_event(stored)
 
-    async def _emit_for_turn(self, event: NewKajiEvent, turn_id: str) -> None:
+    def _projector_for(self, session_id: str) -> SessionProjector:
+        projector = self._projectors.get(session_id)
+        if projector is None:
+            projector = SessionProjector(session_id)
+            self._projectors[session_id] = projector
+            self._trim_projection_cache()
+        else:
+            self._projectors.move_to_end(session_id)
+        return projector
+
+    @asynccontextmanager
+    async def _projection_scope(self, session_id: str) -> AsyncIterator[None]:
+        self._active_projection_sessions[session_id] = (
+            self._active_projection_sessions.get(session_id, 0) + 1
+        )
+        try:
+            yield
+        finally:
+            remaining = self._active_projection_sessions[session_id] - 1
+            if remaining == 0:
+                self._active_projection_sessions.pop(session_id, None)
+            else:
+                self._active_projection_sessions[session_id] = remaining
+            self._trim_projection_cache()
+
+    def _trim_projection_cache(self) -> None:
+        while len(self._projectors) > self._projection_cache_capacity:
+            candidate = None
+            for session_id in self._projectors:
+                lock = self._projection_locks.get(session_id)
+                if session_id not in self._active_projection_sessions and (
+                    lock is None or not lock.locked()
+                ):
+                    candidate = session_id
+                    break
+            if candidate is None:
+                return
+            self._projectors.pop(candidate, None)
+            self._projection_locks.pop(candidate, None)
+            self._context_diagnostics.pop(candidate, None)
+
+    @property
+    def projection_cache_size(self) -> int:
+        return len(self._projectors)
+
+    def _projection_lock(self, session_id: str) -> asyncio.Lock:
+        lock = self._projection_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._projection_locks[session_id] = lock
+        return lock
+
+    async def _sync_projection(self, session_id: str) -> SessionProjector:
+        projector = self._projector_for(session_id)
+        async with self._projection_lock(session_id):
+            await projector.sync(self.store)
+        return projector
+
+    def context_diagnostics(self, session_id: str) -> ContextDiagnostics | None:
+        """Return diagnostics from the latest provider context for a session."""
+        return self._context_diagnostics.get(session_id)
+
+    async def _emit(self, event: NewKajiEvent) -> StoredKajiEvent:
+        return await self.append_event(event)
+
+    async def _emit_for_turn(
+        self, event: NewKajiEvent, turn_id: str
+    ) -> StoredKajiEvent:
         """Attach the active turn identity without mutating event drafts."""
         if event.turn_id != turn_id:
             event = event.model_copy(update={"turn_id": turn_id})
-        await self._emit(event)
+        return await self._emit(event)
 
     async def turn(
         self,
@@ -218,21 +328,35 @@ class AgentRuntime:
         sid = session_id or uuid.uuid4().hex
         token = cancellation_token or CancellationToken()
         async with self.coordinator.acquire(sid, token):
-            return await self._turn_unlocked(sid, prompt, token)
+            async with self._projection_scope(sid):
+                projector = await self._sync_projection(sid)
+                turn_id = uuid.uuid4().hex
+                turn_events: list[StoredKajiEvent] = []
+                self._turn_event_collectors[turn_id] = turn_events
+                try:
+                    return await self._turn_unlocked(
+                        sid,
+                        prompt,
+                        token,
+                        turn_id,
+                        projector,
+                        turn_events,
+                    )
+                finally:
+                    self._turn_event_collectors.pop(turn_id, None)
 
     async def _turn_unlocked(
         self,
         session_id: str,
         prompt: str,
         cancellation_token: CancellationToken,
+        turn_id: str,
+        projector: SessionProjector,
+        turn_events: list[StoredKajiEvent],
     ) -> TurnResult:
         """Run ``turn`` while the caller holds the session coordinator."""
         cancellation_token.raise_if_cancelled()
-        turn_id = uuid.uuid4().hex
-        # Capture the cursor while holding the session lease. It bounds the
-        # read below; turn_id remains the authoritative result filter.
-        start_sequence = await self.store.last_sequence(session_id)
-        if start_sequence == 0:
+        if projector.cursor == 0:
             await self._emit_for_turn(
                 SessionCreated(session_id=session_id),
                 turn_id,
@@ -243,25 +367,23 @@ class AgentRuntime:
             cancellation_token,
             turn_id,
         )
-        candidates = await self.store.get_events(
-            session_id,
-            after_sequence=start_sequence,
-        )
-        turn_events = [event for event in candidates if event.turn_id == turn_id]
+        result_events = [_copy_stored_event(event) for event in turn_events]
         text = "".join(
             getattr(e, "content", "")
-            for e in turn_events
+            for e in result_events
             if e.type == EventType.AGENT_MESSAGE_COMPLETED
         )
         tool_call_events: List[StoredKajiEvent] = [
-            e for e in turn_events if e.type == EventType.TOOL_CALL_REQUESTED
+            _copy_stored_event(e)
+            for e in result_events
+            if e.type == EventType.TOOL_CALL_REQUESTED
         ]
         return TurnResult(
             text=text,
             session_id=session_id,
             turn_id=turn_id,
             tool_call_events=tool_call_events,
-            events=turn_events,
+            events=result_events,
         )
 
     async def send(
@@ -281,12 +403,14 @@ class AgentRuntime:
         """
         token = cancellation_token or CancellationToken()
         async with self.coordinator.acquire(session_id, token):
-            await self._send_unlocked(
-                session_id,
-                content,
-                token,
-                uuid.uuid4().hex,
-            )
+            async with self._projection_scope(session_id):
+                await self._sync_projection(session_id)
+                await self._send_unlocked(
+                    session_id,
+                    content,
+                    token,
+                    uuid.uuid4().hex,
+                )
 
     async def _send_unlocked(
         self,
@@ -327,7 +451,9 @@ class AgentRuntime:
         """
         token = cancellation_token or CancellationToken()
         async with self.coordinator.acquire(session_id, token):
-            await self._run_turn_unlocked(session_id, token, uuid.uuid4().hex)
+            async with self._projection_scope(session_id):
+                await self._sync_projection(session_id)
+                await self._run_turn_unlocked(session_id, token, uuid.uuid4().hex)
 
     async def _run_turn_unlocked(
         self,
@@ -366,15 +492,17 @@ class AgentRuntime:
         async def emit_turn_event(event: NewKajiEvent) -> None:
             await self._emit_for_turn(event, turn_id)
 
-        await emit_turn_event(AgentReasoningStarted(session_id=session_id))
-
         for iteration in range(self.strategy.max_iterations):
             if token.is_cancelled:
                 await emit_turn_event(CancellationCompleted(session_id=session_id))
                 return
 
-            # 1. Materialize current session state from Event Log
-            state = await self.state_manager.load_state(session_id)
+            # Persist an explicit provider-output/tool-batch boundary so cold
+            # replay can distinguish consecutive tool-only iterations.
+            await emit_turn_event(AgentReasoningStarted(session_id=session_id))
+
+            # 1. Reuse the projection advanced by each committed event.
+            state = self._projector_for(session_id).state
 
             # 1a. RAG: retrieve chunks relevant to the latest user message and
             # prepend them to the system prompt so the model has grounded context.
@@ -404,7 +532,13 @@ class AgentRuntime:
                 if rag_system_prefix
                 else self.prompt
             )
-            messages = ContextBuilder.build_messages(state, prompt_for_turn)
+            context = build_context(
+                state,
+                prompt_for_turn,
+                window=self.context_window,
+            )
+            self._context_diagnostics[session_id] = context.diagnostics
+            messages = context.messages
 
             # 2. Surface tools to the provider (cached payload, see __init__).
             full_response = ""

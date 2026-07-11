@@ -8,7 +8,7 @@ import { InMemoryEventStore } from "@/events/store";
 import type { ModelProviderOptions } from "@/providers/base";
 import { MockProvider } from "@/providers/mock";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
-import { buildMessages } from "@/runtime/context";
+import { ContextIntegrityError, buildMessages } from "@/runtime/context";
 import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
 import { AgentBuilder } from "@/runtime/builder";
 import { ToolPolicy } from "@/tools/policy";
@@ -156,9 +156,14 @@ describe("buildMessages", () => {
 
   it("uses the real toolCallId when present (H3)", () => {
     const r = buildMessages([
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call_abc", name: "get_weather", args: {} }],
+      },
       { role: "tool", content: '{"x":1}', name: "get_weather", toolCallId: "call_abc" },
     ]);
-    expect(r[0]).toEqual({
+    expect(r[1]).toEqual({
       role: "tool",
       content: '{"x":1}',
       name: "get_weather",
@@ -166,9 +171,10 @@ describe("buildMessages", () => {
     });
   });
 
-  it("falls back to name only when no toolCallId is present", () => {
-    const r = buildMessages([{ role: "tool", content: "{}", name: "legacy" }]);
-    expect(r[0]?.tool_call_id).toBe("legacy");
+  it("fails closed when a tool result has no originating call id", () => {
+    expect(() => buildMessages([{ role: "tool", content: "{}", name: "legacy" }])).toThrow(
+      ContextIntegrityError,
+    );
   });
 });
 
@@ -266,7 +272,7 @@ describe("AgentRuntime.runTurn", () => {
     const reasoningStarts = (await store.getEvents(s)).filter(
       (e) => e.type === EventType.AGENT_REASONING_STARTED,
     );
-    expect(reasoningStarts).toHaveLength(1);
+    expect(reasoningStarts).toHaveLength(2);
     const completions = (await store.getEvents(s)).filter(
       (e) => e.type === EventType.AGENT_MESSAGE_COMPLETED,
     );

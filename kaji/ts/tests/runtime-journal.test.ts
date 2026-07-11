@@ -55,7 +55,8 @@ describe("runtime event committer", () => {
     const duplicate = await runtime.appendEvent({ ...draft });
 
     expect(stored.sequence).toBe(1);
-    expect(duplicate).toBe(stored);
+    expect(duplicate).toStrictEqual(stored);
+    expect(duplicate).not.toBe(stored);
     expect((await runtime.history("seeded")).map(({ sequence }) => sequence)).toEqual([1]);
   });
 

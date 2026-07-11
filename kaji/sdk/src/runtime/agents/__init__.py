@@ -3,6 +3,12 @@
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator, TurnCoordinator
+from kaji.runtime.agents.context import (
+    ContextDiagnostics,
+    ContextIntegrityError,
+    ContextWindow,
+    ContextWindowOverflowError,
+)
 from kaji.runtime.agents.history import HistoryStore, InMemoryHistoryStore
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
@@ -13,6 +19,10 @@ __all__ = [
     "AgentRuntime",
     "AgentStrategy",
     "CancellationToken",
+    "ContextDiagnostics",
+    "ContextIntegrityError",
+    "ContextWindow",
+    "ContextWindowOverflowError",
     "HistoryStore",
     "InMemoryTurnCoordinator",
     "InMemoryHistoryStore",

@@ -10,21 +10,27 @@ import type { EventBusProtocol } from "@/events/protocols";
 import type { EventCommitter } from "@/events/protocols";
 import {
   KajiEvent,
+  StoredKajiEvent,
   type KajiEventInput,
   type NewKajiEvent,
-  type StoredKajiEvent,
 } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { EventStore } from "@/events/store";
 import { SplitEventCommitter } from "@/events/committer";
 import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
-import { replaySession } from "@/sessions/replay";
+import { SessionProjector } from "@/sessions/projector";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, type AnyApprovalHandler, type ToolExecutor } from "@/tools/planner";
 import { defaultUuid } from "@/internal/uuid";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
-import { buildMessages } from "@/runtime/context";
+import {
+  DEFAULT_CONTEXT_WINDOW,
+  buildContext,
+  validateContextWindow,
+  type ContextDiagnostics,
+  type ContextWindow,
+} from "@/runtime/context";
 import {
   InMemorySessionTurnCoordinator,
   type SessionTurnCoordinator,
@@ -45,6 +51,10 @@ function defaultTurnCoordinator(store: EventStore): SessionTurnCoordinator {
   const coordinator = new InMemorySessionTurnCoordinator();
   DEFAULT_TURN_COORDINATORS.set(store, coordinator);
   return coordinator;
+}
+
+function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
+  return StoredKajiEvent.parse(structuredClone(event));
 }
 
 /** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
@@ -95,6 +105,8 @@ export interface AgentRuntimeOptions {
    * distributed implementation when runtimes span processes.
    */
   turnCoordinator?: SessionTurnCoordinator;
+  /** Complete-turn provider-history bounds. Defaults to 32 turns / 100,000 characters. */
+  contextWindow?: ContextWindow;
 }
 
 export interface RunTurnOptions {
@@ -147,6 +159,13 @@ export class AgentRuntime {
   private readonly approvalHandler: AnyApprovalHandler | undefined;
   private readonly userId: string;
   private readonly turnCoordinator: SessionTurnCoordinator;
+  private readonly contextWindow: Readonly<ContextWindow>;
+  private readonly projectionCacheCapacity: number;
+  private readonly projectors = new Map<string, SessionProjector>();
+  private readonly projectionTails = new Map<string, Promise<void>>();
+  private readonly activeProjectionSessions = new Map<string, number>();
+  private readonly turnEventCollectors = new Map<string, StoredKajiEvent[]>();
+  private readonly contextDiagnosticsBySession = new Map<string, Readonly<ContextDiagnostics>>();
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -172,6 +191,10 @@ export class AgentRuntime {
     this.fixedTools = options.tools;
     this.userId = options.userId ?? "agent";
     this.turnCoordinator = options.turnCoordinator ?? defaultTurnCoordinator(options.store);
+    this.projectionCacheCapacity = Math.max(1, options.store.maxSessions ?? 1_000);
+    const contextWindow = options.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    validateContextWindow(contextWindow);
+    this.contextWindow = Object.freeze({ ...contextWindow });
     this.policy = options.policy;
     this.approvalHandler = options.approvalHandler;
     this.toolExecutor =
@@ -201,7 +224,107 @@ export class AgentRuntime {
 
   /** Canonical application write path for event drafts. */
   async appendEvent(event: NewKajiEvent): Promise<StoredKajiEvent> {
-    return this.committer.commit(event);
+    return this.withProjectionSession(event.session_id, () =>
+      this.withProjectionLock(event.session_id, async () => {
+        const projector = this.projectorFor(event.session_id);
+        if (!projector.initialized) await projector.sync(this.store);
+        const stored = await this.committer.commit(event);
+        if (stored.sequence === projector.lastSequence + 1) {
+          projector.apply(stored);
+        } else if (stored.sequence > projector.lastSequence) {
+          // A canonical writer committed during the active turn. Pull the gap
+          // plus this event before the next provider iteration reads state.
+          await projector.sync(this.store);
+        }
+        if (stored.turn_id !== undefined) {
+          this.turnEventCollectors.get(stored.turn_id)?.push(cloneStoredEvent(stored));
+        }
+        return cloneStoredEvent(stored);
+      }),
+    );
+  }
+
+  private projectorFor(sessionId: string): SessionProjector {
+    let projector = this.projectors.get(sessionId);
+    if (projector === undefined) {
+      projector = new SessionProjector(sessionId);
+      this.projectors.set(sessionId, projector);
+      this.trimProjectionCache();
+    } else {
+      this.projectors.delete(sessionId);
+      this.projectors.set(sessionId, projector);
+    }
+    return projector;
+  }
+
+  private async withProjectionSession<T>(
+    sessionId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    this.activeProjectionSessions.set(
+      sessionId,
+      (this.activeProjectionSessions.get(sessionId) ?? 0) + 1,
+    );
+    try {
+      return await operation();
+    } finally {
+      const remaining = this.activeProjectionSessions.get(sessionId)! - 1;
+      if (remaining === 0) this.activeProjectionSessions.delete(sessionId);
+      else this.activeProjectionSessions.set(sessionId, remaining);
+      this.trimProjectionCache();
+    }
+  }
+
+  private trimProjectionCache(): void {
+    while (this.projectors.size > this.projectionCacheCapacity) {
+      let candidate: string | undefined;
+      for (const sessionId of this.projectors.keys()) {
+        if (!this.activeProjectionSessions.has(sessionId)) {
+          candidate = sessionId;
+          break;
+        }
+      }
+      if (candidate === undefined) return;
+      this.projectors.delete(candidate);
+      this.contextDiagnosticsBySession.delete(candidate);
+    }
+  }
+
+  get projectionCacheSize(): number {
+    return this.projectors.size;
+  }
+
+  private async withProjectionLock<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.projectionTails.get(sessionId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => gate);
+    this.projectionTails.set(sessionId, tail);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.projectionTails.get(sessionId) === tail) {
+        this.projectionTails.delete(sessionId);
+      }
+    }
+  }
+
+  private async syncProjection(sessionId: string): Promise<SessionProjector> {
+    return this.withProjectionLock(sessionId, async () => {
+      const projector = this.projectorFor(sessionId);
+      await projector.sync(this.store);
+      return projector;
+    });
+  }
+
+  /** Diagnostics from the latest provider context built for a session. */
+  contextDiagnostics(sessionId: string): ContextDiagnostics | undefined {
+    const diagnostics = this.contextDiagnosticsBySession.get(sessionId);
+    return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
   }
 
   /**
@@ -215,28 +338,35 @@ export class AgentRuntime {
     const sessionId = options.sessionId ?? defaultUuid();
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
-    return this.turnCoordinator.runExclusive(sessionId, token, async () => {
-      const startSequence = await this.store.lastSequence(sessionId);
-      if (startSequence === 0) {
-        const created = KajiEvent.parse({
-          type: EventType.SESSION_CREATED,
-          session_id: sessionId,
-          turn_id: turnId,
-        });
-        await this.appendEvent(created);
-      }
-      await this.sendUnlocked(sessionId, prompt, turnId, token);
-      const appended = await this.store.getEvents(sessionId, { afterSequence: startSequence });
-      const turnEvents = appended.filter((event) => event.turn_id === turnId);
-      const text = turnEvents
-        .filter((event) => event.type === EventType.AGENT_MESSAGE_COMPLETED)
-        .map((event) => ("content" in event ? (event.content as string) : ""))
-        .join("");
-      const toolCallEvents = turnEvents.filter(
-        (event) => event.type === EventType.TOOL_CALL_REQUESTED,
-      );
-      return { text, sessionId, turnId, toolCallEvents, events: turnEvents };
-    });
+    return this.turnCoordinator.runExclusive(sessionId, token, () =>
+      this.withProjectionSession(sessionId, async () => {
+        const projector = await this.syncProjection(sessionId);
+        const turnEvents: StoredKajiEvent[] = [];
+        this.turnEventCollectors.set(turnId, turnEvents);
+        try {
+          if (projector.lastSequence === 0) {
+            const created = KajiEvent.parse({
+              type: EventType.SESSION_CREATED,
+              session_id: sessionId,
+              turn_id: turnId,
+            });
+            await this.appendEvent(created);
+          }
+          await this.sendUnlocked(sessionId, prompt, turnId, token);
+          const resultEvents = turnEvents.map(cloneStoredEvent);
+          const text = resultEvents
+            .filter((event) => event.type === EventType.AGENT_MESSAGE_COMPLETED)
+            .map((event) => ("content" in event ? (event.content as string) : ""))
+            .join("");
+          const toolCallEvents = resultEvents
+            .filter((event) => event.type === EventType.TOOL_CALL_REQUESTED)
+            .map(cloneStoredEvent);
+          return { text, sessionId, turnId, toolCallEvents, events: resultEvents };
+        } finally {
+          this.turnEventCollectors.delete(turnId);
+        }
+      }),
+    );
   }
 
   /**
@@ -252,7 +382,10 @@ export class AgentRuntime {
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
     await this.turnCoordinator.runExclusive(sessionId, token, () =>
-      this.sendUnlocked(sessionId, content, turnId, token),
+      this.withProjectionSession(sessionId, async () => {
+        await this.syncProjection(sessionId);
+        await this.sendUnlocked(sessionId, content, turnId, token);
+      }),
     );
   }
 
@@ -287,7 +420,10 @@ export class AgentRuntime {
     const token = options.cancellationToken ?? new CancellationToken();
     const turnId = defaultUuid();
     await this.turnCoordinator.runExclusive(sessionId, token, () =>
-      this.runTurnUnlocked(sessionId, turnId, token),
+      this.withProjectionSession(sessionId, async () => {
+        await this.syncProjection(sessionId);
+        await this.runTurnUnlocked(sessionId, turnId, token);
+      }),
     );
   }
 
@@ -306,15 +442,19 @@ export class AgentRuntime {
     };
 
     try {
-      await emit({ type: EventType.AGENT_REASONING_STARTED });
       const tools = this.fixedTools ?? listToolSpecs();
 
       for (let i = 0; i < this.maxToolIterations; i++) {
         token.throwIfCancelled();
 
-        const events = await this.store.getEvents(sessionId);
-        const state = replaySession(events);
-        const messages = buildMessages(state.messages, this.systemPrompt);
+        // Persist a provider-output/tool-batch boundary for deterministic
+        // cold replay of consecutive tool-only iterations.
+        await emit({ type: EventType.AGENT_REASONING_STARTED });
+
+        const state = this.projectorFor(sessionId).state;
+        const context = buildContext(state.messages, this.systemPrompt, this.contextWindow);
+        this.contextDiagnosticsBySession.set(sessionId, Object.freeze({ ...context.diagnostics }));
+        const messages = context.messages;
 
         let content = "";
         const toolCalls: ToolCall[] = [];

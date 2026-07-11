@@ -13,6 +13,8 @@ export interface AppendResult {
 }
 
 export interface EventStore {
+  /** Optional retained-session bound used to align runtime projection caches. */
+  readonly maxSessions?: number;
   append(event: NewKajiEventType): Promise<AppendResult>;
   getEvents(
     sessionId: string,
@@ -37,10 +39,14 @@ function draftOf(event: StoredKajiEvent): unknown {
   return draft;
 }
 
+function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
+  return StoredKajiEvent.parse(structuredClone(event));
+}
+
 export class InMemoryEventStore implements EventStore {
   private readonly sessions = new Map<string, SessionLog>();
   private readonly eventsById = new Map<string, StoredKajiEvent>();
-  private readonly maxSessions: number;
+  readonly maxSessions: number;
   private readonly maxEventsPerSession: number;
   private clock = 0;
 
@@ -56,13 +62,13 @@ export class InMemoryEventStore implements EventStore {
   }
 
   async append(input: NewKajiEventType): Promise<AppendResult> {
-    const event = NewKajiEvent.parse(input);
+    const event = NewKajiEvent.parse(structuredClone(input));
     const existing = this.eventsById.get(event.id);
     if (existing !== undefined) {
       if (!structurallyEqualJson(draftOf(existing), event)) {
         throw new EventIdConflictError(event.id);
       }
-      return { event: existing, inserted: false };
+      return { event: cloneStoredEvent(existing), inserted: false };
     }
 
     let session = this.sessions.get(event.session_id);
@@ -83,7 +89,7 @@ export class InMemoryEventStore implements EventStore {
     session.closed = event.type === EventType.SESSION_CLOSED;
     session.lastAccess = ++this.clock;
     this.eventsById.set(stored.id, stored);
-    return { event: stored, inserted: true };
+    return { event: cloneStoredEvent(stored), inserted: true };
   }
 
   async getEvents(
@@ -102,7 +108,9 @@ export class InMemoryEventStore implements EventStore {
     if (session === undefined || limit === 0) return [];
     session.lastAccess = ++this.clock;
     const start = Math.min(afterSequence, session.events.length);
-    return session.events.slice(start, limit === undefined ? undefined : start + limit);
+    return session.events
+      .slice(start, limit === undefined ? undefined : start + limit)
+      .map(cloneStoredEvent);
   }
 
   async lastSequence(sessionId: string): Promise<number> {
