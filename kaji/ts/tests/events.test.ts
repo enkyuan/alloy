@@ -23,6 +23,7 @@ describe("KajiEvent", () => {
     const event = KajiEvent.parse({
       type: EventType.TOOL_CALL_COMPLETED,
       session_id: "s1",
+      turn_id: "turn-1",
       tool_name: "get_weather",
       tool_call_id: "c1",
       result: { tempF: 68 },

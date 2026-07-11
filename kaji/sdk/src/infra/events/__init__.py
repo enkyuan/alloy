@@ -9,6 +9,7 @@ from .errors import (
 from .journal import InMemoryEventJournal, SplitEventJournal
 from .protocols import EventBusProtocol, EventJournal
 from .replay import (
+    ApprovalKey,
     LegacyEventOrderingWarning,
     SessionState,
     apply_event,
@@ -28,6 +29,7 @@ from .types import EventType
 
 __all__ = [
     "EventType",
+    "ApprovalKey",
     "AgentTurnFailed",
     "KajiEvent",
     "NewKajiEvent",

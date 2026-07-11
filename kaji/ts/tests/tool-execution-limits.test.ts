@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EventType } from "@/events/types";
+import { StoredKajiEvent } from "@/events/schemas";
 import { ToolExecutionController } from "@/tools/execution";
 import { ToolExecutionError, toolTimedOut } from "@/tools/execution-errors";
 import { InMemoryToolIdempotencyLedger } from "@/tools/idempotency";
@@ -809,11 +810,13 @@ describe("bounded tool execution", () => {
     try {
       for (const testCase of cases) {
         const events: Array<{ type: string; tool_call_id?: string }> = [];
+        let sequence = 0;
         await testCase.planner.executeScatterGather(
           `matrix-${testCase.id}`,
           [{ id: testCase.id, name: "tool", arguments: testCase.args ?? {} }],
           async (event) => {
             events.push(event);
+            return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
           },
           "turn",
           TURN,

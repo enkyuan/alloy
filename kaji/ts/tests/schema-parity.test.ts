@@ -22,7 +22,10 @@ describe("shared event schema fixtures", () => {
   });
 
   it("parses a tool call completed event with usage and cost", () => {
-    const event = KajiEvent.parse(readFixture("tool-call-completed-with-usage.json"));
+    const event = KajiEvent.parse({
+      ...(readFixture("tool-call-completed-with-usage.json") as Record<string, unknown>),
+      turn_id: "turn-1",
+    });
 
     expect(event.type).toBe(EventType.TOOL_CALL_COMPLETED);
     if (event.type === EventType.TOOL_CALL_COMPLETED) {

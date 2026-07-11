@@ -67,6 +67,7 @@ describe("InMemoryEventStore", () => {
       id: "immutable",
       type: EventType.TOOL_CALL_REQUESTED,
       session_id: "s1",
+      turn_id: "turn-1",
       metadata: { audit: { level: 1 } },
       tool_name: "search",
       tool_call_id: "call-1",

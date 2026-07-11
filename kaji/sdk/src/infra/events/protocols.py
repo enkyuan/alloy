@@ -15,6 +15,13 @@ from kaji.infra.events.store.base import EventStore
 
 
 @runtime_checkable
+class EventSubscription(AsyncIterator[StoredKajiEvent], Protocol):
+    """A ready, explicitly closable event cursor."""
+
+    async def aclose(self) -> None: ...
+
+
+@runtime_checkable
 class EventBusProtocol(Protocol):
     """Structural interface shared by :class:`~kaji.infra.events.bus.InMemoryEventBus`
     and :class:`~kaji.infra.events.bus.EventBus` (Redis-backed).
@@ -50,6 +57,15 @@ class EventJournal(Protocol):
     store: EventStore
 
     async def commit(self, event: NewKajiEvent) -> StoredKajiEvent: ...
+
+    async def open_subscription(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> EventSubscription:
+        """Return only after backlog/live attachment is complete."""
+        ...
 
     def subscribe(
         self,

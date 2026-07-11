@@ -267,6 +267,32 @@ describe("AnthropicProvider.generate", () => {
 // ---------------------------------------------------------------------------
 
 describe("AnthropicProvider.generateStream", () => {
+  it("recreates a stream after a 429 before the first event", async () => {
+    const stream = vi
+      .fn()
+      .mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          throw Object.assign(new Error("rate limited"), { status: 429 });
+        },
+      })
+      .mockReturnValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "content_block_delta", delta: { type: "text_delta", text: "ok" } };
+        },
+      });
+    const provider = new TestAnthropicProvider(
+      { apiKey: "test-key", retry: { maxAttempts: 2, baseDelayMs: 0 } },
+      { messages: { stream } } as unknown as Anthropic,
+    );
+
+    const chunks = [];
+    for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+      chunks.push(chunk);
+    }
+    expect(chunks.map((chunk) => chunk.delta).join("")).toBe("ok");
+    expect(stream).toHaveBeenCalledTimes(2);
+  });
+
   it("yields text deltas from text_delta events", async () => {
     const events = [
       { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } },

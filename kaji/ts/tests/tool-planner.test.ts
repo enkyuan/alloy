@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { ToolPlanner } from "@/tools/planner";
+import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
-import { KajiEvent } from "@/events/schemas";
+import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { UnclassifiedToolRiskError, UnknownToolError, type ToolSpec } from "@/tools/registry";
@@ -28,6 +28,20 @@ function executePlanner(
   turnId = "test-turn",
 ) {
   return planner.executeScatterGather(sessionId, calls, emit, turnId, TURN_CONTEXT);
+}
+
+function sequencedEmitter(
+  onEvent: (
+    event: Parameters<ToolPlanner["executeScatterGather"]>[2] extends (event: infer T) => unknown
+      ? T
+      : never,
+  ) => void,
+) {
+  let sequence = 0;
+  return async (event: Parameters<typeof onEvent>[0]) => {
+    onEvent(event);
+    return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
+  };
 }
 
 describe("ToolPlanner", () => {
@@ -211,9 +225,9 @@ describe("ToolPlanner", () => {
       planner,
       "sess-approval",
       [{ id: "c1", name: "nuke", arguments: {} }],
-      async (e) => {
+      sequencedEmitter((e) => {
         emitted.push(e);
-      },
+      }),
     );
 
     const types = emitted.map((e) => e.type);
@@ -258,14 +272,14 @@ describe("ToolPlanner", () => {
       planner,
       "sess-isolation",
       [{ id: "c-isolation", name: "nuke", arguments: original }],
-      async (event) => {
+      sequencedEmitter((event) => {
         if (
           event.type === EventType.TOOL_CALL_REQUESTED ||
           event.type === EventType.TOOL_APPROVAL_REQUESTED
         ) {
           (event.tool_args.nested as any).value = "event-mutated";
         }
-      },
+      }),
     );
 
     expect(results[0]).toHaveProperty("result", { value: "validated" });
@@ -284,7 +298,7 @@ describe("ToolPlanner", () => {
     const turnId = "turn-event-handler-approval";
     const executor = vi.fn().mockResolvedValue({ ok: true });
     const committer = new InMemoryEventCommitter(store);
-    const approvalHandler = new EventApprovalHandler(committer, { timeoutMs: 250 });
+    const approvalHandler = new EventApprovalHandler();
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const specs = new Map([
       ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
@@ -308,14 +322,18 @@ describe("ToolPlanner", () => {
       }
     })();
 
-    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const planner = new ToolPlanner({
+      executor,
+      policy,
+      approvalHandler,
+      approvalCommitter: committer,
+      specs,
+    });
     const results = await executePlanner(
       planner,
       sessionId,
       [{ id: "c-typed", name: "nuke", arguments: {} }],
-      async (e) => {
-        await committer.commit(e);
-      },
+      bindEmitterToCommitter((event) => committer.commit(event), committer),
       turnId,
     );
     await approveRequest;
@@ -327,11 +345,11 @@ describe("ToolPlanner", () => {
     expect(results[0]).toHaveProperty("result", { ok: true });
   });
 
-  it("fails closed before invoking an event approval handler without a turn id", async () => {
+  it("fails closed before invoking an event approval handler without the runtime committer", async () => {
     const store = new InMemoryEventStore();
     const committer = new InMemoryEventCommitter(store);
     const executor = vi.fn().mockResolvedValue({ ok: true });
-    const approvalHandler = new EventApprovalHandler(committer, { timeoutMs: 250 });
+    const approvalHandler = new EventApprovalHandler();
     const request = vi.spyOn(approvalHandler, "request");
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const specs = new Map([
@@ -343,19 +361,21 @@ describe("ToolPlanner", () => {
       "sess-missing-turn",
       [{ id: "c-missing-turn", name: "nuke", arguments: {} }],
       async (event) => {
-        await committer.commit(event);
+        return committer.commit(event);
       },
-      undefined,
+      "turn-missing-committer",
       TURN_CONTEXT,
     );
 
     expect(request).not.toHaveBeenCalled();
     expect(executor).not.toHaveBeenCalled();
     expect(results[0]).toMatchObject({
-      error: expect.stringContaining("non-empty turn identity"),
+      error: "Tool approval unavailable",
+      error_code: "APPROVAL_UNAVAILABLE",
+      outcome: "not_started",
     });
     const events = await store.getEvents("sess-missing-turn");
-    expect(events.some((event) => event.type === EventType.TOOL_APPROVAL_REQUESTED)).toBe(false);
+    expect(events.some((event) => event.type === EventType.TOOL_APPROVAL_REQUESTED)).toBe(true);
     expect(events.some((event) => event.type === EventType.TOOL_APPROVAL_REJECTED)).toBe(true);
     expect(events.some((event) => event.type === EventType.TOOL_CALL_FAILED)).toBe(true);
   });
@@ -378,9 +398,9 @@ describe("ToolPlanner", () => {
       planner,
       "sess-reject",
       [{ id: "c2", name: "charge", arguments: {} }],
-      async (e) => {
+      sequencedEmitter((e) => {
         emitted.push(e);
-      },
+      }),
     );
 
     expect(executor).not.toHaveBeenCalled();
@@ -409,7 +429,12 @@ describe("ToolPlanner", () => {
     expect(executor).not.toHaveBeenCalled();
     const types = emitted.map((e) => e.type);
     expect(types).toEqual([EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]);
-    expect(results[0]).toHaveProperty("error", "Tool not permitted: blocked");
+    expect(results[0]).toMatchObject({
+      error: "Tool not permitted",
+      error_code: "TOOL_NOT_ALLOWED",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("allow-list permits only listed tools", async () => {
@@ -500,7 +525,12 @@ describe("ToolPlanner", () => {
       EventType.TOOL_CALL_REQUESTED,
       EventType.TOOL_CALL_FAILED,
     ]);
-    expect(results[0]).toHaveProperty("error", "Tool not permitted: weather_getWeather");
+    expect(results[0]).toMatchObject({
+      error: "Tool not permitted",
+      error_code: "TOOL_NOT_ALLOWED",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("read risk skips a destructive approval gate", async () => {
@@ -651,9 +681,9 @@ describe("ToolPlanner", () => {
       planner,
       "session",
       [{ id: "call", name: "search", arguments: {} }],
-      async (event) => {
+      sequencedEmitter((event) => {
         emitted.push(event);
-      },
+      }),
     );
 
     expect(executor).not.toHaveBeenCalled();
@@ -730,9 +760,9 @@ describe("ToolPlanner", () => {
       planner,
       "sess-no-handler",
       [{ id: "c4", name: "add_user", arguments: {} }],
-      async (e) => {
+      sequencedEmitter((e) => {
         emitted.push(e);
-      },
+      }),
     );
 
     const types = emitted.map((e) => e.type);

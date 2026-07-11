@@ -4,6 +4,7 @@
  */
 import type { ProviderMessage } from "@/providers/base";
 import type { Message } from "@/sessions/replay";
+import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
 /** Caller-owned context applied to one agent turn. */
 export interface TurnContext {
@@ -326,10 +327,26 @@ function providerMessage(message: Message): ProviderMessage {
   };
 }
 
+function providerMessageCharacters(message: ProviderMessage): number {
+  let count = textCharacters(message.content);
+  if (message.role === "assistant") {
+    for (const call of message.toolCalls ?? []) {
+      count += textCharacters(call.id);
+      count += textCharacters(call.name);
+      count += textCharacters(canonicalJson(call.args));
+    }
+  } else if (message.role === "tool") {
+    count += textCharacters(message.name ?? "");
+    count += textCharacters(message.tool_call_id ?? "");
+  }
+  return count;
+}
+
 export function buildContext(
   messages: readonly Message[],
   systemPrompt?: string,
   window: ContextWindow = DEFAULT_CONTEXT_WINDOW,
+  metricsSink: MetricsSink = NOOP_METRICS,
 ): ContextBuildResult {
   validateContextWindow(window);
   const groups = turnGroups(messages);
@@ -362,6 +379,13 @@ export function buildContext(
   for (const group of groups.slice(keptStart)) {
     for (const message of group) result.push(providerMessage(message));
   }
+  recordMetric(metricsSink, "kaji.context.messages", result.length, {});
+  recordMetric(
+    metricsSink,
+    "kaji.context.characters",
+    result.reduce((total, message) => total + providerMessageCharacters(message), 0),
+    {},
+  );
   return {
     messages: result,
     diagnostics: {

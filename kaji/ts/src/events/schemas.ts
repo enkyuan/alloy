@@ -101,21 +101,24 @@ export const AgentTurnFailed = event({
 
 export const ToolCallRequested = event({
   type: z.literal(EventType.TOOL_CALL_REQUESTED),
-  tool_name: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
   tool_args: z.record(z.string(), z.unknown()),
-  tool_call_id: z.string(),
+  tool_call_id: z.string().min(1),
 });
 
 export const ToolCallStarted = event({
   type: z.literal(EventType.TOOL_CALL_STARTED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
 });
 
 export const ToolCallCompleted = event({
   type: z.literal(EventType.TOOL_CALL_COMPLETED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
   result: z.unknown(),
   tokens: z
     .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
@@ -125,9 +128,16 @@ export const ToolCallCompleted = event({
 
 export const ToolCallFailed = event({
   type: z.literal(EventType.TOOL_CALL_FAILED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
-  error: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
+  error: z
+    .string()
+    .min(1)
+    .refine(
+      (value) => Array.from(value).length <= 200,
+      "error must contain at most 200 characters",
+    ),
   error_code: z.string().optional(),
   error_path: z.string().optional(),
   retryable: z.boolean().optional(),
@@ -136,23 +146,39 @@ export const ToolCallFailed = event({
 
 export const ToolApprovalRequested = event({
   type: z.literal(EventType.TOOL_APPROVAL_REQUESTED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
   tool_args: z.record(z.string(), z.unknown()),
-  risk: z.string().nullish(),
+  risk: z.enum(["read", "write", "external_effect", "financial", "destructive", "admin"]),
 });
 
 export const ToolApprovalApproved = event({
   type: z.literal(EventType.TOOL_APPROVAL_APPROVED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
 });
 
 export const ToolApprovalRejected = event({
   type: z.literal(EventType.TOOL_APPROVAL_REJECTED),
-  tool_name: z.string(),
-  tool_call_id: z.string(),
-  reason: z.string().nullish(),
+  turn_id: z.string().min(1),
+  tool_name: z.string().min(1),
+  tool_call_id: z.string().min(1),
+  error_code: z.enum([
+    "APPROVAL_REJECTED",
+    "APPROVAL_TIMEOUT",
+    "TOOL_CANCELLED",
+    "APPROVAL_UNAVAILABLE",
+  ]),
+  reason: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, "reason must not be blank")
+    .refine(
+      (value) => Array.from(value).length <= 200,
+      "reason must contain at most 200 characters",
+    ),
 });
 
 export const WorkflowStarted = event({

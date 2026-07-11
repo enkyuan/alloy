@@ -22,8 +22,8 @@ describe("SessionManager", () => {
         isActive: false,
         messages: [],
         pendingApprovals: new Set<string>(),
-        approvedToolCallIds: new Set<string>(),
-        rejectedToolCallIds: new Set<string>(),
+        approvedApprovals: new Set<string>(),
+        rejectedApprovals: new Map<string, string>(),
         totalTokens: { input: 0, output: 0 },
         totalCostUsd: 0,
       });

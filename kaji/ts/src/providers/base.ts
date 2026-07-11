@@ -12,6 +12,7 @@ import {
 } from "@/runtime/cancellation";
 import type { RetryOptions } from "@/providers/openai";
 import type { ToolSpec } from "@/tools/registry";
+import { NOOP_METRICS, recordMetric, type MetricsSink, type ProviderFamily } from "@/observability";
 
 /** A message in the conversation history passed to the provider. */
 export interface ProviderMessage {
@@ -73,10 +74,14 @@ export interface ModelProviderOptions {
   temperature?: number;
   maxTokens?: number;
   cancellationToken?: CancellationTokenLike;
+  /** Runtime-injected metrics sink. Provider implementations must keep labels low-cardinality. */
+  metricsSink?: MetricsSink;
 }
 
 /** Common interface every LLM provider implements. */
 export interface ModelProvider {
+  /** Stable low-cardinality family identifier for observability. */
+  readonly providerFamily?: ProviderFamily;
   generate(
     messages: ProviderMessage[],
     tools: ToolSpec[],
@@ -113,6 +118,8 @@ export async function withRetry<T>(
   fn: () => Promise<T>,
   retry: Required<RetryOptions>,
   cancellationToken?: CancellationTokenLike,
+  metricsSink: MetricsSink = NOOP_METRICS,
+  providerFamily: ProviderFamily = "custom",
 ): Promise<T> {
   const { maxAttempts, baseDelayMs } = retry;
   let lastError: unknown;
@@ -129,11 +136,117 @@ export async function withRetry<T>(
         throw error;
       }
       const retryAfterMs = parseRetryAfterMs(error) ?? baseDelayMs * 2 ** (attempt - 1);
+      recordMetric(metricsSink, "kaji.provider.retries", 1, {
+        provider_family: providerFamily,
+      });
       lastError = error;
       await cancellableDelay(retryAfterMs, cancellationToken);
     }
   }
   throw lastError;
+}
+
+/** Retry only until a stream yields its first item; never replay partial output. */
+export async function openStreamWithRetry<T>(
+  create: () => AsyncIterable<T> | Promise<AsyncIterable<T>>,
+  retry: Required<RetryOptions>,
+  cancellationToken?: CancellationTokenLike,
+  metricsSink: MetricsSink = NOOP_METRICS,
+  providerFamily: ProviderFamily = "custom",
+): Promise<AsyncIterableIterator<T>> {
+  const opened = await withRetry(
+    async () => {
+      const stream = await create();
+      const iterator = stream[Symbol.asyncIterator]();
+      try {
+        return { iterator, first: await iterator.next() };
+      } catch (error) {
+        try {
+          await iterator.return?.();
+        } catch {
+          // Preserve the provider error that controls retryability.
+        }
+        throw error;
+      }
+    },
+    retry,
+    cancellationToken,
+    metricsSink,
+    providerFamily,
+  );
+  return new BufferedAsyncIterator(opened.iterator, opened.first);
+}
+
+/**
+ * Iterator wrapper for the item consumed while opening a retryable stream.
+ *
+ * A native async generator does not enter its body when `return()` or
+ * `throw()` is called before the first `next()`, so its `finally` block cannot
+ * close the already-open provider iterator. This wrapper owns that lifecycle
+ * explicitly.
+ */
+class BufferedAsyncIterator<T> implements AsyncIterableIterator<T> {
+  private firstPending = true;
+  private closed = false;
+  private closePromise: Promise<void> | undefined;
+
+  constructor(
+    private readonly inner: AsyncIterator<T>,
+    private readonly first: IteratorResult<T>,
+  ) {}
+
+  async next(): Promise<IteratorResult<T>> {
+    if (this.closed) return { value: undefined, done: true };
+    if (this.firstPending) {
+      this.firstPending = false;
+      if (this.first.done) this.markNaturallyClosed();
+      return this.first;
+    }
+    try {
+      const next = await this.inner.next();
+      if (next.done) this.markNaturallyClosed();
+      return next;
+    } catch (error) {
+      try {
+        await this.close();
+      } catch {
+        // Preserve the provider failure that ended the stream.
+      }
+      throw error;
+    }
+  }
+
+  async return(value?: unknown): Promise<IteratorResult<T>> {
+    await this.close();
+    return { value: value as T, done: true };
+  }
+
+  async throw(error?: unknown): Promise<IteratorResult<T>> {
+    await this.close();
+    throw error;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<T> {
+    return this;
+  }
+
+  private markNaturallyClosed(): void {
+    this.closed = true;
+    this.closePromise = Promise.resolve();
+  }
+
+  private close(): Promise<void> {
+    if (this.closePromise !== undefined) return this.closePromise;
+    this.closed = true;
+    this.firstPending = false;
+    try {
+      const result = this.inner.return?.();
+      this.closePromise = Promise.resolve(result).then(() => undefined);
+    } catch (error) {
+      this.closePromise = Promise.reject(error);
+    }
+    return this.closePromise;
+  }
 }
 
 async function cancellableDelay(

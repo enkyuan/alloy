@@ -528,6 +528,7 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     await store.append(
         ToolCallRequested(
             session_id=session_id,
+            turn_id="turn-replay",
             tool_name="lookup",
             tool_args={"q": "test"},
             tool_call_id="call-abc",
@@ -535,12 +536,16 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     )
     await store.append(
         ToolCallStarted(
-            session_id=session_id, tool_name="lookup", tool_call_id="call-abc"
+            session_id=session_id,
+            turn_id="turn-replay",
+            tool_name="lookup",
+            tool_call_id="call-abc",
         )
     )
     await store.append(
         ToolCallCompleted(
             session_id=session_id,
+            turn_id="turn-replay",
             tool_name="lookup",
             tool_call_id="call-abc",
             result={"answer": 42},
@@ -575,6 +580,7 @@ async def test_tool_call_id_preserved_on_failed_tool_replay():
     await store.append(
         ToolCallRequested(
             session_id=session_id,
+            turn_id="turn-replay-fail",
             tool_name="risky",
             tool_args={},
             tool_call_id="call-xyz",
@@ -583,6 +589,7 @@ async def test_tool_call_id_preserved_on_failed_tool_replay():
     await store.append(
         ToolCallFailed(
             session_id=session_id,
+            turn_id="turn-replay-fail",
             tool_name="risky",
             tool_call_id="call-xyz",
             error="timeout",

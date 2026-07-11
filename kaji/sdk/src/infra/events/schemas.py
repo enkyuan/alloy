@@ -13,7 +13,7 @@ from typing import (  # noqa: F401
     runtime_checkable,
 )
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from kaji.infra.events.types import EventType
 
@@ -121,21 +121,24 @@ class AgentTurnFailed(BaseEvent):
 
 class ToolCallRequested(BaseEvent):
     type: Literal[EventType.TOOL_CALL_REQUESTED] = EventType.TOOL_CALL_REQUESTED
-    tool_name: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
     tool_args: Dict[str, Any]
-    tool_call_id: str
+    tool_call_id: str = Field(min_length=1)
 
 
 class ToolCallStarted(BaseEvent):
     type: Literal[EventType.TOOL_CALL_STARTED] = EventType.TOOL_CALL_STARTED
-    tool_name: str
-    tool_call_id: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
 
 
 class ToolCallCompleted(BaseEvent):
     type: Literal[EventType.TOOL_CALL_COMPLETED] = EventType.TOOL_CALL_COMPLETED
-    tool_name: str
-    tool_call_id: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
     result: Any
     tokens: Optional[EventTokenUsage] = None
     cost_usd: Optional[float] = Field(default=None, ge=0)
@@ -143,9 +146,10 @@ class ToolCallCompleted(BaseEvent):
 
 class ToolCallFailed(BaseEvent):
     type: Literal[EventType.TOOL_CALL_FAILED] = EventType.TOOL_CALL_FAILED
-    tool_name: str
-    tool_call_id: str
-    error: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+    error: str = Field(min_length=1, max_length=200)
     error_code: Optional[str] = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -162,23 +166,41 @@ class ToolCallFailed(BaseEvent):
 
 class ToolApprovalRequested(BaseEvent):
     type: Literal[EventType.TOOL_APPROVAL_REQUESTED] = EventType.TOOL_APPROVAL_REQUESTED
-    tool_name: str
-    tool_call_id: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
     tool_args: Dict[str, Any]
-    risk: Optional[str] = None
+    risk: Literal[
+        "read", "write", "external_effect", "financial", "destructive", "admin"
+    ]
 
 
 class ToolApprovalApproved(BaseEvent):
     type: Literal[EventType.TOOL_APPROVAL_APPROVED] = EventType.TOOL_APPROVAL_APPROVED
-    tool_name: str
-    tool_call_id: str
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
 
 
 class ToolApprovalRejected(BaseEvent):
     type: Literal[EventType.TOOL_APPROVAL_REJECTED] = EventType.TOOL_APPROVAL_REJECTED
-    tool_name: str
-    tool_call_id: str
-    reason: Optional[str] = None
+    turn_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+    error_code: Literal[
+        "APPROVAL_REJECTED",
+        "APPROVAL_TIMEOUT",
+        "TOOL_CANCELLED",
+        "APPROVAL_UNAVAILABLE",
+    ]
+    reason: str = Field(min_length=1, max_length=200)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_has_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("approval rejection reason must not be blank")
+        return value
 
 
 class WorkflowStarted(BaseEvent):

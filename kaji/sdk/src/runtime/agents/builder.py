@@ -8,9 +8,16 @@ from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.infra.events.protocols import EventBusProtocol, EventJournal
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.store.inmem import InMemoryEventStore
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    NOOP_TRACE,
+    TraceSink,
+)
 from kaji.runtime.agents.coordinator import TurnCoordinator
 from kaji.runtime.agents.context import ContextWindow, ToolInvocation, TurnContext
-from kaji.runtime.agents.planner import ApprovalHandler, ToolPlanner
+from kaji.runtime.agents.approval import ApprovalHandler, LegacyApprovalCallback
+from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
@@ -55,7 +62,7 @@ class AgentBuilder:
         self._provider: Optional[ModelProvider] = None
         self._integrations: List[Integrable] = []
         self._policy: Optional[ToolPolicy] = None
-        self._approval_handler: Optional[ApprovalHandler] = None
+        self._approval_handler: ApprovalHandler | LegacyApprovalCallback | None = None
         self._system_prompt: str = "You are a helpful assistant."
         self._strategy: Optional[AgentStrategy] = None
         self._coordinator: Optional[TurnCoordinator] = None
@@ -63,6 +70,8 @@ class AgentBuilder:
         self._default_context: TurnContext | None = None
         self._tool_execution_limits: ToolExecutionLimits | None = None
         self._tool_idempotency_ledger: ToolIdempotencyLedger | None = None
+        self._metrics_sink: MetricsSink = NOOP_METRICS
+        self._trace_sink: TraceSink = NOOP_TRACE
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -82,14 +91,10 @@ class AgentBuilder:
         self._policy = p
         return self
 
-    def approval_handler(self, handler: ApprovalHandler) -> "AgentBuilder":
-        """Set an async approval handler for tools that require explicit approval.
-
-        The handler receives ``(tool_name, tool_args, risk)`` and returns
-        ``True`` to allow execution or ``False`` to reject it. When a policy
-        marks a tool as requiring approval and no handler is set, the tool is
-        rejected by default (fail-safe).
-        """
+    def approval_handler(
+        self, handler: ApprovalHandler | LegacyApprovalCallback
+    ) -> "AgentBuilder":
+        """Set a typed handler or deprecated Boolean callback for approvals."""
         self._approval_handler = handler
         return self
 
@@ -130,6 +135,16 @@ class AgentBuilder:
         self._tool_idempotency_ledger = ledger
         return self
 
+    def metrics_sink(self, sink: MetricsSink) -> "AgentBuilder":
+        """Inject a dependency-free recording sink for runtime metrics."""
+        self._metrics_sink = sink
+        return self
+
+    def trace_sink(self, sink: TraceSink) -> "AgentBuilder":
+        """Inject a dependency-free trace sink for runtime spans."""
+        self._trace_sink = sink
+        return self
+
     def build(
         self,
         *,
@@ -151,9 +166,9 @@ class AgentBuilder:
             if store is None:
                 store = InMemoryEventStore()
             journal = (
-                SplitEventJournal(store, bus)
+                SplitEventJournal(store, bus, metrics_sink=self._metrics_sink)
                 if bus is not None
-                else InMemoryEventJournal(store)
+                else InMemoryEventJournal(store, metrics_sink=self._metrics_sink)
             )
 
         registry = ToolRegistry()
@@ -169,6 +184,8 @@ class AgentBuilder:
         controller = ToolExecutionController(
             limits=self._tool_execution_limits,
             ledger=self._tool_idempotency_ledger,
+            metrics_sink=self._metrics_sink,
+            trace_sink=self._trace_sink,
         )
         planner = ToolPlanner(
             executor=_executor,
@@ -191,4 +208,6 @@ class AgentBuilder:
             context_window=self._context_window,
             default_context=self._default_context,
             tool_execution_controller=controller,
+            metrics_sink=self._metrics_sink,
+            trace_sink=self._trace_sink,
         )

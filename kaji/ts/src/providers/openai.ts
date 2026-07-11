@@ -17,7 +17,7 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "@/providers/base";
-import { withRetry } from "@/providers/base";
+import { openStreamWithRetry, withRetry } from "@/providers/base";
 import {
   ProviderConfigError,
   ProviderError,
@@ -94,6 +94,7 @@ interface ResolvedOpenAIOptions {
 }
 
 export class OpenAIProvider implements ModelProvider {
+  readonly providerFamily = "openai" as const;
   private readonly opts: ResolvedOpenAIOptions;
   private client: OpenAI | null = null;
 
@@ -169,6 +170,8 @@ export class OpenAIProvider implements ModelProvider {
           client.chat.completions.create(params, { signal: options?.cancellationToken?.signal }),
         this.opts.retry,
         options?.cancellationToken,
+        options?.metricsSink,
+        "openai",
       );
       const choice = response.choices[0];
       if (!choice) {
@@ -211,9 +214,16 @@ export class OpenAIProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
     try {
-      const stream = await client.chat.completions.create(params, {
-        signal: options?.cancellationToken?.signal,
-      });
+      const stream = await openStreamWithRetry(
+        () =>
+          client.chat.completions.create(params, {
+            signal: options?.cancellationToken?.signal,
+          }),
+        this.opts.retry,
+        options?.cancellationToken,
+        options?.metricsSink,
+        "openai",
+      );
 
       // Accumulate partial tool call args across chunks.
       const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();

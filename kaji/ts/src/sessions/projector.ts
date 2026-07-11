@@ -1,6 +1,7 @@
 import type { EventStore } from "@/events/store";
 import type { StoredKajiEvent } from "@/events/schemas";
 import { applyEvent, createSessionState, type SessionState } from "@/sessions/replay";
+import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
 /** Incremental projection that owns one session-local sequence cursor. */
 export class SessionProjector {
@@ -9,7 +10,10 @@ export class SessionProjector {
   appliedEvents = 0;
   initialized = false;
 
-  constructor(readonly sessionId: string) {
+  constructor(
+    readonly sessionId: string,
+    private readonly metrics: MetricsSink = NOOP_METRICS,
+  ) {
     this.state = createSessionState(sessionId);
   }
 
@@ -26,11 +30,15 @@ export class SessionProjector {
     this.appliedEvents++;
   }
 
-  async sync(store: EventStore): Promise<number> {
+  async sync(store: EventStore, onApplied?: (event: StoredKajiEvent) => void): Promise<number> {
     const events = await store.getEvents(this.sessionId, {
       afterSequence: this.lastSequence,
     });
-    for (const event of events) this.apply(event);
+    recordMetric(this.metrics, "kaji.replay.input_events", events.length, {});
+    for (const event of events) {
+      this.apply(event);
+      onApplied?.(event);
+    }
     this.initialized = true;
     return events.length;
   }

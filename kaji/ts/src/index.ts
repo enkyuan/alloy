@@ -25,7 +25,12 @@ export {
 } from "@/events/schemas";
 export { EventBus } from "@/events/bus";
 export { type EventBusProtocol, type EventCommitter } from "@/events/protocols";
-export { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
+export {
+  InMemoryEventCommitter,
+  SplitEventCommitter,
+  type InMemoryEventCommitterOptions,
+  type SplitEventCommitterOptions,
+} from "@/events/committer";
 export {
   EventBufferOverflowError,
   EventDeliveryError,
@@ -39,6 +44,9 @@ export {
   replayLegacySession,
   replaySession,
   applyEvent,
+  approvalKey,
+  type ApprovalFailureCode,
+  type ApprovalKey,
   type SessionState,
   type Message,
   type SessionTokens,
@@ -221,11 +229,41 @@ export {
 export type {
   TypedApprovalHandler,
   EventBackedApprovalHandler,
-  EventApprovalContext,
-  EventApprovalContext as ApprovalContext,
-  ApprovalDecision,
   ApprovalRequest,
+  ApprovalRequestContext,
+  ApprovalRejectionCode,
+  EventApprovalContext,
+  ApprovalRequestContext as ApprovalContext,
+  ApprovalDecision,
+  LegacyApprovalHandler,
   ToolContext as TypedApprovalContext,
 } from "@/runtime/approval/types";
-export { EventApprovalHandler } from "@/runtime/approval/handler";
+export { adaptLegacyApprovalHandler } from "@/runtime/approval/types";
+export { EventApprovalHandler, type EventApprovalHandlerOptions } from "@/runtime/approval/handler";
 export { AutoApprovalHandler, type AutoApprovalPolicy } from "@/runtime/approval/auto";
+
+// Observability
+export {
+  NOOP_METRICS,
+  NOOP_TRACE,
+  METRIC_NAMES,
+  providerFamily,
+  recordMetric,
+  startSpan,
+  type JournalStage,
+  type MetricLabels,
+  type MetricMeasurement,
+  type MetricName,
+  type MetricsSink,
+  type ProviderFamily,
+  type ProviderStatus,
+  type SpanName,
+  type SubscriberStage,
+  type ToolMetricOutcome,
+  type TraceAttributeName,
+  type TraceAttributeValue,
+  type TraceAttributes,
+  type TraceSink,
+  type TraceSpan,
+  type TurnOutcome,
+} from "@/observability";

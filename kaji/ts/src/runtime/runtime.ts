@@ -21,7 +21,12 @@ import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
 import { SessionProjector } from "@/sessions/projector";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
-import { ToolPlanner, type AnyApprovalHandler, type ToolExecutor } from "@/tools/planner";
+import {
+  ToolPlanner,
+  bindEmitterToCommitter,
+  type AnyApprovalHandler,
+  type ToolExecutor,
+} from "@/tools/planner";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import { defaultUuid } from "@/internal/uuid";
@@ -43,6 +48,17 @@ import {
   InMemorySessionTurnCoordinator,
   type SessionTurnCoordinator,
 } from "@/runtime/session-turn-coordinator";
+import {
+  NOOP_METRICS,
+  NOOP_TRACE,
+  providerFamily,
+  recordMetric,
+  startSpan,
+  type MetricsSink,
+  type ProviderStatus,
+  type TraceSink,
+  type TurnOutcome,
+} from "@/observability";
 
 const PUBLIC_TURN_FAILURE = "Agent turn failed";
 const DEFAULT_TURN_COORDINATORS = new WeakMap<EventStore, SessionTurnCoordinator>();
@@ -69,6 +85,11 @@ function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
 export interface AgentStrategy {
   /** Maximum tool-call iterations before the loop terminates. Default: 10. */
   maxToolIterations?: number;
+  /**
+   * When `false`, the loop breaks after the first provider response even if
+   * it requested tool calls (the calls are never executed). Default: `true`.
+   */
+  allowToolCalls?: boolean;
 }
 
 export interface AgentRuntimeOptions {
@@ -119,6 +140,12 @@ export interface AgentRuntimeOptions {
   turnCoordinator?: SessionTurnCoordinator;
   /** Complete-turn provider-history bounds. Defaults to 32 turns / 100,000 characters. */
   contextWindow?: ContextWindow;
+  /** Dependency-free recording sink; defaults to a no-op. */
+  metricsSink?: MetricsSink;
+  /** Privileged trace sink; defaults to a no-op. */
+  traceSink?: TraceSink;
+  /** Injectable monotonic clock for deterministic latency tests. */
+  monotonicNow?: () => number;
 }
 
 export interface RunTurnOptions {
@@ -173,6 +200,7 @@ export class AgentRuntime {
   private readonly committer: EventCommitter;
   private readonly systemPrompt?: string;
   private readonly maxToolIterations: number;
+  private readonly allowToolCalls: boolean;
   private readonly fixedTools: ToolSpec[] | undefined;
   private readonly toolExecutor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
@@ -187,6 +215,9 @@ export class AgentRuntime {
   private readonly turnEventCollectors = new Map<string, StoredKajiEvent[]>();
   private readonly contextDiagnosticsBySession = new Map<string, Readonly<ContextDiagnostics>>();
   private readonly toolExecutionController: ToolExecutionController;
+  private readonly metrics: MetricsSink;
+  private readonly trace: TraceSink;
+  private readonly monotonicNow: () => number;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -204,6 +235,9 @@ export class AgentRuntime {
       );
     }
     this.provider = options.provider;
+    this.metrics = options.metricsSink ?? NOOP_METRICS;
+    this.trace = options.traceSink ?? NOOP_TRACE;
+    this.monotonicNow = options.monotonicNow ?? (() => globalThis.performance.now());
     this.store = options.store;
     if (options.committer !== undefined) {
       if (options.committer.store !== options.store) {
@@ -211,12 +245,21 @@ export class AgentRuntime {
       }
       this.committer = options.committer;
     } else if (options.bus !== undefined) {
-      this.committer = new SplitEventCommitter(options.store, options.bus);
+      this.committer = new SplitEventCommitter(options.store, options.bus, {
+        metricsSink: this.metrics,
+      });
     } else {
       throw new Error("AgentRuntime requires an event committer or compatibility bus");
     }
+    if (
+      options.planner?.approvalCommitter !== undefined &&
+      options.planner.approvalCommitter !== this.committer
+    ) {
+      throw new Error("Explicit planner approval committer must match the AgentRuntime committer");
+    }
     this.systemPrompt = options.systemPrompt;
     this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
+    this.allowToolCalls = options.strategy?.allowToolCalls ?? true;
     this.fixedTools = options.tools;
     if (options.defaultContext === undefined) {
       this.defaultContext = undefined;
@@ -247,6 +290,9 @@ export class AgentRuntime {
       new ToolExecutionController({
         limits: options.toolExecutionLimits,
         ledger: options.toolIdempotencyLedger,
+        metricsSink: this.metrics,
+        traceSink: this.trace,
+        monotonicNow: this.monotonicNow,
       });
     // Planner resolution:
     //  1. Explicit planner wins.
@@ -263,6 +309,10 @@ export class AgentRuntime {
       executor: this.toolExecutor,
       policy: this.policy,
       approvalHandler: this.approvalHandler,
+      approvalCommitter: this.committer,
+      metricsSink: this.metrics,
+      traceSink: this.trace,
+      monotonicNow: this.monotonicNow,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
       executionController: this.toolExecutionController,
     });
@@ -306,17 +356,19 @@ export class AgentRuntime {
     return this.withProjectionSession(event.session_id, () =>
       this.withProjectionLock(event.session_id, async () => {
         const projector = this.projectorFor(event.session_id);
-        if (!projector.initialized) await projector.sync(this.store);
+        const collect = (applied: StoredKajiEvent) => {
+          if (applied.turn_id === undefined) return;
+          this.turnEventCollectors.get(applied.turn_id)?.push(cloneStoredEvent(applied));
+        };
+        if (!projector.initialized) await projector.sync(this.store, collect);
         const stored = await this.committer.commit(event);
         if (stored.sequence === projector.lastSequence + 1) {
           projector.apply(stored);
+          collect(stored);
         } else if (stored.sequence > projector.lastSequence) {
           // A canonical writer committed during the active turn. Pull the gap
           // plus this event before the next provider iteration reads state.
-          await projector.sync(this.store);
-        }
-        if (stored.turn_id !== undefined) {
-          this.turnEventCollectors.get(stored.turn_id)?.push(cloneStoredEvent(stored));
+          await projector.sync(this.store, collect);
         }
         return cloneStoredEvent(stored);
       }),
@@ -326,7 +378,7 @@ export class AgentRuntime {
   private projectorFor(sessionId: string): SessionProjector {
     let projector = this.projectors.get(sessionId);
     if (projector === undefined) {
-      projector = new SessionProjector(sessionId);
+      projector = new SessionProjector(sessionId, this.metrics);
       this.projectors.set(sessionId, projector);
       this.trimProjectionCache();
     } else {
@@ -406,6 +458,34 @@ export class AgentRuntime {
     return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
   }
 
+  private runCoordinated<T>(
+    sessionId: string,
+    token: CancellationToken,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const queuedAt = this.monotonicNow();
+    let recorded = false;
+    const recordWait = () => {
+      if (recorded) return;
+      recorded = true;
+      recordMetric(
+        this.metrics,
+        "kaji.turn.queue_wait_ms",
+        Math.max(0, this.monotonicNow() - queuedAt),
+        {},
+      );
+    };
+    return this.turnCoordinator
+      .runExclusive(sessionId, token, () => {
+        recordWait();
+        return operation();
+      })
+      .catch((error: unknown) => {
+        recordWait();
+        throw error;
+      });
+  }
+
   /**
    * Run one full agent turn and return a structured result.
    *
@@ -418,7 +498,7 @@ export class AgentRuntime {
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
-    return this.turnCoordinator.runExclusive(sessionId, token, () =>
+    return this.runCoordinated(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         const projector = await this.syncProjection(sessionId);
         const turnEvents: StoredKajiEvent[] = [];
@@ -462,7 +542,7 @@ export class AgentRuntime {
     const turnId = defaultUuid();
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
-    await this.turnCoordinator.runExclusive(sessionId, token, () =>
+    await this.runCoordinated(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
         await this.sendUnlocked(sessionId, content, turnId, token, context);
@@ -502,7 +582,7 @@ export class AgentRuntime {
     const token = options.cancellationToken ?? new CancellationToken();
     const turnId = defaultUuid();
     const context = this.resolveTurnContext(options.context);
-    await this.turnCoordinator.runExclusive(sessionId, token, () =>
+    await this.runCoordinated(sessionId, token, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
         await this.runTurnUnlocked(sessionId, turnId, token, context);
@@ -517,6 +597,16 @@ export class AgentRuntime {
     turnContext: ResolvedTurnContext,
   ): Promise<void> {
     token.throwIfCancelled();
+    const turnStarted = this.monotonicNow();
+    let turnOutcome: TurnOutcome = "completed";
+    let iterations = 0;
+    const turnSpan = startSpan(this.trace, "kaji.turn", {
+      ...(turnContext.principalId === undefined ? {} : { "principal.id": turnContext.principalId }),
+      "session.id": sessionId,
+      "turn.id": turnId,
+      "request.id": turnContext.requestId,
+      "trace.id": turnContext.traceId,
+    });
 
     const emit = async <T extends KajiEventInput>(
       input: EventInputWithoutRuntimeContext<T>,
@@ -527,11 +617,12 @@ export class AgentRuntime {
 
     try {
       const tools = this.fixedTools ?? listToolSpecs();
-      if (tools.length > 0 && turnContext.principalId === undefined) {
+      if (this.allowToolCalls && tools.length > 0 && turnContext.principalId === undefined) {
         throw new MissingToolIdentityError();
       }
 
       for (let i = 0; i < this.maxToolIterations; i++) {
+        iterations = i + 1;
         token.throwIfCancelled();
 
         // Persist a provider-output/tool-batch boundary for deterministic
@@ -539,7 +630,12 @@ export class AgentRuntime {
         await emit({ type: EventType.AGENT_REASONING_STARTED });
 
         const state = this.projectorFor(sessionId).state;
-        const providerContext = buildContext(state.messages, this.systemPrompt, this.contextWindow);
+        const providerContext = buildContext(
+          state.messages,
+          this.systemPrompt,
+          this.contextWindow,
+          this.metrics,
+        );
         this.contextDiagnosticsBySession.set(
           sessionId,
           Object.freeze({ ...providerContext.diagnostics }),
@@ -551,17 +647,42 @@ export class AgentRuntime {
         let usage: TokenUsage | undefined;
         let costUsd: number | undefined;
 
-        for await (const chunk of this.provider.generateStream(messages, tools, {
-          cancellationToken: token,
-        })) {
-          token.throwIfCancelled();
-          if (chunk.delta) {
-            content += chunk.delta;
-            await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+        const family = providerFamily(this.provider);
+        const providerStarted = this.monotonicNow();
+        let providerStatus: ProviderStatus = "success";
+        const providerSpan = startSpan(this.trace, "kaji.provider", {
+          "session.id": sessionId,
+          "turn.id": turnId,
+          "request.id": turnContext.requestId,
+          "trace.id": turnContext.traceId,
+          "provider.family": family,
+        });
+        try {
+          for await (const chunk of this.provider.generateStream(messages, tools, {
+            cancellationToken: token,
+            metricsSink: this.metrics,
+          })) {
+            token.throwIfCancelled();
+            if (chunk.delta) {
+              content += chunk.delta;
+              await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+            }
+            toolCalls.push(...chunk.toolCalls);
+            if (chunk.usage) usage = chunk.usage;
+            if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
           }
-          toolCalls.push(...chunk.toolCalls);
-          if (chunk.usage) usage = chunk.usage;
-          if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
+        } catch (error) {
+          providerStatus = token.isCancelled ? "cancelled" : "error";
+          providerSpan.recordError(error);
+          throw error;
+        } finally {
+          recordMetric(
+            this.metrics,
+            "kaji.provider.duration_ms",
+            Math.max(0, this.monotonicNow() - providerStarted),
+            { provider_family: family, status: providerStatus },
+          );
+          providerSpan.end();
         }
 
         // Finalize the assistant text for THIS iteration before touching tools.
@@ -578,7 +699,7 @@ export class AgentRuntime {
           });
         }
 
-        if (toolCalls.length === 0) {
+        if (toolCalls.length === 0 || !this.allowToolCalls) {
           break;
         }
 
@@ -591,9 +712,10 @@ export class AgentRuntime {
             name: tc.name,
             arguments: tc.args,
           })),
-          async (event) => {
-            await this.appendEvent(KajiEvent.parse({ ...event, turn_id: turnId }));
-          },
+          bindEmitterToCommitter(
+            async (event) => this.appendEvent(KajiEvent.parse({ ...event, turn_id: turnId })),
+            this.committer,
+          ),
           turnId,
           turnContext,
           token.signal,
@@ -617,9 +739,12 @@ export class AgentRuntime {
         error instanceof CancellationError ||
         (token.isCancelled && isCompatibleAbortError(error))
       ) {
+        turnOutcome = "cancelled";
         await emit({ type: EventType.CANCELLATION_COMPLETED });
         return;
       }
+      turnOutcome = "failed";
+      turnSpan.recordError(error);
       try {
         await emit({ type: EventType.AGENT_TURN_FAILED, error: PUBLIC_TURN_FAILURE });
       } catch {
@@ -627,6 +752,15 @@ export class AgentRuntime {
         // terminal event independently fails.
       }
       throw error;
+    } finally {
+      recordMetric(
+        this.metrics,
+        "kaji.turn.duration_ms",
+        Math.max(0, this.monotonicNow() - turnStarted),
+        { outcome: turnOutcome },
+      );
+      recordMetric(this.metrics, "kaji.turn.iterations", iterations, { outcome: turnOutcome });
+      turnSpan.end();
     }
   }
 }

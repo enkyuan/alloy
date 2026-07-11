@@ -17,6 +17,10 @@ from jsonschema.exceptions import SchemaError, ValidationError
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
+PACKAGE_CONTRACT_TARGETS = (
+    ROOT / "kaji" / "sdk" / "src" / "contracts",
+    ROOT / "kaji" / "ts" / "contracts",
+)
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 REQUIRED_JSON = {
     "beta-core-v1.json",
@@ -28,6 +32,12 @@ REQUIRED_JSON = {
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
+}
+APPROVAL_FAILURE_RETRYABILITY = {
+    "APPROVAL_REJECTED": False,
+    "APPROVAL_TIMEOUT": True,
+    "TOOL_CANCELLED": True,
+    "APPROVAL_UNAVAILABLE": False,
 }
 
 
@@ -104,6 +114,31 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
     return documents
 
 
+def check_packaged_contracts() -> None:
+    expected = {
+        path.relative_to(CONTRACTS)
+        for path in CONTRACTS.rglob("*")
+        if path.is_file() and path.suffix in {".json", ".md"}
+    }
+    for target in PACKAGE_CONTRACT_TARGETS:
+        actual = {
+            path.relative_to(target)
+            for path in target.rglob("*")
+            if path.is_file() and path.suffix in {".json", ".md"}
+        }
+        if actual != expected:
+            missing = sorted(path.as_posix() for path in expected - actual)
+            extra = sorted(path.as_posix() for path in actual - expected)
+            raise fail(
+                target,
+                "/",
+                f"packaged contract set mismatch; missing={missing}, extra={extra}",
+            )
+        for relative in sorted(expected):
+            if (target / relative).read_bytes() != (CONTRACTS / relative).read_bytes():
+                raise fail(target / relative, "/", "packaged contract is out of sync")
+
+
 def validate_instance(
     path: Path, location: str, schema: dict[str, Any], value: Any
 ) -> None:
@@ -143,7 +178,16 @@ def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
         stored_schema, format_checker=FormatChecker()
     )
     ids: set[str] = set()
-    sequences: dict[str, set[int]] = {}
+    last_sequences: dict[str, int] = {}
+    tool_requests: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]] = {}
+    tool_terminals: dict[
+        tuple[str, str, str, str], list[tuple[int, dict[str, Any]]]
+    ] = {}
+    approval_requests: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]] = {}
+    approval_decisions: dict[tuple[str, str, str, str], tuple[int, dict[str, Any]]] = {}
+    tool_failures: dict[
+        tuple[str, str, str, str], list[tuple[int, dict[str, Any]]]
+    ] = {}
     for index, event in enumerate(events):
         location = f"/events/{index}"
         error = first_error(stored_validator, event)
@@ -153,10 +197,15 @@ def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
         if event_id in ids:
             raise fail(path, f"{location}/id", "duplicate event id")
         ids.add(event_id)
-        seen = sequences.setdefault(event["session_id"], set())
-        if event["sequence"] in seen:
-            raise fail(path, f"{location}/sequence", "duplicate session sequence")
-        seen.add(event["sequence"])
+        previous_sequence = last_sequences.get(event["session_id"], 0)
+        expected_sequence = previous_sequence + 1
+        if event["sequence"] != expected_sequence:
+            raise fail(
+                path,
+                f"{location}/sequence",
+                f"expected contiguous session sequence {expected_sequence}",
+            )
+        last_sequences[event["session_id"]] = event["sequence"]
 
         draft = dict(event)
         draft.pop("sequence")
@@ -171,11 +220,157 @@ def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
         code = event.get("error_code")
         if code is not None and code not in codes:
             raise fail(path, f"{location}/error_code", f"unknown code {code!r}")
-        if event.get("type") == "tool.call.failed":
+        event_type = event.get("type")
+        if event_type in {
+            "tool.call.requested",
+            "tool.call.completed",
+            "tool.call.failed",
+        } and all(
+            isinstance(event.get(field), str) and event[field]
+            for field in ("turn_id", "tool_call_id", "tool_name")
+        ):
+            key = (
+                event["session_id"],
+                event["turn_id"],
+                event["tool_call_id"],
+                event["tool_name"],
+            )
+            if event_type == "tool.call.requested":
+                if key in tool_requests:
+                    raise fail(path, location, "duplicate tool request key")
+                tool_requests[key] = (index, event)
+            else:
+                tool_terminals.setdefault(key, []).append((index, event))
+
+        if event_type == "tool.call.failed":
             if not isinstance(event.get("retryable"), bool):
                 raise fail(path, f"{location}/retryable", "expected a boolean")
             if event.get("outcome") not in {"not_started", "failed", "unknown"}:
                 raise fail(path, f"{location}/outcome", "unknown tool outcome")
+            if all(
+                isinstance(event.get(field), str) and event[field]
+                for field in ("turn_id", "tool_call_id", "tool_name")
+            ):
+                key = (
+                    event["session_id"],
+                    event["turn_id"],
+                    event["tool_call_id"],
+                    event["tool_name"],
+                )
+                tool_failures.setdefault(key, []).append((index, event))
+
+        if event_type in {
+            "tool.approval.requested",
+            "tool.approval.approved",
+            "tool.approval.rejected",
+        }:
+            key = (
+                event["session_id"],
+                event["turn_id"],
+                event["tool_call_id"],
+                event["tool_name"],
+            )
+            if event_type == "tool.approval.requested":
+                if key in approval_requests:
+                    raise fail(path, location, "duplicate approval request key")
+                tool_request = tool_requests.get(key)
+                if tool_request is None:
+                    raise fail(
+                        path, location, "approval request has no prior tool request"
+                    )
+                if event["sequence"] <= tool_request[1]["sequence"]:
+                    raise fail(
+                        path,
+                        f"{location}/sequence",
+                        "approval request precedes tool request",
+                    )
+                approval_requests[key] = (index, event)
+                continue
+
+            requested = approval_requests.get(key)
+            if requested is None:
+                raise fail(path, location, "approval decision has no prior request")
+            if event["sequence"] <= requested[1]["sequence"]:
+                raise fail(
+                    path, f"{location}/sequence", "approval decision precedes request"
+                )
+            if key in approval_decisions:
+                raise fail(path, location, "duplicate approval decision key")
+            approval_decisions[key] = (index, event)
+
+            if event_type == "tool.approval.rejected":
+                code = event["error_code"]
+                if code not in APPROVAL_FAILURE_RETRYABILITY:
+                    raise fail(path, f"{location}/error_code", "unknown approval code")
+
+    missing_decisions = approval_requests.keys() - approval_decisions.keys()
+    if missing_decisions:
+        request_index, _ = approval_requests[sorted(missing_decisions)[0]]
+        raise fail(path, f"/events/{request_index}", "approval request has no decision")
+    unexpected_decisions = approval_decisions.keys() - approval_requests.keys()
+    if unexpected_decisions:
+        decision_index, _ = approval_decisions[sorted(unexpected_decisions)[0]]
+        raise fail(
+            path, f"/events/{decision_index}", "approval decision has no request"
+        )
+
+    for key, (decision_index, decision) in approval_decisions.items():
+        terminals = tool_terminals.get(key, [])
+        if len(terminals) != 1:
+            raise fail(
+                path,
+                f"/events/{decision_index}",
+                "approval decision requires exactly one matching tool terminal",
+            )
+        terminal_index, terminal = terminals[0]
+        if terminal["sequence"] <= decision["sequence"]:
+            raise fail(
+                path,
+                f"/events/{terminal_index}/sequence",
+                "tool terminal must follow approval decision",
+            )
+
+        if decision.get("type") != "tool.approval.rejected":
+            continue
+        matching = tool_failures.get(key, [])
+        if len(matching) != 1:
+            raise fail(
+                path,
+                f"/events/{decision_index}",
+                "approval rejection requires exactly one matching tool failure",
+            )
+        failure_index, failure = matching[0]
+        code = decision["error_code"]
+        if failure.get("error_code") != code:
+            raise fail(
+                path,
+                f"/events/{failure_index}/error_code",
+                "approval rejection and tool failure codes differ",
+            )
+        if failure.get("retryable") is not APPROVAL_FAILURE_RETRYABILITY[code]:
+            raise fail(
+                path,
+                f"/events/{failure_index}/retryable",
+                "approval failure retryability does not match its code",
+            )
+        if failure.get("outcome") != "not_started":
+            raise fail(
+                path,
+                f"/events/{failure_index}/outcome",
+                "approval failure must be not_started",
+            )
+
+    for key, failures in tool_failures.items():
+        for failure_index, failure in failures:
+            if failure.get("error_code") not in APPROVAL_FAILURE_RETRYABILITY:
+                continue
+            decision = approval_decisions.get(key)
+            if decision is None or decision[1].get("type") != "tool.approval.rejected":
+                raise fail(
+                    path,
+                    f"/events/{failure_index}/error_code",
+                    "approval-coded tool failure has no matching rejection",
+                )
 
 
 def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
@@ -340,6 +535,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     codes = error_codes(documents)
     check_events(documents, codes)
     check_tools(documents, codes)
+    check_packaged_contracts()
     return documents, feature_sets(documents["feature-tiers-v1.json"])
 
 

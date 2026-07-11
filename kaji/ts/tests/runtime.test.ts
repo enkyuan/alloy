@@ -27,6 +27,7 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "risky_tool",
         tool_args: {},
         tool_call_id: "call_fail_1",
@@ -34,12 +35,14 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_STARTED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "risky_tool",
         tool_call_id: "call_fail_1",
       }),
       KajiEvent.parse({
         type: EventType.TOOL_CALL_FAILED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "risky_tool",
         tool_call_id: "call_fail_1",
         error: "connection refused",
@@ -72,6 +75,7 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "bad_tool",
         tool_args: {},
         tool_call_id: "call_bad",
@@ -79,6 +83,7 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_FAILED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "bad_tool",
         tool_call_id: "call_bad",
         error: "timeout",
@@ -87,6 +92,7 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "good_tool",
         tool_args: {},
         tool_call_id: "call_good",
@@ -94,6 +100,7 @@ describe("replaySession", () => {
       KajiEvent.parse({
         type: EventType.TOOL_CALL_COMPLETED,
         session_id: SESSION,
+        turn_id: "turn-1",
         tool_name: "good_tool",
         tool_call_id: "call_good",
         result: { ok: true },
@@ -631,7 +638,7 @@ describe("AgentRuntime policy via ToolPlanner", () => {
       policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
       approvalHandler: {
         async request() {
-          return { granted: true };
+          return { granted: true, code: "approved" as const };
         },
       },
       tools: [

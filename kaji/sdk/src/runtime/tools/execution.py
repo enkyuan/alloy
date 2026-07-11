@@ -7,8 +7,20 @@ from dataclasses import dataclass, field, replace
 import logging
 import math
 import time
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
+from kaji.core.safe_logging import log_no_throw
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    NOOP_TRACE,
+    TraceSink,
+    metric_error_code,
+    record_metric,
+    span_end,
+    span_record_error,
+    start_span,
+)
 from kaji.runtime.context import ToolInvocation, _copy_metadata_snapshot
 from kaji.runtime.tools.idempotency import (
     IdempotencyCapacityExceeded,
@@ -112,6 +124,13 @@ class _PendingSetup:
     settlement: asyncio.Task[None] | None = None
 
 
+@dataclass(slots=True)
+class _PendingApproval:
+    operation_id: int
+    call_id: str
+    task: asyncio.Task[Any]
+
+
 @dataclass(frozen=True, slots=True)
 class _Settlement:
     result: Any | None = None
@@ -203,15 +222,21 @@ class ToolExecutionController:
         ledger: ToolIdempotencyLedger | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+        trace_sink: TraceSink = NOOP_TRACE,
     ) -> None:
         self.limits = limits if limits is not None else ToolExecutionLimits()
         self.ledger = ledger if ledger is not None else InMemoryToolIdempotencyLedger()
         self._clock = clock
+        self._metrics = metrics_sink
+        self._trace = trace_sink
         self._semaphore = asyncio.Semaphore(self.limits.max_parallel)
         self._setup_semaphore = asyncio.Semaphore(self.limits.max_parallel)
         self._active: dict[tuple[str, str], _ActiveExecution] = {}
         self._pending_setup: dict[int, _PendingSetup] = {}
         self._next_setup_id = 0
+        self._pending_approvals: dict[int, _PendingApproval] = {}
+        self._next_approval_id = 0
         self._gate = asyncio.Condition()
         self._safe_claims = 0
         self._exclusive_active = False
@@ -468,8 +493,81 @@ class ToolExecutionController:
         executor: ToolExecutor,
         emit_started: StartedEmitter,
     ) -> _ToolExecutionOutcome:
+        """Measure one bounded execution without exposing tool inputs as telemetry."""
+        started = self._clock()
+        context = invocation.context
+        span = start_span(
+            self._trace,
+            "kaji.tool",
+            {
+                "principal.id": context.principal_id,
+                "session.id": context.session_id,
+                "turn.id": context.turn_id,
+                "request.id": context.request_id,
+                "trace.id": context.trace_id,
+                "tool.call_id": context.tool_call_id,
+            },
+        )
+        try:
+            outcome = await self._execute_bounded(
+                invocation,
+                spec,
+                executor,
+                emit_started,
+            )
+        except asyncio.CancelledError as error:
+            span_record_error(span, error)
+            record_metric(
+                self._metrics,
+                "kaji.tool.duration_ms",
+                (self._clock() - started) * 1_000,
+                outcome="cancelled",
+                error_code="TOOL_CANCELLED",
+            )
+            raise
+        except BaseException as error:
+            span_record_error(span, error)
+            record_metric(
+                self._metrics,
+                "kaji.tool.duration_ms",
+                (self._clock() - started) * 1_000,
+                outcome="failed",
+                error_code="OTHER",
+            )
+            raise
+        else:
+            failure = outcome.failure
+            metric_outcome = "completed"
+            error_code = "NONE"
+            if failure is not None:
+                error_code = metric_error_code(failure.error_code)
+                if failure.error_code == "TOOL_CANCELLED":
+                    metric_outcome = "cancelled"
+                elif failure.error_code == "TOOL_TIMEOUT":
+                    metric_outcome = "timeout"
+                else:
+                    metric_outcome = failure.outcome
+            record_metric(
+                self._metrics,
+                "kaji.tool.duration_ms",
+                (self._clock() - started) * 1_000,
+                outcome=metric_outcome,
+                error_code=error_code,
+            )
+            return outcome
+        finally:
+            span_end(span)
+
+    async def _execute_bounded(
+        self,
+        invocation: ToolInvocation,
+        spec: ToolSpec,
+        executor: ToolExecutor,
+        emit_started: StartedEmitter,
+    ) -> _ToolExecutionOutcome:
         """Execute or replay one preflighted invocation under runtime bounds."""
         context = invocation.context
+        queue_started = self._clock()
         deadline = self._effective_deadline(context.deadline_monotonic, spec.timeout_ms)
         claim, claim_failure = await self._claim_with_deadline(invocation, deadline)
         if claim_failure is not None:
@@ -572,7 +670,24 @@ class ToolExecutionController:
                 gate_accounted = True
                 await self.ledger.retryable_failure(claim, _ledger_failure(failure))
                 claim_resolved = True
+                record_metric(
+                    self._metrics,
+                    "kaji.tool.queue_wait_ms",
+                    (self._clock() - queue_started) * 1_000,
+                    outcome=(
+                        "cancelled"
+                        if failure.error_code == "TOOL_CANCELLED"
+                        else "timeout"
+                    ),
+                )
                 return _ToolExecutionOutcome(failure=failure)
+
+            record_metric(
+                self._metrics,
+                "kaji.tool.queue_wait_ms",
+                (self._clock() - queue_started) * 1_000,
+                outcome="acquired",
+            )
 
             if context.cancellation_token.is_cancelled:
                 failure = _cancelled(started=False)
@@ -784,6 +899,7 @@ class ToolExecutionController:
                 call_id=context.tool_call_id,
                 task=watcher,
             )
+            record_metric(self._metrics, "kaji.tool.active", len(self._active))
             acquired = False  # The settlement callback now owns the permit.
             permit_accounted = True
             gate_acquired = False  # The settlement callback now owns the gate.
@@ -926,6 +1042,61 @@ class ToolExecutionController:
             deadlines.append(now + timeout_ms / 1000)
         return min(deadlines)
 
+    def approval_deadline(self, turn_deadline: float | None) -> float:
+        """Return the effective absolute approval deadline using this clock."""
+        deadline = self._clock() + self.limits.approval_timeout_seconds
+        return deadline if turn_deadline is None else min(deadline, turn_deadline)
+
+    def start_approval(
+        self,
+        call_id: str,
+        operation: Callable[[], Coroutine[Any, Any, Any]],
+    ) -> asyncio.Task[Any] | None:
+        """Own one bounded approval task until it physically settles."""
+        if len(self._pending_approvals) >= self.limits.max_parallel:
+            return None
+        self._next_approval_id += 1
+        operation_id = self._next_approval_id
+        task = asyncio.create_task(operation())
+        self._pending_approvals[operation_id] = _PendingApproval(
+            operation_id=operation_id,
+            call_id=call_id,
+            task=task,
+        )
+        task.add_done_callback(
+            lambda settled, owned_id=operation_id: self._approval_settled(
+                owned_id,
+                settled,
+            )
+        )
+        return task
+
+    def _approval_settled(
+        self,
+        operation_id: int,
+        task: asyncio.Task[Any],
+    ) -> None:
+        self._pending_approvals.pop(operation_id, None)
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except BaseException:
+            log_no_throw(
+                logger,
+                logging.ERROR,
+                "Detached approval handler failed",
+                exc_info=True,
+            )
+
+    def deadline_expired(self, deadline: float) -> bool:
+        """Compare an absolute deadline against the controller's injected clock."""
+        return self._clock() >= deadline
+
+    def deadline_remaining(self, deadline: float) -> float:
+        """Return non-negative time remaining on an absolute deadline."""
+        return max(0.0, deadline - self._clock())
+
     async def _acquire_gate(self, parallel_safe: bool) -> None:
         async with self._gate:
             if parallel_safe:
@@ -976,6 +1147,7 @@ class ToolExecutionController:
                 settlement.set_result(outcome)
         finally:
             self._active.pop(key, None)
+            record_metric(self._metrics, "kaji.tool.active", len(self._active))
 
     async def drain_tools(self, timeout: float) -> list[str]:
         """Wait for executing handlers and durable setup to actually settle."""
@@ -984,7 +1156,7 @@ class ToolExecutionController:
         if not math.isfinite(float(timeout)) or timeout < 0:
             raise ValueError("timeout must be a non-negative number")
         deadline = self._clock() + float(timeout)
-        while self._active or self._pending_setup:
+        while self._active or self._pending_setup or self._pending_approvals:
             remaining = deadline - self._clock()
             if remaining <= 0:
                 break
@@ -993,9 +1165,11 @@ class ToolExecutionController:
                 pending.settlement or pending.task
                 for pending in self._pending_setup.values()
             )
+            tasks.extend(pending.task for pending in self._pending_approvals.values())
             await asyncio.wait(tasks, timeout=remaining)
             await asyncio.sleep(0)
         return sorted(
             [active.call_id for active in self._active.values()]
             + [pending.call_id for pending in self._pending_setup.values()]
+            + [pending.call_id for pending in self._pending_approvals.values()]
         )

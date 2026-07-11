@@ -1,6 +1,8 @@
 import pytest
 
-from kaji.runtime.agents.planner import ToolPlanner
+from kaji.infra.events.journal import InMemoryEventJournal
+from kaji.infra.events.store import InMemoryEventStore
+from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
 from kaji.infra.events.schemas import (
     ToolCallCompleted,
     ToolCallFailed,
@@ -18,13 +20,21 @@ _TURN_CONTEXT = TurnContext(principal_id="test-principal")
 
 
 async def _execute(planner, session_id, calls, emit):
+    journal = InMemoryEventJournal(InMemoryEventStore())
+
+    async def collect(event):
+        await emit(event)
+
+    commit = JournalEventEmitter(journal, before_commit=collect)
+
     return await planner.execute_scatter_gather(
         session_id,
         calls,
-        emit,
+        commit,
         turn_id="test-turn",
         turn_context=_TURN_CONTEXT,
         cancellation_token=CancellationToken(),
+        approval_journal=journal,
     )
 
 
@@ -318,7 +328,14 @@ async def test_policy_denied_tool_skips_execution_and_approval():
     assert called["approval"] is False
     types = [event.type for event in emitted]
     assert types == [EventType.TOOL_CALL_REQUESTED, EventType.TOOL_CALL_FAILED]
-    assert "not permitted" in results[0]["error"]
+    assert results[0] == {
+        "id": "c5",
+        "name": "delete",
+        "error": "Tool not permitted",
+        "error_code": "TOOL_NOT_ALLOWED",
+        "retryable": False,
+        "outcome": "not_started",
+    }
 
 
 @pytest.mark.asyncio
@@ -355,5 +372,11 @@ async def test_policy_allowlist_blocks_unlisted_tool():
         EventType.TOOL_CALL_REQUESTED,
         EventType.TOOL_CALL_FAILED,
     ]
-    assert results[0]["name"] == "charge"
-    assert "not permitted" in results[0]["error"]
+    assert results[0] == {
+        "id": "c6",
+        "name": "charge",
+        "error": "Tool not permitted",
+        "error_code": "TOOL_NOT_ALLOWED",
+        "retryable": False,
+        "outcome": "not_started",
+    }

@@ -33,6 +33,7 @@ def test_replay_session_builds_message_history_from_sequences() -> None:
         TranscriptFinal(session_id="s1", text="voice turn", timestamp=3.0, sequence=4),
         ToolCallCompleted(
             session_id="s1",
+            turn_id="turn-1",
             tool_name="search",
             tool_call_id="c1",
             result={"ok": True},
@@ -57,6 +58,7 @@ def test_replay_session_projects_failed_tool_call() -> None:
         UserMessage(session_id="s1", content="do it", sequence=1),
         ToolCallFailed(
             session_id="s1",
+            turn_id="turn-1",
             tool_name="search",
             tool_call_id="c1",
             error="boom",

@@ -1,6 +1,7 @@
 import { EventBufferOverflowError } from "@/events/errors";
 import type { EventBusProtocol, EventBusSubscribeOptions } from "@/events/protocols";
 import type { KajiEvent } from "@/events/schemas";
+import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
 function eventSequence(event: { readonly session_id: string }): number | undefined {
   const sequence = (event as { readonly sequence?: unknown }).sequence;
@@ -29,6 +30,7 @@ export class RingBufferSubscription<
     capacity: number,
     private readonly onReturn: () => void,
     afterSequence = 0,
+    private readonly metrics: MetricsSink = NOOP_METRICS,
   ) {
     if (!Number.isInteger(capacity) || capacity <= 0) {
       throw new RangeError("subscriber capacity must be a positive integer");
@@ -60,11 +62,13 @@ export class RingBufferSubscription<
       return;
     }
     if (this.size === this.buffer.length) {
+      recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "overflow" });
       this.fail(new EventBufferOverflowError(this.lastSequence, sequence ?? this.lastSequence));
       return;
     }
     this.buffer[(this.head + this.size) % this.buffer.length] = event;
     this.size += 1;
+    recordMetric(this.metrics, "kaji.subscriber.lag_events", this.size, {});
   }
 
   next(): Promise<IteratorResult<TEvent>> {
@@ -131,7 +135,10 @@ export class EventBus<
 > implements EventBusProtocol<TEvent> {
   private readonly subscribers = new Map<string, Set<RingBufferSubscription<TEvent>>>();
 
-  constructor(private readonly subscriberCapacity = 1_024) {
+  constructor(
+    private readonly subscriberCapacity = 1_024,
+    private readonly metrics: MetricsSink = NOOP_METRICS,
+  ) {
     if (!Number.isInteger(subscriberCapacity) || subscriberCapacity <= 0) {
       throw new RangeError("subscriberCapacity must be a positive integer");
     }
@@ -161,6 +168,7 @@ export class EventBus<
         if (bucket.size === 0) this.subscribers.delete(sessionId);
       },
       afterSequence,
+      this.metrics,
     );
     bucket.add(subscription);
     return subscription;

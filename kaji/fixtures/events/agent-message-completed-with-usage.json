@@ -1,6 +1,7 @@
 {
   "type": "agent.message.completed",
   "session_id": "sess-usage",
+  "turn_id": "turn-usage",
   "content": "The answer is ready.",
   "tokens": {
     "input": 12,

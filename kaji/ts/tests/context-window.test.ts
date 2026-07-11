@@ -11,7 +11,13 @@ import { SessionProjector } from "@/sessions/projector";
 import type { ToolSpec } from "@/tools/registry";
 
 function stored(input: Record<string, unknown>) {
-  return StoredKajiEvent.parse(input);
+  const type = input.type;
+  return StoredKajiEvent.parse({
+    ...input,
+    ...(typeof type === "string" && type.startsWith("tool.call.") && input.turn_id === undefined
+      ? { turn_id: "test-turn" }
+      : {}),
+  });
 }
 
 function nestedToolArgs(event: unknown): { nested: { value: string } } {
@@ -528,6 +534,7 @@ describe("AgentRuntime incremental projection", () => {
     const input = KajiEvent.parse({
       type: EventType.TOOL_CALL_REQUESTED,
       session_id: "store-ownership",
+      turn_id: "store-turn",
       tool_name: "ownership",
       tool_call_id: "store-call",
       tool_args: { nested: { value: "original" } },

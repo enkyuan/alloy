@@ -10,6 +10,11 @@ from kaji.infra.events.schemas import (
     StoredKajiEvent,
     require_stored_event,
 )
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    record_metric,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +65,16 @@ class InMemoryEventBus:
     :class:`InMemoryEventJournal`, which owns the backlog/live handshake.
     """
 
-    def __init__(self, *, subscriber_queue_capacity: int = 1_024) -> None:
+    def __init__(
+        self,
+        *,
+        subscriber_queue_capacity: int = 1_024,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+    ) -> None:
         if subscriber_queue_capacity < 1:
             raise ValueError("subscriber_queue_capacity must be positive")
         self.subscriber_queue_capacity = subscriber_queue_capacity
+        self._metrics = metrics_sink
         self._lock = asyncio.Lock()
         self._subscribers: dict[str, list[_LiveSubscriber]] = defaultdict(list)
 
@@ -73,6 +84,12 @@ class InMemoryEventBus:
         subscriber: _LiveSubscriber,
         latest_sequence: int,
     ) -> None:
+        record_metric(
+            self._metrics,
+            "kaji.subscriber.overflow",
+            1,
+            stage="overflow",
+        )
         subscribers = self._subscribers.get(session_id)
         if subscribers is not None and subscriber in subscribers:
             subscribers.remove(subscriber)
@@ -97,6 +114,11 @@ class InMemoryEventBus:
                     self._overflow(stored.session_id, subscriber, stored.sequence)
                 elif stored.sequence > subscriber.last_sequence:
                     subscriber.queue.put_nowait(stored)
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.lag_events",
+                        subscriber.queue.qsize(),
+                    )
         logger.debug("Published event %s for %s", stored.type, stored.session_id)
         return str(stored.sequence)
 

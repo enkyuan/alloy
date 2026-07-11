@@ -3,16 +3,27 @@
 from kaji.infra.events.replay import SessionState, apply_event
 from kaji.infra.events.schemas import StoredKajiEvent, require_stored_event
 from kaji.infra.events.store import EventStore
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    record_metric,
+)
 
 
 class SessionProjector:
     """Apply each stored event once and retain the last applied cursor."""
 
-    def __init__(self, session_id: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+    ) -> None:
         self.state = SessionState(session_id=session_id)
         self.cursor = 0
         self.applied_events = 0
         self.initialized = False
+        self._metrics = metrics_sink
 
     @property
     def session_id(self) -> str:
@@ -37,6 +48,7 @@ class SessionProjector:
             self.session_id,
             after_sequence=self.cursor,
         )
+        record_metric(self._metrics, "kaji.replay.input_events", len(events))
         for event in events:
             self.apply(event)
         self.initialized = True

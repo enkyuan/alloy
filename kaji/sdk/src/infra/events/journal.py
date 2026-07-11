@@ -13,19 +13,69 @@ from kaji.infra.events.errors import (
     EventInfrastructureError,
     EventStoreCapacityError,
 )
-from kaji.infra.events.protocols import EventBusProtocol
+from kaji.infra.events.protocols import EventBusProtocol, EventSubscription
 from kaji.infra.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     require_stored_event,
 )
 from kaji.infra.events.store import EventStore, InMemoryEventStore
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    record_metric,
+)
 
 
 @dataclass(eq=False, slots=True)
 class _Subscriber:
     queue: asyncio.Queue[StoredKajiEvent | EventBufferOverflowError]
     last_sequence: int
+
+
+class _InMemoryJournalSubscription:
+    """Ready subscription returned after the journal's atomic handshake."""
+
+    def __init__(
+        self,
+        journal: InMemoryEventJournal,
+        session_id: str,
+        subscriber: _Subscriber,
+        backlog: list[StoredKajiEvent],
+    ) -> None:
+        self._journal = journal
+        self._session_id = session_id
+        self._subscriber = subscriber
+        self._backlog = backlog
+        self._backlog_index = 0
+        self._closed = False
+
+    def __aiter__(self) -> _InMemoryJournalSubscription:
+        return self
+
+    async def __anext__(self) -> StoredKajiEvent:
+        if self._closed:
+            raise StopAsyncIteration
+        if self._backlog_index < len(self._backlog):
+            event = self._backlog[self._backlog_index]
+            self._backlog_index += 1
+        else:
+            item = await self._subscriber.queue.get()
+            if isinstance(item, EventBufferOverflowError):
+                self._closed = True
+                raise item
+            event = item
+        self._subscriber.last_sequence = self._journal._sequence(event)
+        return event
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await self._journal._remove_subscriber(
+            self._session_id,
+            self._subscriber,
+        )
 
 
 class InMemoryEventJournal:
@@ -36,11 +86,13 @@ class InMemoryEventJournal:
         store: EventStore | None = None,
         *,
         subscriber_queue_capacity: int = 1_024,
+        metrics_sink: MetricsSink = NOOP_METRICS,
     ) -> None:
         if subscriber_queue_capacity < 1:
             raise ValueError("subscriber_queue_capacity must be positive")
         self.store = store if store is not None else InMemoryEventStore()
         self.subscriber_queue_capacity = subscriber_queue_capacity
+        self._metrics = metrics_sink
         self._lock = asyncio.Lock()
         self._subscribers: dict[str, list[_Subscriber]] = defaultdict(list)
 
@@ -51,6 +103,12 @@ class InMemoryEventJournal:
         return stored.sequence
 
     def _overflow(self, session_id: str, subscriber: _Subscriber, latest: int) -> None:
+        record_metric(
+            self._metrics,
+            "kaji.subscriber.overflow",
+            1,
+            stage="overflow",
+        )
         subscribers = self._subscribers.get(session_id)
         if subscribers is not None and subscriber in subscribers:
             subscribers.remove(subscriber)
@@ -70,8 +128,20 @@ class InMemoryEventJournal:
             try:
                 result = await self.store.append(event)
             except EventInfrastructureError:
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="append",
+                )
                 raise
             except Exception as exc:
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="append",
+                )
                 raise EventDeliveryError(
                     phase="append",
                     event_id=event.id,
@@ -88,6 +158,11 @@ class InMemoryEventJournal:
                     self._overflow(stored.session_id, subscriber, latest)
                 else:
                     subscriber.queue.put_nowait(stored)
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.lag_events",
+                        subscriber.queue.qsize(),
+                    )
             return stored
 
     async def subscribe(
@@ -96,6 +171,22 @@ class InMemoryEventJournal:
         *,
         after_sequence: int = 0,
     ) -> AsyncIterator[StoredKajiEvent]:
+        subscription = await self.open_subscription(
+            session_id,
+            after_sequence=after_sequence,
+        )
+        try:
+            async for event in subscription:
+                yield event
+        finally:
+            await subscription.aclose()
+
+    async def open_subscription(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> EventSubscription:
         if after_sequence < 0:
             raise ValueError("after_sequence must be non-negative")
 
@@ -109,36 +200,92 @@ class InMemoryEventJournal:
                 after_sequence=after_sequence,
                 limit=self.subscriber_queue_capacity + 1,
             )
+            record_metric(
+                self._metrics,
+                "kaji.subscriber.lag_events",
+                len(backlog),
+            )
             if len(backlog) > self.subscriber_queue_capacity:
+                record_metric(
+                    self._metrics,
+                    "kaji.subscriber.overflow",
+                    1,
+                    stage="lag",
+                )
                 latest_sequence = await self.store.last_sequence(session_id)
                 overflow = EventBufferOverflowError(
                     last_sequence=after_sequence,
                     latest_sequence=latest_sequence,
                 )
             else:
-                overflow = None
                 self._subscribers[session_id].append(subscriber)
+                return _InMemoryJournalSubscription(
+                    self,
+                    session_id,
+                    subscriber,
+                    backlog,
+                )
+        raise overflow
 
-        if overflow is not None:
-            raise overflow
+    async def _remove_subscriber(
+        self,
+        session_id: str,
+        subscriber: _Subscriber,
+    ) -> None:
+        async with self._lock:
+            subscribers = self._subscribers.get(session_id)
+            if subscribers is not None and subscriber in subscribers:
+                subscribers.remove(subscriber)
+                if not subscribers:
+                    self._subscribers.pop(session_id, None)
 
-        try:
-            for event in backlog:
-                subscriber.last_sequence = self._sequence(event)
-                yield event
-            while True:
-                item = await subscriber.queue.get()
-                if isinstance(item, EventBufferOverflowError):
-                    raise item
-                subscriber.last_sequence = self._sequence(item)
-                yield item
-        finally:
-            async with self._lock:
-                subscribers = self._subscribers.get(session_id)
-                if subscribers is not None and subscriber in subscribers:
-                    subscribers.remove(subscriber)
-                    if not subscribers:
-                        self._subscribers.pop(session_id, None)
+
+class _SplitJournalSubscription:
+    """Merged backlog/live cursor with explicit, idempotent close."""
+
+    def __init__(
+        self,
+        live: EventSubscription,
+        backlog: list[StoredKajiEvent],
+        after_sequence: int,
+    ) -> None:
+        self._live = live
+        self._backlog = backlog
+        self._backlog_index = 0
+        self._last_sequence = after_sequence
+        self._closed = False
+
+    def __aiter__(self) -> _SplitJournalSubscription:
+        return self
+
+    async def __anext__(self) -> StoredKajiEvent:
+        if self._closed:
+            raise StopAsyncIteration
+        while True:
+            if self._backlog_index < len(self._backlog):
+                stored = require_stored_event(self._backlog[self._backlog_index])
+                self._backlog_index += 1
+            else:
+                try:
+                    stored = require_stored_event(await anext(self._live))
+                except EventBufferOverflowError as exc:
+                    if exc.last_sequence < self._last_sequence:
+                        raise EventBufferOverflowError(
+                            last_sequence=self._last_sequence,
+                            latest_sequence=exc.latest_sequence,
+                        ) from exc
+                    raise
+            assert stored.sequence is not None
+            if stored.sequence <= self._last_sequence:
+                continue
+            self._last_sequence = stored.sequence
+            return stored
+
+    async def aclose(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await self._live.aclose()
 
 
 class SplitEventJournal:
@@ -151,6 +298,7 @@ class SplitEventJournal:
         *,
         subscriber_queue_capacity: int = 1_024,
         max_pending_events: int = 1_024,
+        metrics_sink: MetricsSink = NOOP_METRICS,
     ) -> None:
         if subscriber_queue_capacity < 1 or max_pending_events < 1:
             raise ValueError("journal capacities must be positive")
@@ -158,6 +306,7 @@ class SplitEventJournal:
         self.bus = bus
         self.subscriber_queue_capacity = subscriber_queue_capacity
         self.max_pending_events = max_pending_events
+        self._metrics = metrics_sink
         self._lock = asyncio.Lock()
         self._pending: dict[str, StoredKajiEvent] = {}
 
@@ -190,6 +339,12 @@ class SplitEventJournal:
         try:
             await self.bus.publish(event)
         except Exception as exc:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="publish",
+            )
             raise EventDeliveryError(
                 phase="publish",
                 event_id=event.id,
@@ -207,6 +362,12 @@ class SplitEventJournal:
                 len(self._pending) >= self.max_pending_events
                 and event.id not in self._pending
             ):
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="append",
+                )
                 raise EventStoreCapacityError(
                     event.session_id,
                     "split delivery outbox is full "
@@ -216,8 +377,20 @@ class SplitEventJournal:
             try:
                 result = await self.store.append(event)
             except EventInfrastructureError:
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="append",
+                )
                 raise
             except Exception as exc:
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="append",
+                )
                 raise EventDeliveryError(
                     phase="append",
                     event_id=event.id,
@@ -237,6 +410,12 @@ class SplitEventJournal:
             )
             self._pending[stored.id] = stored
             if has_earlier_pending:
+                record_metric(
+                    self._metrics,
+                    "kaji.journal.failures",
+                    1,
+                    stage="publish",
+                )
                 raise EventDeliveryError(
                     phase="publish",
                     event_id=stored.id,
@@ -259,49 +438,58 @@ class SplitEventJournal:
         *,
         after_sequence: int = 0,
     ) -> AsyncIterator[StoredKajiEvent]:
+        subscription = await self.open_subscription(
+            session_id,
+            after_sequence=after_sequence,
+        )
+        try:
+            async for event in subscription:
+                yield event
+        finally:
+            await subscription.aclose()
+
+    async def open_subscription(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> EventSubscription:
         if after_sequence < 0:
             raise ValueError("after_sequence must be non-negative")
 
-        live: AsyncIterator[StoredKajiEvent] | None = None
-        last_sequence = after_sequence
+        live: EventSubscription | None = None
         try:
             async with self._lock:
-                live = self.bus.subscribe(
-                    session_id,
-                    after_sequence=after_sequence,
+                candidate = self.bus.subscribe(
+                    session_id, after_sequence=after_sequence
                 )
+                if not isinstance(candidate, EventSubscription):
+                    raise TypeError("event subscriptions must implement aclose()")
+                live = candidate
                 backlog = await self.store.get_events(
                     session_id,
                     after_sequence=after_sequence,
                     limit=self.subscriber_queue_capacity + 1,
                 )
+                record_metric(
+                    self._metrics,
+                    "kaji.subscriber.lag_events",
+                    len(backlog),
+                )
                 if len(backlog) > self.subscriber_queue_capacity:
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.overflow",
+                        1,
+                        stage="lag",
+                    )
                     raise EventBufferOverflowError(
                         last_sequence=after_sequence,
                         latest_sequence=await self.store.last_sequence(session_id),
                     )
 
-            for event in backlog:
-                stored = require_stored_event(event)
-                assert stored.sequence is not None
-                last_sequence = stored.sequence
-                yield event
-            async for item in live:
-                stored = require_stored_event(item)
-                assert stored.sequence is not None
-                if stored.sequence <= last_sequence:
-                    continue
-                last_sequence = stored.sequence
-                yield stored
-        except EventBufferOverflowError as exc:
-            if exc.last_sequence < last_sequence:
-                raise EventBufferOverflowError(
-                    last_sequence=last_sequence,
-                    latest_sequence=exc.latest_sequence,
-                ) from exc
-            raise
-        finally:
+            return _SplitJournalSubscription(live, backlog, after_sequence)
+        except BaseException:
             if live is not None:
-                close = getattr(live, "aclose", None)
-                if close is not None:
-                    await close()
+                await live.aclose()
+            raise

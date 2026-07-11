@@ -14,6 +14,7 @@ import {
   StoredKajiEvent,
 } from "@/events/schemas";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
+import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
 class SerialExecutor {
   private tail = Promise.resolve();
@@ -100,6 +101,7 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
     private readonly sessionId: string,
     private readonly subscriberCapacity: number,
     afterSequence: number,
+    private readonly metrics: MetricsSink,
   ) {
     this.cursor = afterSequence;
   }
@@ -112,7 +114,9 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
           afterSequence: this.cursor,
           limit: this.subscriberCapacity + 1,
         });
+        recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
         if (backlog.length > this.subscriberCapacity) {
+          recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
           throw new EventBufferOverflowError(
             this.cursor,
             await this.store.lastSequence(this.sessionId),
@@ -164,11 +168,13 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
 
 export interface InMemoryEventCommitterOptions {
   subscriberCapacity?: number;
+  metricsSink?: MetricsSink;
 }
 
 export interface SplitEventCommitterOptions {
   subscriberCapacity?: number;
   maxPendingEvents?: number;
+  metricsSink?: MetricsSink;
 }
 
 /** Stable single-process append + fanout boundary. */
@@ -176,12 +182,14 @@ export class InMemoryEventCommitter implements EventCommitter {
   private readonly serial = new SerialExecutor();
   private readonly subscribers = new Map<string, Set<RingBufferSubscription<StoredKajiEvent>>>();
   private readonly subscriberCapacity: number;
+  private readonly metrics: MetricsSink;
 
   constructor(
     readonly store: EventStore = new InMemoryEventStore(),
     options: InMemoryEventCommitterOptions = {},
   ) {
     this.subscriberCapacity = options.subscriberCapacity ?? 1_024;
+    this.metrics = options.metricsSink ?? NOOP_METRICS;
     if (!Number.isInteger(this.subscriberCapacity) || this.subscriberCapacity <= 0) {
       throw new RangeError("subscriberCapacity must be a positive integer");
     }
@@ -193,6 +201,7 @@ export class InMemoryEventCommitter implements EventCommitter {
       try {
         result = await this.store.append(event);
       } catch (cause) {
+        recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
         if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
           throw cause;
         }
@@ -225,6 +234,7 @@ export class InMemoryEventCommitter implements EventCommitter {
         if (subscribers.size === 0) this.subscribers.delete(sessionId);
       },
       afterSequence,
+      this.metrics,
     );
     const ready = this.serial.run(async () => {
       try {
@@ -232,7 +242,9 @@ export class InMemoryEventCommitter implements EventCommitter {
           afterSequence,
           limit: this.subscriberCapacity + 1,
         });
+        recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
         if (backlog.length > this.subscriberCapacity) {
+          recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
           throw new EventBufferOverflowError(
             afterSequence,
             await this.store.lastSequence(sessionId),
@@ -261,6 +273,7 @@ export class SplitEventCommitter implements EventCommitter {
   private readonly serial = new SerialExecutor();
   private readonly pending = new Map<string, StoredKajiEvent>();
   private readonly subscriberCapacity: number;
+  private readonly metrics: MetricsSink;
   readonly maxPendingEvents: number;
 
   constructor(
@@ -269,6 +282,7 @@ export class SplitEventCommitter implements EventCommitter {
     options: SplitEventCommitterOptions = {},
   ) {
     this.subscriberCapacity = options.subscriberCapacity ?? 1_024;
+    this.metrics = options.metricsSink ?? NOOP_METRICS;
     this.maxPendingEvents = options.maxPendingEvents ?? 1_024;
     if (!Number.isInteger(this.subscriberCapacity) || this.subscriberCapacity <= 0) {
       throw new RangeError("subscriberCapacity must be a positive integer");
@@ -288,11 +302,13 @@ export class SplitEventCommitter implements EventCommitter {
     if (pending !== undefined) {
       const { sequence: _, ...original } = pending;
       if (!structurallyEqualJson(original, event)) {
+        recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
         throw new EventIdConflictError(event.id);
       }
       return this.publishPendingUnlocked(event.id);
     }
     if (this.pending.size >= this.maxPendingEvents) {
+      recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
       throw new EventStoreCapacityError(
         event.session_id,
         `Pending delivery outbox reached its capacity of ${this.maxPendingEvents}; event ${event.id} was not persisted`,
@@ -303,6 +319,7 @@ export class SplitEventCommitter implements EventCommitter {
     try {
       result = await this.store.append(event);
     } catch (cause) {
+      recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
       if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
         throw cause;
       }
@@ -311,6 +328,7 @@ export class SplitEventCommitter implements EventCommitter {
     if (!result.inserted) return result.event;
     if (this.hasPendingForSession(result.event.session_id)) {
       this.pending.set(result.event.id, result.event);
+      recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
       throw new EventDeliveryError("publish", result.event.id, true, {
         cause: new Error(
           `Event ${result.event.id} is queued behind an earlier pending event for session ${result.event.session_id}`,
@@ -321,6 +339,7 @@ export class SplitEventCommitter implements EventCommitter {
       await this.bus.publish(result.event);
     } catch (cause) {
       this.pending.set(result.event.id, result.event);
+      recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
       throw new EventDeliveryError("publish", result.event.id, true, { cause });
     }
     return result.event;
@@ -342,6 +361,7 @@ export class SplitEventCommitter implements EventCommitter {
       try {
         await this.bus.publish(event);
       } catch (cause) {
+        recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
         throw new EventDeliveryError("publish", event.id, true, { cause });
       }
       this.pending.delete(event.id);
@@ -372,6 +392,7 @@ export class SplitEventCommitter implements EventCommitter {
       sessionId,
       this.subscriberCapacity,
       afterSequence,
+      this.metrics,
     );
   }
 

@@ -1,11 +1,13 @@
-/**
- * Tests for `replaySession`'s approval-lifecycle projection. Builds events
- * through Zod's `KajiEvent.parse` so the shapes match the wire format.
- */
 import { describe, expect, it } from "vitest";
-import { EventType } from "@/events/types";
+
 import { KajiEvent } from "@/events/schemas";
-import { replayLegacySession } from "@/sessions/replay";
+import { EventType } from "@/events/types";
+import {
+  approvalKey,
+  applyEvent,
+  createSessionState,
+  replayLegacySession,
+} from "@/sessions/replay";
 
 const SESSION_ID = "s1";
 
@@ -13,56 +15,128 @@ function makeEvent(input: Record<string, unknown>) {
   return KajiEvent.parse({ session_id: SESSION_ID, ...input });
 }
 
-describe("replaySession approval projection", () => {
-  it("tracks approved, rejected, and still-pending approvals by tool_call_id", () => {
+function approvalRequest(turnId: string, callId: string, toolName: string) {
+  return makeEvent({
+    type: EventType.TOOL_APPROVAL_REQUESTED,
+    turn_id: turnId,
+    tool_name: toolName,
+    tool_call_id: callId,
+    tool_args: {},
+    risk: "write",
+  });
+}
+
+describe("approval replay projection", () => {
+  it("keys decisions by turn, call, and tool rather than call id alone", () => {
     const events = [
       makeEvent({ type: EventType.SESSION_CREATED }),
-      makeEvent({
-        type: EventType.TOOL_APPROVAL_REQUESTED,
-        tool_name: "ship_it",
-        tool_call_id: "c1",
-        tool_args: {},
-        risk: "write",
-      }),
+      approvalRequest("turn-1", "reused", "ship"),
       makeEvent({
         type: EventType.TOOL_APPROVAL_APPROVED,
-        tool_name: "ship_it",
-        tool_call_id: "c1",
+        turn_id: "turn-1",
+        tool_name: "ship",
+        tool_call_id: "reused",
       }),
-      makeEvent({
-        type: EventType.TOOL_APPROVAL_REQUESTED,
-        tool_name: "delete_account",
-        tool_call_id: "c2",
-        tool_args: { confirm: true },
-        risk: "destructive",
-      }),
+      approvalRequest("turn-2", "reused", "ship"),
+      approvalRequest("turn-2", "reused", "refund"),
       makeEvent({
         type: EventType.TOOL_APPROVAL_REJECTED,
-        tool_name: "delete_account",
-        tool_call_id: "c2",
-        reason: "Rejected by approval handler",
-      }),
-      makeEvent({
-        type: EventType.TOOL_APPROVAL_REQUESTED,
-        tool_name: "send_email",
-        tool_call_id: "c3",
-        tool_args: { to: "x" },
-        risk: "write",
+        turn_id: "turn-2",
+        tool_name: "refund",
+        tool_call_id: "reused",
+        error_code: "APPROVAL_REJECTED",
+        reason: "Rejected by operator",
       }),
     ];
 
     const state = replayLegacySession(events);
-    expect(state.approvedToolCallIds.has("c1")).toBe(true);
-    expect(state.rejectedToolCallIds.has("c2")).toBe(true);
-    expect(state.pendingApprovals.has("c3")).toBe(true);
-    expect(state.pendingApprovals.has("c1")).toBe(false);
-    expect(state.pendingApprovals.has("c2")).toBe(false);
+    expect(state.approvedApprovals).toEqual(new Set([approvalKey("turn-1", "reused", "ship")]));
+    expect(state.rejectedApprovals).toEqual(
+      new Map([[approvalKey("turn-2", "reused", "refund"), "APPROVAL_REJECTED"]]),
+    );
+    expect(state.pendingApprovals).toEqual(new Set([approvalKey("turn-2", "reused", "ship")]));
   });
 
-  it("defaults all three sets to empty when no approval events occur", () => {
-    const state = replayLegacySession([makeEvent({ type: EventType.SESSION_CREATED })]);
+  it("drains timeout/cancel/unavailable decisions through the rejection path", () => {
+    const events = [makeEvent({ type: EventType.SESSION_CREATED })];
+    for (const [index, errorCode] of [
+      "APPROVAL_TIMEOUT",
+      "TOOL_CANCELLED",
+      "APPROVAL_UNAVAILABLE",
+    ].entries()) {
+      const turnId = `turn-${index}`;
+      const callId = `call-${index}`;
+      events.push(
+        approvalRequest(turnId, callId, "ship"),
+        makeEvent({
+          type: EventType.TOOL_APPROVAL_REJECTED,
+          turn_id: turnId,
+          tool_name: "ship",
+          tool_call_id: callId,
+          error_code: errorCode,
+          reason: "Approval did not complete",
+        }),
+      );
+    }
+
+    const state = replayLegacySession(events);
     expect(state.pendingApprovals.size).toBe(0);
-    expect(state.approvedToolCallIds.size).toBe(0);
-    expect(state.rejectedToolCallIds.size).toBe(0);
+    expect(state.rejectedApprovals.size).toBe(3);
+  });
+
+  it("produces identical cold and incremental approval state", () => {
+    const drafts = [
+      makeEvent({ type: EventType.SESSION_CREATED }),
+      approvalRequest("turn", "call", "ship"),
+      makeEvent({
+        type: EventType.TOOL_APPROVAL_APPROVED,
+        turn_id: "turn",
+        tool_name: "ship",
+        tool_call_id: "call",
+      }),
+    ];
+    const stored = drafts.map((event, index) => ({ ...event, sequence: index + 1 }));
+    const cold = replayLegacySession(drafts);
+    const warm = createSessionState(SESSION_ID);
+    for (const event of stored) applyEvent(warm, event as never);
+
+    expect(warm.pendingApprovals).toEqual(cold.pendingApprovals);
+    expect(warm.approvedApprovals).toEqual(cold.approvedApprovals);
+    expect(warm.rejectedApprovals).toEqual(cold.rejectedApprovals);
+  });
+
+  it("keeps the first decision when duplicate or opposite decisions follow", () => {
+    const events = [
+      makeEvent({ type: EventType.SESSION_CREATED }),
+      approvalRequest("turn", "call", "ship"),
+      makeEvent({
+        type: EventType.TOOL_APPROVAL_REJECTED,
+        turn_id: "turn",
+        tool_name: "ship",
+        tool_call_id: "call",
+        error_code: "APPROVAL_TIMEOUT",
+        reason: "Timed out",
+      }),
+      makeEvent({
+        type: EventType.TOOL_APPROVAL_APPROVED,
+        turn_id: "turn",
+        tool_name: "ship",
+        tool_call_id: "call",
+      }),
+      makeEvent({
+        type: EventType.TOOL_APPROVAL_REJECTED,
+        turn_id: "turn",
+        tool_name: "ship",
+        tool_call_id: "call",
+        error_code: "APPROVAL_REJECTED",
+        reason: "Late opposite decision",
+      }),
+    ];
+
+    const state = replayLegacySession(events);
+    const key = approvalKey("turn", "call", "ship");
+    expect(state.pendingApprovals.size).toBe(0);
+    expect(state.approvedApprovals.has(key)).toBe(false);
+    expect(state.rejectedApprovals).toEqual(new Map([[key, "APPROVAL_TIMEOUT"]]));
   });
 });

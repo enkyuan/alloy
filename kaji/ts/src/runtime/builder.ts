@@ -15,6 +15,7 @@ import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator"
 import type { ContextWindow, TurnContext } from "@/runtime/context";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
+import type { MetricsSink, TraceSink } from "@/observability";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -43,6 +44,9 @@ export class AgentBuilder {
   private _defaultContext: TurnContext | undefined;
   private _toolExecutionLimits: Partial<ToolExecutionLimits> | undefined;
   private _toolIdempotencyLedger: ToolIdempotencyLedger | undefined;
+  private _metricsSink: MetricsSink | undefined;
+  private _traceSink: TraceSink | undefined;
+  private _monotonicNow: (() => number) | undefined;
 
   provider(p: ModelProvider): this {
     this._provider = p;
@@ -101,6 +105,22 @@ export class AgentBuilder {
     return this;
   }
 
+  metricsSink(sink: MetricsSink): this {
+    this._metricsSink = sink;
+    return this;
+  }
+
+  traceSink(sink: TraceSink): this {
+    this._traceSink = sink;
+    return this;
+  }
+
+  /** Override only for deterministic latency tests. */
+  monotonicClock(now: () => number): this {
+    this._monotonicNow = now;
+    return this;
+  }
+
   build(opts: AgentBuilderBuildOptions = {}): AgentRuntime {
     if (!this._provider) {
       throw new Error("provider() must be called before build()");
@@ -117,8 +137,8 @@ export class AgentBuilder {
       store = opts.store ?? new InMemoryEventStore();
       committer =
         opts.bus !== undefined
-          ? new SplitEventCommitter(store, opts.bus)
-          : new InMemoryEventCommitter(store);
+          ? new SplitEventCommitter(store, opts.bus, { metricsSink: this._metricsSink })
+          : new InMemoryEventCommitter(store, { metricsSink: this._metricsSink });
     }
 
     const registry = new ToolRegistry();
@@ -132,11 +152,18 @@ export class AgentBuilder {
     const executionController = new ToolExecutionController({
       limits: this._toolExecutionLimits,
       ledger: this._toolIdempotencyLedger,
+      metricsSink: this._metricsSink,
+      traceSink: this._traceSink,
+      monotonicNow: this._monotonicNow,
     });
     const planner = new ToolPlanner({
       executor: (name, args, context) => registry.execute(name, args, context),
       policy: this._policy,
       approvalHandler: this._approvalHandler,
+      approvalCommitter: committer,
+      metricsSink: this._metricsSink,
+      traceSink: this._traceSink,
+      monotonicNow: this._monotonicNow,
       specs,
       executionController,
     });
@@ -151,6 +178,9 @@ export class AgentBuilder {
       policy: this._policy,
       planner,
       defaultContext: this._defaultContext,
+      metricsSink: this._metricsSink,
+      traceSink: this._traceSink,
+      monotonicNow: this._monotonicNow,
       ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });

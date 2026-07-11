@@ -1,272 +1,359 @@
-/**
- * Tests for the approval handler infrastructure (Sub-Plan 1).
- *
- * Covers:
- * - EventApprovalHandler: grant, reject, timeout
- * - AutoApprovalHandler: allow, deny, allowAll
- */
-import { describe, it, expect, expectTypeOf } from "vitest";
-import { InMemoryEventStore } from "@/events/store";
-import { InMemoryEventCommitter } from "@/events/committer";
-import { KajiEvent } from "@/events/schemas";
-import { EventType } from "@/events/types";
-import { EventApprovalHandler } from "@/runtime/approval/handler";
-import { AutoApprovalHandler } from "@/runtime/approval/auto";
-import type { EventApprovalContext } from "@/runtime/approval/types";
-import type { ToolCall } from "@/providers/base";
+import { describe, expect, it, vi } from "vitest";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import { InMemoryEventCommitter } from "@/events/committer";
+import type { EventCommitter } from "@/events/protocols";
+import { KajiEvent } from "@/events/schemas";
+import { InMemoryEventStore } from "@/events/store";
+import { EventType } from "@/events/types";
+import type { ToolCall } from "@/providers/base";
+import { AutoApprovalHandler } from "@/runtime/approval/auto";
+import { EventApprovalHandler } from "@/runtime/approval/handler";
+import { requestLegacyApproval, type ApprovalRequestContext } from "@/runtime/approval/types";
+import { replaySession } from "@/sessions/replay";
 
 function makeCall(overrides: Partial<ToolCall> = {}): ToolCall {
   return { id: "call-1", name: "my_tool", args: {}, ...overrides };
 }
 
-/** Yield to flush microtasks so async handlers can set up subscriptions. */
-async function flushMicrotasks(): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+function makeContext(
+  committer: EventCommitter,
+  call: ToolCall,
+  options: {
+    controller?: AbortController;
+    sessionId?: string;
+    turnId?: string;
+    deadlineMs?: number;
+    emit?: ApprovalRequestContext["emit"];
+  } = {},
+): ApprovalRequestContext {
+  const controller = options.controller ?? new AbortController();
+  const sessionId = options.sessionId ?? "session-1";
+  const turnId = options.turnId ?? "turn-1";
+  return {
+    execution: {
+      principalId: "principal-1",
+      sessionId,
+      turnId,
+      requestId: "request-1",
+      traceId: "trace-1",
+      toolCallId: call.id,
+      idempotencyKey: `${sessionId}:${call.id}`,
+      signal: controller.signal,
+      metadata: {},
+    },
+    toolName: call.name,
+    risk: "write",
+    arguments: structuredClone(call.args),
+    committer,
+    emit:
+      options.emit ??
+      (async (event) => {
+        return committer.commit(event);
+      }),
+    deadlineMs: options.deadlineMs ?? Date.now() + 1_000,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// EventApprovalHandler
-// ---------------------------------------------------------------------------
+async function decideAfterRequest(
+  committer: EventCommitter,
+  context: ApprovalRequestContext,
+  call: ToolCall,
+  decision: "approved" | "rejected",
+): Promise<void> {
+  const events = committer.subscribe(context.execution.sessionId);
+  try {
+    for await (const event of events) {
+      if (
+        event.type === EventType.TOOL_APPROVAL_REQUESTED &&
+        event.turn_id === context.execution.turnId &&
+        event.tool_call_id === call.id &&
+        event.tool_name === call.name
+      ) {
+        await committer.commit(
+          KajiEvent.parse({
+            type:
+              decision === "approved"
+                ? EventType.TOOL_APPROVAL_APPROVED
+                : EventType.TOOL_APPROVAL_REJECTED,
+            session_id: context.execution.sessionId,
+            turn_id: context.execution.turnId,
+            tool_name: call.name,
+            tool_call_id: call.id,
+            ...(decision === "rejected"
+              ? { error_code: "APPROVAL_REJECTED", reason: "Not authorized" }
+              : {}),
+          }),
+        );
+        return;
+      }
+    }
+  } finally {
+    await events.return?.();
+  }
+}
 
 describe("EventApprovalHandler", () => {
-  it("requires a non-empty turn id in its public and runtime context", async () => {
-    expectTypeOf<EventApprovalContext["turnId"]>().toEqualTypeOf<string>();
-    const handler = new EventApprovalHandler(new InMemoryEventCommitter(new InMemoryEventStore()));
-
-    await expect(
-      handler.request(makeCall(), { sessionId: "missing-turn" } as EventApprovalContext),
-    ).rejects.toThrow("requires a non-empty turnId");
-  });
-
-  it("grant flow: resolves granted:true when TOOL_APPROVAL_APPROVED is appended", async () => {
-    const store = new InMemoryEventStore();
-    const committer = new InMemoryEventCommitter(store);
-    const handler = new EventApprovalHandler(committer);
-    const call = makeCall({ id: "call-grant" });
-    const ctx = { sessionId: "session-1", turnId: "turn-1" };
-
-    const decisionPromise = handler.request(call, ctx);
-
-    // Let the handler complete the REQUEST append and set up its subscription.
-    await flushMicrotasks();
-
-    await committer.commit(
-      KajiEvent.parse({
-        type: EventType.TOOL_APPROVAL_APPROVED,
-        session_id: ctx.sessionId,
-        turn_id: ctx.turnId,
-        tool_name: call.name,
-        tool_call_id: call.id,
-      }),
-    );
-
-    const decision = await decisionPromise;
-    expect(decision.granted).toBe(true);
-  });
-
-  it("captures a synchronous approval appended by a request-event subscriber", async () => {
-    const store = new InMemoryEventStore();
-    const committer = new InMemoryEventCommitter(store);
-    const handler = new EventApprovalHandler(committer);
-    const call = makeCall({ id: "call-sync" });
-    const ctx = { sessionId: "session-sync", turnId: "turn-sync" };
-
-    const observed = committer.subscribe(ctx.sessionId);
-    const approveRequest = (async () => {
-      for await (const event of observed) {
-        if (event.type === EventType.TOOL_APPROVAL_REQUESTED && event.tool_call_id === call.id) {
-          await committer.commit(
-            KajiEvent.parse({
-              type: EventType.TOOL_APPROVAL_APPROVED,
-              session_id: ctx.sessionId,
-              turn_id: ctx.turnId,
-              tool_name: call.name,
-              tool_call_id: call.id,
-            }),
-          );
-          return;
-        }
-      }
-    })();
-
-    await expect(handler.request(call, ctx)).resolves.toEqual({ granted: true });
-    await approveRequest;
-  });
-
-  it("reject flow: resolves granted:false with reason when TOOL_APPROVAL_REJECTED is appended", async () => {
-    const store = new InMemoryEventStore();
-    const committer = new InMemoryEventCommitter(store);
-    const handler = new EventApprovalHandler(committer);
-    const call = makeCall({ id: "call-reject" });
-    const ctx = { sessionId: "session-2", turnId: "turn-2" };
-
-    const decisionPromise = handler.request(call, ctx);
-    await flushMicrotasks();
-
-    await committer.commit(
-      KajiEvent.parse({
-        type: EventType.TOOL_APPROVAL_REJECTED,
-        session_id: ctx.sessionId,
-        turn_id: ctx.turnId,
-        tool_name: call.name,
-        tool_call_id: call.id,
-        reason: "Not authorized",
-      }),
-    );
-
-    const decision = await decisionPromise;
-    expect(decision.granted).toBe(false);
-    expect(decision.reason).toBe("Not authorized");
-  });
-
-  it("timeout: rejects with an error when no decision arrives within timeoutMs", async () => {
-    const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(new InMemoryEventCommitter(store), {
-      timeoutMs: 50,
+  it("subscribes before using the runtime emitter and returns recorded approval", async () => {
+    const inner = new InMemoryEventCommitter(new InMemoryEventStore());
+    let subscribed = false;
+    const committer: EventCommitter = {
+      store: inner.store,
+      commit: (event) => inner.commit(event),
+      subscribe(sessionId, options) {
+        subscribed = true;
+        return inner.subscribe(sessionId, options);
+      },
+    };
+    const call = makeCall({ id: "call-approved" });
+    const context = makeContext(committer, call, {
+      emit: async (event) => {
+        expect(subscribed).toBe(true);
+        return committer.commit(event);
+      },
     });
-    const call = makeCall({ id: "call-timeout" });
-    const ctx = { sessionId: "session-3", turnId: "turn-3" };
+    const bridge = decideAfterRequest(committer, context, call, "approved");
 
-    await expect(handler.request(call, ctx)).rejects.toThrow("timed out");
-  }, 2000);
+    await expect(new EventApprovalHandler().request(call, context)).resolves.toEqual({
+      granted: true,
+      code: "approved",
+      recorded: true,
+    });
+    await bridge;
+  });
 
-  it("ignores events for a different tool_call_id", async () => {
-    const store = new InMemoryEventStore();
-    const committer = new InMemoryEventCommitter(store);
-    const handler = new EventApprovalHandler(committer, { timeoutMs: 100 });
-    const call = makeCall({ id: "call-target" });
-    const ctx = { sessionId: "session-4", turnId: "turn-4" };
+  it("returns a recorded rejection with the stable external code", async () => {
+    const committer = new InMemoryEventCommitter(new InMemoryEventStore());
+    const call = makeCall({ id: "call-rejected" });
+    const context = makeContext(committer, call);
+    const bridge = decideAfterRequest(committer, context, call, "rejected");
 
-    const decisionPromise = handler.request(call, ctx);
-    await flushMicrotasks();
+    await expect(new EventApprovalHandler().request(call, context)).resolves.toEqual({
+      granted: false,
+      code: "rejected",
+      reason: "Not authorized",
+      recorded: true,
+    });
+    await bridge;
+  });
 
-    // Append an APPROVED for a different call — should be ignored.
-    await committer.commit(
-      KajiEvent.parse({
-        type: EventType.TOOL_APPROVAL_APPROVED,
-        session_id: ctx.sessionId,
-        turn_id: ctx.turnId,
-        tool_name: call.name,
-        tool_call_id: "call-other",
+  it("returns typed timeout and caller cancellation decisions", async () => {
+    const committer = new InMemoryEventCommitter(new InMemoryEventStore());
+    const timeoutCall = makeCall({ id: "call-timeout" });
+    await expect(
+      new EventApprovalHandler().request(
+        timeoutCall,
+        makeContext(committer, timeoutCall, { deadlineMs: Date.now() + 10 }),
+      ),
+    ).resolves.toMatchObject({ granted: false, code: "timeout" });
+
+    const controller = new AbortController();
+    const cancelledCall = makeCall({ id: "call-cancelled" });
+    const pending = new EventApprovalHandler().request(
+      cancelledCall,
+      makeContext(committer, cancelledCall, {
+        controller,
+        sessionId: "session-cancelled",
+        deadlineMs: Date.now() + 1_000,
       }),
     );
+    controller.abort();
+    await expect(pending).resolves.toMatchObject({ granted: false, code: "cancelled" });
+  });
 
-    await expect(decisionPromise).rejects.toThrow("timed out");
-  }, 2000);
-
-  it("ignores stale or unscoped decisions for a turn-scoped request", async () => {
-    const store = new InMemoryEventStore();
-    const committer = new InMemoryEventCommitter(store);
-    const handler = new EventApprovalHandler(committer, { timeoutMs: 500 });
-    const call = makeCall({ id: "call-reused" });
-    const ctx = { sessionId: "session-turn", turnId: "turn-current" };
-
-    for (const turnId of [undefined, "turn-stale"] as const) {
+  it("ignores stale decisions and all wrong tri-key components", async () => {
+    const committer = new InMemoryEventCommitter(new InMemoryEventStore());
+    const call = makeCall({ id: "reused-call", name: "target" });
+    const context = makeContext(committer, call, {
+      sessionId: "session-trikey",
+      turnId: "current-turn",
+    });
+    for (const candidate of [
+      { turnId: "stale-turn", callId: call.id, name: call.name },
+      { turnId: context.execution.turnId, callId: "wrong-call", name: call.name },
+      { turnId: context.execution.turnId, callId: call.id, name: "wrong-tool" },
+    ]) {
       await committer.commit(
         KajiEvent.parse({
-          type: EventType.TOOL_APPROVAL_REJECTED,
-          session_id: ctx.sessionId,
-          ...(turnId === undefined ? {} : { turn_id: turnId }),
-          tool_name: call.name,
-          tool_call_id: call.id,
-          reason: "stale decision",
+          type: EventType.TOOL_APPROVAL_APPROVED,
+          session_id: context.execution.sessionId,
+          turn_id: candidate.turnId,
+          tool_name: candidate.name,
+          tool_call_id: candidate.callId,
         }),
       );
     }
-    await committer.commit(
-      KajiEvent.parse({
-        type: EventType.TOOL_APPROVAL_REJECTED,
-        session_id: ctx.sessionId,
-        turn_id: ctx.turnId,
-        tool_name: "different_tool",
-        tool_call_id: call.id,
-        reason: "wrong tool decision",
-      }),
-    );
-
-    const decisionPromise = handler.request(call, ctx);
-    await flushMicrotasks();
-    await committer.commit(
-      KajiEvent.parse({
-        type: EventType.TOOL_APPROVAL_APPROVED,
-        session_id: ctx.sessionId,
-        turn_id: ctx.turnId,
-        tool_name: call.name,
-        tool_call_id: call.id,
-      }),
-    );
-
-    await expect(decisionPromise).resolves.toEqual({ granted: true });
+    const bridge = decideAfterRequest(committer, context, call, "approved");
+    await expect(new EventApprovalHandler().request(call, context)).resolves.toMatchObject({
+      granted: true,
+      recorded: true,
+    });
+    await bridge;
   });
 
-  it("emits TOOL_APPROVAL_REQUESTED to the store", async () => {
-    const store = new InMemoryEventStore();
-    const handler = new EventApprovalHandler(new InMemoryEventCommitter(store), {
-      timeoutMs: 50,
+  it("ignores a matching decision before the exact request sequence and closes replay", async () => {
+    const inner = new InMemoryEventCommitter(new InMemoryEventStore());
+    const returned = vi.fn();
+    const committer: EventCommitter = {
+      store: inner.store,
+      commit: (event) => inner.commit(event),
+      subscribe(sessionId, options) {
+        const iterator = inner.subscribe(sessionId, options);
+        const originalReturn = iterator.return?.bind(iterator);
+        iterator.return = async () => {
+          returned();
+          return originalReturn?.() ?? { value: undefined, done: true };
+        };
+        return iterator;
+      },
+    };
+    const call = makeCall({ id: "raced-call", name: "ship" });
+    const context = makeContext(committer, call, {
+      sessionId: "raced-session",
+      turnId: "raced-turn",
+      emit: async (request) => {
+        await committer.commit(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_APPROVED,
+            session_id: "raced-session",
+            turn_id: "raced-turn",
+            tool_name: "ship",
+            tool_call_id: "raced-call",
+          }),
+        );
+        const storedRequest = await committer.commit(request);
+        await committer.commit(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_REJECTED,
+            session_id: "raced-session",
+            turn_id: "raced-turn",
+            tool_name: "ship",
+            tool_call_id: "raced-call",
+            error_code: "APPROVAL_REJECTED",
+            reason: "Post-request decision",
+          }),
+        );
+        return storedRequest;
+      },
     });
-    const call = makeCall({ id: "call-emit" });
-    const ctx = { sessionId: "session-5", risk: "write", turnId: "turn-5" };
 
-    // Let the timeout fire naturally; check the emitted event afterwards.
-    await expect(handler.request(call, ctx)).rejects.toThrow("timed out");
+    await expect(new EventApprovalHandler().request(call, context)).resolves.toEqual({
+      granted: false,
+      code: "rejected",
+      reason: "Post-request decision",
+      recorded: true,
+    });
+    const events = await inner.store.getEvents("raced-session");
+    expect(events.map(({ sequence }) => sequence)).toEqual([1, 2, 3]);
+    expect(replaySession(events).pendingApprovals.size).toBe(0);
+    expect(returned).toHaveBeenCalledOnce();
+  });
 
-    const events = await store.getEvents(ctx.sessionId);
-    const requestEvent = events.find((e) => e.type === EventType.TOOL_APPROVAL_REQUESTED);
-    expect(requestEvent).toBeDefined();
-    if (requestEvent?.type === EventType.TOOL_APPROVAL_REQUESTED) {
-      expect(requestEvent.tool_call_id).toBe(call.id);
-      expect(requestEvent.risk).toBe("write");
-      expect(requestEvent.turn_id).toBe(ctx.turnId);
+  it("rejects a request returned from a different committer journal", async () => {
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
+    const emitStore = new InMemoryEventStore();
+    const emitCommitter = new InMemoryEventCommitter(emitStore);
+    const call = makeCall({ id: "wrong-journal" });
+    const context = makeContext(approvalCommitter, call, {
+      sessionId: "wrong-journal-session",
+      emit: (event) => emitCommitter.commit(event),
+    });
+
+    await expect(new EventApprovalHandler().request(call, context)).rejects.toThrow(
+      /not stored by the approval committer/i,
+    );
+    expect(await approvalCommitter.store.getEvents("wrong-journal-session")).toEqual([]);
+    expect(await emitStore.getEvents("wrong-journal-session")).toHaveLength(1);
+  });
+
+  it("closes the subscription after every terminal outcome", async () => {
+    const inner = new InMemoryEventCommitter(new InMemoryEventStore());
+    const returned = vi.fn();
+    const committer: EventCommitter = {
+      store: inner.store,
+      commit: (event) => inner.commit(event),
+      subscribe(sessionId, options) {
+        const iterator = inner.subscribe(sessionId, options);
+        const originalReturn = iterator.return?.bind(iterator);
+        iterator.return = async () => {
+          returned();
+          return originalReturn?.() ?? { value: undefined, done: true };
+        };
+        return iterator;
+      },
+    };
+    const call = makeCall({ id: "cleanup" });
+    await new EventApprovalHandler().request(
+      call,
+      makeContext(committer, call, { deadlineMs: Date.now() + 5 }),
+    );
+    expect(returned).toHaveBeenCalledOnce();
+  });
+
+  it("does not hang on a non-cooperative custom iterator return", async () => {
+    const store = new InMemoryEventStore();
+    const returned = vi.fn();
+    const committer: EventCommitter = {
+      store,
+      commit: async (event) => (await store.append(event)).event,
+      subscribe() {
+        return {
+          next: () => new Promise<IteratorResult<never>>(() => {}),
+          return: () => {
+            returned();
+            return new Promise<IteratorResult<never>>(() => {});
+          },
+          [Symbol.asyncIterator]() {
+            return this;
+          },
+        };
+      },
+    };
+    const call = makeCall({ id: "non-cooperative" });
+    const decision = await Promise.race([
+      new EventApprovalHandler().request(
+        call,
+        makeContext(committer, call, { deadlineMs: Date.now() + 5 }),
+      ),
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error("approval cleanup hung")), 100),
+      ),
+    ]);
+    expect(decision).toMatchObject({ granted: false, code: "timeout" });
+    expect(returned).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the legacy callback functional when the deprecation console throws", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {
+      throw new Error("console unavailable");
+    });
+    const handler = vi.fn().mockResolvedValue(true);
+    try {
+      await expect(
+        requestLegacyApproval(handler, makeCall({ name: "legacy" }), {}, "write"),
+      ).resolves.toEqual({ granted: true, code: "approved" });
+      expect(handler).toHaveBeenCalledOnce();
+    } finally {
+      warning.mockRestore();
     }
-  }, 2000);
+  });
 });
 
-// ---------------------------------------------------------------------------
-// AutoApprovalHandler
-// ---------------------------------------------------------------------------
-
 describe("AutoApprovalHandler", () => {
-  const ctx = { sessionId: "session-auto" };
+  const committer = new InMemoryEventCommitter(new InMemoryEventStore());
 
-  it("allows a tool in the allow list", async () => {
-    const handler = new AutoApprovalHandler({ allow: ["safe_tool"], deny: [] });
-    const decision = await handler.request(makeCall({ name: "safe_tool" }), ctx);
-    expect(decision.granted).toBe(true);
-  });
-
-  it("denies a tool in the deny list (deny takes precedence)", async () => {
-    const handler = new AutoApprovalHandler({
-      allow: ["safe_tool"],
-      deny: ["safe_tool"],
+  it("uses the typed approved/rejected union", async () => {
+    const allow = new AutoApprovalHandler({ allow: ["safe"], deny: [] });
+    const allowed = makeCall({ id: "allow", name: "safe" });
+    await expect(allow.request(allowed, makeContext(committer, allowed))).resolves.toEqual({
+      granted: true,
+      code: "approved",
     });
-    const decision = await handler.request(makeCall({ name: "safe_tool" }), ctx);
-    expect(decision.granted).toBe(false);
-    expect(decision.reason).toContain("deny list");
-  });
 
-  it("denies an unknown tool when allowAll is false (default)", async () => {
-    const handler = new AutoApprovalHandler({ allow: [], deny: [] });
-    const decision = await handler.request(makeCall({ name: "unknown_tool" }), ctx);
-    expect(decision.granted).toBe(false);
-  });
-
-  it("allowAll:true allows an unknown tool not in deny list", async () => {
-    const handler = new AutoApprovalHandler({ allow: [], deny: [], allowAll: true });
-    const decision = await handler.request(makeCall({ name: "unknown_tool" }), ctx);
-    expect(decision.granted).toBe(true);
-  });
-
-  it("allowAll:true still denies tools in the deny list", async () => {
-    const handler = new AutoApprovalHandler({
-      allow: [],
-      deny: ["bad_tool"],
-      allowAll: true,
+    const deny = new AutoApprovalHandler({ allow: [], deny: ["unsafe"] });
+    const denied = makeCall({ id: "deny", name: "unsafe" });
+    await expect(deny.request(denied, makeContext(committer, denied))).resolves.toMatchObject({
+      granted: false,
+      code: "rejected",
     });
-    const decision = await handler.request(makeCall({ name: "bad_tool" }), ctx);
-    expect(decision.granted).toBe(false);
   });
 });

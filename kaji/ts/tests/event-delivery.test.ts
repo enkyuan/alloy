@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   EventBufferOverflowError,
   EventDeliveryError,
+  EventIdConflictError,
   EventStoreCapacityError,
 } from "@/events/errors";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
@@ -10,6 +11,7 @@ import type { EventBusProtocol, EventBusSubscribeOptions } from "@/events/protoc
 import { KajiEvent, type StoredKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore, type AppendResult } from "@/events/store";
 import { EventType } from "@/events/types";
+import type { MetricMeasurement, MetricsSink } from "@/observability";
 
 function message(id: string, sessionId = "s1") {
   return KajiEvent.parse({ id, type: EventType.USER_MESSAGE, session_id: sessionId, content: id });
@@ -398,6 +400,7 @@ describe("event delivery", () => {
       id: "nested",
       type: EventType.TOOL_CALL_REQUESTED,
       session_id: "s1",
+      turn_id: "turn-1",
       tool_name: "search",
       tool_call_id: "call-1",
       tool_args: { filters: { a: 1, b: 2 } },
@@ -411,6 +414,39 @@ describe("event delivery", () => {
     await expect(committer.commit(reordered)).resolves.toMatchObject({ id: "nested", sequence: 1 });
     expect(store.appendCalls).toBe(1);
     expect(bus.published.map(({ id }) => id)).toEqual(["nested"]);
+  });
+
+  it("records a pending event-id structural conflict as an append failure", async () => {
+    const measurements: MetricMeasurement[] = [];
+    const metrics: MetricsSink = {
+      record(measurement) {
+        measurements.push(measurement);
+      },
+    };
+    const store = new CountingStore();
+    const bus = new FlakyBus();
+    bus.failures = 1;
+    const committer = new SplitEventCommitter(store, bus, { metricsSink: metrics });
+    await expect(committer.commit(message("conflict"))).rejects.toBeInstanceOf(EventDeliveryError);
+
+    await expect(
+      committer.commit(
+        KajiEvent.parse({
+          id: "conflict",
+          type: EventType.USER_MESSAGE,
+          session_id: "s1",
+          content: "different",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EventIdConflictError);
+
+    expect(
+      measurements.filter(
+        (measurement) =>
+          measurement.name === "kaji.journal.failures" && measurement.labels.stage === "append",
+      ),
+    ).toHaveLength(1);
+    expect(store.appendCalls).toBe(1);
   });
 
   it("serializes a concurrent duplicate behind the first publish result", async () => {

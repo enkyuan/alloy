@@ -115,6 +115,26 @@ Applications can handle `IdempotencyCapacityExceeded` and
 inject a restart-safe ledger. Durable ledgers must keep resolution waits
 cancellation-cooperative and implement start-state reads as bounded operations.
 
+Approval-gated tools use an `ApprovalHandler` that returns a validated
+`ApprovalDecision`. Each request receives an `ApprovalRequestContext` carrying
+the tool context, canonical event journal, a no-argument canonical request
+operation, a stored-event observer, cancellation, and the effective deadline.
+`EventApprovalHandler` implements the
+`EventBackedApprovalHandler` contract for external decision bridges and matches
+decisions by turn, call, and tool identity only after the exact stored request.
+When a framework timeout or cancellation races an external bridge, Kaji appends
+the framework rejection as a sequence fence and selects the first matching
+decision after the request through that fence. Standalone `ToolPlanner` callers
+must use `JournalEventEmitter` bound to the exact same journal object; bare
+emitters and wrappers over another journal fail before lifecycle persistence.
+
+Observability is optional and dependency-free. Inject a `MetricsSink` or
+`TraceSink` through `AgentBuilder.metrics_sink()` and `.trace_sink()`;
+measurements arrive as immutable `Measurement` values and traces return a
+best-effort, idempotent `SpanHandle`. `NOOP_METRICS` and `NOOP_TRACE` are the
+allocation-free defaults. Metric labels are closed and never include prompts,
+tool arguments, or correlation IDs.
+
 ## Event journal contract
 
 `EventJournal` is the stable persistence boundary for runtime events. New
@@ -127,6 +147,9 @@ atomic, process-local path. A journal used by the tool runtime must acknowledge
 `ToolCallStarted` appends atomically and cooperate with task cancellation; the
 runtime cannot detach this append without allowing a late Started event to
 overtake the terminal event.
+Approval-capable journals also provide `open_subscription()`, which returns
+only after backlog/live attachment and always yields an explicitly closable
+subscription.
 
 `AgentRuntime.history()` and `TextSession.events()` return at most 1,024 stored
 events by default. Pass `after_sequence` and `limit` to page explicitly.
@@ -238,6 +261,8 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError` | Draft 2020-12 validation and normalized failures before tool side effects |
 | `ToolExecutionController`, `ToolExecutionLimits`, `ToolExecutionError` | Bounded execution, deadlines, drain state, and certified retryable handler failures |
 | `ToolIdempotencyLedger`, `InMemoryToolIdempotencyLedger`, `IdempotencyCapacityExceeded`, `IdempotencyConflictError` | Exact tool-call coalescing/replay and bounded-ledger failures |
+| `ApprovalDecision`, `ApprovalHandler`, `ApprovalRequestContext`, `EventApprovalHandler`, `EventBackedApprovalHandler`, `JournalEventEmitter` | Typed approval lifecycle and canonical event-backed bridge |
+| `Measurement`, `MetricsSink`, `TraceSink`, `SpanHandle`, `NOOP_METRICS`, `NOOP_TRACE` | Dependency-free, low-cardinality observability contracts and no-op defaults |
 | `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
 | `Integration` | Namespace-scoped tool bundle base class |
 | `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |

@@ -11,6 +11,11 @@ from kaji.runtime.context import (
 )
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.infra.events.replay import SessionState
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    record_metric,
+)
 
 
 class ContextBuilder:
@@ -145,6 +150,7 @@ def build_context(
     variables: Optional[Dict[str, Any]] = None,
     *,
     window: ContextWindow | None = None,
+    metrics_sink: MetricsSink = NOOP_METRICS,
 ) -> ContextBuildResult:
     """Build provider messages and diagnostics without splitting a turn."""
     resolved = window or ContextWindow()
@@ -186,13 +192,17 @@ def build_context(
         dropped_messages=sum(len(group) for group in dropped),
         dropped_characters=sum(group_characters[:kept_start]),
     )
-    return ContextBuildResult(
-        messages=[
-            {"role": "system", "content": prompt.render(variables)},
-            *kept_messages,
-        ],
-        diagnostics=diagnostics,
+    messages = [
+        {"role": "system", "content": prompt.render(variables)},
+        *kept_messages,
+    ]
+    record_metric(metrics_sink, "kaji.context.messages", len(messages))
+    record_metric(
+        metrics_sink,
+        "kaji.context.characters",
+        sum(_message_characters(message) for message in messages),
     )
+    return ContextBuildResult(messages=messages, diagnostics=diagnostics)
 
 
 def build_messages(
@@ -201,6 +211,7 @@ def build_messages(
     variables: Optional[Dict[str, Any]] = None,
     *,
     window: ContextWindow | None = None,
+    metrics_sink: MetricsSink = NOOP_METRICS,
 ) -> List[Dict[str, Any]]:
     """Construct provider messages, preserving the historical list API."""
     return build_context(
@@ -208,4 +219,5 @@ def build_messages(
         prompt,
         variables,
         window=window,
+        metrics_sink=metrics_sink,
     ).messages

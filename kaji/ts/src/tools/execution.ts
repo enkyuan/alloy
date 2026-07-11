@@ -1,5 +1,14 @@
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
 import {
+  NOOP_METRICS,
+  NOOP_TRACE,
+  recordMetric,
+  startSpan,
+  type MetricsSink,
+  type ToolMetricOutcome,
+  type TraceSink,
+} from "@/observability";
+import {
   ToolExecutionError,
   normalizeStartedToolFailure,
   snapshotToolExecutionError,
@@ -45,6 +54,9 @@ export interface ToolExecutionControllerOptions {
   limits?: Partial<ToolExecutionLimits>;
   ledger?: ToolIdempotencyLedger;
   now?: () => number;
+  monotonicNow?: () => number;
+  metricsSink?: MetricsSink;
+  traceSink?: TraceSink;
 }
 
 interface PermitWaiter {
@@ -164,12 +176,39 @@ function snapshotExecutionRequestContext(context: unknown): ToolExecutionContext
   }
 }
 
+class ToolStartRecordingError extends Error {
+  constructor(
+    readonly failure: ToolExecutionError,
+    readonly original: unknown,
+  ) {
+    super("Tool start recording failed", { cause: original });
+    this.name = "ToolStartRecordingError";
+  }
+}
+
+function toolMetricFields(outcome: ToolExecutionControllerOutcome): {
+  outcome: ToolMetricOutcome;
+  error_code: string;
+} {
+  if (outcome.status === "completed") return { outcome: "completed", error_code: "NONE" };
+  const metricOutcome: ToolMetricOutcome =
+    outcome.error.error_code === "TOOL_TIMEOUT"
+      ? "timeout"
+      : outcome.error.error_code === "TOOL_CANCELLED"
+        ? "cancelled"
+        : outcome.error.outcome;
+  return { outcome: metricOutcome, error_code: outcome.error.error_code };
+}
+
 /** Runtime-lifetime bounded tool execution and idempotency controller. */
 export class ToolExecutionController {
   readonly limits: Readonly<ToolExecutionLimits>;
   readonly ledger: ToolIdempotencyLedger;
   private readonly permits: PermitPool;
   private readonly now: () => number;
+  private readonly monotonicNow: () => number;
+  private readonly metrics: MetricsSink;
+  private readonly trace: TraceSink;
   private readonly active = new Map<string, { callId: string; settled: Promise<void> }>();
   private readonly claimCleanups = new Set<Promise<void>>();
 
@@ -179,10 +218,58 @@ export class ToolExecutionController {
     this.ledger = options.ledger ?? new InMemoryToolIdempotencyLedger();
     this.permits = new PermitPool(this.limits.maxParallel);
     this.now = options.now ?? Date.now;
+    this.monotonicNow = options.monotonicNow ?? (() => globalThis.performance.now());
+    this.metrics = options.metricsSink ?? NOOP_METRICS;
+    this.trace = options.traceSink ?? NOOP_TRACE;
   }
 
   async execute(request: ToolExecutionRequest): Promise<ToolExecutionControllerOutcome> {
     const canonicalContext = snapshotExecutionRequestContext(request.context);
+    const started = this.monotonicNow();
+    const span = startSpan(this.trace, "kaji.tool", {
+      "principal.id": canonicalContext.principalId,
+      "session.id": canonicalContext.sessionId,
+      "turn.id": canonicalContext.turnId,
+      "request.id": canonicalContext.requestId,
+      "trace.id": canonicalContext.traceId,
+      "tool.call_id": canonicalContext.toolCallId,
+    });
+    try {
+      const outcome = await this.executeBounded(request, canonicalContext);
+      if (outcome.status === "failed") span.recordError(outcome.error.cause ?? outcome.error);
+      recordMetric(
+        this.metrics,
+        "kaji.tool.duration_ms",
+        Math.max(0, this.monotonicNow() - started),
+        toolMetricFields(outcome),
+      );
+      return outcome;
+    } catch (error) {
+      const observed =
+        error instanceof ToolStartRecordingError
+          ? ({ status: "failed", error: error.failure } as const)
+          : undefined;
+      span.recordError(error instanceof ToolStartRecordingError ? error.original : error);
+      recordMetric(
+        this.metrics,
+        "kaji.tool.duration_ms",
+        Math.max(0, this.monotonicNow() - started),
+        observed === undefined
+          ? { outcome: "failed", error_code: "OTHER" }
+          : toolMetricFields(observed),
+      );
+      if (error instanceof ToolStartRecordingError) throw error.original;
+      throw error;
+    } finally {
+      span.end();
+    }
+  }
+
+  private async executeBounded(
+    request: ToolExecutionRequest,
+    canonicalContext: ToolExecutionContext,
+  ): Promise<ToolExecutionControllerOutcome> {
+    const queueStarted = this.monotonicNow();
     const key = JSON.stringify([canonicalContext.sessionId, canonicalContext.toolCallId]);
     const linked = this.linkedSignal(canonicalContext, request.timeoutMs);
     let fingerprint: string;
@@ -255,10 +342,23 @@ export class ToolExecutionController {
       );
     } catch {
       const error = this.abortError(linked.kind(), "not_started");
+      recordMetric(
+        this.metrics,
+        "kaji.tool.queue_wait_ms",
+        Math.max(0, this.monotonicNow() - queueStarted),
+        { outcome: error.error_code === "TOOL_TIMEOUT" ? "timeout" : "cancelled" },
+      );
       await this.ledger.retryableFailure(claim, error);
       linked.cleanup();
       return { status: "failed", error };
     }
+
+    recordMetric(
+      this.metrics,
+      "kaji.tool.queue_wait_ms",
+      Math.max(0, this.monotonicNow() - queueStarted),
+      { outcome: "acquired" },
+    );
 
     if (linked.signal.aborted) {
       release();
@@ -275,7 +375,7 @@ export class ToolExecutionController {
       const error = toolStartRecordFailed(cause);
       await this.ledger.retryableFailure(claim, error);
       linked.cleanup();
-      throw cause;
+      throw new ToolStartRecordingError(error, cause);
     }
 
     if (linked.signal.aborted) {
@@ -305,8 +405,10 @@ export class ToolExecutionController {
         linked.cleanup();
         removeAbortListener();
         this.active.delete(key);
+        recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
       });
     this.active.set(key, { callId: canonicalContext.toolCallId, settled: tracked });
+    recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
 
     const abort = new Promise<ToolExecutionControllerOutcome>((resolve) => {
       const finish = () => {
@@ -327,7 +429,8 @@ export class ToolExecutionController {
       } catch (cause) {
         const error = toolExecutionUnknown(cause);
         await this.ledger.unknownOutcome(claim, error);
-        return { status: "failed", error };
+        const failure = { status: "failed" as const, error };
+        return failure;
       }
     }
     if (outcome.error.outcome === "failed" && outcome.error.retryable) {

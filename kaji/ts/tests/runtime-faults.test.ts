@@ -351,6 +351,26 @@ describe("runtime fault handling", () => {
     );
   });
 
+  it("rejects an explicit planner wired to a different approval committer", () => {
+    const store = new InMemoryEventStore();
+    const runtimeCommitter = new InMemoryEventCommitter(store);
+    const plannerCommitter = new InMemoryEventCommitter(store);
+    const planner = new ToolPlanner({
+      executor: async () => ({}),
+      approvalCommitter: plannerCommitter,
+    });
+
+    expect(
+      () =>
+        new AgentRuntime({
+          provider: new MockProvider(),
+          store,
+          committer: runtimeCommitter,
+          planner,
+        }),
+    ).toThrow(/approval committer must match/i);
+  });
+
   it.each(["timeout", "cancel"] as const)(
     "bounds a slow durable claim by %s and cleans a late owner claim",
     async (mode) => {

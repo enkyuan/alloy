@@ -56,6 +56,7 @@ def test_projector_applies_ten_thousand_tool_events_once() -> None:
         apply(
             ToolCallRequested(
                 session_id="projection-10k",
+                turn_id=f"turn-{batch}",
                 tool_name="lookup",
                 tool_call_id=call_id,
                 tool_args={"batch": batch},
@@ -64,6 +65,7 @@ def test_projector_applies_ten_thousand_tool_events_once() -> None:
         apply(
             ToolCallCompleted(
                 session_id="projection-10k",
+                turn_id=f"turn-{batch}",
                 tool_name="lookup",
                 tool_call_id=call_id,
                 result={"ok": True},
@@ -90,6 +92,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         AgentReasoningStarted(session_id="batches", sequence=2),
         ToolCallRequested(
             session_id="batches",
+            turn_id="turn-1",
             tool_name="one",
             tool_call_id="c1",
             tool_args={},
@@ -97,6 +100,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         ),
         ToolCallRequested(
             session_id="batches",
+            turn_id="turn-1",
             tool_name="two",
             tool_call_id="c2",
             tool_args={},
@@ -104,6 +108,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         ),
         ToolCallCompleted(
             session_id="batches",
+            turn_id="turn-1",
             tool_name="one",
             tool_call_id="c1",
             result=1,
@@ -111,6 +116,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         ),
         ToolCallCompleted(
             session_id="batches",
+            turn_id="turn-1",
             tool_name="two",
             tool_call_id="c2",
             result=2,
@@ -119,6 +125,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         AgentReasoningStarted(session_id="batches", sequence=7),
         ToolCallRequested(
             session_id="batches",
+            turn_id="turn-2",
             tool_name="three",
             tool_call_id="c3",
             tool_args={},
@@ -126,6 +133,7 @@ def test_projection_separates_batches_and_groups_parallel_calls() -> None:
         ),
         ToolCallCompleted(
             session_id="batches",
+            turn_id="turn-2",
             tool_name="three",
             tool_call_id="c3",
             result=3,

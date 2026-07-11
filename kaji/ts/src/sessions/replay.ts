@@ -30,20 +30,31 @@ export interface SessionTokens {
   output: number;
 }
 
+declare const APPROVAL_KEY: unique symbol;
+/** Stable value key for the approval security/correlation tuple. */
+export type ApprovalKey = string & { readonly [APPROVAL_KEY]: true };
+export type ApprovalFailureCode =
+  | "APPROVAL_REJECTED"
+  | "APPROVAL_TIMEOUT"
+  | "TOOL_CANCELLED"
+  | "APPROVAL_UNAVAILABLE";
+
+export function approvalKey(turnId: string, toolCallId: string, toolName: string): ApprovalKey {
+  return JSON.stringify([turnId, toolCallId, toolName]) as ApprovalKey;
+}
+
 /** A projection of the event log into current session state. */
 export interface SessionState {
   sessionId: string;
   isActive: boolean;
   messages: Message[];
   /**
-   * tool_call_ids that emitted TOOL_APPROVAL_REQUESTED but have not yet been
-   * approved or rejected. The set drains as APPROVED / REJECTED events arrive.
+   * Correlation triples that emitted TOOL_APPROVAL_REQUESTED but have not yet
+   * been approved or rejected.
    */
-  pendingApprovals: Set<string>;
-  /** tool_call_ids the host approved via TOOL_APPROVAL_APPROVED. */
-  approvedToolCallIds: Set<string>;
-  /** tool_call_ids the host rejected via TOOL_APPROVAL_REJECTED. */
-  rejectedToolCallIds: Set<string>;
+  pendingApprovals: Set<ApprovalKey>;
+  approvedApprovals: Set<ApprovalKey>;
+  rejectedApprovals: Map<ApprovalKey, ApprovalFailureCode>;
   /** Total tokens consumed in this session (summed from AGENT_MESSAGE_COMPLETED events). */
   totalTokens: SessionTokens;
   /** Estimated total cost in USD for this session. */
@@ -58,9 +69,9 @@ export function createSessionState(sessionId: string): SessionState {
     sessionId,
     isActive: false,
     messages: [],
-    pendingApprovals: new Set<string>(),
-    approvedToolCallIds: new Set<string>(),
-    rejectedToolCallIds: new Set<string>(),
+    pendingApprovals: new Set<ApprovalKey>(),
+    approvedApprovals: new Set<ApprovalKey>(),
+    rejectedApprovals: new Map<ApprovalKey, ApprovalFailureCode>(),
     totalTokens: { input: 0, output: 0 },
     totalCostUsd: 0,
   };
@@ -211,17 +222,33 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
         content: `Error: ${event.error}`,
         toolCallId: event.tool_call_id,
       });
+      if (event.turn_id !== undefined) {
+        state.pendingApprovals.delete(
+          approvalKey(event.turn_id, event.tool_call_id, event.tool_name),
+        );
+      }
       break;
     case EventType.TOOL_APPROVAL_REQUESTED:
-      state.pendingApprovals.add(event.tool_call_id);
+      {
+        const key = approvalKey(event.turn_id, event.tool_call_id, event.tool_name);
+        if (!state.approvedApprovals.has(key) && !state.rejectedApprovals.has(key)) {
+          state.pendingApprovals.add(key);
+        }
+      }
       break;
     case EventType.TOOL_APPROVAL_APPROVED:
-      state.pendingApprovals.delete(event.tool_call_id);
-      state.approvedToolCallIds.add(event.tool_call_id);
+      {
+        const key = approvalKey(event.turn_id, event.tool_call_id, event.tool_name);
+        if (state.pendingApprovals.delete(key)) state.approvedApprovals.add(key);
+      }
       break;
     case EventType.TOOL_APPROVAL_REJECTED:
-      state.pendingApprovals.delete(event.tool_call_id);
-      state.rejectedToolCallIds.add(event.tool_call_id);
+      {
+        const key = approvalKey(event.turn_id, event.tool_call_id, event.tool_name);
+        if (state.pendingApprovals.delete(key)) {
+          state.rejectedApprovals.set(key, event.error_code);
+        }
+      }
       break;
     // NOTE: AGENT_MESSAGE_DELTA and TOOL_CALL_STARTED are intentionally NOT
     // projected. Deltas are transient, and STARTED does not carry provider

@@ -1,5 +1,5 @@
 import type { EventStore } from "@/events/store";
-import { replaySession } from "@/sessions/replay";
+import { createSessionState, replaySession } from "@/sessions/replay";
 import type { SessionState } from "@/sessions/replay";
 import type { SessionStore } from "@/sessions/store";
 
@@ -15,16 +15,7 @@ export class SessionManager {
   async getState(sessionId: string): Promise<SessionState> {
     const events = await this._store.getEvents(sessionId);
     if (events.length === 0) {
-      return {
-        sessionId,
-        isActive: false,
-        messages: [],
-        pendingApprovals: new Set<string>(),
-        approvedToolCallIds: new Set<string>(),
-        rejectedToolCallIds: new Set<string>(),
-        totalTokens: { input: 0, output: 0 },
-        totalCostUsd: 0,
-      };
+      return createSessionState(sessionId);
     }
     return replaySession(events);
   }

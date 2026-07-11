@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field
 import inspect
 import logging
@@ -11,7 +12,10 @@ import uuid
 import warnings
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
+from kaji.core.safe_logging import log_no_throw
 from kaji.infra.events.schemas import (
+    NewKajiEvent,
+    StoredKajiEvent,
     ToolApprovalApproved,
     ToolApprovalRejected,
     ToolApprovalRequested,
@@ -19,6 +23,18 @@ from kaji.infra.events.schemas import (
     ToolCallFailed,
     ToolCallRequested,
     ToolCallStarted,
+    require_stored_event,
+)
+from kaji.infra.events.protocols import EventJournal
+from kaji.infra.events.types import EventType
+from kaji.runtime.agents.approval import (
+    ApprovalCode,
+    ApprovalDecision,
+    ApprovalErrorCode,
+    ApprovalHandler,
+    ApprovalRequestContext,
+    LegacyApprovalCallback,
+    adapt_approval_handler,
 )
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import (
@@ -48,10 +64,51 @@ logger = logging.getLogger(__name__)
 
 ToolExecutor = Callable[[ToolInvocation], Awaitable[Any]]
 LegacyToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
-ApprovalHandler = Callable[[str, Dict[str, Any], Optional[str]], Awaitable[bool]]
 
 _legacy_executor_warned = False
 _NO_RESULT = object()
+
+
+class JournalEventEmitter:
+    """Explicitly bind standalone planner events to one journal object."""
+
+    def __init__(
+        self,
+        journal: EventJournal,
+        *,
+        before_commit: Callable[[NewKajiEvent], Awaitable[None]] | None = None,
+        observer: Callable[[StoredKajiEvent], Awaitable[None]] | None = None,
+    ) -> None:
+        self.journal = journal
+        self._before_commit = before_commit
+        self._observer = observer
+
+    async def __call__(self, event: NewKajiEvent) -> StoredKajiEvent:
+        if self._before_commit is not None:
+            await self._before_commit(event)
+        stored = await self.journal.commit(event)
+        if self._observer is not None:
+            await self._observer(stored)
+        return stored
+
+    async def observe_stored(self, event: StoredKajiEvent) -> None:
+        if self._observer is not None:
+            await self._observer(event)
+
+
+def _require_approval_boundary(
+    emit_event: Callable[[Any], Awaitable[Any]],
+    journal: EventJournal | None,
+) -> EventJournal:
+    if journal is None:
+        raise ValueError("approval_journal is required for approval-gated tools")
+    if getattr(emit_event, "journal", None) is not journal or not callable(
+        getattr(emit_event, "observe_stored", None)
+    ):
+        raise ValueError(
+            "approval event emitter must be explicitly bound to approval_journal"
+        )
+    return journal
 
 
 def _arguments_are_json_safe(value: Any, active: set[int]) -> bool:
@@ -165,6 +222,190 @@ class _PreparedCall:
         return self.recording_error is None and self.terminal is None
 
 
+class _ApprovalRequestGate:
+    """Seal one canonical request and its externally persisted decision."""
+
+    def __init__(
+        self,
+        event: ToolApprovalRequested,
+        journal: EventJournal,
+        emit: Callable[[Any], Awaitable[Any]],
+        observe: Callable[[StoredKajiEvent], Awaitable[None]],
+    ) -> None:
+        self._event = event.model_copy(deep=True)
+        self._journal = journal
+        self._emit = emit
+        self._observe = observe
+        self._handler_called = False
+        self._sealed = False
+        self._stored: StoredKajiEvent | None = None
+        self._observed: StoredKajiEvent | None = None
+
+    @property
+    def requested(self) -> bool:
+        return self._stored is not None
+
+    async def request(self) -> StoredKajiEvent:
+        """Handler-facing exactly-once, no-argument request operation."""
+        if self._sealed:
+            raise RuntimeError("approval request operation is closed")
+        if self._handler_called:
+            raise RuntimeError("approval request was already attempted")
+        self._handler_called = True
+        return await self._commit()
+
+    async def ensure_requested(self) -> StoredKajiEvent:
+        """Runtime-owned idempotent recovery for pre-cancel and failed handlers."""
+        if self._stored is not None:
+            return self._stored
+        return await self._commit()
+
+    def seal(self) -> None:
+        self._sealed = True
+
+    async def _commit(self) -> StoredKajiEvent:
+        stored = await self._persist_exact(self._event)
+        if self._stored is not None and (
+            self._stored.id != stored.id or self._stored.sequence != stored.sequence
+        ):
+            raise RuntimeError("approval request was persisted more than once")
+        self._stored = stored.model_copy(deep=True)
+        return stored.model_copy(deep=True)
+
+    async def _persist_exact(self, event: NewKajiEvent) -> StoredKajiEvent:
+        stored = require_stored_event(await self._emit(event.model_copy(deep=True)))
+        assert stored.sequence is not None
+        expected = event.model_dump(mode="json", exclude={"sequence"})
+        actual = stored.model_dump(mode="json", exclude={"sequence"})
+        if actual != expected:
+            raise ValueError("approval event emitter altered the canonical event")
+        persisted = await self._journal.store.get_events(
+            stored.session_id,
+            after_sequence=stored.sequence - 1,
+            limit=1,
+        )
+        if (
+            len(persisted) != 1
+            or persisted[0].sequence != stored.sequence
+            or persisted[0].model_dump(mode="json") != stored.model_dump(mode="json")
+        ):
+            raise ValueError(
+                "approval journal and event emitter must share one boundary"
+            )
+        return stored.model_copy(deep=True)
+
+    def _matches_request(self, event: StoredKajiEvent) -> bool:
+        requested = self._stored
+        return (
+            requested is not None
+            and event.type
+            in (
+                EventType.TOOL_APPROVAL_APPROVED,
+                EventType.TOOL_APPROVAL_REJECTED,
+            )
+            and event.session_id == requested.session_id
+            and event.turn_id == requested.turn_id
+            and event.tool_name == requested.tool_name
+            and event.tool_call_id == requested.tool_call_id
+        )
+
+    @staticmethod
+    def _decision_from_event(event: StoredKajiEvent) -> ApprovalDecision:
+        if event.type == EventType.TOOL_APPROVAL_APPROVED:
+            return ApprovalDecision(True, "approved", recorded=True)
+        if event.type != EventType.TOOL_APPROVAL_REJECTED:
+            raise TypeError("event is not an approval decision")
+        code_by_error: dict[ApprovalErrorCode, ApprovalCode] = {
+            "APPROVAL_REJECTED": "rejected",
+            "APPROVAL_TIMEOUT": "timeout",
+            "TOOL_CANCELLED": "cancelled",
+            "APPROVAL_UNAVAILABLE": "unavailable",
+        }
+        return ApprovalDecision(
+            False,
+            code_by_error[event.error_code],
+            event.reason,
+            recorded=True,
+        )
+
+    async def observe(self, candidate: StoredKajiEvent) -> None:
+        event = require_stored_event(candidate)
+        requested = self._stored
+        if requested is None or requested.sequence is None or event.sequence is None:
+            raise RuntimeError("approval decision cannot precede its request")
+        if event.sequence <= requested.sequence:
+            raise ValueError("approval decision must follow its exact request sequence")
+        if not self._matches_request(event):
+            raise ValueError("approval decision correlation does not match its request")
+        persisted = await self._journal.store.get_events(
+            event.session_id,
+            after_sequence=event.sequence - 1,
+            limit=1,
+        )
+        if (
+            len(persisted) != 1
+            or persisted[0].sequence != event.sequence
+            or persisted[0].model_dump(mode="json") != event.model_dump(mode="json")
+        ):
+            raise ValueError("approval decision must use the canonical journal")
+        if self._observed is not None:
+            if (
+                self._observed.id == event.id
+                and self._observed.sequence == event.sequence
+            ):
+                return
+            raise RuntimeError("approval decision was observed more than once")
+        await self._observe(event)
+        self._observed = event.model_copy(deep=True)
+
+    def observed_decision(self) -> ApprovalDecision | None:
+        if self._observed is None:
+            return None
+        return self._decision_from_event(self._observed)
+
+    async def resolve_framework_loss(
+        self,
+        decision: ApprovalDecision,
+    ) -> ApprovalDecision:
+        """Fence a framework loss, then choose the first durable decision."""
+        requested = self._stored
+        if requested is None or requested.sequence is None or decision.reason is None:
+            raise RuntimeError("approval loss cannot be fenced before its request")
+        assert requested.turn_id is not None
+        error_by_code: dict[ApprovalCode, ApprovalErrorCode] = {
+            "cancelled": "TOOL_CANCELLED",
+            "timeout": "APPROVAL_TIMEOUT",
+            "rejected": "APPROVAL_REJECTED",
+            "unavailable": "APPROVAL_UNAVAILABLE",
+            "approved": "APPROVAL_UNAVAILABLE",
+        }
+        fence = await self._persist_exact(
+            ToolApprovalRejected(
+                session_id=requested.session_id,
+                turn_id=requested.turn_id,
+                tool_name=requested.tool_name,
+                tool_call_id=requested.tool_call_id,
+                error_code=error_by_code[decision.code],
+                reason=decision.reason,
+                metadata=deepcopy(requested.metadata),
+            )
+        )
+        assert fence.sequence is not None
+        suffix = await self._journal.store.get_events(
+            requested.session_id,
+            after_sequence=requested.sequence,
+            limit=fence.sequence - requested.sequence,
+        )
+        for event in suffix:
+            if event.sequence is None or event.sequence > fence.sequence:
+                break
+            if not self._matches_request(event):
+                continue
+            await self.observe(event)
+            return self._decision_from_event(event)
+        raise RuntimeError("approval fence did not persist a matching decision")
+
+
 class ToolPlanner:
     """Validate, gate, and execute tools through a bounded controller."""
 
@@ -173,7 +414,7 @@ class ToolPlanner:
         executor: ToolExecutor | LegacyToolExecutor,
         *,
         policy: Optional[ToolPolicy] = None,
-        approval_handler: Optional[ApprovalHandler] = None,
+        approval_handler: ApprovalHandler | LegacyApprovalCallback | None = None,
         specs: Optional[Dict[str, ToolSpec]] = None,
         controller: ToolExecutionController | None = None,
         execution_limits: ToolExecutionLimits | None = None,
@@ -187,7 +428,7 @@ class ToolPlanner:
             )
         self.executor = _adapt_executor(executor)
         self.policy = policy
-        self.approval_handler = approval_handler
+        self.approval_handler = adapt_approval_handler(approval_handler)
         self._specs: Dict[str, ToolSpec] = {
             name: _snapshot_tool_spec(spec) for name, spec in (specs or {}).items()
         }
@@ -201,11 +442,12 @@ class ToolPlanner:
         self,
         session_id: str,
         tool_calls: List[Dict[str, Any]],
-        emit_event: Callable[[Any], Awaitable[None]],
+        emit_event: Callable[[Any], Awaitable[Any]],
         *,
         turn_id: str,
         turn_context: TurnContext,
         cancellation_token: CancellationToken,
+        approval_journal: EventJournal | None = None,
     ) -> List[Dict[str, Any]]:
         """Execute one provider batch with ordered request and terminal events.
 
@@ -249,6 +491,14 @@ class ToolPlanner:
             )
             for index, call in enumerate(normalized)
         ]
+        if self.policy is not None:
+            for item in prepared:
+                aliases = [item.spec.catalog_name] if item.spec.catalog_name else []
+                if self.policy.is_allowed_any([item.call["name"], *aliases]) and (
+                    self.policy.requires_approval(item.call["name"], item.spec.risk)
+                ):
+                    _require_approval_boundary(emit_event, approval_journal)
+                    break
         plumbing_errors: list[Exception] = []
 
         # Request records are attempted sequentially in provider order. A
@@ -258,6 +508,7 @@ class ToolPlanner:
                 await emit_event(
                     ToolCallRequested(
                         session_id=session_id,
+                        turn_id=item.context.turn_id,
                         tool_name=item.call["name"],
                         tool_args=item.tool_args,
                         tool_call_id=item.context.tool_call_id,
@@ -273,7 +524,12 @@ class ToolPlanner:
             if item.recording_error is not None:
                 continue
             try:
-                item.terminal = await self._preflight(item, session_id, emit_event)
+                item.terminal = await self._preflight(
+                    item,
+                    session_id,
+                    emit_event,
+                    approval_journal,
+                )
             except Exception as error:
                 item.recording_error = error
                 plumbing_errors.append(error)
@@ -379,7 +635,8 @@ class ToolPlanner:
         self,
         item: _PreparedCall,
         session_id: str,
-        emit_event: Callable[[Any], Awaitable[None]],
+        emit_event: Callable[[Any], Awaitable[Any]],
+        approval_journal: EventJournal | None,
     ) -> _TerminalDraft | None:
         tool_name = item.call["name"]
         validation_error = item.validation_error
@@ -398,79 +655,248 @@ class ToolPlanner:
         if self.policy is not None:
             try:
                 self.policy.enforce_any(tool_name, aliases)
-            except ToolPolicyViolation as error:
-                return _TerminalDraft(error=str(error))
-
-        risk = item.spec.risk
-        if self.policy is None or not self.policy.requires_approval(tool_name, risk):
-            return None
-
-        await emit_event(
-            ToolApprovalRequested(
-                session_id=session_id,
-                tool_name=tool_name,
-                tool_call_id=item.context.tool_call_id,
-                tool_args=item.tool_args,
-                risk=risk,
-                metadata=item.metadata,
-            )
-        )
-        approved = False
-        if self.approval_handler is not None:
-            try:
-                approved = await self.approval_handler(tool_name, item.tool_args, risk)
-            except Exception:
-                logger.exception("Tool approval handler failed: %s", tool_name)
-                await emit_event(
-                    ToolApprovalRejected(
-                        session_id=session_id,
-                        tool_name=tool_name,
-                        tool_call_id=item.context.tool_call_id,
-                        reason="Approval handler unavailable",
-                        metadata=item.metadata,
-                    )
-                )
+            except ToolPolicyViolation:
                 return _TerminalDraft(
-                    error="Tool approval unavailable",
+                    error="Tool not permitted",
                     fields={
-                        "error_code": "APPROVAL_UNAVAILABLE",
+                        "error_code": "TOOL_NOT_ALLOWED",
                         "retryable": False,
                         "outcome": "not_started",
                     },
                 )
 
-        if not approved:
-            reason = (
-                "No approval handler registered"
-                if self.approval_handler is None
-                else "Rejected by approval handler"
+        risk = item.spec.risk
+        if self.policy is None or not self.policy.requires_approval(tool_name, risk):
+            return None
+        if risk is None:
+            raise RuntimeError("approval-required tools must have a classified risk")
+        approval_journal = _require_approval_boundary(
+            emit_event,
+            approval_journal,
+        )
+
+        request_event = ToolApprovalRequested(
+            session_id=session_id,
+            turn_id=item.context.turn_id,
+            tool_name=tool_name,
+            tool_call_id=item.context.tool_call_id,
+            tool_args=deepcopy(item.tool_args),
+            risk=risk,
+            metadata=deepcopy(item.metadata),
+        )
+        observe_stored = getattr(emit_event, "observe_stored", None)
+        assert callable(observe_stored)
+
+        request_gate = _ApprovalRequestGate(
+            request_event,
+            approval_journal,
+            emit_event,
+            observe_stored,
+        )
+        handler = self.approval_handler
+        event_backed = (
+            handler is not None and getattr(handler, "event_backed", False) is True
+        )
+        if not event_backed:
+            await request_gate.request()
+
+        deadline = self.controller.approval_deadline(item.context.deadline_monotonic)
+        framework_loss = False
+        if handler is None:
+            decision = ApprovalDecision(
+                granted=False,
+                code="unavailable",
+                reason="No approval handler registered",
             )
+        elif item.context.cancellation_token.is_cancelled:
+            framework_loss = event_backed
+            decision = ApprovalDecision(
+                granted=False,
+                code="cancelled",
+                reason="Tool approval cancelled",
+            )
+        elif self.controller.deadline_expired(deadline):
+            framework_loss = event_backed
+            decision = ApprovalDecision(
+                granted=False,
+                code="timeout",
+                reason="Tool approval timed out",
+            )
+        else:
+            invocation = ToolInvocation(
+                name=tool_name,
+                arguments=item.tool_args,
+                context=item.context,
+            )
+            approval_context = ApprovalRequestContext(
+                tool_context=item.context,
+                risk=risk,
+                arguments=item.tool_args,
+                journal=approval_journal,
+                request=request_gate.request,
+                observe=request_gate.observe,
+                deadline_monotonic=deadline,
+            )
+            request_task = self.controller.start_approval(
+                item.context.tool_call_id,
+                lambda: handler.request(invocation, approval_context),
+            )
+            if request_task is None:
+                decision = ApprovalDecision(
+                    granted=False,
+                    code="unavailable",
+                    reason="Approval handler capacity exhausted",
+                )
+            else:
+                cancellation_task = asyncio.create_task(
+                    item.context.cancellation_token.wait()
+                )
+                try:
+                    done, _ = await asyncio.wait(
+                        {request_task, cancellation_task},
+                        timeout=self.controller.deadline_remaining(deadline),
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    # A fully observed durable decision wins a simultaneous
+                    # caller cancellation. Cancellation wins only while the
+                    # handler is still physically unresolved.
+                    if request_task.done():
+                        try:
+                            decision = request_task.result()
+                            if not isinstance(decision, ApprovalDecision):
+                                raise TypeError(
+                                    "approval handler must return ApprovalDecision"
+                                )
+                            if event_backed and not request_gate.requested:
+                                raise RuntimeError(
+                                    "event-backed approval handler returned before "
+                                    "recording its request"
+                                )
+                            observed = request_gate.observed_decision()
+                            if observed is not None:
+                                decision = observed
+                            elif decision.recorded:
+                                raise RuntimeError(
+                                    "recorded approval decision does not match the journal"
+                                )
+                        except BaseException:
+                            log_no_throw(
+                                logger,
+                                logging.ERROR,
+                                "Tool approval handler failed: %s",
+                                tool_name,
+                                exc_info=True,
+                            )
+                            decision = ApprovalDecision(
+                                granted=False,
+                                code="unavailable",
+                                reason="Approval handler unavailable",
+                            )
+                    elif (
+                        cancellation_task in done
+                        or item.context.cancellation_token.is_cancelled
+                    ):
+                        framework_loss = event_backed
+                        decision = ApprovalDecision(
+                            False,
+                            "cancelled",
+                            "Tool approval cancelled",
+                        )
+                    else:
+                        framework_loss = event_backed
+                        decision = ApprovalDecision(
+                            False,
+                            "timeout",
+                            "Tool approval timed out",
+                        )
+                finally:
+                    request_gate.seal()
+                    cancellation_task.cancel()
+                    try:
+                        await cancellation_task
+                    except asyncio.CancelledError:
+                        pass
+                    if not request_task.done():
+                        request_task.cancel()
+        request_gate.seal()
+        await request_gate.ensure_requested()
+        if framework_loss:
+            decision = await request_gate.resolve_framework_loss(decision)
+        observed = request_gate.observed_decision()
+        if observed is not None:
+            decision = observed
+        elif decision.recorded:
+            decision = ApprovalDecision(
+                granted=False,
+                code="unavailable",
+                reason="Approval handler unavailable",
+            )
+
+        if decision.granted:
+            if not decision.recorded:
+                await emit_event(
+                    ToolApprovalApproved(
+                        session_id=session_id,
+                        turn_id=item.context.turn_id,
+                        tool_name=tool_name,
+                        tool_call_id=item.context.tool_call_id,
+                        metadata=item.metadata,
+                    )
+                )
+            return None
+
+        if decision.code == "rejected":
+            failure_fields: tuple[ApprovalErrorCode, bool, str] = (
+                "APPROVAL_REJECTED",
+                False,
+                "Tool approval rejected",
+            )
+        elif decision.code == "timeout":
+            failure_fields = (
+                "APPROVAL_TIMEOUT",
+                True,
+                "Tool approval timed out",
+            )
+        elif decision.code == "cancelled":
+            failure_fields = (
+                "TOOL_CANCELLED",
+                True,
+                "Tool approval cancelled",
+            )
+        else:
+            failure_fields = (
+                "APPROVAL_UNAVAILABLE",
+                False,
+                "Tool approval unavailable",
+            )
+        error_code, retryable, error = failure_fields
+        assert decision.reason is not None
+        if not decision.recorded:
             await emit_event(
                 ToolApprovalRejected(
                     session_id=session_id,
+                    turn_id=item.context.turn_id,
                     tool_name=tool_name,
                     tool_call_id=item.context.tool_call_id,
-                    reason=reason,
+                    error_code=error_code,
+                    reason=decision.reason,
                     metadata=item.metadata,
                 )
             )
-            return _TerminalDraft(error=f"Tool approval rejected: {reason}")
-
-        await emit_event(
-            ToolApprovalApproved(
-                session_id=session_id,
-                tool_name=tool_name,
-                tool_call_id=item.context.tool_call_id,
-                metadata=item.metadata,
-            )
+        return _TerminalDraft(
+            error=error,
+            fields={
+                "error_code": error_code,
+                "retryable": retryable,
+                "outcome": "not_started",
+            },
         )
-        return None
 
     async def _run_group(
         self,
         group: list[_PreparedCall],
         session_id: str,
-        emit_event: Callable[[Any], Awaitable[None]],
+        emit_event: Callable[[Any], Awaitable[Any]],
         plumbing_errors: list[Exception],
     ) -> None:
         if not group:
@@ -511,12 +937,13 @@ class ToolPlanner:
         self,
         item: _PreparedCall,
         session_id: str,
-        emit_event: Callable[[Any], Awaitable[None]],
+        emit_event: Callable[[Any], Awaitable[Any]],
     ) -> _ToolExecutionOutcome:
         async def emit_started() -> None:
             await emit_event(
                 ToolCallStarted(
                     session_id=session_id,
+                    turn_id=item.context.turn_id,
                     tool_name=item.call["name"],
                     tool_call_id=item.context.tool_call_id,
                     metadata=item.metadata,
@@ -546,7 +973,7 @@ class ToolPlanner:
         self,
         item: _PreparedCall,
         session_id: str,
-        emit_event: Callable[[Any], Awaitable[None]],
+        emit_event: Callable[[Any], Awaitable[Any]],
     ) -> None:
         terminal = item.terminal
         if terminal is None:
@@ -555,6 +982,7 @@ class ToolPlanner:
             await emit_event(
                 ToolCallCompleted(
                     session_id=session_id,
+                    turn_id=item.context.turn_id,
                     tool_name=item.call["name"],
                     tool_call_id=item.context.tool_call_id,
                     result=terminal.result,
@@ -565,6 +993,7 @@ class ToolPlanner:
         await emit_event(
             ToolCallFailed(
                 session_id=session_id,
+                turn_id=item.context.turn_id,
                 tool_name=item.call["name"],
                 tool_call_id=item.context.tool_call_id,
                 error=terminal.error,

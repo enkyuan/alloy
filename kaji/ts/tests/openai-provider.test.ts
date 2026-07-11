@@ -272,6 +272,27 @@ describe("OpenAIProvider.generate", () => {
 // ---------------------------------------------------------------------------
 
 describe("OpenAIProvider.generateStream", () => {
+  it("recreates a stream after a 429 before the first chunk", async () => {
+    async function* successfulStream() {
+      yield { choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] };
+    }
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("rate limited"), { status: 429 }))
+      .mockResolvedValueOnce(successfulStream());
+    const provider = new TestOpenAIProvider(
+      { apiKey: "test-key", retry: { maxAttempts: 2, baseDelayMs: 0 } },
+      { chat: { completions: { create } } } as unknown as OpenAI,
+    );
+
+    const chunks = [];
+    for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+      chunks.push(chunk);
+    }
+    expect(chunks.map((chunk) => chunk.delta).join("")).toBe("ok");
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
   it("yields text chunks as they arrive", async () => {
     async function* fakeStream() {
       yield { choices: [{ delta: { content: "hel" }, finish_reason: null }] };

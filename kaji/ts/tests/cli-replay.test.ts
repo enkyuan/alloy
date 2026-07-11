@@ -21,11 +21,11 @@ const FIXTURE_JSONL = [
   `{"type":"agent.message.delta","session_id":"sess-1","id":"e3","version":"1.0","timestamp":1002,"metadata":{},"delta":"Hi"}`,
   `{"type":"agent.message.delta","session_id":"sess-1","id":"e4","version":"1.0","timestamp":1003,"metadata":{},"delta":" there!"}`,
   `{"type":"agent.message.completed","session_id":"sess-1","id":"e5","version":"1.0","timestamp":1004,"metadata":{},"content":"Hi there!"}`,
-  `{"type":"tool.call.requested","session_id":"sess-1","id":"e6","version":"1.0","timestamp":1005,"metadata":{},"tool_name":"echo.say","tool_args":{"message":"test"},"tool_call_id":"tc1"}`,
-  `{"type":"tool.call.started","session_id":"sess-1","id":"e7","version":"1.0","timestamp":1006,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc1"}`,
-  `{"type":"tool.call.completed","session_id":"sess-1","id":"e8","version":"1.0","timestamp":1007,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc1","result":{"message":"test"}}`,
-  `{"type":"tool.call.requested","session_id":"sess-1","id":"e9","version":"1.0","timestamp":1008,"metadata":{},"tool_name":"echo.say","tool_args":{"message":"fail"},"tool_call_id":"tc2"}`,
-  `{"type":"tool.call.failed","session_id":"sess-1","id":"e10","version":"1.0","timestamp":1009,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc2","error":"Something went wrong"}`,
+  `{"type":"tool.call.requested","session_id":"sess-1","turn_id":"turn-1","id":"e6","version":"1.0","timestamp":1005,"metadata":{},"tool_name":"echo.say","tool_args":{"message":"test"},"tool_call_id":"tc1"}`,
+  `{"type":"tool.call.started","session_id":"sess-1","turn_id":"turn-1","id":"e7","version":"1.0","timestamp":1006,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc1"}`,
+  `{"type":"tool.call.completed","session_id":"sess-1","turn_id":"turn-1","id":"e8","version":"1.0","timestamp":1007,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc1","result":{"message":"test"}}`,
+  `{"type":"tool.call.requested","session_id":"sess-1","turn_id":"turn-1","id":"e9","version":"1.0","timestamp":1008,"metadata":{},"tool_name":"echo.say","tool_args":{"message":"fail"},"tool_call_id":"tc2"}`,
+  `{"type":"tool.call.failed","session_id":"sess-1","turn_id":"turn-1","id":"e10","version":"1.0","timestamp":1009,"metadata":{},"tool_name":"echo.say","tool_call_id":"tc2","error":"Something went wrong"}`,
 ].join("\n");
 
 // Fixture for --tail: 25 USER_MESSAGE events (more than the 20 limit)

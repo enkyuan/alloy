@@ -25,6 +25,167 @@
           "error": { "type": "string", "minLength": 1, "maxLength": 200 }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.call.requested" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "tool_name", "tool_call_id", "tool_args"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "tool_name": { "type": "string", "minLength": 1 },
+          "tool_call_id": { "type": "string", "minLength": 1 },
+          "tool_args": { "type": "object" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.call.completed" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "tool_name", "tool_call_id", "result"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "tool_name": { "type": "string", "minLength": 1 },
+          "tool_call_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.call.started" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "tool_name", "tool_call_id"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "tool_name": { "type": "string", "minLength": 1 },
+          "tool_call_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.call.failed" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "tool_name", "tool_call_id", "error"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "tool_name": { "type": "string", "minLength": 1 },
+          "tool_call_id": { "type": "string", "minLength": 1 },
+          "error": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "tool.approval.requested",
+              "tool.approval.approved",
+              "tool.approval.rejected"
+            ]
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["turn_id", "tool_name", "tool_call_id"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "tool_name": { "type": "string", "minLength": 1 },
+          "tool_call_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.approval.requested" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["tool_args", "risk"],
+        "properties": {
+          "tool_args": { "type": "object" },
+          "risk": {
+            "enum": [
+              "read",
+              "write",
+              "external_effect",
+              "financial",
+              "destructive",
+              "admin"
+            ]
+          }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["error_code"] },
+            { "required": ["reason"] },
+            { "required": ["retryable"] },
+            { "required": ["outcome"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.approval.approved" } },
+        "required": ["type"]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["error_code"] },
+            { "required": ["reason"] },
+            { "required": ["risk"] },
+            { "required": ["tool_args"] },
+            { "required": ["retryable"] },
+            { "required": ["outcome"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "tool.approval.rejected" } },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["error_code", "reason"],
+        "properties": {
+          "error_code": {
+            "enum": [
+              "APPROVAL_REJECTED",
+              "APPROVAL_TIMEOUT",
+              "TOOL_CANCELLED",
+              "APPROVAL_UNAVAILABLE"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "\\S"
+          }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["risk"] },
+            { "required": ["tool_args"] },
+            { "required": ["retryable"] },
+            { "required": ["outcome"] }
+          ]
+        }
+      }
     }
   ],
   "not": { "required": ["sequence"] },

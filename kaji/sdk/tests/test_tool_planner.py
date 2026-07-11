@@ -8,10 +8,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kaji.infra.events.schemas import KajiEvent, ToolCallFailed
+from kaji.infra.events.journal import InMemoryEventJournal
+from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import TurnContext
-from kaji.runtime.agents.planner import ToolPlanner
+from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 
@@ -40,9 +42,12 @@ async def _collect(
     calls: List[Dict[str, Any]],
 ) -> tuple[List[KajiEvent], List[Dict[str, Any]]]:
     emitted: List[KajiEvent] = []
+    journal = InMemoryEventJournal(InMemoryEventStore())
 
-    async def emit(event: KajiEvent) -> None:
+    async def collect(event: KajiEvent) -> None:
         emitted.append(event)
+
+    emit = JournalEventEmitter(journal, before_commit=collect)
 
     results = await planner.execute_scatter_gather(
         session_id,
@@ -51,6 +56,7 @@ async def _collect(
         turn_id="test-turn",
         turn_context=TurnContext(principal_id="test-principal"),
         cancellation_token=CancellationToken(),
+        approval_journal=journal,
     )
     return emitted, results
 

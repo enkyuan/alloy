@@ -48,7 +48,7 @@ describe("AgentBuilder", () => {
       .provider(new MockProvider())
       .approvalHandler({
         async request() {
-          return { granted: true };
+          return { granted: true, code: "approved" as const };
         },
       })
       .build({ bus, store });

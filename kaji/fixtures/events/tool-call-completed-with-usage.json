@@ -1,6 +1,7 @@
 {
   "type": "tool.call.completed",
   "session_id": "sess-usage",
+  "turn_id": "turn-usage",
   "tool_name": "echo_probe",
   "tool_call_id": "call_echo",
   "result": {

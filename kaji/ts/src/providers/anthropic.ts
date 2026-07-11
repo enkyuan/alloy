@@ -17,7 +17,7 @@ import type {
   TokenUsage,
   ToolCall,
 } from "@/providers/base";
-import { withRetry } from "@/providers/base";
+import { openStreamWithRetry, withRetry } from "@/providers/base";
 import type { RetryOptions } from "@/providers/openai";
 import {
   ProviderConfigError,
@@ -142,6 +142,7 @@ interface ResolvedAnthropicOptions {
 }
 
 export class AnthropicProvider implements ModelProvider {
+  readonly providerFamily = "anthropic" as const;
   private readonly opts: ResolvedAnthropicOptions;
   private client: Anthropic | null = null;
 
@@ -209,6 +210,8 @@ export class AnthropicProvider implements ModelProvider {
         () => client.messages.create(params, { signal: options?.cancellationToken?.signal }),
         this.opts.retry,
         options?.cancellationToken,
+        options?.metricsSink,
+        "anthropic",
       );
       const { content, toolCalls } = parseContentBlocks(response.content);
       const usage = response.usage
@@ -248,11 +251,18 @@ export class AnthropicProvider implements ModelProvider {
     let latestUsage: TokenUsage | undefined;
 
     try {
-      const stream = client.messages.stream(params, {
-        signal: options?.cancellationToken?.signal,
-      });
+      const stream = await openStreamWithRetry(
+        () =>
+          client.messages.stream(params, {
+            signal: options?.cancellationToken?.signal,
+          }) as AsyncIterable<AnthropicStreamEvent>,
+        this.opts.retry,
+        options?.cancellationToken,
+        options?.metricsSink,
+        "anthropic",
+      );
 
-      for await (const event of stream as AsyncIterable<AnthropicStreamEvent>) {
+      for await (const event of stream) {
         latestUsage = usageFromEvent(event, latestUsage);
         if (event.type === "content_block_start") {
           const block = event.content_block;

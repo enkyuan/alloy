@@ -1,6 +1,13 @@
 """Agent runtime: the provider-agnostic ReAct loop and its building blocks."""
 
 from kaji.runtime.agents.builder import AgentBuilder
+from kaji.runtime.agents.approval import (
+    ApprovalDecision,
+    ApprovalHandler,
+    ApprovalRequestContext,
+    EventApprovalHandler,
+    EventBackedApprovalHandler,
+)
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator, TurnCoordinator
 from kaji.runtime.agents.context import (
@@ -14,7 +21,7 @@ from kaji.runtime.agents.context import (
     TurnContext,
 )
 from kaji.runtime.agents.history import HistoryStore, InMemoryHistoryStore
-from kaji.runtime.agents.planner import ToolPlanner
+from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
 from kaji.runtime.agents.strategy import AgentStrategy
 
@@ -22,14 +29,20 @@ __all__ = [
     "AgentBuilder",
     "AgentRuntime",
     "AgentStrategy",
+    "ApprovalDecision",
+    "ApprovalHandler",
+    "ApprovalRequestContext",
     "CancellationToken",
     "ContextDiagnostics",
     "ContextIntegrityError",
     "ContextWindow",
     "ContextWindowOverflowError",
     "HistoryStore",
+    "EventApprovalHandler",
+    "EventBackedApprovalHandler",
     "InMemoryTurnCoordinator",
     "InMemoryHistoryStore",
+    "JournalEventEmitter",
     "MissingToolIdentityError",
     "ToolExecutionContext",
     "ToolInvocation",

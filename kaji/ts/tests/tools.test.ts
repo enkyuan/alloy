@@ -635,7 +635,8 @@ describe("AgentRuntime with ToolPolicy", () => {
     expect(failed.length).toBeGreaterThan(0);
     const failedEvent = failed[0];
     if (failedEvent && "error" in failedEvent) {
-      expect(failedEvent.error).toMatch(/approval rejected/i);
+      expect(failedEvent.error).toBe("Tool approval unavailable");
+      expect(failedEvent.error_code).toBe("APPROVAL_UNAVAILABLE");
     }
     expect(events.some((e) => e.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
   });

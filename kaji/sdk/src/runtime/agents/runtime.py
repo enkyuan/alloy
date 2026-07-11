@@ -1,11 +1,12 @@
 import asyncio
 import logging
+import time
 import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import (
@@ -19,8 +20,8 @@ from kaji.runtime.agents.context import (
     TurnContext,
     build_context,
 )
+from kaji.runtime.agents.approval import ApprovalHandler, LegacyApprovalCallback
 from kaji.runtime.agents.planner import (
-    ApprovalHandler,
     LegacyToolExecutor,
     ToolExecutor,
     ToolPlanner,
@@ -46,6 +47,18 @@ from kaji.infra.events.schemas import (
 )
 from kaji.infra.events.store import EventStore
 from kaji.infra.events.types import EventType
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    NOOP_TRACE,
+    TraceAttributeName,
+    TraceSink,
+    provider_family,
+    record_metric,
+    span_end,
+    span_record_error,
+    start_span,
+)
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import TokenMetrics
 from kaji.runtime.sessions.projector import SessionProjector
@@ -86,6 +99,29 @@ def _copy_stored_event(event: StoredKajiEvent) -> StoredKajiEvent:
     return require_stored_event(event.model_copy(deep=True))
 
 
+@dataclass(slots=True)
+class _TurnEventCollector:
+    session_id: str
+    turn_id: str
+    cursor: int
+    events: list[StoredKajiEvent] = field(default_factory=list)
+
+
+class _TurnEventEmitter:
+    """One runtime-owned append/observe boundary for a single turn."""
+
+    def __init__(self, runtime: "AgentRuntime", turn_id: str) -> None:
+        self._runtime = runtime
+        self._turn_id = turn_id
+        self.journal = runtime.journal
+
+    async def __call__(self, event: NewKajiEvent) -> StoredKajiEvent:
+        return await self._runtime._emit_for_turn(event, self._turn_id)
+
+    async def observe_stored(self, event: StoredKajiEvent) -> None:
+        await self._runtime._observe_stored_event(event)
+
+
 class AgentRuntime:
     """A generic, provider-agnostic agent runtime.
 
@@ -117,7 +153,7 @@ class AgentRuntime:
         # Optional wiring for the default planner (ignored when planner is given)
         tool_executor: Optional[ToolExecutor | LegacyToolExecutor] = None,
         policy: Optional[Any] = None,
-        approval_handler: Optional[ApprovalHandler] = None,
+        approval_handler: ApprovalHandler | LegacyApprovalCallback | None = None,
         journal: Optional[EventJournal] = None,
         coordinator: Optional[TurnCoordinator] = None,
         context_window: ContextWindow | None = None,
@@ -125,11 +161,14 @@ class AgentRuntime:
         tool_execution_controller: ToolExecutionController | None = None,
         tool_execution_limits: ToolExecutionLimits | None = None,
         tool_idempotency_ledger: ToolIdempotencyLedger | None = None,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+        trace_sink: TraceSink = NOOP_TRACE,
+        clock: Callable[[], float] = time.monotonic,
     ):
         resolved_journal: EventJournal = journal or (
-            SplitEventJournal(store, bus)
+            SplitEventJournal(store, bus, metrics_sink=metrics_sink)
             if bus is not None
-            else InMemoryEventJournal(store)
+            else InMemoryEventJournal(store, metrics_sink=metrics_sink)
         )
         if resolved_journal.store is not store:
             raise ValueError("store must be the same object as journal.store")
@@ -142,6 +181,9 @@ class AgentRuntime:
             else default_coordinator_for_store(store)
         )
         self.provider = provider
+        self._metrics = metrics_sink
+        self._trace = trace_sink
+        self._clock = clock
         self._default_context = default_context
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
@@ -155,7 +197,7 @@ class AgentRuntime:
         self._projectors: OrderedDict[str, SessionProjector] = OrderedDict()
         self._projection_locks: dict[str, asyncio.Lock] = {}
         self._active_projection_sessions: dict[str, int] = {}
-        self._turn_event_collectors: dict[str, list[StoredKajiEvent]] = {}
+        self._turn_event_collectors: dict[str, _TurnEventCollector] = {}
         self._context_diagnostics: dict[str, ContextDiagnostics] = {}
         # Tools surfaced to the provider each turn. Empty by default, so a
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
@@ -205,6 +247,8 @@ class AgentRuntime:
                 or ToolExecutionController(
                     limits=tool_execution_limits,
                     ledger=tool_idempotency_ledger,
+                    metrics_sink=metrics_sink,
+                    trace_sink=trace_sink,
                 )
             )
             self.planner = self._build_planner(
@@ -219,7 +263,7 @@ class AgentRuntime:
         *,
         tool_executor: Optional[ToolExecutor | LegacyToolExecutor],
         policy: Optional[Any],
-        approval_handler: Optional[ApprovalHandler],
+        approval_handler: ApprovalHandler | LegacyApprovalCallback | None,
         controller: ToolExecutionController,
     ) -> ToolPlanner:
         """Construct the default planner. Called only when no explicit
@@ -296,13 +340,73 @@ class AgentRuntime:
                 else None
             )
             if collector is not None:
-                collector.append(_copy_stored_event(stored))
+                assert stored.sequence is not None
+                if stored.sequence == collector.cursor + 1:
+                    collector.events.append(_copy_stored_event(stored))
+                    collector.cursor = stored.sequence
+                else:
+                    await self._collect_turn_events_through(
+                        collector,
+                        stored.sequence,
+                    )
             return _copy_stored_event(stored)
+
+    async def _observe_stored_event(self, event: StoredKajiEvent) -> None:
+        """Advance projection and active turn collection for an external append."""
+        stored = require_stored_event(event)
+        assert stored.sequence is not None
+        async with self._projection_scope(stored.session_id):
+            async with self._projection_lock(stored.session_id):
+                persisted = await self.store.get_events(
+                    stored.session_id,
+                    after_sequence=stored.sequence - 1,
+                    limit=1,
+                )
+                if len(persisted) != 1 or persisted[0].model_dump(
+                    mode="json"
+                ) != stored.model_dump(mode="json"):
+                    raise ValueError("observed event is not in the runtime journal")
+                projector = self._projector_for(stored.session_id)
+                if not projector.initialized or stored.sequence > projector.cursor:
+                    await projector.sync(self.store)
+                collector = (
+                    self._turn_event_collectors.get(stored.turn_id)
+                    if stored.turn_id is not None
+                    else None
+                )
+                if collector is not None:
+                    await self._collect_turn_events_through(
+                        collector,
+                        stored.sequence,
+                    )
+
+    async def _collect_turn_events_through(
+        self,
+        collector: _TurnEventCollector,
+        sequence: int,
+    ) -> None:
+        """Collect a persisted suffix once, including externally appended gaps."""
+        if sequence <= collector.cursor:
+            return
+        suffix = await self.store.get_events(
+            collector.session_id,
+            after_sequence=collector.cursor,
+            limit=sequence - collector.cursor,
+        )
+        for event in suffix:
+            assert event.sequence is not None
+            if event.sequence > sequence:
+                break
+            if event.turn_id == collector.turn_id:
+                collector.events.append(_copy_stored_event(event))
+            collector.cursor = event.sequence
+        if collector.cursor < sequence:
+            raise RuntimeError("turn event collector could not close a sequence gap")
 
     def _projector_for(self, session_id: str) -> SessionProjector:
         projector = self._projectors.get(session_id)
         if projector is None:
-            projector = SessionProjector(session_id)
+            projector = SessionProjector(session_id, metrics_sink=self._metrics)
             self._projectors[session_id] = projector
             self._trim_projection_cache()
         else:
@@ -323,6 +427,32 @@ class AgentRuntime:
             else:
                 self._active_projection_sessions[session_id] = remaining
             self._trim_projection_cache()
+
+    @asynccontextmanager
+    async def _turn_scope(
+        self,
+        session_id: str,
+        token: CancellationToken,
+    ) -> AsyncIterator[None]:
+        """Measure coordinator wait without coupling sinks to shared coordinators."""
+        started = self._clock()
+        recorded = False
+        try:
+            async with self.coordinator.acquire(session_id, token):
+                record_metric(
+                    self._metrics,
+                    "kaji.turn.queue_wait_ms",
+                    (self._clock() - started) * 1_000,
+                )
+                recorded = True
+                yield
+        finally:
+            if not recorded:
+                record_metric(
+                    self._metrics,
+                    "kaji.turn.queue_wait_ms",
+                    (self._clock() - started) * 1_000,
+                )
 
     def _trim_projection_cache(self) -> None:
         while len(self._projectors) > self._projection_cache_capacity:
@@ -399,12 +529,16 @@ class AgentRuntime:
         sid = session_id or uuid.uuid4().hex
         token = cancellation_token or CancellationToken()
         resolved_context = self._resolve_turn_context(context)
-        async with self.coordinator.acquire(sid, token):
+        async with self._turn_scope(sid, token):
             async with self._projection_scope(sid):
                 projector = await self._sync_projection(sid)
                 turn_id = uuid.uuid4().hex
-                turn_events: list[StoredKajiEvent] = []
-                self._turn_event_collectors[turn_id] = turn_events
+                collector = _TurnEventCollector(
+                    session_id=sid,
+                    turn_id=turn_id,
+                    cursor=projector.cursor,
+                )
+                self._turn_event_collectors[turn_id] = collector
                 try:
                     return await self._turn_unlocked(
                         sid,
@@ -412,7 +546,7 @@ class AgentRuntime:
                         token,
                         turn_id,
                         projector,
-                        turn_events,
+                        collector.events,
                         resolved_context,
                     )
                 finally:
@@ -480,7 +614,7 @@ class AgentRuntime:
         """
         token = cancellation_token or CancellationToken()
         resolved_context = self._resolve_turn_context(context)
-        async with self.coordinator.acquire(session_id, token):
+        async with self._turn_scope(session_id, token):
             async with self._projection_scope(session_id):
                 await self._sync_projection(session_id)
                 await self._send_unlocked(
@@ -540,7 +674,7 @@ class AgentRuntime:
         """
         token = cancellation_token or CancellationToken()
         resolved_context = self._resolve_turn_context(context)
-        async with self.coordinator.acquire(session_id, token):
+        async with self._turn_scope(session_id, token):
             async with self._projection_scope(session_id):
                 await self._sync_projection(session_id)
                 await self._run_turn_unlocked(
@@ -558,9 +692,34 @@ class AgentRuntime:
         context: TurnContext,
     ) -> None:
         """Run the turn body and record any ordinary terminal failure."""
+        started = self._clock()
+        iterations = 0
+        outcome = "completed"
+        trace_attributes: dict[TraceAttributeName, str] = {
+            "session.id": session_id,
+            "turn.id": turn_id,
+            "request.id": context.request_id,
+            "trace.id": context.trace_id,
+        }
+        if context.principal_id is not None:
+            trace_attributes["principal.id"] = context.principal_id
+        span = start_span(self._trace, "kaji.turn", trace_attributes)
         try:
-            await self._run_turn_body(session_id, token, turn_id, context)
-        except Exception:
+            iterations = await self._run_turn_body(
+                session_id,
+                token,
+                turn_id,
+                context,
+            )
+            if token.is_cancelled:
+                outcome = "cancelled"
+        except asyncio.CancelledError as error:
+            outcome = "cancelled"
+            span_record_error(span, error)
+            raise
+        except Exception as error:
+            outcome = "failed"
+            span_record_error(span, error)
             try:
                 await self._emit_for_turn(
                     AgentTurnFailed(
@@ -575,6 +734,20 @@ class AgentRuntime:
                 # secondary journal failure must not replace it.
                 logger.exception("Failed to record terminal agent turn failure")
             raise
+        finally:
+            record_metric(
+                self._metrics,
+                "kaji.turn.duration_ms",
+                (self._clock() - started) * 1_000,
+                outcome=outcome,
+            )
+            record_metric(
+                self._metrics,
+                "kaji.turn.iterations",
+                iterations,
+                outcome=outcome,
+            )
+            span_end(span)
 
     async def _run_turn_body(
         self,
@@ -582,7 +755,7 @@ class AgentRuntime:
         token: CancellationToken,
         turn_id: str,
         turn_context: TurnContext,
-    ) -> None:
+    ) -> int:
         """Run the ReAct loop while the caller holds the session lease."""
         token.raise_if_cancelled()
         if (
@@ -592,13 +765,14 @@ class AgentRuntime:
         ):
             raise MissingToolIdentityError()
 
-        async def emit_turn_event(event: NewKajiEvent) -> None:
-            await self._emit_for_turn(event, turn_id)
+        emit_turn_event = _TurnEventEmitter(self, turn_id)
 
+        iterations = 0
         for iteration in range(self.strategy.max_iterations):
+            iterations = iteration + 1
             if token.is_cancelled:
                 await emit_turn_event(CancellationCompleted(session_id=session_id))
-                return
+                return iterations
 
             # Persist an explicit provider-output/tool-batch boundary so cold
             # replay can distinguish consecutive tool-only iterations.
@@ -639,6 +813,7 @@ class AgentRuntime:
                 state,
                 prompt_for_turn,
                 window=self.context_window,
+                metrics_sink=self._metrics,
             )
             self._context_diagnostics[session_id] = context.diagnostics
             messages = context.messages
@@ -654,6 +829,20 @@ class AgentRuntime:
             # CancellationCompleted event still reaches observers. Re-raise if
             # the cancel came from outside our token (e.g. parent task cancel)
             # so structured concurrency stays intact.
+            family = provider_family(self.provider)
+            provider_started = self._clock()
+            provider_status = "success"
+            provider_span = start_span(
+                self._trace,
+                "kaji.provider",
+                {
+                    "session.id": session_id,
+                    "turn.id": turn_id,
+                    "request.id": turn_context.request_id,
+                    "trace.id": turn_context.trace_id,
+                    "provider.family": family,
+                },
+            )
             try:
                 async for chunk in self.provider.generate_stream(
                     messages, self._tool_payload, cancellation_token=token
@@ -670,7 +859,9 @@ class AgentRuntime:
                         stream_metrics = chunk.metrics
                     if chunk.cost_usd is not None:
                         stream_cost_usd = chunk.cost_usd
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as error:
+                provider_status = "cancelled"
+                span_record_error(provider_span, error)
                 current = asyncio.current_task()
                 parent_cancelling = current is not None and current.cancelling() > 0
                 if parent_cancelling or not token.is_cancelled:
@@ -683,7 +874,26 @@ class AgentRuntime:
                 await asyncio.shield(
                     emit_turn_event(CancellationCompleted(session_id=session_id))
                 )
-                return
+                return iterations
+            except Exception as error:
+                provider_status = "error"
+                span_record_error(provider_span, error)
+                raise
+            finally:
+                record_metric(
+                    self._metrics,
+                    "kaji.provider.duration_ms",
+                    (self._clock() - provider_started) * 1_000,
+                    provider_family=family,
+                    status=provider_status,
+                )
+                record_metric(
+                    self._metrics,
+                    "kaji.provider.retries",
+                    0,
+                    provider_family=family,
+                )
+                span_end(provider_span)
 
             # 4. Finalize text message
             if full_response:
@@ -701,7 +911,6 @@ class AgentRuntime:
                         cost_usd=stream_cost_usd,
                     )
                 )
-
             # 5. Break if done
             if not tool_calls or not self.strategy.allow_tool_calls:
                 break
@@ -719,6 +928,7 @@ class AgentRuntime:
                 turn_id=turn_id,
                 turn_context=turn_context,
                 cancellation_token=token,
+                approval_journal=self.journal,
             )
 
             # The planner has emitted ToolCallCompleted/Failed events.
@@ -732,3 +942,4 @@ class AgentRuntime:
                         reason="max_iterations",
                     )
                 )
+        return iterations

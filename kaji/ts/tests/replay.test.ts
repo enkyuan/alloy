@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { KajiEvent, EventType, replayLegacySession } from "@/index";
 
 function ev(input: Record<string, unknown>) {
-  return KajiEvent.parse(input);
+  const type = input.type;
+  return KajiEvent.parse({
+    ...input,
+    ...(typeof type === "string" && type.startsWith("tool.call.") && input.turn_id === undefined
+      ? { turn_id: "test-turn" }
+      : {}),
+  });
 }
 
 describe("replayLegacySession", () => {

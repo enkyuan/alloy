@@ -9,6 +9,20 @@ from kaji.infra.events.schemas import (
     StoredKajiEvent,
     require_stored_event,
 )
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    record_metric,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalKey:
+    """Security and correlation key for one tool approval request."""
+
+    turn_id: str
+    tool_call_id: str
+    tool_name: str
 
 
 @dataclass
@@ -18,6 +32,9 @@ class SessionState:
     session_id: str
     is_active: bool = False
     messages: List[Dict[str, Any]] = field(default_factory=list)
+    pending_approvals: set[ApprovalKey] = field(default_factory=set)
+    approved_approvals: set[ApprovalKey] = field(default_factory=set)
+    rejected_approvals: dict[ApprovalKey, str] = field(default_factory=dict)
     _last_assistant_index: Optional[int] = field(
         default=None,
         init=False,
@@ -54,7 +71,11 @@ def _session_id(events: Sequence[KajiEvent | StoredKajiEvent]) -> str:
     return session_id
 
 
-def replay_session(events: Sequence[StoredKajiEvent]) -> SessionState:
+def replay_session(
+    events: Sequence[StoredKajiEvent],
+    *,
+    metrics_sink: MetricsSink = NOOP_METRICS,
+) -> SessionState:
     """Reconstruct state from strictly sequenced persisted events.
 
     Fully unsequenced historical logs must opt into ``replay_legacy_session``.
@@ -72,6 +93,7 @@ def replay_session(events: Sequence[StoredKajiEvent]) -> SessionState:
     ):
         raise ValueError("Cannot replay mixed sequenced and unsequenced events")
     ordered = [require_stored_event(event) for event in events]
+    record_metric(metrics_sink, "kaji.replay.input_events", len(ordered))
     sequences = [event.sequence for event in ordered]
     if len(sequences) != len(set(sequences)):
         raise ValueError("Cannot replay duplicate event sequences")
@@ -83,12 +105,17 @@ def replay_session(events: Sequence[StoredKajiEvent]) -> SessionState:
     return state
 
 
-def replay_legacy_session(events: Sequence[KajiEvent]) -> SessionState:
+def replay_legacy_session(
+    events: Sequence[KajiEvent],
+    *,
+    metrics_sink: MetricsSink = NOOP_METRICS,
+) -> SessionState:
     """Replay a fully unsequenced legacy log with a visible warning."""
     session_id = _session_id(events)
     if any(event.sequence is not None for event in events):
         raise ValueError("Legacy replay accepts only fully unsequenced event logs")
     state = SessionState(session_id=session_id)
+    record_metric(metrics_sink, "kaji.replay.input_events", len(events))
     for event in _legacy_timestamp_order(events):
         _apply_event(state, event)
     return state
@@ -137,6 +164,35 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
                 "arguments": deepcopy(event.tool_args),
             }
         )
+    elif event.type == EventType.TOOL_APPROVAL_REQUESTED:
+        assert event.turn_id is not None
+        state.pending_approvals.add(
+            ApprovalKey(
+                turn_id=event.turn_id,
+                tool_call_id=event.tool_call_id,
+                tool_name=event.tool_name,
+            )
+        )
+    elif event.type == EventType.TOOL_APPROVAL_APPROVED:
+        assert event.turn_id is not None
+        approval = ApprovalKey(
+            turn_id=event.turn_id,
+            tool_call_id=event.tool_call_id,
+            tool_name=event.tool_name,
+        )
+        if approval in state.pending_approvals:
+            state.pending_approvals.remove(approval)
+            state.approved_approvals.add(approval)
+    elif event.type == EventType.TOOL_APPROVAL_REJECTED:
+        assert event.turn_id is not None
+        approval = ApprovalKey(
+            turn_id=event.turn_id,
+            tool_call_id=event.tool_call_id,
+            tool_name=event.tool_name,
+        )
+        if approval in state.pending_approvals:
+            state.pending_approvals.remove(approval)
+            state.rejected_approvals[approval] = event.error_code
     elif event.type == EventType.TOOL_CALL_COMPLETED:
         state.messages.append(
             {
@@ -147,6 +203,14 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
             }
         )
     elif event.type == EventType.TOOL_CALL_FAILED:
+        if event.turn_id is not None:
+            state.pending_approvals.discard(
+                ApprovalKey(
+                    turn_id=event.turn_id,
+                    tool_call_id=event.tool_call_id,
+                    tool_name=event.tool_name,
+                )
+            )
         # Keep failures in provider history so the model can react instead of
         # repeating the same call until max_iterations.
         state.messages.append(

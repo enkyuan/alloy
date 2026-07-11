@@ -17,7 +17,7 @@ def test_beta_release_check_wraps_required_gates() -> None:
     script = BETA_GATE.read_text()
 
     for expected in [
-        "uv run pytest -m \"not integration\"",
+        'uv run pytest -m "not integration"',
         "uv run python scripts/typecheck_ty.py --output-format concise",
         "uv run ruff check src tests",
         "bash scripts/release_smoke.sh",

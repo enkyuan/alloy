@@ -13,6 +13,10 @@ from kaji.infra.events.schemas import (
     SessionCreated,
     StoredKajiEvent,
     ToolCallCompleted,
+    ToolCallFailed,
+    ToolCallRequested,
+    ToolCallStarted,
+    ToolApprovalRejected,
     UserMessage,
     require_stored_event,
 )
@@ -154,18 +158,21 @@ def test_session_replay():
 
 def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
     fixture = json.loads(CONFORMANCE_FIXTURE.read_text())
-    session_payload = fixture["events"][0]
-    parsed = TypeAdapter(KajiEvent).validate_python(session_payload)
-    assert isinstance(parsed, SessionCreated)
+    parsed = [
+        TypeAdapter(KajiEvent).validate_python(payload) for payload in fixture["events"]
+    ]
+    assert isinstance(parsed[0], SessionCreated)
 
-    stored = require_stored_event(parsed)
-    state = replay_session([stored])
+    stored = [require_stored_event(event) for event in parsed]
+    state = replay_session(stored)
 
-    assert stored.version == "1.0"
-    assert isinstance(stored.timestamp, float)
-    assert stored.sequence == 1
+    assert len(stored) == 23
+    assert [event.sequence for event in stored] == list(range(1, 24))
+    assert all(event.version == "1.0" for event in stored)
+    assert all(isinstance(event.timestamp, float) for event in stored)
     assert state.session_id == "session-1"
     assert state.is_active is True
+    assert state.pending_approvals == set()
 
 
 def test_shared_turn_failure_conformance_fixture_is_bounded_and_turn_scoped() -> None:
@@ -182,3 +189,72 @@ def test_shared_turn_failure_conformance_fixture_is_bounded_and_turn_scoped() ->
         )
     with pytest.raises(ValidationError):
         AgentTurnFailed(session_id="session-1", turn_id="turn-1", error="x" * 201)
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload"),
+    [
+        (ToolCallRequested, {"tool_args": {}}),
+        (ToolCallStarted, {}),
+        (ToolCallCompleted, {"result": {}}),
+        (ToolCallFailed, {"error": "failed"}),
+    ],
+)
+def test_tool_lifecycle_identifiers_match_the_shared_non_empty_contract(
+    event_type: type[object],
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(event_type).validate_python(
+            {
+                "session_id": "session",
+                "tool_name": "tool",
+                "tool_call_id": "call",
+                **payload,
+            }
+        )
+    for field in ("tool_name", "tool_call_id"):
+        with pytest.raises(ValidationError):
+            TypeAdapter(event_type).validate_python(
+                {
+                    "session_id": "session",
+                    "turn_id": "turn",
+                    "tool_name": "tool",
+                    "tool_call_id": "call",
+                    **payload,
+                    field: "",
+                }
+            )
+
+    if event_type is ToolCallFailed:
+        with pytest.raises(ValidationError):
+            ToolCallFailed(
+                session_id="session",
+                turn_id="turn",
+                tool_name="tool",
+                tool_call_id="call",
+                error="x" * 201,
+            )
+
+
+def test_approval_rejection_reason_rejects_blank_without_normalizing_text() -> None:
+    reason = "  Denied by operator  "
+    event = ToolApprovalRejected(
+        session_id="session",
+        turn_id="turn",
+        tool_name="tool",
+        tool_call_id="call",
+        error_code="APPROVAL_REJECTED",
+        reason=reason,
+    )
+    assert event.reason == reason
+
+    with pytest.raises(ValidationError):
+        ToolApprovalRejected(
+            session_id="session",
+            turn_id="turn",
+            tool_name="tool",
+            tool_call_id="call",
+            error_code="APPROVAL_REJECTED",
+            reason="   ",
+        )
