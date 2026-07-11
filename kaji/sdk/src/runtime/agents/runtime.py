@@ -49,6 +49,8 @@ from kaji.infra.events.types import EventType
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import TokenMetrics
 from kaji.runtime.sessions.projector import SessionProjector
+from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
+from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,9 @@ class AgentRuntime:
         coordinator: Optional[TurnCoordinator] = None,
         context_window: ContextWindow | None = None,
         default_context: TurnContext | None = None,
+        tool_execution_controller: ToolExecutionController | None = None,
+        tool_execution_limits: ToolExecutionLimits | None = None,
+        tool_idempotency_ledger: ToolIdempotencyLedger | None = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus)
@@ -174,15 +179,40 @@ class AgentRuntime:
         # Single source of truth: an explicit planner wins; otherwise we build
         # one from tool_executor / policy / approval_handler. Plain attribute
         # so callers can swap it post-construction (tests do this).
-        self.planner: ToolPlanner = (
-            planner
-            if planner is not None
-            else self._build_planner(
+        if planner is not None:
+            if tool_execution_limits is not None or tool_idempotency_ledger is not None:
+                raise ValueError(
+                    "explicit planner cannot be combined with tool execution limits or ledger"
+                )
+            if (
+                tool_execution_controller is not None
+                and planner.controller is not tool_execution_controller
+            ):
+                raise ValueError(
+                    "explicit planner and runtime must share the same tool controller"
+                )
+            self.tool_execution_controller = planner.controller
+            self.planner = planner
+        else:
+            if tool_execution_controller is not None and (
+                tool_execution_limits is not None or tool_idempotency_ledger is not None
+            ):
+                raise ValueError(
+                    "tool_execution_controller cannot be combined with limits or ledger"
+                )
+            self.tool_execution_controller = (
+                tool_execution_controller
+                or ToolExecutionController(
+                    limits=tool_execution_limits,
+                    ledger=tool_idempotency_ledger,
+                )
+            )
+            self.planner = self._build_planner(
                 tool_executor=tool_executor,
                 policy=policy,
                 approval_handler=approval_handler,
+                controller=self.tool_execution_controller,
             )
-        )
 
     def _build_planner(
         self,
@@ -190,6 +220,7 @@ class AgentRuntime:
         tool_executor: Optional[ToolExecutor | LegacyToolExecutor],
         policy: Optional[Any],
         approval_handler: Optional[ApprovalHandler],
+        controller: ToolExecutionController,
     ) -> ToolPlanner:
         """Construct the default planner. Called only when no explicit
         planner was passed to ``__init__``."""
@@ -209,7 +240,12 @@ class AgentRuntime:
             policy=policy,
             approval_handler=approval_handler,
             specs=specs,
+            controller=controller,
         )
+
+    async def drain_tools(self, timeout: float) -> list[str]:
+        """Report tool calls still running after a bounded shutdown drain."""
+        return await self.tool_execution_controller.drain_tools(timeout)
 
     def _resolve_turn_context(self, context: TurnContext | None) -> TurnContext:
         default = self._default_context

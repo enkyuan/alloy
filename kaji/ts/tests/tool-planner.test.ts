@@ -69,16 +69,16 @@ describe("ToolPlanner", () => {
     );
 
     expect(results[0]).toMatchObject({
-      error: "Tool execution failed",
+      error: "Tool execution failed with an unknown outcome",
       error_code: "TOOL_EXECUTION_FAILED",
       retryable: false,
-      outcome: "failed",
+      outcome: "unknown",
     });
     expect(emitted.find((e) => e.type === EventType.TOOL_CALL_FAILED)).toMatchObject({
-      error: "Tool execution failed",
+      error: "Tool execution failed with an unknown outcome",
       error_code: "TOOL_EXECUTION_FAILED",
       retryable: false,
-      outcome: "failed",
+      outcome: "unknown",
     });
     expect(JSON.stringify({ emitted, results })).not.toContain("tool exploded");
     expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: "tool exploded" }));

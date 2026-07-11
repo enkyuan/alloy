@@ -43,8 +43,19 @@ class ToolSpec:
     tags: tuple[str, ...] = ()
     enabled: bool = True
     risk: Optional[ToolRisk] = None
+    parallel_safe: bool = False
+    timeout_ms: int | None = None
 
     def __post_init__(self) -> None:
+        if type(self.parallel_safe) is not bool:
+            raise TypeError("parallel_safe must be a boolean")
+        if self.timeout_ms is not None:
+            if isinstance(self.timeout_ms, bool) or not isinstance(
+                self.timeout_ms, int
+            ):
+                raise TypeError("timeout_ms must be a positive integer or None")
+            if self.timeout_ms < 1:
+                raise ValueError("timeout_ms must be a positive integer or None")
         if self.risk is None:
             if self.enabled:
                 raise UnclassifiedToolRiskError(self.name)

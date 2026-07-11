@@ -65,6 +65,10 @@ export interface ToolSpec {
   readonly enabled?: boolean;
   /** Risk classification for policy enforcement and approval routing. */
   readonly risk: ToolRisk;
+  /** Explicit opt-in for bounded overlap with adjacent parallel-safe tools. */
+  readonly parallel_safe?: boolean;
+  /** Per-tool execution deadline. Must be a positive integer when present. */
+  readonly timeout_ms?: number;
   readonly [TOOL_ARGUMENT_VALIDATOR]?: ToolArgumentValidator;
 }
 
@@ -80,6 +84,7 @@ export function setToolArgumentValidator<T extends ToolSpec>(
 
 export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
   assertToolRisk(spec);
+  assertToolExecutionSettings(spec);
   const snapshot = setToolArgumentValidator<ToolSpec>(
     {
       name: spec.name,
@@ -89,10 +94,24 @@ export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
       ...(spec.tags !== undefined ? { tags: Object.freeze([...spec.tags]) } : {}),
       ...(spec.enabled !== undefined ? { enabled: spec.enabled } : {}),
       risk: spec.risk,
+      ...(spec.parallel_safe !== undefined ? { parallel_safe: spec.parallel_safe } : {}),
+      ...(spec.timeout_ms !== undefined ? { timeout_ms: spec.timeout_ms } : {}),
     },
     spec[TOOL_ARGUMENT_VALIDATOR],
   );
   return Object.freeze(snapshot);
+}
+
+function assertToolExecutionSettings(spec: ToolSpec): void {
+  if (spec.parallel_safe !== undefined && typeof spec.parallel_safe !== "boolean") {
+    throw new TypeError(`Tool ${spec.name} parallel_safe must be a boolean`);
+  }
+  if (
+    spec.timeout_ms !== undefined &&
+    (!Number.isInteger(spec.timeout_ms) || spec.timeout_ms < 1)
+  ) {
+    throw new TypeError(`Tool ${spec.name} timeout_ms must be a positive integer`);
+  }
 }
 
 function assertToolRisk(spec: ToolSpec): void {
@@ -130,6 +149,8 @@ export interface ToolMeta {
   risk: ToolRisk;
   tags?: string[];
   enabled?: boolean;
+  parallel_safe?: boolean;
+  timeout_ms?: number;
 }
 
 /** Symbol key used to tag a handler with its ToolMeta. */
@@ -210,6 +231,8 @@ function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
       risk: meta.risk,
       ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
       ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+      ...(meta.parallel_safe !== undefined ? { parallel_safe: meta.parallel_safe } : {}),
+      ...(meta.timeout_ms !== undefined ? { timeout_ms: meta.timeout_ms } : {}),
     },
     (handler as TaggedHandler)[TOOL_ARGUMENT_VALIDATOR],
   );

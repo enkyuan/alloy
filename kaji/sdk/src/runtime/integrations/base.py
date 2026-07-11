@@ -35,6 +35,8 @@ def tool(
     risk: Optional[ToolRisk] = None,
     tags: tuple[str, ...] = (),
     enabled: bool = True,
+    parallel_safe: bool = False,
+    timeout_ms: int | None = None,
 ) -> Callable[[Any], Any]:
     """Decorator to declare a method as a tool on an Integration subclass.
 
@@ -53,6 +55,8 @@ def tool(
             risk=risk,
             tags=tags,
             enabled=enabled,
+            parallel_safe=parallel_safe,
+            timeout_ms=timeout_ms,
         )
         return fn
 
@@ -98,6 +102,8 @@ class Integration(abc.ABC):
                     risk=spec_meta["risk"],
                     tags=spec_meta["tags"],
                     enabled=spec_meta["enabled"],
+                    parallel_safe=spec_meta["parallel_safe"],
+                    timeout_ms=spec_meta["timeout_ms"],
                 )
                 result.append((spec, cast(ToolHandler, method)))
         return result

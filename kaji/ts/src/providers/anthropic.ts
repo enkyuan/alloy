@@ -17,6 +17,8 @@ import type {
   TokenUsage,
   ToolCall,
 } from "@/providers/base";
+import { withRetry } from "@/providers/base";
+import type { RetryOptions } from "@/providers/openai";
 import {
   ProviderConfigError,
   ProviderError,
@@ -24,7 +26,6 @@ import {
 } from "@/providers/errors";
 import { parseToolArgsJSON } from "@/providers/args";
 import { calculateCostUsd } from "@/providers/costs";
-import type { RetryOptions } from "@/providers/openai";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -166,41 +167,9 @@ export class AnthropicProvider implements ModelProvider {
     return this.opts.model;
   }
 
-  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-    const { maxAttempts, baseDelayMs } = this.opts.retry;
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        const statusCode =
-          typeof error === "object" && error !== null && "status" in error
-            ? (error as { status: unknown }).status
-            : undefined;
-        if (statusCode !== 429 || attempt === maxAttempts) {
-          throw error;
-        }
-        const retryAfterMs = this.parseRetryAfterMs(error) ?? baseDelayMs * 2 ** (attempt - 1);
-        lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
-      }
-    }
-    throw lastError;
-  }
-
-  private parseRetryAfterMs(error: unknown): number | undefined {
-    if (typeof error !== "object" || error === null) return undefined;
-    const headers = "headers" in error ? (error as { headers: unknown }).headers : null;
-    if (typeof headers !== "object" || headers === null) return undefined;
-    const retryAfter = (headers as Record<string, string>)["retry-after"];
-    if (!retryAfter) return undefined;
-    const seconds = Number(retryAfter);
-    return Number.isFinite(seconds) ? seconds * 1000 : undefined;
-  }
-
   protected async createClient(): Promise<Anthropic> {
     const { default: AnthropicDefault } = await import("@anthropic-ai/sdk");
-    return new AnthropicDefault({ apiKey: this.opts.apiKey });
+    return new AnthropicDefault({ apiKey: this.opts.apiKey, maxRetries: 0 });
   }
 
   private async getClient(): Promise<Anthropic> {
@@ -236,8 +205,10 @@ export class AnthropicProvider implements ModelProvider {
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
 
     try {
-      const response = await this.withRetry(() =>
-        client.messages.create(params, { signal: options?.cancellationToken?.signal }),
+      const response = await withRetry(
+        () => client.messages.create(params, { signal: options?.cancellationToken?.signal }),
+        this.opts.retry,
+        options?.cancellationToken,
       );
       const { content, toolCalls } = parseContentBlocks(response.content);
       const usage = response.usage

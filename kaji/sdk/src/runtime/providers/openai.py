@@ -74,7 +74,13 @@ class OpenAIProvider(ModelProvider):
                     "OpenAI provider requires openai. Install kaji[openai]."
                 ) from error
 
-            self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            # Kaji does not own a cancellable pre-stream retry loop. Disable
+            # opaque SDK backoff so caller cancellation cannot be trapped in it.
+            self._client = AsyncOpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_retries=0,
+            )
         return self._client
 
     def _build_messages(

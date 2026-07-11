@@ -100,6 +100,8 @@ export function functionTool<P extends z.ZodType | Record<string, unknown>>(
       risk: meta.risk,
       ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
       ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+      ...(meta.parallel_safe !== undefined ? { parallel_safe: meta.parallel_safe } : {}),
+      ...(meta.timeout_ms !== undefined ? { timeout_ms: meta.timeout_ms } : {}),
     },
     argumentValidator,
   );

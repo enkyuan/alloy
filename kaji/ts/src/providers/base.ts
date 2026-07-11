@@ -5,7 +5,12 @@
  * Each provider translates the neutral message + tool format to its own API at
  * its boundary. The runtime never imports provider-specific types.
  */
-import type { CancellationTokenLike } from "@/runtime/cancellation";
+import {
+  CancellationError,
+  throwIfCancellationRequested,
+  type CancellationTokenLike,
+} from "@/runtime/cancellation";
+import type { RetryOptions } from "@/providers/openai";
 import type { ToolSpec } from "@/tools/registry";
 
 /** A message in the conversation history passed to the provider. */
@@ -82,4 +87,87 @@ export interface ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk>;
+}
+
+function parseRetryAfterMs(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const headers =
+    "headers" in error
+      ? (error as { headers: unknown }).headers
+      : "response" in error && typeof (error as { response: unknown }).response === "object"
+        ? ((error as { response: { headers?: unknown } }).response?.headers ?? null)
+        : null;
+  if (typeof headers !== "object" || headers === null) return undefined;
+  const retryAfter = (headers as Record<string, string>)["retry-after"];
+  if (!retryAfter) return undefined;
+  const seconds = Number(retryAfter);
+  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+}
+
+/**
+ * Retry wrapper for rate-limited (429) responses. Backs off exponentially
+ * (honoring a `Retry-After` header when present), up to `retry.maxAttempts`
+ * total attempts. Shared by every HTTP-backed provider.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  retry: Required<RetryOptions>,
+  cancellationToken?: CancellationTokenLike,
+): Promise<T> {
+  const { maxAttempts, baseDelayMs } = retry;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    throwIfCancellationRequested(cancellationToken);
+    try {
+      return await fn();
+    } catch (error) {
+      const statusCode =
+        typeof error === "object" && error !== null && "status" in error
+          ? (error as { status: unknown }).status
+          : undefined;
+      if (statusCode !== 429 || attempt === maxAttempts) {
+        throw error;
+      }
+      const retryAfterMs = parseRetryAfterMs(error) ?? baseDelayMs * 2 ** (attempt - 1);
+      lastError = error;
+      await cancellableDelay(retryAfterMs, cancellationToken);
+    }
+  }
+  throw lastError;
+}
+
+async function cancellableDelay(
+  delayMs: number,
+  cancellationToken?: CancellationTokenLike,
+): Promise<void> {
+  throwIfCancellationRequested(cancellationToken);
+  if (cancellationToken === undefined) {
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    return;
+  }
+  const signal = cancellationToken?.signal;
+  if (signal === undefined) {
+    const deadline = globalThis.performance.now() + delayMs;
+    while (globalThis.performance.now() < deadline) {
+      throwIfCancellationRequested(cancellationToken);
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, Math.min(10, deadline - globalThis.performance.now())),
+      );
+    }
+    throwIfCancellationRequested(cancellationToken);
+    return;
+  }
+  if (signal.aborted) throw new CancellationError();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new CancellationError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }

@@ -98,6 +98,23 @@ same validation boundary outside the runtime; invalid definitions raise
 `ToolArgumentValidationError` with a safe error code, JSON Pointer, and
 message.
 
+Tool execution is sequential by default. Mark only effect-independent tools
+with `parallel_safe=True`; the shared `ToolExecutionController` then applies
+the `ToolExecutionLimits` default of four active handlers and a 30-second
+queue-to-completion deadline. A `ToolSpec.timeout_ms` can tighten that deadline,
+and `AgentRuntime.drain_tools()` reports timed-out handlers that have not
+actually settled, including durable setup operations still resolving after a
+request deadline. A handler may raise `ToolExecutionError` only when it can
+certify that it failed before producing a side effect; unexpected exceptions
+are retained as unknown-outcome tombstones.
+
+Exact `(session_id, tool_call_id)` replay is owned by the replaceable
+`ToolIdempotencyLedger`; `InMemoryToolIdempotencyLedger` is the bounded default.
+Applications can handle `IdempotencyCapacityExceeded` and
+`IdempotencyConflictError` explicitly, while durable side-effect tools should
+inject a restart-safe ledger. Durable ledgers must keep resolution waits
+cancellation-cooperative and implement start-state reads as bounded operations.
+
 ## Event journal contract
 
 `EventJournal` is the stable persistence boundary for runtime events. New
@@ -106,7 +123,10 @@ returns a sequenced `StoredKajiEvent` directly. The lower-level
 `EventStore.append()` compatibility path returns `AppendResult(event, inserted)`
 so journals can suppress duplicate fanout. `AgentBuilder` uses
 `InMemoryEventJournal` by default so persistence and live delivery share one
-atomic, process-local path.
+atomic, process-local path. A journal used by the tool runtime must acknowledge
+`ToolCallStarted` appends atomically and cooperate with task cancellation; the
+runtime cannot detach this append without allowing a late Started event to
+overtake the terminal event.
 
 `AgentRuntime.history()` and `TextSession.events()` return at most 1,024 stored
 events by default. Pass `after_sequence` and `limit` to page explicitly.
@@ -216,6 +236,8 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator` | Turn-scoped result and injectable same-session FIFO coordination |
 | `ToolSpec`, `ToolRegistry`, `ToolContext` | Tool definition, scoped registry, and execution context |
 | `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError` | Draft 2020-12 validation and normalized failures before tool side effects |
+| `ToolExecutionController`, `ToolExecutionLimits`, `ToolExecutionError` | Bounded execution, deadlines, drain state, and certified retryable handler failures |
+| `ToolIdempotencyLedger`, `InMemoryToolIdempotencyLedger`, `IdempotencyCapacityExceeded`, `IdempotencyConflictError` | Exact tool-call coalescing/replay and bounded-ledger failures |
 | `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
 | `Integration` | Namespace-scoped tool bundle base class |
 | `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |

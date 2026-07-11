@@ -160,6 +160,8 @@ def function_tool(
     tags: tuple[str, ...] = (),
     enabled: bool = True,
     namespace: str = "fn",
+    parallel_safe: bool = False,
+    timeout_ms: int | None = None,
 ) -> Any:
     """Wrap a bare async function as a registrable tool.
 
@@ -197,6 +199,8 @@ def function_tool(
             risk=risk,
             tags=tags,
             enabled=enabled,
+            parallel_safe=parallel_safe,
+            timeout_ms=timeout_ms,
         )
         return BoundTool(
             spec=spec,

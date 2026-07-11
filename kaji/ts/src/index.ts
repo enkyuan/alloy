@@ -87,6 +87,29 @@ export {
   type ToolValidationCode,
 } from "@/tools/validation";
 export { cliApprovalHandler, type CliApprovalOptions } from "@/tools/approval";
+export {
+  DEFAULT_TOOL_EXECUTION_LIMITS,
+  ToolExecutionController,
+  type ToolExecutionControllerOptions,
+  type ToolExecutionControllerOutcome,
+  type ToolExecutionLimits,
+  type ToolExecutionRequest,
+} from "@/tools/execution";
+export {
+  IdempotencyCapacityError,
+  IdempotencyConflictError,
+  ToolExecutionError,
+  type ToolFailureFields,
+  type ToolFailureOutcome,
+} from "@/tools/execution-errors";
+export {
+  InMemoryToolIdempotencyLedger,
+  type InMemoryToolIdempotencyLedgerOptions,
+  type ToolClaimResult,
+  type ToolIdempotencyClaim,
+  type ToolIdempotencyLedger,
+  type ToolLedgerOutcome,
+} from "@/tools/idempotency";
 
 // Providers
 export type {

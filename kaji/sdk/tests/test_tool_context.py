@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+import time
 from types import MappingProxyType
 from typing import Any
 
@@ -52,6 +53,7 @@ async def test_tool_context_propagates_and_isolates_concurrent_principals() -> N
     metadata_a = {"tenant": {"id": "a"}}
     db_a = object()
     token_a = kaji.CancellationToken()
+    deadline_a = time.monotonic() + 5
     runtime = (
         kaji.AgentBuilder()
         .provider(MockProvider())
@@ -63,7 +65,7 @@ async def test_tool_context_propagates_and_isolates_concurrent_principals() -> N
         principal_id="principal-a",
         request_id="request-a",
         trace_id="trace-a",
-        deadline_monotonic=123.5,
+        deadline_monotonic=deadline_a,
         db=db_a,
         metadata=metadata_a,
     )
@@ -96,8 +98,8 @@ async def test_tool_context_propagates_and_isolates_concurrent_principals() -> N
     assert captured_a.trace_id == "trace-a"
     assert captured_a.tool_call_id == "mock-call-1"
     assert captured_a.idempotency_key == "session-a:mock-call-1"
-    assert captured_a.cancellation_token is token_a
-    assert captured_a.deadline_monotonic == 123.5
+    assert captured_a.cancellation_token is not token_a
+    assert captured_a.deadline_monotonic == deadline_a
     assert captured_a.db is db_a
     assert captured_a.metadata == {"tenant": {"id": "a"}}
 

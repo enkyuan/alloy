@@ -16,6 +16,8 @@ from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
+from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
+from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
 
 
 @runtime_checkable
@@ -59,6 +61,8 @@ class AgentBuilder:
         self._coordinator: Optional[TurnCoordinator] = None
         self._context_window: ContextWindow | None = None
         self._default_context: TurnContext | None = None
+        self._tool_execution_limits: ToolExecutionLimits | None = None
+        self._tool_idempotency_ledger: ToolIdempotencyLedger | None = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -116,6 +120,16 @@ class AgentBuilder:
         self._default_context = context
         return self
 
+    def tool_execution_limits(self, limits: ToolExecutionLimits) -> "AgentBuilder":
+        """Configure runtime-wide tool concurrency and deadline limits."""
+        self._tool_execution_limits = limits
+        return self
+
+    def tool_idempotency_ledger(self, ledger: ToolIdempotencyLedger) -> "AgentBuilder":
+        """Inject durable or application-scoped exact-call idempotency."""
+        self._tool_idempotency_ledger = ledger
+        return self
+
     def build(
         self,
         *,
@@ -152,11 +166,16 @@ class AgentBuilder:
         # Build a specs mapping so the planner can look up risk per tool.
         specs = {spec.name: spec for spec in registry.list_specs(enabled_only=False)}
 
+        controller = ToolExecutionController(
+            limits=self._tool_execution_limits,
+            ledger=self._tool_idempotency_ledger,
+        )
         planner = ToolPlanner(
             executor=_executor,
             policy=self._policy,
             approval_handler=self._approval_handler,
             specs=specs,
+            controller=controller,
         )
 
         return AgentRuntime(
@@ -171,4 +190,5 @@ class AgentBuilder:
             coordinator=self._coordinator,
             context_window=self._context_window,
             default_context=self._default_context,
+            tool_execution_controller=controller,
         )

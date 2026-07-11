@@ -1,10 +1,12 @@
-/**
- * ToolPlanner: concurrent scatter-gather execution of LLM tool calls.
- * Mirrors `kaji.runtime.agents.planner` from the Python SDK.
- */
+/** Bounded, ordered planning and execution of provider tool calls. */
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { defaultUuid } from "@/internal/uuid";
+import type {
+  EventBackedApprovalHandler,
+  ToolContext as ApprovalContext,
+  TypedApprovalHandler,
+} from "@/runtime/approval/types";
 import {
   MissingToolIdentityError,
   assertAbortSignal,
@@ -17,12 +19,19 @@ import {
   type TurnContext,
 } from "@/runtime/context";
 import {
+  ToolExecutionController,
+  type ToolExecutionControllerOutcome,
+  type ToolExecutionLimits,
+} from "@/tools/execution";
+import type { ToolExecutionError } from "@/tools/execution-errors";
+import type { ToolIdempotencyLedger } from "@/tools/idempotency";
+import type { ToolPolicy } from "@/tools/policy";
+import {
   UnknownToolError,
   assertClassifiedToolSpec,
   snapshotToolSpec,
   type ToolSpec,
 } from "@/tools/registry";
-import type { ToolPolicy } from "@/tools/policy";
 import {
   ToolArgumentValidationError,
   ToolSchemaValidator,
@@ -32,11 +41,6 @@ import {
   validationFailureFields,
   withValidationReceiptScope,
 } from "@/tools/validation";
-import type {
-  EventBackedApprovalHandler,
-  TypedApprovalHandler,
-  ToolContext as ApprovalContext,
-} from "@/runtime/approval/types";
 
 function isJsonObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -58,8 +62,8 @@ export type ToolCallResult =
       error: string;
       error_code?: string;
       error_path?: string;
-      retryable?: false;
-      outcome?: "not_started" | "failed";
+      retryable?: boolean;
+      outcome?: "not_started" | "failed" | "unknown";
     };
 
 export type ToolExecutor = (
@@ -74,7 +78,6 @@ export type ApprovalHandler = (
 ) => Promise<boolean>;
 export type EmitFn = (event: KajiEvent) => Promise<void>;
 
-/** Either a legacy function-style handler or the new structured handler. */
 export type AnyApprovalHandler =
   | ApprovalHandler
   | TypedApprovalHandler
@@ -83,18 +86,102 @@ export type AnyApprovalHandler =
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
   policy?: ToolPolicy;
-  /**
-   * Approval gate invoked when policy requires approval. Accepts either the
-   * legacy `(name, args, risk) => Promise<boolean>` function form or the new
-   * `TypedApprovalHandler` object form (duck-typed: has a `.request` method).
-   */
   approvalHandler?: AnyApprovalHandler;
   specs?: ReadonlyMap<string, ToolSpec>;
-  /**
-   * Override the call-id generator. Defaults to `globalThis.crypto.randomUUID`
-   * with a `Math.random` fallback for runtimes without Web Crypto.
-   */
   uuid?: () => string;
+  executionController?: ToolExecutionController;
+  executionLimits?: Partial<ToolExecutionLimits>;
+  idempotencyLedger?: ToolIdempotencyLedger;
+}
+
+interface ResolvedTurnContext {
+  readonly principalId: string;
+  readonly requestId: string;
+  readonly traceId: string;
+  readonly deadlineMs?: number;
+  readonly db?: unknown;
+  readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+type ValidationReceipt = Awaited<ReturnType<typeof validateToolArgumentsForExecution>>;
+
+interface NormalizedCall {
+  readonly id: string;
+  readonly name: string;
+  readonly args: Record<string, unknown>;
+  readonly spec: ToolSpec;
+  readonly context: ToolExecutionContext;
+  readonly metadata: Readonly<Record<string, unknown>>;
+  readonly validationError?: ToolArgumentValidationError;
+}
+
+interface PreparedCall extends NormalizedCall {
+  readonly receipt: ValidationReceipt;
+}
+
+interface FailureDraft {
+  readonly status: "failed";
+  readonly error: string;
+  readonly error_code?: string;
+  readonly error_path?: string;
+  readonly retryable?: boolean;
+  readonly outcome?: "not_started" | "failed" | "unknown";
+}
+
+interface SuccessDraft {
+  readonly status: "completed";
+  readonly result: unknown;
+}
+
+type TerminalDraft = FailureDraft | SuccessDraft;
+type PlannedCall =
+  | { readonly status: "prepared"; readonly call: PreparedCall }
+  | { readonly status: "terminal"; readonly call: NormalizedCall; readonly draft: FailureDraft }
+  | { readonly status: "recording_failed"; readonly call: NormalizedCall; readonly error: unknown };
+
+function failureFromExecution(error: ToolExecutionError): FailureDraft {
+  return {
+    status: "failed",
+    error: error.message,
+    error_code: error.error_code,
+    retryable: error.retryable,
+    outcome: error.outcome,
+  };
+}
+
+function normalizeArguments(
+  toolName: string,
+  raw: unknown,
+): { args: Record<string, unknown>; validationError?: ToolArgumentValidationError } {
+  if (!isJsonObjectRecord(raw)) {
+    return {
+      args: { __parse_error: "invalid arguments" },
+      validationError: ToolArgumentValidationError.nonObject(toolName),
+    };
+  }
+  try {
+    const parseError = Object.getOwnPropertyDescriptor(raw, "__parse_error");
+    if (
+      parseError !== undefined &&
+      parseError.enumerable &&
+      "value" in parseError &&
+      typeof parseError.value === "string"
+    ) {
+      return {
+        args: { __parse_error: "invalid JSON" },
+        validationError: ToolArgumentValidationError.parseError(toolName),
+      };
+    }
+    return { args: cloneToolExecutionArguments(toolName, raw) };
+  } catch (error) {
+    return {
+      args: { __parse_error: "invalid arguments" },
+      validationError:
+        error instanceof ToolArgumentValidationError
+          ? error
+          : ToolArgumentValidationError.jsonUnsafe(toolName, "/"),
+    };
+  }
 }
 
 export class ToolPlanner {
@@ -104,8 +191,17 @@ export class ToolPlanner {
   private readonly specs: Map<string, ToolSpec>;
   private readonly schemaValidator: ToolSchemaValidator;
   private readonly uuid: () => string;
+  readonly executionController: ToolExecutionController;
 
   constructor(opts: ToolPlannerOptions) {
+    if (
+      opts.executionController !== undefined &&
+      (opts.executionLimits !== undefined || opts.idempotencyLedger !== undefined)
+    ) {
+      throw new TypeError(
+        "executionController cannot be combined with executionLimits or idempotencyLedger",
+      );
+    }
     this.executor = opts.executor;
     this.policy = opts.policy;
     this.approvalHandler = opts.approvalHandler;
@@ -114,24 +210,15 @@ export class ToolPlanner {
     );
     this.schemaValidator = new ToolSchemaValidator(this.specs);
     this.uuid = opts.uuid ?? defaultUuid;
+    this.executionController =
+      opts.executionController ??
+      new ToolExecutionController({ limits: opts.executionLimits, ledger: opts.idempotencyLedger });
   }
 
   /**
-   * Execute all tool calls concurrently (scatter-gather) and collect results.
-   *
-   * Each call emits `TOOL_CALL_REQUESTED` as its first step before entering
-   * the approval/execution phase. For multiple simultaneous calls, lifecycle
-   * events from different calls will interleave — e.g. call A's
-   * `TOOL_CALL_STARTED` may appear between call B's `TOOL_CALL_REQUESTED` and
-   * `TOOL_CALL_STARTED`. Consumers that require strict per-call ordering
-   * should correlate events by `tool_call_id`.
-   *
-   * Approval rejection emits both `TOOL_APPROVAL_REJECTED` and
-   * `TOOL_CALL_FAILED` so `replaySession` projects the outcome into
-   * model-visible history, preventing the agent from re-requesting the same
-   * tool indefinitely.
-   *
-   * The whole batch is validated before lifecycle events begin.
+   * Execute one provider batch with bounded parallelism and provider-order
+   * request/result/terminal semantics. Explicitly parallel-safe runs overlap;
+   * every unmarked tool is an exclusive barrier.
    */
   async executeScatterGather(
     sessionId: string,
@@ -152,7 +239,7 @@ export class ToolPlanner {
     assertNonEmptyContextId(traceId, "traceId");
     assertValidDeadline(turnContext.deadlineMs);
     assertAbortSignal(signal);
-    const resolvedTurnContext = Object.freeze({
+    const resolvedTurnContext: ResolvedTurnContext = Object.freeze({
       principalId,
       requestId,
       traceId,
@@ -160,123 +247,210 @@ export class ToolPlanner {
       ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
       metadata: snapshotContextMetadata(turnContext.metadata),
     });
-    const callIds = new Set<string>();
-    const preparedCalls = toolCalls.map((call) => {
-      const id = call.id ?? this.uuid();
-      assertNonEmptyContextId(id, "toolCallId");
-      if (callIds.has(id)) throw new TypeError(`Duplicate toolCallId: ${id}`);
-      callIds.add(id);
-      return { ...call, id };
-    });
-    for (const call of preparedCalls) {
-      const spec = this.specs.get(call.name);
-      if (spec === undefined) throw new UnknownToolError(call.name);
-      assertClassifiedToolSpec(spec);
-      if (spec.enabled === false) throw new UnknownToolError(call.name);
-    }
-    return Promise.all(
-      preparedCalls.map((call) =>
-        this.executeSingle(
-          sessionId,
-          call,
-          emit,
-          resolvedTurnId,
-          resolvedTurnContext,
-          signal,
-          turnId !== undefined && turnId.length > 0,
-        ),
-      ),
-    );
-  }
 
-  private async executeSingle(
-    sessionId: string,
-    call: ToolCallInstruction,
-    emit: EmitFn,
-    turnId: string,
-    turnContext: Readonly<{
-      principalId: string;
-      requestId: string;
-      traceId: string;
-      deadlineMs?: number;
-      db?: unknown;
-      metadata: Readonly<Record<string, unknown>>;
-    }>,
-    signal: AbortSignal,
-    turnIdProvided: boolean,
-  ): Promise<ToolCallResult> {
-    const toolName = call.name;
-    const rawToolArgs: unknown = call.arguments;
-    let validationError: ToolArgumentValidationError | undefined;
-    let toolArgs: Record<string, unknown>;
-    if (!isJsonObjectRecord(rawToolArgs)) {
-      toolArgs = { __parse_error: "invalid arguments" };
-      validationError = ToolArgumentValidationError.nonObject(toolName);
-    } else {
+    const calls = this.normalizeCalls(
+      sessionId,
+      resolvedTurnId,
+      resolvedTurnContext,
+      signal,
+      toolCalls,
+    );
+    const requestedErrors = new Map<number, unknown>();
+    for (const [index, call] of calls.entries()) {
       try {
-        const parseError = Object.getOwnPropertyDescriptor(rawToolArgs, "__parse_error");
-        if (
-          parseError !== undefined &&
-          parseError.enumerable &&
-          "value" in parseError &&
-          typeof parseError.value === "string"
-        ) {
-          toolArgs = { __parse_error: "invalid JSON" };
-          validationError = ToolArgumentValidationError.parseError(toolName);
-        } else {
-          toolArgs = cloneToolExecutionArguments(toolName, rawToolArgs);
-        }
+        await emit(this.requestedEvent(sessionId, resolvedTurnId, call));
       } catch (error) {
-        validationError =
-          error instanceof ToolArgumentValidationError
-            ? error
-            : ToolArgumentValidationError.jsonUnsafe(toolName, "/");
-        toolArgs = { __parse_error: "invalid arguments" };
+        requestedErrors.set(index, error);
       }
     }
-    const callId = call.id!;
-    const executionContext = snapshotToolExecutionContext({
-      principalId: turnContext.principalId,
-      sessionId,
-      turnId,
-      requestId: turnContext.requestId,
-      traceId: turnContext.traceId,
-      toolCallId: callId,
-      idempotencyKey: `${sessionId}:${callId}`,
-      signal,
-      ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
-      ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
-      metadata: turnContext.metadata,
-    });
-    const spec = this.specs.get(toolName)!;
-    const risk = spec.risk;
-    const catalogName = spec.catalogName;
-    const aliases = catalogName ? [catalogName] : [];
-    const metadata = catalogName ? { catalog_name: catalogName } : {};
-    const eventTurnContext = { turn_id: turnId };
 
-    // 1. Announce intent
-    await emit(
-      KajiEvent.parse({
-        type: EventType.TOOL_CALL_REQUESTED,
-        session_id: sessionId,
-        ...eventTurnContext,
-        tool_name: toolName,
-        tool_args: cloneToolExecutionArguments(toolName, toolArgs),
-        tool_call_id: callId,
-        metadata,
-      }),
+    const planned: PlannedCall[] = [];
+    for (const [index, call] of calls.entries()) {
+      const recordingError = requestedErrors.get(index);
+      if (recordingError !== undefined) {
+        planned.push({ status: "recording_failed", call, error: recordingError });
+        continue;
+      }
+      try {
+        planned.push(
+          await this.preflight(sessionId, resolvedTurnId, call, emit, turnId !== undefined),
+        );
+      } catch (error) {
+        planned.push({ status: "recording_failed", call, error });
+      }
+    }
+
+    const slots: Array<TerminalDraft | { readonly recordingError: unknown }> = new Array(
+      calls.length,
     );
+    let index = 0;
+    while (index < planned.length) {
+      const item = planned[index]!;
+      if (item.status === "recording_failed") {
+        slots[index] = { recordingError: item.error };
+        index++;
+        continue;
+      }
+      if (item.status === "terminal") {
+        slots[index] = item.draft;
+        index++;
+        continue;
+      }
+      if (item.call.spec.parallel_safe === true) {
+        const group: Array<{ index: number; call: PreparedCall }> = [];
+        while (index < planned.length) {
+          const candidate = planned[index]!;
+          if (candidate.status !== "prepared" || candidate.call.spec.parallel_safe !== true) break;
+          group.push({ index, call: candidate.call });
+          index++;
+        }
+        // Preserve the existing plumbing-failure contract: every sibling is
+        // allowed to settle before recording errors are aggregated.
+        await this.executeParallelGroup(group, slots, sessionId, resolvedTurnId, emit);
+        continue;
+      }
+      try {
+        slots[index] = await this.executePrepared(sessionId, resolvedTurnId, item.call, emit);
+      } catch (error) {
+        slots[index] = { recordingError: error };
+      }
+      index++;
+    }
 
-    // 2. Fail closed on provider parse errors and complete schema violations.
-    let validationReceipt: Awaited<ReturnType<typeof validateToolArgumentsForExecution>> =
-      undefined;
+    const results: ToolCallResult[] = [];
+    const recordingErrors: unknown[] = [];
+    for (const [slotIndex, call] of calls.entries()) {
+      const slot = slots[slotIndex]!;
+      if ("recordingError" in slot) {
+        recordingErrors.push(slot.recordingError);
+        continue;
+      }
+      const result: ToolCallResult =
+        slot.status === "completed"
+          ? { id: call.id, name: call.name, result: slot.result }
+          : {
+              id: call.id,
+              name: call.name,
+              error: slot.error,
+              ...(slot.error_code === undefined ? {} : { error_code: slot.error_code }),
+              ...(slot.error_path === undefined ? {} : { error_path: slot.error_path }),
+              ...(slot.retryable === undefined ? {} : { retryable: slot.retryable }),
+              ...(slot.outcome === undefined ? {} : { outcome: slot.outcome }),
+            };
+      results.push(result);
+      try {
+        await emit(this.terminalEvent(sessionId, resolvedTurnId, call, slot));
+      } catch (error) {
+        // Never emit a fallback failed event after an ambiguous completed append.
+        recordingErrors.push(error);
+      }
+    }
+    if (recordingErrors.length > 0) {
+      throw new AggregateError(
+        recordingErrors,
+        `${recordingErrors.length} of ${toolCalls.length} tool call(s) failed to record their events`,
+      );
+    }
+    return results;
+  }
+
+  private async executeParallelGroup(
+    group: ReadonlyArray<{ index: number; call: PreparedCall }>,
+    slots: Array<TerminalDraft | { readonly recordingError: unknown }>,
+    sessionId: string,
+    turnId: string,
+    emit: EmitFn,
+  ): Promise<void> {
+    let next = 0;
+    const worker = async () => {
+      while (next < group.length) {
+        const item = group[next++]!;
+        try {
+          slots[item.index] = await this.executePrepared(sessionId, turnId, item.call, emit);
+        } catch (error) {
+          slots[item.index] = { recordingError: error };
+        }
+      }
+    };
+    const workers: Promise<void>[] = [];
+    const count = Math.min(group.length, this.executionController.limits.maxParallel);
+    for (let workerIndex = 0; workerIndex < count; workerIndex++) workers.push(worker());
+    await Promise.all(workers);
+  }
+
+  private normalizeCalls(
+    sessionId: string,
+    turnId: string,
+    turnContext: ResolvedTurnContext,
+    signal: AbortSignal,
+    toolCalls: ToolCallInstruction[],
+  ): NormalizedCall[] {
+    const ids = new Set<string>();
+    return toolCalls.map((instruction) => {
+      const id = instruction.id ?? this.uuid();
+      assertNonEmptyContextId(id, "toolCallId");
+      if (ids.has(id)) throw new TypeError(`Duplicate toolCallId: ${id}`);
+      ids.add(id);
+      const spec = this.specs.get(instruction.name);
+      if (spec === undefined) throw new UnknownToolError(instruction.name);
+      assertClassifiedToolSpec(spec);
+      if (spec.enabled === false) throw new UnknownToolError(instruction.name);
+      const normalized = normalizeArguments(instruction.name, instruction.arguments);
+      const context = snapshotToolExecutionContext({
+        principalId: turnContext.principalId,
+        sessionId,
+        turnId,
+        requestId: turnContext.requestId,
+        traceId: turnContext.traceId,
+        toolCallId: id,
+        idempotencyKey: `${sessionId}:${id}`,
+        signal,
+        ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
+        ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
+        metadata: turnContext.metadata,
+      });
+      const catalogName = spec.catalogName;
+      return {
+        id,
+        name: instruction.name,
+        args: normalized.args,
+        spec,
+        context,
+        metadata: catalogName ? Object.freeze({ catalog_name: catalogName }) : Object.freeze({}),
+        ...(normalized.validationError === undefined
+          ? {}
+          : { validationError: normalized.validationError }),
+      };
+    });
+  }
+
+  private requestedEvent(sessionId: string, turnId: string, call: NormalizedCall): KajiEvent {
+    return KajiEvent.parse({
+      type: EventType.TOOL_CALL_REQUESTED,
+      session_id: sessionId,
+      turn_id: turnId,
+      tool_name: call.name,
+      tool_args: cloneToolExecutionArguments(call.name, call.args),
+      tool_call_id: call.id,
+      metadata: call.metadata,
+    });
+  }
+
+  private async preflight(
+    sessionId: string,
+    turnId: string,
+    call: NormalizedCall,
+    emit: EmitFn,
+    turnIdProvided: boolean,
+  ): Promise<PlannedCall> {
+    let validationError = call.validationError;
+    let receipt: ValidationReceipt = undefined;
     if (validationError === undefined) {
       try {
-        validationReceipt = await validateToolArgumentsForExecution(
+        receipt = await validateToolArgumentsForExecution(
           this.schemaValidator,
-          toolName,
-          toolArgs,
+          call.name,
+          call.args,
         );
       } catch (error) {
         if (!(error instanceof ToolArgumentValidationError)) throw error;
@@ -284,245 +458,216 @@ export class ToolPlanner {
       }
     }
     if (validationError !== undefined) {
-      const failureFields = validationFailureFields(validationError);
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_CALL_FAILED,
-          session_id: sessionId,
-          ...eventTurnContext,
-          tool_name: toolName,
-          tool_call_id: callId,
-          error: validationError.message,
-          metadata,
-          ...failureFields,
-        }),
-      );
+      const fields = validationFailureFields(validationError);
       return {
-        id: callId,
-        name: toolName,
-        error: validationError.message,
-        ...failureFields,
+        status: "terminal",
+        call,
+        draft: { status: "failed", error: validationError.message, ...fields },
       };
     }
 
-    try {
-      // 3. Allow/deny gate: policy violations fail before approval/execution.
-      if (this.policy !== undefined && !this.policy.isAllowedAny([toolName, ...aliases])) {
-        const errorMsg = `Tool not permitted: ${toolName}`;
+    const aliases = call.spec.catalogName ? [call.spec.catalogName] : [];
+    if (this.policy !== undefined && !this.policy.isAllowedAny([call.name, ...aliases])) {
+      revokeValidationReceipt(receipt);
+      return {
+        status: "terminal",
+        call,
+        draft: { status: "failed", error: `Tool not permitted: ${call.name}` },
+      };
+    }
+
+    if (this.policy?.requiresApproval(call.name, call.spec.risk)) {
+      const handlerPublishesRequest =
+        this.approvalHandler !== undefined &&
+        typeof this.approvalHandler !== "function" &&
+        this.approvalHandler.emitsApprovalRequest === true;
+      if (!handlerPublishesRequest) {
         await emit(
           KajiEvent.parse({
-            type: EventType.TOOL_CALL_FAILED,
+            type: EventType.TOOL_APPROVAL_REQUESTED,
             session_id: sessionId,
-            ...eventTurnContext,
-            tool_name: toolName,
-            tool_call_id: callId,
-            error: errorMsg,
-            metadata,
+            turn_id: turnId,
+            tool_name: call.name,
+            tool_call_id: call.id,
+            tool_args: cloneToolExecutionArguments(call.name, call.args),
+            risk: call.spec.risk,
+            metadata: call.metadata,
           }),
         );
-        return { id: callId, name: toolName, error: errorMsg };
       }
 
-      // 3. Approval gate
-      if (this.policy?.requiresApproval(toolName, risk)) {
-        const handlerPublishesApprovalRequest =
-          this.approvalHandler !== undefined &&
-          typeof this.approvalHandler !== "function" &&
-          this.approvalHandler.emitsApprovalRequest === true;
-
-        if (!handlerPublishesApprovalRequest) {
-          await emit(
-            KajiEvent.parse({
-              type: EventType.TOOL_APPROVAL_REQUESTED,
-              session_id: sessionId,
-              ...eventTurnContext,
-              tool_name: toolName,
-              tool_call_id: callId,
-              tool_args: cloneToolExecutionArguments(toolName, toolArgs),
-              risk,
-              metadata,
-            }),
+      let approved = false;
+      let rejectedReason = "Rejected by approval handler";
+      try {
+        if (typeof this.approvalHandler === "function") {
+          approved = await this.approvalHandler(
+            call.name,
+            cloneToolExecutionArguments(call.name, call.args),
+            call.spec.risk,
           );
-        }
-
-        let approved = false;
-        let rejectedReason = "Rejected by approval handler";
-        if (this.approvalHandler !== undefined) {
-          try {
-            if (typeof this.approvalHandler === "function") {
-              approved = await this.approvalHandler(
-                toolName,
-                cloneToolExecutionArguments(toolName, toolArgs),
-                risk,
-              );
-            } else if (this.approvalHandler.emitsApprovalRequest === true) {
-              if (!turnIdProvided) {
-                rejectedReason = "Event approval requires a non-empty turn identity";
-              } else {
-                const decision = await this.approvalHandler.request(
-                  {
-                    id: callId,
-                    name: toolName,
-                    args: cloneToolExecutionArguments(toolName, toolArgs),
-                  },
-                  { sessionId, risk, turnId },
-                );
-                approved = decision.granted;
-                if (!approved && decision.reason) {
-                  rejectedReason = decision.reason;
-                }
-              }
-            } else {
-              const approvalCtx: ApprovalContext = {
-                sessionId,
-                risk,
-                turnId,
-              };
-              const decision = await this.approvalHandler.request(
-                {
-                  id: callId,
-                  name: toolName,
-                  args: cloneToolExecutionArguments(toolName, toolArgs),
-                },
-                approvalCtx,
-              );
-              approved = decision.granted;
-              if (!approved && decision.reason) {
-                rejectedReason = decision.reason;
-              }
-            }
-          } catch (error) {
-            console.error(error);
-            const reason = "Approval handler unavailable";
-            const errorMsg = "Tool approval unavailable";
-            const failure = {
-              error_code: "APPROVAL_UNAVAILABLE" as const,
-              retryable: false as const,
-              outcome: "not_started" as const,
-            };
-            await emit(
-              KajiEvent.parse({
-                type: EventType.TOOL_APPROVAL_REJECTED,
-                session_id: sessionId,
-                ...eventTurnContext,
-                tool_name: toolName,
-                tool_call_id: callId,
-                reason,
-                metadata,
-              }),
+        } else if (this.approvalHandler?.emitsApprovalRequest === true) {
+          if (!turnIdProvided) {
+            rejectedReason = "Event approval requires a non-empty turn identity";
+          } else {
+            const decision = await this.approvalHandler.request(
+              {
+                id: call.id,
+                name: call.name,
+                args: cloneToolExecutionArguments(call.name, call.args),
+              },
+              { sessionId, risk: call.spec.risk, turnId },
             );
-            await emit(
-              KajiEvent.parse({
-                type: EventType.TOOL_CALL_FAILED,
-                session_id: sessionId,
-                ...eventTurnContext,
-                tool_name: toolName,
-                tool_call_id: callId,
-                error: errorMsg,
-                metadata,
-                ...failure,
-              }),
-            );
-            return { id: callId, name: toolName, error: errorMsg, ...failure };
+            approved = decision.granted;
+            if (!approved && decision.reason) rejectedReason = decision.reason;
           }
-        }
-
-        if (!approved) {
-          const reason =
-            this.approvalHandler === undefined ? "No approval handler registered" : rejectedReason;
-          const errorMsg = `Tool approval rejected: ${reason}`;
-          await emit(
-            KajiEvent.parse({
-              type: EventType.TOOL_APPROVAL_REJECTED,
-              session_id: sessionId,
-              ...eventTurnContext,
-              tool_name: toolName,
-              tool_call_id: callId,
-              reason,
-              metadata,
-            }),
+        } else if (this.approvalHandler !== undefined) {
+          const context: ApprovalContext = { sessionId, risk: call.spec.risk, turnId };
+          const decision = await this.approvalHandler.request(
+            {
+              id: call.id,
+              name: call.name,
+              args: cloneToolExecutionArguments(call.name, call.args),
+            },
+            context,
           );
-          // Also emit TOOL_CALL_FAILED so replaySession projects this into
-          // model-visible history. Without it, the next iteration sees no tool
-          // result and re-requests the same tool until maxToolIterations.
-          await emit(
-            KajiEvent.parse({
-              type: EventType.TOOL_CALL_FAILED,
-              session_id: sessionId,
-              ...eventTurnContext,
-              tool_name: toolName,
-              tool_call_id: callId,
-              error: errorMsg,
-              metadata,
-            }),
-          );
-          return { id: callId, name: toolName, error: errorMsg };
+          approved = decision.granted;
+          if (!approved && decision.reason) rejectedReason = decision.reason;
         }
-
+      } catch (error) {
+        console.error(error);
+        revokeValidationReceipt(receipt);
         await emit(
           KajiEvent.parse({
-            type: EventType.TOOL_APPROVAL_APPROVED,
+            type: EventType.TOOL_APPROVAL_REJECTED,
             session_id: sessionId,
-            ...eventTurnContext,
-            tool_name: toolName,
-            tool_call_id: callId,
-            metadata,
+            turn_id: turnId,
+            tool_name: call.name,
+            tool_call_id: call.id,
+            reason: "Approval handler unavailable",
+            metadata: call.metadata,
           }),
         );
+        return {
+          status: "terminal",
+          call,
+          draft: {
+            status: "failed",
+            error: "Tool approval unavailable",
+            error_code: "APPROVAL_UNAVAILABLE",
+            retryable: false,
+            outcome: "not_started",
+          },
+        };
       }
 
-      // 4. Mark execution started
+      if (!approved) {
+        revokeValidationReceipt(receipt);
+        const reason =
+          this.approvalHandler === undefined ? "No approval handler registered" : rejectedReason;
+        await emit(
+          KajiEvent.parse({
+            type: EventType.TOOL_APPROVAL_REJECTED,
+            session_id: sessionId,
+            turn_id: turnId,
+            tool_name: call.name,
+            tool_call_id: call.id,
+            reason,
+            metadata: call.metadata,
+          }),
+        );
+        return {
+          status: "terminal",
+          call,
+          draft: { status: "failed", error: `Tool approval rejected: ${reason}` },
+        };
+      }
+
       await emit(
         KajiEvent.parse({
-          type: EventType.TOOL_CALL_STARTED,
+          type: EventType.TOOL_APPROVAL_APPROVED,
           session_id: sessionId,
-          ...eventTurnContext,
-          tool_name: toolName,
-          tool_call_id: callId,
-          metadata,
+          turn_id: turnId,
+          tool_name: call.name,
+          tool_call_id: call.id,
+          metadata: call.metadata,
         }),
       );
-
-      // 5. Execute
-      try {
-        const execute = () => this.executor(toolName, toolArgs, executionContext);
-        const result = await withValidationReceiptScope(validationReceipt, execute);
-        await emit(
-          KajiEvent.parse({
-            type: EventType.TOOL_CALL_COMPLETED,
-            session_id: sessionId,
-            ...eventTurnContext,
-            tool_name: toolName,
-            tool_call_id: callId,
-            result,
-            metadata,
-          }),
-        );
-        return { id: callId, name: toolName, result };
-      } catch (err) {
-        console.error(err);
-        const errorMsg = "Tool execution failed";
-        const failure = {
-          error_code: "TOOL_EXECUTION_FAILED" as const,
-          retryable: false as const,
-          outcome: "failed" as const,
-        };
-        await emit(
-          KajiEvent.parse({
-            type: EventType.TOOL_CALL_FAILED,
-            session_id: sessionId,
-            ...eventTurnContext,
-            tool_name: toolName,
-            tool_call_id: callId,
-            error: errorMsg,
-            metadata,
-            ...failure,
-          }),
-        );
-        return { id: callId, name: toolName, error: errorMsg, ...failure };
-      }
-    } finally {
-      revokeValidationReceipt(validationReceipt);
     }
+    return { status: "prepared", call: { ...call, receipt } };
+  }
+
+  private async executePrepared(
+    sessionId: string,
+    turnId: string,
+    call: PreparedCall,
+    emit: EmitFn,
+  ): Promise<TerminalDraft> {
+    let started = false;
+    let outcome: ToolExecutionControllerOutcome;
+    try {
+      outcome = await this.executionController.execute({
+        name: call.name,
+        args: call.args,
+        context: call.context,
+        timeoutMs: call.spec.timeout_ms,
+        exclusive: call.spec.parallel_safe !== true,
+        onStarted: async () => {
+          await emit(
+            KajiEvent.parse({
+              type: EventType.TOOL_CALL_STARTED,
+              session_id: sessionId,
+              turn_id: turnId,
+              tool_name: call.name,
+              tool_call_id: call.id,
+              metadata: call.metadata,
+            }),
+          );
+          started = true;
+        },
+        execute: (context) =>
+          withValidationReceiptScope(call.receipt, () =>
+            this.executor(call.name, call.args, context),
+          ),
+      });
+    } catch (error) {
+      if (!started) revokeValidationReceipt(call.receipt);
+      throw error;
+    }
+    if (!started) revokeValidationReceipt(call.receipt);
+    if (outcome.status === "completed") return outcome;
+    if (outcome.error.cause !== undefined) console.error(outcome.error.cause);
+    return failureFromExecution(outcome.error);
+  }
+
+  private terminalEvent(
+    sessionId: string,
+    turnId: string,
+    call: NormalizedCall,
+    draft: TerminalDraft,
+  ): KajiEvent {
+    if (draft.status === "completed") {
+      return KajiEvent.parse({
+        type: EventType.TOOL_CALL_COMPLETED,
+        session_id: sessionId,
+        turn_id: turnId,
+        tool_name: call.name,
+        tool_call_id: call.id,
+        result: draft.result,
+        metadata: call.metadata,
+      });
+    }
+    return KajiEvent.parse({
+      type: EventType.TOOL_CALL_FAILED,
+      session_id: sessionId,
+      turn_id: turnId,
+      tool_name: call.name,
+      tool_call_id: call.id,
+      error: draft.error,
+      metadata: call.metadata,
+      ...(draft.error_code === undefined ? {} : { error_code: draft.error_code }),
+      ...(draft.error_path === undefined ? {} : { error_path: draft.error_path }),
+      ...(draft.retryable === undefined ? {} : { retryable: draft.retryable }),
+      ...(draft.outcome === undefined ? {} : { outcome: draft.outcome }),
+    });
   }
 }

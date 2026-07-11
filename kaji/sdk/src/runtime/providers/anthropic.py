@@ -66,7 +66,9 @@ class AnthropicProvider(ModelProvider):
                     "Anthropic provider requires anthropic. Install kaji[anthropic]."
                 ) from error
 
-            self._client = AsyncAnthropic(api_key=self.api_key)
+            # Kaji does not own a cancellable pre-stream retry loop. Disable
+            # opaque SDK backoff so caller cancellation cannot be trapped in it.
+            self._client = AsyncAnthropic(api_key=self.api_key, max_retries=0)
         return self._client
 
     def _split_messages(

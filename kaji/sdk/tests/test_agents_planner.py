@@ -94,7 +94,7 @@ async def test_tool_planner_emits_failure_event():
         "error": "Tool execution failed",
         "error_code": "TOOL_EXECUTION_FAILED",
         "retryable": False,
-        "outcome": "failed",
+        "outcome": "unknown",
     }
     assert any(event.type == EventType.TOOL_CALL_FAILED for event in emitted)
     assert isinstance(

@@ -80,6 +80,14 @@ class ToolArgumentValidationError(ToolValidationError):
             "Invalid tool arguments: arguments were not valid JSON",
         )
 
+    @classmethod
+    def non_json_value(cls, tool_name: str) -> ToolArgumentValidationError:
+        return cls(
+            tool_name,
+            "/",
+            "Invalid tool arguments: arguments must contain only JSON values",
+        )
+
 
 class ToolSchemaValidationError(ToolValidationError):
     """Raised when a tool definition is not valid Draft 2020-12 JSON Schema."""

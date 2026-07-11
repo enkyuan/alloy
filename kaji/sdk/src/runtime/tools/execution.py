@@ -1,0 +1,1001 @@
+"""Bounded, cancellable tool execution shared across runtime turns."""
+
+from __future__ import annotations
+
+import asyncio
+from dataclasses import dataclass, field, replace
+import logging
+import math
+import time
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
+
+from kaji.runtime.context import ToolInvocation, _copy_metadata_snapshot
+from kaji.runtime.tools.idempotency import (
+    IdempotencyCapacityExceeded,
+    IdempotencyConflictError,
+    InMemoryToolIdempotencyLedger,
+    ToolIdempotencyClaim,
+    ToolIdempotencyFailure,
+    ToolIdempotencyLedger,
+    ToolIdempotencyResolution,
+)
+from kaji.runtime.tools.registry import ToolSpec
+
+if TYPE_CHECKING:
+    from kaji.runtime.agents.cancellation import CancellationToken
+
+
+ToolExecutor = Callable[[ToolInvocation], Awaitable[Any]]
+StartedEmitter = Callable[[], Awaitable[None]]
+
+_PUBLIC_EXECUTION_FAILURE = "Tool execution failed"
+_PUBLIC_CANCELLED = "Tool execution cancelled"
+_PUBLIC_TIMEOUT = "Tool execution timed out"
+_PUBLIC_CAPACITY = "Tool execution capacity exhausted"
+_PUBLIC_CONFLICT = "Tool invocation conflicts with an existing idempotency key"
+_PUBLIC_INVALID_ARGUMENTS = "Invalid tool arguments"
+_STARTED_LOOKUP_TIMEOUT_SECONDS = 0.1
+
+logger = logging.getLogger(__name__)
+
+
+class ToolExecutionError(RuntimeError):
+    """A handler-certified failure known to have produced no side effect."""
+
+    error_code = "TOOL_EXECUTION_FAILED"
+    retryable = True
+    outcome: Literal["failed"] = "failed"
+
+    def __init__(self) -> None:
+        super().__init__(_PUBLIC_EXECUTION_FAILURE)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolExecutionLimits:
+    """Runtime-wide bounds for tool and approval execution."""
+
+    max_parallel: int = 4
+    timeout_seconds: float = 30.0
+    approval_timeout_seconds: float = 300.0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.max_parallel, bool) or not isinstance(
+            self.max_parallel, int
+        ):
+            raise TypeError("max_parallel must be a positive integer")
+        if self.max_parallel < 1:
+            raise ValueError("max_parallel must be a positive integer")
+        for name in ("timeout_seconds", "approval_timeout_seconds"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be a positive number")
+            if not math.isfinite(float(value)) or value <= 0:
+                raise ValueError(f"{name} must be a positive number")
+            object.__setattr__(self, name, float(value))
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolExecutionFailure:
+    """Planner-internal status plus an original cause for private logging."""
+
+    error: str
+    error_code: str
+    retryable: bool
+    outcome: Literal["not_started", "failed", "unknown"]
+    cause: BaseException | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class _ToolExecutionOutcome:
+    """Closed execution result consumed by the planner's terminal emitter."""
+
+    result: Any | None = None
+    failure: _ToolExecutionFailure | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.failure is None
+
+
+@dataclass(slots=True)
+class _ActiveExecution:
+    call_id: str
+    task: asyncio.Task[Any]
+
+
+@dataclass(slots=True)
+class _PendingSetup:
+    operation_id: int
+    session_id: str
+    call_id: str
+    task: asyncio.Task[Any]
+    settlement: asyncio.Task[None] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _Settlement:
+    result: Any | None = None
+    cause: BaseException | None = None
+
+
+def _ledger_failure(failure: _ToolExecutionFailure) -> ToolIdempotencyFailure:
+    return ToolIdempotencyFailure(
+        error=failure.error,
+        error_code=failure.error_code,
+        retryable=failure.retryable,
+        outcome=failure.outcome,
+    )
+
+
+def _from_resolution(
+    resolution: ToolIdempotencyResolution,
+) -> _ToolExecutionOutcome:
+    if resolution.failure is None:
+        return _ToolExecutionOutcome(result=resolution.result)
+    return _ToolExecutionOutcome(
+        failure=_ToolExecutionFailure(
+            error=resolution.failure.error,
+            error_code=resolution.failure.error_code,
+            retryable=resolution.failure.retryable,
+            outcome=resolution.failure.outcome,
+        )
+    )
+
+
+def _cancelled(*, started: bool) -> _ToolExecutionFailure:
+    return _ToolExecutionFailure(
+        error=_PUBLIC_CANCELLED,
+        error_code="TOOL_CANCELLED",
+        retryable=not started,
+        outcome="unknown" if started else "not_started",
+    )
+
+
+def _timed_out(*, started: bool) -> _ToolExecutionFailure:
+    return _ToolExecutionFailure(
+        error=_PUBLIC_TIMEOUT,
+        error_code="TOOL_TIMEOUT",
+        retryable=not started,
+        outcome="unknown" if started else "not_started",
+    )
+
+
+async def _cancel_and_join(task: asyncio.Task[Any]) -> None:
+    if task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+async def _cancel_acquisition(task: asyncio.Task[Any]) -> bool:
+    """Cancel an owned acquisition task and report whether it acquired first."""
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return False
+    return True
+
+
+async def _cancel_operation(
+    task: asyncio.Task[Any],
+) -> tuple[bool, BaseException | None]:
+    """Cancel a cooperative operation and consume its terminal state."""
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return False, None
+    except BaseException as error:
+        return True, error
+    return True, None
+
+
+class ToolExecutionController:
+    """Own runtime-lifetime concurrency, cancellation, and idempotency state."""
+
+    def __init__(
+        self,
+        limits: ToolExecutionLimits | None = None,
+        ledger: ToolIdempotencyLedger | None = None,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.limits = limits if limits is not None else ToolExecutionLimits()
+        self.ledger = ledger if ledger is not None else InMemoryToolIdempotencyLedger()
+        self._clock = clock
+        self._semaphore = asyncio.Semaphore(self.limits.max_parallel)
+        self._setup_semaphore = asyncio.Semaphore(self.limits.max_parallel)
+        self._active: dict[tuple[str, str], _ActiveExecution] = {}
+        self._pending_setup: dict[int, _PendingSetup] = {}
+        self._next_setup_id = 0
+        self._gate = asyncio.Condition()
+        self._safe_claims = 0
+        self._exclusive_active = False
+        self._exclusive_waiters = 0
+
+    def _start_setup(
+        self,
+        *,
+        session_id: str,
+        call_id: str,
+        operation: Callable[[], Awaitable[Any]],
+    ) -> _PendingSetup:
+        async def run() -> Any:
+            async with self._setup_semaphore:
+                return await operation()
+
+        self._next_setup_id += 1
+        pending = _PendingSetup(
+            operation_id=self._next_setup_id,
+            session_id=session_id,
+            call_id=call_id,
+            task=asyncio.create_task(run()),
+        )
+        self._pending_setup[pending.operation_id] = pending
+        return pending
+
+    def _finish_setup(self, pending: _PendingSetup) -> None:
+        self._pending_setup.pop(pending.operation_id, None)
+
+    def _detach_setup(
+        self,
+        pending: _PendingSetup,
+        settle: Callable[[asyncio.Task[Any]], Awaitable[None]],
+    ) -> None:
+        pending.task.cancel()
+        pending.settlement = asyncio.create_task(
+            self._settle_detached_setup(pending, settle)
+        )
+
+    async def _settle_detached_setup(
+        self,
+        pending: _PendingSetup,
+        settle: Callable[[asyncio.Task[Any]], Awaitable[None]],
+    ) -> None:
+        try:
+            await settle(pending.task)
+        except Exception:
+            logger.exception("Detached tool setup settlement failed")
+        finally:
+            self._finish_setup(pending)
+
+    def _continue_setup(self, pending: _PendingSetup) -> None:
+        pending.settlement = asyncio.create_task(self._settle_background_setup(pending))
+
+    async def _settle_background_setup(self, pending: _PendingSetup) -> None:
+        try:
+            await pending.task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Background tool setup failed")
+        finally:
+            self._finish_setup(pending)
+
+    async def _claim_with_deadline(
+        self,
+        invocation: ToolInvocation,
+        deadline: float,
+    ) -> tuple[ToolIdempotencyClaim | None, _ToolExecutionFailure | None]:
+        context = invocation.context
+        pending = self._start_setup(
+            session_id=context.session_id,
+            call_id=context.tool_call_id,
+            operation=lambda: self.ledger.claim(
+                session_id=context.session_id,
+                tool_call_id=context.tool_call_id,
+                tool_name=invocation.name,
+                tool_args=dict(invocation.arguments),
+            ),
+        )
+        claim_task = pending.task
+        cancel_task = asyncio.create_task(context.cancellation_token.wait())
+        try:
+            try:
+                done, _ = await asyncio.wait(
+                    {claim_task, cancel_task},
+                    timeout=max(0.0, deadline - self._clock()),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                failure = _cancelled(started=False)
+                self._detach_setup(
+                    pending,
+                    lambda task: self._cleanup_late_claim(
+                        task, _ledger_failure(failure)
+                    ),
+                )
+                raise
+
+            if claim_task not in done:
+                failure = (
+                    _cancelled(started=False)
+                    if cancel_task in done or context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                self._detach_setup(
+                    pending,
+                    lambda task: self._cleanup_late_claim(
+                        task, _ledger_failure(failure)
+                    ),
+                )
+                return None, failure
+
+            try:
+                claim = claim_task.result()
+            except IdempotencyCapacityExceeded as error:
+                return None, _ToolExecutionFailure(
+                    error=_PUBLIC_CAPACITY,
+                    error_code="IDEMPOTENCY_CAPACITY_EXCEEDED",
+                    retryable=True,
+                    outcome="not_started",
+                    cause=error,
+                )
+            except IdempotencyConflictError as error:
+                return None, _ToolExecutionFailure(
+                    error=_PUBLIC_CONFLICT,
+                    error_code="IDEMPOTENCY_CONFLICT",
+                    retryable=False,
+                    outcome="not_started",
+                    cause=error,
+                )
+            except (TypeError, ValueError) as error:
+                return None, _ToolExecutionFailure(
+                    error=_PUBLIC_INVALID_ARGUMENTS,
+                    error_code="INVALID_TOOL_ARGUMENTS",
+                    retryable=False,
+                    outcome="not_started",
+                    cause=error,
+                )
+            except Exception as error:
+                return None, _ToolExecutionFailure(
+                    error=_PUBLIC_EXECUTION_FAILURE,
+                    error_code="TOOL_EXECUTION_FAILED",
+                    retryable=True,
+                    outcome="not_started",
+                    cause=error,
+                )
+            finally:
+                self._finish_setup(pending)
+
+            if claim.kind != "owner":
+                return claim, None
+            if context.cancellation_token.is_cancelled or self._clock() >= deadline:
+                failure = (
+                    _cancelled(started=False)
+                    if context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                cleanup = self._start_setup(
+                    session_id=context.session_id,
+                    call_id=context.tool_call_id,
+                    operation=lambda: self.ledger.retryable_failure(
+                        claim, _ledger_failure(failure)
+                    ),
+                )
+                self._continue_setup(cleanup)
+                return None, failure
+            return claim, None
+        finally:
+            await _cancel_and_join(cancel_task)
+
+    async def _cleanup_late_claim(
+        self,
+        claim_task: asyncio.Task[Any],
+        failure: ToolIdempotencyFailure,
+    ) -> None:
+        try:
+            claim = await claim_task
+        except (
+            asyncio.CancelledError,
+            IdempotencyCapacityExceeded,
+            IdempotencyConflictError,
+        ):
+            return
+        except Exception:
+            logger.exception("Late tool idempotency claim failed")
+            return
+        if claim.kind == "owner":
+            async with self._setup_semaphore:
+                await self.ledger.retryable_failure(claim, failure)
+
+    async def _is_started(
+        self,
+        claim: ToolIdempotencyClaim,
+        session_id: str,
+        call_id: str,
+    ) -> bool:
+        """Return False only after a bounded, successful persistence read."""
+        pending = self._start_setup(
+            session_id=session_id,
+            call_id=call_id,
+            operation=lambda: self.ledger.is_started(claim),
+        )
+        try:
+            done, _ = await asyncio.wait(
+                {pending.task},
+                timeout=min(
+                    _STARTED_LOOKUP_TIMEOUT_SECONDS,
+                    self.limits.timeout_seconds,
+                ),
+            )
+        except asyncio.CancelledError:
+            self._detach_setup(pending, self._consume_late_setup)
+            raise
+        if pending.task not in done:
+            self._detach_setup(pending, self._consume_late_setup)
+            return True
+        try:
+            return bool(pending.task.result())
+        except Exception:
+            logger.exception("Tool idempotency start-state lookup failed")
+            return True
+        finally:
+            self._finish_setup(pending)
+
+    @staticmethod
+    async def _consume_late_setup(task: asyncio.Task[Any]) -> None:
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Late tool setup operation failed")
+
+    async def _cleanup_late_mark(
+        self,
+        mark_task: asyncio.Task[Any],
+        claim: ToolIdempotencyClaim,
+        failure: ToolIdempotencyFailure,
+    ) -> None:
+        try:
+            await mark_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Late tool idempotency start marker failed")
+        async with self._setup_semaphore:
+            await self.ledger.unknown_outcome(claim, failure)
+
+    async def execute(
+        self,
+        invocation: ToolInvocation,
+        spec: ToolSpec,
+        executor: ToolExecutor,
+        emit_started: StartedEmitter,
+    ) -> _ToolExecutionOutcome:
+        """Execute or replay one preflighted invocation under runtime bounds."""
+        context = invocation.context
+        deadline = self._effective_deadline(context.deadline_monotonic, spec.timeout_ms)
+        claim, claim_failure = await self._claim_with_deadline(invocation, deadline)
+        if claim_failure is not None:
+            return _ToolExecutionOutcome(failure=claim_failure)
+        if claim is None:
+            raise RuntimeError("tool idempotency claim returned no state")
+
+        if claim.kind in ("completed", "unknown"):
+            if claim.resolution is None:
+                raise RuntimeError("idempotency replay is missing its resolution")
+            return _from_resolution(claim.resolution)
+        if claim.kind == "waiter":
+            return await self._wait_for_owner(
+                claim,
+                context.cancellation_token,
+                deadline,
+            )
+
+        gate_acquired = False
+        gate_accounted = False
+        gate_task = asyncio.create_task(self._acquire_gate(spec.parallel_safe))
+        gate_cancel_task = asyncio.create_task(context.cancellation_token.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {gate_task, gate_cancel_task},
+                timeout=max(0.0, deadline - self._clock()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if gate_task in done:
+                gate_task.result()
+                gate_acquired = True
+            if not gate_acquired:
+                gate_acquired = await _cancel_acquisition(gate_task)
+                failure = (
+                    _cancelled(started=False)
+                    if gate_cancel_task in done
+                    or context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                if gate_acquired:
+                    await self._release_gate(spec.parallel_safe)
+                    gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                return _ToolExecutionOutcome(failure=failure)
+            if context.cancellation_token.is_cancelled or self._clock() >= deadline:
+                failure = (
+                    _cancelled(started=False)
+                    if context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                return _ToolExecutionOutcome(failure=failure)
+        except asyncio.CancelledError:
+            if not gate_accounted:
+                if not gate_acquired:
+                    gate_acquired = await _cancel_acquisition(gate_task)
+                if gate_acquired:
+                    await self._release_gate(spec.parallel_safe)
+                    gate_acquired = False
+                gate_accounted = True
+            failure = _cancelled(started=False)
+            await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+            raise
+        finally:
+            await _cancel_and_join(gate_cancel_task)
+
+        acquired = False
+        permit_accounted = False
+        handler_started = False
+        claim_resolved = False
+        acquire_task = asyncio.create_task(self._semaphore.acquire())
+        cancel_task = asyncio.create_task(context.cancellation_token.wait())
+        try:
+            remaining = max(0.0, deadline - self._clock())
+            done, _ = await asyncio.wait(
+                {acquire_task, cancel_task},
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if acquire_task in done:
+                acquire_task.result()
+                acquired = True
+            if not acquired:
+                acquired = await _cancel_acquisition(acquire_task)
+                failure = (
+                    _cancelled(started=False)
+                    if cancel_task in done or context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                if acquired:
+                    self._semaphore.release()
+                    acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            if context.cancellation_token.is_cancelled:
+                failure = _cancelled(started=False)
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+            if self._clock() >= deadline:
+                failure = _timed_out(started=False)
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            from kaji.runtime.agents.cancellation import (  # noqa: PLC0415
+                CancellationToken,
+            )
+
+            child_token = CancellationToken()
+            child_context = replace(
+                context,
+                cancellation_token=child_token,
+                deadline_monotonic=deadline,
+                metadata=_copy_metadata_snapshot(context.metadata),
+            )
+            child_invocation = ToolInvocation(
+                name=invocation.name,
+                arguments=invocation.arguments,
+                context=child_context,
+            )
+
+            async def record_started() -> None:
+                await emit_started()
+
+            # A Started append is an acknowledgement boundary, not detachable
+            # setup work. Journal implementations must be cancellation-
+            # cooperative so a terminal event cannot overtake a late Started.
+            emit_task = asyncio.create_task(record_started())
+            done, _ = await asyncio.wait(
+                {emit_task, cancel_task},
+                timeout=max(0.0, deadline - self._clock()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            emit_error: BaseException | None = None
+            if emit_task in done:
+                try:
+                    emit_task.result()
+                except BaseException as error:
+                    emit_error = error
+            else:
+                _, emit_error = await _cancel_operation(emit_task)
+
+            if emit_error is not None:
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                failure = _ToolExecutionFailure(
+                    error="Tool execution did not start",
+                    error_code="TOOL_START_RECORD_FAILED",
+                    retryable=True,
+                    outcome="not_started",
+                )
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                raise emit_error
+
+            if context.cancellation_token.is_cancelled or self._clock() >= deadline:
+                failure = (
+                    _cancelled(started=False)
+                    if context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            mark_pending = self._start_setup(
+                session_id=context.session_id,
+                call_id=context.tool_call_id,
+                operation=lambda: self.ledger.mark_started(claim),
+            )
+            mark_task = mark_pending.task
+            try:
+                done, _ = await asyncio.wait(
+                    {mark_task, cancel_task},
+                    timeout=max(0.0, deadline - self._clock()),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                failure = _cancelled(started=True)
+                self._detach_setup(
+                    mark_pending,
+                    lambda task: self._cleanup_late_mark(
+                        task,
+                        claim,
+                        _ledger_failure(failure),
+                    ),
+                )
+                claim_resolved = True
+                raise
+
+            if mark_task not in done:
+                failure = (
+                    _cancelled(started=True)
+                    if cancel_task in done or context.cancellation_token.is_cancelled
+                    else _timed_out(started=True)
+                )
+                self._detach_setup(
+                    mark_pending,
+                    lambda task: self._cleanup_late_mark(
+                        task,
+                        claim,
+                        _ledger_failure(failure),
+                    ),
+                )
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            mark_error: BaseException | None = None
+            try:
+                mark_task.result()
+            except BaseException as error:
+                mark_error = error
+            finally:
+                self._finish_setup(mark_pending)
+            if mark_error is not None:
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                failure = _ToolExecutionFailure(
+                    error=_PUBLIC_EXECUTION_FAILURE,
+                    error_code="TOOL_EXECUTION_FAILED",
+                    retryable=True,
+                    outcome="not_started",
+                    cause=mark_error,
+                )
+                cleanup = self._start_setup(
+                    session_id=context.session_id,
+                    call_id=context.tool_call_id,
+                    operation=lambda: self.ledger.retryable_failure(
+                        claim, _ledger_failure(failure)
+                    ),
+                )
+                self._continue_setup(cleanup)
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+            if context.cancellation_token.is_cancelled or self._clock() >= deadline:
+                failure = (
+                    _cancelled(started=False)
+                    if context.cancellation_token.is_cancelled
+                    else _timed_out(started=False)
+                )
+                self._semaphore.release()
+                acquired = False
+                permit_accounted = True
+                await self._release_gate(spec.parallel_safe)
+                gate_acquired = False
+                gate_accounted = True
+                await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            async def invoke() -> Any:
+                return await executor(child_invocation)
+
+            task = asyncio.create_task(invoke())
+            handler_started = True
+            key = (context.session_id, context.tool_call_id)
+            settlement: asyncio.Future[_Settlement] = (
+                asyncio.get_running_loop().create_future()
+            )
+            watcher = asyncio.create_task(
+                self._settle_execution(
+                    key,
+                    task,
+                    spec.parallel_safe,
+                    settlement,
+                )
+            )
+            self._active[key] = _ActiveExecution(
+                call_id=context.tool_call_id,
+                task=watcher,
+            )
+            acquired = False  # The settlement callback now owns the permit.
+            permit_accounted = True
+            gate_acquired = False  # The settlement callback now owns the gate.
+            gate_accounted = True
+
+            remaining = max(0.0, deadline - self._clock())
+            done, _ = await asyncio.wait(
+                {settlement, cancel_task},
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if settlement in done:
+                completed = settlement.result()
+                if completed.cause is None:
+                    try:
+                        await self.ledger.complete(claim, completed.result)
+                    except Exception as error:
+                        failure = _ToolExecutionFailure(
+                            error=_PUBLIC_EXECUTION_FAILURE,
+                            error_code="TOOL_EXECUTION_FAILED",
+                            retryable=False,
+                            outcome="unknown",
+                            cause=error,
+                        )
+                        await self.ledger.unknown_outcome(
+                            claim, _ledger_failure(failure)
+                        )
+                        claim_resolved = True
+                        return _ToolExecutionOutcome(failure=failure)
+                    claim_resolved = True
+                    return _ToolExecutionOutcome(result=completed.result)
+                if isinstance(completed.cause, ToolExecutionError):
+                    failure = _ToolExecutionFailure(
+                        error=_PUBLIC_EXECUTION_FAILURE,
+                        error_code=completed.cause.error_code,
+                        retryable=completed.cause.retryable,
+                        outcome=completed.cause.outcome,
+                        cause=completed.cause,
+                    )
+                    await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                else:
+                    failure = _ToolExecutionFailure(
+                        error=_PUBLIC_EXECUTION_FAILURE,
+                        error_code="TOOL_EXECUTION_FAILED",
+                        retryable=False,
+                        outcome="unknown",
+                        cause=completed.cause,
+                    )
+                    await self.ledger.unknown_outcome(claim, _ledger_failure(failure))
+                claim_resolved = True
+                return _ToolExecutionOutcome(failure=failure)
+
+            if cancel_task in done or context.cancellation_token.is_cancelled:
+                failure = _cancelled(started=True)
+            else:
+                failure = _timed_out(started=True)
+            child_token.cancel()
+            task.cancel()
+            await self.ledger.unknown_outcome(claim, _ledger_failure(failure))
+            claim_resolved = True
+            return _ToolExecutionOutcome(failure=failure)
+        except asyncio.CancelledError:
+            if "emit_task" in locals() and not emit_task.done():
+                await _cancel_operation(emit_task)
+            if (
+                "mark_task" in locals()
+                and not mark_task.done()
+                and mark_pending.settlement is None
+            ):
+                await _cancel_operation(mark_task)
+            if not permit_accounted:
+                if not acquired:
+                    acquired = await _cancel_acquisition(acquire_task)
+                if acquired:
+                    self._semaphore.release()
+                    acquired = False
+                permit_accounted = True
+            if not gate_accounted:
+                if gate_acquired:
+                    await self._release_gate(spec.parallel_safe)
+                    gate_acquired = False
+                gate_accounted = True
+            if handler_started and "task" in locals() and not task.done():
+                child_token.cancel()
+                task.cancel()
+            if not claim_resolved:
+                if handler_started:
+                    failure = _cancelled(started=True)
+                    await self.ledger.unknown_outcome(claim, _ledger_failure(failure))
+                else:
+                    failure = _cancelled(started=False)
+                    await self.ledger.retryable_failure(claim, _ledger_failure(failure))
+                claim_resolved = True
+            raise
+        finally:
+            await _cancel_and_join(cancel_task)
+
+    async def _wait_for_owner(
+        self,
+        claim: ToolIdempotencyClaim,
+        cancellation_token: CancellationToken,
+        deadline: float,
+    ) -> _ToolExecutionOutcome:
+        wait_task = asyncio.create_task(self.ledger.wait(claim))
+        cancel_task = asyncio.create_task(cancellation_token.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {wait_task, cancel_task},
+                timeout=max(0.0, deadline - self._clock()),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if wait_task in done:
+                return _from_resolution(wait_task.result())
+            started = await self._is_started(
+                claim,
+                claim.session_id,
+                claim.tool_call_id,
+            )
+            return _ToolExecutionOutcome(
+                failure=(
+                    _cancelled(started=started)
+                    if cancel_task in done or cancellation_token.is_cancelled
+                    else _timed_out(started=started)
+                )
+            )
+        finally:
+            await _cancel_and_join(wait_task)
+            await _cancel_and_join(cancel_task)
+
+    def _effective_deadline(
+        self,
+        turn_deadline: float | None,
+        timeout_ms: int | None,
+    ) -> float:
+        now = self._clock()
+        deadlines = [now + self.limits.timeout_seconds]
+        if turn_deadline is not None:
+            deadlines.append(turn_deadline)
+        if timeout_ms is not None:
+            deadlines.append(now + timeout_ms / 1000)
+        return min(deadlines)
+
+    async def _acquire_gate(self, parallel_safe: bool) -> None:
+        async with self._gate:
+            if parallel_safe:
+                await self._gate.wait_for(
+                    lambda: not self._exclusive_active and self._exclusive_waiters == 0
+                )
+                self._safe_claims += 1
+                return
+            self._exclusive_waiters += 1
+            try:
+                await self._gate.wait_for(
+                    lambda: not self._exclusive_active and self._safe_claims == 0
+                )
+                self._exclusive_active = True
+            finally:
+                self._exclusive_waiters -= 1
+                self._gate.notify_all()
+
+    async def _release_gate(self, parallel_safe: bool) -> None:
+        async with self._gate:
+            if parallel_safe:
+                if self._safe_claims < 1:
+                    raise RuntimeError("parallel tool gate released more than once")
+                self._safe_claims -= 1
+            else:
+                if not self._exclusive_active:
+                    raise RuntimeError("exclusive tool gate released more than once")
+                self._exclusive_active = False
+            self._gate.notify_all()
+
+    async def _settle_execution(
+        self,
+        key: tuple[str, str],
+        handler: asyncio.Task[Any],
+        parallel_safe: bool,
+        settlement: asyncio.Future[_Settlement],
+    ) -> None:
+        try:
+            try:
+                result = await handler
+            except BaseException as error:
+                outcome = _Settlement(cause=error)
+            else:
+                outcome = _Settlement(result=result)
+            self._semaphore.release()
+            await self._release_gate(parallel_safe)
+            if not settlement.done():
+                settlement.set_result(outcome)
+        finally:
+            self._active.pop(key, None)
+
+    async def drain_tools(self, timeout: float) -> list[str]:
+        """Wait for executing handlers and durable setup to actually settle."""
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise TypeError("timeout must be a non-negative number")
+        if not math.isfinite(float(timeout)) or timeout < 0:
+            raise ValueError("timeout must be a non-negative number")
+        deadline = self._clock() + float(timeout)
+        while self._active or self._pending_setup:
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                break
+            tasks = [active.task for active in self._active.values()]
+            tasks.extend(
+                pending.settlement or pending.task
+                for pending in self._pending_setup.values()
+            )
+            await asyncio.wait(tasks, timeout=remaining)
+            await asyncio.sleep(0)
+        return sorted(
+            [active.call_id for active in self._active.values()]
+            + [pending.call_id for pending in self._pending_setup.values()]
+        )

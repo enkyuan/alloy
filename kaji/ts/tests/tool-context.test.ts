@@ -82,8 +82,10 @@ describe("tool execution context", () => {
     expect(capturedA.traceId).toBe("trace-a");
     expect(capturedA.toolCallId).toBe("mock-call-1");
     expect(capturedA.idempotencyKey).toBe("session-a:mock-call-1");
-    expect(capturedA.signal).toBe(tokenA.signal);
-    expect(capturedA.deadlineMs).toBe(2_000_000_000_000);
+    expect(capturedA.signal).toBeInstanceOf(AbortSignal);
+    expect(capturedA.signal.aborted).toBe(false);
+    expect(capturedA.deadlineMs).toBeLessThan(2_000_000_000_000);
+    expect(capturedA.deadlineMs).toBeGreaterThan(Date.now());
     expect(capturedA.db).toBe(dbA);
     expect(capturedA.metadata).toEqual({ tenant: { id: "a" } });
     expect(Object.isFrozen(capturedA.metadata)).toBe(true);

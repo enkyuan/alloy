@@ -22,6 +22,8 @@ import { SessionProjector } from "@/sessions/projector";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, type AnyApprovalHandler, type ToolExecutor } from "@/tools/planner";
+import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
+import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import { defaultUuid } from "@/internal/uuid";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import {
@@ -104,6 +106,10 @@ export interface AgentRuntimeOptions {
    * Falls back to the global `executeTool` registry.
    */
   toolExecutor?: ToolExecutor;
+  /** Runtime-lifetime tool execution bounds used by every dynamic planner. */
+  toolExecutionLimits?: Partial<ToolExecutionLimits>;
+  /** Replace the process-local tool idempotency ledger. */
+  toolIdempotencyLedger?: ToolIdempotencyLedger;
   /** Explicit defaults for a single-tenant application. */
   defaultContext?: TurnContext;
   /**
@@ -180,6 +186,7 @@ export class AgentRuntime {
   private readonly activeProjectionSessions = new Map<string, number>();
   private readonly turnEventCollectors = new Map<string, StoredKajiEvent[]>();
   private readonly contextDiagnosticsBySession = new Map<string, Readonly<ContextDiagnostics>>();
+  private readonly toolExecutionController: ToolExecutionController;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -188,6 +195,14 @@ export class AgentRuntime {
   private readonly planner: ToolPlanner | null;
 
   constructor(options: AgentRuntimeOptions) {
+    if (
+      options.planner !== undefined &&
+      (options.toolExecutionLimits !== undefined || options.toolIdempotencyLedger !== undefined)
+    ) {
+      throw new TypeError(
+        "Explicit planner cannot be combined with tool execution limits or idempotency ledger",
+      );
+    }
     this.provider = options.provider;
     this.store = options.store;
     if (options.committer !== undefined) {
@@ -227,6 +242,12 @@ export class AgentRuntime {
     this.approvalHandler = options.approvalHandler;
     this.toolExecutor =
       options.toolExecutor ?? ((name, args, context) => executeTool(name, args, context));
+    this.toolExecutionController =
+      options.planner?.executionController ??
+      new ToolExecutionController({
+        limits: options.toolExecutionLimits,
+        ledger: options.toolIdempotencyLedger,
+      });
     // Planner resolution:
     //  1. Explicit planner wins.
     //  2. Otherwise, if tools are fixed at construction time, build once.
@@ -243,11 +264,17 @@ export class AgentRuntime {
       policy: this.policy,
       approvalHandler: this.approvalHandler,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
+      executionController: this.toolExecutionController,
     });
   }
 
   private resolvePlanner(tools: ToolSpec[]): ToolPlanner {
     return this.planner ?? this.buildPlanner(tools);
+  }
+
+  /** Drain actual tool handler settlement without claiming cancellation stopped work. */
+  async drainTools(timeoutMs: number): Promise<readonly string[]> {
+    return this.toolExecutionController.drain(timeoutMs);
   }
 
   private resolveTurnContext(context?: TurnContext): ResolvedTurnContext {

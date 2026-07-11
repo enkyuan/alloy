@@ -103,7 +103,7 @@ async def test_planner_emits_failed_on_executor_error():
         "error": "Tool execution failed",
         "error_code": "TOOL_EXECUTION_FAILED",
         "retryable": False,
-        "outcome": "failed",
+        "outcome": "unknown",
     }
     assert secret not in " ".join(event.model_dump_json() for event in emitted)
 
