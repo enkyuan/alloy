@@ -7,8 +7,9 @@
  * in tsconfig.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 import { functionTool, type ToolContext } from "@/index";
+import { createWebIntegration } from "../registry/web/index";
 
 const ctx: ToolContext = { userId: "_" };
 
@@ -197,5 +198,19 @@ describe("web integration: search", () => {
     expect((callArgs[1]?.headers as Record<string, string>)?.["X-Subscription-Token"]).toBe(
       "test-api-key",
     );
+  });
+
+  it("applies the default count in the shipped registry handler", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ web: { results: [] } }),
+    } as Partial<Response>);
+    vi.stubGlobal("fetch", mockFetch);
+
+    const { search } = createWebIntegration({ braveApiKey: "test-api-key" });
+    await search.handler(ctx, { query: "hello" });
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    expect(mockFetch.mock.calls[0]?.[0]).toContain("q=hello&count=5");
   });
 });

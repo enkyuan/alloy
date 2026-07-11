@@ -17,7 +17,7 @@ import {
   openai,
   type ModelProvider,
 } from "@kaji/sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 const getWeather = functionTool(
   {

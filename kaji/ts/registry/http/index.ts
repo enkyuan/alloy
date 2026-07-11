@@ -7,7 +7,7 @@
 // Updates: re-run `kaji add http` to diff against the latest version we ship.
 
 import { functionTool } from "@kaji/sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 function checkSSRF(url: string, allowedHosts?: string[]): void {
   if (!allowedHosts || allowedHosts.length === 0) return;

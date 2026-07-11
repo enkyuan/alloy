@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
+import { describe, expect, it, vi } from "vitest";
+import * as z from "zod";
 
 import { Integration, tool } from "@/integrations/base";
 import { ToolRegistry } from "@/tools/registry";
@@ -101,12 +101,46 @@ describe("Integration", () => {
     expect(spec.name).toBe("makePayment");
     expect(spec.description).toBe("Make a payment");
     expect(spec.parameters).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: { amount: { type: "number" } },
       required: ["amount"],
     });
     expect(spec.risk).toBe("financial");
     expect(typeof handler).toBe("function");
+  });
+
+  it("validates Zod metadata with byte-equivalent isolated arguments", async () => {
+    let transformCalls = 0;
+    const original = { amount: "42", label: "lowercase" };
+    const implementation = vi.fn(async (_ctx, args) => ({ args }));
+    const handler = tool(
+      {
+        description: "Validate only",
+        parameters: z.object({
+          amount: z.coerce.number(),
+          label: z.string().transform((value) => {
+            transformCalls += 1;
+            return value.toUpperCase();
+          }),
+        }),
+      },
+      implementation,
+    );
+    const context = { userId: "user-1" };
+
+    await expect(handler(context, original)).resolves.toEqual({ args: original });
+    expect(implementation).toHaveBeenCalledWith(context, original);
+    expect(implementation.mock.calls[0]![1]).not.toBe(original);
+    expect(transformCalls).toBe(1);
+
+    const registry = new ToolRegistry();
+    registry.register("validate", handler);
+    await expect(registry.execute("user-2", "validate", original)).resolves.toEqual({
+      args: original,
+    });
+    expect(transformCalls).toBe(2);
+    expect(implementation.mock.calls[1]![1]).not.toBe(original);
   });
 
   it("manual tools() override still works", () => {

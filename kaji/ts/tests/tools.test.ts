@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import { ToolPolicy, listToolSpecs, registerTool, tool, toolSpecFromSchema } from "@/index";
 import { TOOL_META, ToolRegistry, clearTools, executeTool } from "@/tools/registry";
+import { ToolSchemaValidator } from "@/tools/validation";
 import { AgentRuntime } from "@/runtime/runtime";
 import { MockProvider } from "@/providers/mock";
 import { EventBus } from "@/events/bus";
@@ -26,9 +27,33 @@ describe("tool registry", () => {
       name: "get_weather",
       description: "Look up weather",
       parameters: {
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         type: "object",
         properties: { city: { type: "string" }, units: { type: "string" } },
         required: ["city"],
+      },
+    });
+  });
+
+  it("preserves complete Zod validation constraints", () => {
+    const spec = toolSpecFromSchema(
+      "bounded_tags",
+      "Validate bounded tags",
+      z.strictObject({ tags: z.array(z.string().min(2)).min(1).max(2) }),
+    );
+
+    expect(spec.parameters).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      required: ["tags"],
+      additionalProperties: false,
+      properties: {
+        tags: {
+          type: "array",
+          minItems: 1,
+          maxItems: 2,
+          items: { type: "string", minLength: 2 },
+        },
       },
     });
   });
@@ -128,12 +153,13 @@ describe("tool registry", () => {
       risk: "read",
     });
     expect(specs[0]?.parameters).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
       properties: { message: { type: "string" } },
       required: ["message"],
     });
 
-    const result = await executeTool("u", "ping", {});
+    const result = await executeTool("u", "ping", { message: "hello" });
     expect(result).toEqual({ pong: true });
   });
 
@@ -144,6 +170,84 @@ describe("tool registry", () => {
 });
 
 describe("ToolRegistry", () => {
+  it("adds every registration to the injected compiler environment", async () => {
+    const compiler = new ToolSchemaValidator();
+    const registry = new ToolRegistry(compiler);
+
+    for (const name of ["one", "two", "three"]) {
+      registry.register(
+        {
+          name,
+          description: name,
+          parameters: {
+            type: "object",
+            required: ["value"],
+            properties: { value: { type: "string" } },
+          },
+        },
+        async () => ({}),
+      );
+    }
+
+    for (const name of ["one", "two", "three"]) {
+      await expect(compiler.validate(name, { value: 1 })).rejects.toMatchObject({
+        code: "INVALID_TOOL_ARGUMENTS",
+        path: "/value",
+      });
+    }
+  });
+
+  it("snapshots caller specs before compiling and publishing", async () => {
+    const spec = {
+      name: "snapshot",
+      description: "snapshot",
+      parameters: {
+        type: "object",
+        required: ["value"],
+        properties: { value: { type: "string" } },
+      },
+    };
+    const registry = new ToolRegistry();
+    registry.register(spec, async (_context, args) => ({ value: args.value }));
+
+    spec.parameters.properties.value.type = "number";
+
+    await expect(registry.execute("u", "snapshot", { value: "stable" })).resolves.toEqual({
+      value: "stable",
+    });
+    await expect(registry.execute("u", "snapshot", { value: 1 })).rejects.toMatchObject({
+      code: "INVALID_TOOL_ARGUMENTS",
+      path: "/value",
+    });
+    expect((registry.listSpecs()[0]!.parameters.properties as any).value.type).toBe("string");
+  });
+
+  it("publishes deeply immutable specs", async () => {
+    const registry = new ToolRegistry();
+    registry.register(
+      {
+        name: "immutable",
+        description: "immutable",
+        tags: ["stable"],
+        parameters: { type: "object", properties: { value: { type: "string" } } },
+      },
+      async () => ({ ok: true }),
+    );
+    const listed = registry.listSpecs()[0]!;
+
+    expect(Object.isFrozen(listed)).toBe(true);
+    expect(Object.isFrozen(listed.parameters)).toBe(true);
+    expect(Object.isFrozen((listed.parameters.properties as any).value)).toBe(true);
+    expect(Object.isFrozen(listed.tags)).toBe(true);
+    expect(() => {
+      (listed.parameters.properties as any).value.type = "number";
+    }).toThrow();
+    expect(() => (listed.tags as string[]).push("mutated")).toThrow();
+    await expect(registry.execute("u", "immutable", { value: "stable" })).resolves.toEqual({
+      ok: true,
+    });
+  });
+
   it("register and execute round-trip", async () => {
     const registry = new ToolRegistry();
     registry.register({ name: "ping", description: "d", parameters: {} }, async () => ({

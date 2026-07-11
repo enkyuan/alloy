@@ -6,7 +6,7 @@
 // Updates: re-run `kaji add echo` to diff against the latest version we ship.
 
 import { functionTool } from "@kaji/sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 export const say = functionTool(
   {

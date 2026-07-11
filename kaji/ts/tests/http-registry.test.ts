@@ -8,7 +8,7 @@
  * file to be included in the tsconfig.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 import { functionTool, type ToolContext } from "@/index";
 
 const ctx: ToolContext = { userId: "_" };

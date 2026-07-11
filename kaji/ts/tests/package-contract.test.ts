@@ -34,6 +34,22 @@ describe("npm contract artifact", () => {
         }),
       ) as Array<{ filename: string }>;
       const tarball = join(workdir, packed[0]!.filename);
+      const manifest = JSON.parse(
+        execFileSync("tar", ["-xOf", tarball, "package/package.json"], {
+          encoding: "utf8",
+        }),
+      ) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+        peerDependencies?: Record<string, string>;
+      };
+      expect(manifest.dependencies).toEqual({
+        ajv: "^8.20.0",
+        "ajv-formats": "^3.0.1",
+      });
+      expect(manifest.peerDependencies?.zod).toBe(">=4.3 <5");
+      expect(manifest.devDependencies?.zod).toBe("^4.3.6");
+      expect(manifest.dependencies).not.toHaveProperty("zod");
       const prefix = "package/contracts/";
       const actual = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" })
         .split("\n")

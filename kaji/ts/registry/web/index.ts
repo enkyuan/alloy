@@ -7,7 +7,7 @@
 // Updates: re-run `kaji add web` to diff against the latest version we ship.
 
 import { functionTool } from "@kaji/sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 function extractReadableText(html: string): { text: string; title?: string } {
   const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
@@ -85,11 +85,12 @@ export function createWebIntegration(opts?: { braveApiKey?: string }): {
       risk: "read",
     },
     async ({ query, count }) => {
+      const resultCount = count ?? 5;
       const apiKey = opts?.braveApiKey ?? process.env["BRAVE_API_KEY"];
       if (!apiKey) {
         throw new Error("BRAVE_API_KEY not set. Get one at https://brave.com/search/api/");
       }
-      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${count}`;
+      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${resultCount}`;
       const resp = await fetch(url, {
         headers: { "X-Subscription-Token": apiKey, Accept: "application/json" },
       });

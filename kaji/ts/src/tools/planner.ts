@@ -5,62 +5,25 @@
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { defaultUuid } from "@/internal/uuid";
-import type { ToolSpec } from "@/tools/registry";
+import { snapshotToolSpec, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
+import {
+  ToolArgumentValidationError,
+  ToolSchemaValidator,
+  cloneToolExecutionArguments,
+  revokeValidationReceipt,
+  validateToolArgumentsForExecution,
+  validationFailureFields,
+  withValidationReceiptScope,
+  type ValidationFailureFields,
+} from "@/tools/validation";
 import type {
   TypedApprovalHandler,
   ToolContext as ApprovalContext,
 } from "@/runtime/approval/types";
 
-const JSON_TYPE_CHECK: Record<string, (v: unknown) => boolean> = {
-  object: (v) => typeof v === "object" && v !== null && !Array.isArray(v),
-  array: Array.isArray,
-  string: (v) => typeof v === "string",
-  integer: (v) => typeof v === "number" && Number.isInteger(v),
-  number: (v) => typeof v === "number" && Number.isFinite(v),
-  boolean: (v) => typeof v === "boolean",
-  null: (v) => v === null,
-};
-
-function jsonTypeName(value: unknown): string {
-  if (value === null) return "null";
-  if (Array.isArray(value)) return "array";
-  return typeof value;
-}
-
 function isJsonObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Shallow JSON Schema check against ToolSpec.parameters. Returns null on success. */
-function validateArgs(spec: ToolSpec, args: Record<string, unknown>): string | null {
-  const schema = (spec.parameters ?? {}) as Record<string, unknown>;
-  if (
-    schema.type === "object" &&
-    (typeof args !== "object" || args === null || Array.isArray(args))
-  ) {
-    return `arguments must be an object, got ${Array.isArray(args) ? "array" : typeof args}`;
-  }
-  const required = (schema.required as string[] | undefined) ?? [];
-  for (const key of required) {
-    if (!(key in args)) return `missing required argument: '${key}'`;
-  }
-  const properties = (schema.properties as Record<string, { type?: string }> | undefined) ?? {};
-  for (const [key, propSchema] of Object.entries(properties)) {
-    if (!(key in args)) continue;
-    const expected = propSchema?.type;
-    if (!expected) continue;
-    const check = JSON_TYPE_CHECK[expected];
-    if (check && !check(args[key])) {
-      const value = args[key];
-      const isNumeric = expected === "number" || expected === "integer";
-      const got =
-        typeof value === "number" && !Number.isFinite(value) ? "non-finite number" : typeof value;
-      const want = isNumeric ? `finite ${expected}` : expected;
-      return `argument '${key}': expected ${want}, got ${got}`;
-    }
-  }
-  return null;
 }
 
 const ERROR_MSG_MAX = 200;
@@ -86,7 +49,7 @@ export interface ToolCallInstruction {
 /** Result of a single tool call execution. */
 export type ToolCallResult =
   | { id: string; name: string; result: unknown }
-  | { id: string; name: string; error: string };
+  | ({ id: string; name: string; error: string } & Partial<ValidationFailureFields>);
 
 export type ToolExecutor = (name: string, args: Record<string, unknown>) => Promise<unknown>;
 export type ApprovalHandler = (
@@ -108,7 +71,7 @@ export interface ToolPlannerOptions {
    * `TypedApprovalHandler` object form (duck-typed: has a `.request` method).
    */
   approvalHandler?: AnyApprovalHandler;
-  specs?: Map<string, ToolSpec>;
+  specs?: ReadonlyMap<string, ToolSpec>;
   /**
    * Override the call-id generator. Defaults to `globalThis.crypto.randomUUID`
    * with a `Math.random` fallback for runtimes without Web Crypto.
@@ -121,13 +84,17 @@ export class ToolPlanner {
   private readonly policy: ToolPolicy | undefined;
   private readonly approvalHandler: AnyApprovalHandler | undefined;
   private readonly specs: Map<string, ToolSpec>;
+  private readonly schemaValidator: ToolSchemaValidator;
   private readonly uuid: () => string;
 
   constructor(opts: ToolPlannerOptions) {
     this.executor = opts.executor;
     this.policy = opts.policy;
     this.approvalHandler = opts.approvalHandler;
-    this.specs = opts.specs ?? new Map();
+    this.specs = new Map(
+      [...(opts.specs ?? new Map())].map(([name, spec]) => [name, snapshotToolSpec(spec)]),
+    );
+    this.schemaValidator = new ToolSchemaValidator(this.specs);
     this.uuid = opts.uuid ?? defaultUuid;
   }
 
@@ -161,11 +128,33 @@ export class ToolPlanner {
   ): Promise<ToolCallResult> {
     const toolName = call.name;
     const rawToolArgs: unknown = call.arguments;
-    const toolArgs = isJsonObjectRecord(rawToolArgs)
-      ? rawToolArgs
-      : {
-          __parse_error: `arguments must be a JSON object, got ${jsonTypeName(rawToolArgs)}`,
-        };
+    let validationError: ToolArgumentValidationError | undefined;
+    let toolArgs: Record<string, unknown>;
+    if (!isJsonObjectRecord(rawToolArgs)) {
+      toolArgs = { __parse_error: "invalid arguments" };
+      validationError = ToolArgumentValidationError.nonObject(toolName);
+    } else {
+      try {
+        const parseError = Object.getOwnPropertyDescriptor(rawToolArgs, "__parse_error");
+        if (
+          parseError !== undefined &&
+          parseError.enumerable &&
+          "value" in parseError &&
+          typeof parseError.value === "string"
+        ) {
+          toolArgs = { __parse_error: "invalid JSON" };
+          validationError = ToolArgumentValidationError.parseError(toolName);
+        } else {
+          toolArgs = cloneToolExecutionArguments(toolName, rawToolArgs);
+        }
+      } catch (error) {
+        validationError =
+          error instanceof ToolArgumentValidationError
+            ? error
+            : ToolArgumentValidationError.jsonUnsafe(toolName, "/");
+        toolArgs = { __parse_error: "invalid arguments" };
+      }
+    }
     const callId = call.id ?? this.uuid();
     const spec = this.specs.get(toolName);
     const risk = spec?.risk;
@@ -179,33 +168,52 @@ export class ToolPlanner {
         type: EventType.TOOL_CALL_REQUESTED,
         session_id: sessionId,
         tool_name: toolName,
-        tool_args: toolArgs,
+        tool_args: cloneToolExecutionArguments(toolName, toolArgs),
         tool_call_id: callId,
         metadata,
       }),
     );
 
-    // 2a. Provider parse-error sentinel: model produced unparseable tool JSON.
-    if (typeof toolArgs.__parse_error === "string") {
-      const errorMsg = `Invalid tool arguments: ${toolArgs.__parse_error}`;
+    // 2. Fail closed on provider parse errors and complete schema violations.
+    let validationReceipt: Awaited<ReturnType<typeof validateToolArgumentsForExecution>> =
+      undefined;
+    if (validationError === undefined) {
+      try {
+        validationReceipt = await validateToolArgumentsForExecution(
+          this.schemaValidator,
+          toolName,
+          toolArgs,
+        );
+      } catch (error) {
+        if (!(error instanceof ToolArgumentValidationError)) throw error;
+        validationError = error;
+      }
+    }
+    if (validationError !== undefined) {
+      const failureFields = validationFailureFields(validationError);
       await emit(
         KajiEvent.parse({
           type: EventType.TOOL_CALL_FAILED,
           session_id: sessionId,
           tool_name: toolName,
           tool_call_id: callId,
-          error: errorMsg,
+          error: validationError.message,
           metadata,
+          ...failureFields,
         }),
       );
-      return { id: callId, name: toolName, error: errorMsg };
+      return {
+        id: callId,
+        name: toolName,
+        error: validationError.message,
+        ...failureFields,
+      };
     }
 
-    // 2b. Schema validation: fail closed on malformed args from the model.
-    if (spec !== undefined) {
-      const schemaError = validateArgs(spec, toolArgs);
-      if (schemaError !== null) {
-        const errorMsg = `Invalid tool arguments: ${schemaError}`;
+    try {
+      // 3. Allow/deny gate: policy violations fail before approval/execution.
+      if (this.policy !== undefined && !this.policy.isAllowedAny([toolName, ...aliases])) {
+        const errorMsg = `Tool not permitted: ${toolName}`;
         await emit(
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
@@ -218,80 +226,123 @@ export class ToolPlanner {
         );
         return { id: callId, name: toolName, error: errorMsg };
       }
-    }
 
-    // 3. Allow/deny gate: policy violations fail before approval/execution.
-    if (this.policy !== undefined && !this.policy.isAllowedAny([toolName, ...aliases])) {
-      const errorMsg = `Tool not permitted: ${toolName}`;
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_CALL_FAILED,
-          session_id: sessionId,
-          tool_name: toolName,
-          tool_call_id: callId,
-          error: errorMsg,
-          metadata,
-        }),
-      );
-      return { id: callId, name: toolName, error: errorMsg };
-    }
+      // 3. Approval gate
+      if (this.policy?.requiresApproval(toolName, risk)) {
+        const handlerPublishesApprovalRequest =
+          this.approvalHandler !== undefined &&
+          typeof this.approvalHandler !== "function" &&
+          this.approvalHandler.emitsApprovalRequest === true;
 
-    // 3. Approval gate
-    if (this.policy?.requiresApproval(toolName, risk)) {
-      const handlerPublishesApprovalRequest =
-        this.approvalHandler !== undefined &&
-        typeof this.approvalHandler !== "function" &&
-        this.approvalHandler.emitsApprovalRequest === true;
-
-      if (!handlerPublishesApprovalRequest) {
-        await emit(
-          KajiEvent.parse({
-            type: EventType.TOOL_APPROVAL_REQUESTED,
-            session_id: sessionId,
-            tool_name: toolName,
-            tool_call_id: callId,
-            tool_args: toolArgs,
-            risk: risk ?? null,
-            metadata,
-          }),
-        );
-      }
-
-      let approved = false;
-      let rejectedReason = "Rejected by approval handler";
-      if (this.approvalHandler !== undefined) {
-        if (typeof this.approvalHandler === "function") {
-          approved = await this.approvalHandler(toolName, toolArgs, risk);
-        } else {
-          const approvalCtx: ApprovalContext = { sessionId, risk };
-          const decision = await this.approvalHandler.request(
-            { id: callId, name: toolName, args: toolArgs },
-            approvalCtx,
+        if (!handlerPublishesApprovalRequest) {
+          await emit(
+            KajiEvent.parse({
+              type: EventType.TOOL_APPROVAL_REQUESTED,
+              session_id: sessionId,
+              tool_name: toolName,
+              tool_call_id: callId,
+              tool_args: cloneToolExecutionArguments(toolName, toolArgs),
+              risk: risk ?? null,
+              metadata,
+            }),
           );
-          approved = decision.granted;
-          if (!approved && decision.reason) {
-            rejectedReason = decision.reason;
+        }
+
+        let approved = false;
+        let rejectedReason = "Rejected by approval handler";
+        if (this.approvalHandler !== undefined) {
+          if (typeof this.approvalHandler === "function") {
+            approved = await this.approvalHandler(
+              toolName,
+              cloneToolExecutionArguments(toolName, toolArgs),
+              risk,
+            );
+          } else {
+            const approvalCtx: ApprovalContext = { sessionId, risk };
+            const decision = await this.approvalHandler.request(
+              {
+                id: callId,
+                name: toolName,
+                args: cloneToolExecutionArguments(toolName, toolArgs),
+              },
+              approvalCtx,
+            );
+            approved = decision.granted;
+            if (!approved && decision.reason) {
+              rejectedReason = decision.reason;
+            }
           }
         }
-      }
 
-      if (!approved) {
-        const reason =
-          this.approvalHandler === undefined ? "No approval handler registered" : rejectedReason;
-        const errorMsg = `Tool approval rejected: ${reason}`;
+        if (!approved) {
+          const reason =
+            this.approvalHandler === undefined ? "No approval handler registered" : rejectedReason;
+          const errorMsg = `Tool approval rejected: ${reason}`;
+          await emit(
+            KajiEvent.parse({
+              type: EventType.TOOL_APPROVAL_REJECTED,
+              session_id: sessionId,
+              tool_name: toolName,
+              tool_call_id: callId,
+              reason,
+              metadata,
+            }),
+          );
+          // Also emit TOOL_CALL_FAILED so replaySession projects this into
+          // model-visible history. Without it, the next iteration sees no tool
+          // result and re-requests the same tool until maxToolIterations.
+          await emit(
+            KajiEvent.parse({
+              type: EventType.TOOL_CALL_FAILED,
+              session_id: sessionId,
+              tool_name: toolName,
+              tool_call_id: callId,
+              error: errorMsg,
+              metadata,
+            }),
+          );
+          return { id: callId, name: toolName, error: errorMsg };
+        }
+
         await emit(
           KajiEvent.parse({
-            type: EventType.TOOL_APPROVAL_REJECTED,
+            type: EventType.TOOL_APPROVAL_APPROVED,
             session_id: sessionId,
             tool_name: toolName,
             tool_call_id: callId,
-            reason,
             metadata,
           }),
         );
-        // Also emit TOOL_CALL_FAILED so replaySession projects this into
-        // model-visible history. Without it, the next iteration sees no tool
-        // result and re-requests the same tool until maxToolIterations.
+      }
+
+      // 4. Mark execution started
+      await emit(
+        KajiEvent.parse({
+          type: EventType.TOOL_CALL_STARTED,
+          session_id: sessionId,
+          tool_name: toolName,
+          tool_call_id: callId,
+          metadata,
+        }),
+      );
+
+      // 5. Execute
+      try {
+        const execute = () => this.executor(toolName, toolArgs);
+        const result = await withValidationReceiptScope(validationReceipt, execute);
+        await emit(
+          KajiEvent.parse({
+            type: EventType.TOOL_CALL_COMPLETED,
+            session_id: sessionId,
+            tool_name: toolName,
+            tool_call_id: callId,
+            result,
+            metadata,
+          }),
+        );
+        return { id: callId, name: toolName, result };
+      } catch (err) {
+        const errorMsg = sanitizeError(err);
         await emit(
           KajiEvent.parse({
             type: EventType.TOOL_CALL_FAILED,
@@ -304,56 +355,8 @@ export class ToolPlanner {
         );
         return { id: callId, name: toolName, error: errorMsg };
       }
-
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_APPROVAL_APPROVED,
-          session_id: sessionId,
-          tool_name: toolName,
-          tool_call_id: callId,
-          metadata,
-        }),
-      );
-    }
-
-    // 4. Mark execution started
-    await emit(
-      KajiEvent.parse({
-        type: EventType.TOOL_CALL_STARTED,
-        session_id: sessionId,
-        tool_name: toolName,
-        tool_call_id: callId,
-        metadata,
-      }),
-    );
-
-    // 5. Execute
-    try {
-      const result = await this.executor(toolName, toolArgs);
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_CALL_COMPLETED,
-          session_id: sessionId,
-          tool_name: toolName,
-          tool_call_id: callId,
-          result,
-          metadata,
-        }),
-      );
-      return { id: callId, name: toolName, result };
-    } catch (err) {
-      const errorMsg = sanitizeError(err);
-      await emit(
-        KajiEvent.parse({
-          type: EventType.TOOL_CALL_FAILED,
-          session_id: sessionId,
-          tool_name: toolName,
-          tool_call_id: callId,
-          error: errorMsg,
-          metadata,
-        }),
-      );
-      return { id: callId, name: toolName, error: errorMsg };
+    } finally {
+      revokeValidationReceipt(validationReceipt);
     }
   }
 }

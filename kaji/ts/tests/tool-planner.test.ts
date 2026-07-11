@@ -67,8 +67,50 @@ describe("ToolPlanner", () => {
       ]);
       expect(results[0]).toHaveProperty("error");
       expect((results[0] as { error: string }).error).toContain("Invalid tool arguments");
-      expect((results[0] as { error: string }).error).toContain("arguments must be a JSON object");
+      expect((results[0] as { error: string }).error).toContain("arguments must be an object");
+      expect(results[0]).toMatchObject({
+        error_code: "INVALID_TOOL_ARGUMENTS",
+        error_path: "/",
+        retryable: false,
+        outcome: "not_started",
+      });
     }
+  });
+
+  it("redacts provider parse-error details before recording validation failure", async () => {
+    const emitted: any[] = [];
+    const executor = vi.fn();
+    const planner = new ToolPlanner({ executor });
+    const secret = "sk-secret-value-that-must-not-appear";
+
+    const results = await planner.executeScatterGather(
+      "sess-parse-error",
+      [
+        {
+          id: "parse-error",
+          name: "search",
+          arguments: { __parse_error: `invalid JSON near ${secret}` },
+        },
+      ],
+      async (event) => {
+        emitted.push(event);
+      },
+    );
+
+    expect(executor).not.toHaveBeenCalled();
+    expect(emitted.map((event) => event.type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(emitted[0].tool_args).toEqual({ __parse_error: "invalid JSON" });
+    expect(results[0]).toMatchObject({
+      error: "Invalid tool arguments: arguments were not valid JSON",
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/",
+      retryable: false,
+      outcome: "not_started",
+    });
+    expect(JSON.stringify({ emitted, results })).not.toContain(secret);
   });
 
   it("generates a call ID when none is provided", async () => {
@@ -132,6 +174,56 @@ describe("ToolPlanner", () => {
     expect(types).toContain(EventType.TOOL_APPROVAL_APPROVED);
     expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
     expect(results[0]).toHaveProperty("result", { ok: true });
+  });
+
+  it("isolates execution arguments from event and approval mutations", async () => {
+    const original = { nested: { value: "validated" } };
+    const executor = vi.fn(async (_name, args) => ({ value: (args.nested as any).value }));
+    const approvalHandler = vi.fn(async (_name, args: Record<string, unknown>) => {
+      (args.nested as any).value = "approval-mutated";
+      return true;
+    });
+    const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const specs = new Map([
+      [
+        "nuke",
+        {
+          name: "nuke",
+          description: "nuke",
+          risk: "destructive" as const,
+          parameters: {
+            type: "object",
+            required: ["nested"],
+            properties: {
+              nested: {
+                type: "object",
+                required: ["value"],
+                properties: { value: { const: "validated" } },
+              },
+            },
+          },
+        },
+      ],
+    ]);
+    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+
+    const results = await planner.executeScatterGather(
+      "sess-isolation",
+      [{ id: "c-isolation", name: "nuke", arguments: original }],
+      async (event) => {
+        if (
+          event.type === EventType.TOOL_CALL_REQUESTED ||
+          event.type === EventType.TOOL_APPROVAL_REQUESTED
+        ) {
+          (event.tool_args.nested as any).value = "event-mutated";
+        }
+      },
+    );
+
+    expect(results[0]).toHaveProperty("result", { value: "validated" });
+    expect(executor).toHaveBeenCalledWith("nuke", { nested: { value: "validated" } });
+    expect(approvalHandler).toHaveBeenCalledOnce();
+    expect(original).toEqual({ nested: { value: "validated" } });
   });
 
   it("emits exactly one approval request when EventApprovalHandler publishes request events", async () => {

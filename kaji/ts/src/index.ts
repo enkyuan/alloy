@@ -74,6 +74,14 @@ export {
   type ApprovalHandler,
   type AnyApprovalHandler,
 } from "@/tools/planner";
+export {
+  ToolArgumentValidationError,
+  ToolSchemaValidationError,
+  ToolSchemaValidator,
+  ToolValidationError,
+  type ToolExecutionOutcome,
+  type ToolValidationCode,
+} from "@/tools/validation";
 export { cliApprovalHandler, type CliApprovalOptions } from "@/tools/approval";
 
 // Providers

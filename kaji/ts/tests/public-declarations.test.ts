@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -6,6 +6,29 @@ const root = resolve(import.meta.dirname, "..");
 const dist = resolve(root, "dist");
 
 describe("public declarations", () => {
+  it("exposes tool validation classes from both module formats", () => {
+    const esm = resolve(dist, "index.d.ts");
+    const cjs = resolve(dist, "index.d.cts");
+    if (!existsSync(esm) || !existsSync(cjs)) return;
+    if (statSync(esm).mtimeMs < statSync(resolve(root, "src/tools/validation.ts")).mtimeMs) return;
+
+    for (const declaration of [readFileSync(esm, "utf8"), readFileSync(cjs, "utf8")]) {
+      expect(declaration).toContain("ToolArgumentValidationError");
+      expect(declaration).toContain("ToolSchemaValidationError");
+      expect(declaration).toContain("ToolSchemaValidator");
+    }
+
+    const declarationGraph = readdirSync(dist)
+      .filter((file) => file.endsWith(".d.ts") || file.endsWith(".d.cts"))
+      .map((file) => readFileSync(resolve(dist, file), "utf8"))
+      .join("\n");
+    expect(declarationGraph).not.toContain("ToolValidationReceipt");
+    expect(declarationGraph).not.toContain("claim(receipt");
+    expect(declarationGraph).not.toContain("claimActive(");
+    expect(declarationGraph).not.toContain("revokeValidationReceipt");
+    expect(declarationGraph).not.toContain("validateAsync(");
+  });
+
   it("does not expose provider test hooks after build", () => {
     const openaiDts = resolve(dist, "openai.d.ts");
     const anthropicDts = resolve(dist, "anthropic.d.ts");

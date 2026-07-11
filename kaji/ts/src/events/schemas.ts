@@ -122,6 +122,10 @@ export const ToolCallFailed = event({
   tool_name: z.string(),
   tool_call_id: z.string(),
   error: z.string(),
+  error_code: z.string().optional(),
+  error_path: z.string().optional(),
+  retryable: z.boolean().optional(),
+  outcome: z.enum(["not_started", "failed", "unknown"]).optional(),
 });
 
 export const ToolApprovalRequested = event({

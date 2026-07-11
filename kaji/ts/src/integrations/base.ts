@@ -5,11 +5,19 @@
 import type { ToolHandler, ToolSpec } from "@/tools/registry";
 import {
   TOOL_META,
+  TOOL_ARGUMENT_VALIDATOR,
   ToolRegistry,
   providerSafeToolName,
+  setToolArgumentValidator,
+  toolArgumentValidator,
   toolParametersToJSONSchema,
 } from "@/tools/registry";
 import type { TaggedHandler, ToolMeta } from "@/tools/registry";
+import {
+  cloneToolExecutionArguments,
+  consumeValidationReceipt,
+  validateIsolatedToolArguments,
+} from "@/tools/validation";
 
 /**
  * Mark a handler function as a tool with the given metadata.
@@ -25,8 +33,24 @@ import type { TaggedHandler, ToolMeta } from "@/tools/registry";
  * handlers marked this way.
  */
 export function tool(meta: ToolMeta, handler: ToolHandler): ToolHandler {
-  (handler as TaggedHandler)[TOOL_META] = meta;
-  return handler;
+  const argumentValidator = toolArgumentValidator(meta.parameters);
+  const adapter: ToolHandler = async (context, args) => {
+    let executionArgs = args;
+    if (
+      argumentValidator !== undefined &&
+      !consumeValidationReceipt(context, args, argumentValidator)
+    ) {
+      const toolName = handler.name || "tool";
+      executionArgs = cloneToolExecutionArguments(toolName, args);
+      await validateIsolatedToolArguments(toolName, executionArgs, argumentValidator);
+    }
+    return handler(context, executionArgs);
+  };
+  (adapter as TaggedHandler)[TOOL_META] = meta;
+  if (argumentValidator !== undefined) {
+    Object.defineProperty(adapter, TOOL_ARGUMENT_VALIDATOR, { value: argumentValidator });
+  }
+  return adapter;
 }
 
 export abstract class Integration {
@@ -46,14 +70,17 @@ export abstract class Integration {
       if (typeof value !== "function") continue;
       const meta = (value as TaggedHandler)[TOOL_META];
       if (meta) {
-        const spec: ToolSpec = {
-          name: key,
-          description: meta.description,
-          parameters: toolParametersToJSONSchema(meta.parameters),
-          ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
-          ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
-          ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
-        };
+        const spec = setToolArgumentValidator<ToolSpec>(
+          {
+            name: key,
+            description: meta.description,
+            parameters: toolParametersToJSONSchema(meta.parameters),
+            ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+            ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+            ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+          },
+          (value as TaggedHandler)[TOOL_ARGUMENT_VALIDATOR],
+        );
         result.push([spec, value as ToolHandler]);
       }
     }
@@ -65,11 +92,14 @@ export abstract class Integration {
     for (const [spec, handler] of this.tools()) {
       const catalogName = `${this.namespace}.${spec.name}`;
       registry.register(
-        {
-          ...spec,
-          name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
-          catalogName,
-        },
+        setToolArgumentValidator(
+          {
+            ...spec,
+            name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
+            catalogName,
+          },
+          spec[TOOL_ARGUMENT_VALIDATOR],
+        ),
         handler,
       );
     }

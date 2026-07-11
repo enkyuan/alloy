@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { EventType } from "@/events/types";
 import { ToolPlanner } from "@/tools/planner";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -32,6 +33,128 @@ function makePlanner(spec: ToolSpec): ToolPlanner {
 }
 
 describe("ToolPlanner argument validation", () => {
+  const unsafeArguments: Array<{
+    name: string;
+    path: string;
+    build: () => Record<string, unknown>;
+  }> = [
+    { name: "undefined", path: "/value", build: () => ({ value: undefined }) },
+    { name: "function", path: "/value", build: () => ({ value: () => "unsafe" }) },
+    { name: "bigint", path: "/value", build: () => ({ value: 1n }) },
+    { name: "symbol", path: "/value", build: () => ({ value: Symbol("unsafe") }) },
+    {
+      name: "cycle",
+      path: "/self",
+      build: () => {
+        const value: Record<string, unknown> = {};
+        value.self = value;
+        return value;
+      },
+    },
+  ];
+
+  for (const unsafe of unsafeArguments) {
+    it(`normalizes JSON-unsafe ${unsafe.name} arguments before emitting`, async () => {
+      const executor = vi.fn();
+      const planner = new ToolPlanner({
+        executor,
+        specs: new Map([["unsafe", { name: "unsafe", description: "unsafe", parameters: {} }]]),
+      });
+      const events: Array<{ type: string; tool_args?: unknown }> = [];
+
+      const result = await planner.executeScatterGather(
+        "session-1",
+        [{ id: "unsafe-1", name: "unsafe", arguments: unsafe.build() }],
+        async (event) => {
+          events.push(event);
+        },
+      );
+
+      expect(executor).not.toHaveBeenCalled();
+      expect(events.map(({ type }) => type)).toEqual([
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+      ]);
+      expect(events[0]?.tool_args).toEqual({ __parse_error: "invalid arguments" });
+      expect(result[0]).toMatchObject({
+        error_code: "INVALID_TOOL_ARGUMENTS",
+        error_path: unsafe.path,
+        retryable: false,
+        outcome: "not_started",
+      });
+      expect((result[0] as { error: string }).error).toBe(
+        `Tool arguments failed JSON safety validation at ${unsafe.path}`,
+      );
+      expect((result[0] as { error: string }).error.length).toBeLessThanOrEqual(200);
+    });
+  }
+
+  it("rejects a reserved parse-error accessor without invoking it", async () => {
+    let reads = 0;
+    const args: Record<string, unknown> = {};
+    Object.defineProperty(args, "__parse_error", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        throw new Error("must not run");
+      },
+    });
+    const executor = vi.fn();
+    const planner = new ToolPlanner({
+      executor,
+      specs: new Map([["unsafe", { name: "unsafe", description: "unsafe", parameters: {} }]]),
+    });
+
+    const result = await planner.executeScatterGather(
+      "session-1",
+      [{ id: "unsafe-accessor", name: "unsafe", arguments: args }],
+      async () => {},
+    );
+
+    expect(reads).toBe(0);
+    expect(executor).not.toHaveBeenCalled();
+    expect(result[0]).toMatchObject({
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/__parse_error",
+      retryable: false,
+      outcome: "not_started",
+    });
+  });
+
+  it("snapshots specs at construction", async () => {
+    const spec: ToolSpec = {
+      name: "snapshot",
+      description: "snapshot",
+      parameters: {
+        type: "object",
+        required: ["value"],
+        properties: { value: { type: "string" } },
+      },
+    };
+    const specs = new Map([[spec.name, spec]]);
+    const planner = new ToolPlanner({ executor: async (_name, args) => args, specs });
+
+    (spec.parameters.properties as any).value.type = "number";
+    specs.clear();
+
+    const accepted = await planner.executeScatterGather(
+      "session-1",
+      [{ id: "snapshot-1", name: "snapshot", arguments: { value: "stable" } }],
+      noopEmit,
+    );
+    const rejected = await planner.executeScatterGather(
+      "session-1",
+      [{ id: "snapshot-2", name: "snapshot", arguments: { value: 1 } }],
+      noopEmit,
+    );
+
+    expect(accepted[0]).toHaveProperty("result", { value: "stable" });
+    expect(rejected[0]).toMatchObject({
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/value",
+    });
+  });
+
   it("rejects NaN as a number argument", async () => {
     const planner = makePlanner(numericSpec);
     const out = await planner.executeScatterGather(
@@ -39,8 +162,13 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c1", name: "price_check", arguments: { price: Number.NaN } }],
       noopEmit,
     );
-    expect("error" in out[0]!).toBe(true);
-    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
+    expect(out[0]).toMatchObject({
+      error: "Tool arguments failed JSON safety validation at /price",
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/price",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("rejects positive Infinity as a number argument", async () => {
@@ -56,8 +184,13 @@ describe("ToolPlanner argument validation", () => {
       ],
       noopEmit,
     );
-    expect("error" in out[0]!).toBe(true);
-    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
+    expect(out[0]).toMatchObject({
+      error: "Tool arguments failed JSON safety validation at /price",
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/price",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("rejects negative Infinity as a number argument", async () => {
@@ -73,8 +206,13 @@ describe("ToolPlanner argument validation", () => {
       ],
       noopEmit,
     );
-    expect("error" in out[0]!).toBe(true);
-    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
+    expect(out[0]).toMatchObject({
+      error: "Tool arguments failed JSON safety validation at /price",
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/price",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("rejects NaN as an integer argument", async () => {
@@ -84,8 +222,13 @@ describe("ToolPlanner argument validation", () => {
       [{ id: "c4", name: "count_check", arguments: { n: Number.NaN } }],
       noopEmit,
     );
-    expect("error" in out[0]!).toBe(true);
-    expect((out[0]! as { error: string }).error).toMatch(/finite/i);
+    expect(out[0]).toMatchObject({
+      error: "Tool arguments failed JSON safety validation at /n",
+      error_code: "INVALID_TOOL_ARGUMENTS",
+      error_path: "/n",
+      retryable: false,
+      outcome: "not_started",
+    });
   });
 
   it("accepts a finite number", async () => {

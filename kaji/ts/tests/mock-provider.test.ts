@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { z } from "zod";
+import * as z from "zod";
 
 import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "@/providers/base";
 import { ProviderConfigError } from "@/providers/errors";

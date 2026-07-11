@@ -9,7 +9,7 @@
 // Peer dependency: npm install better-sqlite3 @types/better-sqlite3
 
 import { functionTool } from "@kaji/sdk";
-import { z } from "zod";
+import * as z from "zod";
 
 type Database = {
   prepare: (sql: string) => {

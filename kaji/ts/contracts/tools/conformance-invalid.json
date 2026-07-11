@@ -252,6 +252,7 @@
       "arguments": {},
       "expectedPath": "/type",
       "expectedCode": "INVALID_TOOL_SCHEMA",
+      "expectedMessage": "Tool schema failed schema validation at /type",
       "retryable": false,
       "outcome": "not_started"
     },
@@ -262,6 +263,7 @@
       "arguments": {},
       "expectedPath": "/required",
       "expectedCode": "INVALID_TOOL_SCHEMA",
+      "expectedMessage": "Tool schema failed schema validation at /required",
       "retryable": false,
       "outcome": "not_started"
     }

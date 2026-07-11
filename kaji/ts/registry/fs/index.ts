@@ -9,7 +9,7 @@
 import { functionTool } from "@kaji/sdk";
 import { lstat, mkdir, readdir, realpath } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { z } from "zod";
+import * as z from "zod";
 
 type BunRuntime = typeof Bun;
 
@@ -171,7 +171,7 @@ export function createFsIntegration(opts: { root: string }): {
       risk: "read",
     },
     async ({ path }) => {
-      const safe = await sandboxResolve(root, path, "read");
+      const safe = await sandboxResolve(root, path ?? ".", "read");
       const entries = await readdir(safe, { withFileTypes: true });
       return {
         entries: entries.map((e) => ({ name: e.name, isDir: e.isDirectory() })),

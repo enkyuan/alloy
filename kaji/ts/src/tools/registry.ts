@@ -3,10 +3,29 @@
  * `kaji.runtime.tools.registry`. A process-level registry holds specs and
  * handlers; tools run with a `ToolContext` and need no infra by default.
  */
-import { z } from "zod";
+import * as z from "zod";
+
+import {
+  TOOL_ARGUMENT_VALIDATOR,
+  ToolArgumentValidationError,
+  ToolSchemaValidator,
+  addToolSchema,
+  assertToolArgumentsJsonSafe,
+  attachValidationReceipt,
+  claimValidationReceipt,
+  clearToolSchemas,
+  cloneToolExecutionArguments,
+  consumeScopedValidationReceipt,
+  revokeValidationReceipt,
+  snapshotToolSchemaJson,
+  validateToolArgumentsForExecution,
+  type ToolArgumentValidator,
+} from "@/tools/validation";
+
+export { TOOL_ARGUMENT_VALIDATOR } from "@/tools/validation";
 
 /** A JSON Schema object describing a tool's parameters. */
-export type JSONSchema = Record<string, unknown>;
+export type JSONSchema = Readonly<Record<string, unknown>>;
 
 /** Parameter schema accepted at tool authoring boundaries. */
 export type ToolParameters = JSONSchema | z.ZodType;
@@ -16,15 +35,42 @@ export type ToolRisk = "read" | "write" | "external_effect" | "financial" | "des
 
 /** Definition of a tool exposed to the LLM. */
 export interface ToolSpec {
-  name: string;
-  description: string;
-  parameters: JSONSchema;
-  catalogName?: string;
-  tags?: string[];
-  enabled?: boolean;
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: JSONSchema;
+  readonly catalogName?: string;
+  readonly tags?: readonly string[];
+  readonly enabled?: boolean;
   /** Risk classification for policy enforcement and approval routing.
    * undefined = unclassified, treated as "read" by default policies. */
-  risk?: ToolRisk;
+  readonly risk?: ToolRisk;
+  readonly [TOOL_ARGUMENT_VALIDATOR]?: ToolArgumentValidator;
+}
+
+export function setToolArgumentValidator<T extends ToolSpec>(
+  spec: T,
+  validator: ToolArgumentValidator | undefined,
+): T {
+  if (validator !== undefined) {
+    Object.defineProperty(spec, TOOL_ARGUMENT_VALIDATOR, { value: validator });
+  }
+  return spec;
+}
+
+export function snapshotToolSpec(spec: ToolSpec): ToolSpec {
+  const snapshot = setToolArgumentValidator<ToolSpec>(
+    {
+      name: spec.name,
+      description: spec.description,
+      parameters: snapshotToolSchemaJson(spec.name, spec.parameters),
+      ...(spec.catalogName !== undefined ? { catalogName: spec.catalogName } : {}),
+      ...(spec.tags !== undefined ? { tags: Object.freeze([...spec.tags]) } : {}),
+      ...(spec.enabled !== undefined ? { enabled: spec.enabled } : {}),
+      ...(spec.risk !== undefined ? { risk: spec.risk } : {}),
+    },
+    spec[TOOL_ARGUMENT_VALIDATOR],
+  );
+  return Object.freeze(snapshot);
 }
 
 /**
@@ -56,7 +102,10 @@ export interface ToolMeta {
 export const TOOL_META = Symbol("tool_meta");
 
 /** A ToolHandler that may carry attached ToolMeta (set by `tool()`). */
-export type TaggedHandler = ToolHandler & { [TOOL_META]?: ToolMeta };
+export type TaggedHandler = ToolHandler & {
+  [TOOL_META]?: ToolMeta;
+  [TOOL_ARGUMENT_VALIDATOR]?: ToolArgumentValidator;
+};
 
 export interface ProviderSafeToolNameOptions {
   /**
@@ -76,20 +125,36 @@ export function providerSafeToolName(name: string, opts: ProviderSafeToolNameOpt
   return safe;
 }
 
-function isZodSchema(parameters: ToolParameters): parameters is z.ZodType {
+export function isZodSchema(parameters: ToolParameters): parameters is z.ZodType {
   return typeof parameters === "object" && parameters !== null && "_zod" in parameters;
 }
 
+export function toolArgumentValidator(
+  parameters: ToolParameters,
+): ToolArgumentValidator | undefined {
+  if (!isZodSchema(parameters)) return undefined;
+  const parseAsync = parameters.parseAsync.bind(parameters);
+  return async (toolName, args) => {
+    assertToolArgumentsJsonSafe(toolName, args);
+    try {
+      await parseAsync(args);
+    } catch (error) {
+      if (error instanceof z.ZodError && error.issues.length > 0) {
+        const issue = [...error.issues].sort((left, right) => {
+          const leftPath = left.path.map(String).join("/");
+          const rightPath = right.path.map(String).join("/");
+          if (leftPath !== rightPath) return leftPath < rightPath ? -1 : 1;
+          return left.code < right.code ? -1 : left.code > right.code ? 1 : 0;
+        })[0]!;
+        throw ToolArgumentValidationError.fromValidationIssue(toolName, issue.path, issue.code);
+      }
+      throw ToolArgumentValidationError.fromValidationIssue(toolName, [], "custom");
+    }
+  };
+}
+
 function schemaParameters(schema: z.ZodType): JSONSchema {
-  const json = z.toJSONSchema(schema) as {
-    properties?: Record<string, unknown>;
-    required?: string[];
-  };
-  return {
-    type: "object",
-    properties: json.properties ?? {},
-    required: json.required ?? [],
-  };
+  return z.toJSONSchema(schema, { io: "input" }) as JSONSchema;
 }
 
 export function toolParametersToJSONSchema(parameters: ToolParameters): JSONSchema {
@@ -103,14 +168,17 @@ function specFromTagged(name: string, handler: ToolHandler): ToolSpec {
       `handler for "${name}" has no TOOL_META — wrap it with tool(meta, fn) before registering by name`,
     );
   }
-  return {
-    name,
-    description: meta.description,
-    parameters: toolParametersToJSONSchema(meta.parameters),
-    ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
-    ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
-    ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
-  };
+  return setToolArgumentValidator(
+    {
+      name,
+      description: meta.description,
+      parameters: toolParametersToJSONSchema(meta.parameters),
+      ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+      ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+      ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+    },
+    (handler as TaggedHandler)[TOOL_ARGUMENT_VALIDATOR],
+  );
 }
 
 export interface ListToolSpecsOptions {
@@ -130,16 +198,18 @@ function filterSpecs(all: ToolSpec[], options: ListToolSpecsOptions): ToolSpec[]
 }
 
 /**
- * Build a tool spec from a Zod schema, reducing it to the
- * `{ type, properties, required }` shape the LLM tool API expects (mirrors the
- * Python `tool_spec_from_model`).
+ * Build a tool spec from a Zod schema while preserving its complete validation
+ * schema, including nested constraints and references.
  */
 export function toolSpecFromSchema(name: string, description: string, schema: z.ZodType): ToolSpec {
-  return {
-    name,
-    description,
-    parameters: schemaParameters(schema),
-  };
+  return setToolArgumentValidator(
+    {
+      name,
+      description,
+      parameters: schemaParameters(schema),
+    },
+    toolArgumentValidator(schema),
+  );
 }
 
 /**
@@ -164,14 +234,22 @@ export function toolSpecFromSchema(name: string, description: string, schema: z.
 export class ToolRegistry {
   private readonly specs = new Map<string, ToolSpec>();
   private readonly handlers = new Map<string, ToolHandler>();
+  private readonly schemaValidator: ToolSchemaValidator;
+
+  constructor(schemaValidator: ToolSchemaValidator = new ToolSchemaValidator()) {
+    this.schemaValidator = schemaValidator;
+  }
 
   register(spec: ToolSpec, handler: ToolHandler): this;
   register(name: string, handler: ToolHandler): this;
   register(specOrName: ToolSpec | string, handler: ToolHandler): this {
-    const spec = typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
-    if (this.specs.has(spec.name)) {
-      throw new Error(`Tool already registered: ${spec.name}`);
+    const sourceSpec =
+      typeof specOrName === "string" ? specFromTagged(specOrName, handler) : specOrName;
+    if (this.specs.has(sourceSpec.name)) {
+      throw new Error(`Tool already registered: ${sourceSpec.name}`);
     }
+    const spec = snapshotToolSpec(sourceSpec);
+    addToolSchema(this.schemaValidator, spec.name, spec);
     this.specs.set(spec.name, spec);
     this.handlers.set(spec.name, handler);
     return this;
@@ -191,12 +269,35 @@ export class ToolRegistry {
     if (handler === undefined) {
       throw new UnknownToolError(toolName);
     }
-    return handler({ userId, db }, toolArgs);
+    let executionArgs = toolArgs;
+    let receipt = consumeScopedValidationReceipt(this.schemaValidator, toolName, executionArgs);
+    if (receipt === undefined) {
+      executionArgs = cloneToolExecutionArguments(toolName, toolArgs);
+      receipt = await validateToolArgumentsForExecution(
+        this.schemaValidator,
+        toolName,
+        executionArgs,
+      );
+      if (
+        receipt !== undefined &&
+        !claimValidationReceipt(this.schemaValidator, receipt, toolName, executionArgs)
+      ) {
+        throw new Error(`Tool validation receipt could not be claimed: ${toolName}`);
+      }
+    }
+    const context = { userId, db };
+    if (receipt !== undefined) attachValidationReceipt(context, receipt);
+    try {
+      return await handler(context, executionArgs);
+    } finally {
+      if (receipt !== undefined) revokeValidationReceipt(receipt);
+    }
   }
 
   clear(): void {
     this.specs.clear();
     this.handlers.clear();
+    clearToolSchemas(this.schemaValidator);
   }
 }
 

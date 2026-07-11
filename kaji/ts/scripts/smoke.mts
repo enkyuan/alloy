@@ -17,9 +17,11 @@
 // convenient during local development.
 const sdk = await import("@kaji/sdk").catch(() => import("../src/index.ts"));
 const testing = await import("@kaji/sdk/testing").catch(() => import("../src/testing.ts"));
-const openaiSubpath = await import("@kaji/sdk/openai").catch(() => import("../src/providers/openai.ts"));
-const anthropicSubpath = await import("@kaji/sdk/anthropic").catch(() =>
-  import("../src/providers/anthropic.ts"),
+const openaiSubpath = await import("@kaji/sdk/openai").catch(
+  () => import("../src/providers/openai.ts"),
+);
+const anthropicSubpath = await import("@kaji/sdk/anthropic").catch(
+  () => import("../src/providers/anthropic.ts"),
 );
 
 const {
@@ -30,6 +32,9 @@ const {
   ToolRegistry,
   ToolPlanner,
   ToolPolicy,
+  ToolArgumentValidationError,
+  ToolSchemaValidationError,
+  ToolSchemaValidator,
   CancellationToken,
   EventType,
   KajiEvent,
@@ -69,6 +74,9 @@ const exports: [string, unknown][] = [
   ["ToolRegistry", ToolRegistry],
   ["ToolPlanner", ToolPlanner],
   ["ToolPolicy", ToolPolicy],
+  ["ToolArgumentValidationError", ToolArgumentValidationError],
+  ["ToolSchemaValidationError", ToolSchemaValidationError],
+  ["ToolSchemaValidator", ToolSchemaValidator],
   ["CancellationToken", CancellationToken],
   ["EventType", EventType],
   ["KajiEvent", KajiEvent],
@@ -119,11 +127,18 @@ delete process.env["ANTHROPIC_API_KEY"];
 try {
   const p = new OpenAIProvider({ apiKey: "" });
   // May not throw at construction; try to generate
-  await (p as any).generate([], []).catch((e: Error) => { throw e; });
+  await (p as any).generate([], []).catch((e: Error) => {
+    throw e;
+  });
   fail("OpenAIProvider missing key", "no error thrown");
 } catch (e) {
   const msg = String(e).toLowerCase();
-  if (msg.includes("key") || msg.includes("auth") || msg.includes("config") || msg.includes("api")) {
+  if (
+    msg.includes("key") ||
+    msg.includes("auth") ||
+    msg.includes("config") ||
+    msg.includes("api")
+  ) {
     ok(`OpenAIProvider raises clear error: ${e}`);
   } else {
     // A generic error is still OK for smoke purposes — we just confirm something throws

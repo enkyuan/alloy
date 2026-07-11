@@ -13,24 +13,32 @@
  *
  *   const runtime = new AgentBuilder().provider(p).tool(getWeather).build();
  */
-import { z } from "zod";
+import * as z from "zod";
 
 import {
+  TOOL_ARGUMENT_VALIDATOR,
   providerSafeToolName,
+  setToolArgumentValidator,
+  toolArgumentValidator,
   type ToolHandler,
+  type ToolContext,
   type ToolMeta,
   type ToolRegistry,
   type ToolSpec,
   toolParametersToJSONSchema,
 } from "@/tools/registry";
+import {
+  cloneToolExecutionArguments,
+  consumeValidationReceipt,
+  validateIsolatedToolArguments,
+} from "@/tools/validation";
 
-type ArgsOf<P> = P extends z.ZodType ? z.infer<P> : Record<string, unknown>;
+type ArgsOf<P> = P extends z.ZodType ? z.input<P> : Record<string, unknown>;
 
-/** Signature accepted by `functionTool`. The handler receives parsed arguments
- * (typed via Zod inference) directly — no `ctx` parameter. The return value is
- * normalised to an object (primitives become `{ result: <value> }`) before
- * being emitted as the tool result. */
-export type FunctionToolHandler<P> = (args: ArgsOf<P>) => Promise<unknown>;
+/** Signature accepted by `functionTool`. Zod validates the provider arguments,
+ * but its defaults, coercions, and transformations are deliberately discarded.
+ * The second context parameter may be ignored and matches registry handlers. */
+export type FunctionToolHandler<P> = (args: ArgsOf<P>, context: ToolContext) => Promise<unknown>;
 
 /** Tool packaged with its spec + adapter handler, registrable like an Integration. */
 export class BoundTool {
@@ -43,11 +51,14 @@ export class BoundTool {
   register(registry: ToolRegistry): void {
     const catalogName = `${this.namespace}.${this.spec.name}`;
     registry.register(
-      {
-        ...this.spec,
-        name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
-        catalogName,
-      },
+      setToolArgumentValidator(
+        {
+          ...this.spec,
+          name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
+          catalogName,
+        },
+        this.spec[TOOL_ARGUMENT_VALIDATOR],
+      ),
       this.handler,
     );
   }
@@ -69,25 +80,37 @@ export interface FunctionToolMeta<P> extends Omit<ToolMeta, "parameters"> {
 }
 
 /**
- * Build a single tool from a meta + handler pair. The handler receives parsed
- * arguments (typed via Zod inference) directly.
+ * Build a single tool from a meta + handler pair. The handler receives the
+ * a byte-equivalent isolated clone after validation succeeds.
  */
 export function functionTool<P extends z.ZodType | Record<string, unknown>>(
   meta: FunctionToolMeta<P>,
   handler: FunctionToolHandler<P>,
 ): BoundTool {
   const name = meta.name ?? handler.name ?? "tool";
-  const spec: ToolSpec = {
-    name,
-    description: meta.description,
-    parameters: toolParametersToJSONSchema(meta.parameters as never),
-    ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
-    ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
-    ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
-  };
+  const argumentValidator = toolArgumentValidator(meta.parameters as never);
+  const spec = setToolArgumentValidator<ToolSpec>(
+    {
+      name,
+      description: meta.description,
+      parameters: toolParametersToJSONSchema(meta.parameters as never),
+      ...(meta.risk !== undefined ? { risk: meta.risk } : {}),
+      ...(meta.tags !== undefined ? { tags: meta.tags } : {}),
+      ...(meta.enabled !== undefined ? { enabled: meta.enabled } : {}),
+    },
+    argumentValidator,
+  );
 
-  const adapter: ToolHandler = async (_ctx, args) => {
-    const result = await handler(args as ArgsOf<P>);
+  const adapter: ToolHandler = async (context, args) => {
+    let executionArgs = args;
+    if (
+      argumentValidator !== undefined &&
+      !consumeValidationReceipt(context, args, argumentValidator)
+    ) {
+      executionArgs = cloneToolExecutionArguments(name, args);
+      await validateIsolatedToolArguments(name, executionArgs, argumentValidator);
+    }
+    const result = await handler(executionArgs as ArgsOf<P>, context);
     // ToolHandler must return an object; wrap primitives/arrays.
     if (result !== null && typeof result === "object" && !Array.isArray(result)) {
       return result as Record<string, unknown>;

@@ -90,7 +90,7 @@ class ToolSchemaValidationError(ToolValidationError):
         return cls(
             tool_name,
             path,
-            _bounded_message("Tool schema", error.validator, path),
+            _bounded_message("Tool schema", "schema", path),
         )
 
 

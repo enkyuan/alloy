@@ -143,7 +143,7 @@ def test_shared_invalid_schemas_fail_during_compilation(case: dict[str, Any]) ->
     assert error.normalized() == {
         "code": case["expectedCode"],
         "path": case["expectedPath"],
-        "message": error.message,
+        "message": case["expectedMessage"],
     }
     assert error.retryable is case["retryable"]
     assert error.outcome == case["outcome"]
