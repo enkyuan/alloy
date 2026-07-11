@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 import re
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
 ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
+
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -27,6 +29,15 @@ class ToolSpec:
     # "destructive", "admin". None means unclassified (treated as "read" by
     # default policies).
     risk: Optional[str] = None
+
+
+def _snapshot_tool_spec(spec: ToolSpec) -> ToolSpec:
+    """Return a detached spec whose nested schema cannot mutate ``spec``."""
+    return replace(
+        spec,
+        parameters=deepcopy(spec.parameters),
+        tags=tuple(spec.tags),
+    )
 
 
 @dataclass(frozen=True)
@@ -122,10 +133,11 @@ class ToolRegistry:
         def wrapper(func: ToolHandler) -> ToolHandler:
             if spec.name in self._specs:
                 raise ValueError(f"Tool already registered: {spec.name}")
-            validator = ToolSchemaValidator({spec.name: spec})
-            self._specs[spec.name] = spec
-            self._handlers[spec.name] = func
-            self._validators[spec.name] = (spec, validator)
+            registered_spec = _snapshot_tool_spec(spec)
+            validator = ToolSchemaValidator({registered_spec.name: registered_spec})
+            self._specs[registered_spec.name] = registered_spec
+            self._handlers[registered_spec.name] = func
+            self._validators[registered_spec.name] = (registered_spec, validator)
             return func
 
         return wrapper
@@ -136,7 +148,8 @@ class ToolRegistry:
         enabled_only: bool = True,
     ) -> List[ToolSpec]:
         """Return specs from this registry, optionally filtered."""
-        return _filter_specs(list(self._specs.values()), tags, enabled_only)
+        specs = _filter_specs(list(self._specs.values()), tags, enabled_only)
+        return [_snapshot_tool_spec(spec) for spec in specs]
 
     async def execute(
         self,

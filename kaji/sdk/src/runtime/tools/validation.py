@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any, Protocol
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -29,12 +30,13 @@ class ToolSchemaValidator:
     def __init__(self, specs: Mapping[str, ToolSchemaSpec]) -> None:
         self._validators: dict[str, Validator] = {}
         for name, spec in specs.items():
+            schema = deepcopy(spec.parameters)
             try:
-                Draft202012Validator.check_schema(spec.parameters)
+                Draft202012Validator.check_schema(schema)
             except SchemaError as error:
                 raise ToolSchemaValidationError.from_jsonschema(name, error) from None
             self._validators[name] = Draft202012Validator(
-                spec.parameters,
+                schema,
                 format_checker=FormatChecker(),
             )
 

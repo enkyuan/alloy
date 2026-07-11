@@ -207,6 +207,7 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `AgentRuntime` | Provider-agnostic ReAct loop |
 | `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator` | Turn-scoped result and injectable same-session FIFO coordination |
 | `ToolSpec`, `ToolRegistry`, `ToolContext` | Tool definition, scoped registry, and execution context |
+| `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError` | Draft 2020-12 validation and normalized failures before tool side effects |
 | `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
 | `Integration` | Namespace-scoped tool bundle base class |
 | `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |

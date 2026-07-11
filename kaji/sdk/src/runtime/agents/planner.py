@@ -17,7 +17,7 @@ from kaji.runtime.tools.errors import (
     validation_failure_fields,
 )
 from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
-from kaji.runtime.tools.registry import ToolSpec
+from kaji.runtime.tools.registry import ToolSpec, _snapshot_tool_spec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,9 @@ class ToolPlanner:
         self.executor = executor
         self.policy = policy
         self.approval_handler = approval_handler
-        self._specs: Dict[str, ToolSpec] = specs or {}
+        self._specs: Dict[str, ToolSpec] = {
+            name: _snapshot_tool_spec(spec) for name, spec in (specs or {}).items()
+        }
         self._schema_validator = ToolSchemaValidator(self._specs)
 
     async def execute_scatter_gather(
