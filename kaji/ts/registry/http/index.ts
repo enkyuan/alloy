@@ -6,26 +6,48 @@
 //   4. Add helper tools your agent wants but the API doesn't have natively
 // Updates: re-run `kaji add http` to diff against the latest version we ship.
 
-import { functionTool } from "@kaji/sdk";
+import {
+  functionTool,
+  safeRequest,
+  type BoundNetworkTransport,
+  type SafeFetchPolicy,
+  type ToolExecutionContext,
+} from "@kaji/sdk";
 import * as z from "zod";
 
-function checkSSRF(url: string, allowedHosts?: string[]): void {
-  if (!allowedHosts || allowedHosts.length === 0) return;
-  const hostname = new URL(url).hostname;
-  if (!allowedHosts.includes(hostname)) {
-    throw new Error(
-      `SSRF protection: host '${hostname}' is not in allowedHosts [${allowedHosts.join(", ")}]`,
-    );
-  }
+export interface HttpIntegrationOptions {
+  readonly policy: SafeFetchPolicy;
+  readonly transport: BoundNetworkTransport;
+  /** @internal Deterministic resolver seam for tests and pinned egress adapters. */
+  readonly resolver?: (hostname: string) => Promise<readonly string[]>;
 }
 
-export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
+export function createHttpIntegration(opts: HttpIntegrationOptions): {
   fetch: ReturnType<typeof functionTool>;
   post: ReturnType<typeof functionTool>;
   put: ReturnType<typeof functionTool>;
   delete: ReturnType<typeof functionTool>;
 } {
-  const allowedHosts = opts?.allowedHosts;
+  if (typeof opts?.policy !== "object") throw new TypeError("HTTP safe fetch policy is required");
+  if (typeof opts.transport?.request !== "function") {
+    throw new TypeError("HTTP bound network transport is required");
+  }
+
+  const request = async (
+    url: string,
+    init: RequestInit,
+    context: ToolExecutionContext,
+  ): Promise<{ status: number; body: string }> => {
+    const response = await safeRequest(
+      new URL(url),
+      init,
+      context,
+      opts.policy,
+      opts.transport,
+      opts.resolver,
+    );
+    return { status: response.status, body: new TextDecoder().decode(response.bytes) };
+  };
 
   const httpFetch = functionTool(
     {
@@ -38,12 +60,7 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       }),
       risk: "read",
     },
-    async ({ url, headers }) => {
-      checkSSRF(url, allowedHosts);
-      const resp = await fetch(url, { headers });
-      const body = await resp.text();
-      return { status: resp.status, body };
-    },
+    async ({ url, headers }, context) => request(url, { headers }, context),
   );
 
   const httpPost = functionTool(
@@ -58,16 +75,16 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       }),
       risk: "write",
     },
-    async ({ url, body, headers }) => {
-      checkSSRF(url, allowedHosts);
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      });
-      const text = await resp.text();
-      return { status: resp.status, body: text };
-    },
+    async ({ url, body, headers }, context) =>
+      request(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        },
+        context,
+      ),
   );
 
   const httpPut = functionTool(
@@ -82,16 +99,16 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       }),
       risk: "write",
     },
-    async ({ url, body, headers }) => {
-      checkSSRF(url, allowedHosts);
-      const resp = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      });
-      const text = await resp.text();
-      return { status: resp.status, body: text };
-    },
+    async ({ url, body, headers }, context) =>
+      request(
+        url,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+        },
+        context,
+      ),
   );
 
   const httpDelete = functionTool(
@@ -105,20 +122,8 @@ export function createHttpIntegration(opts?: { allowedHosts?: string[] }): {
       }),
       risk: "write",
     },
-    async ({ url, headers }) => {
-      checkSSRF(url, allowedHosts);
-      const resp = await fetch(url, { method: "DELETE", headers });
-      const body = await resp.text();
-      return { status: resp.status, body };
-    },
+    async ({ url, headers }, context) => request(url, { method: "DELETE", headers }, context),
   );
 
   return { fetch: httpFetch, post: httpPost, put: httpPut, delete: httpDelete };
 }
-
-export const {
-  fetch: httpFetch,
-  post: httpPost,
-  put: httpPut,
-  delete: httpDelete,
-} = createHttpIntegration();

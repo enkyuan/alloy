@@ -35,7 +35,9 @@ export async function listIntegrations(_rest: string[], opts: RunOptions): Promi
         schemaRoot: opts.schemaRoot,
         index,
       });
-      rows.push([manifest.name, manifest.description]);
+      const label =
+        manifest.stability === "experimental" ? `${manifest.name} [experimental]` : manifest.name;
+      rows.push([label, manifest.description]);
     } catch (error) {
       err(formatIntegrationError(error));
       return 1;

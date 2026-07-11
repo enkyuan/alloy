@@ -2,13 +2,13 @@
   "name": "sqlite",
   "version": "0.1.0",
   "namespace": "sqlite",
-  "description": "SQLite via better-sqlite3. Query, execute, schema inspection.",
+  "description": "Experimental owned SQLite lifecycle with bounded reads and explicitly classified destructive execution.",
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [
     { "name": "query", "description": "Run a SELECT query and return rows.", "risk": "read" },
-    { "name": "exec", "description": "Execute a SQL statement (INSERT/UPDATE/DELETE/DDL).", "risk": "write" },
-    { "name": "schema", "description": "List CREATE TABLE statements for all tables.", "risk": "read" }
+    { "name": "exec", "description": "Execute an explicitly allowed destructive SQL statement.", "risk": "destructive" },
+    { "name": "schema", "description": "List CREATE TABLE statements for application tables.", "risk": "read" }
   ],
   "peerDeps": { "better-sqlite3": "^9" }
 }

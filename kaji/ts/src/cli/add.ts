@@ -84,12 +84,13 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
   const name = argv[0];
   if (!name || name.startsWith("-")) {
-    log("usage: kaji add <name> [--out <dir>] [--force]");
+    log("usage: kaji add <name> [--out <dir>] [--force] [--allow-experimental]");
     return 1;
   }
 
   let out = "./integrations";
   let force = false;
+  let allowExperimental = false;
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === "--out") {
       const next = argv[++i];
@@ -100,6 +101,8 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       out = next;
     } else if (argv[i] === "--force") {
       force = true;
+    } else if (argv[i] === "--allow-experimental") {
+      allowExperimental = true;
     } else {
       log(`Unknown argument: ${argv[i]}`);
       return 1;
@@ -114,9 +117,16 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     return 1;
   }
 
-  if (index.integrations[name] === undefined) {
+  const entry = index.integrations[name];
+  if (entry === undefined) {
     const available = Object.keys(index.integrations).sort().join(", ") || "(none)";
     log(`Unknown integration: '${name}'. Available: ${available}`);
+    return 1;
+  }
+  if (entry.stability === "experimental" && !allowExperimental) {
+    log(
+      `Integration '${name}' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.`,
+    );
     return 1;
   }
 

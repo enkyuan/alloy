@@ -2,7 +2,7 @@
   "name": "http",
   "version": "0.1.0",
   "namespace": "http",
-  "description": "Generic HTTP client. Tools for GET, POST, PUT, DELETE. Allowlist hosts to prevent SSRF.",
+  "description": "Experimental bounded HTTP tools requiring an explicit SSRF policy and address-pinning transport.",
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [

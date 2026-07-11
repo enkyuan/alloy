@@ -185,6 +185,10 @@ export {
   type RegistryIndexDocument,
   type RegistryIndexEntry,
   type RegistryLoaderOptions,
+  safeRequest,
+  type BoundedResponse,
+  type BoundNetworkTransport,
+  type SafeFetchPolicy,
 } from "@/integrations";
 
 // Runtime

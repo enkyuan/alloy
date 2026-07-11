@@ -2,7 +2,7 @@
   "name": "fs",
   "version": "0.1.0",
   "namespace": "fs",
-  "description": "Sandboxed filesystem tools. Read, write, list, glob. Constrained to a root directory.",
+  "description": "Experimental root-contained filesystem tools with explicit depth, entry, read, and write limits.",
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [

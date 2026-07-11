@@ -2,7 +2,7 @@
   "name": "web",
   "version": "0.1.0",
   "namespace": "web",
-  "description": "Web fetch with reader-mode HTML extraction. search requires BRAVE_API_KEY.",
+  "description": "Experimental bounded web fetch/search requiring an explicit SSRF policy and address-pinning transport.",
   "auth": { "kind": "env", "env": "BRAVE_API_KEY", "optional": true },
   "files": ["index.ts"],
   "tools": [

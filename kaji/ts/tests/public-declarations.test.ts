@@ -6,6 +6,20 @@ const root = resolve(import.meta.dirname, "..");
 const dist = resolve(root, "dist");
 
 describe("public declarations", () => {
+  it("exposes the bounded network transport contract from the package root", () => {
+    const esm = resolve(dist, "index.d.ts");
+    const cjs = resolve(dist, "index.d.cts");
+    if (!existsSync(esm) || !existsSync(cjs)) return;
+    if (statSync(esm).mtimeMs < statSync(resolve(root, "src/integrations/safe-fetch.ts")).mtimeMs)
+      return;
+
+    for (const declaration of [readFileSync(esm, "utf8"), readFileSync(cjs, "utf8")]) {
+      expect(declaration).toContain("interface SafeFetchPolicy");
+      expect(declaration).toContain("interface BoundNetworkTransport");
+      expect(declaration).toContain("function safeRequest(");
+    }
+  });
+
   it("exposes tool validation classes from both module formats", () => {
     const esm = resolve(dist, "index.d.ts");
     const cjs = resolve(dist, "index.d.cts");

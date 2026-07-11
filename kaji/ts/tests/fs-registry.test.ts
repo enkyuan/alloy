@@ -187,16 +187,14 @@ describe("fs integration: glob", () => {
     expect(result).toEqual({ matches: ["visible.txt"] });
   });
 
-  it("does not return symlinked outside-root paths from glob", async () => {
+  it("rejects symlinked outside-root paths from glob explicitly", async () => {
     const outside = await mkdtemp(join(tmpdir(), "kaji-fs-outside-"));
     try {
       await writeFile(join(outside, "secret.txt"), "secret");
       await symlink(join(outside, "secret.txt"), join(tmpRoot, "secret-link.txt"));
       const { glob } = createFsIntegration({ root: tmpRoot });
 
-      const result = await glob.handler({ pattern: "**/*" }, ctx);
-      const matches = result["matches"] as string[];
-      expect(matches).not.toContain("secret-link.txt");
+      await expect(glob.handler({ pattern: "**/*" }, ctx)).rejects.toThrow(/escape.*sandbox/i);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }

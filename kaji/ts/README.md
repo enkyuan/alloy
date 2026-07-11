@@ -184,9 +184,17 @@ Unscoped or stale backlog decisions are ignored.
 ```
 kaji --help                            # list subcommands
 kaji add <integration>                 # copy an integration into your project
+kaji add <integration> --allow-experimental  # explicitly copy a non-beta template
 kaji init [--out <dir>] [--force]      # scaffold a TypeScript Kaji project
 kaji list-integrations                 # enumerate the registry catalog
 ```
+
+`echo` is the only beta catalog entry. HTTP, Web, filesystem, and SQLite are
+direct-import templates outside the beta guarantee and require
+`--allow-experimental` when copied. HTTP and Web additionally require an
+application-owned bound transport or egress proxy that connects only to the
+addresses validated by the SDK; Kaji deliberately does not provide a native
+`fetch()` fallback that could reopen DNS-rebinding risk.
 
 ## Global tool registry (advanced)
 

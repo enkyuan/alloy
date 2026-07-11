@@ -51,6 +51,14 @@ describe("cross-SDK release matrix docs", () => {
     expect(mvp).not.toContain("no shared manifest/auth/credential shape");
   });
 
+  it("keeps experimental catalog quarantine and transport ownership explicit", () => {
+    const readme = read("kaji/ts/README.md");
+    expect(readme).toContain("--allow-experimental");
+    expect(readme).toContain("direct-import templates outside the beta guarantee");
+    expect(readme).toContain("application-owned bound transport or egress proxy");
+    expect(readme).toContain("does not provide a native");
+  });
+
   it("matches the machine-readable beta feature tiers exactly", () => {
     const tiers = JSON.parse(read("kaji/contracts/feature-tiers-v1.json")) as Record<
       "stable" | "experimental",

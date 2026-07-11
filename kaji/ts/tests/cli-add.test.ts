@@ -23,14 +23,17 @@ import { add } from "@/cli/add";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaRoot = join(__dirname, "..", "registry");
 
-function registryIndex(integrations: Record<string, string>): object {
+function registryIndex(
+  integrations: Record<string, string>,
+  stability: "experimental" | "beta" = "beta",
+): object {
   return {
     $schema: "./index.schema.json",
     version: "0.1.0",
     integrations: Object.fromEntries(
       Object.entries(integrations).map(([name, manifest]) => [
         name,
-        { manifest, stability: "experimental", runtimes: ["typescript"] },
+        { manifest, stability, runtimes: ["typescript"] },
       ]),
     ),
   };
@@ -91,6 +94,50 @@ describe("kaji add", () => {
     });
     expect(code).toBe(0);
     expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
+  });
+
+  it("refuses experimental integrations without creating the output directory", async () => {
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify(registryIndex({ "demo-ts": "demo-ts/manifest.json" }, "experimental")),
+    );
+    const out = join(tmp, "experimental-out");
+    const logs: string[] = [];
+    const code = await add(["demo-ts", "--out", out], {
+      registryRoot: registry,
+      schemaRoot,
+      log: (message) => logs.push(message),
+    });
+    expect(code).toBe(1);
+    expect(existsSync(out)).toBe(false);
+    expect(logs.join("\n")).toMatch(/--allow-experimental/);
+  });
+
+  it("copies an experimental integration only with explicit opt-in", async () => {
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify(registryIndex({ "demo-ts": "demo-ts/manifest.json" }, "experimental")),
+    );
+    const out = join(tmp, "experimental-out");
+    const code = await add(["demo-ts", "--allow-experimental", "--out", out], {
+      registryRoot: registry,
+      schemaRoot,
+    });
+    expect(code).toBe(0);
+    expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
+  });
+
+  it("rejects unknown flags before loading or copying", async () => {
+    const out = join(tmp, "unknown-flag-out");
+    const logs: string[] = [];
+    const code = await add(["demo-ts", "--unsafe", "--out", out], {
+      registryRoot: registry,
+      schemaRoot,
+      log: (message) => logs.push(message),
+    });
+    expect(code).toBe(1);
+    expect(existsSync(out)).toBe(false);
+    expect(logs.join("\n")).toMatch(/Unknown argument: --unsafe/);
   });
 
   it("skips integrations with no .ts files", async () => {

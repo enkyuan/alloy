@@ -1,130 +1,111 @@
-/**
- * Tests for the http registry integration pattern.
- *
- * Validates the SSRF allowlist, fetch invocation, and POST content-type
- * behaviours that kaji/ts/registry/http/index.ts ships.
- */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolExecutionContext } from "@/index";
-import { createHttpIntegration } from "../registry/http/index";
+import { describe, expect, it, vi } from "vitest";
+
+import type { BoundNetworkTransport, SafeFetchPolicy, ToolExecutionContext } from "@/index";
+import { createHttpIntegration, type HttpIntegrationOptions } from "../registry/http/index";
 
 const ctx: ToolExecutionContext = {
-  principalId: "_",
-  sessionId: "test-session",
-  turnId: "test-turn",
-  requestId: "test-request",
-  traceId: "test-trace",
-  toolCallId: "test-call",
-  idempotencyKey: "test-session:test-call",
+  principalId: "tester",
+  sessionId: "session",
+  turnId: "turn",
+  requestId: "request",
+  traceId: "trace",
+  toolCallId: "call",
+  idempotencyKey: "session:call",
   signal: new AbortController().signal,
   metadata: {},
 };
 
-describe("http integration: fetch", () => {
-  let mockFetch: ReturnType<typeof vi.fn>;
+function integration(
+  response: Response = new Response("ok", { status: 200 }),
+  policy: SafeFetchPolicy = { allowedHosts: ["example.com"] },
+): { tools: ReturnType<typeof createHttpIntegration>; request: ReturnType<typeof vi.fn> } {
+  const request = vi.fn(async () => response);
+  const transport: BoundNetworkTransport = { request };
+  return {
+    tools: createHttpIntegration({
+      policy,
+      transport,
+      resolver: async () => ["93.184.216.34"],
+    }),
+    request,
+  };
+}
 
-  beforeEach(() => {
-    mockFetch = vi.fn();
-    vi.stubGlobal("fetch", mockFetch);
+describe("http registry integration", () => {
+  it("requires both an explicit policy and a bound transport", () => {
+    expect(() => createHttpIntegration(undefined as never)).toThrow(/policy is required/i);
+    expect(() =>
+      createHttpIntegration({ policy: { allowedHosts: ["example.com"] } } as never),
+    ).toThrow(/transport is required/i);
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("returns status and body from a successful GET", async () => {
-    mockFetch.mockResolvedValueOnce({
-      status: 200,
-      text: async () => "Hello, world!",
-    } as Partial<Response>);
-
-    const { fetch: tool } = createHttpIntegration();
-    const result = await tool.handler({ url: "https://example.com" }, ctx);
-
-    expect(result).toEqual({ status: 200, body: "Hello, world!" });
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [calledUrl] = mockFetch.mock.calls[0] as [string, ...unknown[]];
-    expect(calledUrl).toBe("https://example.com");
-  });
-
-  it("SSRF block: throws when host is not in allowedHosts", async () => {
-    const { fetch: tool } = createHttpIntegration({ allowedHosts: ["example.com"] });
-
-    await expect(tool.handler({ url: "https://evil.internal" }, ctx)).rejects.toThrow(
-      /SSRF protection/i,
+  it("routes GET through the bounded transport and decodes the bounded body", async () => {
+    const { tools, request } = integration(
+      new Response("Hello, world!", { status: 206, headers: { "X-Result": "partial" } }),
     );
-
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
-
-  it("SSRF pass: allows requests to whitelisted host", async () => {
-    mockFetch.mockResolvedValueOnce({
-      status: 200,
-      text: async () => "ok",
-    } as Partial<Response>);
-
-    const { fetch: tool } = createHttpIntegration({ allowedHosts: ["example.com"] });
-    const result = await tool.handler({ url: "https://example.com/path" }, ctx);
-
-    expect(result).toMatchObject({ status: 200 });
-  });
-
-  it("SSRF disabled: no allowedHosts allows all hosts", async () => {
-    mockFetch.mockResolvedValueOnce({
-      status: 200,
-      text: async () => "ok",
-    } as Partial<Response>);
-
-    const { fetch: tool } = createHttpIntegration(); // no allowedHosts
-    await expect(tool.handler({ url: "https://any.internal.host" }, ctx)).resolves.toMatchObject({
-      status: 200,
+    await expect(tools.fetch.handler({ url: "https://example.com/path" }, ctx)).resolves.toEqual({
+      status: 206,
+      body: "Hello, world!",
     });
-  });
-});
-
-describe("http integration: post", () => {
-  let mockFetch: ReturnType<typeof vi.fn>;
-  let capturedInit: RequestInit | undefined;
-
-  beforeEach(() => {
-    capturedInit = undefined;
-    mockFetch = vi.fn((_url: string, init?: RequestInit) => {
-      capturedInit = init;
-      return Promise.resolve({ status: 201, text: async () => '{"id":1}' } as Partial<Response>);
+    expect(request).toHaveBeenCalledOnce();
+    const [target, init] = request.mock.calls[0]!;
+    expect(target).toMatchObject({
+      url: new URL("https://example.com/path"),
+      validatedAddresses: ["93.184.216.34"],
     });
-    vi.stubGlobal("fetch", mockFetch);
+    expect(init.redirect).toBe("manual");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("sends JSON body with correct Content-Type header", async () => {
-    const { post: tool } = createHttpIntegration();
+  it.each([
+    ["post", "POST"],
+    ["put", "PUT"],
+  ] as const)("sends %s JSON with the caller context", async (toolName, method) => {
+    const { tools, request } = integration(new Response('{"id":1}', { status: 201 }));
+    const tool = tools[toolName];
     const result = await tool.handler(
-      {
-        url: "https://api.example.com/items",
-        body: { name: "widget" },
-      },
+      { url: "https://example.com/items", body: { name: "widget" } },
       ctx,
     );
 
-    expect(result).toMatchObject({ status: 201 });
-    expect(capturedInit?.method).toBe("POST");
-    expect((capturedInit?.headers as Record<string, string>)?.["Content-Type"]).toBe(
-      "application/json",
-    );
-    const sentBody = capturedInit?.body as string;
-    expect(JSON.parse(sentBody)).toEqual({ name: "widget" });
+    expect(result).toEqual({ status: 201, body: '{"id":1}' });
+    const [, init] = request.mock.calls[0]!;
+    expect(init.method).toBe(method);
+    expect(new Headers(init.headers).get("content-type")).toBe("application/json");
+    expect(JSON.parse(init.body as string)).toEqual({ name: "widget" });
   });
 
-  it("SSRF block on post: throws when host is not in allowedHosts", async () => {
-    const { post: tool } = createHttpIntegration({ allowedHosts: ["safe.example.com"] });
+  it("routes DELETE through the same policy boundary", async () => {
+    const { tools, request } = integration(new Response(null, { status: 204 }));
+    await expect(
+      tools.delete.handler({ url: "https://example.com/items/1" }, ctx),
+    ).resolves.toEqual({ status: 204, body: "" });
+    expect(request.mock.calls[0]?.[1].method).toBe("DELETE");
+  });
 
-    await expect(tool.handler({ url: "https://evil.com/steal", body: {} }, ctx)).rejects.toThrow(
-      /SSRF protection/i,
+  it("rejects a non-allowlisted host before transport", async () => {
+    const { tools, request } = integration();
+    await expect(tools.fetch.handler({ url: "https://evil.example" }, ctx)).rejects.toThrow(
+      /explicitly allowed/i,
     );
+    expect(request).not.toHaveBeenCalled();
+  });
 
-    expect(mockFetch).not.toHaveBeenCalled();
+  it("enforces response byte caps through the actual tool", async () => {
+    const { tools } = integration(new Response("four"), {
+      allowedHosts: ["example.com"],
+      maxResponseBytes: 3,
+    });
+    await expect(tools.fetch.handler({ url: "https://example.com" }, ctx)).rejects.toThrow(
+      /maxResponseBytes/,
+    );
+  });
+
+  it("preserves the factory option contract without a default unsafe instance", () => {
+    const opts: HttpIntegrationOptions = {
+      policy: { allowedHosts: ["example.com"] },
+      transport: { request: async () => new Response("ok") },
+    };
+    expect(createHttpIntegration(opts).fetch.spec.risk).toBe("read");
   });
 });

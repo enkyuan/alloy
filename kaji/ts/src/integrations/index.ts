@@ -28,3 +28,9 @@ export {
   type RegistryIndexEntry,
   type RegistryLoaderOptions,
 } from "@/integrations/registry-loader";
+export {
+  safeRequest,
+  type BoundedResponse,
+  type BoundNetworkTransport,
+  type SafeFetchPolicy,
+} from "@/integrations/safe-fetch";

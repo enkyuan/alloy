@@ -11,15 +11,20 @@ import { listIntegrations } from "@/cli/list";
 const here = dirname(fileURLToPath(import.meta.url));
 const schemaRoot = join(here, "..", "registry");
 
-function registryIndex(integrations: Record<string, string>): object {
+type FixtureIndexEntry =
+  | string
+  | { readonly manifest: string; readonly stability: "experimental" | "beta" };
+
+function registryIndex(integrations: Record<string, FixtureIndexEntry>): object {
   return {
     $schema: "./index.schema.json",
     version: "0.1.0",
     integrations: Object.fromEntries(
-      Object.entries(integrations).map(([name, manifest]) => [
-        name,
-        { manifest, stability: "experimental", runtimes: ["typescript"] },
-      ]),
+      Object.entries(integrations).map(([name, value]) => {
+        const entry =
+          typeof value === "string" ? { manifest: value, stability: "beta" as const } : value;
+        return [name, { ...entry, runtimes: ["typescript"] }];
+      }),
     ),
   };
 }
@@ -74,6 +79,30 @@ describe("kaji list-integrations", () => {
     const output = lines.join("\n");
     expect(output).toMatch(/echo\s+Echo a string back\./);
     expect(output).toMatch(/weather\s+Look up the weather\./);
+  });
+
+  it("marks experimental entries while leaving beta entries unmarked", async () => {
+    writeIntegration(registryRoot, "echo", "Echo a string back.");
+    writeIntegration(registryRoot, "weather", "Look up the weather.");
+    writeFileSync(
+      join(registryRoot, "index.json"),
+      JSON.stringify(
+        registryIndex({
+          echo: { manifest: "echo/manifest.json", stability: "beta" },
+          weather: { manifest: "weather/manifest.json", stability: "experimental" },
+        }),
+      ),
+    );
+
+    const lines: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot,
+      schemaRoot,
+      log: (message) => lines.push(message),
+    });
+    expect(code).toBe(0);
+    expect(lines.join("\n")).toMatch(/^echo\s+Echo a string back\./m);
+    expect(lines.join("\n")).toMatch(/^weather \[experimental\]\s+Look up the weather\./m);
   });
 
   it("returns 1 when the packaged index is missing", async () => {
