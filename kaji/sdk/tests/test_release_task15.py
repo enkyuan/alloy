@@ -30,12 +30,10 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
     ts = _read(".github/workflows/ts.test.yml")
     lint = _read(".github/workflows/ts.lint.yml")
 
-    assert "scripts/verify_wheel.sh" in python
-    assert "verify_wheel_contents.sh" not in python
+    assert "scripts/verify_wheel.py" in python
     assert 'python-version: "3.11"' in python
     assert 'python-version: "3.14"' in python
     assert "scripts/smoke-installed.mts" in ts
-    assert "smoke-install.mts" not in ts
     assert 'node-version: ["22", "24"]' in ts
     for command in (
         "bun run format:check",
@@ -48,29 +46,30 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
 
 
 def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
-    script = _read("kaji/scripts/beta-release-check.sh")
+    script = _read("kaji/scripts/beta_release_check.py")
 
     for expected in (
         "--release",
-        "uv run ruff format --check src tests",
-        "uv run pip-audit",
-        "--extra openai --extra anthropic",
-        "--requirement build-requirements.txt",
-        "bun audit --production",
-        "bun x publint",
-        "bun x attw --pack .",
-        "verify-package-metadata.py",
+        '"ruff", "format", "--check", "src", "tests"',
+        '"pip-audit",',
+        '"--require-hashes",',
+        '"openai",',
+        '"anthropic",',
+        '"build-requirements.txt",',
+        '["bun", "audit", "--production"]',
+        '["bun", "x", "publint"]',
+        '["bun", "x", "attw", "--pack", "."]',
+        "verify_package_metadata.py",
         "verify_npm_package.py",
-        'bun scripts/smoke-installed.mts "$TARBALL"',
+        "smoke-installed.mts",
         "Reverify final Python artifacts",
-        "bun run package:smoke",
-        "bun run typecheck:registry",
-        "bun run validate:registry",
-        "bun run check:integrations",
+        '"package:smoke"',
+        '"typecheck:registry"',
+        '"validate:registry"',
+        '"check:integrations"',
     ):
         assert expected in script
-
-    metadata_verifier = _read("kaji/scripts/verify-package-metadata.py")
+    metadata_verifier = _read("kaji/scripts/verify_package_metadata.py")
     assert '"buildAudit": {' in metadata_verifier
     assert '"file": "kaji/sdk/build-requirements.txt"' in metadata_verifier
     assert '"sha256": sha256(build_audit)' in metadata_verifier
@@ -102,7 +101,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "environment: kaji-beta" in rehearsal
     assert "OPENAI_API_KEY" in rehearsal
     assert "ANTHROPIC_API_KEY" in rehearsal
-    assert "live-provider-proof.sh" in rehearsal
+    assert "live_provider_proof.py" in rehearsal
     assert "needs: [offline-release, python-compat, node-compat]" in rehearsal
     assert "needs.offline-release.result == 'success'" in rehearsal
     assert "needs.python-compat.result == 'success'" in rehearsal
@@ -121,8 +120,8 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
         "sbom",
-        "run-beta-benchmarks.sh --full",
-        "live-provider-proof.sh",
+        "run_beta_benchmarks.py --full",
+        "live_provider_proof.py",
         "group: kaji-beta-publish-${{ github.ref_name }}",
         "KAJI_RELEASE_SIGNER_EMAIL",
         'verification.reason !== "valid"',
@@ -143,15 +142,15 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "publisher-preflight:",
         "NPM_TOKEN is required",
         "npm access list packages",
-        "verify-release-artifacts.py",
+        "verify_release_artifacts.py",
         "verify_npm_package.py",
-        "verify_wheel.sh",
+        "verify_wheel.py",
         "Rebuild and verify exact package contents against the clean checkout",
         "Reverify Python archive contents against the clean checkout",
         "Rebuild and verify npm archive contents against the clean checkout",
-        "verify-published-packages.py",
+        "verify_published_packages.py",
         "--attempts 8 --initial-delay 2 --max-delay 20",
-        "attach-release-assets.py",
+        "attach_release_assets.py",
         "registry-verification.json",
     ):
         assert expected in publish
@@ -205,7 +204,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         assert f"needs.{dependency}.result == 'success'" in publish
     _assert_external_actions_are_sha_pinned(publish)
 
-    attach = _read("kaji/scripts/attach-release-assets.py")
+    attach = _read("kaji/scripts/attach_release_assets.py")
     assert "unexpected = set(existing) - set(desired)" in attach
     assert "set(final_assets) != set(desired)" in attach
     assert re.search(r'"gh",\s*"release",\s*"upload"', attach)
@@ -214,7 +213,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert 'prefix="kaji-release-final-"' in attach
     assert attach.count("verify_remote_asset(") >= 3
 
-    registry = _read("kaji/scripts/verify-published-packages.py")
+    registry = _read("kaji/scripts/verify_published_packages.py")
     assert "PyPI digest/size mismatch" in registry
     assert "downloaded npm tarball differs from manifest" in registry
     assert "downloaded npm tarball fails registry integrity" in registry
@@ -230,7 +229,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     ):
         assert evidence_field in registry
 
-    artifact_verifier = _read("kaji/scripts/verify-release-artifacts.py")
+    artifact_verifier = _read("kaji/scripts/verify_release_artifacts.py")
     assert (
         'EXPECTED_BUILD_AUDIT = "kaji/sdk/build-requirements.txt"' in artifact_verifier
     )
@@ -284,7 +283,7 @@ def test_release_metadata_rejects_non_commit_provenance() -> None:
     result = subprocess.run(
         [
             sys.executable,
-            str(REPO_ROOT / "kaji/scripts/verify-package-metadata.py"),
+            str(REPO_ROOT / "kaji/scripts/verify_package_metadata.py"),
             "--release",
             "--commit",
             "not-a-commit",
@@ -299,7 +298,7 @@ def test_release_metadata_rejects_non_commit_provenance() -> None:
 
 
 def test_release_metadata_queries_and_records_actual_build_tool_versions() -> None:
-    verifier = _read("kaji/scripts/verify-package-metadata.py")
+    verifier = _read("kaji/scripts/verify_package_metadata.py")
     setup = _read(".github/actions/setup-python-uv/action.yml")
 
     assert 'version: "0.11.25"' in setup
@@ -365,7 +364,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     )
     command = [
         sys.executable,
-        str(REPO_ROOT / "kaji/scripts/verify-release-artifacts.py"),
+        str(REPO_ROOT / "kaji/scripts/verify_release_artifacts.py"),
         "--artifacts-dir",
         str(artifacts),
         "--expected-commit",

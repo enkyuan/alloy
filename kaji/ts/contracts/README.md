@@ -10,4 +10,4 @@ These files define the behavior shared by the Python and TypeScript SDK beta.
   `errors/provider-normalization.json` pins cross-SDK status classification.
 
 Canonical files live here. Package copies are generated and checked by
-`kaji/scripts/sync-beta-contracts.py`; do not edit package copies directly.
+`kaji/scripts/sync_beta_contracts.py`; do not edit package copies directly.

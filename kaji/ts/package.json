@@ -62,7 +62,7 @@
     "lint": "oxlint src tests scripts registry",
     "format": "oxfmt --write \"**/*.ts\"",
     "format:check": "oxfmt --check \"**/*.ts\"",
-    "parity": "uv run --project ../sdk python ../scripts/check-sdk-parity.py",
+    "parity": "uv run --project ../sdk python ../scripts/check_sdk_parity.py",
     "test": "vitest run",
     "test:complexity": "vitest run tests/runtime-complexity.test.ts tests/runtime-faults.test.ts",
     "benchmark:beta": "bun benchmarks/runtime-benchmark.ts",

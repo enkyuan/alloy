@@ -54,7 +54,7 @@ jobs:
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Compare five-sample medians
-        run: bash kaji/scripts/run-beta-benchmarks.sh --full
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --full
       - name: Upload raw benchmark samples
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,7 +87,7 @@ jobs:
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Run protected 30-minute soak
-        run: bash kaji/scripts/run-beta-soak.sh --minutes 30
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30
       - name: Upload soak and heap samples
         if: always()
         uses: actions/upload-artifact@v4
@@ -118,7 +118,7 @@ jobs:
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Produce candidate baseline only
-        run: bash kaji/scripts/run-beta-benchmarks.sh --calibrate
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --calibrate
       - name: Upload candidate baseline and raw samples
         if: always()
         uses: actions/upload-artifact@v4

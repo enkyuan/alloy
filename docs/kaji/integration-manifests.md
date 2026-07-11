@@ -57,7 +57,7 @@ not represented as provider errors.
 ## Validate and synchronize
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/sync-integration-contracts.py --check
+uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
 cd kaji/ts
 bun run validate:registry
 bun run check:integrations

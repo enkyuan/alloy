@@ -29,7 +29,7 @@
 
 ### Task 1: Add A Root Beta Gate Wrapper
 
-**Files:** `kaji/scripts/beta-release-check.sh`
+**Files:** `kaji/scripts/beta_release_check.py`
 
 - [x] Run no-key live-gate skip hygiene.
 - [x] Assert `KAJI_REQUIRE_LIVE_KEYS=1` fails loudly without `OPENAI_API_KEY`.
@@ -52,7 +52,7 @@
 
 **Files:** `kaji/RELEASE_MATRIX.md`, `kaji/sdk/README.md`, `kaji/ts/README.md`, `docs/MVP.md`, root `package.json`
 
-- [x] Make `bash kaji/scripts/beta-release-check.sh` the default non-keyed gate.
+- [x] Make `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py` the default non-keyed gate.
 - [x] Document that keyed OpenAI live proof remains required before claiming live readiness.
 - [x] Add a root script alias for discoverability.
 
@@ -63,7 +63,7 @@
 - [x] Run TypeScript build.
 - [x] Run Python tests/typecheck/lint through `uv`.
 - [x] Run Python wheel smoke through `uv build` and clean install.
-- [x] Run the full non-keyed `bash kaji/scripts/beta-release-check.sh` wrapper.
+- [x] Run the full non-keyed `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py` wrapper.
 - [ ] Run keyed OpenAI live proof after non-keyed gates pass and credentials are intentionally supplied.
 
 ## Remaining Beta Readiness Questions

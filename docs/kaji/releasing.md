@@ -34,8 +34,8 @@ From a clean checkout with Bun 1.3.11, Node 22 or 24, uv 0.11.25, and the locked
 Python interpreters available, run:
 
 ```bash
-bash kaji/scripts/beta-release-check.sh --release
-uv run --project kaji/sdk python kaji/scripts/verify-package-metadata.py
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/sdk python kaji/scripts/verify_package_metadata.py
 ```
 
 `--release` is deliberately offline with respect to provider APIs and package

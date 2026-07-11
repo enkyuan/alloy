@@ -41,7 +41,9 @@ def check() -> list[str]:
     for source, targets in COPIES.items():
         expected = source.read_text().splitlines(keepends=True)
         for target in targets:
-            actual = target.read_text().splitlines(keepends=True) if target.exists() else []
+            actual = (
+                target.read_text().splitlines(keepends=True) if target.exists() else []
+            )
             if actual == expected:
                 continue
             diffs.extend(

@@ -1057,7 +1057,7 @@ cd kaji/sdk
 uv run pytest -m "not integration"
 uv run python scripts/typecheck_ty.py --output-format concise
 uv run ruff check src tests
-bash scripts/release_smoke.sh
+uv run python scripts/release_smoke.py
 ```
 
 Expected:
@@ -1070,8 +1070,8 @@ Expected:
 
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-bash kaji/scripts/live-openai-tool-loop.sh
-KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
+uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
 ```
 
 Expected:
@@ -1084,7 +1084,7 @@ Only run when a real key is intentionally supplied:
 
 ```bash
 cd /Users/Enkang.Yuan1/Desktop/Projects/alloy
-OPENAI_API_KEY="$OPENAI_API_KEY" KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
+OPENAI_API_KEY="$OPENAI_API_KEY" KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
 ```
 
 Expected:

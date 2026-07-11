@@ -242,8 +242,8 @@ After Task 1, Task 2, Tasks 5-6, and Task 10 can start in parallel. Task 3 depen
 - `kaji/contracts/events/conformance.json`
 - `kaji/contracts/errors/error-codes.json`
 - `kaji/contracts/README.md`
-- `kaji/scripts/check-beta-contract.py`
-- `kaji/scripts/sync-beta-contracts.py`
+- `kaji/scripts/check_beta_contract.py`
+- `kaji/scripts/sync_beta_contracts.py`
 - `kaji/sdk/src/contracts/` (generated package copy)
 - `kaji/ts/contracts/` (generated package copy)
 - `kaji/sdk/tests/test_beta_contract.py`
@@ -295,7 +295,7 @@ cd kaji/ts && bun run vitest run tests/beta-contract.test.ts
 
 The draft schema requires `id`, `type`, `version`, `timestamp`, `session_id`, and optional `turn_id`, and forbids `sequence`. The stored schema requires all of those fields plus `sequence`. Tool terminal fixtures must include `error_code`, `retryable`, and `outcome`. Fixtures use fixed clocks and UUID factories so both test suites emit byte-stable normalized JSON.
 
-**Step 4: Add `check-beta-contract.py`.**
+**Step 4: Add `check_beta_contract.py`.**
 
 It must:
 
@@ -305,12 +305,12 @@ It must:
 - Compare the stable/experimental feature table with `kaji/RELEASE_MATRIX.md` markers.
 - Exit non-zero with a JSON Pointer and file path for the first failure.
 
-`sync-beta-contracts.py --write|--check` copies canonical contract files into both package-owned directories. Python package data and TypeScript `files` include those copies; installed-artifact tests load and compare them to the canonical files.
+`sync_beta_contracts.py --write|--check` copies canonical contract files into both package-owned directories. Python package data and TypeScript `files` include those copies; installed-artifact tests load and compare them to the canonical files.
 
 **Step 5: Run the contract checks.**
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/check-beta-contract.py
+uv run --project kaji/sdk python kaji/scripts/check_beta_contract.py
 cd kaji/sdk && uv run pytest tests/test_beta_contract.py tests/test_stability_contract.py -q
 cd kaji/ts && bun run vitest run tests/beta-contract.test.ts tests/docs-contract.test.ts
 ```
@@ -1129,7 +1129,7 @@ but commit enkang/kaji-production-beta -m "fix(kaji): close approval and failure
 - `kaji/contracts/integrations/index.schema.json`
 - `kaji/contracts/integrations/conformance-valid.json`
 - `kaji/contracts/integrations/conformance-invalid.json`
-- `kaji/scripts/sync-integration-contracts.py`
+- `kaji/scripts/sync_integration_contracts.py`
 - `kaji/sdk/src/integrations/validation.py`
 - `kaji/ts/src/integrations/registry-loader.ts`
 - `kaji/ts/tsconfig.registry.json`
@@ -1235,12 +1235,12 @@ Migrate each index entry from a string to:
 
 **Step 5: Sync canonical schemas into package-owned copies.**
 
-`sync-integration-contracts.py` supports `--write` and `--check`. The write mode copies the canonical schemas; check mode fails with a unified diff. CI runs only `--check`.
+`sync_integration_contracts.py` supports `--write` and `--check`. The write mode copies the canonical schemas; check mode fails with a unified diff. CI runs only `--check`.
 
 **Step 6: Verify schemas, loaders, paths, and packaged copies.**
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/sync-integration-contracts.py --check
+uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
 cd kaji/sdk && uv run pytest tests/test_manifest_registry.py tests/cli/test_add.py -q
 cd kaji/ts
 bun run validate:registry
@@ -1372,7 +1372,7 @@ but commit enkang/kaji-production-beta -m "fix(ts): bound catalog integration I/
 - `kaji/contracts/parity/expected-normalized.json`
 - `kaji/sdk/scripts/export_contract_snapshots.py`
 - `kaji/ts/scripts/export-contract-snapshots.ts`
-- `kaji/scripts/check-sdk-parity.py`
+- `kaji/scripts/check_sdk_parity.py`
 - `kaji/sdk/tests/test_cross_sdk_fixtures.py`
 - `kaji/ts/tests/cross-sdk-fixtures.test.ts`
 
@@ -1415,12 +1415,12 @@ Each runner reads `scenarios.json` and writes canonical JSON to stdout. It must 
 
 **Step 3: Compare through one orchestrator.**
 
-`check-sdk-parity.py` runs both exporters into a temporary directory, canonicalizes object-key order, compares Python to `expected-normalized.json`, TypeScript to `expected-normalized.json`, and then Python to TypeScript. It prints the smallest JSON Pointer diff. It deletes temporary output on success and retains it on failure under `.artifacts/kaji-parity/`.
+`check_sdk_parity.py` runs both exporters into a temporary directory, canonicalizes object-key order, compares Python to `expected-normalized.json`, TypeScript to `expected-normalized.json`, and then Python to TypeScript. It prints the smallest JSON Pointer diff. It deletes temporary output on success and retains it on failure under `.artifacts/kaji-parity/`.
 
 **Step 4: Verify behavior and documented feature status.**
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py
+uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py
 cd kaji/sdk && uv run pytest tests/test_cross_sdk_fixtures.py -q
 cd kaji/ts && bun run vitest run tests/cross-sdk-fixtures.test.ts tests/schema-parity.test.ts
 ```
@@ -1446,8 +1446,8 @@ but commit enkang/kaji-production-beta -m "test(kaji): prove cross-sdk behaviora
 - `kaji/ts/benchmarks/runtime-benchmark.ts`
 - `kaji/ts/benchmarks/runtime-soak.ts`
 - `kaji/ts/tests/runtime-complexity.test.ts`
-- `kaji/scripts/run-beta-benchmarks.sh`
-- `kaji/scripts/run-beta-soak.sh`
+- `kaji/scripts/run_beta_benchmarks.py`
+- `kaji/scripts/run_beta_soak.py`
 - `.github/workflows/kaji.benchmark.yml`
 
 **Modify:**
@@ -1514,13 +1514,13 @@ The soak uses fixture providers/tools, bounded concurrency, and periodic forced 
 ```bash
 cd kaji/sdk && uv run pytest tests/test_runtime_complexity.py tests/test_runtime_faults.py -q
 cd kaji/ts && bun run vitest run tests/runtime-complexity.test.ts tests/runtime-faults.test.ts
-bash kaji/scripts/run-beta-benchmarks.sh --quick
+uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --quick
 ```
 
 Full soak is a protected release/nightly job:
 
 ```bash
-bash kaji/scripts/run-beta-soak.sh --minutes 30
+uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30
 ```
 
 **Step 6: Checkpoint.**
@@ -1556,7 +1556,7 @@ but commit enkang/kaji-production-beta -m "test(kaji): gate runtime bounds and p
 **Modify:**
 
 - `sgconfig.yml`
-- `kaji/scripts/beta-release-check.sh`
+- `kaji/scripts/beta_release_check.py`
 - `kaji/sdk/tests/test_beta_release_check.py`
 - Root scripts/CI
 
@@ -1653,19 +1653,19 @@ but commit enkang/kaji-production-beta -m "test(kaji): guard runtime architectur
 - `kaji/sdk/LICENSE`
 - `kaji/ts/LICENSE`
 - `kaji/ts/scripts/smoke-installed.mts`
-- `kaji/scripts/verify-package-metadata.py`
+- `kaji/scripts/verify_package_metadata.py`
 - `.github/workflows/kaji.beta.yml`
 - `.github/workflows/kaji.beta-publish.yml`
 - `docs/kaji/releasing.md`
 
 **Modify:**
 
-- `kaji/sdk/pyproject.toml`, `src/__init__.py`, `scripts/release_smoke.sh`, `scripts/verify_wheel.sh`
+- `kaji/sdk/pyproject.toml`, `src/__init__.py`, `scripts/release_smoke.py`, `scripts/verify_wheel.py`
 - `kaji/ts/package.json`, `scripts/smoke.mts`
 - `.github/workflows/python.test.yml:58-68`
 - `.github/workflows/ts.test.yml:67-81`
 - `.github/workflows/ts.lint.yml:24-39`
-- `kaji/scripts/beta-release-check.sh`
+- `kaji/scripts/beta_release_check.py`
 - root `package.json`, locks, changelogs
 
 **Step 1: Add failing package-content tests.**
@@ -1674,7 +1674,7 @@ Python wheel and sdist must contain license, `py.typed`, integration contracts/c
 
 **Step 2: Repair current broken CI references.**
 
-- Python workflow calls the existing verifier (`scripts/verify_wheel.sh`), not nonexistent `verify_wheel_contents.sh`.
+- Python workflow calls the existing verifier (`scripts/verify_wheel.py`), not nonexistent `verify_wheel_contents.sh`.
 - TypeScript workflow calls the new `scripts/smoke-installed.mts`, not nonexistent `smoke-install.mts`.
 - `smoke.mts` loses the `src/` fallback; installed-package failure must fail.
 - Python venv creation uses the uv-selected supported interpreter, not a bare unrelated `python3`.
@@ -1698,7 +1698,7 @@ uv run ty check src tests
 uv run pytest
 uv build
 uv run twine check dist/*
-bash scripts/verify_wheel.sh
+uv run python scripts/verify_wheel.py
 ```
 
 TypeScript:
@@ -1747,8 +1747,8 @@ Rollback runbook: yank the PyPI beta, deprecate the npm beta with a replacement 
 **Step 8: Run a dry-run release without publishing.**
 
 ```bash
-bash kaji/scripts/beta-release-check.sh --release
-uv run --project kaji/sdk python kaji/scripts/verify-package-metadata.py
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/sdk python kaji/scripts/verify_package_metadata.py
 ```
 
 **Step 9: Checkpoint.**
@@ -1818,13 +1818,13 @@ Cover executor signature changes, `TurnContext`, required risk, sequence/turn ID
 **Step 5: Run the final beta audit.**
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/check-beta-contract.py
-uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py
-uv run --project kaji/sdk python kaji/scripts/sync-integration-contracts.py --check
+uv run --project kaji/sdk python kaji/scripts/check_beta_contract.py
+uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py
+uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
 ast-grep test -t tools/ast-grep/rule-tests --skip-snapshot-tests
 ast-grep scan --config sgconfig.yml kaji
-bash kaji/scripts/beta-release-check.sh --release
-bash kaji/scripts/run-beta-benchmarks.sh --full
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --full
 ```
 
 Then run the protected keyed-provider and 30-minute soak jobs. Capture links/artifacts in the beta release checklist; do not substitute a prior run from another commit.

@@ -274,7 +274,7 @@ Expected: PASS with no findings.
 Run:
 
 ```bash
-bash kaji/scripts/beta-release-check.sh
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
 ```
 
 Expected: PASS, ending with:
@@ -302,7 +302,7 @@ Expected: only the intentional plan, rule, doc, and test changes are present.
 
 ## What Already Exists
 
-- `kaji/scripts/beta-release-check.sh` already runs `sg scan --config sgconfig.yml kaji` when `sg` exists.
+- `kaji/scripts/beta_release_check.py` already runs `sg scan --config sgconfig.yml kaji` when `sg` exists.
 - `kaji/sdk/tests/test_package_boundaries.py` already guards Python SDK package boundaries with Python AST tests.
 - `tools/ast-grep/rules/no-generic-ts-cancelled-error.yml` already guards one TS cancellation regression.
 - Release docs already define stable core, experimental Python-only surfaces, TS-not-ported surfaces, and keyed live proof requirements.

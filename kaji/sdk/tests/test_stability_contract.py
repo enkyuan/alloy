@@ -10,7 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json"
 RELEASE_MATRIX = REPO_ROOT / "kaji" / "RELEASE_MATRIX.md"
-CONTRACT_CHECKER = REPO_ROOT / "kaji" / "scripts" / "check-beta-contract.py"
+CONTRACT_CHECKER = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 DOC_PATHS = [
     REPO_ROOT / "kaji" / "RELEASE_MATRIX.md",
     REPO_ROOT / "kaji" / "sdk" / "README.md",

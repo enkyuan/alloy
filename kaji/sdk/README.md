@@ -244,7 +244,7 @@ providers in this order: Anthropic, Python Gemini native, then Kimi/OpenRouter.
 For the cross-SDK release gate, run from the repository root:
 
 ```bash
-bash kaji/scripts/beta-release-check.sh
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
@@ -254,8 +254,8 @@ live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, cor
 For the live-gate credential modes specifically:
 
 ```bash
-bash kaji/scripts/live-openai-tool-loop.sh
-KAJI_REQUIRE_LIVE_KEYS=1 bash kaji/scripts/live-openai-tool-loop.sh
+uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
@@ -265,11 +265,11 @@ command exits with `PASS: OpenAI live tool-loop readiness verified` while
 `OPENAI_API_KEY` is set:
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/live_openai_tool_loop.py
 ```
 
 The same keyed proof can be included in the wrapper with
-`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 bash kaji/scripts/beta-release-check.sh`.
+`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py`.
 
 ## Stability tiers
 
@@ -368,8 +368,8 @@ uv run ruff check src             # lint
 Release smoke checks the current `src/` package remap in an installed wheel:
 
 ```bash
-bash scripts/clean_generated.sh
-bash scripts/release_smoke.sh
+uv run python scripts/clean_generated.py
+uv run python scripts/release_smoke.py
 ```
 
 Live provider tests are opt-in (extras pull in the provider SDK):

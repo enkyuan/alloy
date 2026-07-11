@@ -74,7 +74,7 @@ The implementation should be symmetric across Python and TS:
    - `cd kaji/sdk && uv run pytest tests/test_tool_planner.py -q`
    - `cd kaji/ts && bun run test tests/provider-args.test.ts tests/tool-planner.test.ts`
    - `sg scan --config sgconfig.yml kaji`
-   - `bash kaji/scripts/beta-release-check.sh`
+   - `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py`
 
 ## Completion Criteria
 

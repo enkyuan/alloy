@@ -33,7 +33,7 @@ jobs:
         run: |
           mkdir -p .artifacts/kaji-offline-evidence
           set +e
-          bash kaji/scripts/beta-release-check.sh --release \
+          uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release \
             > >(tee .artifacts/kaji-offline-evidence/offline-gates.log) 2>&1
           status=$?
           set -e
@@ -82,7 +82,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install and smoke wheel and sdist
         working-directory: kaji/sdk
-        run: bash scripts/release_smoke.sh
+        run: uv run --no-sync python scripts/release_smoke.py
 
   node-compat:
     runs-on: ubuntu-latest
@@ -129,7 +129,7 @@ jobs:
           python-version: "3.14"
           sync-args: --frozen --extra openai --extra anthropic
       - name: Run protected provider proof
-        run: bash kaji/scripts/live-provider-proof.sh
+        run: uv run --project kaji/sdk python kaji/scripts/live_provider_proof.py
       - name: Retain explicit provider status
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

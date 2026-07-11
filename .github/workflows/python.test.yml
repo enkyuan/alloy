@@ -64,8 +64,8 @@ jobs:
 
       - name: Build, verify, and install wheel and sdist
         run: |
-          bash scripts/release_smoke.sh
-          bash scripts/verify_wheel.sh
+          uv run --no-sync python scripts/release_smoke.py
+          uv run --no-sync python scripts/verify_wheel.py
 
   serve:
     name: kaji/serve

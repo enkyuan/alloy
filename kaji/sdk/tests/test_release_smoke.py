@@ -1,37 +1,92 @@
+import importlib.util
 import re
+import sys
 import tomllib
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+
+import pytest
 
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
 
 
-def test_release_smoke_invokes_wheel_verifier_and_install_smoke() -> None:
-    script = (SDK_ROOT / "scripts" / "release_smoke.sh").read_text()
+def _load_script(name: str) -> ModuleType:
+    path = SDK_ROOT / "scripts" / name
+    spec = importlib.util.spec_from_file_location(f"test_{path.stem}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
-    assert "uv build --sdist --wheel" in script
-    assert "--build-constraints build-requirements.txt --require-hashes" in script
-    assert "scripts/clean_generated.sh" in script
-    assert "rm -rf build" in script
-    assert 'PYTHON_CMD=("$PYTHON")' in script
-    assert "PYTHON_CMD=(uv run --no-sync python)" in script
-    assert "PYTHON_CMD=(python3)" in script
-    assert script.count('bash scripts/verify_wheel.sh "$DIST_DIR"') == 2
-    assert '"${PYTHON_CMD[@]}" scripts/test_archive_verifier.py "$DIST_DIR"' in script
-    assert "scripts/smoke_install.py" in script
-    assert "uv run --no-sync python -m venv" in script
-    assert "python3 -m venv" not in script
-    assert "uv export --locked --no-dev --no-emit-project" in script
-    assert "--extra openai --extra anthropic" in script
-    assert "pip install --require-hashes" in script
-    assert "--requirement build-requirements.txt" in script
-    assert '--requirement "$WORKDIR/runtime-requirements.txt"' in script
-    assert "pip install --no-deps --no-build-isolation" in script
-    assert script.rindex('bash scripts/verify_wheel.sh "$DIST_DIR"') > script.index(
-        '"$venv/bin/python" scripts/smoke_install.py'
+
+def test_release_smoke_preserves_build_verify_install_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script("release_smoke.py")
+    sdk_root = tmp_path / "sdk"
+    scripts = sdk_root / "scripts"
+    dist = sdk_root / "dist"
+    scripts.mkdir(parents=True)
+    dist.mkdir()
+    wheel = dist / "kaji.whl"
+    sdist = dist / "kaji.tar.gz"
+    wheel.touch()
+    sdist.touch()
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(module, "SDK_ROOT", sdk_root)
+    monkeypatch.setattr(module, "SCRIPTS", scripts)
+    monkeypatch.setattr(module, "run", commands.append)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+
+    module.release_smoke(Path("dist"))
+
+    assert commands[0] == [sys.executable, str(scripts / "clean_generated.py")]
+    assert commands[1][:4] == ["uv", "build", "--sdist", "--wheel"]
+    verify = [
+        index
+        for index, command in enumerate(commands)
+        if str(scripts / "verify_wheel.py") in command
+    ]
+    archive = next(
+        index
+        for index, command in enumerate(commands)
+        if str(scripts / "test_archive_verifier.py") in command
     )
-    assert "PASS: release smoke verified" in script
+    installed_smokes = [
+        index
+        for index, command in enumerate(commands)
+        if str(scripts / "smoke_install.py") in command
+    ]
+
+    assert len(verify) == 2
+    assert len(installed_smokes) == 2
+    assert verify[0] < archive < installed_smokes[0] < installed_smokes[1] < verify[1]
+    assert any(command[:2] == ["uv", "export"] for command in commands)
+    assert (
+        sum(
+            len(command) >= 3 and command[1:3] == ["-m", "venv"] for command in commands
+        )
+        == 2
+    )
+    assert all(isinstance(command, list) for command in commands)
+
+
+def test_release_smoke_normalizes_signal_exit_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("release_smoke.py")
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=-15),
+    )
+
+    with pytest.raises(SystemExit, match="143"):
+        module.run(["tool"])
 
 
 def test_installed_smoke_requires_the_missing_key_failure() -> None:
@@ -44,18 +99,17 @@ def test_installed_smoke_requires_the_missing_key_failure() -> None:
 
 
 def test_wheel_verifier_compares_all_packaged_contract_bytes() -> None:
-    script = (SDK_ROOT / "scripts" / "verify_wheel.sh").read_text()
+    script = (SDK_ROOT / "scripts" / "verify_wheel.py").read_text()
 
-    assert 'PYTHON_CMD=("$PYTHON")' in script
-    assert "PYTHON_CMD=(uv run --no-sync python)" in script
-    assert "PYTHON_CMD=(python3)" in script
-    assert "\"${PYTHON_CMD[@]}\" - <<'PY'" in script
+    assert "argparse.ArgumentParser" in script
+    assert "def configure(dist_dir: Path)" in script
+    assert "tomllib.loads" in script
     assert "canonical_contracts" in script
     assert "packaged_contracts" in script
     assert "wheel contract set mismatch" in script
     assert "differs from canonical bytes" in script
     assert 'entry.get("manifest")' in script
-    assert "SDIST" in script
+    assert "sdist" in script
     assert "LICENSE" in script
     assert "expected_source_bytes" in script
     assert "forbidden_artifacts" in script
@@ -135,16 +189,28 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
     assert 'version: "0.11.25"' in setup_action
 
 
-def test_clean_generated_removes_project_caches_without_touching_venv() -> None:
-    script = (SDK_ROOT / "scripts" / "clean_generated.sh").read_text()
+def test_clean_generated_removes_project_caches_without_touching_venv(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("clean_generated.py")
+    generated = [
+        tmp_path / "src" / "package" / "__pycache__" / "module.pyc",
+        tmp_path / "tests" / "case.pyc",
+        tmp_path / "scripts" / "__pycache__" / "tool.pyo",
+        tmp_path / ".pytest_cache" / "state",
+        tmp_path / ".ruff_cache" / "state",
+        tmp_path / "htmlcov" / "index.html",
+        tmp_path / ".coverage",
+    ]
+    preserved = tmp_path / ".venv" / "lib" / "keep.pyc"
+    for path in [*generated, preserved]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
 
-    assert "find src tests" in script
-    assert "__pycache__" in script
-    assert "*.pyc" in script
-    assert "*.pyo" in script
-    assert ".pytest_cache" in script
-    assert ".ruff_cache" in script
-    assert ".venv" not in script
+    module.clean_generated(tmp_path)
+
+    assert all(not path.exists() for path in generated)
+    assert preserved.is_file()
 
 
 def test_release_docs_reference_release_smoke() -> None:
@@ -155,8 +221,8 @@ def test_release_docs_reference_release_smoke() -> None:
         ]
     )
 
-    assert "scripts/release_smoke.sh" in combined
-    assert "scripts/clean_generated.sh" in combined
+    assert "scripts/release_smoke.py" in combined
+    assert "scripts/clean_generated.py" in combined
 
 
 def test_registry_namespace_packages_are_declared() -> None:

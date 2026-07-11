@@ -173,7 +173,7 @@ def test_user_facing_docs_include_stability_contract() -> None:
         "voice/TTS",
         "DocumentRAG",
         "OpenAI-compatible factories",
-        "scripts/release_smoke.sh",
+        "scripts/release_smoke.py",
     ):
         assert phrase in haystack
 

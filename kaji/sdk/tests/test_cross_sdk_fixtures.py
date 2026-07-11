@@ -23,7 +23,7 @@ SNAPSHOT_KEYS = {
     "replay",
     "result",
 }
-PARITY_CHECK = REPO_ROOT / "kaji" / "scripts" / "check-sdk-parity.py"
+PARITY_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_sdk_parity.py"
 
 
 def run_exporter(poison: str) -> bytes:

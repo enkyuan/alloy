@@ -9,7 +9,6 @@ import copy
 import csv
 import hashlib
 import io
-import os
 import shutil
 import subprocess
 import sys
@@ -192,14 +191,11 @@ def run_case(
         sdist_mutation(sdist_files)
         write_sdist(case_sdist, sdist_files)
 
-    environment = os.environ.copy()
-    environment["PYTHON"] = sys.executable
     completed = subprocess.run(
-        ["bash", str(verifier), str(case_dir)],
+        [sys.executable, str(verifier), str(case_dir)],
         check=False,
         capture_output=True,
         text=True,
-        env=environment,
     )
     output = completed.stdout + completed.stderr
     if completed.returncode == 0:
@@ -218,7 +214,7 @@ def main() -> None:
     )
     wheel = find_one(dist_dir, "*.whl")
     sdist = find_one(dist_dir, "*.tar.gz")
-    verifier = sdk_root / "scripts/verify_wheel.sh"
+    verifier = sdk_root / "scripts/verify_wheel.py"
 
     with tempfile.TemporaryDirectory(prefix="kaji-archive-verifier-") as temporary:
         root = Path(temporary)

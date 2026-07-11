@@ -14,7 +14,7 @@ adapter is beta-ready.
 The exact runtime defaults and operating boundaries are documented in
 [`docs/kaji/production-beta.md`](../docs/kaji/production-beta.md). This matrix
 is checked against the machine feature contract and both registry indexes by
-`kaji/scripts/check-beta-contract.py`.
+`kaji/scripts/check_beta_contract.py`.
 
 ## Stable Core
 
@@ -98,7 +98,7 @@ HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
 Use the root wrapper as the default local gate before a beta checkpoint:
 
 ```bash
-bash kaji/scripts/beta-release-check.sh
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
 ```
 
 The wrapper runs all non-keyed checks below, fails clearly when required local
@@ -112,15 +112,15 @@ TypeScript optional provider imports, and cancellation error shape.
 
 | Gate | Command or workflow | Required for beta | Current evidence |
 | --- | --- | --- | --- |
-| Offline release rehearsal | `bash kaji/scripts/beta-release-check.sh --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
-| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py` | Yes; 59 deterministic scenarios | Locally proven |
-| Shared schemas and registry | `check-beta-contract.py` plus both sync checks | Yes | Locally proven |
+| Offline release rehearsal | `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py` | Yes; 59 deterministic scenarios | Locally proven |
+| Shared schemas and registry | `check_beta_contract.py` plus both sync checks | Yes | Locally proven |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.beta.yml` and `kaji.beta-publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
-| Full benchmark | `run-beta-benchmarks.sh --full` on the pinned runner | Yes | Pending protected run |
-| Thirty-minute soak | `run-beta-soak.sh --minutes 30` on the pinned runner | Yes | Pending protected run |
-| Keyed OpenAI live proof | `live-provider-proof.sh` in `kaji-beta` | Yes; keyed OpenAI, conditional Anthropic | Pending protected run |
+| Full benchmark | `run_beta_benchmarks.py --full` on the pinned runner | Yes | Pending protected run |
+| Thirty-minute soak | `run_beta_soak.py --minutes 30` on the pinned runner | Yes | Pending protected run |
+| Keyed OpenAI live proof | `live_provider_proof.py` in `kaji-beta` | Yes; keyed OpenAI, conditional Anthropic | Pending protected run |
 | Immutable signed tag | `kaji.beta-publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
 | Registry publication proof | protected PyPI/npm jobs plus byte verification | Yes | Pending approval/publication |

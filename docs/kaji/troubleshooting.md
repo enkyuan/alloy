@@ -52,7 +52,7 @@ for routing and retry policy, not a full diagnostic payload.
 
 ## A local release check passed, but release is still blocked
 
-`beta-release-check.sh --release` is an offline rehearsal. It does not prove
+`beta_release_check.py --release` is an offline rehearsal. It does not prove
 the protected keyed-provider run, floor/latest runtime matrix, full benchmark,
 30-minute soak, real signed tag, provenance, or publication. Evidence must
 come from the exact release commit. See [production-beta.md](production-beta.md)
