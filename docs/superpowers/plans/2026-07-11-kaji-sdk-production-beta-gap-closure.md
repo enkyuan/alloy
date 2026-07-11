@@ -74,10 +74,10 @@ The remaining blockers are concrete:
 | P1 | Global event commit serialization | Python journal uses one `_lock` at `kaji/sdk/src/infra/events/journal.py:128-169`; TypeScript committers use one `SerialExecutor` at `kaji/ts/src/events/committer.ts:180-218,273-353` | Unrelated sessions contend under fan-out |
 | P1 | Full context scan per tool iteration | Python calls `_turn_groups(state.messages)` at `kaji/sdk/src/runtime/agents/context.py:135-177`; TypeScript calls `turnGroups(messages)` at `kaji/ts/src/runtime/context.ts:345-380`, both inside provider loops | Work grows with retained history multiplied by tool iterations |
 | P1 | Streaming amplification | Python uses `full_response += chunk.delta` and commits each delta (`kaji/sdk/src/runtime/agents/runtime.py:896-903`); TypeScript does the same (`kaji/ts/src/runtime/runtime.ts:701-709`) | High-rate streams create avoidable CPU, memory, and event writes |
-| P1 | Integration ABI is descriptive only | Manifest tools contain name, description, and risk (`kaji/contracts/integrations/manifest.schema.json:75-93`); `kaji/ts/scripts/check.ts:18-30` checks files/header only | Catalog metadata can drift from executable schemas/settings |
+| P1 | Integration ABI is descriptive only | Manifest tools contain name, description, and risk (`kaji/contracts/integrations/manifest.schema.json:75-93`); `kaji/ts/scripts/check_integration_sources.ts:18-30` checks files/header only | Catalog metadata can drift from executable schemas/settings |
 | P1 | Performance proof cannot pass | `kaji/benchmarks/beta-baseline.json:2-20` is explicitly uncalibrated and the full gate rejects it at `kaji/scripts/beta_benchmark_gate.py:211-224` | No defensible regression threshold exists |
 | P1 | CI path coverage is incomplete | Python paths at `.github/workflows/python.test.yml:6-16` and TS paths at `.github/workflows/ts.test.yml:6-22` exclude shared contracts/scripts/docs | Contract-only drift can merge without both suites |
-| P2 | Installed-package smoke can hang | `kaji/ts/scripts/smoke-installed.mts:27-38` calls `execFileSync` without `timeout` or `maxBuffer` | A network or child-process stall can consume the entire job |
+| P2 | Installed-package smoke can hang | `kaji/ts/scripts/smoke_package.mts:27-38` calls `execFileSync` without `timeout` or `maxBuffer` | A network or child-process stall can consume the entire job |
 
 ### ast-grep structural evidence
 
@@ -95,7 +95,7 @@ for await (... this.provider.generateStream(...))
   kaji/ts/src/runtime/runtime.ts:701
 
 execFileSync(...)
-  kaji/ts/scripts/smoke-installed.mts:33
+  kaji/ts/scripts/smoke_package.mts:33
 
 build_context(...) in the provider iteration
   kaji/sdk/src/runtime/agents/runtime.py:861
@@ -661,7 +661,7 @@ but commit enkang/kaji-beta-gap-closure -m "fix(kaji): enforce turn deadlines th
 - Modify `kaji/scripts/beta_release_check.py`.
 - Modify `kaji/sdk/tests/test_beta_release_check.py`.
 - Create `kaji/ts/scripts/command.ts`.
-- Modify `kaji/ts/scripts/smoke-installed.mts`.
+- Modify `kaji/ts/scripts/smoke_package.mts`.
 - Create `kaji/ts/tests/smoke-command.test.ts`.
 - Modify `.github/workflows/ts.test.yml`, `.github/workflows/kaji.beta.yml`, and `.github/workflows/kaji.beta-publish.yml` with job-level timeouts where missing.
 
@@ -741,7 +741,7 @@ but commit enkang/kaji-beta-gap-closure -m "fix(kaji): make release rehearsal cl
 - Modify generated copies `kaji/sdk/src/integrations/registry/schema.json` and `kaji/ts/registry/schema.json` only through `kaji/scripts/sync_integration_contracts.py --write`.
 - Modify `kaji/sdk/src/integrations/registry/echo/manifest.json` and `kaji/sdk/src/integrations/registry/echo/echo.py` only as required for exact metadata parity.
 - Modify `kaji/ts/src/integrations/registry-loader.ts`.
-- Create `kaji/ts/scripts/integration-abi.ts` and modify `kaji/ts/scripts/check.ts`.
+- Create `kaji/ts/scripts/integration-abi.ts` and modify `kaji/ts/scripts/check_integration_sources.ts`.
 - Modify `kaji/ts/registry/_template/manifest.json`, `kaji/ts/registry/echo/manifest.json`, `kaji/ts/registry/fs/manifest.json`, `kaji/ts/registry/http/manifest.json`, `kaji/ts/registry/sqlite/manifest.json`, and `kaji/ts/registry/web/manifest.json`; modify only `kaji/ts/registry/echo/index.ts` for executable parity.
 - Modify `kaji/sdk/tests/test_manifest_registry.py`, `kaji/sdk/tests/test_echo_registry.py`, and `kaji/sdk/tests/test_integrations.py`.
 - Modify `kaji/ts/tests/manifest-validate.test.ts`, `kaji/ts/tests/echo-registry.test.ts`, `kaji/ts/tests/fs-registry.test.ts`, `kaji/ts/tests/http-registry.test.ts`, `kaji/ts/tests/sqlite-registry.test.ts`, and `kaji/ts/tests/web-registry.test.ts`; create `kaji/ts/tests/integration-abi.test.ts` for Echo only.
@@ -1343,7 +1343,7 @@ but commit enkang/kaji-beta-gap-closure -m "ci(kaji): require shared beta contra
 - Modify `kaji/ts/src/cli/init.ts`, `kaji/ts/src/cli/index.ts`, and `kaji/ts/src/cli/render.ts`.
 - Modify `kaji/sdk/tests/cli/test_init.py`, `kaji/sdk/tests/cli/test_main.py`, `kaji/sdk/tests/test_production_beta_docs.py`, `kaji/sdk/tests/test_docs_sync.py`, and `kaji/sdk/tests/test_release_smoke.py`.
 - Modify `kaji/ts/tests/cli-init.test.ts`, `kaji/ts/tests/cli-dispatch.test.ts`, `kaji/ts/tests/cli-replay.test.ts`, `kaji/ts/tests/docs-contract.test.ts`, `kaji/ts/tests/package-contract.test.ts`, and `kaji/ts/tests/public-declarations.test.ts`.
-- Modify `kaji/ts/package.json`, `kaji/ts/scripts/smoke-installed.mts`, and `kaji/sdk/scripts/release_smoke.py`.
+- Modify `kaji/ts/package.json`, `kaji/ts/scripts/smoke_package.mts`, and `kaji/sdk/scripts/release_smoke.py`.
 - Create `SECURITY.md`, `CONTRIBUTING.md`, `SUPPORT.md`, and `.github/ISSUE_TEMPLATE/kaji-sdk-bug.yml`.
 
 ### Developer perspective
@@ -1450,7 +1450,7 @@ Declare Node support separately from compiler support: Node 22/24 runtime; TypeS
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_production_beta_docs.py kaji/sdk/tests/test_docs_sync.py kaji/sdk/tests/test_release_smoke.py --no-cov -q
 uv run --project kaji/sdk pytest kaji/sdk/tests/cli/test_init.py kaji/sdk/tests/cli/test_main.py --no-cov -q
 cd kaji/ts && bun run build && bun run vitest run tests/cli-init.test.ts tests/cli-dispatch.test.ts tests/cli-replay.test.ts tests/docs-contract.test.ts tests/package-contract.test.ts tests/public-declarations.test.ts
-cd kaji/ts && bun scripts/smoke-installed.mts
+cd kaji/ts && bun scripts/smoke_package.mts
 ```
 
 The exact-artifact smoke must pack/install, run `kaji init`, install/compile the generated project, execute it, and assert deterministic text/turn/sequence output. Record automated cold setup-to-output and warm run time separately for Python, npm, and Bun.
