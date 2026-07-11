@@ -36,7 +36,7 @@ async def test_in_memory_bus_is_live_only_and_does_not_duplicate_store_history()
 
     live = await _stored(store, "s1", "live")
     await bus.publish(live)
-    assert await pending is live
+    assert await pending == live
     await _close(stream)
 
 
@@ -54,7 +54,7 @@ async def test_in_memory_bus_isolates_sessions() -> None:
 
     expected = await _stored(store, "s2", "expected")
     await bus.publish(expected)
-    assert await pending is expected
+    assert await pending == expected
     await _close(stream)
 
 
@@ -68,7 +68,7 @@ async def test_in_memory_bus_overflow_terminates_only_lagging_subscriber() -> No
 
     first = await _stored(store, "s1", "one")
     await bus.publish(first)
-    assert await first_task is first
+    assert await first_task == first
     await bus.publish(await _stored(store, "s1", "two"))
     third = await _stored(store, "s1", "three")
     await bus.publish(third)

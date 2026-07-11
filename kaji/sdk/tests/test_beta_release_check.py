@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import os
 from pathlib import Path
 
 
@@ -19,6 +20,49 @@ def test_beta_release_check_shell_syntax() -> None:
     subprocess.run(["bash", "-n", str(BETA_GATE)], check=True)
 
 
+def test_beta_release_check_rejects_unknown_flag_before_gates() -> None:
+    result = subprocess.run(
+        ["bash", str(BETA_GATE), "--unknown"],
+        capture_output=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin"},
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "usage:" in result.stderr
+    assert "PASS:" not in result.stdout + result.stderr
+
+
+def test_protected_provider_proof_requires_openai_before_success() -> None:
+    env = os.environ.copy()
+    env.pop("OPENAI_API_KEY", None)
+    proof = REPO_ROOT / "kaji" / "scripts" / "live-provider-proof.sh"
+    result = subprocess.run(
+        ["bash", str(proof)],
+        capture_output=True,
+        check=False,
+        env=env,
+        text=True,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 2
+    assert "OPENAI_API_KEY is required for keyed provider proof" in output
+    assert "STATUS: openai=passed" not in output
+    assert "PASS:" not in output
+
+
+def test_release_success_line_disclaims_protected_evidence() -> None:
+    script = BETA_GATE.read_text()
+
+    assert (
+        "PASS: offline release rehearsal; keyed/provider/publish readiness NOT claimed"
+        in script
+    )
+    assert "PASS: Kaji beta release checks completed" not in script
+
+
 def test_beta_release_check_wraps_required_gates() -> None:
     script = BETA_GATE.read_text()
 
@@ -30,8 +74,8 @@ def test_beta_release_check_wraps_required_gates() -> None:
         "bun run test",
         "bun run typecheck",
         "bun run build",
-        "bun run scripts/smoke.mts",
-        "live-openai-tool-loop.sh",
+        "bun run package:smoke",
+        "live-provider-proof.sh",
         "KAJI_REQUIRE_LIVE_KEYS",
         "KAJI_RUN_KEYED_LIVE",
         "UV_SYSTEM_CERTS",
@@ -45,7 +89,7 @@ def test_beta_release_check_wraps_required_gates() -> None:
     assert "SKIP: ast-grep CLI not installed" not in script
 
     parity = script.index("check-sdk-parity.py")
-    assert parity < script.index("bun run scripts/smoke.mts")
+    assert parity < script.index("bun run package:smoke")
     assert parity < script.index("bash scripts/release_smoke.sh")
 
 

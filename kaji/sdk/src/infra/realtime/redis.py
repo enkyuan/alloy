@@ -34,7 +34,7 @@ async def get_redis_client() -> Any:
     if redis_client is None:
         _redis = _get_redis_module()
         settings = get_settings()
-        logger.info("Connecting to Redis at %s", settings.REDIS_URL)
+        logger.info("Connecting to Redis (endpoint and credentials redacted)")
         redis_client = _redis.from_url(
             settings.REDIS_URL,
             encoding="utf-8",
@@ -50,7 +50,9 @@ async def get_redis_stream_client() -> Any:
     if redis_stream_client is None:
         _redis = _get_redis_module()
         settings = get_settings()
-        logger.info("Connecting stream Redis client at %s", settings.REDIS_URL)
+        logger.info(
+            "Connecting stream Redis client (endpoint and credentials redacted)"
+        )
         redis_stream_client = _redis.from_url(
             settings.REDIS_URL,
             decode_responses=False,
@@ -64,7 +66,9 @@ async def get_redis_binary_client() -> Any:
     if redis_binary_client is None:
         _redis = _get_redis_module()
         settings = get_settings()
-        logger.info("Connecting binary Redis client at %s", settings.REDIS_URL)
+        logger.info(
+            "Connecting binary Redis client (endpoint and credentials redacted)"
+        )
         redis_binary_client = _redis.from_url(
             settings.REDIS_URL,
             decode_responses=False,

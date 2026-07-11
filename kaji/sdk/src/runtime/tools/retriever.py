@@ -12,6 +12,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Protocol, Tuple
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.runtime.tools._vector_math import cosine_similarity
 from kaji.runtime.tools.registry import list_tool_specs
 
@@ -60,8 +61,10 @@ class GeminiEmbedder:
 
             try:
                 self._service = get_gemini_service()
-            except Exception as e:  # missing key, missing package, etc.
-                logger.warning("Gemini embedder unavailable: %s", e)
+            except Exception as error:  # missing key, missing package, etc.
+                log_redacted_failure(
+                    logger, logging.WARNING, "Gemini embedder unavailable", error
+                )
                 return []
 
         embedding = await self._service.embed_text(text)
@@ -117,8 +120,13 @@ class ToolRetriever:
                     logger.info(
                         "Loaded %s tool vectors from cache.", len(self._embeddings)
                     )
-            except Exception as e:
-                logger.warning("Failed to load cached tool embeddings: %s", e)
+            except Exception as error:
+                log_redacted_failure(
+                    logger,
+                    logging.WARNING,
+                    "Failed to load cached tool embeddings",
+                    error,
+                )
                 self._embeddings = {}
 
             needs_update = False
@@ -135,8 +143,10 @@ class ToolRetriever:
                     if vec:
                         self._embeddings[spec.name] = vec
                         needs_update = True
-                except Exception as e:
-                    logger.error("Failed to embed tool %s: %s", spec.name, e)
+                except Exception as error:
+                    log_redacted_failure(
+                        logger, logging.WARNING, "Failed to embed tool", error
+                    )
 
             if needs_update and self._embeddings:
                 try:
@@ -144,8 +154,13 @@ class ToolRetriever:
                     logger.info(
                         "Cached embeddings for %s tools.", len(self._embeddings)
                     )
-                except Exception as e:
-                    logger.error("Failed to persist tool embeddings: %s", e)
+                except Exception as error:
+                    log_redacted_failure(
+                        logger,
+                        logging.WARNING,
+                        "Failed to persist tool embeddings",
+                        error,
+                    )
 
             self._initialized = True
 
@@ -164,8 +179,13 @@ class ToolRetriever:
 
         try:
             query_vec = await self._embed_text(query)
-        except Exception as e:
-            logger.error("Failed to embed query for tool RAG: %s", e)
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to embed query for tool RAG",
+                error,
+            )
             return [spec.name for spec in list_tool_specs()]
 
         if not query_vec:

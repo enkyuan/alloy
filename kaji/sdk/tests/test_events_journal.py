@@ -315,7 +315,9 @@ async def test_split_subscription_joins_store_backlog_and_live_without_loss() ->
     assert backlog == first
     assert backlog is not first
     second = await journal.commit(UserMessage(session_id="s1", content="live"))
-    assert await anext(stream) is second
+    live = await anext(stream)
+    assert live == second
+    assert live is not second
     await _close(stream)
 
 
@@ -385,5 +387,7 @@ async def test_split_subscription_deduplicates_pending_retry_by_sequence() -> No
     assert persisted.sequence == 1
     await journal.retry_pending(draft.id)
     second = await journal.commit(UserMessage(session_id="s1", content="next"))
-    assert await anext(stream) is second
+    live = await anext(stream)
+    assert live == second
+    assert live is not second
     await _close(stream)

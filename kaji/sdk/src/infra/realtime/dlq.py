@@ -6,6 +6,7 @@ import json
 import logging
 from typing import Any
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.infra.realtime.common import (
     append_to_list_with_ttl,
     coerce_str_payload,
@@ -130,10 +131,12 @@ async def drain_generic_dlq(
         try:
             handled = await handler_callback(redis, payload, **extras)
         except Exception as error:
-            logger.warning(
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
                 "Error handling DLQ entry",
-                extra={"error": str(error), "attempts": attempts, "dlq_key": dlq_key},
-                exc_info=True,
+                error,
+                identifiers={"attempts": attempts, "dlq_key": dlq_key},
             )
 
         if handled:
@@ -159,15 +162,15 @@ async def drain_generic_dlq(
                     extra={
                         "dead_key": dead_key,
                         "attempts": next_attempt,
-                        "reason": next_reason,
-                        **extras,
                     },
                 )
             except Exception as error:
-                logger.warning(
+                log_redacted_failure(
+                    logger,
+                    logging.WARNING,
                     "Failed to move exhausted DLQ entry to dead queue",
-                    extra={"attempts": next_attempt, "error": str(error)},
-                    exc_info=True,
+                    error,
+                    identifiers={"attempts": next_attempt, "dead_key": dead_key},
                 )
             continue
 
@@ -186,16 +189,16 @@ async def drain_generic_dlq(
                 "Requeued failed dead-letter payload for retry",
                 extra={
                     "attempts": next_attempt,
-                    "reason": next_reason,
                     "dlq_key": dlq_key,
-                    **extras,
                 },
             )
         except Exception as error:
-            logger.warning(
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
                 "Failed to requeue DLQ payload for retry",
-                extra={"attempts": next_attempt, "error": str(error)},
-                exc_info=True,
+                error,
+                identifiers={"attempts": next_attempt, "dlq_key": dlq_key},
             )
     if drained:
         logger.info(

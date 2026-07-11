@@ -181,7 +181,6 @@ export class AnthropicProvider implements ModelProvider {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("Anthropic provider requires the @anthropic-ai/sdk package.", {
         service: "anthropic",
-        cause: error,
       });
     }
     return this.client;

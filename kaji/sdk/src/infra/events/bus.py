@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 from kaji.infra.events.errors import EventBufferOverflowError
 from kaji.infra.events.schemas import (
-    KajiEvent,
     StoredKajiEvent,
-    require_stored_event,
+    revalidate_stored_event,
+    validate_event_json,
 )
 from kaji.infra.observability.protocols import (
     MetricsSink,
@@ -106,7 +106,7 @@ class InMemoryEventBus:
 
     async def publish(self, event: StoredKajiEvent) -> str:
         """Fan out a persisted event without retaining duplicate history."""
-        stored = require_stored_event(event)
+        stored = revalidate_stored_event(event)
         assert stored.sequence is not None
         async with self._lock:
             for subscriber in list(self._subscribers.get(stored.session_id, ())):
@@ -160,13 +160,14 @@ class EventBus:
 
     async def publish(self, event: StoredKajiEvent) -> str:
         """Publish an event to the Redis stream."""
+        stored = revalidate_stored_event(event)
+
         from kaji.infra.realtime.redis import get_redis_client
 
         redis = await get_redis_client()
-        stream_key = self._get_stream_key(event.session_id)
+        stream_key = self._get_stream_key(stored.session_id)
 
         # Serialize the event to JSON
-        stored = require_stored_event(event)
         event_json = stored.model_dump_json()
 
         # We store it under a single field 'payload' in the stream
@@ -189,10 +190,6 @@ class EventBus:
         redis = await get_redis_client()
         stream_key = self._get_stream_key(session_id)
         current_id = last_id
-
-        from pydantic import TypeAdapter
-
-        adapter = TypeAdapter(KajiEvent)
 
         while True:
             # xread returns: [[b'stream_name', [(b'message_id', {b'payload': b'json_str'})]]]
@@ -224,11 +221,15 @@ class EventBus:
                     )
 
                     try:
-                        event = require_stored_event(
-                            adapter.validate_json(payload_json)
+                        event = revalidate_stored_event(
+                            validate_event_json(payload_json)
                         )
                         assert event.sequence is not None
                         if event.sequence > after_sequence:
                             yield event
-                    except Exception as e:
-                        logger.error("Failed to deserialize event from stream: %s", e)
+                    except Exception as error:
+                        logger.error(
+                            "Failed to deserialize event from stream "
+                            "(%s; payload and details redacted)",
+                            type(error).__name__,
+                        )

@@ -5,6 +5,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0b1] — production beta candidate
+
+- Added bounded durable tool arguments, fail-closed package verification, and
+  reproducible wheel/sdist release gates for shared contract version `1.0.0`.
+
 ## [Unreleased] — pre-beta hardening
 
 ### Added

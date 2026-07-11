@@ -1,6 +1,12 @@
 /** Bounded, ordered planning and execution of provider tool calls. */
-import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
+import {
+  KajiEvent,
+  MAX_DURABLE_TOOL_ARGUMENT_BYTES,
+  StoredKajiEvent,
+  durableToolArgumentsSize,
+} from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
+import { logRedactedFailure } from "@/internal/safe-logging";
 import { EventType } from "@/events/types";
 import type { EventCommitter } from "@/events/protocols";
 import {
@@ -57,14 +63,6 @@ import {
 
 function isJsonObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function reportError(error: unknown): void {
-  try {
-    console.error(error);
-  } catch {
-    // Diagnostics are observational and must not alter lifecycle closure.
-  }
 }
 
 /** A single tool call instruction from the LLM. */
@@ -223,7 +221,14 @@ function normalizeArguments(
         validationError: ToolArgumentValidationError.parseError(toolName),
       };
     }
-    return { args: cloneToolExecutionArguments(toolName, raw) };
+    const args = cloneToolExecutionArguments(toolName, raw);
+    if (durableToolArgumentsSize(args) > MAX_DURABLE_TOOL_ARGUMENT_BYTES) {
+      return {
+        args: { __parse_error: "payload too large" },
+        validationError: ToolArgumentValidationError.oversize(toolName),
+      };
+    }
+    return { args };
   } catch (error) {
     return {
       args: { __parse_error: "invalid arguments" },
@@ -815,7 +820,7 @@ export class ToolPlanner {
         }
       } catch (error) {
         if (error instanceof ApprovalEventRecordingError) throw error.cause;
-        reportError(error);
+        logRedactedFailure("internal error", error);
         decision = {
           granted: false,
           code: "unavailable",
@@ -841,7 +846,10 @@ export class ToolPlanner {
           throughSequence,
         );
         if (authoritative === undefined && decision.recorded === true) {
-          reportError(new Error("Approval handler claimed a decision that was not recorded"));
+          logRedactedFailure(
+            "internal error",
+            new Error("Approval handler claimed a decision that was not recorded"),
+          );
           decision = {
             granted: false,
             code: "unavailable",
@@ -984,7 +992,6 @@ export class ToolPlanner {
     }
     if (!started) revokeValidationReceipt(call.receipt);
     if (outcome.status === "completed") return outcome;
-    if (outcome.error.cause !== undefined) reportError(outcome.error.cause);
     return failureFromExecution(outcome.error);
   }
 

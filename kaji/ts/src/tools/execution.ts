@@ -1,4 +1,5 @@
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
+import { logRedactedFailure } from "@/internal/safe-logging";
 import {
   NOOP_METRICS,
   NOOP_TRACE,
@@ -236,7 +237,7 @@ export class ToolExecutionController {
     });
     try {
       const outcome = await this.executeBounded(request, canonicalContext);
-      if (outcome.status === "failed") span.recordError(outcome.error.cause ?? outcome.error);
+      if (outcome.status === "failed") span.recordError(outcome.error);
       recordMetric(
         this.metrics,
         "kaji.tool.duration_ms",
@@ -395,7 +396,10 @@ export class ToolExecutionController {
       .then(() => request.execute(executionContext))
       .then<ToolExecutionControllerOutcome, ToolExecutionControllerOutcome>(
         (result) => ({ status: "completed", result }),
-        (cause) => ({ status: "failed", error: normalizeStartedToolFailure(cause) }),
+        (cause) => {
+          logRedactedFailure("internal error", cause);
+          return { status: "failed", error: normalizeStartedToolFailure(cause) };
+        },
       );
     let removeAbortListener = () => {};
     const tracked = settled
@@ -506,7 +510,9 @@ export class ToolExecutionController {
           await this.ledger.retryableFailure(claim.claim, failure);
         }
       } catch (cause) {
-        if (!(cause instanceof ToolExecutionError)) console.error(cause);
+        if (!(cause instanceof ToolExecutionError)) {
+          logRedactedFailure("late claim cleanup failed", cause);
+        }
       } finally {
         this.claimCleanups.delete(cleanup);
       }

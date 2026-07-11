@@ -61,10 +61,10 @@ class AnthropicProvider(ModelProvider):
         if self._client is None:
             try:
                 AsyncAnthropic = import_module("anthropic").AsyncAnthropic
-            except ImportError as error:
+            except ImportError:
                 raise ProviderConfigError(
                     "Anthropic provider requires anthropic. Install kaji[anthropic]."
-                ) from error
+                ) from None
 
             # Kaji does not own a cancellable pre-stream retry loop. Disable
             # opaque SDK backoff so caller cancellation cannot be trapped in it.
@@ -128,8 +128,7 @@ class AnthropicProvider(ModelProvider):
 
         When the model's tool-arg JSON does not parse, we do two things:
 
-        - log a truncated snapshot of the raw input plus the exception at
-          WARNING (the logger is the privileged sink),
+        - log only the tool identity, payload length, and exception type,
         - return ``{"__parse_error": str(exc)}`` so the planner fails the
           call closed via the existing sentinel in ``planner.py``.
 
@@ -142,14 +141,13 @@ class AnthropicProvider(ModelProvider):
         try:
             parsed = json.loads(payload)
         except (json.JSONDecodeError, TypeError) as exc:
-            raw_snippet = raw if len(raw) <= 200 else raw[:200] + "..."
             logger.warning(
                 "Anthropic streaming tool_use input failed to parse "
-                "for tool=%s id=%s raw=%r: %s",
+                "for tool=%s id=%s (arguments redacted; %d characters; %s)",
                 name,
                 tool_id or "<unknown>",
-                raw_snippet,
-                exc,
+                len(raw),
+                type(exc).__name__,
             )
             return {"__parse_error": str(exc)}
         if not isinstance(parsed, dict):
@@ -181,13 +179,20 @@ class AnthropicProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        request_error = None
         try:
             response = await self.client.messages.create(**kwargs)
         except Exception as e:  # noqa: BLE001
-            logger.error("Anthropic API error: %s", e)
-            raise provider_error_from_exception(
+            logger.error(
+                "Anthropic API request failed (%s; details redacted)",
+                type(e).__name__,
+            )
+            request_error = provider_error_from_exception(
                 service="anthropic", action="request", error=e
-            ) from e
+            )
+
+        if request_error is not None:
+            raise request_error from None
 
         text, tool_calls = self._parse_tool_use(response.content)
 
@@ -243,83 +248,103 @@ class AnthropicProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        open_error = None
         try:
             stream = self.client.messages.stream(**kwargs)
         except Exception as e:  # noqa: BLE001
-            logger.error("Anthropic streaming API error: %s", e)
-            raise provider_error_from_exception(
+            logger.error(
+                "Anthropic streaming API request failed (%s; details redacted)",
+                type(e).__name__,
+            )
+            open_error = provider_error_from_exception(
                 service="anthropic", action="stream", error=e
-            ) from e
+            )
+
+        if open_error is not None:
+            raise open_error from None
 
         # Accumulate tool_use blocks — Anthropic streams them in deltas that
         # must be reassembled before the arguments are valid JSON.
         pending_tool: Dict[str, Any] = {}
         latest_metrics: TokenMetrics | None = None
 
-        async with stream as s:
-            async for event in s:
-                _raise_if_cancelled(cancellation_token)
+        iteration_error = None
+        try:
+            async with stream as s:
+                async for event in s:
+                    _raise_if_cancelled(cancellation_token)
 
-                event_type = getattr(event, "type", None)
-                usage = getattr(event, "usage", None)
-                if usage is not None:
-                    prompt_tokens = getattr(
-                        usage,
-                        "input_tokens",
-                        latest_metrics.prompt_tokens if latest_metrics else 0,
-                    )
-                    completion_tokens = getattr(
-                        usage,
-                        "output_tokens",
-                        latest_metrics.completion_tokens if latest_metrics else 0,
-                    )
-                    latest_metrics = TokenMetrics(
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        total_tokens=prompt_tokens + completion_tokens,
-                    )
+                    event_type = getattr(event, "type", None)
+                    usage = getattr(event, "usage", None)
+                    if usage is not None:
+                        prompt_tokens = getattr(
+                            usage,
+                            "input_tokens",
+                            latest_metrics.prompt_tokens if latest_metrics else 0,
+                        )
+                        completion_tokens = getattr(
+                            usage,
+                            "output_tokens",
+                            latest_metrics.completion_tokens if latest_metrics else 0,
+                        )
+                        latest_metrics = TokenMetrics(
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=prompt_tokens + completion_tokens,
+                        )
 
-                if event_type == "content_block_start":
-                    block = getattr(event, "content_block", None)
-                    if block and getattr(block, "type", None) == "tool_use":
-                        pending_tool = {
-                            "id": getattr(block, "id", None),
-                            "name": getattr(block, "name", None),
-                            "arguments_raw": "",
-                        }
+                    if event_type == "content_block_start":
+                        block = getattr(event, "content_block", None)
+                        if block and getattr(block, "type", None) == "tool_use":
+                            pending_tool = {
+                                "id": getattr(block, "id", None),
+                                "name": getattr(block, "name", None),
+                                "arguments_raw": "",
+                            }
 
-                elif event_type == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    delta_type = getattr(delta, "type", None)
-                    if delta_type == "text_delta":
-                        text = getattr(delta, "text", "")
-                        if text:
-                            yield ModelResponseChunk(delta=text)
-                    elif delta_type == "input_json_delta":
-                        pending_tool["arguments_raw"] = pending_tool.get(
-                            "arguments_raw", ""
-                        ) + getattr(delta, "partial_json", "")
+                    elif event_type == "content_block_delta":
+                        delta = getattr(event, "delta", None)
+                        delta_type = getattr(delta, "type", None)
+                        if delta_type == "text_delta":
+                            text = getattr(delta, "text", "")
+                            if text:
+                                yield ModelResponseChunk(delta=text)
+                        elif delta_type == "input_json_delta":
+                            pending_tool["arguments_raw"] = pending_tool.get(
+                                "arguments_raw", ""
+                            ) + getattr(delta, "partial_json", "")
 
-                elif event_type == "content_block_stop" and pending_tool:
-                    args = self._parse_tool_args(
-                        raw=pending_tool.get("arguments_raw", ""),
-                        name=pending_tool.get("name") or "",
-                        tool_id=pending_tool.get("id"),
-                    )
-                    yield ModelResponseChunk(
-                        delta="",
-                        tool_calls=cast(
-                            Any,
-                            [
-                                {
-                                    "id": pending_tool.get("id"),
-                                    "name": pending_tool.get("name"),
-                                    "arguments": args,
-                                }
-                            ],
-                        ),
-                    )
-                    pending_tool = {}
+                    elif event_type == "content_block_stop" and pending_tool:
+                        args = self._parse_tool_args(
+                            raw=pending_tool.get("arguments_raw", ""),
+                            name=pending_tool.get("name") or "",
+                            tool_id=pending_tool.get("id"),
+                        )
+                        yield ModelResponseChunk(
+                            delta="",
+                            tool_calls=cast(
+                                Any,
+                                [
+                                    {
+                                        "id": pending_tool.get("id"),
+                                        "name": pending_tool.get("name"),
+                                        "arguments": args,
+                                    }
+                                ],
+                            ),
+                        )
+                        pending_tool = {}
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "Anthropic streaming API iteration failed (%s; details redacted)",
+                type(e).__name__,
+            )
+            iteration_error = provider_error_from_exception(
+                service="anthropic", action="stream", error=e
+            )
+
+        if iteration_error is not None:
+            raise iteration_error from None
 
         if latest_metrics is not None:
             yield ModelResponseChunk(

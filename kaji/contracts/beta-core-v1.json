@@ -26,6 +26,7 @@
     "storedSchema": "stored-kaji-event-v1.schema.json",
     "warmProjection": "cursor_suffix",
     "subscriberQueueCapacity": 1024,
+    "maxDurableToolArgumentBytes": 65536,
     "inMemoryStoreMaxSessions": 1000,
     "inMemoryStoreMaxEventsPerSession": 10000,
     "overflow": "typed_error"

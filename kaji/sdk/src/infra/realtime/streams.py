@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.infra.realtime.dlq import drain_generic_dlq, enqueue_generic_dlq
 from kaji.infra.realtime.publish import drain_user_update_outbox
 
@@ -38,13 +39,21 @@ async def run_stream_with_dlq(
         await redis.xgroup_create(stream_key, group_name, id="0", mkstream=True)
     except Exception as error:
         if "BUSYGROUP" not in str(error):
-            logger.warning("Error creating consumer group %s: %s", group_name, error)
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Error creating consumer group",
+                error,
+                identifiers={"group_name": group_name},
+            )
 
     while True:
         try:
             await drain_user_update_outbox(redis)
         except Exception as error:
-            logger.warning("Failed to drain outbox: %s", error)
+            log_redacted_failure(
+                logger, logging.WARNING, "Failed to drain outbox", error
+            )
 
         try:
 
@@ -65,7 +74,13 @@ async def run_stream_with_dlq(
                 dlq_handler,
             )
         except Exception as error:
-            logger.warning("Failed to drain DLQ: %s", error)
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to drain DLQ",
+                error,
+                identifiers={"dlq_key": dlq_key},
+            )
 
         try:
             messages = await redis.xreadgroup(
@@ -83,7 +98,13 @@ async def run_stream_with_dlq(
                     count=stream_pending_batch,
                 )
         except Exception as error:
-            logger.warning("Error reading stream %s: %s", stream_key, error)
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Error reading stream",
+                error,
+                identifiers={"stream_key": stream_key, "group_name": group_name},
+            )
             continue
 
         if not messages:
@@ -97,11 +118,12 @@ async def run_stream_with_dlq(
                 try:
                     handled = await handler_callback(redis, raw_payload, message_id)
                 except Exception as error:
-                    logger.warning(
-                        "Error handling message %s: %s",
-                        message_id,
+                    log_redacted_failure(
+                        logger,
+                        logging.WARNING,
+                        "Error handling stream message",
                         error,
-                        exc_info=True,
+                        identifiers={"message_id": message_id},
                     )
 
                 enqueued = False
@@ -120,11 +142,27 @@ async def run_stream_with_dlq(
                         )
                         enqueued = True
                     except Exception as error:
-                        logger.warning("Failed to queue DLQ: %s", error)
+                        log_redacted_failure(
+                            logger,
+                            logging.WARNING,
+                            "Failed to queue DLQ",
+                            error,
+                            identifiers={"dlq_key": dlq_key, "message_id": message_id},
+                        )
                         await sleep(0.05)
 
                 if handled or enqueued:
                     try:
                         await redis.xack(stream_key, group_name, message_id)
                     except Exception as error:
-                        logger.warning("Failed to xack %s: %s", message_id, error)
+                        log_redacted_failure(
+                            logger,
+                            logging.WARNING,
+                            "Failed to acknowledge stream message",
+                            error,
+                            identifiers={
+                                "stream_key": stream_key,
+                                "group_name": group_name,
+                                "message_id": message_id,
+                            },
+                        )

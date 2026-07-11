@@ -242,20 +242,20 @@ class _SafeSpan:
                 logger,
                 logging.ERROR,
                 "Observability trace span failed to set attribute",
-                exc_info=True,
             )
 
     def record_error(self, error: BaseException) -> None:
         if self._ended:
             return
         try:
-            self._inner.record_error(error)
+            self._inner.record_error(
+                RuntimeError(f"{type(error).__name__}: details redacted")
+            )
         except Exception:
             log_no_throw(
                 logger,
                 logging.ERROR,
                 "Observability trace span failed to record error",
-                exc_info=True,
             )
 
     def end(self) -> None:
@@ -269,7 +269,6 @@ class _SafeSpan:
                 logger,
                 logging.ERROR,
                 "Observability trace span failed to end",
-                exc_info=True,
             )
 
 
@@ -291,7 +290,6 @@ def record_metric(
             logging.ERROR,
             "Observability metric sink failed for %s",
             name,
-            exc_info=True,
         )
 
 
@@ -322,7 +320,6 @@ def start_span(
             logging.ERROR,
             "Observability trace sink failed for %s",
             name,
-            exc_info=True,
         )
         return _NOOP_SPAN
 

@@ -6,13 +6,16 @@ import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field
 import inspect
+import json
 import logging
 import math
 import warnings
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 from kaji.core.safe_logging import log_no_throw
+from kaji.infra.events.json import canonical_json
 from kaji.infra.events.schemas import (
+    MAX_DURABLE_TOOL_ARGUMENT_BYTES,
     NewKajiEvent,
     StoredKajiEvent,
     ToolApprovalApproved,
@@ -22,8 +25,8 @@ from kaji.infra.events.schemas import (
     ToolCallFailed,
     ToolCallRequested,
     ToolCallStarted,
-    require_stored_event,
     event_defaults,
+    require_stored_event,
 )
 from kaji.infra.events.protocols import EventJournal
 from kaji.infra.events.types import EventType
@@ -119,8 +122,10 @@ def _require_approval_boundary(
 
 def _arguments_are_json_safe(value: Any, active: set[int]) -> bool:
     value_type = type(value)
-    if value is None or value_type in (bool, int, str):
+    if value is None or value_type in (bool, int):
         return True
+    if value_type is str:
+        return not any(0xD800 <= ord(character) <= 0xDFFF for character in value)
     if value_type is float:
         return math.isfinite(value)
     if value_type is dict:
@@ -130,7 +135,9 @@ def _arguments_are_json_safe(value: Any, active: set[int]) -> bool:
         active.add(object_id)
         try:
             return all(
-                type(key) is str and _arguments_are_json_safe(item, active)
+                type(key) is str
+                and _arguments_are_json_safe(key, active)
+                and _arguments_are_json_safe(item, active)
                 for key, item in value.items()
             )
         finally:
@@ -544,7 +551,7 @@ class ToolPlanner:
                         session_id=session_id,
                         turn_id=item.context.turn_id,
                         tool_name=item.call["name"],
-                        tool_args=item.tool_args,
+                        tool_args=deepcopy(item.tool_args),
                         tool_call_id=item.context.tool_call_id,
                         metadata=item.metadata,
                     )
@@ -652,7 +659,19 @@ class ToolPlanner:
             tool_args = {"__parse_error": "invalid JSON"}
             validation_error = ToolArgumentValidationError.parse_error(tool_name)
         else:
-            tool_args = raw_args
+            try:
+                serialized_args = canonical_json(raw_args, subject="tool arguments")
+                arguments_size = len(serialized_args.encode("utf-8"))
+                detached_args = json.loads(serialized_args)
+            except (TypeError, ValueError, UnicodeError):
+                tool_args = {"__parse_error": "invalid arguments"}
+                validation_error = ToolArgumentValidationError.non_json_value(tool_name)
+            else:
+                if arguments_size > MAX_DURABLE_TOOL_ARGUMENT_BYTES:
+                    tool_args = {"__parse_error": "payload too large"}
+                    validation_error = ToolArgumentValidationError.oversize(tool_name)
+                else:
+                    tool_args = detached_args
         spec = self._specs[tool_name]
         metadata: Any = {"catalog_name": spec.catalog_name} if spec.catalog_name else {}
         return _PreparedCall(
@@ -813,13 +832,13 @@ class ToolPlanner:
                                 raise RuntimeError(
                                     "recorded approval decision does not match the journal"
                                 )
-                        except BaseException:
+                        except BaseException as error:
                             log_no_throw(
                                 logger,
                                 logging.ERROR,
-                                "Tool approval handler failed: %s",
+                                "Tool approval handler failed: %s (%s; details redacted)",
                                 tool_name,
-                                exc_info=True,
+                                type(error).__name__,
                             )
                             decision = ApprovalDecision(
                                 granted=False,
@@ -996,10 +1015,12 @@ class ToolPlanner:
         )
         if outcome.failure is not None and outcome.failure.cause is not None:
             cause = outcome.failure.cause
-            logger.error(
-                "Tool execution failed: %s",
+            log_no_throw(
+                logger,
+                logging.ERROR,
+                "Tool execution failed: %s (%s; details redacted)",
                 item.call["name"],
-                exc_info=(type(cause), cause, cause.__traceback__),
+                type(cause).__name__,
             )
         return outcome
 

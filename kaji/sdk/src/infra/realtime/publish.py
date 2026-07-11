@@ -9,6 +9,7 @@ from typing import Any
 
 import asyncio
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.infra.events.envelope import build_event_envelope, to_redis_stream_fields
 from kaji.infra.realtime.redis import RedisConfig, RedisKeys
 from kaji.infra.realtime.common import (
@@ -63,15 +64,15 @@ async def publish_user_update_safely(
         )
         return True
     except Exception as error:
-        logger.warning(
+        log_redacted_failure(
+            logger,
+            logging.WARNING,
             "Failed to publish user update",
-            extra={
+            error,
+            identifiers={
                 "event_type": event_type,
                 "user_id": user_id,
-                "context": context or {},
-                "error": str(error),
             },
-            exc_info=True,
         )
         return False
 
@@ -91,15 +92,16 @@ async def _publish_with_retry(
             return
         except Exception as error:
             if attempt >= max_attempts:
-                logger.error(
+                log_redacted_failure(
+                    logger,
+                    logging.ERROR,
                     "Failed to publish user update after retries",
-                    extra={
+                    error,
+                    identifiers={
                         "user_id": user_id,
                         "event_type": event_type,
                         "attempt": attempt,
-                        "error": str(error),
                     },
-                    exc_info=True,
                 )
                 outbox_item = {
                     "payload_b64": base64.b64encode(payload_bytes).decode("ascii"),
@@ -127,7 +129,8 @@ async def _publish_with_retry(
                         "payload_b64": outbox_item["payload_b64"],
                         "user_id": user_id,
                         "event_type": event_type,
-                        "error": str(outbox_error),
+                        "error_type": type(outbox_error).__name__,
+                        "error_details": "redacted",
                         "reason": "publish_outbox_enqueue_failed",
                     }
                     try:
@@ -138,26 +141,30 @@ async def _publish_with_retry(
                             maxlen=RedisConfig.USER_UPDATE_OUTBOX_DLQ_MAXLEN,
                             ttl_seconds=RedisConfig.USER_UPDATE_OUTBOX_DLQ_TTL_SECONDS,
                         )
-                    except Exception:
-                        logger.error(
+                    except Exception as dlq_error:
+                        log_redacted_failure(
+                            logger,
+                            logging.ERROR,
                             "Failed to enqueue user update publish failure to DLQ",
-                            extra={
+                            dlq_error,
+                            identifiers={
                                 "user_id": user_id,
                                 "event_type": event_type,
                                 "outbox_key": RedisKeys.USER_UPDATE_OUTBOX_KEY,
                                 "dlq_key": RedisKeys.USER_UPDATE_OUTBOX_DLQ_KEY,
-                                "outbox_error": str(outbox_error),
+                                "outbox_error_type": type(outbox_error).__name__,
                             },
-                            exc_info=True,
                         )
-                    logger.error(
+                    log_redacted_failure(
+                        logger,
+                        logging.ERROR,
                         "Failed to enqueue user update publish failure for outbox",
-                        extra={
+                        outbox_error,
+                        identifiers={
                             "user_id": user_id,
                             "event_type": event_type,
                             "outbox_key": RedisKeys.USER_UPDATE_OUTBOX_KEY,
                         },
-                        exc_info=True,
                     )
                 raise
 
@@ -230,15 +237,17 @@ async def publish_user_update(
                 maxlen=RedisConfig.TOOL_RESULT_STREAM_MAXLEN,
                 approximate=True,
             )
-        except Exception:
-            logger.warning(
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
                 "Failed to append tool.result to stream",
-                extra={
+                error,
+                identifiers={
                     "event_type": event_type,
                     "user_id": user_id,
                     "stream": RedisKeys.STREAM_TOOL_RESULTS,
                 },
-                exc_info=True,
             )
 
     await _publish_with_retry(

@@ -78,7 +78,10 @@ class GeminiTTSProvider:
                     if audio:
                         loop.call_soon_threadsafe(queue.put_nowait, audio)
             except Exception as error:  # surface, then unblock the consumer
-                logger.error("Gemini TTS stream failed: %s", error, exc_info=True)
+                logger.error(
+                    "Gemini TTS stream failed (%s; details redacted)",
+                    type(error).__name__,
+                )
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, None)
 

@@ -1,0 +1,58 @@
+name: Verify immutable Kaji beta tag
+description: Reverify the annotated tag object, signature, and peeled direct commit.
+inputs:
+  token:
+    description: Read-only GitHub token
+    required: true
+  tag:
+    description: Expected tag name
+    required: true
+  tag_object:
+    description: Expected annotated tag object SHA
+    required: true
+  commit:
+    description: Expected directly targeted commit SHA
+    required: true
+  tagger_email:
+    description: Repository-approved signed tagger email
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        EXPECTED_TAG: ${{ inputs.tag }}
+        EXPECTED_TAG_OBJECT: ${{ inputs.tag_object }}
+        EXPECTED_COMMIT: ${{ inputs.commit }}
+        EXPECTED_TAGGER_EMAIL: ${{ inputs.tagger_email }}
+      run: |
+        set -euo pipefail
+        test -n "$EXPECTED_TAGGER_EMAIL" || {
+          echo "Approved beta tagger email is not configured." >&2
+          exit 1
+        }
+        ref_json="$(mktemp)"
+        tag_json="$(mktemp)"
+        trap 'rm -f "$ref_json" "$tag_json"' EXIT
+        timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$EXPECTED_TAG" >"$ref_json"
+        jq --exit-status \
+          --arg object "$EXPECTED_TAG_OBJECT" \
+          '.object.type == "tag" and .object.sha == $object' \
+          "$ref_json" >/dev/null || {
+            echo "Annotated beta tag object changed before release mutation." >&2
+            exit 1
+          }
+        timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/tags/$EXPECTED_TAG_OBJECT" >"$tag_json"
+        jq --exit-status \
+          --arg commit "$EXPECTED_COMMIT" \
+          --arg tag "$EXPECTED_TAG" \
+          --arg tagger "$EXPECTED_TAGGER_EMAIL" \
+          '.verification.verified == true and .verification.reason == "valid" and
+           .tag == $tag and
+           .tagger.email == $tagger and
+           .object.type == "commit" and .object.sha == $commit' \
+          "$tag_json" >/dev/null || {
+            echo "Beta tag no longer verifies or targets the approved commit directly." >&2
+            exit 1
+          }

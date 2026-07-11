@@ -1,8 +1,9 @@
 [project]
 name = "kaji"
-version = "0.1.0"
+version = "0.2.0b1"
 description = "An embeddable SDK for building agentic platforms (text + voice)."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11,<4"
 authors = [
     { name = "enkyuan", email = "yuan.enkng@gmail.com" },
@@ -34,7 +35,7 @@ realtime = ["redis[asyncio]>=6.4.0,<7"]
 kaji = "kaji.cli:main"
 
 [build-system]
-requires = ["setuptools>=68", "editables>=0.5"]
+requires = ["setuptools==83.0.0", "editables==0.6"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -42,7 +43,7 @@ include-package-data = true
 
 # src/ IS the kaji package root (no src/kaji/ subdirectory exists).
 # We enumerate all packages explicitly with kaji.* names so setuptools
-# knows to remap src/ → kaji at install time. The editables>=0.5 backend
+# knows to remap src/ → kaji at install time. The pinned editables backend
 # then implements the prefix-change case via a runtime MetaPathFinder.
 packages = [
     "kaji",
@@ -110,7 +111,12 @@ kaji = "src"
 "kaji.runtime.workflows" = "src/runtime/workflows"
 
 [tool.setuptools.package-data]
-kaji = ["py.typed", "integrations/registry/**/*"]
+kaji = [
+    "py.typed",
+    "integrations/registry/**/*.json",
+    "integrations/registry/**/*.py",
+    "integrations/registry/**/*.ts",
+]
 "kaji.contracts" = ["*.json", "*.md"]
 "kaji.contracts.errors" = ["*.json"]
 "kaji.contracts.events" = ["*.json"]
@@ -120,12 +126,14 @@ kaji = ["py.typed", "integrations/registry/**/*"]
 
 [dependency-groups]
 dev = [
+    "pip-audit==2.10.1",
     "ty",
     "ruff>=0.11.0,<0.12",
     "pytest>=9.0.2,<10",
     "pytest-asyncio>=1.3.0,<2",
     "pytest-cov>=7.0.0,<8",
     "fakeredis>=2.33.0,<3",
+    "twine==6.2.0",
 ]
 
 [tool.pytest.ini_options]

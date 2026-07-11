@@ -196,23 +196,25 @@ export class InMemoryEventCommitter implements EventCommitter {
   }
 
   commit(event: NewKajiEventType): Promise<StoredKajiEvent> {
+    const validated = NewKajiEvent.parse(structuredClone(event));
     return this.serial.run(async () => {
       let result;
       try {
-        result = await this.store.append(event);
+        result = await this.store.append(validated);
       } catch (cause) {
         recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
         if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
           throw cause;
         }
-        throw new EventDeliveryError("append", event.id, false, { cause });
+        throw new EventDeliveryError("append", validated.id, false, { cause });
       }
+      const stored = StoredKajiEvent.parse(structuredClone(result.event));
       if (result.inserted) {
-        for (const subscriber of this.subscribers.get(result.event.session_id) ?? []) {
-          subscriber.push(result.event);
+        for (const subscriber of this.subscribers.get(stored.session_id) ?? []) {
+          subscriber.push(stored);
         }
       }
-      return result.event;
+      return stored;
     });
   }
 
@@ -293,7 +295,7 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   commit(input: NewKajiEventType): Promise<StoredKajiEvent> {
-    const event = NewKajiEvent.parse(input);
+    const event = NewKajiEvent.parse(structuredClone(input));
     return this.serial.run(() => this.commitUnlocked(event));
   }
 
@@ -325,24 +327,25 @@ export class SplitEventCommitter implements EventCommitter {
       }
       throw new EventDeliveryError("append", event.id, false, { cause });
     }
-    if (!result.inserted) return result.event;
-    if (this.hasPendingForSession(result.event.session_id)) {
-      this.pending.set(result.event.id, result.event);
+    const stored = StoredKajiEvent.parse(structuredClone(result.event));
+    if (!result.inserted) return stored;
+    if (this.hasPendingForSession(stored.session_id)) {
+      this.pending.set(stored.id, stored);
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
-      throw new EventDeliveryError("publish", result.event.id, true, {
+      throw new EventDeliveryError("publish", stored.id, true, {
         cause: new Error(
-          `Event ${result.event.id} is queued behind an earlier pending event for session ${result.event.session_id}`,
+          `Event ${stored.id} is queued behind an earlier pending event for session ${stored.session_id}`,
         ),
       });
     }
     try {
-      await this.bus.publish(result.event);
+      await this.bus.publish(stored);
     } catch (cause) {
-      this.pending.set(result.event.id, result.event);
+      this.pending.set(stored.id, stored);
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
-      throw new EventDeliveryError("publish", result.event.id, true, { cause });
+      throw new EventDeliveryError("publish", stored.id, true, { cause });
     }
-    return result.event;
+    return stored;
   }
 
   retryPublish(eventId: string): Promise<StoredKajiEvent> {

@@ -143,7 +143,6 @@ export class OpenAIProvider implements ModelProvider {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("OpenAI provider requires the openai package.", {
         service: "openai",
-        cause: error,
       });
     }
     return this.client;

@@ -275,9 +275,10 @@ describe("OpenAIProvider.generate", () => {
       service: "openai",
       action: "request",
       statusCode: 429,
-      responseText: "too many requests",
+      responseText: undefined,
     });
-    expect((caught as ProviderAPIError).cause).toBe(error);
+    expect(String(caught)).not.toContain("too many requests");
+    expect((caught as ProviderAPIError).cause).toBeUndefined();
   });
 
   it("classifies network-coded client failures", async () => {
@@ -291,7 +292,8 @@ describe("OpenAIProvider.generate", () => {
       .catch((cause) => cause);
 
     expect(caught).toBeInstanceOf(ProviderConnectionError);
-    expect(caught).toMatchObject({ service: "openai", action: "request", cause: error });
+    expect(caught).toMatchObject({ service: "openai", action: "request" });
+    expect((caught as ProviderConnectionError).cause).toBeUndefined();
   });
 });
 

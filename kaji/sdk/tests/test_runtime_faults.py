@@ -1258,7 +1258,7 @@ async def test_ledger_claim_operational_error_is_sanitized_and_terminal(
         [repr(results), *(event.model_dump_json() for event in events)]
     )
     assert secret not in public_text
-    assert secret in caplog.text
+    assert secret not in caplog.text
     assert started is False
     assert executed is False
 

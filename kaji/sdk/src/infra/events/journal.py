@@ -18,6 +18,8 @@ from kaji.infra.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     require_stored_event,
+    revalidate_new_event,
+    revalidate_stored_event,
 )
 from kaji.infra.events.store import EventStore, InMemoryEventStore
 from kaji.infra.observability.protocols import (
@@ -124,6 +126,7 @@ class InMemoryEventJournal:
         )
 
     async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
+        event = revalidate_new_event(event)
         async with self._lock:
             try:
                 result = await self.store.append(event)
@@ -148,7 +151,7 @@ class InMemoryEventJournal:
                     persisted=False,
                 ) from exc
 
-            stored = require_stored_event(result.event)
+            stored = revalidate_stored_event(result.event)
             if not result.inserted:
                 return stored
 
@@ -357,6 +360,7 @@ class SplitEventJournal:
             await self._publish_pending(pending)
 
     async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
+        event = revalidate_new_event(event)
         async with self._lock:
             if (
                 len(self._pending) >= self.max_pending_events
@@ -397,7 +401,7 @@ class SplitEventJournal:
                     persisted=False,
                 ) from exc
 
-            stored = require_stored_event(result.event)
+            stored = revalidate_stored_event(result.event)
             if not result.inserted:
                 if stored.id in self._pending:
                     await self._drain_pending_through(stored)

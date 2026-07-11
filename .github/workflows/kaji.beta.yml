@@ -1,0 +1,138 @@
+name: Kaji beta rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kaji-beta-rehearsal-0.2.0-beta.1
+  cancel-in-progress: false
+
+jobs:
+  offline-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: kaji/ts
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: "3.14"
+      - name: Run offline release gates and retain the actual summary
+        id: offline
+        shell: bash
+        run: |
+          mkdir -p .artifacts/kaji-offline-evidence
+          set +e
+          bash kaji/scripts/beta-release-check.sh --release \
+            > >(tee .artifacts/kaji-offline-evidence/offline-gates.log) 2>&1
+          status=$?
+          set -e
+          jq --null-input \
+            --arg commit "$GITHUB_SHA" \
+            --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
+            --argjson exitCode "$status" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              exitCode: $exitCode, workflowRun: $workflowRun}' \
+            >.artifacts/kaji-offline-evidence/offline-gate-summary.json
+          {
+            echo "## Offline Kaji beta rehearsal"
+            echo
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Exit code: \`$status\`"
+            echo "- Conclusion: \`$([ "$status" -eq 0 ] && printf passed || printf failed)\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Upload offline gate/test summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kaji-offline-evidence
+          path: .artifacts/kaji-offline-evidence
+          if-no-files-found: error
+      - name: Upload exact release artifacts
+        if: ${{ steps.offline.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+          if-no-files-found: error
+
+  python-compat:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: ${{ matrix.python-version }}
+      - name: Install and smoke wheel and sdist
+        working-directory: kaji/sdk
+        run: bash scripts/release_smoke.sh
+
+  node-compat:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22", "24"]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node-version }}
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: kaji/ts
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+      - name: Install and smoke ESM and CommonJS
+        working-directory: kaji/ts
+        run: bun run package:smoke
+
+  keyed-proof:
+    needs: [offline-release, python-compat, node-compat]
+    if: ${{ always() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: kaji-beta
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-status.txt
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: kaji/ts
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: "3.14"
+          sync-args: --frozen --extra openai --extra anthropic
+      - name: Run protected provider proof
+        run: bash kaji/scripts/live-provider-proof.sh
+      - name: Retain explicit provider status
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kaji-provider-status
+          path: provider-status.txt
+          if-no-files-found: error

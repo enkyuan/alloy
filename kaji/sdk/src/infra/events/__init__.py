@@ -23,6 +23,8 @@ from .schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     UserMessage,
+    validate_event_json,
+    validate_event_python,
 )
 from .store import AppendResult, EventStore, InMemoryEventStore
 from .types import EventType
@@ -36,6 +38,8 @@ __all__ = [
     "StoredKajiEvent",
     "BaseEvent",
     "UserMessage",
+    "validate_event_json",
+    "validate_event_python",
     "AppendResult",
     "EventBus",
     "EventBusProtocol",

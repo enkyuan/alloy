@@ -74,8 +74,10 @@ class ProviderError(ServiceError):
             action=action,
             message=message,
             status_code=status_code,
-            response_text=response_text,
-            cause=cause,
+            response_text=None,
+            # Provider exceptions are public SDK values. Never retain a vendor
+            # exception that may carry request bodies, credentials, or headers.
+            cause=None,
         )
 
 
@@ -175,16 +177,42 @@ def provider_error_from_exception(
     error: Exception,
 ) -> ServiceError:
     """Convert provider SDK exceptions into typed service errors."""
-    if isinstance(error, ServiceError):
-        return error
-
     status_code = _extract_status_code(error)
+    if isinstance(error, ProviderConfigError):
+        return ProviderConfigError(
+            f"{service} configuration failed",
+            service=service,
+        )
+    if isinstance(error, ServiceAuthError):
+        return ServiceAuthError(
+            service=service,
+            action=action,
+            message=f"{service} {action} authentication failed",
+            status_code=status_code,
+            response_text=None,
+            cause=None,
+        )
+    if isinstance(error, ServiceRateLimitError):
+        return ServiceRateLimitError(
+            service=service,
+            action=action,
+            message=f"{service} {action} rate limited",
+            status_code=status_code,
+            response_text=None,
+            cause=None,
+        )
+    if isinstance(error, ServiceNetworkError):
+        return ProviderConnectionError(
+            f"{service} {action} failed due to a network error",
+            service=service,
+            action=action,
+        )
     if status_code is not None:
         return classify_http_error(
             service=service,
             action=action,
             status_code=status_code,
-            response_text=_extract_response_text(error),
+            response_text=None,
         )
 
     if _is_network_error(error):
@@ -192,15 +220,13 @@ def provider_error_from_exception(
             f"{service} {action} failed due to a network error",
             service=service,
             action=action,
-            cause=error,
         )
 
     return ProviderAPIError(
-        f"{service} {action} failed: {error}",
+        f"{service} {action} failed",
         service=service,
         action=action,
-        response_text=_extract_response_text(error),
-        cause=error,
+        response_text=None,
     )
 
 

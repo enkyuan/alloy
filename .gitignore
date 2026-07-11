@@ -42,6 +42,7 @@ bun.lock
 dist/
 out/
 build/
+.artifacts/
 .next/
 *.tsbuildinfo
 

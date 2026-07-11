@@ -270,9 +270,10 @@ describe("AnthropicProvider.generate", () => {
       service: "anthropic",
       action: "request",
       statusCode: 529,
-      responseText: "try later",
+      responseText: undefined,
     });
-    expect((caught as ProviderAPIError).cause).toBe(error);
+    expect(String(caught)).not.toContain("try later");
+    expect((caught as ProviderAPIError).cause).toBeUndefined();
   });
 
   it("classifies network-coded client failures", async () => {
@@ -286,7 +287,8 @@ describe("AnthropicProvider.generate", () => {
       .catch((cause) => cause);
 
     expect(caught).toBeInstanceOf(ProviderConnectionError);
-    expect(caught).toMatchObject({ service: "anthropic", action: "request", cause: error });
+    expect(caught).toMatchObject({ service: "anthropic", action: "request" });
+    expect((caught as ProviderConnectionError).cause).toBeUndefined();
   });
 });
 

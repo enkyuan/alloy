@@ -182,6 +182,7 @@ class KimiProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        transport_error = None
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -191,29 +192,39 @@ class KimiProvider(ModelProvider):
                     timeout=60.0,
                 )
         except httpx.HTTPError as error:
-            raise provider_error_from_exception(
+            transport_error = provider_error_from_exception(
                 service="kimi",
                 action="generate",
                 error=error,
-            ) from error
+            )
+
+        if transport_error is not None:
+            raise transport_error from None
 
         if response.status_code != 200:
-            logger.error("Kimi API Error: %s", response.text)
+            logger.error(
+                "Kimi API request failed with status %s (response redacted)",
+                response.status_code,
+            )
             raise classify_http_error(
                 service="kimi",
                 action="generate",
                 status_code=response.status_code,
-                response_text=response.text,
+                response_text=None,
             )
 
+        parse_error = None
         try:
             data = response.json()
-        except ValueError as error:
-            raise ProviderAPIError(
+        except ValueError:
+            parse_error = ProviderAPIError(
                 "Kimi API returned invalid JSON.",
                 service="kimi",
-                response_text=response.text,
-            ) from error
+                response_text=None,
+            )
+
+        if parse_error is not None:
+            raise parse_error from None
 
         choices = data.get("choices", [])
         if not choices:
@@ -277,6 +288,7 @@ class KimiProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        stream_error = None
         try:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
@@ -287,14 +299,16 @@ class KimiProvider(ModelProvider):
                     timeout=60.0,
                 ) as response:
                     if response.status_code != 200:
-                        body = (await response.aread()).decode(
-                            "utf-8", errors="replace"
+                        logger.error(
+                            "Kimi streaming API request failed with status %s "
+                            "(response redacted)",
+                            response.status_code,
                         )
                         raise classify_http_error(
                             service="kimi",
                             action="stream",
                             status_code=response.status_code,
-                            response_text=body,
+                            response_text=None,
                         )
 
                     pending_tool_calls: Dict[int, Dict[str, str]] = {}
@@ -309,14 +323,18 @@ class KimiProvider(ModelProvider):
                         if line.startswith("data: "):
                             line = line[6:]
 
+                        parse_error = None
                         try:
                             data = json.loads(line)
-                        except json.JSONDecodeError as error:
-                            raise ProviderAPIError(
+                        except json.JSONDecodeError:
+                            parse_error = ProviderAPIError(
                                 "Kimi stream returned invalid JSON.",
                                 service="kimi",
-                                response_text=line,
-                            ) from error
+                                response_text=None,
+                            )
+
+                        if parse_error is not None:
+                            raise parse_error from None
 
                         choices = data.get("choices", [])
                         if not choices:
@@ -338,11 +356,14 @@ class KimiProvider(ModelProvider):
                             delta="", tool_calls=cast(Any, tool_calls)
                         )
         except httpx.HTTPError as error:
-            raise provider_error_from_exception(
+            stream_error = provider_error_from_exception(
                 service="kimi",
                 action="stream",
                 error=error,
-            ) from error
+            )
+
+        if stream_error is not None:
+            raise stream_error from None
 
 
 register_provider("kimi", KimiProvider)

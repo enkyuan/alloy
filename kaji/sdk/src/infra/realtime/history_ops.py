@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any
 
+from kaji.core.safe_logging import log_redacted_failure
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,8 +38,13 @@ async def append_history(
                 and str(last_entry.get("content")) == content
             ):
                 return
-        except Exception:
-            logger.warning("Skipping invalid history tail entry", exc_info=True)
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Skipping invalid history tail entry",
+                error,
+            )
 
     await redis.rpush(key, json.dumps(entry))
     if history_limit > 0:
@@ -56,7 +63,12 @@ async def get_history(redis: Any, user_id: str) -> list[dict[str, str]]:
                 messages.append(
                     {"role": str(data["role"]), "content": str(data["content"])}
                 )
-        except Exception:
-            logger.warning("Skipping invalid history entry", exc_info=True)
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Skipping invalid history entry",
+                error,
+            )
             continue
     return messages

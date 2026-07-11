@@ -9,7 +9,7 @@ import math
 import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
-from kaji.core.safe_logging import log_no_throw
+from kaji.core.safe_logging import log_no_throw, log_redacted_failure
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
@@ -283,8 +283,13 @@ class ToolExecutionController:
     ) -> None:
         try:
             await settle(pending.task)
-        except Exception:
-            logger.exception("Detached tool setup settlement failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.ERROR,
+                "Detached tool setup settlement failed",
+                error,
+            )
         finally:
             self._finish_setup(pending)
 
@@ -296,8 +301,10 @@ class ToolExecutionController:
             await pending.task
         except asyncio.CancelledError:
             pass
-        except Exception:
-            logger.exception("Background tool setup failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger, logging.ERROR, "Background tool setup failed", error
+            )
         finally:
             self._finish_setup(pending)
 
@@ -421,8 +428,10 @@ class ToolExecutionController:
             IdempotencyConflictError,
         ):
             return
-        except Exception:
-            logger.exception("Late tool idempotency claim failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger, logging.ERROR, "Late tool idempotency claim failed", error
+            )
             return
         if claim.kind == "owner":
             async with self._setup_semaphore:
@@ -456,8 +465,13 @@ class ToolExecutionController:
             return True
         try:
             return bool(pending.task.result())
-        except Exception:
-            logger.exception("Tool idempotency start-state lookup failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.ERROR,
+                "Tool idempotency start-state lookup failed",
+                error,
+            )
             return True
         finally:
             self._finish_setup(pending)
@@ -468,8 +482,10 @@ class ToolExecutionController:
             await task
         except asyncio.CancelledError:
             pass
-        except Exception:
-            logger.exception("Late tool setup operation failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger, logging.ERROR, "Late tool setup operation failed", error
+            )
 
     async def _cleanup_late_mark(
         self,
@@ -481,8 +497,13 @@ class ToolExecutionController:
             await mark_task
         except asyncio.CancelledError:
             pass
-        except Exception:
-            logger.exception("Late tool idempotency start marker failed")
+        except Exception as error:
+            log_redacted_failure(
+                logger,
+                logging.ERROR,
+                "Late tool idempotency start marker failed",
+                error,
+            )
         async with self._setup_semaphore:
             await self.ledger.unknown_outcome(claim, failure)
 
@@ -540,6 +561,8 @@ class ToolExecutionController:
             metric_outcome = "completed"
             error_code = "NONE"
             if failure is not None:
+                if failure.cause is not None:
+                    span_record_error(span, failure.cause)
                 error_code = metric_error_code(failure.error_code)
                 if failure.error_code == "TOOL_CANCELLED":
                     metric_outcome = "cancelled"
@@ -1081,12 +1104,12 @@ class ToolExecutionController:
             task.result()
         except asyncio.CancelledError:
             return
-        except BaseException:
+        except BaseException as error:
             log_no_throw(
                 logger,
                 logging.ERROR,
-                "Detached approval handler failed",
-                exc_info=True,
+                "Detached approval handler failed (%s; details redacted)",
+                type(error).__name__,
             )
 
     def deadline_expired(self, deadline: float) -> bool:

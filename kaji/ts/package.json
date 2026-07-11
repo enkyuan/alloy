@@ -1,44 +1,65 @@
 {
   "name": "@kaji/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "description": "Embeddable SDK for building agents in TypeScript: event-sourced runtime, tool registry, session replay. Infra-free core.",
   "type": "module",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js",
-      "require": "./dist/testing.cjs"
+      "import": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
+      }
     },
     "./openai": {
-      "types": "./dist/openai.d.ts",
-      "import": "./dist/openai.js",
-      "require": "./dist/openai.cjs"
+      "import": {
+        "types": "./dist/openai.d.ts",
+        "default": "./dist/openai.js"
+      },
+      "require": {
+        "types": "./dist/openai.d.cts",
+        "default": "./dist/openai.cjs"
+      }
     },
     "./anthropic": {
-      "types": "./dist/anthropic.d.ts",
-      "import": "./dist/anthropic.js",
-      "require": "./dist/anthropic.cjs"
+      "import": {
+        "types": "./dist/anthropic.d.ts",
+        "default": "./dist/anthropic.js"
+      },
+      "require": {
+        "types": "./dist/anthropic.d.cts",
+        "default": "./dist/anthropic.cjs"
+      }
     }
   },
   "bin": {
     "kaji": "./dist/cli/bin.js"
   },
-  "files": ["contracts", "dist", "registry"],
+  "files": ["LICENSE", "contracts", "dist", "registry"],
   "scripts": {
     "prebuild": "bun run scripts/copy.ts",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "typecheck:registry": "tsc --noEmit --project tsconfig.registry.json",
+    "typecheck:registry": "tsc -p tsconfig.registry.json --noEmit",
+    "lint": "oxlint src tests scripts registry",
     "format": "oxfmt --write \"**/*.ts\"",
     "format:check": "oxfmt --check \"**/*.ts\"",
     "parity": "uv run --project ../sdk python ../scripts/check-sdk-parity.py",
@@ -51,6 +72,7 @@
     "test:watch": "vitest",
     "check:integrations": "bun run scripts/check.ts",
     "clean": "rm -rf dist",
+    "package:smoke": "bun run build && bun scripts/smoke-installed.mts",
     "validate:registry": "bun run scripts/validate.ts"
   },
   "dependencies": {
@@ -71,11 +93,13 @@
     }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.4",
     "@anthropic-ai/sdk": "^0.104.1",
     "@types/bun": "^1.0.0",
     "@types/node": "^22.10.2",
     "openai": "^6.42.0",
     "oxfmt": "^0.54.0",
+    "publint": "0.3.21",
     "tsup": "^8.3.5",
     "typescript": "^6.0.2",
     "vitest": "^4.1.5",

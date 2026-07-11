@@ -20,6 +20,8 @@
     "ast-grep:scan": "sg scan --config sgconfig.yml kaji",
     "audit:ast-grep": "bun run ast-grep:test && bun run ast-grep:scan",
     "audit:kaji-beta": "bash kaji/scripts/beta-release-check.sh",
+    "audit:kaji-beta:release": "bash kaji/scripts/beta-release-check.sh --release",
+    "verify:kaji-package-metadata": "uv run --project kaji/sdk python kaji/scripts/verify-package-metadata.py",
     "benchmark:kaji-beta": "bash kaji/scripts/run-beta-benchmarks.sh --quick",
     "benchmark:kaji-beta:full": "bash kaji/scripts/run-beta-benchmarks.sh --full",
     "soak:kaji-beta": "bash kaji/scripts/run-beta-soak.sh --minutes 30",

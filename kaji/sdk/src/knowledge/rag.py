@@ -12,6 +12,7 @@ retrieve and inject context into the system prompt on every turn.
 import logging
 from typing import List, Optional
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.knowledge.chunking import chunk_text
 from kaji.knowledge.store import InMemoryVectorStore, VectorStore
 from kaji.knowledge.types import Chunk, Document
@@ -48,9 +49,12 @@ class DocumentRAG:
         for i, piece in enumerate(pieces):
             try:
                 vec = await self._embedder.embed(piece)
-            except Exception as e:  # embedder failure must not crash ingestion
-                logger.warning(
-                    "Embedding failed for %s chunk %d: %s", document.id, i, e
+            except Exception as error:  # embedder failure must not crash ingestion
+                log_redacted_failure(
+                    logger,
+                    logging.WARNING,
+                    "Document chunk embedding failed",
+                    error,
                 )
                 vec = []
             if not vec:
@@ -86,8 +90,10 @@ class DocumentRAG:
         """Return the chunks most relevant to ``query`` (possibly empty)."""
         try:
             query_vec = await self._embedder.embed(query)
-        except Exception as e:
-            logger.error("Failed to embed RAG query: %s", e)
+        except Exception as error:
+            log_redacted_failure(
+                logger, logging.WARNING, "Failed to embed RAG query", error
+            )
             return []
         if not query_vec:
             return []

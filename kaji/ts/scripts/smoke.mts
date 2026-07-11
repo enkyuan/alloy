@@ -5,24 +5,14 @@
  * constructing a provider without a key fails with a clear error. Does NOT
  * run a full agent turn — that requires a real API key.
  *
- * Run after installing the packed tarball into a clean directory:
- *   npm install @kaji/sdk-*.tgz zod
- *   npx tsx scripts/smoke.mts
- *
- * Or from monorepo source:
- *   bun run scripts/smoke.mts
+ * Run only from a clean project where the packed tarball is installed. The
+ * release gate uses smoke-installed.mts to create that project.
  */
 
-// Prefer the installed package. Fall back to source so the script is still
-// convenient during local development.
-const sdk = await import("@kaji/sdk").catch(() => import("../src/index.ts"));
-const testing = await import("@kaji/sdk/testing").catch(() => import("../src/testing.ts"));
-const openaiSubpath = await import("@kaji/sdk/openai").catch(
-  () => import("../src/providers/openai.ts"),
-);
-const anthropicSubpath = await import("@kaji/sdk/anthropic").catch(
-  () => import("../src/providers/anthropic.ts"),
-);
+const sdk = await import("@kaji/sdk");
+const testing = await import("@kaji/sdk/testing");
+const openaiSubpath = await import("@kaji/sdk/openai");
+const anthropicSubpath = await import("@kaji/sdk/anthropic");
 
 const {
   AgentBuilder,

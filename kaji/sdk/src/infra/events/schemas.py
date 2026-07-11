@@ -1,6 +1,7 @@
 from contextvars import ContextVar
 from contextlib import contextmanager
 from typing import (  # noqa: F401
+    Annotated,
     Any,
     Dict,
     List,
@@ -13,8 +14,9 @@ from typing import (  # noqa: F401
     runtime_checkable,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
+from kaji.infra.events.json import canonical_json
 from kaji.infra.events.types import EventType
 from kaji.runtime.determinism import (
     Clock,
@@ -28,6 +30,23 @@ _EVENT_ID_FACTORY: ContextVar[IdFactory] = ContextVar(
     "kaji_event_id_factory", default=SYSTEM_ID_FACTORY
 )
 _EVENT_CLOCK: ContextVar[Clock] = ContextVar("kaji_event_clock", default=SYSTEM_CLOCK)
+MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024
+
+
+def durable_tool_arguments_size(value: Dict[str, Any]) -> int:
+    return len(canonical_json(value, subject="tool arguments").encode("utf-8"))
+
+
+def _validate_durable_tool_arguments(value: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        size = durable_tool_arguments_size(value)
+    except (TypeError, ValueError):
+        raise ValueError("tool_args must contain only JSON values") from None
+    if size > MAX_DURABLE_TOOL_ARGUMENT_BYTES:
+        raise ValueError(
+            "tool_args cannot exceed 65536 serialized bytes; payload redacted"
+        )
+    return value
 
 
 def _next_event_id() -> str:
@@ -68,7 +87,7 @@ class BaseEvent(BaseModel):
         default=None, ge=1, exclude_if=lambda value: value is None
     )
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class SessionCreated(BaseEvent):
@@ -158,6 +177,13 @@ class ToolCallRequested(BaseEvent):
     tool_args: Dict[str, Any]
     tool_call_id: str = Field(min_length=1)
 
+    @field_validator("tool_args", mode="before")
+    @classmethod
+    def _bounded_tool_args(cls, value: Any) -> Dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("tool_args must be a JSON object")
+        return _validate_durable_tool_arguments(value)
+
 
 class ToolCallStarted(BaseEvent):
     type: Literal[EventType.TOOL_CALL_STARTED] = EventType.TOOL_CALL_STARTED
@@ -205,6 +231,13 @@ class ToolApprovalRequested(BaseEvent):
     risk: Literal[
         "read", "write", "external_effect", "financial", "destructive", "admin"
     ]
+
+    @field_validator("tool_args", mode="before")
+    @classmethod
+    def _bounded_tool_args(cls, value: Any) -> Dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("tool_args must be a JSON object")
+        return _validate_durable_tool_arguments(value)
 
 
 class ToolApprovalApproved(BaseEvent):
@@ -261,33 +294,52 @@ class CancellationCompleted(BaseEvent):
     type: Literal[EventType.CANCELLATION_COMPLETED] = EventType.CANCELLATION_COMPLETED
 
 
-KajiEvent = Union[
-    SessionCreated,
-    SessionClosed,
-    UserMessage,
-    UserAudioChunk,
-    TranscriptPartial,
-    TranscriptFinal,
-    MemoryRetrievalStarted,
-    MemoryRetrievalCompleted,
-    AgentReasoningStarted,
-    AgentMessageDelta,
-    AgentMessageCompleted,
-    AgentTurnExhausted,
-    AgentTurnFailed,
-    ToolCallRequested,
-    ToolCallStarted,
-    ToolCallCompleted,
-    ToolCallFailed,
-    ToolApprovalRequested,
-    ToolApprovalApproved,
-    ToolApprovalRejected,
-    WorkflowStarted,
-    WorkflowCompleted,
-    WorkflowFailed,
-    CancellationRequested,
-    CancellationCompleted,
+KajiEvent = Annotated[
+    Union[
+        SessionCreated,
+        SessionClosed,
+        UserMessage,
+        UserAudioChunk,
+        TranscriptPartial,
+        TranscriptFinal,
+        MemoryRetrievalStarted,
+        MemoryRetrievalCompleted,
+        AgentReasoningStarted,
+        AgentMessageDelta,
+        AgentMessageCompleted,
+        AgentTurnExhausted,
+        AgentTurnFailed,
+        ToolCallRequested,
+        ToolCallStarted,
+        ToolCallCompleted,
+        ToolCallFailed,
+        ToolApprovalRequested,
+        ToolApprovalApproved,
+        ToolApprovalRejected,
+        WorkflowStarted,
+        WorkflowCompleted,
+        WorkflowFailed,
+        CancellationRequested,
+        CancellationCompleted,
+    ],
+    Field(discriminator="type"),
 ]
+
+_EVENT_ADAPTER = TypeAdapter(
+    KajiEvent,
+    config=ConfigDict(hide_input_in_errors=True),
+)
+
+
+def validate_event_python(value: object) -> KajiEvent:
+    """Validate a Python value against the closed Kaji event union."""
+    return _EVENT_ADAPTER.validate_python(value)
+
+
+def validate_event_json(value: str | bytes | bytearray) -> KajiEvent:
+    """Validate JSON against the closed Kaji event union."""
+    return _EVENT_ADAPTER.validate_json(value)
+
 
 # Python keeps one discriminated event model family for compatibility. These
 # names make the persistence boundary explicit without duplicating that model
@@ -320,7 +372,25 @@ def require_new_event(event: KajiEvent) -> NewKajiEvent:
     return event
 
 
+def revalidate_new_event(event: KajiEvent) -> NewKajiEvent:
+    """Detach and fully revalidate a mutable draft at a durable boundary."""
+    if not isinstance(event, BaseEvent):
+        raise TypeError("new events must be validated Kaji event models")
+    validated = validate_event_python(event.model_dump(mode="python"))
+    return require_new_event(validated)
+
+
 def require_stored_event(event: KajiEvent | StoredKajiEvent) -> StoredKajiEvent:
     if not isinstance(event.sequence, int) or event.sequence < 1:
         raise ValueError("stored events require a positive sequence")
     return cast(StoredKajiEvent, event)
+
+
+def revalidate_stored_event(
+    event: KajiEvent | StoredKajiEvent,
+) -> StoredKajiEvent:
+    """Detach and fully revalidate a store result before replay or delivery."""
+    if not isinstance(event, BaseEvent):
+        raise TypeError("stored events must be validated Kaji event models")
+    validated = validate_event_python(event.model_dump(mode="python"))
+    return require_stored_event(validated)

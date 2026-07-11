@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kaji.infra.events.schemas import KajiEvent, ToolCallFailed
+from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallRequested
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
@@ -88,7 +88,9 @@ async def test_planner_emits_lifecycle_on_success():
 
 
 @pytest.mark.asyncio
-async def test_planner_emits_failed_on_executor_error():
+async def test_planner_emits_failed_on_executor_error(
+    caplog: pytest.LogCaptureFixture,
+):
     secret = "sk-handler-secret-must-not-escape"
     executor = AsyncMock(side_effect=RuntimeError(secret))
     planner = _planner(
@@ -111,6 +113,41 @@ async def test_planner_emits_failed_on_executor_error():
         "retryable": False,
         "outcome": "unknown",
     }
+    assert secret not in " ".join(event.model_dump_json() for event in emitted)
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_planner_normalizes_oversize_arguments_before_persistence() -> None:
+    secret = "sk-oversize-provider-argument"
+    executor = AsyncMock(return_value={"ok": True})
+    planner = _planner(executor)
+    arguments = {"value": secret + "x" * (64 * 1024)}
+
+    emitted, results = await _collect(
+        planner,
+        "oversize",
+        [{"id": "oversize", "name": "search", "arguments": arguments}],
+    )
+
+    executor.assert_not_awaited()
+    assert _types(emitted) == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    assert isinstance(emitted[0], ToolCallRequested)
+    assert emitted[0].tool_args == {"__parse_error": "payload too large"}
+    assert results == [
+        {
+            "id": "oversize",
+            "name": "search",
+            "error": "Invalid tool arguments: serialized arguments exceed 65536 bytes",
+            "error_code": "INVALID_TOOL_ARGUMENTS",
+            "error_path": "/",
+            "retryable": False,
+            "outcome": "not_started",
+        }
+    ]
     assert secret not in " ".join(event.model_dump_json() for event in emitted)
 
 
@@ -424,7 +461,7 @@ async def test_planner_closes_approval_handler_exceptions_without_secret_leak(
         "outcome": "not_started",
     }
     assert secret not in " ".join(event.model_dump_json() for event in emitted)
-    assert secret in caplog.text
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

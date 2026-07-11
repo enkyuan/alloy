@@ -37,4 +37,39 @@ describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => 
     expect(chunks.length).toBeGreaterThan(0);
     expect(chunks.join("").trim().length).toBeGreaterThan(0);
   });
+
+  it("returns one normalized tool call", async () => {
+    const marker = "kaji-anthropic-live-marker";
+    const provider = new AnthropicProvider({
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+      model: process.env.KAJI_LIVE_ANTHROPIC_MODEL,
+      temperature: 0,
+    });
+    const response = await provider.generate(
+      [
+        {
+          role: "user",
+          content: `Call echo_probe exactly once with marker ${marker}. Do not answer with plain text.`,
+        },
+      ],
+      [
+        {
+          name: "echo_probe",
+          description: "Echo a marker for release verification.",
+          parameters: {
+            type: "object",
+            properties: { marker: { type: "string" } },
+            required: ["marker"],
+            additionalProperties: false,
+          },
+          risk: "read",
+        },
+      ],
+    );
+
+    expect(response.toolCalls).toHaveLength(1);
+    expect(response.toolCalls[0]!.name).toBe("echo_probe");
+    expect(response.toolCalls[0]!.args).toEqual({ marker });
+    expect(response.toolCalls[0]!.id).toBeTruthy();
+  });
 });

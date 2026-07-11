@@ -20,6 +20,7 @@ ID + client secret.
 from __future__ import annotations
 
 import http.server
+from importlib import import_module
 import json
 import logging
 import secrets
@@ -34,6 +35,7 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 import httpx
 
+from kaji.core.safe_logging import log_redacted_failure
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +44,9 @@ logger = logging.getLogger(__name__)
 # ``oauth-keyring`` extra. ``KeyringTokenStorage`` surfaces a clear error if
 # called without it installed.
 try:
-    import keyring  # type: ignore
+    keyring: Any = import_module("keyring")
 except ImportError:  # pragma: no cover - exercised via monkeypatch
-    keyring = None  # type: ignore[assignment]
+    keyring = None
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -83,8 +85,14 @@ class FileTokenStorage:
             return None
         try:
             return json.loads(self.path.read_text())
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.warning("Failed to load tokens from %s: %s", self.path, exc)
+        except (json.JSONDecodeError, ValueError) as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to load tokens from file",
+                error,
+                identifiers={"storage": "file"},
+            )
             return None
 
     def save(self, data: dict[str, Any]) -> None:
@@ -135,14 +143,15 @@ class KeyringTokenStorage:
             return None
         try:
             return json.loads(secret)
-        except (json.JSONDecodeError, ValueError) as exc:
+        except (json.JSONDecodeError, ValueError) as error:
             # Symmetric with FileTokenStorage: a corrupt entry should
             # trigger a clean re-consent, not crash the caller.
-            logger.warning(
-                "Failed to parse tokens from keyring entry %s/%s: %s",
-                self.service_name,
-                self.account,
-                exc,
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to parse tokens from keyring entry",
+                error,
+                identifiers={"storage": "keyring"},
             )
             return None
 
@@ -275,8 +284,14 @@ class GoogleOAuthClient:
             return None
         try:
             return _Tokens.from_dict(data)
-        except (KeyError, ValueError) as e:
-            logger.warning("Failed to parse loaded tokens: %s", e)
+        except (KeyError, ValueError) as error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to parse loaded tokens",
+                error,
+                identifiers={"storage": type(self._token_storage).__name__},
+            )
             return None
 
     def _save_tokens(self, tokens: _Tokens) -> None:
@@ -307,9 +322,7 @@ class GoogleOAuthClient:
                 },
             )
             if resp.status_code != 200:
-                raise OAuthError(
-                    f"Token exchange failed ({resp.status_code}): {resp.text}"
-                )
+                raise OAuthError(f"Token exchange failed ({resp.status_code})")
             payload = resp.json()
         return _tokens_from_payload(payload, fallback_scopes=self.scopes)
 
@@ -325,9 +338,7 @@ class GoogleOAuthClient:
                 },
             )
             if resp.status_code != 200:
-                raise OAuthError(
-                    f"Token refresh failed ({resp.status_code}): {resp.text}"
-                )
+                raise OAuthError(f"Token refresh failed ({resp.status_code})")
             payload = resp.json()
         # Refresh responses don't always echo refresh_token; preserve the old.
         payload.setdefault("refresh_token", tokens.refresh_token)

@@ -27,3 +27,47 @@ async def test_anthropic_generate_returns_nonempty_content() -> None:
 
     assert isinstance(response.text, str), "response.text should be a string"
     assert len(response.text.strip()) > 0, "response.text should not be empty"
+
+
+@pytest.mark.integration
+async def test_anthropic_returns_normalized_tool_call() -> None:
+    """A live Anthropic tool use is normalized to the shared SDK shape."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    assert api_key, "ANTHROPIC_API_KEY must be set"
+
+    from kaji.runtime.providers.anthropic import AnthropicProvider
+
+    marker = "kaji-anthropic-live-marker"
+    provider = AnthropicProvider(
+        api_key=api_key,
+        model=os.environ.get("KAJI_LIVE_ANTHROPIC_MODEL"),
+    )
+    response = await provider.generate(
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Call echo_probe exactly once with marker "
+                    f"{marker}. Do not answer with plain text."
+                ),
+            }
+        ],
+        tools=[
+            {
+                "name": "echo_probe",
+                "description": "Echo a marker for release verification.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"marker": {"type": "string"}},
+                    "required": ["marker"],
+                    "additionalProperties": False,
+                },
+            }
+        ],
+        temperature=0,
+    )
+
+    assert len(response.tool_calls) == 1
+    assert response.tool_calls[0]["name"] == "echo_probe"
+    assert response.tool_calls[0]["arguments"] == {"marker": marker}
+    assert response.tool_calls[0]["id"]

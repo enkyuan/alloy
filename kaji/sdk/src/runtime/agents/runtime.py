@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from kaji.core.safe_logging import log_redacted_failure
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import (
     TurnCoordinator,
@@ -763,10 +764,15 @@ class AgentRuntime:
                     ),
                     turn_id,
                 )
-            except Exception:
+            except Exception as log_error:
                 # The original operation failure is the public API result. A
                 # secondary journal failure must not replace it.
-                logger.exception("Failed to record terminal agent turn failure")
+                log_redacted_failure(
+                    logger,
+                    logging.WARNING,
+                    "Failed to record terminal agent turn failure",
+                    log_error,
+                )
             raise
         finally:
             record_metric(
@@ -835,8 +841,13 @@ class AgentRuntime:
                         if chunks:
                             joined = "\n\n".join(c.text for c in chunks)
                             rag_system_prefix = f"## Relevant context\n\n{joined}\n\n"
-                    except Exception as e:  # retrieval must never crash the turn
-                        logger.warning("RAG retrieval failed: %s", e)
+                    except Exception as error:  # retrieval must never crash the turn
+                        log_redacted_failure(
+                            logger,
+                            logging.WARNING,
+                            "RAG retrieval failed",
+                            error,
+                        )
 
             prompt_for_turn = (
                 SystemPrompt(rag_system_prefix + self.prompt.template)

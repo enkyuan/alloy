@@ -37,7 +37,7 @@
           "turn_id": { "type": "string", "minLength": 1 },
           "tool_name": { "type": "string", "minLength": 1 },
           "tool_call_id": { "type": "string", "minLength": 1 },
-          "tool_args": { "type": "object" }
+          "tool_args": { "type": "object", "x-maxSerializedBytes": 65536 }
         }
       }
     },
@@ -114,7 +114,7 @@
       "then": {
         "required": ["tool_args", "risk"],
         "properties": {
-          "tool_args": { "type": "object" },
+          "tool_args": { "type": "object", "x-maxSerializedBytes": 65536 },
           "risk": {
             "enum": [
               "read",

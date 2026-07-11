@@ -1,7 +1,7 @@
 """Surfacing tool-arg JSON parse failures in Anthropic streaming.
 
-Raw model output may carry user PII; it goes only to the privileged log sink,
-NOT into the event payload (which is persisted, replayed, and surfaced to UI).
+Raw model output may carry user PII; it goes neither to logs nor into the event
+payload (which is persisted, replayed, and surfaced to UI).
 The payload signals the failure via ``__parse_error`` so the planner can fail
 the call closed.
 """
@@ -13,7 +13,7 @@ import logging
 from kaji.runtime.providers.anthropic import AnthropicProvider
 
 
-def test_parse_tool_args_logs_raw_and_surfaces_parse_error_in_payload(caplog):
+def test_parse_tool_args_redacts_raw_and_surfaces_parse_error_in_payload(caplog):
     caplog.set_level(logging.WARNING, logger="kaji.runtime.providers.anthropic")
 
     args = AnthropicProvider._parse_tool_args(
@@ -25,14 +25,14 @@ def test_parse_tool_args_logs_raw_and_surfaces_parse_error_in_payload(caplog):
     assert isinstance(args["__parse_error"], str)
     assert "__raw" not in args
 
-    # Raw input is logged at WARNING. Privileged sink only.
     log_text = " ".join(rec.message for rec in caplog.records)
     assert "failed to parse" in log_text.lower()
-    assert "{not json" in log_text
+    assert "arguments redacted" in log_text
+    assert "{not json" not in log_text
     assert "lookup" in log_text
 
 
-def test_parse_tool_args_truncates_oversize_raw_in_log(caplog):
+def test_parse_tool_args_reports_size_without_logging_oversize_raw(caplog):
     caplog.set_level(logging.WARNING, logger="kaji.runtime.providers.anthropic")
 
     payload = "{" + ("a" * 1024)
@@ -42,7 +42,8 @@ def test_parse_tool_args_truncates_oversize_raw_in_log(caplog):
 
     assert "__parse_error" in args
     log_text = " ".join(rec.message for rec in caplog.records)
-    assert "..." in log_text
+    assert "arguments redacted" in log_text
+    assert "1025 characters" in log_text
     assert payload not in log_text
 
 

@@ -6,16 +6,15 @@ export interface ToolFailureFields {
   readonly outcome: ToolFailureOutcome;
 }
 
-/** Stable public tool failure with an optional private tracing cause. */
+/** Stable public tool failure without retaining the originating exception. */
 export class ToolExecutionError extends Error implements ToolFailureFields {
   constructor(
     message: string,
     readonly error_code: string,
     readonly retryable: boolean,
     readonly outcome: ToolFailureOutcome,
-    options: ErrorOptions = {},
   ) {
-    super(message, options);
+    super(message);
     this.name = "ToolExecutionError";
   }
 }
@@ -50,7 +49,6 @@ export function snapshotToolExecutionError(error: ToolExecutionError): ToolExecu
     error.error_code,
     error.retryable,
     error.outcome,
-    { cause: error.cause },
   );
   snapshot.name = error.name;
   return Object.freeze(snapshot);
@@ -74,29 +72,25 @@ export function toolTimedOut(outcome: "not_started" | "unknown"): ToolExecutionE
   );
 }
 
-export function toolExecutionFailed(cause: unknown): ToolExecutionError {
-  return new ToolExecutionError("Tool execution failed", "TOOL_EXECUTION_FAILED", false, "failed", {
-    cause,
-  });
+export function toolExecutionFailed(_cause: unknown): ToolExecutionError {
+  return new ToolExecutionError("Tool execution failed", "TOOL_EXECUTION_FAILED", false, "failed");
 }
 
-export function toolStartRecordFailed(cause: unknown): ToolExecutionError {
+export function toolStartRecordFailed(_cause: unknown): ToolExecutionError {
   return new ToolExecutionError(
     "Tool execution did not start",
     "TOOL_START_RECORD_FAILED",
     true,
     "not_started",
-    { cause },
   );
 }
 
-export function toolExecutionUnknown(cause: unknown): ToolExecutionError {
+export function toolExecutionUnknown(_cause: unknown): ToolExecutionError {
   return new ToolExecutionError(
     "Tool execution failed with an unknown outcome",
     "TOOL_EXECUTION_FAILED",
     false,
     "unknown",
-    { cause },
   );
 }
 
@@ -119,6 +113,5 @@ export function normalizeStartedToolFailure(cause: unknown): ToolExecutionError 
     cause.error_code,
     cause.outcome === "failed" && cause.retryable,
     cause.outcome,
-    { cause },
   );
 }

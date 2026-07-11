@@ -11,8 +11,10 @@ from kaji.infra.events.schemas import (
     EventType,
     NewKajiEvent,
     StoredKajiEvent,
-    require_new_event,
+    revalidate_new_event,
+    revalidate_stored_event,
     require_stored_event,
+    validate_event_python,
 )
 from kaji.infra.events.store.base import AppendResult
 
@@ -40,7 +42,7 @@ class InMemoryEventStore:
 
     @staticmethod
     def _copy_stored(event: StoredKajiEvent) -> StoredKajiEvent:
-        return require_stored_event(event.model_copy(deep=True))
+        return revalidate_stored_event(event)
 
     def _evict_closed_session(self) -> bool:
         for session_id, events in self._events.items():
@@ -55,7 +57,7 @@ class InMemoryEventStore:
         # Draft models intentionally remain mutable for callers. Detach before
         # waiting on the store lock so later caller mutation cannot alter the
         # value that this append persists.
-        draft = require_new_event(event.model_copy(deep=True))
+        draft = revalidate_new_event(event)
         async with self._lock:
             existing = self._events_by_id.get(draft.id)
             if existing is not None:
@@ -82,9 +84,9 @@ class InMemoryEventStore:
                     f"session reached {self.max_events_per_session} events",
                 )
 
-            stored = require_stored_event(
-                draft.model_copy(update={"sequence": len(bucket) + 1})
-            )
+            stored_payload = draft.model_dump(mode="python")
+            stored_payload["sequence"] = len(bucket) + 1
+            stored = require_stored_event(validate_event_python(stored_payload))
             bucket.append(stored)
             self._events_by_id[stored.id] = stored
             self._events.move_to_end(stored.session_id)
@@ -116,6 +118,6 @@ class InMemoryEventStore:
             if not bucket:
                 return 0
             self._events.move_to_end(session_id)
-            sequence = require_stored_event(bucket[-1]).sequence
+            sequence = revalidate_stored_event(bucket[-1]).sequence
             assert sequence is not None
             return sequence

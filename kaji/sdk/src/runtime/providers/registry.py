@@ -24,11 +24,11 @@ def get_provider(name: str, **kwargs) -> ModelProvider:
         module_name, class_name = _BUILTINS[name]
         try:
             module = importlib.import_module(module_name)
-        except ImportError as error:
+        except ImportError:
             raise ProviderConfigError(
                 f"Provider '{name}' requires optional dependencies. "
                 f"Install kaji[{name}] or the corresponding provider package."
-            ) from error
+            ) from None
         provider_cls = _PROVIDERS.get(name) or getattr(module, class_name)
     if provider_cls is None:
         raise ProviderConfigError(f"Provider '{name}' is not registered.")

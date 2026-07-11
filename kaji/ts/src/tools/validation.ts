@@ -289,6 +289,14 @@ export class ToolArgumentValidationError extends ToolValidationError {
     );
   }
 
+  static oversize(toolName: string): ToolArgumentValidationError {
+    return new ToolArgumentValidationError(
+      toolName,
+      "/",
+      "Invalid tool arguments: serialized arguments exceed 65536 bytes",
+    );
+  }
+
   static changedDuringValidation(toolName: string): ToolArgumentValidationError {
     return new ToolArgumentValidationError(
       toolName,

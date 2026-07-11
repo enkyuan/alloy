@@ -262,7 +262,8 @@ export function startSpan(
     recordError(error) {
       if (ended) return;
       try {
-        inner.recordError(error);
+        const kind = error instanceof Error ? error.name : typeof error;
+        inner.recordError(new Error(`${kind}: details redacted`));
       } catch {
         // Best-effort.
       }

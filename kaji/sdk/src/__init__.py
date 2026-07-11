@@ -15,7 +15,7 @@ Public surface follows PEP 8: classes are CapWords (``AgentRuntime``,
 import importlib
 from typing import Any
 
-__version__ = "0.1.0"
+__version__ = "0.2.0b1"
 
 # Public name -> module it lives in. Kept as a static map so that importing
 # the top-level package triggers no submodule side effects. Entries are

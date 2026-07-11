@@ -4,6 +4,7 @@
  * `SessionState` is a read model derived by replaying events in store order.
  */
 import { EventType } from "@/events/types";
+import { canonicalJsonValue } from "@/events/json";
 import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
@@ -277,46 +278,5 @@ export function orderLegacyUnsequencedEvents(events: readonly KajiEvent[]): Kaji
  * fail instead of being silently coerced or omitted.
  */
 function stringifyResult(result: unknown): string {
-  if (result === null) return "null";
-
-  switch (typeof result) {
-    case "boolean":
-      return result ? "true" : "false";
-    case "string":
-      return JSON.stringify(result);
-    case "number":
-      if (!Number.isFinite(result)) {
-        throw new TypeError("tool result contains a non-finite number");
-      }
-      return Object.is(result, -0) ? "0" : result.toString();
-    case "object":
-      if (Object.getOwnPropertySymbols(result).length > 0) {
-        throw new TypeError("tool result JSON object keys must be strings");
-      }
-      if (Array.isArray(result)) {
-        return `[${Array.from(result, (item) => stringifyResult(item)).join(",")}]`;
-      }
-      if (
-        Object.getPrototypeOf(result) !== Object.prototype &&
-        Object.getPrototypeOf(result) !== null
-      ) {
-        throw new TypeError("tool result contains a non-plain object");
-      }
-      const keys = Object.getOwnPropertyNames(result);
-      for (const key of keys) {
-        const descriptor = Object.getOwnPropertyDescriptor(result, key);
-        if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
-          throw new TypeError("tool result JSON object properties must be enumerable data values");
-        }
-      }
-      return `{${keys
-        .sort()
-        .map(
-          (key) =>
-            `${JSON.stringify(key)}:${stringifyResult((result as Record<string, unknown>)[key])}`,
-        )
-        .join(",")}}`;
-    default:
-      throw new TypeError(`tool result contains non-JSON value ${typeof result}`);
-  }
+  return canonicalJsonValue(result, "tool result");
 }

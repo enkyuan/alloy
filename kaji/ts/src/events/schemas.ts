@@ -11,7 +11,29 @@ import * as z from "zod";
 
 import { defaultUuid } from "@/internal/uuid";
 import { EventType } from "@/events/types";
-import { cloneAndFreezeJson, type DeepReadonly } from "@/events/json";
+import { canonicalJsonValue, cloneAndFreezeJson, type DeepReadonly } from "@/events/json";
+
+export const MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024;
+
+export function durableToolArgumentsSize(value: Record<string, unknown>): number {
+  return new TextEncoder().encode(canonicalJsonValue(value, "tool arguments")).byteLength;
+}
+
+const durableToolArguments = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+  let size: number;
+  try {
+    size = durableToolArgumentsSize(value);
+  } catch {
+    ctx.addIssue({ code: "custom", message: "tool_args must contain only JSON values" });
+    return;
+  }
+  if (size > MAX_DURABLE_TOOL_ARGUMENT_BYTES) {
+    ctx.addIssue({
+      code: "custom",
+      message: "tool_args cannot exceed 65536 serialized bytes; payload redacted",
+    });
+  }
+});
 
 /** Fields shared by every event. No provider- or voice-specific fields here. */
 const baseShape = {
@@ -103,7 +125,7 @@ export const ToolCallRequested = event({
   type: z.literal(EventType.TOOL_CALL_REQUESTED),
   turn_id: z.string().min(1),
   tool_name: z.string().min(1),
-  tool_args: z.record(z.string(), z.unknown()),
+  tool_args: durableToolArguments,
   tool_call_id: z.string().min(1),
 });
 
@@ -149,7 +171,7 @@ export const ToolApprovalRequested = event({
   turn_id: z.string().min(1),
   tool_name: z.string().min(1),
   tool_call_id: z.string().min(1),
-  tool_args: z.record(z.string(), z.unknown()),
+  tool_args: durableToolArguments,
   risk: z.enum(["read", "write", "external_effect", "financial", "destructive", "admin"]),
 });
 

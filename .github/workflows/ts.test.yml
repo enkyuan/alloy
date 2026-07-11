@@ -34,6 +34,8 @@ jobs:
       - uses: ./.github/actions/setup-bun-cache
         with:
           working-directory: kaji/ts
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
 
       - name: Typecheck
         run: bun run typecheck
@@ -48,8 +50,12 @@ jobs:
         run: bun run test
 
   kaji-ts-install-smoke:
-    name: kaji/ts install smoke
+    name: kaji/ts install smoke / Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["22", "24"]
     defaults:
       run:
         working-directory: kaji/ts
@@ -58,27 +64,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node-version }}
 
       - uses: ./.github/actions/setup-bun-cache
         with:
           working-directory: kaji/ts
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
 
-      - name: Build package
-        run: bun run build
-
-      - name: Pack tarball
-        run: npm pack
-
-      - name: Install tarball in clean temp project
-        run: |
-          TARBALL=$(ls "$GITHUB_WORKSPACE"/kaji/ts/kaji-sdk-*.tgz | head -1)
-          mkdir /tmp/kaji-smoke
-          cp "$GITHUB_WORKSPACE/kaji/ts/scripts/smoke-install.mts" /tmp/kaji-smoke/smoke-install.mts
-          cd /tmp/kaji-smoke
-          npm init -y --quiet
-          npm install --quiet "$TARBALL" zod
-          npx --yes tsx ./smoke-install.mts
+      - name: Build, pack, and test installed package
+        run: bun run build && bun scripts/smoke-installed.mts
 
   auth:
     name: ryo/auth

@@ -5,6 +5,7 @@ from kaji.runtime.providers.errors import (
     ProviderAPIError,
     ProviderConfigError,
     ProviderError,
+    ServiceError,
     ServiceErrorToDetail,
     ServiceErrorToHTTPStatus,
     ServiceAPIError,
@@ -120,3 +121,64 @@ def test_provider_http_error_normalization_preserves_status_and_retryability() -
         "status": 429,
         "retryable": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_type", "status_code"),
+    [
+        ("config", ProviderConfigError, None),
+        ("auth", ServiceAuthError, 401),
+        ("rate-limit", ServiceRateLimitError, 429),
+        ("network", ServiceNetworkError, None),
+        ("api", ServiceAPIError, 500),
+    ],
+)
+def test_secret_bearing_service_error_is_reclassified_without_retention(
+    kind: str,
+    expected_type: type[ServiceError],
+    status_code: int | None,
+) -> None:
+    secret = f"sk-service-{kind}-secret"
+    if kind == "config":
+        original: ServiceError = ProviderConfigError(secret, service="vendor")
+    else:
+        error_types: dict[str, type[ServiceError]] = {
+            "auth": ServiceAuthError,
+            "rate-limit": ServiceRateLimitError,
+            "network": ServiceNetworkError,
+            "api": ServiceAPIError,
+        }
+        original = error_types[kind](
+            service="vendor",
+            action="private-action",
+            message=secret,
+            status_code=status_code,
+            response_text=secret,
+            cause=RuntimeError(secret),
+        )
+
+    captured: ServiceError | None = None
+    try:
+        try:
+            raise RuntimeError(secret)
+        except RuntimeError:
+            raise original from None
+    except ServiceError as error:
+        captured = error
+
+    assert captured is original
+    normalized = provider_error_from_exception(
+        service="openai",
+        action="request",
+        error=captured,
+    )
+
+    assert normalized is not original
+    assert isinstance(normalized, expected_type)
+    assert normalized.service == "openai"
+    assert normalized.action == ("configure" if kind == "config" else "request")
+    assert normalized.response_text is None
+    assert normalized.cause is None
+    assert normalized.__cause__ is None
+    assert normalized.__context__ is None
+    assert secret not in str(normalized)

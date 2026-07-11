@@ -11,7 +11,6 @@ export class ProviderError extends Error {
   readonly action: string;
   readonly statusCode?: number;
   readonly responseText?: string;
-  override readonly cause?: unknown;
 
   constructor(message: string, options: ProviderErrorOptions = {}) {
     super(message);
@@ -19,8 +18,10 @@ export class ProviderError extends Error {
     this.service = options.service ?? "provider";
     this.action = options.action ?? "request";
     if (options.statusCode !== undefined) this.statusCode = options.statusCode;
-    if (options.responseText !== undefined) this.responseText = options.responseText;
-    if (options.cause !== undefined) this.cause = options.cause;
+    // Response bodies are vendor-controlled and may contain credentials.
+    // Keep the compatibility property undefined rather than retaining them.
+    // Deliberately discard vendor causes: SDK errors are public values and
+    // vendor exceptions may retain request bodies, credentials, or headers.
   }
 }
 
@@ -56,10 +57,6 @@ export class ProviderRateLimitedError extends ProviderError {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function errorStatusCode(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const status = "status" in error ? error.status : undefined;
@@ -69,16 +66,6 @@ function errorStatusCode(error: unknown): number | undefined {
     : typeof statusCode === "number"
       ? statusCode
       : undefined;
-}
-
-function errorResponseText(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined;
-  const response = "response" in error ? error.response : undefined;
-  if (typeof response === "string") return response;
-  if (typeof response === "object" && response !== null && "text" in response) {
-    return typeof response.text === "string" ? response.text : undefined;
-  }
-  return undefined;
 }
 
 const NETWORK_ERROR_CODES = new Set([
@@ -112,20 +99,43 @@ export function providerAPIErrorFromUnknown(
   error: unknown,
   action = "request",
 ): ProviderError {
-  if (error instanceof ProviderError) return error;
+  if (error instanceof ProviderConfigError) {
+    return new ProviderConfigError(`${service} configuration failed`, {
+      service,
+      statusCode: error.statusCode,
+    });
+  }
+  if (error instanceof ProviderConnectionError) {
+    return new ProviderConnectionError(`${service} ${action} failed due to a network error`, {
+      service,
+      action,
+      statusCode: error.statusCode,
+    });
+  }
+  if (error instanceof ProviderRateLimitedError) {
+    return new ProviderRateLimitedError(`${service} rate limit exceeded`, {
+      service,
+      retryAfterMs: error.retryAfterMs,
+      attempts: error.attempts,
+    });
+  }
+  if (error instanceof ProviderError) {
+    return new ProviderAPIError(`${service} ${action} failed`, {
+      service,
+      action,
+      statusCode: error.statusCode,
+    });
+  }
   if (isNetworkError(error)) {
     return new ProviderConnectionError(`${service} ${action} failed due to a network error`, {
       service,
       action,
-      cause: error,
     });
   }
-  return new ProviderAPIError(`${service} ${action} failed: ${errorMessage(error)}`, {
+  return new ProviderAPIError(`${service} ${action} failed`, {
     service,
     action,
     statusCode: errorStatusCode(error),
-    responseText: errorResponseText(error),
-    cause: error,
   });
 }
 

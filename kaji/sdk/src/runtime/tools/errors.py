@@ -88,6 +88,14 @@ class ToolArgumentValidationError(ToolValidationError):
             "Invalid tool arguments: arguments must contain only JSON values",
         )
 
+    @classmethod
+    def oversize(cls, tool_name: str) -> ToolArgumentValidationError:
+        return cls(
+            tool_name,
+            "/",
+            "Invalid tool arguments: serialized arguments exceed 65536 bytes",
+        )
+
 
 class ToolSchemaValidationError(ToolValidationError):
     """Raised when a tool definition is not valid Draft 2020-12 JSON Schema."""

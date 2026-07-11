@@ -69,10 +69,10 @@ class OpenAIProvider(ModelProvider):
         if self._client is None:
             try:
                 AsyncOpenAI = import_module("openai").AsyncOpenAI
-            except ImportError as error:
+            except ImportError:
                 raise ProviderConfigError(
                     "OpenAI provider requires openai. Install kaji[openai]."
-                ) from error
+                ) from None
 
             # Kaji does not own a cancellable pre-stream retry loop. Disable
             # opaque SDK backoff so caller cancellation cannot be trapped in it.
@@ -112,18 +112,13 @@ class OpenAIProvider(ModelProvider):
                 try:
                     args = json.loads(raw_args)
                 except (json.JSONDecodeError, TypeError) as exc:
-                    raw_snippet = (
-                        raw_args
-                        if len(str(raw_args)) <= 200
-                        else str(raw_args)[:200] + "..."
-                    )
                     logger.warning(
                         "OpenAI tool_call arguments failed to parse "
-                        "for tool=%s id=%s raw=%r: %s",
+                        "for tool=%s id=%s (arguments redacted; %d characters; %s)",
                         field(func, "name"),
                         field(tc, "id") or "<unknown>",
-                        raw_snippet,
-                        exc,
+                        len(str(raw_args)),
+                        type(exc).__name__,
                     )
                     args = {"__parse_error": str(exc)}
             calls.append(
@@ -172,8 +167,7 @@ class OpenAIProvider(ModelProvider):
 
         When the model's tool-arg JSON does not parse, we do two things:
 
-        - log a truncated snapshot of the raw input plus the exception at
-          WARNING (the logger is the privileged sink),
+        - log only the tool identity, payload length, and exception type,
         - return ``{"__parse_error": str(exc)}`` so the planner fails the
           call closed via the existing sentinel in ``planner.py``.
 
@@ -190,14 +184,13 @@ class OpenAIProvider(ModelProvider):
             try:
                 args: Dict[str, Any] = json.loads(raw)
             except (json.JSONDecodeError, TypeError) as exc:
-                raw_snippet = raw if len(raw) <= 200 else raw[:200] + "..."
                 logger.warning(
                     "OpenAI streaming tool_call arguments failed to parse "
-                    "for tool=%s id=%s raw=%r: %s",
+                    "for tool=%s id=%s (arguments redacted; %d characters; %s)",
                     item["name"],
                     item["id"] or "<unknown>",
-                    raw_snippet,
-                    exc,
+                    len(raw),
+                    type(exc).__name__,
                 )
                 args = {"__parse_error": str(exc)}
             calls.append(
@@ -233,13 +226,19 @@ class OpenAIProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        request_error = None
         try:
             response = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001 - surface as a provider error
-            logger.error("OpenAI API error: %s", e)
-            raise provider_error_from_exception(
+            logger.error(
+                "OpenAI API request failed (%s; details redacted)", type(e).__name__
+            )
+            request_error = provider_error_from_exception(
                 service="openai", action="request", error=e
-            ) from e
+            )
+
+        if request_error is not None:
+            raise request_error from None
 
         choice = response.choices[0]
         message = choice.message
@@ -301,45 +300,65 @@ class OpenAIProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        open_error = None
         try:
             stream = await self.client.chat.completions.create(**kwargs)
         except Exception as e:  # noqa: BLE001
-            logger.error("OpenAI streaming API error: %s", e)
-            raise provider_error_from_exception(
+            logger.error(
+                "OpenAI streaming API request failed (%s; details redacted)",
+                type(e).__name__,
+            )
+            open_error = provider_error_from_exception(
                 service="openai", action="stream", error=e
-            ) from e
+            )
+
+        if open_error is not None:
+            raise open_error from None
 
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
-        async for chunk in stream:
-            _raise_if_cancelled(cancellation_token)
+        iteration_error = None
+        try:
+            async for chunk in stream:
+                _raise_if_cancelled(cancellation_token)
 
-            usage = getattr(chunk, "usage", None)
-            if usage is not None:
-                metrics = TokenMetrics(
-                    prompt_tokens=getattr(usage, "prompt_tokens", 0),
-                    completion_tokens=getattr(usage, "completion_tokens", 0),
-                    total_tokens=getattr(usage, "total_tokens", 0),
-                )
-                yield ModelResponseChunk(
-                    metrics=metrics,
-                    cost_usd=calculate_cost_usd(
-                        self.model_name,
-                        metrics.prompt_tokens,
-                        metrics.completion_tokens,
-                    ),
-                )
-                continue
+                usage = getattr(chunk, "usage", None)
+                if usage is not None:
+                    metrics = TokenMetrics(
+                        prompt_tokens=getattr(usage, "prompt_tokens", 0),
+                        completion_tokens=getattr(usage, "completion_tokens", 0),
+                        total_tokens=getattr(usage, "total_tokens", 0),
+                    )
+                    yield ModelResponseChunk(
+                        metrics=metrics,
+                        cost_usd=calculate_cost_usd(
+                            self.model_name,
+                            metrics.prompt_tokens,
+                            metrics.completion_tokens,
+                        ),
+                    )
+                    continue
 
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
-            text = getattr(delta, "content", None) or ""
-            self._accumulate_stream_tool_calls(
-                pending_tool_calls, getattr(delta, "tool_calls", None)
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                text = getattr(delta, "content", None) or ""
+                self._accumulate_stream_tool_calls(
+                    pending_tool_calls, getattr(delta, "tool_calls", None)
+                )
+                if text:
+                    yield ModelResponseChunk(delta=text, tool_calls=[])
+        except Exception as e:  # noqa: BLE001
+            logger.error(
+                "OpenAI streaming API iteration failed (%s; details redacted)",
+                type(e).__name__,
             )
-            if text:
-                yield ModelResponseChunk(delta=text, tool_calls=[])
+            iteration_error = provider_error_from_exception(
+                service="openai", action="stream", error=e
+            )
+
+        if iteration_error is not None:
+            raise iteration_error from None
 
         tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
         if tool_calls:

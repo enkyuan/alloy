@@ -95,7 +95,8 @@ describe("ToolPlanner", () => {
       outcome: "unknown",
     });
     expect(JSON.stringify({ emitted, results })).not.toContain("tool exploded");
-    expect(logged).toHaveBeenCalledWith(expect.objectContaining({ message: "tool exploded" }));
+    expect(JSON.stringify(logged.mock.calls)).not.toContain("tool exploded");
+    expect(logged).toHaveBeenCalledWith("[kaji] internal error (Error; details redacted)");
     logged.mockRestore();
   });
 
@@ -129,6 +130,41 @@ describe("ToolPlanner", () => {
         outcome: "not_started",
       });
     }
+  });
+
+  it("normalizes oversize arguments before persistence", async () => {
+    const secret = "sk-oversize-provider-argument";
+    const emitted: any[] = [];
+    const executor = vi.fn();
+    const planner = new ToolPlanner({ executor, specs: specsFor("search") });
+
+    const results = await executePlanner(
+      planner,
+      "oversize",
+      [{ id: "oversize", name: "search", arguments: { value: secret + "x".repeat(64 * 1024) } }],
+      async (event) => {
+        emitted.push(event);
+      },
+    );
+
+    expect(executor).not.toHaveBeenCalled();
+    expect(emitted.map(({ type }) => type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(emitted[0].tool_args).toEqual({ __parse_error: "payload too large" });
+    expect(results).toEqual([
+      {
+        id: "oversize",
+        name: "search",
+        error: "Invalid tool arguments: serialized arguments exceed 65536 bytes",
+        error_code: "INVALID_TOOL_ARGUMENTS",
+        error_path: "/",
+        retryable: false,
+        outcome: "not_started",
+      },
+    ]);
+    expect(JSON.stringify({ emitted, results })).not.toContain(secret);
   });
 
   it("redacts provider parse-error details before recording validation failure", async () => {
