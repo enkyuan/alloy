@@ -17,7 +17,7 @@ three packages live under `kaji/`:
 | -------------------- | ---------------------- | ------------------------------------------------ |
 | `kaji` | `kaji/sdk` | python SDK: the core runtime, embed anywhere |
 | `kaji-serve` | `kaji/serve` | python: FastAPI + workers reference service |
-| `@kaji/sdk` | `kaji/ts` | TypeScript port of the core runtime |
+| `@kaji/sdk` | `kaji/ts` | TypeScript SDK for the shared embedded core |
 
 individual package setup lives in each package's own README. this doc covers
 the shared concepts across all three.
@@ -37,15 +37,15 @@ the shared concepts across all three.
    │                                                   │
    │  1. project session state from event log          │
    │  2. call LLM provider with history + tool specs   │
-   │  3. execute tool calls scatter-gather             │
+   │  3. execute tools sequentially by default         │
    │  4. loop until model response is final            │
    └────────┬────────────────────────────┬─────────────┘
             │ events                     │ tool calls
             ▼                            ▼
    ┌──────────────────┐        ┌──────────────────────┐
    │  event store     │        │  tool handlers       │
-   │  (in-memory or   │        │  (your functions,    │
-   │   persistent)    │        │   run concurrently)  │
+   │  (in-memory or   │        │  (bounded; explicit  │
+   │   persistent)    │        │   parallel opt-in)   │
    └──────────────────┘        └──────────────────────┘
 ```
 
@@ -105,49 +105,93 @@ history in `{role, content}` form that gets passed to the LLM).
 
 ### tool registry
 
-tools are registered with a spec (name, description, JSON schema parameters) and
-a handler function. the runtime calls the LLM with the full tool spec list; when
-the model requests a tool call, the registry dispatches it. multiple tool calls
-from one LLM turn run concurrently (scatter-gather) and results are collected
-before the next loop iteration.
+tools are registered with a spec (name, description, JSON Schema parameters,
+and risk) plus a handler. the runtime validates each requested call before
+approval or execution. tools execute sequentially unless an effect-independent
+spec explicitly sets `parallel_safe`; even then, the default limit is four
+active handlers.
 
 ```python
 # python
+import asyncio
 import kaji
 
-@kaji.function_tool(description="Look up weather.")
-async def get_weather(city: str) -> dict:
-    return {"city": city, "tempF": 68}
+@kaji.function_tool(description="Look up weather.", risk="read")
+async def get_weather(
+    context: kaji.ToolExecutionContext,
+    city: str,
+) -> dict:
+    return {
+        "city": city,
+        "tempF": 68,
+        "principal": context.principal_id,
+    }
 
 runtime = (
     kaji.AgentBuilder()
-    .provider(kaji.get_provider("mock"))  # swap for "openai", "anthropic", etc.
+    .provider(kaji.get_provider("openai"))
     .tool(get_weather)
-    .build(bus=kaji.InMemoryEventBus(), store=kaji.InMemoryEventStore())
+    .build()
 )
+
+async def main() -> None:
+    result = await runtime.turn(
+        "Weather in Seattle?",
+        context=kaji.TurnContext(principal_id="weather-app"),
+    )
+    print(result.text)
+
+
+asyncio.run(main())
 ```
 
-See [docs/RUNTIME_API.md](docs/RUNTIME_API.md#tools) for richer schemas
-(`parameters=MyModel`) and `Integration` bundles.
+See [the canonical tool contract](../docs/kaji/tool-contracts.md) for richer
+schemas, `Integration` bundles, deadlines, cancellation, and idempotency.
 
 ```ts
 // typescript
-registerTool(
-  toolSpecFromSchema("get_weather", "Look up weather", z.object({ city: z.string() })),
-  async (ctx, args) => ({ tempF: 68 }),
+import { AgentBuilder, functionTool, OpenAIProvider } from "@kaji/sdk";
+import { z } from "zod";
+
+const getWeather = functionTool(
+  {
+    name: "get_weather",
+    description: "Look up weather.",
+    parameters: z.object({ city: z.string() }),
+    risk: "read",
+  },
+  async (args, context) => ({
+    city: args.city,
+    tempF: 68,
+    principal: context.principalId,
+  }),
 );
+
+const runtime = new AgentBuilder()
+  .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
+  .tool(getWeather)
+  .build();
+
+const result = await runtime.turn("Weather in Seattle?", {
+  context: { principalId: "weather-app" },
+});
 ```
 
-`ToolContext` carries `userId` / `user_id` and an optional `db` handle (null by
-default; inject one when the tool needs persistence).
+Python integration handlers use `(context, args)`; TypeScript function and
+integration handlers use `(args, context)`. every tool-capable turn needs an
+explicit principal, either per turn as above or as a deliberately configured
+single-tenant builder default. handlers receive an immutable
+`ToolExecutionContext` snapshot with principal, session, turn, request, trace,
+tool-call, idempotency, deadline, cancellation, metadata, and optional `db`
+values.
 
 ### event bus
 
-the event bus fans out events to subscribers per session. in the python SDK the
-default implementation is in-memory (`InMemoryEventBus`); a Redis Stream-backed
-bus is available for service hand-off. the typescript SDK ships an in-memory bus
-only (sufficient for an embedded SDK; Redis deferred until there is a TS server
-runtime).
+the event journal/committer atomically persists and fans out events per session.
+both embedded SDKs default to bounded in-memory implementations. persisted
+sequence, not timestamp, defines ordering; history is read through bounded,
+exclusive cursors. python also has experimental Redis/split adapters for
+service hand-off. TypeScript remains in-memory only.
 
 ### providers
 
@@ -183,11 +227,11 @@ embed `kaji` directly when you want infra-free usage inside your own app.
 
 ## typescript SDK
 
-`@kaji/sdk` (`kaji/ts`) is a TypeScript port of the python core. it
-mirrors the public surface (event types, store, bus, replay, tool registry,
-agent runtime, and provider interfaces) and uses Zod 4 for validation. wire
-format (event type strings, field names) is identical to the python SDK so
-events can round-trip across both.
+`@kaji/sdk` (`kaji/ts`) implements the shared embedded beta core: events,
+bounded store/committer, replay, tool registry and planner, agent runtime, and
+OpenAI/Anthropic providers. it requires Zod `>=4.3 <5` as a peer dependency.
+the stable event wire format (type strings and field names) is shared with the
+python SDK so validated stored events can round-trip across both.
 
 voice modalities (STT, TTS) are not yet ported to TypeScript.
 

@@ -5,11 +5,13 @@ the pieces you need and compose them. The core is infra-free (no database,
 server, or environment configured). It mirrors the runtime core of the Python
 `kaji` SDK.
 
-> **Status:** beta candidate for the core embedded loop. Event-sourced building
-> blocks, tool registry, `ToolPlanner` / `ToolPolicy`, `AgentBuilder`, OpenAI
-> and Anthropic providers, and the agent runtime are implemented and CI-tested.
-> RAG, voice, and Redis realtime are not yet ported from Python. CLI scaffold
-> and integration-registry commands are present.
+> **Status:** pre-beta release implementation; promotion is blocked pending
+> same-commit protected release evidence. The embedded stable core has local
+> deterministic coverage, but the Node 22/24 matrix, required keyed OpenAI
+> proof (and Anthropic only when configured), full
+> benchmark, 30-minute soak, signed tag, provenance, and publication proof must
+> pass before a production-beta label. RAG, voice, and Redis realtime are not
+> ported from Python.
 
 See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
 definition.
@@ -28,7 +30,23 @@ are optional peers -- install only the one you use. Node 22+.
 
 ## Quick start
 
-Set an API key, then build an agent with `AgentBuilder`:
+First prove a text-only turn without credentials. No principal is required
+because this runtime has no enabled tools:
+
+```ts
+import { AgentBuilder } from "@kaji/sdk";
+import { MockProvider } from "@kaji/sdk/testing";
+
+const runtime = new AgentBuilder()
+  .provider(new MockProvider({ reply: "hello" }))
+  .build();
+const result = await runtime.turn("Say hello.");
+console.log(result.text, result.sessionId, result.turnId);
+console.log(result.events.map((event) => [event.sequence, event.turn_id, event.type]));
+```
+
+Then set an API key and add a risk-classified tool with explicit caller
+identity, deadline, and cancellation:
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -40,6 +58,7 @@ import {
   AgentBuilder,
   OpenAIProvider,
   Integration,
+  CancellationToken,
   tool,
 } from "@kaji/sdk";
 import { z } from "zod";
@@ -61,14 +80,26 @@ const runtime = new AgentBuilder()
   .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
   .integration(new WeatherIntegration())
   .systemPrompt("You are a weather assistant.")
-  .defaultContext({ principalId: "weather-app" })
   .build();
 
-const result = await runtime.turn("Weather in Seattle?");
-console.log(result.text);
+const token = new CancellationToken();
+const cancelAt = setTimeout(() => token.cancel(), 30_000);
+let result;
+try {
+  result = await runtime.turn("Weather in Seattle?", {
+    cancellationToken: token,
+    context: {
+      principalId: "weather-app",
+      deadlineMs: Date.now() + 30_000,
+    },
+  });
+} finally {
+  clearTimeout(cancelAt);
+}
+console.log(result.text, result.sessionId, result.turnId);
 
 for (const e of result.events) {
-  console.log(e.type, "content" in e ? e.content : "delta" in e ? e.delta : "");
+  console.log(e.id, e.sequence, e.turn_id, e.type);
 }
 ```
 
@@ -77,6 +108,20 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
+
+Catch a Kaji `ProviderError`, then call `normalizeProviderError(error)` for the
+redaction-safe `type`, `code`, `service`, `action`, `status`, and `retryable`
+fields. The normalizer accepts Kaji provider errors, not arbitrary vendor
+exceptions.
+
+See [`docs/kaji/production-beta.md`](../../docs/kaji/production-beta.md) for
+the installed-package version of both first-success examples and exact default
+limits. Operating details are in
+[`concurrency-and-ordering.md`](../../docs/kaji/concurrency-and-ordering.md),
+[`tool-contracts.md`](../../docs/kaji/tool-contracts.md), and
+[`troubleshooting.md`](../../docs/kaji/troubleshooting.md).
+Call `runtime.effectiveLimits()` to inspect the immutable
+`EffectiveRuntimeLimits` resolved for one runtime.
 
 Runtimes that share the same `EventStore` also share a default per-store turn
 coordinator within the current process, so same-session turns serialize even
@@ -110,7 +155,7 @@ bash kaji/scripts/beta-release-check.sh
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
-checks, TS package smoke, ast-grep boundary checks when available, and no-key
+checks, TS package smoke, mandatory pinned ast-grep boundary checks, and no-key
 live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
 
 For the live-gate credential modes specifically:
@@ -137,7 +182,7 @@ The same keyed proof can be included in the wrapper with
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
   `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
-  event bus/store are the beta-candidate embedded-agent surface.
+  event bus/store are the pre-beta embedded-agent surface under release review.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities exist in Python but are not production-hardened.
@@ -158,9 +203,10 @@ provider implementations.
 ## Approval handler
 
 Tools whose risk exceeds your policy threshold pause for approval before the
-runtime executes them. `cliApprovalHandler` is a built-in handler for
-dev / REPL use that prints the tool name, risk, and arguments, then reads
-`y` / `N` on stdin:
+runtime executes them. Production hosts implement `TypedApprovalHandler` and
+return an `ApprovalDecision`. `cliApprovalHandler` is only a deprecated
+dev/REPL compatibility helper that prints the tool name, risk, and arguments,
+then reads `y` / `N` on stdin:
 
 ```ts
 import { AgentBuilder, cliApprovalHandler, openai } from "@kaji/sdk";
@@ -171,9 +217,12 @@ const agent = new AgentBuilder()
   .build();
 ```
 
-`ApprovalHandler` is `(name, args, risk) => Promise<boolean>`. For production
-hosts, implement your own handler that talks to a web modal, Slack, or
-whatever your operator workflow needs.
+`ApprovalHandler` and `cliApprovalHandler` are deprecated Boolean compatibility
+paths. Production hosts implement `TypedApprovalHandler.request(call, context)`
+and return an `ApprovalDecision`, for example
+`{ granted: true, code: "approved" }` or a rejected decision with an explicit
+code and safe reason. See
+[`tool-contracts.md`](../../docs/kaji/tool-contracts.md) for the lifecycle.
 
 `EventApprovalHandler` requires a non-empty turn ID and accepts a decision only
 when `turn_id`, `tool_call_id`, and `tool_name` all match the pending request.
@@ -187,7 +236,12 @@ kaji add <integration>                 # copy an integration into your project
 kaji add <integration> --allow-experimental  # explicitly copy a non-beta template
 kaji init [--out <dir>] [--force]      # scaffold a TypeScript Kaji project
 kaji list-integrations                 # enumerate the registry catalog
+kaji replay <session.jsonl>            # render a stored JSONL session log
 ```
+
+This is the embedded `@kaji/sdk` CLI. The standalone cross-language
+`@kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
+package also exposes additional Python-only maintenance commands.
 
 `echo` is the only beta catalog entry. HTTP, Web, filesystem, and SQLite are
 direct-import templates outside the beta guarantee and require

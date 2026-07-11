@@ -110,7 +110,9 @@ describe("kaji add", () => {
     });
     expect(code).toBe(1);
     expect(existsSync(out)).toBe(false);
-    expect(logs.join("\n")).toMatch(/--allow-experimental/);
+    expect(logs).toEqual([
+      "INTEGRATION_EXPERIMENTAL at /integrations/demo-ts/stability: Integration 'demo-ts' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
+    ]);
   });
 
   it("copies an experimental integration only with explicit opt-in", async () => {

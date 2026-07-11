@@ -56,7 +56,7 @@ describe("bounded tool execution", () => {
     const tool = spec("parallel", { parallel_safe: true });
     const planner = new ToolPlanner({ executor, specs: new Map([[tool.name, tool]]) });
     const events: Array<{ type: string; tool_call_id?: string }> = [];
-    const results = await planner.executeScatterGather(
+    const results = await planner.executeBatch(
       "parallel-session",
       Array.from({ length: 20 }, (_, index) => ({
         id: `call-${index}`,
@@ -98,7 +98,7 @@ describe("bounded tool execution", () => {
       },
       specs: new Map([["unsafe", spec("unsafe")]]),
     });
-    await planner.executeScatterGather(
+    await planner.executeBatch(
       "sequential-session",
       Array.from({ length: 6 }, (_, index) => ({
         id: `call-${index}`,
@@ -322,7 +322,7 @@ describe("bounded tool execution", () => {
     });
     const events: string[] = [];
     await expect(
-      planner.executeScatterGather(
+      planner.executeBatch(
         "terminal-failure",
         [{ id: "call", name: "tool", arguments: {} }],
         async (event) => {
@@ -404,7 +404,7 @@ describe("bounded tool execution", () => {
       },
     });
     const events: Array<{ type: string; tool_call_id?: string }> = [];
-    const pending = planner.executeScatterGather(
+    const pending = planner.executeBatch(
       "parent-cancel",
       [
         { id: "running", name: "cooperative", arguments: {} },
@@ -689,7 +689,7 @@ describe("bounded tool execution", () => {
         return { ok: true };
       },
     });
-    const result = await planner.executeScatterGather(
+    const result = await planner.executeBatch(
       "barrier-session",
       [
         { id: "barrier", name: "barrier", arguments: {} },
@@ -811,7 +811,7 @@ describe("bounded tool execution", () => {
       for (const testCase of cases) {
         const events: Array<{ type: string; tool_call_id?: string }> = [];
         let sequence = 0;
-        await testCase.planner.executeScatterGather(
+        await testCase.planner.executeBatch(
           `matrix-${testCase.id}`,
           [{ id: testCase.id, name: "tool", arguments: testCase.args ?? {} }],
           async (event) => {

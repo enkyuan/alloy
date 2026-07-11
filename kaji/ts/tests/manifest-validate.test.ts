@@ -132,7 +132,7 @@ describe("real registry", () => {
       loadManifest(registryRoot, "echo", { index: invalidIndex }),
     );
     expect(error.normalized()).toEqual({
-      code: "INVALID_INTEGRATION_INDEX",
+      code: "INTEGRATION_SCHEMA_INVALID",
       path: "/integrations/echo/stability",
     });
   });
@@ -174,7 +174,7 @@ describe("real registry", () => {
         loadManifest(root, "escape", { schemaRoot: registryRoot }),
       );
       expect(error.normalized()).toEqual({
-        code: "INVALID_INTEGRATION_INDEX",
+        code: "INTEGRATION_SCHEMA_INVALID",
         path: "/integrations/escape/manifest",
       });
     } finally {
@@ -221,7 +221,7 @@ describe("real registry", () => {
         loadManifest(root, "linked", { schemaRoot: registryRoot }),
       );
       expect(error.normalized()).toEqual({
-        code: "INVALID_INTEGRATION_MANIFEST",
+        code: "INTEGRATION_SCHEMA_INVALID",
         path: "/files/0",
       });
     } finally {

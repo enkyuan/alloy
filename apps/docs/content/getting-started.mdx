@@ -19,13 +19,14 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun add @kaji/sdk openai
+        bun add @kaji/sdk "zod@>=4.3 <5" openai
         ```
       </Tab>
     </Tabs>
 
-    These pull the SDK plus one provider client. For other providers or
-    optional extras, see [install](/docs/install).
+    These pull the SDK plus one provider client. TypeScript also requires Zod
+    `>=4.3 <5` as a peer dependency. For other providers or optional extras,
+    see [install](/docs/install).
 
   </Step>
 
@@ -50,19 +51,27 @@ tool wired in.
   <Step>
     ### Define a tool
 
-    Tools are a spec (name, description, JSON-schema parameters) plus a
-    handler. The `@function_tool` decorator (Python) / `functionTool(...)`
-    helper (TS) derives the spec from type hints and the docstring.
+    Tools are a spec (name, description, JSON Schema parameters, and risk)
+    plus a handler. The `@function_tool` decorator (Python) /
+    `functionTool(...)` helper (TS) derives the parameter schema from type
+    hints or Zod. Every enabled tool must declare risk explicitly.
 
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```python
-        from kaji import function_tool
+        import kaji
 
-        @function_tool
-        async def get_weather(city: str) -> dict:
+        @kaji.function_tool(risk="read")
+        async def get_weather(
+            context: kaji.ToolExecutionContext,
+            city: str,
+        ) -> dict:
             """Look up the weather for a city."""
-            return {"city": city, "tempF": 68}
+            return {
+                "city": city,
+                "tempF": 68,
+                "principal": context.principal_id,
+            }
         ```
       </Tab>
       <Tab value="typescript">
@@ -75,8 +84,13 @@ tool wired in.
             name: "get_weather",
             description: "Look up the weather for a city.",
             parameters: z.object({ city: z.string() }),
+            risk: "read",
           },
-          async ({ city }) => ({ city, tempF: 68 }),
+          async ({ city }, context) => ({
+            city,
+            tempF: 68,
+            principal: context.principalId,
+          }),
         );
         ```
       </Tab>
@@ -87,8 +101,8 @@ tool wired in.
   <Step>
     ### Build the runtime
 
-    `AgentBuilder` wires a provider, tools, and an in-memory bus + store into
-    a runnable `AgentRuntime`.
+    `AgentBuilder` wires a provider and tools to the runtime's event
+    journal/committer, producing a runnable `AgentRuntime`.
 
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
@@ -106,7 +120,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { AgentBuilder, OpenAIProvider } from "@kaji/sdk";
+        import { AgentBuilder, CancellationToken, OpenAIProvider } from "@kaji/sdk";
 
         const runtime = new AgentBuilder()
           .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
@@ -117,9 +131,8 @@ tool wired in.
       </Tab>
     </Tabs>
 
-    No DB. No server. The runtime holds an in-memory event store
-    (`InMemoryEventStore`) and bus (`InMemoryEventBus` in Python,
-    `EventBus` in TS) by default.
+    No DB or server is required. The runtime uses a bounded in-memory event
+    store and atomic in-memory journal/committer by default.
 
   </Step>
 
@@ -136,22 +149,53 @@ tool wired in.
         import asyncio
 
         async def main():
-            result = await runtime.turn("What's the weather in NYC?")
-            print(result.text)
+            token = kaji.CancellationToken()
+            loop = asyncio.get_running_loop()
+            cancel_at = loop.call_later(30, token.cancel)
+            try:
+                result = await runtime.turn(
+                    "What's the weather in NYC?",
+                    cancellation_token=token,
+                    context=kaji.TurnContext(
+                        principal_id="weather-app",
+                        deadline_monotonic=loop.time() + 30,
+                    ),
+                )
+            finally:
+                cancel_at.cancel()
+            print(result.text, result.session_id, result.turn_id)
 
         asyncio.run(main())
         ```
       </Tab>
       <Tab value="typescript">
         ```ts
-        const result = await runtime.turn("What's the weather in NYC?");
-        console.log(result.text);
+        const token = new CancellationToken();
+        const cancelAt = setTimeout(() => token.cancel(), 30_000);
+        try {
+          const result = await runtime.turn("What's the weather in NYC?", {
+            cancellationToken: token,
+            context: {
+              principalId: "weather-app",
+              deadlineMs: Date.now() + 30_000,
+            },
+          });
+          console.log(result.text, result.sessionId, result.turnId);
+        } finally {
+          clearTimeout(cancelAt);
+        }
         ```
       </Tab>
     </Tabs>
 
-    To stream events as they happen instead of reading them after the turn,
-    subscribe to the bus. See [event bus](/docs/concepts/event-bus).
+    Tool-capable turns require a per-turn principal unless the host has
+    deliberately configured a single-tenant builder default. Handlers receive
+    a detached, immutable execution context containing principal, session,
+    turn, request, trace, call, idempotency, deadline, and cancellation data.
+
+    To stream events as they happen instead of reading a bounded history page,
+    subscribe through the event journal/committer. See
+    [event bus](/docs/concepts/event-bus).
 
   </Step>
 </Steps>

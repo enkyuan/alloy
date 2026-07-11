@@ -108,7 +108,7 @@ async def test_openai_bad_json_tool_args_fail_closed_in_planner():
     async def emit(event):
         emitted.append(event)
 
-    await planner.execute_scatter_gather(
+    await planner.execute_batch(
         "s1",
         [call],
         emit,

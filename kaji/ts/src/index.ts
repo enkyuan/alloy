@@ -166,6 +166,7 @@ export {
   tool,
   formatIntegrationError,
   IndexValidationError,
+  IntegrationExperimentalError,
   IntegrationNotFoundError,
   IntegrationValidationError,
   loadManifest,
@@ -194,6 +195,7 @@ export {
 // Runtime
 export {
   AgentRuntime,
+  type EffectiveRuntimeLimits,
   type AgentRuntimeOptions,
   type AgentStrategy,
   type RunTurnOptions,

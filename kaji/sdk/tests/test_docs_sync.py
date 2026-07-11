@@ -12,7 +12,9 @@ Scope of "user-facing docs":
 - ``kaji/sdk/README.md`` -- the python SDK README
 - ``kaji/serve/README.md`` -- the reference-service README
 - ``kaji/ts/README.md`` -- the TypeScript SDK README
+- ``kaji/docs/*.md`` -- compact shared compatibility references
 - ``docs/MVP.md`` -- the SDK MVP contract and readiness snapshot
+- ``docs/kaji/*.md`` -- the canonical production-beta operating contract
 - ``apps/docs/content/**/*.mdx`` -- the Fumadocs site
 
 Plan/spec files under ``docs/superpowers/`` are excluded -- those are
@@ -48,6 +50,8 @@ def _user_facing_docs() -> list[Path]:
         REPO_ROOT / "kaji" / "ts" / "README.md",
         REPO_ROOT / "docs" / "MVP.md",
     ]
+    paths.extend(sorted((REPO_ROOT / "kaji" / "docs").glob("*.md")))
+    paths.extend(sorted((REPO_ROOT / "docs" / "kaji").glob("*.md")))
     paths.extend(sorted(FUMADOCS_CONTENT.rglob("*.mdx")))
     return paths
 

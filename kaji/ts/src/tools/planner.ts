@@ -131,7 +131,6 @@ export interface ToolPlannerOptions {
   approvalCommitter?: EventCommitter;
   /** Wall-clock source used to derive the absolute approval deadline. */
   now?: () => number;
-  monotonicNow?: () => number;
   metricsSink?: MetricsSink;
   traceSink?: TraceSink;
 }
@@ -383,7 +382,7 @@ export class ToolPlanner {
       new ToolExecutionController({
         limits: opts.executionLimits,
         ledger: opts.idempotencyLedger,
-        monotonicNow: opts.monotonicNow ?? (() => this.clock.nowMonotonic()),
+        monotonicNow: () => this.clock.nowMonotonic(),
         metricsSink: opts.metricsSink,
         traceSink: opts.traceSink,
       });
@@ -394,7 +393,7 @@ export class ToolPlanner {
    * request/result/terminal semantics. Explicitly parallel-safe runs overlap;
    * every unmarked tool is an exclusive barrier.
    */
-  async executeScatterGather(
+  async executeBatch(
     sessionId: string,
     toolCalls: ToolCallInstruction[],
     emit: EmitFn,

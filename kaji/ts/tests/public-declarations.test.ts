@@ -27,6 +27,8 @@ describe("public declarations", () => {
     if (statSync(esm).mtimeMs < statSync(resolve(root, "src/tools/validation.ts")).mtimeMs) return;
 
     for (const declaration of [readFileSync(esm, "utf8"), readFileSync(cjs, "utf8")]) {
+      expect(declaration).toContain("normalizeProviderError");
+      expect(declaration).toContain("NormalizedProviderError");
       expect(declaration).toContain("ToolArgumentValidationError");
       expect(declaration).toContain("ToolSchemaValidationError");
       expect(declaration).toContain("ToolSchemaValidator");

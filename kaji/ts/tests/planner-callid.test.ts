@@ -25,7 +25,7 @@ describe("ToolPlanner uuid injection", () => {
       uuid: () => `fixed-${++counter}`,
     });
 
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "s1",
       [{ name: "noop", arguments: {} }],
       noopEmit,
@@ -44,7 +44,7 @@ describe("ToolPlanner uuid injection", () => {
       uuid: () => `gen-${++counter}`,
     });
 
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "s1",
       [
         { name: "noop", arguments: {} },
@@ -71,7 +71,7 @@ describe("ToolPlanner uuid injection", () => {
       },
     });
 
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "s1",
       [{ id: "caller-id", name: "noop", arguments: {} }],
       noopEmit,
@@ -89,7 +89,7 @@ describe("ToolPlanner uuid injection", () => {
       specs: new Map([[noopSpec.name, noopSpec]]),
     });
 
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "s1",
       [{ name: "noop", arguments: {} }],
       noopEmit,

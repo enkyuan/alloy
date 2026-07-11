@@ -32,7 +32,7 @@ from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
-from kaji.runtime.determinism import IdScope
+from kaji.runtime.determinism import Clock, IdScope
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.idempotency import InMemoryToolIdempotencyLedger
@@ -101,6 +101,10 @@ class _Metrics:
             self.max_subscriber_depth = max(
                 self.max_subscriber_depth, int(measurement.value)
             )
+
+
+def test_runtime_clock_seam_accepts_clock_protocol_only() -> None:
+    assert AgentRuntime.__init__.__annotations__["clock"] == Clock | None
 
 
 class _ToolLoopProvider:
@@ -297,7 +301,7 @@ async def _run_tool_batch(*, parallel_safe: bool, count: int) -> tuple[int, list
         return None
 
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "tools",
             [
                 {"id": f"call-{index}", "name": spec.name, "arguments": {}}

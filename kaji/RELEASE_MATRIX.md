@@ -2,9 +2,19 @@
 
 ## Release Promise
 
-Kaji pre-beta readiness means the stable core agent loop works in both Python
-and TypeScript with one real OpenAI model and one real model-requested tool call.
-It does not mean every Python-only modality or infrastructure adapter is beta-ready.
+Kaji is in pre-beta release implementation. Promotion is blocked pending
+same-commit protected release evidence: floor/latest runtime matrices, the
+required keyed OpenAI proof, full benchmarks, a 30-minute soak, a real signed
+tag, provenance,
+and publication verification. The stable core agent loop must work in both
+Python and TypeScript with one real OpenAI model and one real model-requested
+tool call. It does not mean every Python-only modality or infrastructure
+adapter is beta-ready.
+
+The exact runtime defaults and operating boundaries are documented in
+[`docs/kaji/production-beta.md`](../docs/kaji/production-beta.md). This matrix
+is checked against the machine feature contract and both registry indexes by
+`kaji/scripts/check-beta-contract.py`.
 
 ## Stable Core
 
@@ -25,6 +35,19 @@ It does not mean every Python-only modality or infrastructure adapter is beta-re
 
 The echo integration is the only catalog entry inside the first beta promise.
 HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
+
+## Catalog Stability
+
+<!-- beta-integrations: echo -->
+<!-- experimental-integrations: fs,http,sqlite,web -->
+
+| Integration | Stability | Runtimes |
+| --- | --- | --- |
+| echo | beta | python, typescript |
+| fs | experimental | typescript |
+| http | experimental | typescript |
+| sqlite | experimental | typescript |
+| web | experimental | typescript |
 
 <!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,retriever-selection,typescript-http-integration,typescript-web-integration,typescript-filesystem-integration,typescript-sqlite-integration,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 
@@ -83,15 +106,25 @@ tooling such as `bun` or `uv` is missing, and does not spend provider credits by
 default. To include the keyed OpenAI live proof in the same run, set
 `KAJI_RUN_KEYED_LIVE=1` with `OPENAI_API_KEY`.
 
-When available, the ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
+The pinned ast-grep step is mandatory. It guards the Python SDK/service
+boundary, core package dependency direction, legacy tool-model imports,
+TypeScript optional provider imports, and cancellation error shape.
 
-| Gate | Command | Required for beta |
-| --- | --- | --- |
-| Non-keyed beta gate bundle | `bash kaji/scripts/beta-release-check.sh` | Yes, aggregates non-keyed gates |
-| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py` | Yes, compares 59 offline deterministic scenarios |
-| Python unit/static | `cd kaji/sdk && uv run pytest -m "not integration" && uv run python scripts/typecheck_ty.py --output-format concise && uv run ruff check src tests` | Yes |
-| Python wheel smoke | `cd kaji/sdk && bash scripts/release_smoke.sh` | Yes |
-| TS unit/static/build | `cd kaji/ts && bun run test && node_modules/.bin/tsc --noEmit && bun run build` | Yes |
-| TS package smoke | `cd kaji/ts && bun run scripts/smoke.mts` | Yes |
-| No-key integration hygiene | `bash kaji/scripts/live-openai-tool-loop.sh` | Yes, proves skip hygiene only |
-| Keyed OpenAI live proof | `OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini bash kaji/scripts/live-openai-tool-loop.sh` | Yes, proves live readiness |
+| Gate | Command or workflow | Required for beta | Current evidence |
+| --- | --- | --- | --- |
+| Offline release rehearsal | `bash kaji/scripts/beta-release-check.sh --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check-sdk-parity.py` | Yes; 59 deterministic scenarios | Locally proven |
+| Shared schemas and registry | `check-beta-contract.py` plus both sync checks | Yes | Locally proven |
+| Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
+| Python floor/latest artifacts | `kaji.beta.yml` and `kaji.beta-publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
+| Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
+| Full benchmark | `run-beta-benchmarks.sh --full` on the pinned runner | Yes | Pending protected run |
+| Thirty-minute soak | `run-beta-soak.sh --minutes 30` on the pinned runner | Yes | Pending protected run |
+| Keyed OpenAI live proof | `live-provider-proof.sh` in `kaji-beta` | Yes; keyed OpenAI, conditional Anthropic | Pending protected run |
+| Immutable signed tag | `kaji.beta-publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
+| SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
+| Registry publication proof | protected PyPI/npm jobs plus byte verification | Yes | Pending approval/publication |
+
+No-key provider hygiene proves only that missing credentials skip or fail as
+requested. It is not provider-readiness evidence. Every protected row must come
+from the exact release commit; a prior run cannot be substituted.

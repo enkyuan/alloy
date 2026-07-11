@@ -4,28 +4,32 @@ description: AgentBuilder configures the runtime; AgentRuntime.turn runs the hig
 ---
 
 `AgentRuntime` is the loop that takes a user message, calls the LLM,
-dispatches tool calls scatter-gather, and projects the resulting events
-into session state. You build one with `AgentBuilder`.
+validates and dispatches tool calls, and projects stored events into session
+state. Tool calls are sequential unless their specs explicitly opt into
+parallel-safe execution; even then, the default concurrency limit is four. You
+build a runtime with `AgentBuilder`.
 
 ## AgentBuilder
 
-| Method                       | Description                                                                                                                                   |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.provider(p)`               | Sets the LLM provider (required).                                                                                                             |
-| `.tool(t)`                   | Adds one tool. Call multiple times for multiple tools.                                                                                        |
-| `.integration(i)`            | Adds an `Integration` that registers a bundle of tools.                                                                                       |
-| `.system_prompt(s)` (Python) | Sets the system prompt. `.systemPrompt(s)` in TypeScript.                                                                                     |
-| `.strategy(s)`               | Overrides loop strategy (e.g. max iterations).                                                                                                |
-| `.policy(p)`                 | Attaches a `ToolPolicy` for risk-based approval.                                                                                              |
-| `.build(bus?, store?)`       | Builds the runtime. `bus` and `store` are optional keyword/option args, not separate fluent calls; both default to in-memory implementations. |
+| Method                               | Description                                                                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `.provider(p)`                       | Sets the LLM provider (required).                                                                                                     |
+| `.tool(t)`                           | Adds one tool. Call multiple times for multiple tools.                                                                                |
+| `.integration(i)`                    | Adds an `Integration` that registers a bundle of tools.                                                                               |
+| `.system_prompt(s)` (Python)         | Sets the system prompt. `.systemPrompt(s)` in TypeScript.                                                                             |
+| `.strategy(s)`                       | Overrides loop strategy (e.g. max iterations).                                                                                        |
+| `.policy(p)`                         | Attaches a `ToolPolicy` for risk-based approval.                                                                                      |
+| `.default_context(c)` (Python)       | Sets an explicit single-tenant default. TypeScript uses `.defaultContext(c)`. Prefer per-turn identity in multi-tenant hosts.         |
+| `.tool_execution_limits(l)` (Python) | Overrides bounded tool execution. TypeScript uses `.toolExecutionLimits(l)`.                                                          |
+| `.build(...)`                        | Builds the runtime with a bounded in-memory store and atomic journal/committer unless application-owned implementations are supplied. |
 
 ## AgentRuntime
 
-| Method                   | Returns                                    | Description                                                                |
-| ------------------------ | ------------------------------------------ | -------------------------------------------------------------------------- |
-| `turn(text)`             | turn result                                | High-level path for one user message and model/tool loop.                  |
-| `send(session_id, text)` | `None` / `Promise<void>`                   | Lower-level session API: append a `USER_MESSAGE` and run one turn.         |
-| `history(session_id)`    | `list[KajiEvent]` / `Promise<KajiEvent[]>` | All events appended to this session, in order.                             |
+| Method                                | Returns                   | Description                                                                                           |
+| ------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `turn(text)`                          | turn result               | High-level path for one user message and model/tool loop.                                             |
+| `send(session_id, text)`              | `None` / `Promise<void>`  | Lower-level session API: append a `USER_MESSAGE` and run one turn.                                    |
+| `history(session_id, cursor options)` | bounded stored-event page | Events strictly after the supplied sequence cursor, in append order; the default page limit is 1,024. |
 
 In Python, methods are snake_case (`send`, `history`) and async. In
 TypeScript they are camelCase (`send`, `history`) and return Promises.
@@ -64,3 +68,18 @@ TypeScript they are camelCase (`send`, `history`) and return Promises.
 </Tabs>
 
 See [event bus](/docs/concepts/event-bus) for the underlying mechanism.
+
+## Ordering and execution context
+
+Turns for the same session serialize FIFO within the process-local coordinator;
+different sessions may run concurrently. Persisted `sequence`, not timestamp,
+defines event order. Page history with `after_sequence` / `afterSequence` and
+resume subscriptions from the last stored sequence.
+
+A text-only runtime may omit a principal. Once enabled tools are present, pass
+`TurnContext(principal_id=...)` to the Python turn or
+`{ context: { principalId: ... } }` to the TypeScript turn. Kaji resolves that
+caller-owned input into a detached, immutable `ToolExecutionContext` for every
+handler. The snapshot includes correlation IDs, the canonical idempotency key,
+deadline, and cancellation signal/token; handlers must not replace identity or
+correlation fields.

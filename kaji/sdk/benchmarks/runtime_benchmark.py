@@ -198,7 +198,7 @@ async def _tool_batch100(seed: int) -> dict[str, Any]:
 
     started = time.perf_counter_ns()
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "benchmark-tools",
             [
                 {"id": f"call-{index}", "name": spec.name, "arguments": {}}

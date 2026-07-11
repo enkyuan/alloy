@@ -1,9 +1,14 @@
+import json
+from pathlib import Path
+
 import pytest
 
+import kaji
 from kaji.runtime.providers.errors import (
     ClassifyHTTPError,
     ProviderAPIError,
     ProviderConfigError,
+    ProviderConnectionError,
     ProviderError,
     ServiceError,
     ServiceErrorToDetail,
@@ -15,6 +20,17 @@ from kaji.runtime.providers.errors import (
     normalize_provider_error,
     provider_error_from_exception,
 )
+
+
+PROVIDER_NORMALIZATION_CASES = json.loads(
+    (
+        Path(__file__).resolve().parents[3]
+        / "kaji"
+        / "contracts"
+        / "errors"
+        / "provider-normalization.json"
+    ).read_text()
+)["cases"]
 
 
 @pytest.mark.parametrize(
@@ -33,7 +49,7 @@ def test_classify_http_error(status: int, expected_type: type):
     )
     assert isinstance(error, expected_type)
     assert error.status_code == status
-    assert error.response_text == "body"
+    assert error.response_text is None
 
 
 def test_service_error_to_http_status_mapping():
@@ -70,6 +86,62 @@ def test_service_error_to_detail_masks_internals():
 def test_provider_errors_accept_message_only_constructors():
     assert isinstance(ProviderConfigError("missing key"), ProviderConfigError)
     assert isinstance(ProviderAPIError("bad response"), ProviderAPIError)
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 400, 500])
+def test_public_provider_error_catches_http_classifications(status: int) -> None:
+    assert kaji.ProviderError is ProviderError
+    error = ClassifyHTTPError(
+        service="fixture",
+        action="request",
+        status_code=status,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        raise error
+
+    assert captured.value is error
+
+
+def test_provider_specific_errors_extend_the_service_error_categories() -> None:
+    assert issubclass(ProviderAPIError, ServiceAPIError)
+    assert issubclass(ProviderConnectionError, ServiceNetworkError)
+
+
+def test_non_provider_service_errors_stay_outside_the_provider_boundary() -> None:
+    error = ServiceAPIError(service="supabase", action="query", message="failed")
+
+    assert not isinstance(error, ProviderError)
+
+
+@pytest.mark.parametrize(
+    "case",
+    PROVIDER_NORMALIZATION_CASES,
+    ids=[case["name"] for case in PROVIDER_NORMALIZATION_CASES],
+)
+def test_shared_provider_error_normalization(case: dict[str, object]) -> None:
+    source = case["source"]
+    status = case["status"]
+    if source == "config":
+        error: ProviderError = ProviderConfigError("private", service="fixture")
+    elif source == "network":
+        error = ProviderConnectionError(
+            "private",
+            service="fixture",
+            action="stream",
+        )
+    else:
+        error = ProviderAPIError(
+            "private",
+            service="fixture",
+            action="request",
+            status_code=status if isinstance(status, int) else None,
+            response_text="private response",
+            cause=RuntimeError("private cause"),
+        )
+
+    assert isinstance(error, ProviderError)
+    assert normalize_provider_error(error) == case["expected"]
 
 
 def test_provider_transport_error_has_stable_network_semantics() -> None:
@@ -174,6 +246,7 @@ def test_secret_bearing_service_error_is_reclassified_without_retention(
     )
 
     assert normalized is not original
+    assert isinstance(normalized, ProviderError)
     assert isinstance(normalized, expected_type)
     assert normalized.service == "openai"
     assert normalized.action == ("configure" if kind == "config" else "request")

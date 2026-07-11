@@ -7,7 +7,7 @@
  *     messages: [{ role: "user", content: "Hello" }],
  *   });
  *
- * For tool-using ReAct loops, durable replay, scatter-gather, or policy
+ * For tool-using ReAct loops, durable replay, batched tools, or policy
  * gating, build an `AgentRuntime`/`AgentBuilder` instead.
  */
 import type {

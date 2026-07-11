@@ -107,7 +107,7 @@ async def _execute(
 
     emit = JournalEventEmitter(journal, before_commit=collect)
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         [{"id": "call", "name": "charge", "arguments": {"amount": 5}}],
         emit,
@@ -159,7 +159,7 @@ async def _start_external_approval(
     emit = JournalEventEmitter(journal)
 
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {"amount": 5}}],
             emit,
@@ -346,7 +346,7 @@ async def test_external_rejection_is_not_duplicated_by_planner() -> None:
     emit = JournalEventEmitter(journal)
 
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {}}],
             emit,
@@ -603,7 +603,7 @@ async def test_cancellation_resistant_handler_is_owned_until_it_settles() -> Non
     emit = JournalEventEmitter(journal)
 
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {}}],
             emit,
@@ -726,7 +726,7 @@ async def test_framework_timeout_fence_selects_lower_sequence_external_decision(
         ),
     )
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {}}],
             emitter,
@@ -832,7 +832,7 @@ async def test_observed_decision_overrides_mismatched_unrecorded_return(
             )
         },
     )
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         [{"id": "call", "name": "charge", "arguments": {}}],
         JournalEventEmitter(journal),
@@ -894,7 +894,7 @@ async def test_mismatched_approval_journal_and_emitter_are_rejected() -> None:
     emit = JournalEventEmitter(foreign)
 
     with pytest.raises(ValueError, match="explicitly bound"):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {}}],
             emit,
@@ -910,7 +910,7 @@ async def test_mismatched_approval_journal_and_emitter_are_rejected() -> None:
         return await canonical.commit(event)
 
     with pytest.raises(ValueError, match="explicitly bound"):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [{"id": "call", "name": "charge", "arguments": {}}],
             bare_emit,

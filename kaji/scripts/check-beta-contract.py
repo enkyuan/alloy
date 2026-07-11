@@ -7,7 +7,7 @@ import argparse
 import json
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -17,6 +17,10 @@ from jsonschema.exceptions import SchemaError, ValidationError
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
+REGISTRY_INDEXES = (
+    ROOT / "kaji" / "sdk" / "src" / "integrations" / "registry" / "index.json",
+    ROOT / "kaji" / "ts" / "registry" / "index.json",
+)
 PACKAGE_CONTRACT_TARGETS = (
     ROOT / "kaji" / "sdk" / "src" / "contracts",
     ROOT / "kaji" / "ts" / "contracts",
@@ -26,9 +30,12 @@ REQUIRED_JSON = {
     "beta-core-v1.json",
     "feature-tiers-v1.json",
     "errors/error-codes.json",
+    "errors/provider-normalization.json",
     "events/conformance.json",
     "events/new-kaji-event-v1.schema.json",
     "events/stored-kaji-event-v1.schema.json",
+    "integrations/conformance-invalid.json",
+    "integrations/conformance-valid.json",
     "parity/expected-normalized.json",
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
@@ -641,6 +648,205 @@ def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
             )
 
 
+def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
+    manifest_schema = documents["integrations/manifest.schema.json"]
+    index_schema = documents["integrations/index.schema.json"]
+    validators = {
+        "manifest": Draft202012Validator(
+            manifest_schema, format_checker=FormatChecker()
+        ),
+        "index": Draft202012Validator(index_schema, format_checker=FormatChecker()),
+    }
+
+    valid_path = CONTRACTS / "integrations" / "conformance-valid.json"
+    valid_cases = documents["integrations/conformance-valid.json"].get("cases")
+    if not isinstance(valid_cases, list) or not valid_cases:
+        raise fail(valid_path, "/cases", "expected a non-empty array")
+    for index, case in enumerate(valid_cases):
+        base = f"/cases/{index}"
+        if not isinstance(case, dict):
+            raise fail(valid_path, base, "expected an object")
+        target = case.get("target")
+        if target not in validators:
+            raise fail(valid_path, f"{base}/target", f"unknown target {target!r}")
+        if set(case) != {"name", "target", "document"}:
+            raise fail(valid_path, base, "invalid conformance case envelope")
+        if not isinstance(case.get("name"), str) or not case["name"]:
+            raise fail(valid_path, f"{base}/name", "expected a non-empty string")
+        if not isinstance(case.get("document"), dict):
+            raise fail(valid_path, f"{base}/document", "expected an object")
+        error = first_error(validators[target], case["document"])
+        if error is not None:
+            error_path = pointer(error.absolute_path)
+            raise fail(
+                valid_path,
+                f"{base}/document{error_path if error_path != '/' else ''}",
+                error.message,
+            )
+
+    invalid_path = CONTRACTS / "integrations" / "conformance-invalid.json"
+    invalid_cases = documents["integrations/conformance-invalid.json"].get("cases")
+    if not isinstance(invalid_cases, list) or not invalid_cases:
+        raise fail(invalid_path, "/cases", "expected a non-empty array")
+    if "INTEGRATION_SCHEMA_INVALID" not in codes:
+        raise fail(
+            CONTRACTS / "errors" / "error-codes.json",
+            "/codes",
+            "missing INTEGRATION_SCHEMA_INVALID",
+        )
+    for index, case in enumerate(invalid_cases):
+        base = f"/cases/{index}"
+        if not isinstance(case, dict):
+            raise fail(invalid_path, base, "expected an object")
+        target = case.get("target")
+        if target not in {"manifest", "index", "registry"}:
+            raise fail(invalid_path, f"{base}/target", f"unknown target {target!r}")
+        expected_keys = (
+            {"name", "target", "document", "expectedPath", "expectedCode"}
+            if target != "registry"
+            else {
+                "name",
+                "target",
+                "index",
+                "manifests",
+                "files",
+                "expectedPath",
+                "expectedCode",
+            }
+        )
+        if set(case) != expected_keys:
+            raise fail(invalid_path, base, "invalid conformance case envelope")
+        if not isinstance(case.get("name"), str) or not case["name"]:
+            raise fail(invalid_path, f"{base}/name", "expected a non-empty string")
+        if case.get("expectedCode") != "INTEGRATION_SCHEMA_INVALID":
+            raise fail(
+                invalid_path,
+                f"{base}/expectedCode",
+                "expected INTEGRATION_SCHEMA_INVALID",
+            )
+        expected_path = case.get("expectedPath")
+        if (
+            not isinstance(expected_path, str)
+            or not expected_path.startswith("/")
+            or re.search(r"~(?:[^01]|$)", expected_path) is not None
+        ):
+            raise fail(
+                invalid_path,
+                f"{base}/expectedPath",
+                "expected a normalized JSON pointer",
+            )
+
+        if target in validators:
+            document = case.get("document")
+            if not isinstance(document, dict):
+                raise fail(invalid_path, f"{base}/document", "expected an object")
+            error = first_error(validators[target], document)
+            actual_path: str | None = (
+                pointer(error.absolute_path) if error is not None else None
+            )
+            if target == "manifest" and error is None:
+                seen: set[str] = set()
+                for tool_index, tool in enumerate(document["tools"]):
+                    name = tool["name"]
+                    if name in seen:
+                        actual_path = f"/tools/{tool_index}/name"
+                        break
+                    seen.add(name)
+            if actual_path is None:
+                raise fail(
+                    invalid_path,
+                    f"{base}/document",
+                    "expected document to fail validation",
+                )
+            if expected_path != actual_path:
+                raise fail(
+                    invalid_path,
+                    f"{base}/expectedPath",
+                    f"expected {expected_path!r}, normalized first error is {actual_path!r}",
+                )
+            continue
+
+        registry_index = case.get("index")
+        manifests = case.get("manifests")
+        files = case.get("files")
+        if not isinstance(registry_index, dict):
+            raise fail(invalid_path, f"{base}/index", "expected an object")
+        error = first_error(validators["index"], registry_index)
+        if error is not None:
+            error_path = pointer(error.absolute_path)
+            raise fail(
+                invalid_path,
+                f"{base}/index{error_path if error_path != '/' else ''}",
+                error.message,
+            )
+        if not isinstance(manifests, dict):
+            raise fail(invalid_path, f"{base}/manifests", "expected an object")
+        for manifest_path, manifest in manifests.items():
+            if not isinstance(manifest_path, str) or not manifest_path:
+                raise fail(
+                    invalid_path,
+                    f"{base}/manifests",
+                    "manifest paths must be non-empty strings",
+                )
+            if not isinstance(manifest, dict):
+                raise fail(
+                    invalid_path,
+                    f"{base}/manifests/{pointer([manifest_path]).lstrip('/')}",
+                    "expected an object",
+                )
+            error = first_error(validators["manifest"], manifest)
+            if error is not None:
+                manifest_pointer = pointer([manifest_path]).lstrip("/")
+                error_path = pointer(error.absolute_path)
+                raise fail(
+                    invalid_path,
+                    f"{base}/manifests/{manifest_pointer}"
+                    f"{error_path if error_path != '/' else ''}",
+                    error.message,
+                )
+        if (
+            not isinstance(files, list)
+            or not all(isinstance(file, str) and file for file in files)
+            or len(files) != len(set(files))
+        ):
+            raise fail(
+                invalid_path,
+                f"{base}/files",
+                "expected unique non-empty string paths",
+            )
+
+        actual_path = None
+        virtual_files = set(files)
+        for integration_name, entry in registry_index["integrations"].items():
+            manifest_path = entry["manifest"]
+            manifest = manifests.get(manifest_path)
+            if manifest is None:
+                actual_path = pointer(("integrations", integration_name, "manifest"))
+                break
+            if manifest["name"] != integration_name:
+                actual_path = "/name"
+                break
+            manifest_root = PurePosixPath(manifest_path).parent
+            for file_index, relative_file in enumerate(manifest["files"]):
+                if (manifest_root / relative_file).as_posix() not in virtual_files:
+                    actual_path = f"/files/{file_index}"
+                    break
+            if actual_path is not None:
+                break
+        if actual_path is None:
+            raise fail(
+                invalid_path,
+                base,
+                "expected virtual registry to fail validation",
+            )
+        if expected_path != actual_path:
+            raise fail(
+                invalid_path,
+                f"{base}/expectedPath",
+                f"expected {expected_path!r}, normalized first error is {actual_path!r}",
+            )
+
+
 def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
     path = CONTRACTS / "feature-tiers-v1.json"
     result: dict[str, set[str]] = {}
@@ -668,7 +874,32 @@ def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
     return result
 
 
-def check_release_matrix(features: dict[str, Any]) -> None:
+def _registry_entries() -> dict[str, dict[str, Any]]:
+    entries: dict[str, dict[str, Any]] = {}
+    for path in REGISTRY_INDEXES:
+        index = load_json(path)
+        integrations = index.get("integrations")
+        if not isinstance(integrations, dict):
+            raise fail(path, "/integrations", "expected an object")
+        for name, entry in integrations.items():
+            if not isinstance(entry, dict):
+                raise fail(path, f"/integrations/{name}", "expected an object")
+            normalized = {
+                "stability": entry.get("stability"),
+                "runtimes": entry.get("runtimes"),
+            }
+            existing = entries.get(name)
+            if existing is not None and existing != normalized:
+                raise fail(
+                    path,
+                    f"/integrations/{name}",
+                    "registry indexes disagree on stability or runtimes",
+                )
+            entries[name] = normalized
+    return entries
+
+
+def check_release_matrix(features: dict[str, Any], beta_core: dict[str, Any]) -> None:
     try:
         text = RELEASE_MATRIX.read_text()
     except OSError as exc:
@@ -702,6 +933,58 @@ def check_release_matrix(features: dict[str, Any]) -> None:
                 f"missing stable row for {entry['surface']!r}",
             )
 
+    registry_entries = _registry_entries()
+    integration_sets = {
+        tier: {
+            name
+            for name, entry in registry_entries.items()
+            if entry.get("stability") == tier
+        }
+        for tier in ("beta", "experimental")
+    }
+    configured_stable = beta_core.get("integrations", {}).get("stable")
+    if configured_stable != sorted(integration_sets["beta"]):
+        raise fail(
+            CONTRACTS / "beta-core-v1.json",
+            "/integrations/stable",
+            "must exactly match beta registry integrations",
+        )
+    if beta_core.get("integrations", {}).get("experimentalRequiresOptIn") is not True:
+        raise fail(
+            CONTRACTS / "beta-core-v1.json",
+            "/integrations/experimentalRequiresOptIn",
+            "experimental integrations must require opt-in",
+        )
+
+    for tier in ("beta", "experimental"):
+        marker_matches = re.findall(rf"<!-- {tier}-integrations:\s*([^>]*) -->", text)
+        if len(marker_matches) != 1:
+            raise fail(
+                RELEASE_MATRIX,
+                f"/#-{tier}-integrations",
+                "expected exactly one integration marker",
+            )
+        actual = {
+            value.strip() for value in marker_matches[0].split(",") if value.strip()
+        }
+        if actual != integration_sets[tier]:
+            raise fail(
+                RELEASE_MATRIX,
+                f"/#-{tier}-integrations",
+                f"marker mismatch; expected={sorted(integration_sets[tier])}",
+            )
+
+    catalog_section = text.split("## Catalog Stability", 1)[1].split("\n## ", 1)[0]
+    for name, entry in sorted(registry_entries.items()):
+        runtimes = ", ".join(entry["runtimes"])
+        row = f"| {name} | {entry['stability']} | {runtimes} |"
+        if row not in catalog_section:
+            raise fail(
+                RELEASE_MATRIX,
+                f"/catalog/{name}",
+                f"missing registry row {row!r}",
+            )
+
 
 def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     documents = load_contract_documents()
@@ -711,6 +994,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     codes = error_codes(documents)
     check_events(documents, codes)
     check_tools(documents, codes)
+    check_integrations(documents, codes)
     check_parity(documents)
     check_packaged_contracts()
     return documents, feature_sets(documents["feature-tiers-v1.json"])
@@ -723,7 +1007,9 @@ def main() -> int:
     try:
         documents, _ = check_contracts()
         if not args.contracts_only:
-            check_release_matrix(documents["feature-tiers-v1.json"])
+            check_release_matrix(
+                documents["feature-tiers-v1.json"], documents["beta-core-v1.json"]
+            )
     except ContractError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1

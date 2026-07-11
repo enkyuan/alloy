@@ -4,13 +4,13 @@
 import the pieces you need and compose them. The core is dependency-injected and
 infra-free (no database, Supabase, FastAPI, or web server required).
 
-> **Status:** pre-beta, MVP-ready for embedded agents. The core SDK (runtime,
-> toolgen, OpenAI/Anthropic providers, and session replay) is suitable for
-> internal embedded agents. Multi-process platform features (Redis event
-> backbone, Postgres session index, voice workers) are present but not
-> production-hardened. Durable event replay is not wired by default; do not
-> deploy the realtime/voice stack without additional load and durability
-> testing.
+> **Status:** pre-beta release implementation; promotion is blocked pending
+> same-commit protected release evidence. The embedded stable core has local
+> deterministic coverage, but the Python floor/latest matrix, required keyed
+> OpenAI proof (and Anthropic only when configured),
+> full benchmark, 30-minute soak, signed tag, provenance, and publication proof
+> must pass before a production-beta label. Python-only Redis, voice/TTS, and
+> RAG/retrieval remain experimental.
 
 See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
 definition.
@@ -35,7 +35,30 @@ pip install 'kaji[providers]'   # all provider SDKs
 
 ## Quick start
 
-Set an API key, then build an agent with `AgentBuilder`:
+First prove a text-only turn without credentials. No principal is required
+because this runtime has no enabled tools:
+
+```python
+import asyncio
+import kaji
+
+
+async def text_only() -> None:
+    runtime = (
+        kaji.AgentBuilder()
+        .provider(kaji.get_provider("mock", reply="hello"))
+        .build()
+    )
+    result = await runtime.turn("Say hello.")
+    print(result.text, result.session_id, result.turn_id)
+    print([(event.sequence, event.turn_id, event.type) for event in result.events])
+
+
+asyncio.run(text_only())
+```
+
+Then set an API key and add a risk-classified tool with explicit caller
+identity, deadline, and cancellation:
 
 ```bash
 export OPENAI_API_KEY=sk-...
@@ -59,7 +82,7 @@ class WeatherIntegration(kaji.Integration):
         },
         risk="read",
     )
-    async def get_weather(self, ctx: kaji.ToolContext, args: dict) -> dict:
+    async def get_weather(self, ctx: kaji.ToolExecutionContext, args: dict) -> dict:
         return {"city": args["city"], "tempF": 68}
 
 
@@ -68,13 +91,26 @@ async def main():
         kaji.AgentBuilder()
         .provider(kaji.get_provider("openai"))  # reads OPENAI_API_KEY
         .integration(WeatherIntegration())
-        .default_context(kaji.TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
         .build()
     )
 
-    result = await runtime.turn("Weather in Seattle?")
-    print(result.text)
+    token = kaji.CancellationToken()
+    loop = asyncio.get_running_loop()
+    cancel_at = loop.call_later(30, token.cancel)
+    try:
+        result = await runtime.turn(
+            "Weather in Seattle?",
+            cancellation_token=token,
+            context=kaji.TurnContext(
+                principal_id="quickstart",
+                deadline_monotonic=loop.time() + 30,
+            ),
+        )
+    finally:
+        cancel_at.cancel()
+    print(result.text, result.session_id, result.turn_id)
+    print([(event.id, event.sequence, event.turn_id) for event in result.events])
 
 
 asyncio.run(main())
@@ -83,8 +119,23 @@ asyncio.run(main())
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
 
+Catch a Kaji `ProviderError`, then call `normalize_provider_error(error)` for
+the redaction-safe `type`, `code`, `service`, `action`, `status`, and
+`retryable` fields. The normalizer accepts Kaji provider errors, not arbitrary
+vendor exceptions.
+
+See [`docs/kaji/production-beta.md`](../../docs/kaji/production-beta.md) for
+the installed-package version of both first-success examples and exact default
+limits. Operating details are in
+[`concurrency-and-ordering.md`](../../docs/kaji/concurrency-and-ordering.md),
+[`tool-contracts.md`](../../docs/kaji/tool-contracts.md), and
+[`troubleshooting.md`](../../docs/kaji/troubleshooting.md).
+Call `runtime.effective_limits()` to inspect the immutable
+`EffectiveRuntimeLimits` resolved for one runtime.
+
 Tool-capable turns require a caller identity. Supply a `TurnContext` per turn,
-or configure an explicit builder `default_context` as above. Each handler
+or configure an explicit builder `default_context` for a deliberately
+single-tenant host. Each handler
 receives an immutable `ToolExecutionContext` through `ToolInvocation` (with
 `ToolContext` retained as a compatibility alias). Missing identity raises
 `MissingToolIdentityError`; enabled tools without an explicit risk raise
@@ -197,7 +248,7 @@ bash kaji/scripts/beta-release-check.sh
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
-checks, TS package smoke, ast-grep boundary checks when available, and no-key
+checks, TS package smoke, mandatory pinned ast-grep boundary checks, and no-key
 live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
 
 For the live-gate credential modes specifically:
@@ -256,8 +307,9 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | --- | --- |
 | `AgentBuilder` | Fluent builder wiring provider + integrations + policy into `AgentRuntime` |
 | `AgentRuntime` | Provider-agnostic ReAct loop |
+| `EffectiveRuntimeLimits` | Immutable values returned by `AgentRuntime.effective_limits()` after overrides |
 | `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator` | Turn-scoped result and injectable same-session FIFO coordination |
-| `ToolSpec`, `ToolRegistry`, `ToolContext` | Tool definition, scoped registry, and execution context |
+| `ToolSpec`, `ToolRegistry`, `ToolExecutionContext` | Tool definition, scoped registry, and execution context |
 | `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError` | Draft 2020-12 validation and normalized failures before tool side effects |
 | `ToolExecutionController`, `ToolExecutionLimits`, `ToolExecutionError` | Bounded execution, deadlines, drain state, and certified retryable handler failures |
 | `ToolIdempotencyLedger`, `InMemoryToolIdempotencyLedger`, `IdempotencyCapacityExceeded`, `IdempotencyConflictError` | Exact tool-call coalescing/replay and bounded-ledger failures |
@@ -277,6 +329,8 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
 | `ProviderMessage`, `ProviderToolSpec` | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `kaji.runtime.providers.types`) |
 | `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
+| `NormalizedProviderError`, `normalize_provider_error` | Redaction-safe semantic classification for Kaji provider errors |
+| `Clock`, `IdFactory`, `SystemClock`, `SystemIdFactory` | Deterministic time/ID seams and their production defaults |
 | `UnknownToolError` | Raised when the model calls a tool name not in the registry |
 | `CancellationToken` | Cooperative cancellation across async boundaries |
 

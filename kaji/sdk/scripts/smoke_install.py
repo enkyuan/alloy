@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Install smoke test for kaji.
 
-Validates that the installed wheel exports resolve correctly and that provider
-instantiation fails with a clear error when no API key is set. Does NOT run a
-full agent turn — that requires a real provider key and belongs in integration tests.
+Validates that the installed wheel exports resolve, provider configuration
+fails safely without a key, and the canonical no-key docs quickstart runs.
 
 Run after installing the built wheel into a clean venv:
     pip install dist/*.whl
@@ -13,6 +12,8 @@ Run after installing the built wheel into a clean venv:
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import re
 import sys
 
 # ---------------------------------------------------------------------------
@@ -32,8 +33,14 @@ required_names = [
     "get_provider",
     "register_provider",
     "CancellationToken",
+    "EffectiveRuntimeLimits",
+    "NormalizedProviderError",
+    "ProviderConfigError",
+    "ProviderError",
+    "ToolExecutionContext",
     "UserMessage",
     "SessionManager",
+    "normalize_provider_error",
 ]
 
 for name in required_names:
@@ -52,17 +59,17 @@ os.environ.pop("OPENAI_API_KEY", None)
 
 try:
     kaji.get_provider("openai")
-    # If no error is raised, the provider may load lazily; attempt a generate call
+except kaji.ProviderConfigError as error:
+    print(f"  ok: ProviderConfigError raised: {error}")
+except Exception as error:
     print(
-        "  ok: get_provider('openai') returned (key checked at instantiation/call time)"
+        f"FAIL: expected ProviderConfigError, received {type(error).__name__}: {error}",
+        file=sys.stderr,
     )
-except Exception as e:
-    error_text = str(e).lower()
-    if "openai" in error_text or "api key" in error_text or "config" in error_text:
-        print(f"  ok: clear error raised: {e}")
-    else:
-        print(f"FAIL: unexpected error message: {e}", file=sys.stderr)
-        sys.exit(1)
+    sys.exit(1)
+else:
+    print("FAIL: OpenAI provider accepted a missing API key", file=sys.stderr)
+    sys.exit(1)
 
 # ---------------------------------------------------------------------------
 # 3. Version attribute is present
@@ -94,5 +101,24 @@ for entry in list_integrations():
             )
             sys.exit(1)
         print(f"  ok: {entry}/{rel}")
+
+# ---------------------------------------------------------------------------
+# 5. The canonical docs quickstart runs against this installed artifact.
+# ---------------------------------------------------------------------------
+print("\nRunning installed-package Python quickstart...")
+
+docs_path = Path(__file__).resolve().parents[3] / "docs" / "kaji" / "production-beta.md"
+docs = docs_path.read_text()
+match = re.search(
+    r"<!-- installed-quickstart:python:start -->\s*```python\n(.*?)\n```\s*"
+    r"<!-- installed-quickstart:python:end -->",
+    docs,
+    flags=re.DOTALL,
+)
+if match is None:
+    print("FAIL: canonical Python quickstart block is missing", file=sys.stderr)
+    sys.exit(1)
+exec(compile(match.group(1), str(docs_path), "exec"), {"__name__": "__main__"})
+print("  ok: canonical Python quickstart")
 
 print("\nSmoke install: PASSED")

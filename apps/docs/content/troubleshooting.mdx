@@ -13,11 +13,11 @@ You installed `kaji` without the provider extra.
 pip install "kaji[openai]"        # or [anthropic] / [gemini] / [providers]
 ```
 
-The same applies in TypeScript -- `@kaji/sdk` lists `openai` and
-`@anthropic-ai/sdk` as optional peer deps. Install whichever you'll use:
+In TypeScript, Zod `>=4.3 <5` is required and the provider clients are optional
+peers. Install Zod plus the provider you'll use:
 
 ```bash
-bun add @kaji/sdk openai
+bun add @kaji/sdk "zod@>=4.3 <5" openai
 ```
 
 ## ProviderConfigError: `<PROVIDER>_API_KEY` is required
@@ -35,11 +35,18 @@ Run `kaji doctor` to verify at least one provider key is present.
 
 ## Peer dep version mismatch (TS)
 
-If `bun add @kaji/sdk openai` warns about a peer-dep version
-conflict, you probably have an older `openai` installed elsewhere in the
-workspace. `@kaji/sdk` accepts `openai >=4 <8` and
-`@anthropic-ai/sdk >=0.30 <2`. Upgrade the dep or pin one that fits the
+If installation warns about a peer-dependency conflict, check all three
+supported ranges: `zod >=4.3 <5`, `openai >=4 <8`, and
+`@anthropic-ai/sdk >=0.30 <2`. Zod is required; the two provider clients are
+optional. Upgrade or pin the conflicting workspace dependency to a supported
 range.
+
+## `MISSING_TOOL_IDENTITY` or unclassified tool risk
+
+Every enabled tool needs an explicit risk classification. Every turn that can
+execute one needs a caller principal. Pass `TurnContext(principal_id=...)` in
+Python or `{ context: { principalId: ... } }` in TypeScript. Do not hardcode a
+shared principal inside a tool handler. Text-only runtimes may omit identity.
 
 ## Tool calls never fire
 
@@ -55,11 +62,22 @@ Three usual causes, in order of likelihood:
 
 ## Events log is empty after a turn
 
-`runtime.history(sessionId)` reads from the `EventStore` you passed (or
-the default `InMemoryEventStore`). If you instantiated a fresh store
-between the turn and the read, it will be empty. Reuse the store; or, to
-stream events as they happen, subscribe to the bus -- see
-[event bus](/docs/concepts/event-bus).
+`runtime.history(sessionId)` reads a bounded cursor page from the `EventStore`
+you passed (or the default `InMemoryEventStore`). If you instantiated a fresh
+store between the turn and the read, it will be empty. Reuse the store and page
+with `after_sequence` / `afterSequence`; ordering is by stored sequence, not
+timestamp. To stream events as they happen, subscribe through the journal or
+committer -- see [event bus](/docs/concepts/event-bus).
+
+## Provider request failed
+
+Catch the package-root `ProviderError` (`from kaji import ProviderError` or
+`import { ProviderError } from "@kaji/sdk"`) and inspect
+`normalize_provider_error(error)` / `normalizeProviderError(error)`. All Kaji
+provider auth, rate-limit, network, configuration, and API failures are
+catchable through that type. The normalized fields are safe for routing and
+retry policy. Do not log vendor exceptions, response bodies, causes, prompts,
+credentials, headers, or tool arguments.
 
 ## `import kaji` is slow
 

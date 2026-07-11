@@ -16,7 +16,8 @@ Before you write any code:
 
 1. **Install the package** (`pip install kaji` or `npm install @kaji/sdk zod`)
 2. **Install your provider SDK** (OpenAI or Anthropic; see below)
-3. **Set an API key** (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`)
+3. **Set an API key for live providers** (`OPENAI_API_KEY` or
+   `ANTHROPIC_API_KEY`). The installed-package mock quickstart needs no key.
 
 The SDK core has no required LLM dependency. The provider package is opt-in so
 your image size reflects only what you use.
@@ -41,9 +42,16 @@ your image size reflects only what you use.
 
 ## Current readiness snapshot
 
-The core runtime exists in both packages, but "production-ready for developers"
-also requires a stable first-run path, clear provider failures, and a real
-integration catalog contract.
+The core runtime exists in both packages. This is a pre-beta release
+implementation, not a production-beta claim. Promotion remains blocked until
+the same release commit supplies the protected floor/latest runtime, required
+keyed OpenAI, full benchmark, 30-minute soak, signed-tag, provenance, and
+publication evidence.
+
+The operating contract and exact defaults are in
+[`docs/kaji/production-beta.md`](kaji/production-beta.md). Concurrency,
+tool-safety, integration-schema, migration, and failure guidance live beside
+it in [`docs/kaji/`](kaji/).
 
 | Area | Python SDK | TypeScript SDK | MVP status |
 |------|------------|----------------|------------|
@@ -62,10 +70,13 @@ The practical readiness judgement:
   and developer-authored tools.
 - Provider error contracts, tool-name safety, and the public surface are
   aligned across Python and TypeScript.
-- Catalog contract implemented: both SDKs validate the same v0 manifest shape,
+- Catalog contract implemented: both SDKs validate the same closed manifest
+  and registry-index schemas,
   including `extras`, `peerDeps`, and non-empty `tools`. The remaining
   integration work is production expansion: auth flows, credential storage,
   third-party catalogs, and scraper fallback policy.
+- RAG/retrieval remains experimental even where implemented; it is not part of
+  the beta support promise.
 
 ---
 
@@ -201,7 +212,7 @@ bash kaji/scripts/beta-release-check.sh
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
-checks, TS package smoke, ast-grep boundary checks when available, and no-key
+checks, TS package smoke, mandatory pinned ast-grep boundary checks, and no-key
 live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
 
 For the live-gate credential modes specifically:
@@ -286,7 +297,7 @@ class WeatherIntegration extends Integration {
       parameters: z.object({ city: z.string() }),
       risk: "read",
     },
-    async (_ctx, args) => ({ city: args.city, tempF: 68 }),
+    async (args, _context) => ({ city: args.city, tempF: 68 }),
   );
 }
 ```
@@ -297,7 +308,7 @@ class WeatherIntegration extends Integration {
 
 ```python
 import asyncio
-from kaji import AgentBuilder
+from kaji import AgentBuilder, TurnContext
 
 async def main():
     runtime = (
@@ -308,7 +319,10 @@ async def main():
         .build()
     )
 
-    result = await runtime.turn("Weather in Seattle?")
+    result = await runtime.turn(
+        "Weather in Seattle?",
+        context=TurnContext(principal_id="weather-app"),
+    )
     print(result.text)
 
 asyncio.run(main())
@@ -325,7 +339,9 @@ const runtime = new AgentBuilder()
   .systemPrompt("You are a weather assistant.")
   .build();
 
-const result = await runtime.turn("Weather in Seattle?");
+const result = await runtime.turn("Weather in Seattle?", {
+  context: { principalId: "weather-app" },
+});
 console.log(result.text);
 ```
 
@@ -335,18 +351,19 @@ console.log(result.text);
 
 ```python
 for e in result.events:
-    print(e.type, getattr(e, "content", getattr(e, "delta", "")))
+    print(e.id, e.sequence, e.turn_id, e.type)
 ```
 
 **TypeScript**
 
 ```ts
 for (const e of result.events) {
-  console.log(e.type, "content" in e ? e.content : "delta" in e ? e.delta : "");
+  console.log(e.id, e.sequence, e.turn_id, e.type);
 }
 ```
 
-Events are written in chronological order. Key types to look for:
+Events are written in contiguous session-local sequence order. Timestamps are
+observability data and do not determine replay order. Key types to look for:
 
 | Event type | Meaning |
 |------------|---------|
@@ -364,7 +381,8 @@ Events are written in chronological order. Key types to look for:
 
 The in-memory stores lose state on process restart. To persist:
 
-- Drop in your own `EventStore` implementation (any async append + getEvents backend works)
+- Inject an `EventStore` with append, exclusive cursor reads, and
+  `lastSequence`/`last_sequence`, plus the canonical journal/committer boundary.
 - For a full platform with Postgres, Redis, and workers, see `kaji-serve`
 
 ---
@@ -420,23 +438,23 @@ AgentBuilder
   -> scoped ToolRegistry
   -> ToolPlanner
   -> AgentRuntime
-  -> EventStore + EventBus
+  -> EventJournal / EventCommitter
+  -> EventStore
   -> ModelProvider
 ```
 
 Current code paths:
 
-- Python: `kaji/sdk/kaji/runtime/agents/builder.py` creates a scoped
+- Python: `kaji/sdk/src/runtime/agents/builder.py` creates a scoped
   registry, registers each integration, builds a planner, and passes
   `registry.list_specs()` into `AgentRuntime`.
-- Python: `kaji/sdk/kaji/runtime/agents/runtime.py` emits user,
-  reasoning, message, cancellation, and tool events through `_emit()`, which
-  appends to the store and publishes on the bus.
+- Python: `kaji/sdk/src/runtime/agents/runtime.py` commits runtime events through
+  the journal and advances a cursor-based session projector.
 - TypeScript: `kaji/ts/src/runtime/builder.ts` mirrors the Python builder
   by creating a scoped `ToolRegistry`, `ToolPlanner`, and runtime.
-- TypeScript: `kaji/ts/src/runtime/runtime.ts` appends `USER_MESSAGE` in
-  `send()`, replays state in `runTurn()`, streams the provider, emits message
-  events, and executes tool calls through `ToolPlanner`.
+- TypeScript: `kaji/ts/src/runtime/runtime.ts` commits through `EventCommitter`,
+  advances a cursor projector, streams the provider, and executes tool calls
+  through `ToolPlanner`.
 
 This shape is good for an SDK MVP. The main issue is not the ReAct loop; it is
 the public contract around tool schemas, integration names, provider errors, and
@@ -446,9 +464,9 @@ catalog packaging.
 
 ## Hardening plans
 
-Status summary: Plans 1, 2, 4, 5, 6 are implemented and are kept here as a
-record of the contract each one fixes. Plan 3 (first-party integration
-catalog) is the only outstanding item.
+Status summary: the plans below are a historical design record. Their current
+contracts are implemented; the canonical status and supported surface now live
+in `kaji/contracts`, `kaji/RELEASE_MATRIX.md`, and `docs/kaji/`.
 
 ### Plan 1 - Make integration authoring one obvious path (implemented)
 
@@ -508,7 +526,7 @@ class WeatherIntegration extends Integration {
       parameters: z.object({ city: z.string() }),
       risk: "read",
     },
-    async (_ctx, args) => ({ city: args.city, tempF: 68 }),
+    async (args, _context) => ({ city: args.city, tempF: 68 }),
   );
 }
 ```
@@ -535,7 +553,7 @@ interface ToolSpec {
   catalogName?: string;  // human/catalog identity, e.g. "weather.get_weather"
   description: string;
   parameters: Record<string, unknown>;
-  risk?: ToolRisk;
+  risk: ToolRisk;
 }
 ```
 
@@ -561,10 +579,10 @@ Current behavior:
 
 ### Plan 3 - Define the first-party integration catalog contract (implemented)
 
-The production developer goal includes integrations such as Gmail and Spotify.
-The current SDKs now share a v0 manifest contract for registry entries, but
-production auth, credential storage, third-party catalogs, and scraper fallback
-policy remain future integration-expansion work.
+The current SDKs share closed manifest and registry-index schemas. Echo is the
+only beta catalog entry; TypeScript HTTP, Web, filesystem, and SQLite are
+experimental. Production credential storage, third-party catalogs, and scraper
+fallback policy remain future integration-expansion work.
 
 Current manifest contract:
 
@@ -574,19 +592,24 @@ interface IntegrationManifest {
   version: string;
   namespace: string;
   description: string;
-  auth: { kind: "none" | "api_key" | "oauth" };
+  auth:
+    | { kind: "none" }
+    | { kind: "env"; env: string; optional?: boolean; docs?: string }
+    | { kind: "oauth"; scopes: string[]; docs?: string };
   files: string[];
   extras?: string[];
   peerDeps?: Record<string, string>;
   tools: Array<{
     name: string;
     description: string;
+    risk: "read" | "write" | "external_effect" | "financial" | "destructive" | "admin";
   }>;
 }
 ```
 
-Python and TypeScript validate this contract against normalized equivalent
-`schema.json` files. This is enough for the pre-beta SDK catalog proof.
+Python and TypeScript validate canonical byte-identical schema copies and the
+index's explicit `manifest`, `stability`, and `runtimes` fields. See
+`docs/kaji/integration-manifests.md` for the executable contract.
 
 Future production integration expansion order:
 
@@ -630,12 +653,11 @@ Python exports several non-MVP features from the top-level package: text
 modality, TTS, tool retrieval, and document RAG. These can remain implemented,
 but the public getting-started surface should make the MVP path obvious.
 
-Status: implemented for the package entrypoints. The Python top-level
-`kaji` namespace now advertises the MVP runtime, providers, events,
-sessions, tools, and integration helpers. Non-MVP extensions remain importable
-from their owning submodules, such as `kaji.knowledge` and
-`kaji.modalities.text`. The TypeScript main entrypoint no longer exports
-the deterministic test provider; tests import it from `@kaji/sdk/testing`.
+Status: implemented for the package entrypoints. The Python top-level `kaji`
+namespace includes the stable runtime plus documented experimental extensions;
+top-level importability does not promote RAG/retrieval into the beta promise.
+The TypeScript main entrypoint does not export the deterministic test provider;
+tests import it from `@kaji/sdk/testing`.
 
 Required changes:
 
@@ -673,7 +695,7 @@ in the local TypeScript project so the source quickstart typechecks.
 
 ---
 
-## Production MVP exit criteria
+## Historical MVP exit criteria
 
 Both SDKs are ready for a developer MVP when all of these are true:
 

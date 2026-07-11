@@ -458,7 +458,7 @@ describe("AgentRuntime.runTurn", () => {
     );
     expect(exhausted).toHaveLength(1);
     expect(exhausted[0]).toMatchObject({
-      max_iterations: 10,
+      max_iterations: 5,
       reason: "max_iterations",
       pending_tool_calls: [{ id: "x", name: "loop", arguments: {} }],
     });
@@ -526,6 +526,40 @@ describe("AgentRuntime.send", () => {
 describe("AgentStrategy.maxToolIterations", () => {
   afterEach(() => clearTools());
 
+  it("defaults to the shared beta contract limit of five", async () => {
+    const store = new InMemoryEventStore();
+    let callCount = 0;
+    const runtime = new AgentRuntime({
+      provider: {
+        async generate() {
+          return { content: "", toolCalls: [] };
+        },
+        async *generateStream() {
+          callCount++;
+          yield { delta: "", toolCalls: [{ id: `default-${callCount}`, name: "noop", args: {} }] };
+        },
+      },
+      store,
+      bus: new EventBus(),
+      defaultContext: { principalId: "test" },
+    });
+    await store.append(
+      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "default-five" }),
+    );
+    await store.append(
+      KajiEvent.parse({
+        type: EventType.USER_MESSAGE,
+        session_id: "default-five",
+        content: "go",
+      }),
+    );
+    registerTool(toolSpecFromSchema("noop", "no-op", z.object({}), "read"), async () => ({}));
+
+    await runtime.runTurn("default-five");
+
+    expect(callCount).toBe(5);
+  });
+
   it("respects a custom maxToolIterations lower than the default", async () => {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
@@ -555,7 +589,7 @@ describe("AgentStrategy.maxToolIterations", () => {
 
     await runtime.runTurn(s);
 
-    // Provider was called exactly maxToolIterations times (not the default 10).
+    // Provider was called exactly the configured maxToolIterations times.
     expect(callCount).toBe(3);
   });
 });

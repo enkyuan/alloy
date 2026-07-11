@@ -5,9 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-export type IntegrationValidationCode =
-  | "INVALID_INTEGRATION_MANIFEST"
-  | "INVALID_INTEGRATION_INDEX";
+export type IntegrationValidationCode = "INTEGRATION_SCHEMA_INVALID";
 export type IntegrationStability = "experimental" | "beta";
 export type IntegrationRuntime = "python" | "typescript";
 export type IntegrationToolRisk =
@@ -40,13 +38,30 @@ export abstract class IntegrationValidationError extends Error {
 
 export class ManifestValidationError extends IntegrationValidationError {
   constructor(path: string, message: string) {
-    super("INVALID_INTEGRATION_MANIFEST", path, message);
+    super("INTEGRATION_SCHEMA_INVALID", path, message);
   }
 }
 
 export class IndexValidationError extends IntegrationValidationError {
   constructor(path: string, message: string) {
-    super("INVALID_INTEGRATION_INDEX", path, message);
+    super("INTEGRATION_SCHEMA_INVALID", path, message);
+  }
+}
+
+export class IntegrationExperimentalError extends Error {
+  readonly code = "INTEGRATION_EXPERIMENTAL" as const;
+  readonly path: string;
+
+  constructor(readonly integrationName: string) {
+    super(
+      `Integration '${integrationName}' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.`,
+    );
+    this.name = "IntegrationExperimentalError";
+    this.path = `/integrations/${pointerPart(integrationName)}/stability`;
+  }
+
+  normalized(): { code: "INTEGRATION_EXPERIMENTAL"; path: string } {
+    return { code: this.code, path: this.path };
   }
 }
 
@@ -402,7 +417,10 @@ export async function loadManifest(
 }
 
 export function formatIntegrationError(error: unknown): string {
-  if (error instanceof IntegrationValidationError) {
+  if (
+    error instanceof IntegrationValidationError ||
+    error instanceof IntegrationExperimentalError
+  ) {
     return `${error.code} at ${error.path}: ${error.message}`;
   }
   return error instanceof Error ? error.message : String(error);

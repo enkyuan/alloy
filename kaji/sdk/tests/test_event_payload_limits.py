@@ -229,7 +229,7 @@ async def test_planner_normalizes_unpaired_surrogate_before_persistence() -> Non
         events.append(event)
 
     with pytest.raises(ToolArgumentValidationError, match="only JSON values"):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [
                 {
@@ -271,7 +271,7 @@ async def test_planner_detaches_arguments_before_event_emission_await() -> None:
             raw_arguments["nested"]["value"] = "after"
             raw_arguments["oversize"] = "x" * 70_000
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         [{"id": "call", "name": "tool", "arguments": raw_arguments}],
         emit,

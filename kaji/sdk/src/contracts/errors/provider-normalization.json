@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/errors/provider-normalization.json",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "name": "config",
+      "source": "config",
+      "status": null,
+      "expected": {
+        "type": "config",
+        "code": "PROVIDER_CONFIG_ERROR",
+        "service": "fixture",
+        "action": "configure",
+        "status": null,
+        "retryable": false
+      }
+    },
+    {
+      "name": "network",
+      "source": "network",
+      "status": null,
+      "expected": {
+        "type": "network",
+        "code": "PROVIDER_NETWORK_ERROR",
+        "service": "fixture",
+        "action": "stream",
+        "status": null,
+        "retryable": true
+      }
+    },
+    {
+      "name": "api-without-status",
+      "source": "api",
+      "status": null,
+      "expected": {
+        "type": "api",
+        "code": "PROVIDER_API_ERROR",
+        "service": "fixture",
+        "action": "request",
+        "status": null,
+        "retryable": false
+      }
+    },
+    {
+      "name": "api-400",
+      "source": "api",
+      "status": 400,
+      "expected": {
+        "type": "api",
+        "code": "PROVIDER_API_ERROR",
+        "service": "fixture",
+        "action": "request",
+        "status": 400,
+        "retryable": false
+      }
+    },
+    {
+      "name": "api-401-is-auth",
+      "source": "api",
+      "status": 401,
+      "expected": {
+        "type": "auth",
+        "code": "PROVIDER_AUTH_ERROR",
+        "service": "fixture",
+        "action": "request",
+        "status": 401,
+        "retryable": false
+      }
+    },
+    {
+      "name": "api-403-is-auth",
+      "source": "api",
+      "status": 403,
+      "expected": {
+        "type": "auth",
+        "code": "PROVIDER_AUTH_ERROR",
+        "service": "fixture",
+        "action": "request",
+        "status": 403,
+        "retryable": false
+      }
+    },
+    {
+      "name": "api-429-is-rate-limited",
+      "source": "api",
+      "status": 429,
+      "expected": {
+        "type": "rate_limit",
+        "code": "PROVIDER_RATE_LIMITED",
+        "service": "fixture",
+        "action": "request",
+        "status": 429,
+        "retryable": true
+      }
+    },
+    {
+      "name": "api-500-is-retryable",
+      "source": "api",
+      "status": 500,
+      "expected": {
+        "type": "api",
+        "code": "PROVIDER_API_ERROR",
+        "service": "fixture",
+        "action": "request",
+        "status": 500,
+        "retryable": true
+      }
+    }
+  ]
+}

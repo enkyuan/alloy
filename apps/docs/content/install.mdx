@@ -3,9 +3,10 @@ title: Install
 description: Install kaji in Python or TypeScript, pick the provider extras you need, and learn the v0.x compatibility policy.
 ---
 
-kaji ships as two SDKs that share the same wire format. Install one
-per app; pick provider extras as needed. v0.x is alpha and minor versions
-may break the public surface - pin exact versions in production until 1.0.
+kaji ships as two SDKs that share the stable-core wire format. Install one per
+app and pick provider extras as needed. The release implementation remains
+pre-beta until protected evidence passes; all `0.x` releases are pre-1.0, so
+minor versions may break the public surface. Pin exact versions in production.
 
 ## Python
 
@@ -37,32 +38,33 @@ Optional extras:
 ## TypeScript
 
 ```bash
-bun add @kaji/sdk openai
-bun add @kaji/sdk @anthropic-ai/sdk
+bun add @kaji/sdk "zod@>=4.3 <5" openai
+bun add @kaji/sdk "zod@>=4.3 <5" @anthropic-ai/sdk
 ```
 
-`@kaji/sdk` lists `openai` and `@anthropic-ai/sdk` as optional peer
-dependencies. Install whichever you'll register as a provider. `zod` is
-already a runtime dep of `@kaji/sdk`.
+`zod >=4.3 <5` is a required peer dependency of `@kaji/sdk`. `openai >=4 <8`
+and `@anthropic-ai/sdk >=0.30 <2` are optional peers; install whichever you'll
+register as a provider. Zod 3 and Zod 5 are outside the supported beta range.
 
 ## CLI
 
-The `kaji` CLI is a separate package with the same scaffold/generator UX in
-both languages.
+Three packages expose a binary named `kaji`; their command sets are different.
 
 ```bash
-pip install kaji       # Python: brings `kaji init/gen/...`
-bun add -D @kaji/cli   # TypeScript: cross-language init/gen/doctor helpers
+pip install kaji       # Python SDK CLI: init/gen/add/list/info/doctor/...
+bun add @kaji/sdk "zod@>=4.3 <5" # Embedded TS CLI: init/add/list/replay
+bun add -D @kaji/cli   # Standalone cross-language scaffold + diagnostics
 ```
 
-`@kaji/cli mcp` only reports that MCP server setup is deferred; it does not
-write AI-tool config yet. See [CLI](/docs/cli) for the full command list.
+Only standalone `@kaji/cli` has `mcp`; it reports that server setup is deferred
+and does not write AI-tool config. See [CLI](/docs/cli) for the exact command
+matrix and flag differences.
 
 ## Version policy
 
 | Range   | Behavior                                                |
 | ------- | ------------------------------------------------------- |
-| `0.x.y` | alpha. Minor bumps may rename or remove public names.   |
+| `0.x.y` | pre-1.0. Minor bumps may rename or remove public names. |
 | `>=1.0` | semver. Public surface is stable across minor versions. |
 
 Pin exact versions in lockfiles until 1.0 lands. The events wire format

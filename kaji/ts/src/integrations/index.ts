@@ -8,6 +8,7 @@ export {
 export {
   formatIntegrationError,
   IndexValidationError,
+  IntegrationExperimentalError,
   IntegrationNotFoundError,
   IntegrationValidationError,
   loadManifest,

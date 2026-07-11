@@ -200,7 +200,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
     const events: Array<{ type: string }> = [];
-    const plannerResult = await planner.executeScatterGather(
+    const plannerResult = await planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_validation_only", arguments: original }],
       async (event) => {
@@ -247,7 +247,7 @@ describe("functionTool", () => {
     });
     const events: Array<{ type: string }> = [];
 
-    const result = await planner.executeScatterGather(
+    const result = await planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_flapping", arguments: { value: "x" } }],
       async (event) => {
@@ -296,7 +296,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
-    await planner.executeScatterGather(
+    await planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_bound_executor", arguments: { value: "x" } }],
       async () => {},
@@ -343,7 +343,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
-    const pending = planner.executeScatterGather(
+    const pending = planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_isolated_async", arguments: original }],
       async () => {},
@@ -400,7 +400,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
-    const planned = planner.executeScatterGather(
+    const planned = planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_invocation_bound", arguments: original }],
       async () => {},
@@ -511,7 +511,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
 
-    await planner.executeScatterGather(
+    await planner.executeBatch(
       "session-1",
       [{ id: "call-1", name: "fn_delayed", arguments: args }],
       async () => {},
@@ -557,7 +557,7 @@ describe("functionTool", () => {
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
     });
     const events: Array<{ type: string }> = [];
-    const result = await planner.executeScatterGather(
+    const result = await planner.executeBatch(
       "session-1",
       [
         {

@@ -34,6 +34,15 @@ def test_release_smoke_invokes_wheel_verifier_and_install_smoke() -> None:
     assert "PASS: release smoke verified" in script
 
 
+def test_installed_smoke_requires_the_missing_key_failure() -> None:
+    script = (SDK_ROOT / "scripts" / "smoke_install.py").read_text()
+
+    assert 'kaji.get_provider("openai")' in script
+    assert "except kaji.ProviderConfigError as error:" in script
+    assert "FAIL: OpenAI provider accepted a missing API key" in script
+    assert "key checked at instantiation/call time" not in script
+
+
 def test_wheel_verifier_compares_all_packaged_contract_bytes() -> None:
     script = (SDK_ROOT / "scripts" / "verify_wheel.sh").read_text()
 

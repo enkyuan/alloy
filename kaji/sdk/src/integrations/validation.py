@@ -12,9 +12,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.protocols import Validator
 
 
-IntegrationValidationCode = Literal[
-    "INVALID_INTEGRATION_MANIFEST", "INVALID_INTEGRATION_INDEX"
-]
+IntegrationValidationCode = Literal["INTEGRATION_SCHEMA_INVALID"]
 SchemaKind = Literal["manifest", "index"]
 
 
@@ -46,16 +44,14 @@ class IntegrationValidationError(ManifestError):
 
 
 class ManifestValidationError(IntegrationValidationError):
-    code: ClassVar[Literal["INVALID_INTEGRATION_MANIFEST"]] = (
-        "INVALID_INTEGRATION_MANIFEST"
-    )
+    code: ClassVar[Literal["INTEGRATION_SCHEMA_INVALID"]] = "INTEGRATION_SCHEMA_INVALID"
 
     def __init__(self, path: str, message: str) -> None:
         super().__init__(self.code, path, message)
 
 
 class IndexValidationError(IntegrationValidationError):
-    code: ClassVar[Literal["INVALID_INTEGRATION_INDEX"]] = "INVALID_INTEGRATION_INDEX"
+    code: ClassVar[Literal["INTEGRATION_SCHEMA_INVALID"]] = "INTEGRATION_SCHEMA_INVALID"
 
     def __init__(self, path: str, message: str) -> None:
         super().__init__(self.code, path, message)

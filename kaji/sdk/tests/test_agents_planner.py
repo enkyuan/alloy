@@ -27,7 +27,7 @@ async def _execute(planner, session_id, calls, emit):
 
     commit = JournalEventEmitter(journal, before_commit=collect)
 
-    return await planner.execute_scatter_gather(
+    return await planner.execute_batch(
         session_id,
         calls,
         commit,

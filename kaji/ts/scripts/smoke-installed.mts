@@ -1,9 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "..");
+const repositoryRoot = resolve(packageRoot, "../..");
 const workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
 const npmCache = join(workdir, "npm-cache");
 const installRoot = join(workdir, "project");
@@ -89,7 +97,38 @@ if (sdk.VERSION !== "0.2.0-beta.1" || !sdk.AgentRuntime || !testing.MockProvider
   run(nodeBinary, ["smoke.mjs"]);
   run(nodeBinary, ["smoke.cjs"]);
   run(nodeBinary, [join(installRoot, "node_modules/.bin/kaji"), "--help"]);
-  console.log("PASS: exact npm tarball resolves ESM, CJS, subpaths, and CLI");
+
+  const docsPath = join(repositoryRoot, "docs/kaji/production-beta.md");
+  const docs = readFileSync(docsPath, "utf8");
+  const quickstart = docs.match(
+    /<!-- installed-quickstart:typescript:start -->\s*```ts\n([\s\S]*?)\n```\s*<!-- installed-quickstart:typescript:end -->/,
+  )?.[1];
+  if (quickstart === undefined) {
+    throw new Error("canonical TypeScript quickstart block is missing");
+  }
+  writeFileSync(join(installRoot, "docs-quickstart.mts"), quickstart);
+  writeFileSync(
+    join(installRoot, "tsconfig.docs.json"),
+    JSON.stringify({
+      compilerOptions: {
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        noEmit: false,
+        outDir: "compiled-docs",
+        skipLibCheck: true,
+        strict: true,
+        target: "ES2022",
+      },
+      include: ["docs-quickstart.mts"],
+    }),
+  );
+  const tsc = join(packageRoot, "node_modules/typescript/bin/tsc");
+  if (!existsSync(tsc)) throw new Error("pinned TypeScript compiler is missing");
+  run(nodeBinary, [tsc, "--project", "tsconfig.docs.json"]);
+  run(nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
+  console.log(
+    "PASS: exact npm tarball resolves ESM, CJS, subpaths, CLI, and docs quickstart",
+  );
 } finally {
   rmSync(workdir, { recursive: true, force: true });
 }

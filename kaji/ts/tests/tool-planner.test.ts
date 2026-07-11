@@ -22,17 +22,17 @@ function specsFor(...names: string[]): Map<string, ToolSpec> {
 
 function executePlanner(
   planner: ToolPlanner,
-  sessionId: Parameters<ToolPlanner["executeScatterGather"]>[0],
-  calls: Parameters<ToolPlanner["executeScatterGather"]>[1],
-  emit: Parameters<ToolPlanner["executeScatterGather"]>[2],
+  sessionId: Parameters<ToolPlanner["executeBatch"]>[0],
+  calls: Parameters<ToolPlanner["executeBatch"]>[1],
+  emit: Parameters<ToolPlanner["executeBatch"]>[2],
   turnId = "test-turn",
 ) {
-  return planner.executeScatterGather(sessionId, calls, emit, turnId, TURN_CONTEXT);
+  return planner.executeBatch(sessionId, calls, emit, turnId, TURN_CONTEXT);
 }
 
 function sequencedEmitter(
   onEvent: (
-    event: Parameters<ToolPlanner["executeScatterGather"]>[2] extends (event: infer T) => unknown
+    event: Parameters<ToolPlanner["executeBatch"]>[2] extends (event: infer T) => unknown
       ? T
       : never,
   ) => void,
@@ -45,6 +45,12 @@ function sequencedEmitter(
 }
 
 describe("ToolPlanner", () => {
+  it("exposes batch terminology only", () => {
+    const planner = new ToolPlanner({ executor: vi.fn(), specs: specsFor("search") });
+    expect(typeof planner.executeBatch).toBe("function");
+    expect("executeScatterGather" in planner).toBe(false);
+  });
+
   it("emits lifecycle events on success", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
@@ -393,7 +399,7 @@ describe("ToolPlanner", () => {
     ]);
     const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
 
-    const results = await planner.executeScatterGather(
+    const results = await planner.executeBatch(
       "sess-missing-turn",
       [{ id: "c-missing-turn", name: "nuke", arguments: {} }],
       async (event) => {
@@ -744,30 +750,30 @@ describe("ToolPlanner", () => {
     const planner = new ToolPlanner({ executor: vi.fn(), specs: specsFor("search") });
     const call = [{ id: "call", name: "search", arguments: {} }];
     const invalidInvocations: Array<(emit: (event: any) => Promise<void>) => Promise<unknown>> = [
-      (emit) => planner.executeScatterGather(" ", call, emit, "turn", TURN_CONTEXT),
-      (emit) => planner.executeScatterGather("session", call, emit, " ", TURN_CONTEXT),
+      (emit) => planner.executeBatch(" ", call, emit, "turn", TURN_CONTEXT),
+      (emit) => planner.executeBatch("session", call, emit, " ", TURN_CONTEXT),
       (emit) =>
-        planner.executeScatterGather("session", call, emit, "turn", {
+        planner.executeBatch("session", call, emit, "turn", {
           ...TURN_CONTEXT,
           principalId: " ",
         }),
       (emit) =>
-        planner.executeScatterGather("session", call, emit, "turn", {
+        planner.executeBatch("session", call, emit, "turn", {
           ...TURN_CONTEXT,
           requestId: " ",
         }),
       (emit) =>
-        planner.executeScatterGather("session", call, emit, "turn", {
+        planner.executeBatch("session", call, emit, "turn", {
           ...TURN_CONTEXT,
           traceId: " ",
         }),
       (emit) =>
-        planner.executeScatterGather("session", call, emit, "turn", {
+        planner.executeBatch("session", call, emit, "turn", {
           ...TURN_CONTEXT,
           deadlineMs: Number.POSITIVE_INFINITY,
         }),
       (emit) =>
-        planner.executeScatterGather("session", call, emit, "turn", TURN_CONTEXT, {
+        planner.executeBatch("session", call, emit, "turn", TURN_CONTEXT, {
           aborted: false,
         } as AbortSignal),
     ];

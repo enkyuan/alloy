@@ -257,7 +257,7 @@ def test_load_manifest_rejects_source_symlink_escape(
         load_manifest("escape")
 
     assert caught.value.normalized() == {
-        "code": "INVALID_INTEGRATION_MANIFEST",
+        "code": "INTEGRATION_SCHEMA_INVALID",
         "path": "/files/0",
     }
 
@@ -283,7 +283,7 @@ def test_load_manifest_normalizes_source_symlink_loop(
         load_manifest("loop")
 
     assert caught.value.normalized() == {
-        "code": "INVALID_INTEGRATION_MANIFEST",
+        "code": "INTEGRATION_SCHEMA_INVALID",
         "path": "/files/0",
     }
 
@@ -308,7 +308,7 @@ def test_load_manifest_rejects_indexed_manifest_symlink_escape(
         load_manifest("escape")
 
     assert caught.value.normalized() == {
-        "code": "INVALID_INTEGRATION_INDEX",
+        "code": "INTEGRATION_SCHEMA_INVALID",
         "path": "/integrations/escape/manifest",
     }
 

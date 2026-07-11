@@ -3,7 +3,7 @@
  * `kaji.runtime.agents.runtime.AgentRuntime`.
  *
  * runTurn: replay state -> build messages -> stream from provider -> emit
- * events -> execute tool calls concurrently (scatter-gather) -> loop until the
+ * events -> execute a bounded tool batch -> loop until the
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
 import type { EventBusProtocol } from "@/events/protocols";
@@ -83,7 +83,7 @@ function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
 
 /** Tuning parameters for the ReAct loop, mirroring Python `AgentStrategy`. */
 export interface AgentStrategy {
-  /** Maximum tool-call iterations before the loop terminates. Default: 10. */
+  /** Maximum tool-call iterations before the loop terminates. Default: 5. */
   maxToolIterations?: number;
   /**
    * When `false`, the loop breaks after the first provider response even if
@@ -144,12 +144,20 @@ export interface AgentRuntimeOptions {
   metricsSink?: MetricsSink;
   /** Privileged trace sink; defaults to a no-op. */
   traceSink?: TraceSink;
-  /** Injectable monotonic clock for deterministic latency tests. */
-  monotonicNow?: () => number;
   /** Scoped identifier source used for every runtime and event identifier. */
   idFactory?: IdFactory;
   /** Wall and monotonic clock used by runtime events and timing. */
   clock?: Clock;
+}
+
+/** Immutable snapshot of the resolved limits used by one runtime instance. */
+export interface EffectiveRuntimeLimits {
+  readonly maxToolIterations: number;
+  readonly contextWindowTurns: number | null;
+  readonly contextWindowCharacters: number | null;
+  readonly toolMaxParallel: number;
+  readonly toolTimeoutMs: number | null;
+  readonly approvalTimeoutMs: number;
 }
 
 export interface RunTurnOptions {
@@ -221,7 +229,6 @@ export class AgentRuntime {
   private readonly toolExecutionController: ToolExecutionController;
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
-  private readonly monotonicNow: () => number;
   private readonly idFactory: IdFactory;
   private readonly clock: Clock;
   /**
@@ -245,7 +252,6 @@ export class AgentRuntime {
     this.trace = options.traceSink ?? NOOP_TRACE;
     this.idFactory = options.idFactory ?? systemIdFactory;
     this.clock = options.clock ?? systemClock;
-    this.monotonicNow = options.monotonicNow ?? (() => this.clock.nowMonotonic());
     this.store = options.store;
     if (options.committer !== undefined) {
       if (options.committer.store !== options.store) {
@@ -266,7 +272,11 @@ export class AgentRuntime {
       throw new Error("Explicit planner approval committer must match the AgentRuntime committer");
     }
     this.systemPrompt = options.systemPrompt;
-    this.maxToolIterations = options.strategy?.maxToolIterations ?? 10;
+    const maxToolIterations = options.strategy?.maxToolIterations ?? 5;
+    if (!(Number.isInteger(maxToolIterations) && maxToolIterations >= 1)) {
+      throw new RangeError("maxToolIterations must be a positive integer");
+    }
+    this.maxToolIterations = maxToolIterations;
     this.allowToolCalls = options.strategy?.allowToolCalls ?? true;
     this.fixedTools = options.tools;
     if (options.defaultContext === undefined) {
@@ -300,7 +310,7 @@ export class AgentRuntime {
         ledger: options.toolIdempotencyLedger,
         metricsSink: this.metrics,
         traceSink: this.trace,
-        monotonicNow: this.monotonicNow,
+        monotonicNow: () => this.clock.nowMonotonic(),
       });
     // Planner resolution:
     //  1. Explicit planner wins.
@@ -320,7 +330,6 @@ export class AgentRuntime {
       approvalCommitter: this.committer,
       metricsSink: this.metrics,
       traceSink: this.trace,
-      monotonicNow: this.monotonicNow,
       idFactory: this.idFactory,
       clock: this.clock,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
@@ -335,6 +344,19 @@ export class AgentRuntime {
   /** Drain actual tool handler settlement without claiming cancellation stopped work. */
   async drainTools(timeoutMs: number): Promise<readonly string[]> {
     return this.toolExecutionController.drain(timeoutMs);
+  }
+
+  /** Return an immutable snapshot of the limits this runtime will use. */
+  effectiveLimits(): Readonly<EffectiveRuntimeLimits> {
+    const toolLimits = this.toolExecutionController.limits;
+    return Object.freeze({
+      maxToolIterations: this.maxToolIterations,
+      contextWindowTurns: this.contextWindow.maxTurns,
+      contextWindowCharacters: this.contextWindow.maxCharacters,
+      toolMaxParallel: toolLimits.maxParallel,
+      toolTimeoutMs: toolLimits.timeoutMs,
+      approvalTimeoutMs: toolLimits.approvalTimeoutMs,
+    });
   }
 
   private resolveTurnContext(context?: TurnContext): ResolvedTurnContext {
@@ -481,7 +503,7 @@ export class AgentRuntime {
     token: CancellationToken,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const queuedAt = this.monotonicNow();
+    const queuedAt = this.clock.nowMonotonic();
     let recorded = false;
     const recordWait = () => {
       if (recorded) return;
@@ -489,7 +511,7 @@ export class AgentRuntime {
       recordMetric(
         this.metrics,
         "kaji.turn.queue_wait_ms",
-        Math.max(0, this.monotonicNow() - queuedAt),
+        Math.max(0, this.clock.nowMonotonic() - queuedAt),
         {},
       );
     };
@@ -615,7 +637,7 @@ export class AgentRuntime {
     turnContext: ResolvedTurnContext,
   ): Promise<void> {
     token.throwIfCancelled();
-    const turnStarted = this.monotonicNow();
+    const turnStarted = this.clock.nowMonotonic();
     let turnOutcome: TurnOutcome = "completed";
     let iterations = 0;
     const turnSpan = startSpan(this.trace, "kaji.turn", {
@@ -666,7 +688,7 @@ export class AgentRuntime {
         let costUsd: number | undefined;
 
         const family = providerFamily(this.provider);
-        const providerStarted = this.monotonicNow();
+        const providerStarted = this.clock.nowMonotonic();
         let providerStatus: ProviderStatus = "success";
         const providerSpan = startSpan(this.trace, "kaji.provider", {
           "session.id": sessionId,
@@ -697,7 +719,7 @@ export class AgentRuntime {
           recordMetric(
             this.metrics,
             "kaji.provider.duration_ms",
-            Math.max(0, this.monotonicNow() - providerStarted),
+            Math.max(0, this.clock.nowMonotonic() - providerStarted),
             { provider_family: family, status: providerStatus },
           );
           providerSpan.end();
@@ -723,7 +745,7 @@ export class AgentRuntime {
 
         if (turnContext.principalId === undefined) throw new MissingToolIdentityError();
 
-        await this.resolvePlanner(tools).executeScatterGather(
+        await this.resolvePlanner(tools).executeBatch(
           sessionId,
           toolCalls.map((tc) => ({
             id: tc.id,
@@ -774,7 +796,7 @@ export class AgentRuntime {
       recordMetric(
         this.metrics,
         "kaji.turn.duration_ms",
-        Math.max(0, this.monotonicNow() - turnStarted),
+        Math.max(0, this.clock.nowMonotonic() - turnStarted),
         { outcome: turnOutcome },
       );
       recordMetric(this.metrics, "kaji.turn.iterations", iterations, { outcome: turnOutcome });

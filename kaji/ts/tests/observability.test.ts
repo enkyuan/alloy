@@ -14,9 +14,11 @@ import {
 import { MockProvider } from "@/providers/mock";
 import { openStreamWithRetry, withRetry } from "@/providers/base";
 import { AgentBuilder } from "@/runtime/builder";
+import type { AgentRuntimeOptions } from "@/runtime/runtime";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { buildContext } from "@/runtime/context";
 import { ToolExecutionController } from "@/tools/execution";
+import type { ToolPlannerOptions } from "@/tools/planner";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import { EventBus } from "@/events/bus";
 import { KajiEvent, type NewKajiEvent, type StoredKajiEvent } from "@/events/schemas";
@@ -24,6 +26,17 @@ import { InMemoryEventStore, type AppendResult } from "@/events/store";
 import { EventType } from "@/events/types";
 
 describe("observability contracts", () => {
+  it("uses Clock as the only runtime-level monotonic time seam", () => {
+    const runtimeHasMonotonicNow: "monotonicNow" extends keyof AgentRuntimeOptions ? true : false =
+      false;
+    const plannerHasMonotonicNow: "monotonicNow" extends keyof ToolPlannerOptions ? true : false =
+      false;
+
+    expect(runtimeHasMonotonicNow).toBe(false);
+    expect(plannerHasMonotonicNow).toBe(false);
+    expect("monotonicClock" in AgentBuilder.prototype).toBe(false);
+  });
+
   it("records the closed metric vocabulary and strips undeclared labels", () => {
     const measurements: MetricMeasurement[] = [];
     const sink: MetricsSink = {
@@ -177,7 +190,7 @@ describe("observability contracts", () => {
     const runtime = new AgentBuilder()
       .provider(new MockProvider({ reply: "done" }))
       .metricsSink(metrics)
-      .monotonicClock(now)
+      .clock({ nowWallSeconds: () => 0, nowMonotonic: now })
       .build();
 
     await runtime.turn(secret, {

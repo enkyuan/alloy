@@ -9,7 +9,7 @@ LLM-provider-specific subclasses on top.
 from __future__ import annotations
 
 import httpx
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from kaji.core.errors import (
     ServiceAPIError,
@@ -17,12 +17,10 @@ from kaji.core.errors import (
     ServiceError,
     ServiceNetworkError,
     ServiceRateLimitError,
-    classify_http_error,
     service_error_to_detail,
     service_error_to_http_status,
 )
 
-ClassifyHTTPError = classify_http_error
 ServiceErrorToDetail = service_error_to_detail
 ServiceErrorToHTTPStatus = service_error_to_http_status
 
@@ -48,8 +46,14 @@ __all__ = [
 class NormalizedProviderError(TypedDict):
     """Stable semantic provider failure shape used at SDK boundaries."""
 
-    type: str
-    code: str
+    type: Literal["api", "auth", "config", "network", "rate_limit"]
+    code: Literal[
+        "PROVIDER_API_ERROR",
+        "PROVIDER_AUTH_ERROR",
+        "PROVIDER_CONFIG_ERROR",
+        "PROVIDER_NETWORK_ERROR",
+        "PROVIDER_RATE_LIMITED",
+    ]
     service: str
     action: str
     status: int | None
@@ -75,10 +79,16 @@ class ProviderError(ServiceError):
             message=message,
             status_code=status_code,
             response_text=None,
-            # Provider exceptions are public SDK values. Never retain a vendor
-            # exception that may carry request bodies, credentials, or headers.
             cause=None,
         )
+
+
+class _ProviderAuthError(ProviderError, ServiceAuthError):
+    """Provider-owned authentication failure."""
+
+
+class _ProviderRateLimitError(ProviderError, ServiceRateLimitError):
+    """Provider-owned rate-limit failure."""
 
 
 class ProviderConfigError(ProviderError):
@@ -88,7 +98,7 @@ class ProviderConfigError(ProviderError):
         super().__init__(message, service=service, action="configure")
 
 
-class ProviderAPIError(ProviderError):
+class ProviderAPIError(ProviderError, ServiceAPIError):
     """Raised when a provider API returns an error."""
 
     def __init__(
@@ -123,11 +133,45 @@ class ProviderConnectionError(ProviderError, ServiceNetworkError):
         cause: Exception | None = None,
     ) -> None:
         super().__init__(
+            message,
             service=service,
             action=action,
-            message=message,
             cause=cause,
         )
+
+
+def classify_http_error(
+    *,
+    service: str,
+    action: str,
+    status_code: int,
+    response_text: str | None = None,
+) -> ProviderError:
+    """Map a provider HTTP status to a redacted provider-owned error."""
+    message = f"{service} {action} failed with status {status_code}"
+    if status_code in (401, 403):
+        return _ProviderAuthError(
+            message,
+            service=service,
+            action=action,
+            status_code=status_code,
+        )
+    if status_code == 429:
+        return _ProviderRateLimitError(
+            message,
+            service=service,
+            action=action,
+            status_code=status_code,
+        )
+    return ProviderAPIError(
+        message,
+        service=service,
+        action=action,
+        status_code=status_code,
+    )
+
+
+ClassifyHTTPError = classify_http_error
 
 
 def _extract_status_code(error: Exception) -> int | None:
@@ -175,7 +219,7 @@ def provider_error_from_exception(
     service: str,
     action: str,
     error: Exception,
-) -> ServiceError:
+) -> ProviderError:
     """Convert provider SDK exceptions into typed service errors."""
     status_code = _extract_status_code(error)
     if isinstance(error, ProviderConfigError):
@@ -184,19 +228,19 @@ def provider_error_from_exception(
             service=service,
         )
     if isinstance(error, ServiceAuthError):
-        return ServiceAuthError(
+        return _ProviderAuthError(
+            f"{service} {action} authentication failed",
             service=service,
             action=action,
-            message=f"{service} {action} authentication failed",
             status_code=status_code,
             response_text=None,
             cause=None,
         )
     if isinstance(error, ServiceRateLimitError):
-        return ServiceRateLimitError(
+        return _ProviderRateLimitError(
+            f"{service} {action} rate limited",
             service=service,
             action=action,
-            message=f"{service} {action} rate limited",
             status_code=status_code,
             response_text=None,
             cause=None,
@@ -230,14 +274,22 @@ def provider_error_from_exception(
     )
 
 
-def normalize_provider_error(error: ServiceError) -> NormalizedProviderError:
+def normalize_provider_error(error: ProviderError) -> NormalizedProviderError:
     """Return provider-neutral classification without exposing private messages."""
     status = error.status_code
+    error_type: Literal["api", "auth", "config", "network", "rate_limit"]
+    code: Literal[
+        "PROVIDER_API_ERROR",
+        "PROVIDER_AUTH_ERROR",
+        "PROVIDER_CONFIG_ERROR",
+        "PROVIDER_NETWORK_ERROR",
+        "PROVIDER_RATE_LIMITED",
+    ]
     if isinstance(error, ProviderConfigError):
         error_type, code, retryable = "config", "PROVIDER_CONFIG_ERROR", False
-    elif isinstance(error, ServiceAuthError):
+    elif status in (401, 403) or isinstance(error, ServiceAuthError):
         error_type, code, retryable = "auth", "PROVIDER_AUTH_ERROR", False
-    elif isinstance(error, ServiceRateLimitError):
+    elif status == 429 or isinstance(error, ServiceRateLimitError):
         error_type, code, retryable = "rate_limit", "PROVIDER_RATE_LIMITED", True
     elif isinstance(error, ServiceNetworkError):
         error_type, code, retryable = "network", "PROVIDER_NETWORK_ERROR", True

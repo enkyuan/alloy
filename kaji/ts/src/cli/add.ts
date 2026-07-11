@@ -19,6 +19,7 @@ import { copyFile, lstat, rename, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   formatIntegrationError,
+  IntegrationExperimentalError,
   loadManifest,
   loadRegistryIndex,
   resolveManifestFile,
@@ -124,9 +125,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     return 1;
   }
   if (entry.stability === "experimental" && !allowExperimental) {
-    log(
-      `Integration '${name}' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.`,
-    );
+    log(formatIntegrationError(new IntegrationExperimentalError(name)));
     return 1;
   }
 

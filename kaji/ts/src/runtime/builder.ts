@@ -16,7 +16,7 @@ import type { ContextWindow, TurnContext } from "@/runtime/context";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { MetricsSink, TraceSink } from "@/observability";
-import type { Clock, IdFactory } from "@/internal/uuid";
+import { systemClock, type Clock, type IdFactory } from "@/internal/uuid";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -47,7 +47,6 @@ export class AgentBuilder {
   private _toolIdempotencyLedger: ToolIdempotencyLedger | undefined;
   private _metricsSink: MetricsSink | undefined;
   private _traceSink: TraceSink | undefined;
-  private _monotonicNow: (() => number) | undefined;
   private _idFactory: IdFactory | undefined;
   private _clock: Clock | undefined;
 
@@ -118,12 +117,6 @@ export class AgentBuilder {
     return this;
   }
 
-  /** Override only for deterministic latency tests. */
-  monotonicClock(now: () => number): this {
-    this._monotonicNow = now;
-    return this;
-  }
-
   idFactory(factory: IdFactory): this {
     this._idFactory = factory;
     return this;
@@ -162,15 +155,13 @@ export class AgentBuilder {
     const specs = new Map(
       registry.listSpecs({ enabledOnly: false }).map((spec) => [spec.name, spec]),
     );
-    const clock = this._clock;
-    const monotonicNow =
-      this._monotonicNow ?? (clock === undefined ? undefined : () => clock.nowMonotonic());
+    const clock = this._clock ?? systemClock;
     const executionController = new ToolExecutionController({
       limits: this._toolExecutionLimits,
       ledger: this._toolIdempotencyLedger,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow,
+      monotonicNow: () => clock.nowMonotonic(),
     });
     const planner = new ToolPlanner({
       executor: (name, args, context) => registry.execute(name, args, context),
@@ -179,9 +170,8 @@ export class AgentBuilder {
       approvalCommitter: committer,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow,
       idFactory: this._idFactory,
-      clock: this._clock,
+      clock,
       specs,
       executionController,
     });
@@ -198,9 +188,8 @@ export class AgentBuilder {
       defaultContext: this._defaultContext,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
-      monotonicNow,
       idFactory: this._idFactory,
-      clock: this._clock,
+      clock,
       ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });

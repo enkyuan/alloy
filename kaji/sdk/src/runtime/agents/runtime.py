@@ -1,11 +1,10 @@
 import asyncio
 import logging
-import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from kaji.core.safe_logging import log_redacted_failure
 from kaji.runtime.agents.cancellation import CancellationToken
@@ -73,19 +72,6 @@ from kaji.runtime.determinism import (
 )
 
 
-class _CallableMonotonicClock:
-    """Compatibility adapter for the pre-beta ``clock=callable`` seam."""
-
-    def __init__(self, monotonic: Callable[[], float]) -> None:
-        self._monotonic = monotonic
-
-    def now_wall_seconds(self) -> float:
-        return time.time()
-
-    def now_monotonic(self) -> float:
-        return self._monotonic()
-
-
 @dataclass(frozen=True)
 class TurnResult:
     """The user-facing result of a single ``AgentRuntime.turn`` call.
@@ -108,6 +94,18 @@ class TurnResult:
     turn_id: str
     tool_call_events: List[StoredKajiEvent] = field(default_factory=list)
     events: List[StoredKajiEvent] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class EffectiveRuntimeLimits:
+    """Resolved runtime limits used by this agent instance."""
+
+    max_tool_iterations: int
+    context_window_turns: int | None
+    context_window_characters: int | None
+    tool_max_parallel: int
+    tool_timeout_seconds: float
+    approval_timeout_seconds: float
 
 
 logger = logging.getLogger(__name__)
@@ -146,7 +144,7 @@ class AgentRuntime:
     """A generic, provider-agnostic agent runtime.
 
     Consumes Kaji events, maintains session state, calls an abstract ModelProvider,
-    executes scatter-gather tool workflows via ToolPlanner.
+    executes tool batches via ToolPlanner.
 
     ``planner`` is optional. When omitted, a default ``ToolPlanner`` is
     constructed from ``tool_executor`` (falls back to the global
@@ -183,7 +181,7 @@ class AgentRuntime:
         tool_idempotency_ledger: ToolIdempotencyLedger | None = None,
         metrics_sink: MetricsSink = NOOP_METRICS,
         trace_sink: TraceSink = NOOP_TRACE,
-        clock: Clock | Callable[[], float] | None = None,
+        clock: Clock | None = None,
         id_factory: IdFactory | None = None,
     ):
         resolved_journal: EventJournal = journal or (
@@ -205,13 +203,7 @@ class AgentRuntime:
         self._metrics = metrics_sink
         self._trace = trace_sink
         self._id_factory = id_factory or SYSTEM_ID_FACTORY
-        if clock is None:
-            self._clock_source: Clock = SYSTEM_CLOCK
-        elif isinstance(clock, Clock):
-            self._clock_source = clock
-        else:
-            self._clock_source = _CallableMonotonicClock(clock)
-        self._clock = self._clock_source.now_monotonic
+        self._clock_source = SYSTEM_CLOCK if clock is None else clock
         self._default_context = default_context
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
@@ -275,7 +267,7 @@ class AgentRuntime:
                 or ToolExecutionController(
                     limits=tool_execution_limits,
                     ledger=tool_idempotency_ledger,
-                    clock=self._clock,
+                    clock=self._clock_source.now_monotonic,
                     metrics_sink=metrics_sink,
                     trace_sink=trace_sink,
                 )
@@ -321,6 +313,18 @@ class AgentRuntime:
     async def drain_tools(self, timeout: float) -> list[str]:
         """Report tool calls still running after a bounded shutdown drain."""
         return await self.tool_execution_controller.drain_tools(timeout)
+
+    def effective_limits(self) -> EffectiveRuntimeLimits:
+        """Return an immutable snapshot of the limits this runtime will use."""
+        tool_limits = self.tool_execution_controller.limits
+        return EffectiveRuntimeLimits(
+            max_tool_iterations=self.strategy.max_iterations,
+            context_window_turns=self.context_window.max_turns,
+            context_window_characters=self.context_window.max_characters,
+            tool_max_parallel=tool_limits.max_parallel,
+            tool_timeout_seconds=tool_limits.timeout_seconds,
+            approval_timeout_seconds=tool_limits.approval_timeout_seconds,
+        )
 
     def _resolve_turn_context(self, context: TurnContext | None) -> TurnContext:
         default = self._default_context
@@ -467,14 +471,14 @@ class AgentRuntime:
         token: CancellationToken,
     ) -> AsyncIterator[None]:
         """Measure coordinator wait without coupling sinks to shared coordinators."""
-        started = self._clock()
+        started = self._clock_source.now_monotonic()
         recorded = False
         try:
             async with self.coordinator.acquire(session_id, token):
                 record_metric(
                     self._metrics,
                     "kaji.turn.queue_wait_ms",
-                    (self._clock() - started) * 1_000,
+                    (self._clock_source.now_monotonic() - started) * 1_000,
                 )
                 recorded = True
                 yield
@@ -483,7 +487,7 @@ class AgentRuntime:
                 record_metric(
                     self._metrics,
                     "kaji.turn.queue_wait_ms",
-                    (self._clock() - started) * 1_000,
+                    (self._clock_source.now_monotonic() - started) * 1_000,
                 )
 
     def _trim_projection_cache(self) -> None:
@@ -727,7 +731,7 @@ class AgentRuntime:
         context: TurnContext,
     ) -> None:
         """Run the turn body and record any ordinary terminal failure."""
-        started = self._clock()
+        started = self._clock_source.now_monotonic()
         iterations = 0
         outcome = "completed"
         trace_attributes: dict[TraceAttributeName, str] = {
@@ -778,7 +782,7 @@ class AgentRuntime:
             record_metric(
                 self._metrics,
                 "kaji.turn.duration_ms",
-                (self._clock() - started) * 1_000,
+                (self._clock_source.now_monotonic() - started) * 1_000,
                 outcome=outcome,
             )
             record_metric(
@@ -875,7 +879,7 @@ class AgentRuntime:
             # the cancel came from outside our token (e.g. parent task cancel)
             # so structured concurrency stays intact.
             family = provider_family(self.provider)
-            provider_started = self._clock()
+            provider_started = self._clock_source.now_monotonic()
             provider_status = "success"
             provider_span = start_span(
                 self._trace,
@@ -928,7 +932,7 @@ class AgentRuntime:
                 record_metric(
                     self._metrics,
                     "kaji.provider.duration_ms",
-                    (self._clock() - provider_started) * 1_000,
+                    (self._clock_source.now_monotonic() - provider_started) * 1_000,
                     provider_family=family,
                     status=provider_status,
                 )
@@ -965,8 +969,8 @@ class AgentRuntime:
                 # an unadvertised tool call.
                 raise MissingToolIdentityError()
 
-            # 6. Execute tools concurrently (Scatter-Gather)
-            await self.planner.execute_scatter_gather(
+            # 6. Execute one bounded tool batch
+            await self.planner.execute_batch(
                 session_id,
                 tool_calls,
                 emit_turn_event,

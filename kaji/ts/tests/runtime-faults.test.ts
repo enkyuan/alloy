@@ -350,7 +350,7 @@ describe("runtime fault handling", () => {
       planner: explicitPlanner,
       tools: [spec],
     });
-    await explicitPlanner.executeScatterGather(
+    await explicitPlanner.executeBatch(
       "explicit",
       [{ id: "explicit-call", name: "stuck", arguments: {} }],
       async () => {},

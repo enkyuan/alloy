@@ -152,7 +152,7 @@ class ToolRegistry:
         @registry.register(
             ToolSpec(name="ping", description="...", parameters={}, risk="read")
         )
-        async def ping(ctx: ToolContext, args: dict) -> dict:
+        async def ping(ctx: ToolExecutionContext, args: dict) -> dict:
             return {"pong": True}
 
         runtime = AgentRuntime(..., tools=registry.list_specs())

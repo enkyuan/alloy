@@ -22,7 +22,7 @@ from kaji.runtime.agents.context import (
 )
 from kaji.runtime.agents.history import HistoryStore, InMemoryHistoryStore
 from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
-from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
+from kaji.runtime.agents.runtime import AgentRuntime, EffectiveRuntimeLimits, TurnResult
 from kaji.runtime.agents.strategy import AgentStrategy
 
 __all__ = [
@@ -37,6 +37,7 @@ __all__ = [
     "ContextIntegrityError",
     "ContextWindow",
     "ContextWindowOverflowError",
+    "EffectiveRuntimeLimits",
     "HistoryStore",
     "EventApprovalHandler",
     "EventBackedApprovalHandler",

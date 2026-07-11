@@ -99,7 +99,7 @@ async def test_shared_invalid_arguments_never_start_or_execute(
     async def emit(event: KajiEvent) -> None:
         events.append(event)
 
-    result = await planner.execute_scatter_gather(
+    result = await planner.execute_batch(
         "session-1",
         [
             {
@@ -318,7 +318,7 @@ async def test_planner_snapshots_source_specs_at_construction() -> None:
     schema["properties"]["value"]["type"] = "not-a-json-schema-type"
     specs.clear()
 
-    result = await planner.execute_scatter_gather(
+    result = await planner.execute_batch(
         "session-1",
         [
             {

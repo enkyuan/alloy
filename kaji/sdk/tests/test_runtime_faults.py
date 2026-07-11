@@ -475,7 +475,7 @@ async def test_started_append_failure_rolls_back_without_invoking_handler() -> N
             raise RuntimeError("journal unavailable")
 
     with pytest.raises(ExceptionGroup):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [{"id": "call", "name": "tool", "arguments": {}}],
             broken,
@@ -491,7 +491,7 @@ async def test_started_append_failure_rolls_back_without_invoking_handler() -> N
     async def emit(event: Any) -> None:
         events.append(event)
 
-    await planner.execute_scatter_gather(
+    await planner.execute_batch(
         "session",
         [{"id": "call", "name": "tool", "arguments": {}}],
         emit,
@@ -517,7 +517,7 @@ async def test_completed_append_failure_never_emits_fallback_failed() -> None:
             raise RuntimeError("ambiguous append")
 
     with pytest.raises(ExceptionGroup):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [{"id": "call", "name": "tool", "arguments": {}}],
             emit,
@@ -1158,7 +1158,7 @@ async def test_non_json_argument_is_rejected_before_requested() -> None:
         events.append(event)
 
     with pytest.raises(ToolArgumentValidationError, match="only JSON values"):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             [{"id": "bad-json", "name": "tool", "arguments": {"x": object()}}],
             emit,
@@ -1232,7 +1232,7 @@ async def test_ledger_claim_operational_error_is_sanitized_and_terminal(
     async def emit(event: Any) -> None:
         events.append(event)
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         [{"id": "planner-claim-fault", "name": "tool", "arguments": {}}],
         emit,

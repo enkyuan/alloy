@@ -359,7 +359,7 @@ async def test_planner_rejects_invalid_call_contract_before_any_event(
 
     planner = ToolPlanner(executor=executor, specs=specs)
     with pytest.raises((UnclassifiedToolRiskError, ValueError)):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             "session",
             calls,
             emit,
@@ -397,7 +397,7 @@ async def test_planner_rejects_invalid_context_before_any_event(
 
     planner = ToolPlanner(executor=executor, specs={"safe": spec})
     with pytest.raises((TypeError, ValueError)):
-        await planner.execute_scatter_gather(
+        await planner.execute_batch(
             session_id,
             [{"id": "call", "name": "safe", "arguments": {}}],
             emit,

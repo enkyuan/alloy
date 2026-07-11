@@ -1,4 +1,4 @@
-"""Unit tests for ToolPlanner — policy, approval, and scatter-gather."""
+"""Unit tests for ToolPlanner — policy, approval, and batch execution."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ async def _collect(
 
     emit = JournalEventEmitter(journal, before_commit=collect)
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         session_id,
         calls,
         emit,
@@ -59,6 +59,11 @@ async def _collect(
         approval_journal=journal,
     )
     return emitted, results
+
+
+def test_planner_exposes_batch_terminology_only() -> None:
+    assert hasattr(ToolPlanner, "execute_batch")
+    assert not hasattr(ToolPlanner, "execute_scatter_gather")
 
 
 def _types(events: List[KajiEvent]) -> List[str]:
@@ -509,7 +514,7 @@ async def test_planner_low_risk_tool_skips_approval_gate():
 
 
 @pytest.mark.asyncio
-async def test_planner_scatter_gather_runs_both_calls():
+async def test_planner_batch_runs_both_calls():
     call_log: list[str] = []
 
     executor = AsyncMock(side_effect=lambda invocation: {"name": invocation.name})

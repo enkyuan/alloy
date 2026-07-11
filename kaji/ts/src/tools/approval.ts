@@ -10,7 +10,7 @@
  *
  * Concurrency: prompts against the same input stream are serialized through
  * a per-stream mutex so concurrent approval gates from `Promise.all`-style
- * scatter-gather do not interleave reads — a single 'y' cannot satisfy two
+ * batch execution does not interleave reads — a single 'y' cannot satisfy two
  * pending prompts. Use distinct streams or distinct handler factories if
  * you want parallelism.
  */

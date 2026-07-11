@@ -81,7 +81,7 @@ async def test_parallel_safe_batch_is_bounded_and_terminal_order_is_stable() -> 
     async def emit(event: Any) -> None:
         events.append(event)
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         calls,
         emit,
@@ -129,7 +129,7 @@ async def test_parallel_safe_batch_uses_a_fixed_number_of_planner_tasks() -> Non
     calls = [
         {"id": f"call-{index}", "name": "tool", "arguments": {}} for index in range(200)
     ]
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         calls,
         emit,
@@ -181,7 +181,7 @@ async def test_default_tools_are_exclusive_barriers() -> None:
     async def emit(_event: Any) -> None:
         return None
 
-    await planner.execute_scatter_gather(
+    await planner.execute_batch(
         "session",
         [
             {"id": "safe-1", "name": "safe", "arguments": {}},
@@ -417,7 +417,7 @@ async def test_parent_token_cancels_running_and_queued_siblings_once() -> None:
             if entered == 4:
                 token.cancel()
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         "session",
         [
             {"id": f"call-{index}", "name": "tool", "arguments": {}}

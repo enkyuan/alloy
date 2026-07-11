@@ -115,7 +115,7 @@ describe("kaji list-integrations", () => {
       err: (message) => stderr.push(message),
     });
     expect(code).toBe(1);
-    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_INDEX at \/:/);
+    expect(stderr.join("\n")).toMatch(/INTEGRATION_SCHEMA_INVALID at \/:/);
     expect(stdout).toEqual([]);
   });
 
@@ -142,7 +142,7 @@ describe("kaji list-integrations", () => {
       err: (message) => stderr.push(message),
     });
     expect(code).toBe(1);
-    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_INDEX at \/:/);
+    expect(stderr.join("\n")).toMatch(/INTEGRATION_SCHEMA_INVALID at \/:/);
     expect(stdout.join("\n")).not.toMatch(/No integrations found/);
   });
 
@@ -161,7 +161,7 @@ describe("kaji list-integrations", () => {
     });
     expect(code).toBe(1);
     expect(stderr.join("\n")).toMatch(
-      /INVALID_INTEGRATION_INDEX at \/integrations\/ghost\/manifest/,
+      /INTEGRATION_SCHEMA_INVALID at \/integrations\/ghost\/manifest/,
     );
     expect(stdout).toEqual([]);
   });
@@ -180,6 +180,6 @@ describe("kaji list-integrations", () => {
       err: (message) => stderr.push(message),
     });
     expect(code).toBe(1);
-    expect(stderr.join("\n")).toMatch(/INVALID_INTEGRATION_MANIFEST at \/:/);
+    expect(stderr.join("\n")).toMatch(/INTEGRATION_SCHEMA_INVALID at \/:/);
   });
 });

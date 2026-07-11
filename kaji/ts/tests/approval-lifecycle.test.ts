@@ -38,7 +38,7 @@ async function executeApproval(
     specs: new Map([[SPEC.name, SPEC]]),
   });
   const controller = options.controller ?? new AbortController();
-  const results = await planner.executeScatterGather(
+  const results = await planner.executeBatch(
     "session",
     [{ id: "call", name: SPEC.name, arguments: {} }],
     bindEmitterToCommitter(async (event) => {
@@ -159,7 +159,7 @@ describe("approval lifecycle closure", () => {
       specs: new Map([[SPEC.name, SPEC]]),
     });
 
-    await planner.executeScatterGather(
+    await planner.executeBatch(
       "session",
       [{ id: "call", name: "ship", arguments: {} }],
       ToolPlanner.committerEmitter(committer),
@@ -199,7 +199,7 @@ describe("approval lifecycle closure", () => {
     });
 
     await expect(
-      planner.executeScatterGather(
+      planner.executeBatch(
         "mismatched-session",
         [{ id: "mismatched-call", name: "ship", arguments: {} }],
         ToolPlanner.committerEmitter(emitCommitter),
@@ -266,7 +266,7 @@ describe("approval lifecycle closure", () => {
       return stored;
     }, committer);
 
-    const results = await planner.executeScatterGather(
+    const results = await planner.executeBatch(
       "cancel-race",
       [{ id: "call", name: "ship", arguments: {} }],
       emit,
@@ -340,7 +340,7 @@ describe("approval lifecycle closure", () => {
         return stored;
       }, committer);
 
-      const pending = planner.executeScatterGather(
+      const pending = planner.executeBatch(
         "timeout-race",
         [{ id: "call", name: "ship", arguments: {} }],
         emit,
@@ -411,7 +411,7 @@ describe("approval lifecycle closure", () => {
       specs: new Map([[SPEC.name, SPEC]]),
     });
 
-    const results = await planner.executeScatterGather(
+    const results = await planner.executeBatch(
       "opposite-return",
       [{ id: "call", name: "ship", arguments: {} }],
       ToolPlanner.committerEmitter(committer),

@@ -15,17 +15,21 @@ description: How the modality-agnostic ReAct runtime loop projects session state
    │  agent runtime  (ReAct loop)                      │
    │  1. project session state from event log          │
    │  2. call LLM provider with history + tool specs   │
-   │  3. execute tool calls scatter-gather             │
+   │  3. execute tool calls sequentially by default    │
    │  4. loop until model response is final            │
    └────────┬────────────────────────────┬─────────────┘
             │ events                     │ tool calls
             ▼                            ▼
    ┌──────────────────┐        ┌──────────────────────┐
    │  event store     │        │  tool handlers       │
-   │  (in-memory or   │        │  (your functions,    │
-   │   persistent)    │        │   run concurrently)  │
+   │  (in-memory or   │        │  (your functions)    │
+   │   persistent)    │        │                      │
    └──────────────────┘        └──────────────────────┘
 ```
+
+Tool calls execute sequentially by default. Only adjacent tools explicitly
+marked `parallel_safe` may overlap, and that overlap is bounded by the
+configured tool concurrency (four handlers by default).
 
 ## Modality edges
 

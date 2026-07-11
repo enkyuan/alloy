@@ -1,16 +1,42 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
   ProviderAPIError,
   ProviderConfigError,
   ProviderConnectionError,
+  ProviderError,
   ProviderRateLimitedError,
   normalizeProviderError,
-  providerAPIErrorFromUnknown,
-} from "@/providers/errors";
+  type NormalizedProviderError,
+} from "@kaji/sdk";
+import { providerAPIErrorFromUnknown } from "@/providers/errors";
 import { inspect } from "node:util";
 
+interface ProviderNormalizationCase {
+  name: string;
+  source: "api" | "config" | "network";
+  status: number | null;
+  expected: NormalizedProviderError;
+}
+
+const providerNormalizationCases = (
+  JSON.parse(
+    readFileSync(
+      new URL("../../contracts/errors/provider-normalization.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { cases: ProviderNormalizationCase[] }
+).cases;
+
 describe("provider error semantics", () => {
+  it("exports the normalized error boundary from the package root", () => {
+    const normalized: NormalizedProviderError = normalizeProviderError(
+      new ProviderConfigError("safe public message"),
+    );
+    expect(normalized.code).toBe("PROVIDER_CONFIG_ERROR");
+  });
+
   it("classifies network-coded transport failures before normalization", () => {
     const cause = Object.assign(new Error("private transport detail"), {
       code: "ECONNRESET",
@@ -59,6 +85,29 @@ describe("provider error semantics", () => {
       status: 429,
       retryable: true,
     });
+  });
+
+  it.each(providerNormalizationCases)("matches shared normalization case $name", (testCase) => {
+    let error: ProviderError;
+    if (testCase.source === "config") {
+      error = new ProviderConfigError("private", { service: "fixture" });
+    } else if (testCase.source === "network") {
+      error = new ProviderConnectionError("private", {
+        service: "fixture",
+        action: "stream",
+      });
+    } else {
+      error = new ProviderAPIError("private", {
+        service: "fixture",
+        action: "request",
+        ...(testCase.status === null ? {} : { statusCode: testCase.status }),
+        responseText: "private response",
+        cause: new Error("private cause"),
+      });
+    }
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(normalizeProviderError(error)).toEqual(testCase.expected);
   });
 
   it.each([

@@ -199,7 +199,7 @@ async def _exercise_noncooperative_timeouts(sequence: int) -> int:
         return None
 
     pending = asyncio.create_task(
-        planner.execute_scatter_gather(
+        planner.execute_batch(
             f"timeout-session-{sequence}",
             [
                 {"id": f"timeout-{index}", "name": spec.name, "arguments": {}}
@@ -255,7 +255,7 @@ async def _exercise_cooperative_timeout(sequence: int) -> int:
     async def emit(_event: Any) -> None:
         return None
 
-    results = await planner.execute_scatter_gather(
+    results = await planner.execute_batch(
         f"cooperative-timeout-session-{sequence}",
         [{"id": "cooperative-timeout", "name": spec.name, "arguments": {}}],
         emit,

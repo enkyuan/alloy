@@ -10,7 +10,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "environment auth has unsafe lowercase env",
@@ -21,7 +21,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "environment auth has OAuth fields",
@@ -33,7 +33,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "OAuth auth missing scopes",
@@ -44,7 +44,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "OAuth auth has empty scopes",
@@ -55,7 +55,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "OAuth auth has duplicate scopes",
@@ -67,7 +67,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "OAuth auth has env fields",
@@ -79,7 +79,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "none auth has credential fields",
@@ -90,7 +90,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "invalid authentication docs URI",
@@ -102,7 +102,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/auth",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "tool missing risk",
@@ -113,7 +113,7 @@
         "tools": [{ "name": "x", "description": "x" }]
       },
       "expectedPath": "/tools/0",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "tool missing name",
@@ -124,7 +124,7 @@
         "tools": [{ "description": "x", "risk": "read" }]
       },
       "expectedPath": "/tools/0",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "duplicate tool name",
@@ -138,7 +138,7 @@
         ]
       },
       "expectedPath": "/tools/1/name",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "absolute manifest file path",
@@ -149,7 +149,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/files/0",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "parent traversal manifest file path",
@@ -160,7 +160,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/files/0",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "duplicate manifest file",
@@ -171,7 +171,7 @@
         "tools": [{ "name": "x", "description": "x", "risk": "read" }]
       },
       "expectedPath": "/files",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "index manifest path escapes registry",
@@ -183,7 +183,7 @@
         }
       },
       "expectedPath": "/integrations/x/manifest",
-      "expectedCode": "INVALID_INTEGRATION_INDEX"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "unknown stability tier",
@@ -195,7 +195,7 @@
         }
       },
       "expectedPath": "/integrations/x/stability",
-      "expectedCode": "INVALID_INTEGRATION_INDEX"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "unknown integration runtime",
@@ -207,7 +207,7 @@
         }
       },
       "expectedPath": "/integrations/x/runtimes/0",
-      "expectedCode": "INVALID_INTEGRATION_INDEX"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "index key does not match manifest name",
@@ -227,7 +227,7 @@
       },
       "files": ["actual/index.ts"],
       "expectedPath": "/name",
-      "expectedCode": "INVALID_INTEGRATION_INDEX"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "index points to missing manifest",
@@ -241,7 +241,7 @@
       "manifests": {},
       "files": [],
       "expectedPath": "/integrations/ghost/manifest",
-      "expectedCode": "INVALID_INTEGRATION_INDEX"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
       "name": "manifest references missing file",
@@ -261,7 +261,7 @@
       },
       "files": [],
       "expectedPath": "/files/0",
-      "expectedCode": "INVALID_INTEGRATION_MANIFEST"
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     }
   ]
 }

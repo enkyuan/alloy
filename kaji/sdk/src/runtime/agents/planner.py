@@ -456,7 +456,7 @@ class ToolPlanner:
             clock=self._clock.now_monotonic,
         )
 
-    async def execute_scatter_gather(
+    async def execute_batch(
         self,
         session_id: str,
         tool_calls: List[Dict[str, Any]],
@@ -468,7 +468,7 @@ class ToolPlanner:
         approval_journal: EventJournal | None = None,
     ) -> List[Dict[str, Any]]:
         with event_defaults(self._id_factory, self._clock):
-            return await self._execute_scatter_gather(
+            return await self._execute_batch(
                 session_id,
                 tool_calls,
                 emit_event,
@@ -478,7 +478,7 @@ class ToolPlanner:
                 approval_journal=approval_journal,
             )
 
-    async def _execute_scatter_gather(
+    async def _execute_batch(
         self,
         session_id: str,
         tool_calls: List[Dict[str, Any]],

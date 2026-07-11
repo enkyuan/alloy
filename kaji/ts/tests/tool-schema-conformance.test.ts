@@ -125,7 +125,7 @@ describe("shared tool-schema conformance", () => {
       });
       const events: Array<Record<string, unknown>> = [];
 
-      const result = await planner.executeScatterGather(
+      const result = await planner.executeBatch(
         "session-1",
         [
           {

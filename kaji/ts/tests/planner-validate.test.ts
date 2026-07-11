@@ -67,7 +67,7 @@ describe("ToolPlanner argument validation", () => {
       });
       const events: Array<{ type: string; tool_args?: unknown }> = [];
 
-      const result = await planner.executeScatterGather(
+      const result = await planner.executeBatch(
         "session-1",
         [{ id: "unsafe-1", name: "unsafe", arguments: unsafe.build() }],
         async (event) => {
@@ -114,7 +114,7 @@ describe("ToolPlanner argument validation", () => {
       ]),
     });
 
-    const result = await planner.executeScatterGather(
+    const result = await planner.executeBatch(
       "session-1",
       [{ id: "unsafe-accessor", name: "unsafe", arguments: args }],
       async () => {},
@@ -149,14 +149,14 @@ describe("ToolPlanner argument validation", () => {
     (spec.parameters.properties as any).value.type = "number";
     specs.clear();
 
-    const accepted = await planner.executeScatterGather(
+    const accepted = await planner.executeBatch(
       "session-1",
       [{ id: "snapshot-1", name: "snapshot", arguments: { value: "stable" } }],
       noopEmit,
       "turn",
       turnContext,
     );
-    const rejected = await planner.executeScatterGather(
+    const rejected = await planner.executeBatch(
       "session-1",
       [{ id: "snapshot-2", name: "snapshot", arguments: { value: 1 } }],
       noopEmit,
@@ -173,7 +173,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("rejects NaN as a number argument", async () => {
     const planner = makePlanner(numericSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [{ id: "c1", name: "price_check", arguments: { price: Number.NaN } }],
       noopEmit,
@@ -191,7 +191,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("rejects positive Infinity as a number argument", async () => {
     const planner = makePlanner(numericSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [
         {
@@ -215,7 +215,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("rejects negative Infinity as a number argument", async () => {
     const planner = makePlanner(numericSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [
         {
@@ -239,7 +239,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("rejects NaN as an integer argument", async () => {
     const planner = makePlanner(integerSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [{ id: "c4", name: "count_check", arguments: { n: Number.NaN } }],
       noopEmit,
@@ -257,7 +257,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("accepts a finite number", async () => {
     const planner = makePlanner(numericSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [{ id: "c5", name: "price_check", arguments: { price: 42 } }],
       noopEmit,
@@ -269,7 +269,7 @@ describe("ToolPlanner argument validation", () => {
 
   it("accepts a finite integer", async () => {
     const planner = makePlanner(integerSpec);
-    const out = await planner.executeScatterGather(
+    const out = await planner.executeBatch(
       "session-1",
       [{ id: "c6", name: "count_check", arguments: { n: 7 } }],
       noopEmit,
