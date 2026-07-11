@@ -6,7 +6,7 @@
 
 **Architecture:** Keep the implemented `AgentBuilder -> AgentRuntime -> provider -> ToolPlanner -> ToolExecutionController -> EventJournal/EventCommitter` architecture. Harden its boundaries instead of replacing it: one closed cross-SDK event contract, JSON-safe durable values, one effective turn deadline, session-scoped commit lanes, an incremental context index, bounded/coalesced provider output, executable integration manifests, and release gates that operate correctly from a clean checkout.
 
-**Tech Stack:** Python 3.11+, asyncio, Pydantic 2, `jsonschema` Draft 2020-12, pytest, Ruff, ty, uv; TypeScript 6, Node 22/24, Zod 4, Ajv 2020, Vitest, tsup, Bun; ast-grep 0.44.1; GitHub Actions; GitButler.
+**Tech Stack:** Python 3.11+, asyncio, Pydantic 2, `jsonschema` Draft 2020-12, pytest, Ruff, ty, uv; TypeScript 5.7 through current 6.x, Node 22/24, Zod 4, Ajv 2020, Vitest, tsup, Bun; ast-grep 0.44.1; GitHub Actions; GitButler.
 
 **Status:** Reviewed plan only. Do not start implementation until the review report at the end of this file is CLEAR.
 
@@ -39,7 +39,7 @@ Reuse the machine-readable tier contract at `kaji/contracts/feature-tiers-v1.jso
 - in-memory event store/journal and replay;
 - tool registry, planner, policy, approvals, and execution controller;
 - OpenAI and Anthropic adapters;
-- Echo integration.
+- Echo integration;
 - the packaged CLI commands explicitly marked stable in the command matrix: no-key `init`, Echo `add`/`list`, and TypeScript event `replay`; every other shipped subcommand is explicitly experimental until promoted.
 
 ### NOT in scope
@@ -77,7 +77,7 @@ The remaining blockers are concrete:
 | P1 | Integration ABI is descriptive only | Manifest tools contain name, description, and risk (`kaji/contracts/integrations/manifest.schema.json:75-93`); `kaji/ts/scripts/check_integration_sources.ts:18-30` checks files/header only | Catalog metadata can drift from executable schemas/settings |
 | P1 | Performance proof cannot pass | `kaji/benchmarks/beta-baseline.json:2-20` is explicitly uncalibrated and the full gate rejects it at `kaji/scripts/beta_benchmark_gate.py:211-224` | No defensible regression threshold exists |
 | P1 | CI path coverage is incomplete | Python paths at `.github/workflows/python.test.yml:6-16` and TS paths at `.github/workflows/ts.test.yml:6-22` exclude shared contracts/scripts/docs | Contract-only drift can merge without both suites |
-| P2 | Installed-package smoke can hang | `kaji/ts/scripts/smoke_package.mts:27-38` calls `execFileSync` without `timeout` or `maxBuffer` | A network or child-process stall can consume the entire job |
+| P2 | Installed-package smoke can hang | `kaji/ts/scripts/smoke_package.mts:20-31` calls `execFileSync` without `timeout` or `maxBuffer` | A network or child-process stall can consume the entire job |
 
 ### ast-grep structural evidence
 
@@ -95,7 +95,7 @@ for await (... this.provider.generateStream(...))
   kaji/ts/src/runtime/runtime.ts:701
 
 execFileSync(...)
-  kaji/ts/scripts/smoke_package.mts:33
+  kaji/ts/scripts/smoke_package.mts:26
 
 build_context(...) in the provider iteration
   kaji/sdk/src/runtime/agents/runtime.py:861
@@ -213,13 +213,12 @@ and waiter count == 0; two journals sharing one store therefore share one coordi
 ```text
 Task 1 shared event contract
   -> Task 2 durable result safety
-  -> Task 3 turn/provider deadline + phase/quarantine semantics
+       -> Task 3 turn/provider deadline + phase/quarantine semantics
+       -> Task 6 session-scoped commit lanes -> Task 7 context index
 
 Task 4 clean release ordering/timeouts ───────────────┐
 Task 5 executable integration ABI ───────────────────┤ can run after Task 1
-Task 6 session-scoped commit lanes ──────────────────┤
-Task 7 incremental context index (after Task 1) ─────┤
-Task 8 provider stream accumulation (after Task 3) ──┘
+Tasks 3 + 7 -> Task 8 provider stream accumulation ─┘
                        |
                        v
 Task 9 benchmarks + ast-grep guards
@@ -230,16 +229,19 @@ Task 9 benchmarks + ast-grep guards
 
 Parallel implementation after Task 1:
 
-- Lane A: Task 2 -> Task 3 -> Task 8 (`runtime/`, providers, event results).
+- Shared event lane seed: Task 2 lands durable-store validation first; then split into Lane A and Lane D.
+- Lane A: Task 3 (`runtime/`, providers, event results).
 - Lane B: Task 4 (`kaji/scripts`, package smoke, gate tests).
 - Lane C: Task 5 (integration contracts/registry).
-- Lane D: Task 6 -> Task 7 (event concurrency then projector/context).
-- Merge all lanes before Task 9 so benchmark baselines measure the final architecture.
+- Lane D: Task 6 -> Task 7 (event concurrency then projector/context), starting only after Task 2.
+- Join Lanes A and D at Task 8 because the context index and bounded stream accumulator both alter the provider loop; land Task 8 only after Tasks 3 and 7, then merge all lanes before Task 9 so benchmark baselines measure the final architecture.
 
 Conflict flags:
 
 - Tasks 2, 3, and 8 all touch runtime event emission and must remain sequential.
+- Tasks 2 and 6 both change event-store boundaries and must remain sequential; Task 6 builds its lane API on Task 2's validated append path.
 - Tasks 6 and 7 both touch projectors/journals and must remain sequential.
+- Tasks 7 and 8 both touch the runtime provider loop and must remain sequential even though their data structures are independent.
 - Every shared-contract edit must include both SDK consumers; never split one contract version across branches.
 
 ## 6. Implementation Tasks
@@ -277,8 +279,14 @@ Conflict flags:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "cases": [
+    { "name": "missing-event-id", "kind": "new", "event": { "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/id" },
+    { "name": "missing-version", "kind": "new", "event": { "id": "e", "type": "session.created", "timestamp": 0, "session_id": "s" }, "path": "/version" },
+    { "name": "missing-timestamp", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "session_id": "s" }, "path": "/timestamp" },
+    { "name": "missing-session-id", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0 }, "path": "/session_id" },
+    { "name": "missing-event-type", "kind": "new", "event": { "id": "e", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/type" },
     { "name": "empty-event-id", "kind": "new", "event": { "id": "", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/id" },
     { "name": "empty-session-id", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "" }, "path": "/session_id" },
+    { "name": "empty-present-turn-id", "kind": "new", "event": { "id": "e", "type": "agent.reasoning.started", "version": "1.0", "timestamp": 0, "session_id": "s", "turn_id": "" }, "path": "/turn_id" },
     { "name": "unknown-event-type", "kind": "new", "event": { "id": "e", "type": "unknown", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/type" },
     { "name": "extra-field", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "extra": true }, "path": "/extra" },
     { "name": "draft-has-sequence", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "sequence": 1 }, "path": "/sequence" },
@@ -288,16 +296,16 @@ Conflict flags:
 }
 ```
 
-Add `validate_new_event_python` / `validate_stored_event_python` and TypeScript equivalents that compose union validation, draft/stored sequence enforcement, and durable JSON validation. Feed every fixture through canonical JSON Schema and those explicit validators, asserting identical acceptance and normalized JSON Pointer. Do not treat the Python `NewKajiEvent` alias or `StoredKajiEvent` protocol as runtime validators.
+Add `validate_new_event_python` / `validate_stored_event_python` and TypeScript equivalents that compose canonical raw-document validation, union validation, draft/stored sequence enforcement, and durable JSON validation. Feed every fixture's untouched mapping through canonical JSON Schema and those explicit validators before Pydantic or Zod can apply constructor defaults, asserting identical acceptance and normalized JSON Pointer. Missing `id`, `version`, or `timestamp` is therefore invalid on the wire even though the host-language constructors may generate those fields for newly authored in-process events. Do not treat the Python `NewKajiEvent` alias or `StoredKajiEvent` protocol as runtime validators.
 
 **Step 2: Run the tests and confirm the current mismatch.**
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_events_schemas.py kaji/sdk/tests/test_beta_contract.py kaji/sdk/tests/test_cross_sdk_fixtures.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/event-contract-conformance.test.ts tests/events.test.ts tests/beta-contract.test.ts tests/schema-parity.test.ts
+(cd kaji/ts && bun run vitest run tests/event-contract-conformance.test.ts tests/events.test.ts tests/beta-contract.test.ts tests/schema-parity.test.ts)
 ```
 
-Expected before implementation: failures for non-UUID IDs, canonical extra fields, and empty TypeScript base IDs.
+Expected before implementation: the canonical schemas reject valid opaque IDs that both runtimes intentionally accept, while TypeScript accepts empty base IDs and the conditional schemas admit fields outside the selected event variant. The implementation resolves this by freezing opaque non-empty IDs everywhere; non-UUID syntax is not an invalid case.
 
 **Step 3: Replace conditional schemas with an exhaustive union.**
 
@@ -337,6 +345,8 @@ Use shared `$defs` for base fields, JSON values, token usage, and each of the 25
 
 The real `oneOf` must list every `EventType`; the sample is intentionally abbreviated.
 
+Remove `format: "uuid"` from both canonical event schemas. UUID remains the default generated value, but the wire contract intentionally accepts any non-empty string supplied through the public `IdFactory`. Duplicate IDs remain a store conflict, not a schema-format error.
+
 **Step 4: Align runtime base validators.**
 
 Python:
@@ -364,6 +374,8 @@ const baseShape = {
 ```
 
 Use a Unicode-code-point length helper for all 200-character error/reason limits so Python and TypeScript do not diverge on surrogate pairs.
+
+Keep construction and wire ingestion as distinct paths. Public constructors may retain the defaults above; serialized replay, migration, import, and any raw-mapping append path must first validate the untouched document against the canonical new/stored schema and only then construct the runtime model. Add regression tests proving Python `SessionCreated(session_id="s")` and TypeScript `SessionCreated.parse({ type: EventType.SESSION_CREATED, session_id: "s" })` receive generated fields, while the raw JSON object `{ "type": "session.created", "session_id": "s" }` is rejected at `/id` before any default is applied.
 
 Update both canonical JSON encoders so any mathematically integral number outside `Number.MAX_SAFE_INTEGER` is rejected, including Python floats. Replace the pre-beta replay cases that accepted `2**53` with boundary cases for `2**53 - 1`, `2**53`, `-(2**53 - 1)`, `-(2**53)`, large non-integral finite values, and exponent notation. This is an intentional pre-beta wire tightening and must appear in the migration guide.
 
@@ -395,15 +407,18 @@ but commit enkang/kaji-beta-gap-closure -c -m "fix(kaji): close the shared event
 
 **Priority:** P0  
 **Depends on:** Task 1
+**Blocks:** Tasks 3 and 6
 
 **Files:**
 
 - Modify `kaji/sdk/src/infra/events/json.py`.
 - Modify `kaji/sdk/src/infra/events/schemas.py`.
+- Modify `kaji/sdk/src/infra/events/store/base.py` and `kaji/sdk/src/infra/events/store/inmem.py` so whole-event validation occurs before persistence.
 - Modify `kaji/sdk/src/runtime/tools/execution.py` around `ledger.complete()` at lines 937-956.
 - Modify `kaji/sdk/src/runtime/agents/planner.py` around terminal creation at lines 997-1045.
 - Modify `kaji/ts/src/events/json.ts`.
 - Modify `kaji/ts/src/events/schemas.ts`.
+- Modify `kaji/ts/src/events/store.ts` so whole-event validation occurs before persistence.
 - Modify `kaji/ts/src/tools/execution.ts` before its ledger completion at the current `ledger.complete` call.
 - Modify `kaji/ts/src/tools/planner.ts:997-1012`.
 - Modify `kaji/contracts/beta-core-v1.json`, `kaji/contracts/events/new-kaji-event-v1.schema.json`, and `kaji/contracts/events/stored-kaji-event-v1.schema.json` with `maxDurableToolResultBytes: 65536` and `maxDurableEventBytes: 1048576`.
@@ -470,7 +485,7 @@ Use this primitive for tool results, workflow results, event metadata, memory do
 ```python
 snapshot = durable_json_snapshot(
     completed.result,
-    subject="tool result",
+    subject="tool_result",
     max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
 )
 await self.ledger.complete(claim, snapshot)
@@ -483,7 +498,7 @@ If snapshotting fails, record an unknown-outcome tombstone with internal `INVALI
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_event_payload_limits.py kaji/sdk/tests/test_events_store.py kaji/sdk/tests/test_events_replay.py kaji/sdk/tests/test_runtime_faults.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/event-json.test.ts tests/event-payload-limits.test.ts tests/store.test.ts tests/replay.test.ts tests/runtime-faults.test.ts
+(cd kaji/ts && bun run vitest run tests/event-json.test.ts tests/event-payload-limits.test.ts tests/store.test.ts tests/replay.test.ts tests/runtime-faults.test.ts)
 ```
 
 Expected: invalid values fail before `ToolCallCompleted`; subsequent projection and turns remain healthy.
@@ -645,7 +660,7 @@ Both stable adapters already forward TypeScript signals (`kaji/ts/src/providers/
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_runtime_concurrency.py kaji/sdk/tests/test_providers_cancel.py kaji/sdk/tests/test_effective_runtime_limits.py kaji/sdk/tests/test_runtime_faults.py kaji/sdk/tests/test_stability_contract.py kaji/sdk/tests/test_tool_execution_limits.py kaji/sdk/tests/test_approval_lifecycle.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/cancellation.test.ts tests/runtime-concurrency.test.ts tests/runtime-faults.test.ts tests/effective-runtime-limits.test.ts tests/tool-execution-limits.test.ts tests/approval-handler.test.ts tests/approval-lifecycle.test.ts tests/openai-provider.test.ts tests/anthropic-provider.test.ts
+(cd kaji/ts && bun run vitest run tests/cancellation.test.ts tests/runtime-concurrency.test.ts tests/runtime-faults.test.ts tests/effective-runtime-limits.test.ts tests/tool-execution-limits.test.ts tests/approval-handler.test.ts tests/approval-lifecycle.test.ts tests/openai-provider.test.ts tests/anthropic-provider.test.ts)
 uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py
 but diff
 but commit enkang/kaji-beta-gap-closure -m "fix(kaji): enforce turn deadlines through providers" --changes <task-3-change-ids>
@@ -658,8 +673,11 @@ but commit enkang/kaji-beta-gap-closure -m "fix(kaji): enforce turn deadlines th
 
 **Files:**
 
-- Modify `kaji/scripts/beta_release_check.py`.
-- Modify `kaji/sdk/tests/test_beta_release_check.py`.
+- Create `kaji/scripts/process_runner.py` as the single bounded Python child-process primitive for Kaji release tooling.
+- Modify `kaji/scripts/beta_release_check.py`, `kaji/scripts/check_sdk_parity.py`, `kaji/scripts/attach_release_assets.py`, and `kaji/scripts/verify_published_packages.py`.
+- Modify `kaji/scripts/run_beta_benchmarks.py`, `kaji/scripts/beta_benchmark_gate.py`, `kaji/scripts/run_beta_soak.py`, `kaji/scripts/verify_openai_loop.py`, `kaji/scripts/live_provider_proof.py`, and `kaji/scripts/verify_package_metadata.py`.
+- Create `kaji/sdk/scripts/_repo_process.py` as a path-only adapter to the repository helper; modify `kaji/sdk/scripts/release_smoke.py`, `kaji/sdk/scripts/check_types.py`, `kaji/sdk/scripts/test_archive_verifier.py`, and their focused tests to use it.
+- Create `kaji/sdk/tests/test_process_runner.py` and modify `kaji/sdk/tests/test_beta_release_check.py`, `kaji/sdk/tests/test_cross_sdk_fixtures.py`, `kaji/sdk/tests/test_release_smoke.py`, `kaji/sdk/tests/test_release_task15.py`, `kaji/sdk/tests/test_live_gate.py`, and the benchmark/soak gate tests.
 - Create `kaji/ts/scripts/command.ts`.
 - Modify `kaji/ts/scripts/smoke_package.mts`.
 - Create `kaji/ts/tests/smoke-command.test.ts`.
@@ -691,35 +709,70 @@ TS_COMMON_GATES = (
 
 Release order: format/lint/typechecks/registry checks -> build -> tests/quickstart -> package smoke -> publint -> attw -> dependency audits.
 
-**Step 3: Bound all installed-package child commands.**
+**Step 3: Bound every Python release child process.**
+
+`kaji/scripts/process_runner.py` owns validated per-command budgets, timeout classification, bounded stdout/stderr capture, process-group termination, and redacted diagnostics. Commands that do not need captured output inherit the parent streams. Captured commands drain stdout and stderr concurrently in bounded chunks; exceeding either cap terminates the process group and raises `CommandOutputLimitError`. Timeout handling sends terminate, waits through a short grace period, then kills and reaps the entire process group before raising `CommandTimeoutError`.
+
+Root release scripts import the sibling module directly. Because the SDK-local scripts are also direct entrypoints and `kaji/scripts` is not an installed package, `_repo_process.py` performs the one tested repository-relative path insertion and re-exports `run_checked`/budget/error types. It contains no execution logic; tests assert all SDK-local callers resolve the root module so the process runner cannot fork into two implementations.
+
+```python
+@dataclass(frozen=True)
+class CommandBudget:
+    timeout_seconds: float
+    max_output_bytes: int = 1_048_576
+    terminate_grace_seconds: float = 2.0
+
+
+def run_checked(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    budget: CommandBudget,
+    capture: bool = False,
+    env: Mapping[str, str] | None = None,
+) -> CompletedCommand:
+    """Run, bound, terminate/reap on failure, and never echo secret arguments."""
+```
+
+Use named budgets instead of ad hoc literals: metadata probes 30 seconds; local lint/type/build/test commands 10 minutes; package install/audit 15 minutes; benchmark child samples 10 minutes; provider proofs 5 minutes; soak duration plus 2 minutes. `run_beta_soak.py` must terminate and reap both children if either child times out or fails. No release script may call bare `subprocess.run(...)` or `Popen.wait()` directly after this task.
+
+**Step 4: Bound all installed-package TypeScript child commands.**
 
 ```ts
-export function runCommand(options: CommandOptions): string {
-  return execFileSync(options.command, options.args, {
+export async function runCommand(options: CommandOptions): Promise<CompletedCommand> {
+  const child = spawn(options.command, options.args, {
     cwd: options.cwd,
     env: options.env,
-    encoding: "utf8",
+    detached: true,
     stdio: ["ignore", "pipe", "pipe"],
-    timeout: options.timeoutMs,
-    killSignal: "SIGKILL",
-    maxBuffer: options.maxBufferBytes,
   });
+  return await collectBoundedChild(child, options);
 }
 ```
 
+`collectBoundedChild` drains stdout and stderr concurrently, counts UTF-8 bytes before concatenation, and owns a timeout state machine: signal the detached POSIX process group with `SIGTERM`, wait a short grace period, then signal the group with `SIGKILL` and await the child close event. A direct-child `execFileSync` timeout is insufficient because descendants can survive. Kaji release tooling is supported on the declared macOS/Linux operator hosts; fail fast with `UnsupportedReleaseHostError` rather than claiming process-tree cleanup on Windows. Convert `smoke_package.mts` to an async entrypoint and route every child through this helper.
+
 Use separate validated budgets: local node/tsc commands 60 seconds; package install/audit 300 seconds; outer GitHub jobs 15-60 minutes. Normalize timeout errors without echoing secret-bearing command arguments.
 
-**Step 4: Verify from no `dist`.**
+**Step 5: Prove timeout, output-cap, and cleanup behavior.**
+
+Add a fake child executable/fixture that can hang, ignore termination, fork a hanging descendant, flood stdout, flood stderr, or exit non-zero. Tests must prove typed classification, bounded captured bytes, descendant/process-group cleanup, and that a failed soak child cannot leave its sibling running. These tests use sub-second injected budgets and never sleep for production timeout values.
+
+Python's standard `subprocess.run(timeout=...)` kills and waits on expiry, while direct `Popen.wait()` requires explicit cleanup and pipe handling; Node's asynchronous `spawn` exposes the child lifecycle needed for bounded drains and explicit process-group termination. Keep those guarantees centralized rather than relying on GitHub Actions' six-hour default job timeout.
+
+Primary references: [Python subprocess timeouts](https://docs.python.org/3/library/subprocess.html#subprocess.run), [Node `child_process.spawn`](https://nodejs.org/api/child_process.html#child_processspawncommand-args-options), and [GitHub Actions job timeouts](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes).
+
+**Step 6: Verify from no `dist`.**
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_beta_release_check.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/smoke-command.test.ts
+(cd kaji/ts && bun run vitest run tests/smoke-command.test.ts)
 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
 ```
 
 Expected: TypeScript full suite reports 844+ passed from a clean checkout; the wrapper ends with the offline-rehearsal disclaimer, not a beta-readiness claim.
 
-**Step 5: Checkpoint.**
+**Step 7: Checkpoint.**
 
 ```bash
 but diff
@@ -735,11 +788,12 @@ but commit enkang/kaji-beta-gap-closure -m "fix(kaji): make release rehearsal cl
 
 - Modify `kaji/contracts/integrations/manifest.schema.json`.
 - Modify `kaji/contracts/integrations/conformance-valid.json` and `kaji/contracts/integrations/conformance-invalid.json`.
+- Create `kaji/contracts/integrations/echo-tool-abi-v1.json` as the sole reviewed Echo namespace/tool-ABI authoring document.
 - Modify `kaji/scripts/check_beta_contract.py` and `kaji/scripts/sync_integration_contracts.py`.
 - Create `kaji/scripts/check_integration_abi.py` as the canonical author/release entrypoint.
-- Modify `kaji/sdk/src/integrations/validation.py`.
+- Modify `kaji/sdk/src/integrations/__init__.py` and `kaji/sdk/src/integrations/validation.py`.
 - Modify generated copies `kaji/sdk/src/integrations/registry/schema.json` and `kaji/ts/registry/schema.json` only through `kaji/scripts/sync_integration_contracts.py --write`.
-- Modify `kaji/sdk/src/integrations/registry/echo/manifest.json` and `kaji/sdk/src/integrations/registry/echo/echo.py` only as required for exact metadata parity.
+- Modify `kaji/sdk/src/integrations/registry/echo/manifest.json`, `kaji/sdk/src/integrations/registry/echo/echo.py`, and the generated `kaji/sdk/src/integrations/registry/echo/echo.ts` only as required for exact metadata parity.
 - Modify `kaji/ts/src/integrations/registry-loader.ts`.
 - Create `kaji/ts/scripts/integration-abi.ts` and modify `kaji/ts/scripts/check_integration_sources.ts`.
 - Modify `kaji/ts/registry/_template/manifest.json`, `kaji/ts/registry/echo/manifest.json`, `kaji/ts/registry/fs/manifest.json`, `kaji/ts/registry/http/manifest.json`, `kaji/ts/registry/sqlite/manifest.json`, and `kaji/ts/registry/web/manifest.json`; modify only `kaji/ts/registry/echo/index.ts` for executable parity.
@@ -766,6 +820,21 @@ but commit enkang/kaji-beta-gap-closure -m "fix(kaji): make release rehearsal cl
 The manifest schema validates `parameters` as an object without a remote meta-schema `$ref`. After manifest validation, call `Draft202012Validator.check_schema` / Ajv `validateSchema` for every tool parameter schema. Validation must remain offline and accept the same Draft 2020-12 subset in both SDKs.
 
 Make `parallel_safe` explicit rather than relying on Python’s false default and TypeScript’s absent default. `timeout_ms` remains optional because the runtime default is authoritative.
+
+Update Python's parsed public shape so validation does not immediately discard the new ABI fields:
+
+```python
+@dataclass(frozen=True)
+class ManifestTool:
+    name: str
+    description: str
+    parameters: Mapping[str, object]
+    risk: ToolRisk
+    parallel_safe: bool
+    timeout_ms: int | None = None
+```
+
+`load_manifest()` must copy/freeze the validated parameter mapping and require `risk`/`parallel_safe`; its focused tests assert every field survives loading. TypeScript's `IntegrationManifestDocument` and registry loader must expose the same values without a duplicate hand-written risk union.
 
 **Step 2: Add Echo source-to-manifest mismatch fixtures.**
 
@@ -806,18 +875,20 @@ export function compareManifestAbi(
 
 Python Echo metadata may be obtained from its decorated handlers/Integration instance through existing public inspection APIs. TypeScript Echo must expose a side-effect-free `tools`/spec list or a private metadata-only loader; do not execute handlers or perform I/O during validation.
 
-Treat the canonical Echo manifest as the reviewed authoring source. `check_integration_abi.py --explain` prints the first normalized JSON Pointer, manifest value, executable value for both runtimes, and the exact rerun commands. It never rewrites source automatically. This avoids choosing one language implementation as the generator of truth.
+`kaji/contracts/integrations/echo-tool-abi-v1.json` is authoritative only for the Echo namespace and normalized tool array. `sync_integration_contracts.py --write` copies that array into both package manifests while preserving their package-specific `files`, extras, and peer dependencies. Neither language implementation generates the ABI contract.
+
+There is one TypeScript executable authoring source: `kaji/ts/registry/echo/index.ts`. The sync command copies it byte-for-byte to the Python package's bundled `echo/echo.ts`, preserving the existing Python `kaji add echo` cross-language output without maintaining a second implementation. `--check` fails if the distribution copy drifts. `check_integration_abi.py --explain` compares the canonical ABI document with the Python `echo.py` specs and the TypeScript `index.ts` specs; the exact-copy check transitively covers the bundled `echo.ts`. It also proves both manifest tool arrays equal the canonical array, prints the first normalized JSON Pointer and redacted expected/actual values, and never rewrites executable source automatically.
 
 **Step 4: Keep promotion separate from validation.**
 
-Structural manifest and parameter-schema validation runs for every catalog entry. `kaji/ts/registry/index.json` continues to mark HTTP, Web, filesystem, and SQLite experimental. Only Echo loads executable metadata and compares it to the manifest on the beta critical path. Exact source-to-manifest parity for an experimental entry is a future promotion gate, not a beta blocker.
+Structural manifest and parameter-schema validation runs for every catalog entry. `kaji/ts/registry/index.json` continues to mark HTTP, Web, filesystem, and SQLite experimental. Only Echo loads executable metadata and compares every shipped stable source to the canonical ABI on the beta critical path. Exact source-to-manifest parity for an experimental entry is a future promotion gate, not a beta blocker.
 
 **Step 5: Verify and checkpoint.**
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_manifest_registry.py kaji/sdk/tests/test_echo_registry.py kaji/sdk/tests/test_integrations.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/integration-abi.test.ts tests/manifest-validate.test.ts tests/echo-registry.test.ts tests/fs-registry.test.ts tests/http-registry.test.ts tests/sqlite-registry.test.ts tests/web-registry.test.ts
-cd kaji/ts && bun run validate:registry && bun run check:integrations && bun run typecheck:registry
+(cd kaji/ts && bun run vitest run tests/integration-abi.test.ts tests/manifest-validate.test.ts tests/echo-registry.test.ts tests/fs-registry.test.ts tests/http-registry.test.ts tests/sqlite-registry.test.ts tests/web-registry.test.ts)
+(cd kaji/ts && bun run validate:registry && bun run check:integrations && bun run typecheck:registry)
 uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --write
 uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
 uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain
@@ -942,7 +1013,7 @@ For `SplitEventCommitter`, reserve pending capacity synchronously before persist
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_events_store.py kaji/sdk/tests/test_events_journal.py kaji/sdk/tests/test_runtime_concurrency.py kaji/sdk/tests/test_runtime_complexity.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/event-delivery.test.ts tests/event-ordering.test.ts tests/store.test.ts tests/runtime-concurrency.test.ts tests/runtime-complexity.test.ts
+(cd kaji/ts && bun run vitest run tests/event-delivery.test.ts tests/event-ordering.test.ts tests/store.test.ts tests/runtime-concurrency.test.ts tests/runtime-complexity.test.ts)
 but diff
 but commit enkang/kaji-beta-gap-closure -m "perf(kaji): isolate event commits by session" --changes <task-6-change-ids>
 ```
@@ -1022,7 +1093,7 @@ Do not use elapsed time as the only proof; retain deterministic counters and add
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_context_window.py kaji/sdk/tests/test_agents_context.py kaji/sdk/tests/test_events_replay.py kaji/sdk/tests/test_runtime_complexity.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/context-window.test.ts tests/replay.test.ts tests/runtime-complexity.test.ts
+(cd kaji/ts && bun run vitest run tests/context-window.test.ts tests/replay.test.ts tests/runtime-complexity.test.ts)
 but diff
 but commit enkang/kaji-beta-gap-closure -m "perf(kaji): index provider context during projection" --changes <task-7-change-ids>
 ```
@@ -1030,7 +1101,7 @@ but commit enkang/kaji-beta-gap-closure -m "perf(kaji): index provider context d
 ### Task 8: Bound Provider Output and Coalesce Durable Deltas
 
 **Priority:** P1  
-**Depends on:** Tasks 2-3
+**Depends on:** Tasks 2-3 and Task 7
 
 **Files:**
 
@@ -1107,7 +1178,7 @@ The ordered concatenation of every `AgentMessageDelta.delta` for an iteration mu
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_runtime_turn.py kaji/sdk/tests/test_event_payload_limits.py kaji/sdk/tests/test_runtime_complexity.py kaji/sdk/tests/test_effective_runtime_limits.py kaji/sdk/tests/test_provider_stream_limits.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/runtime-turn.test.ts tests/event-payload-limits.test.ts tests/runtime-complexity.test.ts tests/effective-runtime-limits.test.ts tests/openai-provider.test.ts tests/anthropic-provider.test.ts
+(cd kaji/ts && bun run vitest run tests/runtime-turn.test.ts tests/event-payload-limits.test.ts tests/runtime-complexity.test.ts tests/effective-runtime-limits.test.ts tests/openai-provider.test.ts tests/anthropic-provider.test.ts)
 but diff
 but commit enkang/kaji-beta-gap-closure -m "perf(kaji): bound and coalesce provider streams" --changes <task-8-change-ids>
 ```
@@ -1215,6 +1286,15 @@ ts-provider-no-tool-argument-string-concatenation
 
 ts-event-committer-no-global-serial-executor
   forbid a process-global SerialExecutor field in event committers
+
+python-release-no-unbounded-subprocess-run
+  forbid direct `subprocess.run(...)` in Kaji release scripts after migration to `process_runner.run_checked`
+
+python-release-no-bare-popen-wait
+  forbid `Popen.wait()` without a timeout and the centralized terminate/kill/reap path
+
+ts-release-command-runner-only
+  forbid direct `execFileSync`, `spawnSync`, `execFile`, or `spawn` calls in Kaji TypeScript release scripts outside `kaji/ts/scripts/command.ts`
 ```
 
 Example rule shape:
@@ -1252,7 +1332,7 @@ Replace `.github/workflows/ast-grep.yml:36-47`’s “8 passed” string asserti
 bun run audit:ast-grep
 uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --quick
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_runtime_complexity.py kaji/sdk/tests/test_beta_release_check.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/runtime-complexity.test.ts
+(cd kaji/ts && bun run vitest run tests/runtime-complexity.test.ts)
 but diff
 but commit enkang/kaji-beta-gap-closure -m "test(kaji): guard beta performance invariants" --changes <task-9-change-ids>
 ```
@@ -1298,6 +1378,7 @@ Keep their existing package-specific paths.
 check_beta_contract.py
 sync_beta_contracts.py --check
 sync_integration_contracts.py --check
+check_integration_abi.py --explain
 check_sdk_parity.py
 bun run audit:ast-grep
 run_beta_benchmarks.py --quick
@@ -1323,7 +1404,7 @@ Tests parse YAML and assert:
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_release_security.py kaji/sdk/tests/test_beta_release_check.py --no-cov -q
-cd kaji/ts && bun run vitest run tests/release-security.test.ts
+(cd kaji/ts && bun run vitest run tests/release-security.test.ts)
 bun run audit:ast-grep
 but diff
 but commit enkang/kaji-beta-gap-closure -m "ci(kaji): require shared beta contract gates" --changes <task-10-change-ids>
@@ -1337,7 +1418,7 @@ but commit enkang/kaji-beta-gap-closure -m "ci(kaji): require shared beta contra
 **Files:**
 
 - Create `docs/kaji/README.md`, `docs/kaji/testing.md`, `docs/kaji/api-parity.md`, and `docs/kaji/cli.md`.
-- Modify `docs/kaji/production-beta.md`, `docs/kaji/concurrency-and-ordering.md`, `docs/kaji/tool-contracts.md`, `docs/kaji/troubleshooting.md`, and `docs/kaji/migrating-to-beta.md`.
+- Modify `docs/kaji/production-beta.md`, `docs/kaji/releasing.md`, `docs/kaji/concurrency-and-ordering.md`, `docs/kaji/tool-contracts.md`, `docs/kaji/troubleshooting.md`, and `docs/kaji/migrating-to-beta.md`.
 - Modify `kaji/sdk/README.md`, `kaji/ts/README.md`, `kaji/sdk/CHANGELOG.md`, `kaji/ts/CHANGELOG.md`, and `kaji/RELEASE_MATRIX.md`.
 - Modify `kaji/sdk/src/cli/init.py`, `kaji/sdk/src/cli/templates.py`, and `kaji/sdk/src/cli/_main.py`.
 - Modify `kaji/ts/src/cli/init.ts`, `kaji/ts/src/cli/index.ts`, and `kaji/ts/src/cli/render.ts`.
@@ -1394,10 +1475,13 @@ References:
 **Step 1: Make the packaged scaffold truthful and no-key by default.**
 
 - Python adds `mock` to the provider choices and makes it the non-interactive/default scaffold. TypeScript adds `--provider mock|openai|anthropic`, defaulting to `mock`.
+- Freeze one stable grammar in both packages: `kaji init [path] --provider mock|openai|anthropic --yes --force`. TypeScript accepts its existing `--out <path>` as a deprecated alias for `[path]`, rejects supplying both forms, and prints one redaction-safe migration warning; remove the alias only in a future major release. Python and TypeScript help, usage errors, exit codes, non-interactive behavior, overwrite refusal, and written-file summaries must match semantically.
 - Generated TypeScript reads the installed package version instead of embedding `^0.1.0`, includes supported Zod, and uses `@kaji/sdk/testing` `MockProvider` for the default. Keyed providers are an explicit second mode.
 - Generated Python uses `kaji.get_provider("mock")` by default. Both generated programs print deterministic text, turn ID, and final sequence.
 - The CLI command matrix classifies stable `init`, Echo `add`/`list`, and TypeScript `replay`; Python maintenance commands and any other command are marked experimental with no beta claim.
 - The real-provider quickstarts remove manual cancellation timers, show the safe 120-second default, expose effective limits, and show Python `deadline_monotonic` versus TypeScript `deadlineAtMs`/`deadlineAfter()` without mixing duration and absolute units.
+
+Add table-driven CLI contract tests that feed the same valid and invalid argument cases to both dispatchers: default path, explicit path, each stable provider, `--yes`, `--force`, unknown provider, missing option value, conflicting path/`--out`, existing-file refusal, and deprecated-alias warning. Installed-artifact smoke must run the canonical command under Python, npm, and Bun.
 
 **Step 2: Make errors actionable in APIs and the CLI.**
 
@@ -1415,9 +1499,10 @@ Update `docs/kaji/troubleshooting.md` with stable anchors. `kaji/ts/src/cli/rend
 
 - `docs/kaji/README.md` is the versioned index: quickstart, stable API, testing, CLI, operations, migration, and experimental surfaces.
 - `docs/kaji/api-parity.md` maps Python/TypeScript builders, contexts, effective limits, errors, snake_case wire fields, host-language field names, units, and stable exports; one side-by-side Echo lifecycle is executable.
-- `docs/kaji/testing.md` covers deterministic providers, clocks/IDs, contract fixtures, tool failures, and package-artifact testing.
+- `docs/kaji/testing.md` covers deterministic providers, clocks/IDs, contract fixtures, tool failures, package-artifact testing, and the macOS/Linux release-operator requirement for tested POSIX process-group cleanup without narrowing the SDK runtime's separately declared platform support.
 - `docs/kaji/cli.md` owns the command stability matrix, streams/exit codes, and scaffold modes.
 - Tests derive the stable export/feature lists from `kaji/contracts/feature-tiers-v1.json` and fail on undocumented stable exports or examples using experimental/deprecated aliases.
+- Update `docs/kaji/production-beta.md`, both package READMEs, and `kaji/RELEASE_MATRIX.md` so OpenAI and Anthropic are described consistently as declared-stable adapters whose keyed Python-and-TypeScript tool-loop proofs are mandatory release evidence. Remove every remaining “conditional,” optional-key, or provider-skip readiness path; local no-key quickstarts continue to use the mock provider, but a missing protected credential blocks release.
 
 **Step 4: Update migration and compiler/package-manager support.**
 
@@ -1442,15 +1527,13 @@ Declare Node support separately from compiler support: Node 22/24 runtime; TypeS
 - Kaji issue form: SDK language/version, runtime/compiler/package manager, OS, minimal reproduction, error code, and redacted event excerpt.
 - Assign an owner/date for a 30-day post-release DX review, monthly friction audit for the beta window, and docs feedback link. Installed smoke is evidence of mechanics, not a substitute for human feedback.
 
-**Step 6: Keep runnable docs and measure TTHW honestly.**
-
-**Step 4: Keep runnable docs as release tests.**
+**Step 6: Keep runnable docs as release tests and measure TTHW honestly.**
 
 ```bash
 uv run --project kaji/sdk pytest kaji/sdk/tests/test_production_beta_docs.py kaji/sdk/tests/test_docs_sync.py kaji/sdk/tests/test_release_smoke.py --no-cov -q
 uv run --project kaji/sdk pytest kaji/sdk/tests/cli/test_init.py kaji/sdk/tests/cli/test_main.py --no-cov -q
-cd kaji/ts && bun run build && bun run vitest run tests/cli-init.test.ts tests/cli-dispatch.test.ts tests/cli-replay.test.ts tests/docs-contract.test.ts tests/package-contract.test.ts tests/public-declarations.test.ts
-cd kaji/ts && bun scripts/smoke_package.mts
+(cd kaji/ts && bun run build && bun run vitest run tests/cli-init.test.ts tests/cli-dispatch.test.ts tests/cli-replay.test.ts tests/docs-contract.test.ts tests/package-contract.test.ts tests/public-declarations.test.ts)
+(cd kaji/ts && bun scripts/smoke_package.mts)
 ```
 
 The exact-artifact smoke must pack/install, run `kaji init`, install/compile the generated project, execute it, and assert deterministic text/turn/sequence output. Record automated cold setup-to-output and warm run time separately for Python, npm, and Bun.
@@ -1476,7 +1559,7 @@ This task includes operational actions that cannot be proven by local source cha
 - Modify `kaji/scripts/live_provider_proof.py`, `kaji/scripts/verify_published_packages.py`, `kaji/sdk/tests/test_live_gate.py`, and `kaji/sdk/tests/test_release_task15.py`.
 - Modify `.github/workflows/kaji.beta.yml` and `.github/workflows/kaji.beta-publish.yml` for mandatory dual-provider evidence and partial-publication state retention.
 - Modify `kaji/benchmarks/beta-baseline.json` only from the reviewed pinned-runner calibration candidate.
-- Modify `kaji/RELEASE_MATRIX.md`, `kaji/sdk/README.md`, and `kaji/ts/README.md` only after every protected row and registry byte check passes.
+- Modify `kaji/RELEASE_MATRIX.md`, `docs/kaji/production-beta.md`, `docs/kaji/releasing.md`, `kaji/sdk/README.md`, and `kaji/ts/README.md` only after every protected row and registry byte check passes.
 - Retain benchmark, soak, provider, TTHW, signature, SBOM/provenance, publication-state, and downloaded-byte evidence under the protected workflow/release; do not commit credentials or raw prompts.
 
 **Step 1: Run the complete local checkpoint from a clean workspace.**
@@ -1540,6 +1623,8 @@ Run `.github/workflows/kaji.beta-publish.yml` through its protected environment 
 - SBOM and provenance attestations;
 - PyPI and npm trusted publication;
 - exact downloaded registry bytes match built artifacts;
+- each PyPI wheel/sdist is downloaded from its registry file URL, hashed locally, and verified with PyPI's Integrity API attestation rather than trusting metadata digests alone;
+- the npm tarball is downloaded, hashed, and its provenance/signatures are verified with the current npm CLI;
 - GitHub prerelease assets and checksums attached;
 - publication status and provider/performance evidence attached to the same release.
 
@@ -1552,11 +1637,15 @@ unpublished
   -> byte_verified
 ```
 
+`byte_verified` is the only success terminal state. Rename the workflow's current `complete` status to `byte_verified` and make the release-evidence job require that exact value; `both_published` without downloaded-byte and attestation verification is not release-ready.
+
+Primary references: [PyPI attestation consumption](https://docs.pypi.org/attestations/consuming-attestations/), [npm provenance statements](https://docs.npmjs.com/generating-provenance-statements/), and [GitHub artifact-attestation verification](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
+
 Publish cannot be atomic across registries. If only one registry succeeds, immediately mark the GitHub prerelease/status as a partial-publication incident, stop install recommendations, and attempt the other registry only from the same immutable artifacts/tag. If recovery cannot complete promptly, yank the PyPI release where policy permits and deprecate the npm version with an incident message; never delete evidence, move/recreate the tag, overwrite bytes, or reuse either version. Fix forward with the next beta version, publish both registries, and verify bytes before clearing the incident. A registry-byte mismatch after both publishes follows the same next-version recovery and security triage.
 
 **Step 7: Update evidence, not claims.**
 
-Only after the publication state is `byte_verified` and every row passes, update `kaji/RELEASE_MATRIX.md` and the package status banners from “pre-beta” to “production beta,” citing protected run/release URLs. If any protected row fails, preserve pre-beta language, fix forward, and rerun every affected same-commit gate.
+Only after the publication state is `byte_verified` and every row passes, update `kaji/RELEASE_MATRIX.md`, `docs/kaji/production-beta.md`, `docs/kaji/releasing.md`, and both package status banners from “pre-beta” to “production beta,” citing protected run/release URLs. The final documents must show required passing OpenAI and Anthropic rows for Python and TypeScript; neither provider may be marked conditional or skipped while it remains in the stable tier. If any protected row fails, preserve pre-beta language, fix forward, and rerun every affected same-commit gate.
 
 ## 7. Error and Rescue Registry
 
@@ -1574,7 +1663,7 @@ Only after the publication state is `byte_verified` and every row passes, update
 | subscriber fanout | queue overflow | `EventBufferOverflowError` | detach subscriber with cursor diagnostics | reconnect from last sequence |
 | context index | malformed tool grouping | `ContextIntegrityError` | fail identically to full-scan oracle | repair/import valid event history |
 | integration ABI check | metadata/schema mismatch | `IntegrationAbiMismatchError` | fail registry validation before copy/publish | exact pointer and expected field |
-| release child command | timeout or output overflow | `PackageSmokeTimeoutError` | kill child, clean temp dir, fail gate | actionable step/timeout, no secrets |
+| release child command | timeout or output overflow | `CommandTimeoutError` or `CommandOutputLimitError` | terminate, kill after grace, reap the process group, clean temp dir, fail gate | actionable step/budget, no secret-bearing arguments |
 | performance full gate | missing/wrong fingerprint baseline | runtime gate error | block release; recalibrate only on pinned runner | no misleading local baseline |
 | protected provider/tag/publish | auth/signature/pre-publication failure | workflow failure | stop before registry mutation; preserve pre-beta state | operator fixes environment and reruns |
 | registry publication | one registry succeeds or byte verification fails | partial-publication incident state | yank/deprecate where permitted; retain tag/evidence; next-version fix forward | package is not advertised as beta until both bytes verify |
@@ -1597,7 +1686,7 @@ No catch-all path may swallow a failure. Broad catches used solely to preserve a
 | stream batching | terminal overtakes buffered text | Yes | every boundary test | exact ordered prefix + terminal | delta/event counters |
 | integration ABI | validator loads side-effectful module | Yes | no-I/O metadata-load test | ABI validation error | registry check |
 | clean release | tests use stale `dist` | Yes | absent-dist regression | failing ordered gate | release step output |
-| package smoke | npm hangs | Yes | hanging-child test | timeout with step | job failure |
+| release child process | command hangs, ignores termination, floods stdout/stderr, or leaves a sibling alive | Yes | fake-child timeout/output/process-group tests | typed command phase and budget | release gate failure |
 | generated CLI | stale SDK/TS/Zod versions or keyed default | Yes | exact-artifact npm/Bun/Python scaffold smoke | deterministic no-key output | install-step timings |
 | benchmark | baseline calibrated before final perf changes | Process prevention | workflow/order test | release blocked | provenance metadata |
 | registry publish | PyPI succeeds and npm fails, or downloaded bytes differ | Yes, incident/fix-forward | workflow state-machine test + operator drill | partial-publication status | release evidence |
@@ -1653,12 +1742,15 @@ INTEGRATION ABI
 
 RELEASE
   absent dist -> build -> tests -> package               [regression + E2E]
+  child hang/ignore-term/output flood/nonzero exit       [fault unit + integration]
+  soak sibling cleanup after timeout/failure             [process integration]
   wheel/tarball imports and docs                         [artifact E2E]
   generated no-key CLI under Python/npm/Bun              [artifact E2E]
   TypeScript 5.7 + 6.x declarations                      [artifact matrix]
   five fresh-user TTHW runs                              [human gate]
   both providers x both SDKs                             [protected E2E]
   partial-publication recovery                           [workflow/operator drill]
+  PyPI/npm download hash + attestation verification      [protected artifact E2E]
   protected benchmark/soak/tag/byte verification         [workflow E2E]
 ```
 
@@ -1799,6 +1891,8 @@ Implementation alternatives considered:
 
 Scope remains the stable core; no new providers, integrations, hosted services, or UI were added. Existing packaged CLIs are now classified because shipping an unclassified public executable would itself be a beta gap. The complete option means fully hardening the named beta promise, not promoting experimental catalog entries.
 
+Current review decisions reaffirmed the complete stable-core path and made three contract choices explicit: event IDs are non-empty opaque strings with UUID as the default generator; both declared-stable providers require keyed same-commit tool-loop proof in both SDKs; and one generic integration ABI verifier enforces executable parity only for stable Echo while experimental entries remain structural-only until promotion.
+
 CEO section outcomes:
 
 - Architecture: store-owned non-nesting transactions, reference-only context index, provider quarantine, and bounded text/argument accumulators added to the plan.
@@ -1820,6 +1914,15 @@ CEO section outcomes:
 - Test decision: require explicit new/stored validators, differential fixtures, direct-store/two-journal races, hostile provider/tool tests, and deterministic semantic counters where elapsed timing would be flaky.
 - Performance decision: remove known global serialization, payload-copy/full-scan work, and text/tool-argument amplification before baseline calibration.
 - Parallelization: four post-contract lanes, with runtime and event/projector overlaps kept sequential.
+- Session ordering decision: the store owns keyed, non-nesting session transactions; per-journal locks and the global serializer are rejected because neither protects direct-store plus multi-journal access correctly.
+- Deadline decision: one absolute deadline is resolved before queueing and propagated through providers/tools; non-cooperative providers retain a background lease and quarantine the session after bounded grace.
+- Release-tooling decision: centralized Python and TypeScript command runners own deadlines, output caps, redaction, process-group termination, and cleanup; ast-grep forbids direct unbounded subprocess calls.
+- Context/stream decision: the projector owns a differential-tested context index, while provider text/tool fragments use bounded linear accumulators and coalesced durable deltas.
+- Performance-evidence decision: semantic budgets run in ordinary CI; timing/RSS calibration and the 30-minute soak run only on the pinned protected runner after code freeze.
+- Wire-ingestion decision: raw serialized events validate required fields before Pydantic/Zod defaults; defaults remain constructor-only conveniences.
+- Provider-loop sequencing decision: Task 8 joins completed deadline and context-index work; Tasks 7 and 8 cannot run in parallel against the same loop.
+- Child-process decision: inventory every Python release caller and use asynchronous detached process groups for TypeScript so descendant cleanup is a tested guarantee, not a direct-child assumption.
+- Echo-authority decision: one canonical Echo ABI document feeds both manifests, one TypeScript executable source feeds its distribution copy, and Python's public `ManifestTool` preserves every validated ABI field.
 
 ### Developer-experience review — DX POLISH
 
@@ -1836,6 +1939,8 @@ CEO section outcomes:
 
 Unweighted DX score: **49/80 (6.1/10) -> 69/80 (8.6/10)** if every planned gate passes. Target median TTHW: **<5 minutes** no-key and **<10 minutes** first Echo lifecycle, with explicit maximums in Task 11. Competitive tier remains **unproven until measured**; safety/parity is the intended wedge rather than the shortest hello-world syntax.
 
+The current DX pass retained the existing platform-engineer persona, no-key magical moment, measured TTHW targets, and DX POLISH mode. It added one cross-SDK contract: both `init` commands now share the same path/provider/non-interactive/overwrite grammar and behavior, with TypeScript's existing `--out` retained only as a tested deprecated alias. All other pass findings were already represented by the exact-artifact quickstart, actionable error table, indexed docs, migration preflight, compiler/package-manager matrix, trust documents, and pre/post-release measurement protocol.
+
 ### Independent outside-voice disposition
 
 Three fresh read-only reviewers challenged the complete draft against CEO/parity, Python engineering, and TypeScript/DX evidence. Their initial verdicts were all `CONCERNS`; no concern was waived:
@@ -1851,8 +1956,10 @@ Three fresh read-only reviewers challenged the complete draft against CEO/parity
 - Experimental integrations receive structural validation only; executable parity remains an Echo/stable gate.
 - Partial PyPI/npm publication has an incident and immutable next-version recovery state machine.
 - Both shipped CLIs are classified; the no-key scaffold, replay errors, compiler/package-manager support, API map, trust docs, and human TTHW gates are explicit.
+- Raw-wire validation now precedes constructor defaults, provider-loop tasks are serialized at their shared edit point, every current release subprocess caller is named, and TypeScript cleanup covers descendants.
+- Echo now has one contract authority and one TypeScript executable authority; both manifests, Python runtime metadata, TypeScript runtime metadata, and the bundled TypeScript copy are checked.
 
-The local Claude wrapper was checked as an optional cross-model review but was unavailable because the CLI/auth were absent. It did not replace or weaken the three completed repository-grounded reviews.
+The installed Claude CLI was considered as an optional cross-model review. After the privacy boundary was made explicit, external repository-content transmission was declined, so no source or plan content was sent. This privacy choice did not replace or weaken the three completed repository-grounded reviews.
 
 ## 16. Implementation Discipline
 
@@ -1870,12 +1977,12 @@ The local Claude wrapper was checked as an optional cross-model review but was u
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |---|---|---:|---:|---|---|
-| CEO Review | `/plan-ceo-review` | Scope and strategy | 2 | CLEAR | HOLD_SCOPE; complete stable core selected; experimental ABI parity removed from critical path |
+| CEO Review | `/plan-ceo-review` | Scope and strategy | 3 | CLEAR | HOLD_SCOPE; complete stable core selected; opaque IDs, mandatory dual-provider proof, and stable-only executable ABI enforcement frozen |
 | Independent Review | fresh read-only reviewers | Adversarial second opinion | 3 | CLEAR | all parity, Python engineering, and TypeScript/DX concerns dispositioned above |
-| Claude Review | `/claude` outside voice | Cross-model check | 0 | UNAVAILABLE | no local CLI/auth; non-blocking because three independent repository reviews completed |
-| Eng Review | `/plan-eng-review` | Architecture and tests | 2 | CLEAR | phase/quarantine semantics, store transaction ownership, stream arguments, and memory proof folded in |
+| Claude Review | `/claude` outside voice | Cross-model check | 0 | SKIPPED | installed CLI; user declined external repository-content transmission after privacy disclosure; no content sent |
+| Eng Review | `/plan-eng-review` | Architecture and tests | 3 | CLEAR | raw-wire strictness, phase/quarantine semantics, task sequencing, store transactions, process-tree bounds, Echo authority, stream limits, and differential context proof folded in |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | SKIPPED | No UI scope |
-| DX Review | `/plan-devex-review` | Developer experience | 2 | CLEAR | honest 6.1 -> 8.6 target; packaged CLI, human TTHW, compiler/package-manager, trust, and feedback gates added |
+| DX Review | `/plan-devex-review` | Developer experience | 3 | CLEAR | honest 6.1 -> 8.6 target; canonical cross-SDK CLI, packaged smoke, human TTHW, compiler/package-manager, trust, and feedback gates added |
 
 **VERDICT:** CLEAR FOR IMPLEMENTATION. The plan closes every reviewed production-beta blocker without promoting experimental product scope. Protected operator evidence remains an implementation-time exit gate, not an unresolved design decision.
 
