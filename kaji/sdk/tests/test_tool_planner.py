@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kaji.infra.events.schemas import KajiEvent
+from kaji.infra.events.schemas import KajiEvent, ToolCallFailed
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.policies import ToolPolicy
@@ -90,6 +90,38 @@ async def test_planner_rejects_non_object_arguments_before_executor(bad_args):
     ]
     assert "Invalid tool arguments" in results[0]["error"]
     assert "arguments must be an object" in results[0]["error"]
+    failure = emitted[-1]
+    assert isinstance(failure, ToolCallFailed)
+    assert failure.error_code == "INVALID_TOOL_ARGUMENTS"
+    assert failure.error_path == "/"
+    assert failure.retryable is False
+    assert failure.outcome == "not_started"
+
+
+@pytest.mark.asyncio
+async def test_planner_redacts_provider_parse_error_before_recording() -> None:
+    secret = "sk-provider-output-must-not-appear"
+    executor = AsyncMock(return_value={"ok": True})
+    planner = ToolPlanner(executor=executor)
+
+    emitted, results = await _collect(
+        planner,
+        "sess-parse-error",
+        [
+            {
+                "id": "parse-error",
+                "name": "search",
+                "arguments": {"__parse_error": f"invalid JSON near {secret}"},
+            }
+        ],
+    )
+
+    executor.assert_not_awaited()
+    serialized = " ".join(event.model_dump_json() for event in emitted)
+    assert secret not in serialized
+    assert secret not in results[0]["error"]
+    assert results[0]["error_code"] == "INVALID_TOOL_ARGUMENTS"
+    assert results[0]["outcome"] == "not_started"
 
 
 @pytest.mark.asyncio

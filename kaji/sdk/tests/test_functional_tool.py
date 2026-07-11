@@ -30,6 +30,7 @@ def test_function_tool_derives_schema_from_type_hints() -> None:
     assert "city" in schema["properties"]
     assert schema["properties"]["city"]["type"] == "string"
     assert schema["required"] == ["city"]
+    assert schema["additionalProperties"] is False
 
 
 def test_function_tool_with_explicit_description() -> None:

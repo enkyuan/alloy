@@ -12,69 +12,18 @@ from kaji.infra.events.schemas import (
     ToolCallRequested,
     ToolCallStarted,
 )
+from kaji.runtime.tools.errors import (
+    ToolArgumentValidationError,
+    validation_failure_fields,
+)
 from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 from kaji.runtime.tools.registry import ToolSpec
+from kaji.runtime.tools.validation import ToolSchemaValidator
 
 logger = logging.getLogger(__name__)
 
 ToolExecutor = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 ApprovalHandler = Callable[[str, Dict[str, Any], Optional[str]], Awaitable[bool]]
-
-_JSON_TYPE_TO_PY: Dict[str, tuple] = {
-    "object": (dict,),
-    "array": (list,),
-    "string": (str,),
-    "integer": (int,),
-    "number": (int, float),
-    "boolean": (bool,),
-    "null": (type(None),),
-}
-
-
-def _json_type_name(value: Any) -> str:
-    if value is None:
-        return "null"
-    if isinstance(value, bool):
-        return "boolean"
-    if isinstance(value, (int, float)):
-        return "number"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, list):
-        return "array"
-    if isinstance(value, dict):
-        return "object"
-    return type(value).__name__
-
-
-def _validate_args(spec: ToolSpec, args: Dict[str, Any]) -> Optional[str]:
-    """Shallow JSON Schema check against ToolSpec.parameters. Returns error string or None.
-
-    Checks: top-level ``type: object``, ``required`` keys present, and top-level
-    property types. Deep schema features (anyOf, format, nested validation) are
-    intentionally not enforced — the goal is to fail closed on shape mismatch
-    from the model, not to be a general validator.
-    """
-    schema = spec.parameters or {}
-    if schema.get("type") == "object" and not isinstance(args, dict):
-        return f"arguments must be an object, got {_json_type_name(args)}"
-    if not isinstance(args, dict):
-        return None
-    for key in schema.get("required", []) or []:
-        if key not in args:
-            return f"missing required argument: {key!r}"
-    for key, prop_schema in (schema.get("properties") or {}).items():
-        if key not in args:
-            continue
-        expected = prop_schema.get("type") if isinstance(prop_schema, dict) else None
-        if not expected:
-            continue
-        py_types = _JSON_TYPE_TO_PY.get(expected)
-        if py_types and not isinstance(args[key], py_types):
-            return (
-                f"argument {key!r}: expected {expected}, got {type(args[key]).__name__}"
-            )
-    return None
 
 
 def _sanitize_error(exc: BaseException, *, max_len: int = 200) -> str:
@@ -109,6 +58,7 @@ class ToolPlanner:
         self.policy = policy
         self.approval_handler = approval_handler
         self._specs: Dict[str, ToolSpec] = specs or {}
+        self._schema_validator = ToolSchemaValidator(self._specs)
 
     async def execute_scatter_gather(
         self,
@@ -132,15 +82,17 @@ class ToolPlanner:
         """Execute a single tool with policy enforcement and approval hooks."""
         tool_name = call.get("name", "unknown")
         raw_tool_args = call.get("arguments", {})
-        tool_args = (
-            raw_tool_args
-            if isinstance(raw_tool_args, dict)
-            else {
-                "__parse_error": (
-                    f"arguments must be an object, got {_json_type_name(raw_tool_args)}"
-                )
-            }
-        )
+        validation_error: Optional[ToolArgumentValidationError] = None
+        if not isinstance(raw_tool_args, dict):
+            tool_args = {"__parse_error": "invalid arguments"}
+            validation_error = ToolArgumentValidationError.non_object(tool_name)
+        elif isinstance(raw_tool_args.get("__parse_error"), str):
+            # Provider parse errors may contain fragments of the model output.
+            # Keep only a stable sentinel in the event stream.
+            tool_args = {"__parse_error": "invalid JSON"}
+            validation_error = ToolArgumentValidationError.parse_error(tool_name)
+        else:
+            tool_args = raw_tool_args
         call_id = call.get("id", str(uuid.uuid4()))
         spec = self._specs.get(tool_name)
         risk = spec.risk if spec else None
@@ -161,37 +113,30 @@ class ToolPlanner:
             )
         )
 
-        # 2a. Provider parse-error sentinel: model produced unparseable tool JSON.
-        if isinstance(tool_args, dict) and isinstance(
-            tool_args.get("__parse_error"), str
-        ):
-            error_msg = f"Invalid tool arguments: {tool_args['__parse_error']}"
+        # 2. Fail closed on provider parse errors and complete schema violations.
+        if validation_error is None:
+            try:
+                self._schema_validator.validate(tool_name, tool_args)
+            except ToolArgumentValidationError as error:
+                validation_error = error
+        if validation_error is not None:
+            failure_fields = validation_failure_fields(validation_error)
             await emit_event(
                 ToolCallFailed(
                     session_id=session_id,
                     tool_name=tool_name,
                     tool_call_id=call_id,
-                    error=error_msg,
+                    error=validation_error.message,
                     metadata=metadata,
+                    **failure_fields,
                 )
             )
-            return {"id": call_id, "name": tool_name, "error": error_msg}
-
-        # 2b. Schema validation: fail closed on malformed args from the model.
-        if spec is not None:
-            schema_error = _validate_args(spec, tool_args)
-            if schema_error is not None:
-                error_msg = f"Invalid tool arguments: {schema_error}"
-                await emit_event(
-                    ToolCallFailed(
-                        session_id=session_id,
-                        tool_name=tool_name,
-                        tool_call_id=call_id,
-                        error=error_msg,
-                        metadata=metadata,
-                    )
-                )
-                return {"id": call_id, "name": tool_name, "error": error_msg}
+            return {
+                "id": call_id,
+                "name": tool_name,
+                "error": validation_error.message,
+                **failure_fields,
+            }
 
         # 3. Allow/deny gate: policy violations fail before approval/execution.
         if self.policy is not None:

@@ -140,6 +140,18 @@ class ToolCallFailed(BaseEvent):
     tool_name: str
     tool_call_id: str
     error: str
+    error_code: Optional[str] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    error_path: Optional[str] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    retryable: Optional[bool] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    outcome: Optional[Literal["not_started", "failed", "unknown"]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ToolApprovalRequested(BaseEvent):

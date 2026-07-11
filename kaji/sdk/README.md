@@ -82,6 +82,14 @@ asyncio.run(main())
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
 
+Tool schemas use Draft 2020-12 JSON Schema with format checking. Both
+`ToolPlanner` and direct `ToolRegistry.execute()` calls validate before a
+handler can start. `ToolSchemaValidator` is available for hosts that need the
+same validation boundary outside the runtime; invalid definitions raise
+`ToolSchemaValidationError`, and invalid arguments raise
+`ToolArgumentValidationError` with a safe error code, JSON Pointer, and
+message.
+
 ## Event journal contract
 
 `EventJournal` is the stable persistence boundary for runtime events. New

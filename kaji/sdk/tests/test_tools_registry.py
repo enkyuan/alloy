@@ -1,5 +1,5 @@
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from unittest.mock import AsyncMock
 
 from kaji.runtime.tools.registry import (
@@ -36,6 +36,25 @@ def test_tool_spec_from_model_builds_json_schema():
     spec = tool_spec_from_model("search", "Search things", SampleArgs)
     assert spec.name == "search"
     assert "q" in spec.parameters["properties"]
+
+
+def test_tool_spec_from_model_preserves_complete_validation_schema():
+    class NestedArgs(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        values: list[int] = Field(min_length=1, max_length=2)
+
+    class ConstrainedArgs(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
+        nested: NestedArgs
+
+    expected = ConstrainedArgs.model_json_schema(mode="validation")
+    spec = tool_spec_from_model("constrained", "d", ConstrainedArgs)
+
+    assert spec.parameters == expected
+    assert "$defs" in spec.parameters
+    assert spec.parameters["additionalProperties"] is False
 
 
 def test_register_tool_rejects_duplicates():

@@ -8,8 +8,9 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Type
 
 from pydantic import BaseModel
 
-ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
+from kaji.runtime.tools.validation import ToolSchemaValidator
 
+ToolHandler = Callable[["ToolContext", Dict[str, Any]], Awaitable[Dict[str, Any]]]
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -78,12 +79,7 @@ def tool_spec_from_model(
     name: str, description: str, model: Type[BaseModel]
 ) -> ToolSpec:
     """Create a tool spec from a Pydantic model."""
-    schema = model.model_json_schema()
-    parameters = {
-        "type": "object",
-        "properties": schema.get("properties", {}),
-        "required": schema.get("required", []),
-    }
+    parameters = model.model_json_schema(mode="validation")
     return ToolSpec(name=name, description=description, parameters=parameters)
 
 
@@ -118,6 +114,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._specs: Dict[str, ToolSpec] = {}
         self._handlers: Dict[str, ToolHandler] = {}
+        self._validators: Dict[str, tuple[ToolSpec, ToolSchemaValidator]] = {}
 
     def register(self, spec: ToolSpec) -> Callable[[ToolHandler], ToolHandler]:
         """Decorator to register a tool handler on this registry instance."""
@@ -125,8 +122,10 @@ class ToolRegistry:
         def wrapper(func: ToolHandler) -> ToolHandler:
             if spec.name in self._specs:
                 raise ValueError(f"Tool already registered: {spec.name}")
+            validator = ToolSchemaValidator({spec.name: spec})
             self._specs[spec.name] = spec
             self._handlers[spec.name] = func
+            self._validators[spec.name] = (spec, validator)
             return func
 
         return wrapper
@@ -147,9 +146,15 @@ class ToolRegistry:
         db: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Execute a tool registered on this registry instance."""
+        spec = self._specs.get(tool_name)
         handler = self._handlers.get(tool_name)
-        if handler is None:
+        if spec is None or handler is None:
             raise UnknownToolError(tool_name)
+        cached = self._validators.get(tool_name)
+        if cached is None or cached[0] is not spec:
+            cached = (spec, ToolSchemaValidator({tool_name: spec}))
+            self._validators[tool_name] = cached
+        cached[1].validate(tool_name, tool_args)
         ctx = ToolContext(user_id=user_id, db=db)
         return await handler(ctx, tool_args)
 
@@ -157,6 +162,7 @@ class ToolRegistry:
         """Clear this registry. Primarily for tests."""
         self._specs.clear()
         self._handlers.clear()
+        self._validators.clear()
 
 
 # Process-default registry that the module-level functions delegate to.

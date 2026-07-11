@@ -21,7 +21,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Callable, Dict, Optional, Type, Union, get_type_hints
 
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from kaji.runtime.tools.registry import (
     ToolHandler,
@@ -88,7 +88,11 @@ def _model_from_signature(fn: Callable[..., Any], model_name: str) -> Type[BaseM
             )
         default = param.default if param.default is not inspect.Parameter.empty else ...
         fields[name] = (hints[name], Field(default))
-    return create_model(model_name, **fields)
+    return create_model(
+        model_name,
+        __config__=ConfigDict(extra="forbid"),
+        **fields,
+    )
 
 
 def _wrap_handler(fn: Callable[..., Any]) -> ToolHandler:

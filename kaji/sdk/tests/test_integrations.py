@@ -1,7 +1,7 @@
 from typing import Any, List, Tuple
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from kaji.runtime.integrations import Integration, tool
 from kaji.runtime.tools.registry import (
@@ -118,6 +118,8 @@ def test_tool_decorator_accepts_pydantic_model():
     """@tool(parameters=<BaseModel>) converts to JSON Schema at registration."""
 
     class WeatherArgs(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+
         city: str = Field(description="City name")
         units: str = "fahrenheit"
 
@@ -138,6 +140,7 @@ def test_tool_decorator_accepts_pydantic_model():
     assert spec.parameters["type"] == "object"
     assert "city" in spec.parameters["properties"]
     assert spec.parameters["required"] == ["city"]
+    assert spec.parameters == WeatherArgs.model_json_schema(mode="validation")
 
 
 def test_tool_decorator_rejects_missing_parameters():
