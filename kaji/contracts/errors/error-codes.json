@@ -1,4 +1,6 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/errors/error-codes.json",
   "version": "1.0.0",
   "codes": [
     "INVALID_TOOL_SCHEMA",

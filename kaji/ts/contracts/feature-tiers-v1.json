@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/feature-tiers-v1.json",
+  "contractVersion": "1.0.0",
+  "stable": [
+    { "id": "agent-builder", "surface": "Agent builder" },
+    { "id": "runtime-turn-loop", "surface": "Runtime turn loop" },
+    { "id": "cancellation", "surface": "Cancellation" },
+    { "id": "sessions", "surface": "Sessions" },
+    {
+      "id": "in-memory-event-store-journal",
+      "surface": "In-memory event store/journal"
+    },
+    { "id": "event-replay", "surface": "Event replay" },
+    {
+      "id": "tool-registry-planner-policy",
+      "surface": "Tool registry/planner/policy"
+    },
+    { "id": "openai-adapter", "surface": "OpenAI adapter" },
+    { "id": "anthropic-adapter", "surface": "Anthropic adapter" },
+    { "id": "echo-integration", "surface": "Echo integration" }
+  ],
+  "experimental": [
+    {
+      "id": "python-redis-event-history",
+      "surface": "Python-only Redis event/history backends"
+    },
+    { "id": "voice-tts", "surface": "Voice/TTS" },
+    { "id": "rag-retrieval", "surface": "RAG/retrieval" },
+    { "id": "native-gemini-kimi", "surface": "Native Gemini/Kimi" },
+    { "id": "retriever-selection", "surface": "Retriever selection" },
+    {
+      "id": "typescript-http-integration",
+      "surface": "TypeScript HTTP integration"
+    },
+    {
+      "id": "typescript-web-integration",
+      "surface": "TypeScript Web integration"
+    },
+    {
+      "id": "typescript-filesystem-integration",
+      "surface": "TypeScript filesystem integration"
+    },
+    {
+      "id": "typescript-sqlite-integration",
+      "surface": "TypeScript SQLite integration"
+    },
+    {
+      "id": "distributed-session-serialization",
+      "surface": "Distributed same-session serialization"
+    },
+    {
+      "id": "exactly-once-external-side-effects",
+      "surface": "Exactly-once external side effects"
+    },
+    {
+      "id": "unbounded-cross-process-replay",
+      "surface": "Unbounded or cross-process replay"
+    },
+    { "id": "durable-snapshotting", "surface": "Durable snapshotting" }
+  ]
+}

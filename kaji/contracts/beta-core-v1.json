@@ -28,7 +28,6 @@
     "subscriberQueueCapacity": 1024,
     "inMemoryStoreMaxSessions": 1000,
     "inMemoryStoreMaxEventsPerSession": 10000,
-    "maxPayloadBytes": 65536,
     "overflow": "typed_error"
   },
   "integrations": {

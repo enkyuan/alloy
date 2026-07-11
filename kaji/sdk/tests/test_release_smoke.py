@@ -17,6 +17,15 @@ def test_release_smoke_invokes_wheel_verifier_and_install_smoke() -> None:
     assert "PASS: release smoke verified" in script
 
 
+def test_wheel_verifier_compares_all_packaged_contract_bytes() -> None:
+    script = (SDK_ROOT / "scripts" / "verify_wheel.sh").read_text()
+
+    assert "canonical_contracts" in script
+    assert "packaged_contracts" in script
+    assert "wheel contract set mismatch" in script
+    assert "differs from canonical bytes" in script
+
+
 def test_clean_generated_removes_project_caches_without_touching_venv() -> None:
     script = (SDK_ROOT / "scripts" / "clean_generated.sh").read_text()
 

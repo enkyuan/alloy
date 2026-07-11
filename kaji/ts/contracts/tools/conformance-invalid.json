@@ -1,7 +1,9 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "cases": [
     {
       "name": "nested required",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
         "required": ["profile"],
@@ -15,10 +17,13 @@
       },
       "arguments": { "profile": {} },
       "expectedPath": "/profile",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
       "name": "nested additional property",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
         "required": ["profile"],
@@ -32,61 +37,203 @@
       },
       "arguments": { "profile": { "extra": true } },
       "expectedPath": "/profile",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "top-level additional property",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "name": { "type": "string" } }
+      },
+      "arguments": { "name": "kaji", "extra": true },
+      "expectedPath": "/",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "const",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "mode": { "const": "strict" } }
+      },
+      "arguments": { "mode": "relaxed" },
+      "expectedPath": "/mode",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
       "name": "enum",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
-        "required": ["mode"],
         "properties": { "mode": { "enum": ["safe", "strict"] } }
       },
       "arguments": { "mode": "other" },
       "expectedPath": "/mode",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
-      "name": "number bound",
+      "name": "number minimum",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "count": { "type": "integer", "minimum": 1, "maximum": 5 } }
+      },
+      "arguments": { "count": 0 },
+      "expectedPath": "/count",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "number maximum",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
         "properties": { "count": { "type": "integer", "minimum": 1, "maximum": 5 } }
       },
       "arguments": { "count": 6 },
       "expectedPath": "/count",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "string minimum length",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "slug": { "type": "string", "minLength": 3, "maxLength": 8 } }
+      },
+      "arguments": { "slug": "ab" },
+      "expectedPath": "/slug",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "string maximum length",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "slug": { "type": "string", "minLength": 3, "maxLength": 8 } }
+      },
+      "arguments": { "slug": "too-long-slug" },
+      "expectedPath": "/slug",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
       "name": "string pattern",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
         "properties": { "slug": { "type": "string", "pattern": "^[a-z]+$" } }
       },
       "arguments": { "slug": "NOT-valid" },
       "expectedPath": "/slug",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
-      "name": "uri format",
+      "name": "array minimum items",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
-        "properties": { "url": { "type": "string", "format": "uri" } }
+        "properties": { "ids": { "type": "array", "minItems": 1, "maxItems": 2 } }
       },
-      "arguments": { "url": "not a uri" },
-      "expectedPath": "/url",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "arguments": { "ids": [] },
+      "expectedPath": "/ids",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "array maximum items",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "ids": { "type": "array", "minItems": 1, "maxItems": 2 } }
+      },
+      "arguments": { "ids": [1, 2, 3] },
+      "expectedPath": "/ids",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
       "name": "array item",
+      "kind": "invalid_arguments",
       "schema": {
         "type": "object",
         "properties": { "ids": { "type": "array", "items": { "type": "integer" } } }
       },
       "arguments": { "ids": [1, "two"] },
       "expectedPath": "/ids/1",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "email format",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "email": { "type": "string", "format": "email" } }
+      },
+      "arguments": { "email": "not-an-email" },
+      "expectedPath": "/email",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "uri format",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "format": "uri" } }
+      },
+      "arguments": { "url": "not a uri" },
+      "expectedPath": "/url",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "union branches",
+      "kind": "invalid_arguments",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "integer", "minimum": 1 }
+            ]
+          }
+        }
+      },
+      "arguments": { "target": false },
+      "expectedPath": "/target",
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
     },
     {
       "name": "local reference",
+      "kind": "invalid_arguments",
       "schema": {
         "$defs": { "positive": { "type": "integer", "minimum": 1 } },
         "type": "object",
@@ -94,7 +241,29 @@
       },
       "arguments": { "value": 0 },
       "expectedPath": "/value",
-      "expectedCode": "INVALID_TOOL_ARGUMENTS"
+      "expectedCode": "INVALID_TOOL_ARGUMENTS",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "invalid type declaration",
+      "kind": "invalid_schema",
+      "schema": { "type": "not-a-json-schema-type" },
+      "arguments": {},
+      "expectedPath": "/type",
+      "expectedCode": "INVALID_TOOL_SCHEMA",
+      "retryable": false,
+      "outcome": "not_started"
+    },
+    {
+      "name": "invalid required declaration",
+      "kind": "invalid_schema",
+      "schema": { "type": "object", "required": "name" },
+      "arguments": {},
+      "expectedPath": "/required",
+      "expectedCode": "INVALID_TOOL_SCHEMA",
+      "retryable": false,
+      "outcome": "not_started"
     }
   ]
 }

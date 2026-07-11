@@ -5,26 +5,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import sys
 from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import SchemaError, ValidationError
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
+DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
+REQUIRED_JSON = {
+    "beta-core-v1.json",
+    "feature-tiers-v1.json",
+    "errors/error-codes.json",
+    "events/conformance.json",
+    "events/new-kaji-event-v1.schema.json",
+    "events/stored-kaji-event-v1.schema.json",
+    "tools/conformance-invalid.json",
+    "tools/conformance-valid.json",
+    "tools/tool-schema-v1.schema.json",
+}
 
 
 class ContractError(RuntimeError):
     pass
-
-
-def load_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ContractError(f"{path}: /: {exc}") from exc
 
 
 def pointer(parts: Any) -> str:
@@ -32,114 +40,307 @@ def pointer(parts: Any) -> str:
     return "/" + "/".join(encoded) if encoded else "/"
 
 
-def validate_schema(path: Path) -> dict[str, Any]:
-    schema = load_json(path)
+def fail(path: Path, location: str, message: str) -> ContractError:
+    return ContractError(f"{path}: {location}: {message}")
+
+
+def load_json(path: Path) -> dict[str, Any]:
     try:
-        Draft202012Validator.check_schema(schema)
-    except Exception as exc:
-        raise ContractError(f"{path}: /: invalid Draft 2020-12 schema: {exc}") from exc
-    return schema
+        document = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise fail(path, "/", str(exc)) from exc
+    if not isinstance(document, dict):
+        raise fail(path, "/", "expected a JSON object")
+    return document
 
 
-def validate_instance(path: Path, schema: dict[str, Any], instance: Any) -> None:
-    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+def first_error(
+    validator: Draft202012Validator, instance: Any
+) -> ValidationError | None:
     errors = sorted(
         validator.iter_errors(instance),
         key=lambda error: (list(error.absolute_path), list(error.absolute_schema_path)),
     )
-    if errors:
-        error = errors[0]
-        raise ContractError(f"{path}: {pointer(error.absolute_path)}: {error.message}")
+    return errors[0] if errors else None
 
 
-def check_contracts() -> None:
-    beta = load_json(CONTRACTS / "beta-core-v1.json")
-    if beta.get("contractVersion") != "1.0.0":
-        raise ContractError(
-            f"{CONTRACTS / 'beta-core-v1.json'}: /contractVersion: expected 1.0.0"
-        )
+def check_schema(schema: Any) -> SchemaError | None:
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        return exc
+    return None
 
-    new_schema = validate_schema(CONTRACTS / "events" / "new-kaji-event-v1.schema.json")
-    stored_schema = validate_schema(
-        CONTRACTS / "events" / "stored-kaji-event-v1.schema.json"
+
+def load_contract_documents() -> dict[str, dict[str, Any]]:
+    paths = sorted(CONTRACTS.rglob("*.json"))
+    relative_paths = {path.relative_to(CONTRACTS).as_posix() for path in paths}
+    missing = sorted(REQUIRED_JSON - relative_paths)
+    if missing:
+        raise fail(CONTRACTS, "/", f"missing canonical JSON: {', '.join(missing)}")
+
+    documents: dict[str, dict[str, Any]] = {}
+    schema_ids: dict[str, Path] = {}
+    for path in paths:
+        relative = path.relative_to(CONTRACTS).as_posix()
+        document = load_json(path)
+        if document.get("$schema") != DRAFT_2020_12:
+            raise fail(path, "/$schema", f"expected {DRAFT_2020_12!r}")
+        error = check_schema(document)
+        if error is not None:
+            raise fail(path, pointer(error.absolute_path), error.message)
+        if path.name.endswith(".schema.json"):
+            schema_id = document.get("$id")
+            if not isinstance(schema_id, str) or not schema_id:
+                raise fail(path, "/$id", "schema document requires a non-empty $id")
+            if schema_id in schema_ids:
+                raise fail(
+                    path,
+                    "/$id",
+                    f"duplicate schema id also used by {schema_ids[schema_id]}",
+                )
+            schema_ids[schema_id] = path
+        documents[relative] = document
+    return documents
+
+
+def validate_instance(
+    path: Path, location: str, schema: dict[str, Any], value: Any
+) -> None:
+    error = first_error(
+        Draft202012Validator(schema, format_checker=FormatChecker()), value
     )
-    validate_schema(CONTRACTS / "tools" / "tool-schema-v1.schema.json")
+    if error is not None:
+        suffix = pointer(error.absolute_path)
+        joined = location.rstrip("/") + (suffix if suffix != "/" else "")
+        raise fail(path, joined or "/", error.message)
 
-    event_fixture_path = CONTRACTS / "events" / "conformance.json"
-    event_fixture = load_json(event_fixture_path)
-    events = event_fixture.get("events")
+
+def error_codes(documents: dict[str, dict[str, Any]]) -> set[str]:
+    path = CONTRACTS / "errors" / "error-codes.json"
+    codes = documents["errors/error-codes.json"].get("codes")
+    if (
+        not isinstance(codes, list)
+        or not codes
+        or not all(isinstance(code, str) for code in codes)
+    ):
+        raise fail(path, "/codes", "expected a non-empty array of strings")
+    if len(codes) != len(set(codes)):
+        raise fail(path, "/codes", "error codes must be unique")
+    return set(codes)
+
+
+def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
+    path = CONTRACTS / "events" / "conformance.json"
+    events = documents["events/conformance.json"].get("events")
     if not isinstance(events, list) or not events:
-        raise ContractError(
-            f"{event_fixture_path}: /events: expected a non-empty array"
-        )
+        raise fail(path, "/events", "expected a non-empty array")
 
+    new_schema = documents["events/new-kaji-event-v1.schema.json"]
+    stored_schema = documents["events/stored-kaji-event-v1.schema.json"]
+    new_validator = Draft202012Validator(new_schema, format_checker=FormatChecker())
+    stored_validator = Draft202012Validator(
+        stored_schema, format_checker=FormatChecker()
+    )
     ids: set[str] = set()
     sequences: dict[str, set[int]] = {}
-    error_codes = set(
-        load_json(CONTRACTS / "errors" / "error-codes.json").get("codes", [])
-    )
     for index, event in enumerate(events):
-        validate_instance(event_fixture_path, stored_schema, event)
+        location = f"/events/{index}"
+        error = first_error(stored_validator, event)
+        if error is not None:
+            raise fail(path, location + pointer(error.absolute_path), error.message)
         event_id = event["id"]
         if event_id in ids:
-            raise ContractError(
-                f"{event_fixture_path}: /events/{index}/id: duplicate event id"
-            )
+            raise fail(path, f"{location}/id", "duplicate event id")
         ids.add(event_id)
-        session_sequences = sequences.setdefault(event["session_id"], set())
-        sequence = event["sequence"]
-        if sequence in session_sequences:
-            raise ContractError(
-                f"{event_fixture_path}: /events/{index}/sequence: duplicate sequence"
+        seen = sequences.setdefault(event["session_id"], set())
+        if event["sequence"] in seen:
+            raise fail(path, f"{location}/sequence", "duplicate session sequence")
+        seen.add(event["sequence"])
+
+        draft = dict(event)
+        draft.pop("sequence")
+        validate_instance(path, location, new_schema, draft)
+        if first_error(new_validator, event) is None:
+            raise fail(
+                path, f"{location}/sequence", "new-event schema must reject sequence"
             )
-        session_sequences.add(sequence)
+        if first_error(stored_validator, draft) is None:
+            raise fail(path, location, "stored-event schema must require sequence")
+
         code = event.get("error_code")
-        if code is not None and code not in error_codes:
-            raise ContractError(
-                f"{event_fixture_path}: /events/{index}/error_code: unknown code {code!r}"
+        if code is not None and code not in codes:
+            raise fail(path, f"{location}/error_code", f"unknown code {code!r}")
+        if event.get("type") == "tool.call.failed":
+            if not isinstance(event.get("retryable"), bool):
+                raise fail(path, f"{location}/retryable", "expected a boolean")
+            if event.get("outcome") not in {"not_started", "failed", "unknown"}:
+                raise fail(path, f"{location}/outcome", "unknown tool outcome")
+
+
+def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
+    valid_path = CONTRACTS / "tools" / "conformance-valid.json"
+    valid_cases = documents["tools/conformance-valid.json"].get("cases")
+    if not isinstance(valid_cases, list) or not valid_cases:
+        raise fail(valid_path, "/cases", "expected a non-empty array")
+    for index, case in enumerate(valid_cases):
+        schema = case.get("schema")
+        schema_error = check_schema(schema)
+        if schema_error is not None:
+            raise fail(
+                valid_path,
+                f"/cases/{index}/schema{pointer(schema_error.absolute_path)}",
+                schema_error.message,
             )
-
-    draft = dict(events[0])
-    draft.pop("sequence")
-    validate_instance(event_fixture_path, new_schema, draft)
-
-    for filename, should_pass in (
-        ("conformance-valid.json", True),
-        ("conformance-invalid.json", False),
-    ):
-        fixture_path = CONTRACTS / "tools" / filename
-        fixture = load_json(fixture_path)
-        for index, case in enumerate(fixture.get("cases", [])):
-            schema = case.get("schema")
-            try:
-                Draft202012Validator.check_schema(schema)
-            except Exception as exc:
-                raise ContractError(
-                    f"{fixture_path}: /cases/{index}/schema: {exc}"
-                ) from exc
-            valid = not list(
-                Draft202012Validator(
-                    schema, format_checker=FormatChecker()
-                ).iter_errors(case.get("arguments"))
-            )
-            if valid is not should_pass:
-                expectation = "pass" if should_pass else "fail"
-                raise ContractError(
-                    f"{fixture_path}: /cases/{index}: expected arguments to {expectation} validation"
-                )
-
-
-def check_release_matrix() -> None:
-    text = RELEASE_MATRIX.read_text()
-    required = {
-        "<!-- beta-stable: echo -->",
-        "<!-- beta-experimental: http,web,fs,sqlite -->",
-    }
-    missing = sorted(required.difference(text.splitlines()))
-    if missing:
-        raise ContractError(
-            f"{RELEASE_MATRIX}: /: missing markers: {', '.join(missing)}"
+        error = first_error(
+            Draft202012Validator(schema, format_checker=FormatChecker()),
+            case.get("arguments"),
         )
+        if error is not None:
+            raise fail(
+                valid_path,
+                f"/cases/{index}/arguments{pointer(error.absolute_path)}",
+                error.message,
+            )
+
+    invalid_path = CONTRACTS / "tools" / "conformance-invalid.json"
+    invalid_cases = documents["tools/conformance-invalid.json"].get("cases")
+    if not isinstance(invalid_cases, list) or not invalid_cases:
+        raise fail(invalid_path, "/cases", "expected a non-empty array")
+    for index, case in enumerate(invalid_cases):
+        base = f"/cases/{index}"
+        expected_code = case.get("expectedCode")
+        if expected_code not in codes:
+            raise fail(
+                invalid_path, f"{base}/expectedCode", f"unknown code {expected_code!r}"
+            )
+        if not isinstance(case.get("retryable"), bool):
+            raise fail(invalid_path, f"{base}/retryable", "expected a boolean")
+        if case.get("outcome") not in {"not_started", "failed", "unknown"}:
+            raise fail(invalid_path, f"{base}/outcome", "unknown tool outcome")
+
+        kind = case.get("kind")
+        schema_error = check_schema(case.get("schema"))
+        if kind == "invalid_schema":
+            if expected_code != "INVALID_TOOL_SCHEMA":
+                raise fail(
+                    invalid_path,
+                    f"{base}/expectedCode",
+                    "invalid schemas require INVALID_TOOL_SCHEMA",
+                )
+            if schema_error is None:
+                raise fail(invalid_path, f"{base}/schema", "expected an invalid schema")
+            actual_path = pointer(schema_error.absolute_path)
+        elif kind == "invalid_arguments":
+            if expected_code != "INVALID_TOOL_ARGUMENTS":
+                raise fail(
+                    invalid_path,
+                    f"{base}/expectedCode",
+                    "invalid arguments require INVALID_TOOL_ARGUMENTS",
+                )
+            if schema_error is not None:
+                raise fail(
+                    invalid_path,
+                    f"{base}/schema{pointer(schema_error.absolute_path)}",
+                    schema_error.message,
+                )
+            error = first_error(
+                Draft202012Validator(case["schema"], format_checker=FormatChecker()),
+                case.get("arguments"),
+            )
+            if error is None:
+                raise fail(
+                    invalid_path,
+                    f"{base}/arguments",
+                    "expected arguments to fail validation",
+                )
+            actual_path = pointer(error.absolute_path)
+        else:
+            raise fail(
+                invalid_path,
+                f"{base}/kind",
+                "expected invalid_schema or invalid_arguments",
+            )
+
+        if case.get("expectedPath") != actual_path:
+            raise fail(
+                invalid_path,
+                f"{base}/expectedPath",
+                f"expected {case.get('expectedPath')!r}, normalized first error is {actual_path!r}",
+            )
+
+
+def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
+    path = CONTRACTS / "feature-tiers-v1.json"
+    result: dict[str, set[str]] = {}
+    all_ids: set[str] = set()
+    for tier in ("stable", "experimental"):
+        entries = document.get(tier)
+        if not isinstance(entries, list) or not entries:
+            raise fail(path, f"/{tier}", "expected a non-empty array")
+        ids: set[str] = set()
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise fail(path, f"/{tier}/{index}", "expected an object")
+            feature_id = entry.get("id")
+            if not isinstance(feature_id, str) or not feature_id:
+                raise fail(path, f"/{tier}/{index}/id", "expected a non-empty string")
+            if feature_id in all_ids:
+                raise fail(path, f"/{tier}/{index}/id", "duplicate feature id")
+            if not isinstance(entry.get("surface"), str) or not entry["surface"]:
+                raise fail(
+                    path, f"/{tier}/{index}/surface", "expected a non-empty string"
+                )
+            ids.add(feature_id)
+            all_ids.add(feature_id)
+        result[tier] = ids
+    return result
+
+
+def check_release_matrix(features: dict[str, Any]) -> None:
+    try:
+        text = RELEASE_MATRIX.read_text()
+    except OSError as exc:
+        raise fail(RELEASE_MATRIX, "/", str(exc)) from exc
+    expected = feature_sets(features)
+    matches = re.findall(r"<!-- beta-(stable|experimental):\s*([^>]*) -->", text)
+    found: dict[str, set[str]] = {}
+    for tier, values in matches:
+        if tier in found:
+            raise fail(RELEASE_MATRIX, f"/#beta-{tier}", "duplicate feature marker")
+        found[tier] = {value.strip() for value in values.split(",") if value.strip()}
+    for tier in ("stable", "experimental"):
+        if tier not in found:
+            raise fail(RELEASE_MATRIX, f"/#beta-{tier}", "missing feature marker")
+        if found[tier] != expected[tier]:
+            missing = sorted(expected[tier] - found[tier])
+            extra = sorted(found[tier] - expected[tier])
+            raise fail(
+                RELEASE_MATRIX,
+                f"/#beta-{tier}",
+                f"marker mismatch; missing={missing}, extra={extra}",
+            )
+
+    stable_section = text.split("## Stable Core", 1)[1].split("\n## ", 1)[0]
+    for index, entry in enumerate(features["stable"]):
+        row = f"| {entry['surface']} | Stable core | Stable core |"
+        if row not in stable_section:
+            raise fail(
+                RELEASE_MATRIX,
+                f"/stable/{index}",
+                f"missing stable row for {entry['surface']!r}",
+            )
+
+
+def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
+    documents = load_contract_documents()
+    beta_path = CONTRACTS / "beta-core-v1.json"
+    if documents["beta-core-v1.json"].get("contractVersion") != "1.0.0":
+        raise fail(beta_path, "/contractVersion", "expected 1.0.0")
+    codes = error_codes(documents)
+    check_events(documents, codes)
+    check_tools(documents, codes)
+    return documents, feature_sets(documents["feature-tiers-v1.json"])
 
 
 def main() -> int:
@@ -147,11 +348,11 @@ def main() -> int:
     parser.add_argument("--contracts-only", action="store_true")
     args = parser.parse_args()
     try:
-        check_contracts()
+        documents, _ = check_contracts()
         if not args.contracts_only:
-            check_release_matrix()
+            check_release_matrix(documents["feature-tiers-v1.json"])
     except ContractError as exc:
-        print(f"FAIL: {exc}")
+        print(f"FAIL: {exc}", file=sys.stderr)
         return 1
     print("OK: beta contracts are valid")
     return 0

@@ -8,22 +8,25 @@ It does not mean every Python-only modality or infrastructure adapter is beta-re
 
 ## Stable Core
 
-<!-- beta-stable: echo -->
+<!-- beta-stable: agent-builder,runtime-turn-loop,cancellation,sessions,in-memory-event-store-journal,event-replay,tool-registry-planner-policy,openai-adapter,anthropic-adapter,echo-integration -->
 
 | Surface | Python | TypeScript | Release gate |
 | --- | --- | --- | --- |
-| AgentBuilder | Stable core | Stable core | unit tests |
-| AgentRuntime turn loop | Stable core | Stable core | unit tests + live OpenAI tool loop |
-| ToolRegistry and ToolPlanner | Stable core | Stable core | unit tests + echo integration |
-| Session replay | Stable core | Stable core | replay tests |
-| OpenAI provider | Stable core | Stable core | unit tests + live OpenAI tool loop |
-| Anthropic provider | Stable core | Stable core | unit tests + live smoke when keyed |
-| In-memory event bus/store | Stable core | Stable core | bus/store tests |
+| Agent builder | Stable core | Stable core | unit tests |
+| Runtime turn loop | Stable core | Stable core | unit tests + live OpenAI tool loop |
+| Cancellation | Stable core | Stable core | cancellation lifecycle tests |
+| Sessions | Stable core | Stable core | session isolation tests |
+| In-memory event store/journal | Stable core | Stable core | journal/store tests |
+| Event replay | Stable core | Stable core | replay tests |
+| Tool registry/planner/policy | Stable core | Stable core | unit tests + echo integration |
+| OpenAI adapter | Stable core | Stable core | unit tests + live OpenAI tool loop |
+| Anthropic adapter | Stable core | Stable core | unit tests + live smoke when keyed |
+| Echo integration | Stable core | Stable core | integration tests |
 
 The echo integration is the only catalog entry inside the first beta promise.
 HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
 
-<!-- beta-experimental: http,web,fs,sqlite -->
+<!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,retriever-selection,typescript-http-integration,typescript-web-integration,typescript-filesystem-integration,typescript-sqlite-integration,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 
 ## Experimental Python-Only
 
@@ -31,9 +34,22 @@ HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
 | --- | --- | --- |
 | Redis realtime/history | Experimental Python-only | present, but not a beta release gate |
 | voice/TTS | Experimental Python-only | provider adapters exist, placeholder TTS remains valid for unconfigured use |
-| DocumentRAG | Experimental Python-only | useful primitives, not cross-SDK parity |
+| RAG/retrieval (DocumentRAG) | Experimental Python-only | useful primitives, not cross-SDK parity |
 | native Gemini/Kimi | Experimental Python-only | not part of first live readiness gate |
-| tool retrieval | Experimental Python-only | not part of first live readiness gate |
+| Retriever selection (tool retrieval) | Experimental Python-only | not part of first live readiness gate |
+
+## Other Experimental or Deferred Surfaces
+
+| Surface | Status | Why |
+| --- | --- | --- |
+| TypeScript HTTP integration | Experimental | requires a bound transport |
+| TypeScript Web integration | Experimental | requires a bound transport |
+| TypeScript filesystem integration | Experimental | excluded from the first beta promise |
+| TypeScript SQLite integration | Experimental | excluded from the first beta promise |
+| Distributed same-session serialization | Deferred | the beta coordinator is process-local |
+| Exactly-once external side effects | Deferred | external systems must honor idempotency |
+| Unbounded or cross-process replay | Deferred | beta replay is capacity-limited |
+| Durable snapshotting | Deferred | promoted with a durable storage backend |
 
 ## TypeScript Not Ported
 

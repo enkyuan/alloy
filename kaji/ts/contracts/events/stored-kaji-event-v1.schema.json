@@ -7,8 +7,8 @@
   "properties": {
     "id": { "type": "string", "format": "uuid" },
     "type": { "type": "string", "minLength": 1 },
-    "version": { "type": "integer", "minimum": 1 },
-    "timestamp": { "type": "string", "format": "date-time" },
+    "version": { "const": "1.0" },
+    "timestamp": { "type": "number" },
     "session_id": { "type": "string", "minLength": 1 },
     "turn_id": { "type": "string", "minLength": 1 },
     "sequence": { "type": "integer", "minimum": 1 },

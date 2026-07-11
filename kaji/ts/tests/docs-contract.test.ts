@@ -50,4 +50,28 @@ describe("cross-SDK release matrix docs", () => {
     expect(mvp).not.toContain("Catalog contract still open");
     expect(mvp).not.toContain("no shared manifest/auth/credential shape");
   });
+
+  it("matches the machine-readable beta feature tiers exactly", () => {
+    const tiers = JSON.parse(read("kaji/contracts/feature-tiers-v1.json")) as Record<
+      "stable" | "experimental",
+      Array<{ id: string; surface: string }>
+    >;
+    const matrix = read("kaji/RELEASE_MATRIX.md");
+
+    for (const tier of ["stable", "experimental"] as const) {
+      const marker = matrix.match(new RegExp(`<!-- beta-${tier}:\\s*([^>]*) -->`));
+      expect(marker).not.toBeNull();
+      const actual = (marker?.[1] ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .sort();
+      expect(actual).toEqual(tiers[tier].map(({ id }) => id).sort());
+    }
+
+    const stableSection = matrix.split("## Stable Core", 2)[1]?.split("\n## ", 1)[0] ?? "";
+    for (const { surface } of tiers.stable) {
+      expect(stableSection).toContain(`| ${surface} | Stable core | Stable core |`);
+    }
+  });
 });

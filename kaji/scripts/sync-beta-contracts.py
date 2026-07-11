@@ -24,9 +24,22 @@ def contract_files() -> list[Path]:
     )
 
 
+def packaged_contract_files(target: Path) -> set[Path]:
+    if not target.exists():
+        return set()
+    return {
+        path.relative_to(target)
+        for path in target.rglob("*")
+        if path.is_file() and path.suffix in {".json", ".md"}
+    }
+
+
 def write() -> None:
+    expected = set(contract_files())
     for target in TARGETS:
-        for relative in contract_files():
+        for relative in packaged_contract_files(target) - expected:
+            (target / relative).unlink()
+        for relative in expected:
             destination = target / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(SOURCE / relative, destination)
@@ -34,13 +47,17 @@ def write() -> None:
 
 def check() -> list[str]:
     errors: list[str] = []
+    expected = set(contract_files())
     for target in TARGETS:
-        for relative in contract_files():
+        actual = packaged_contract_files(target)
+        for relative in sorted(expected - actual):
+            errors.append(f"missing: {target / relative}")
+        for relative in sorted(actual - expected):
+            errors.append(f"unexpected: {target / relative}")
+        for relative in sorted(expected & actual):
             source = SOURCE / relative
             destination = target / relative
-            if not destination.exists():
-                errors.append(f"missing: {destination}")
-            elif destination.read_bytes() != source.read_bytes():
+            if destination.read_bytes() != source.read_bytes():
                 errors.append(f"out of sync: {destination}")
     return errors
 

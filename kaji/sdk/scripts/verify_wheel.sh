@@ -11,6 +11,9 @@ fi
 
 echo "Inspecting $WHEEL"
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+CONTRACTS_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../../contracts" && pwd)
+
 # Capture listing once to avoid SIGPIPE from grep -q under pipefail on macOS.
 LISTING=$(unzip -l "$WHEEL")
 
@@ -26,7 +29,7 @@ echo "$LISTING" | grep -q 'kaji/py.typed' \
 # The registry may not contain every historical file type. The contract that
 # matters for users is that `kaji add <name>` can copy each manifest file.
 PYTHON_BIN="${PYTHON:-python3}"
-WHEEL="$WHEEL" "$PYTHON_BIN" - <<'PY'
+WHEEL="$WHEEL" CONTRACTS_DIR="$CONTRACTS_DIR" "$PYTHON_BIN" - <<'PY'
 from __future__ import annotations
 
 import json
@@ -34,17 +37,18 @@ import os
 import posixpath
 import sys
 import zipfile
+from pathlib import Path
 
 wheel = os.environ["WHEEL"]
+contracts_dir = Path(os.environ["CONTRACTS_DIR"])
 registry_root = "kaji/integrations/registry"
 
 
 def fail(message: str) -> None:
     print(f"FAIL: {message}", file=sys.stderr)
     print(
-        "      setuptools package-data is misconfigured (see "
-        "[tool.setuptools.package-data] in pyproject.toml). "
-        "install_integration() will break for end users.",
+        "      The built wheel does not match its canonical runtime artifacts. "
+        "Check [tool.setuptools.package-data] and the contract sync step.",
         file=sys.stderr,
     )
     raise SystemExit(1)
@@ -92,6 +96,27 @@ with zipfile.ZipFile(wheel) as zf:
         if path not in names:
             fail(f"{path} missing from wheel")
         print(f"  ok: {path}")
+
+    canonical_contracts = {
+        path.relative_to(contracts_dir).as_posix(): path.read_bytes()
+        for path in contracts_dir.rglob("*")
+        if path.is_file() and path.suffix in {".json", ".md"}
+    }
+    packaged_contracts = {
+        path.removeprefix("kaji/contracts/")
+        for path in names
+        if path.startswith("kaji/contracts/") and Path(path).suffix in {".json", ".md"}
+    }
+    expected_contracts = set(canonical_contracts)
+    if packaged_contracts != expected_contracts:
+        missing = sorted(expected_contracts - packaged_contracts)
+        extra = sorted(packaged_contracts - expected_contracts)
+        fail(f"wheel contract set mismatch; missing={missing}, extra={extra}")
+    for relative, expected in sorted(canonical_contracts.items()):
+        packaged = zf.read(f"kaji/contracts/{relative}")
+        if packaged != expected:
+            fail(f"kaji/contracts/{relative} differs from canonical bytes")
+        print(f"  ok: contract {relative}")
 
     index = json.loads(zf.read(index_path))
     integrations = index.get("integrations") or {}
