@@ -4,12 +4,11 @@
 
 Kaji is in pre-beta release implementation. Promotion is blocked pending
 same-commit protected release evidence: floor/latest runtime matrices, the
-required keyed OpenAI proof, full benchmarks, a 30-minute soak, a real signed
-tag, provenance,
-and publication verification. The stable core agent loop must work in both
-Python and TypeScript with one real OpenAI model and one real model-requested
-tool call. It does not mean every Python-only modality or infrastructure
-adapter is beta-ready.
+required keyed OpenAI and Anthropic proofs, full benchmarks, a 30-minute soak,
+a real signed tag, provenance, and publication verification. Both declared
+stable provider adapters must complete a real model-requested tool loop in
+Python and TypeScript on that exact release commit. It does not mean every
+Python-only modality or infrastructure adapter is beta-ready.
 
 The exact runtime defaults and operating boundaries are documented in
 [`docs/kaji/production-beta.md`](../docs/kaji/production-beta.md). This matrix
@@ -23,14 +22,14 @@ is checked against the machine feature contract and both registry indexes by
 | Surface | Python | TypeScript | Release gate |
 | --- | --- | --- | --- |
 | Agent builder | Stable core | Stable core | unit tests |
-| Runtime turn loop | Stable core | Stable core | unit tests + live OpenAI tool loop |
+| Runtime turn loop | Stable core | Stable core | unit tests + mandatory live OpenAI and Anthropic tool loops |
 | Cancellation | Stable core | Stable core | cancellation lifecycle tests |
 | Sessions | Stable core | Stable core | session isolation tests |
 | In-memory event store/journal | Stable core | Stable core | journal/store tests |
 | Event replay | Stable core | Stable core | replay tests |
 | Tool registry/planner/policy | Stable core | Stable core | unit tests + echo integration |
-| OpenAI adapter | Stable core | Stable core | unit tests + live OpenAI tool loop |
-| Anthropic adapter | Stable core | Stable core | unit tests + live smoke when keyed |
+| OpenAI adapter | Stable core | Stable core | unit tests + mandatory live tool loop in both SDKs |
+| Anthropic adapter | Stable core | Stable core | unit tests + mandatory live tool loop in both SDKs |
 | Echo integration | Stable core | Stable core | integration tests |
 
 The echo integration is the only catalog entry inside the first beta promise.
@@ -101,10 +100,11 @@ Use the root wrapper as the default local gate before a beta checkpoint:
 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
 ```
 
-The wrapper runs all non-keyed checks below, fails clearly when required local
-tooling such as `bun` or `uv` is missing, and does not spend provider credits by
-default. To include the keyed OpenAI live proof in the same run, set
-`KAJI_RUN_KEYED_LIVE=1` with `OPENAI_API_KEY`.
+The wrapper runs the non-keyed local checks below and fails clearly when
+required local tooling such as `bun` or `uv` is missing. This is an offline
+rehearsal, not provider-readiness evidence. The protected `kaji-beta` workflow
+requires OpenAI and Anthropic credentials and completes both provider tool
+loops in both SDKs; a missing credential blocks the release.
 
 The pinned ast-grep step is mandatory. It guards the Python SDK/service
 boundary, core package dependency direction, legacy tool-model imports,
@@ -120,11 +120,12 @@ TypeScript optional provider imports, and cancellation error shape.
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
 | Full benchmark | `run_beta_benchmarks.py --full` on the pinned runner | Yes | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30` on the pinned runner | Yes | Pending protected run |
-| Keyed OpenAI live proof | `live_provider_proof.py` in `kaji-beta` | Yes; keyed OpenAI, conditional Anthropic | Pending protected run |
+| Keyed OpenAI + Anthropic proof | `live_provider_proof.py` in `kaji-beta` | Yes; both providers in Python and TypeScript, missing key blocks | Pending protected run |
+| Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh users across macOS/Linux and Python/npm/Bun | Unmeasured |
 | Immutable signed tag | `kaji.beta-publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
 | Registry publication proof | protected PyPI/npm jobs plus byte verification | Yes | Pending approval/publication |
 
-No-key provider hygiene proves only that missing credentials skip or fail as
-requested. It is not provider-readiness evidence. Every protected row must come
+No-key provider hygiene proves only that missing credentials fail safely. It is
+not provider-readiness evidence. Every protected row must come
 from the exact release commit; a prior run cannot be substituted.

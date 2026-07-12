@@ -1,9 +1,12 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
+import runpy
 import shutil
 from typing import Any
 
+import kaji
 import pytest
 
 
@@ -53,7 +56,7 @@ def test_release_matrix_preserves_cross_sdk_contract() -> None:
         "Redis realtime/history",
         "voice/TTS",
         "DocumentRAG",
-        "Keyed OpenAI live proof",
+        "Keyed OpenAI + Anthropic proof",
         "gpt-5.4-mini",
     ]:
         assert phrase in combined
@@ -93,6 +96,26 @@ def test_release_matrix_matches_machine_readable_feature_tiers() -> None:
     stable_section = matrix.split("## Stable Core", 1)[1].split("\n## ", 1)[0]
     for entry in tiers["stable"]:
         assert f"| {entry['surface']} | Stable core | Stable core |" in stable_section
+
+
+def test_python_public_exports_have_one_tier_and_exact_generated_docs() -> None:
+    contract = json.loads(FEATURE_TIERS.read_text())
+    tiers = contract["publicExports"]["python"]
+    classified = [value for values in tiers.values() for value in values]
+
+    assert len(classified) == len(set(classified))
+    assert set(classified) == set(kaji.__all__)
+
+    checker = runpy.run_path(str(CONTRACT_CHECKER), run_name="export_fragment_test")
+    docs = (REPO_ROOT / "docs" / "kaji" / "api-parity.md").read_text()
+    marker = re.search(
+        r"<!-- public-exports:python:start -->\n(.*?)\n"
+        r"<!-- public-exports:python:end -->",
+        docs,
+        re.DOTALL,
+    )
+    assert marker is not None
+    assert marker.group(1) == checker["render_public_exports_fragment"]("python", tiers)
 
 
 def test_release_matrix_matches_registry_stability() -> None:

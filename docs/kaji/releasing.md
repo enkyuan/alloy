@@ -10,8 +10,9 @@ advance to provider proof; registry authorization remains separate.
 
 The two protected environments have intentionally different authority:
 
-- `kaji-beta` permits the keyed OpenAI proof and optional Anthropic proof. It
-  has provider secrets but no registry publisher authority.
+- `kaji-beta` permits mandatory keyed OpenAI and Anthropic proof in Python and
+  TypeScript. Missing either credential blocks release. It has provider
+  secrets but no registry publisher authority.
 - `kaji-beta-publish` permits PyPI trusted publishing and npm publication. Its
   required reviewers approve registry writes only after all preceding evidence
   is green. It must not contain provider keys.
@@ -62,10 +63,9 @@ later run is not acceptable evidence.
    ```
 
 3. Approve `kaji-beta` only after offline, compatibility, and benchmark/soak
-   jobs pass. `OPENAI_API_KEY` is required and missing it is a hard failure.
-   `ANTHROPIC_API_KEY` is conditional: when configured, its normalized
-   tool-call proof must pass; otherwise evidence records
-   `anthropic=not_configured` and does not claim Anthropic readiness.
+   jobs pass. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both required; each
+   must complete a normalized tool loop in Python and TypeScript. Missing-key
+   hygiene is not release evidence.
 4. Review the exact manifest, checksums, offline summary, provider status,
    benchmark, soak, SBOM, and provenance evidence. The first
    `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
@@ -83,7 +83,8 @@ later run is not acceptable evidence.
    report success it polls at most eight times with delays capped at 20 seconds
    (a 90-second total backoff window), compares PyPI's exact filename/size/
    SHA-256 metadata to the manifest, downloads and hashes the npm tarball, and
-   verifies npm integrity metadata. Only byte-exact convergence is `complete`.
+   verifies npm integrity metadata. Only byte-exact convergence is
+   `byte_verified`; `both_published` is not a success terminal.
    It attaches the
    exact wheel, sdist, npm tarball, manifest, checksums, offline test evidence,
    provider/performance evidence, SPDX SBOM, provenance bundle, attestation ID
@@ -139,7 +140,7 @@ is failure. Therefore:
   the old tag, resume the old workflow, or attach rebuilt files to its release.
 
 There is one narrow rerun exception. When both original publisher jobs
-succeeded, `kaji-publication-status/publication-status.json` says `complete`,
+succeeded, `kaji-publication-status/publication-status.json` says `byte_verified`,
 the registry-byte verification is retained, and the only failed job is
 `release-evidence`, do not republish. In the Actions UI choose **Re-run jobs →
 Re-run failed jobs**, or run:
@@ -155,3 +156,19 @@ path: it rejects unexpected or duplicate remote assets, checks every existing
 asset digest, uploads only missing assets, and requires the final remote asset-
 name set to equal the desired set. Never delete, overwrite, or auto-replace a
 mismatch.
+
+## Human TTHW evidence
+
+Validate one retained evidence document with
+`kaji/scripts/validate_tthw_evidence.py`. It must bind one 40-hex commit and
+release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
+versions, and SHA-256 values; automated Python/npm/Bun cold/warm timings; and
+exactly five distinct pseudonymous fresh-user runs across macOS/Linux and
+Python/npm/Bun. Until that real cohort exists, TTHW is **unmeasured**.
+
+The validator recomputes median and maximum totals. No-key median must be under
+5 minutes and every run under 10; Echo median must be under 10 minutes and
+every run under 20. Retain clean/no-source attestations, toolchain versions,
+ordered step milliseconds, deterministic lifecycle assertions, redacted
+confusion/remediation, owner, review date, and follow-up date. Repeat the
+protocol 30 days after publication.

@@ -258,6 +258,7 @@ def validate_core_metadata(data: bytes, label: str) -> None:
         "Summary",
         "Author-email",
         "License",
+        "Project-URL",
         "Requires-Python",
         "Description-Content-Type",
         "License-File",
@@ -298,6 +299,11 @@ def validate_core_metadata(data: bytes, label: str) -> None:
         fail(f"{label} Provides-Extra differs from pyproject")
     if (message.get_all("Requires-Dist") or []) != expected_requires_dist():
         fail(f"{label} Requires-Dist differs from pyproject")
+    expected_project_urls = [
+        f"{name}, {url}" for name, url in project.get("urls", {}).items()
+    ]
+    if (message.get_all("Project-URL") or []) != expected_project_urls:
+        fail(f"{label} Project-URL differs from pyproject")
     if metadata_license(data, label) != license_bytes:
         fail(f"{label} License header differs from checkout LICENSE")
     _header, separator, body = data.partition(b"\n\n")

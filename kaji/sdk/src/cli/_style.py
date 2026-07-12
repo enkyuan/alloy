@@ -24,3 +24,10 @@ def color(text: str, *codes: str) -> str:
         return text
     prefix = "".join(_CODES.get(c, "") for c in codes)
     return f"{prefix}{text}{_CODES['reset']}"
+
+
+def set_color_enabled(enabled: bool) -> None:
+    """Apply the process-local CLI color preference."""
+
+    global _USE_COLOR
+    _USE_COLOR = enabled and sys.stdout.isatty() and os.environ.get("NO_COLOR") is None

@@ -9,6 +9,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 - Added bounded durable tool arguments, fail-closed package verification, and
   reproducible wheel/sdist release gates for shared contract version `1.0.0`.
+- Added the cross-SDK no-key `kaji init [path]` grammar with mock default,
+  all-destination collision preflight, safe replacement, deterministic
+  text/turn/sequence output, and installed wheel/sdist cold/warm proof.
+- Classified every public export and added canonical CLI, API-parity, testing,
+  migration, troubleshooting, trust, and exact-commit TTHW contracts.
 - Promotion remains blocked pending same-commit protected runtime-matrix,
   provider, benchmark, soak, signing, provenance, and publication evidence.
 

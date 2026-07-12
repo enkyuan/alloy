@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import re
 import sys
 import tomllib
@@ -47,6 +48,17 @@ def test_release_smoke_preserves_build_verify_install_order(
         "run",
         lambda command, **_kwargs: commands.append(command),
     )
+    monkeypatch.setattr(
+        module,
+        "run_capture",
+        lambda command, **_kwargs: (
+            commands.append(command) or "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
+        ),
+    )
+    monkeypatch.setattr(module, "installed_registry_root", lambda _venv: tmp_path)
+    monkeypatch.setattr(module, "assert_init_cli_output", lambda *_args: None)
+    monkeypatch.setattr(module, "assert_echo_cli_output", lambda *_args: None)
+    monkeypatch.setattr(module, "assert_list_integrations_output", lambda *_args: None)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
     module.release_smoke(Path("dist"))
@@ -80,6 +92,114 @@ def test_release_smoke_preserves_build_verify_install_order(
         == 2
     )
     assert all(isinstance(command, list) for command in commands)
+    assert sum(command[1:3] == ["--no-color", "init"] for command in commands) == 2
+    assert (
+        sum(command[1:4] == ["--no-color", "add", "echo"] for command in commands) == 2
+    )
+    assert (
+        sum(command[1:3] == ["--no-color", "list-integrations"] for command in commands)
+        == 2
+    )
+
+
+def test_release_smoke_asserts_all_installed_stable_cli_results(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("release_smoke.py")
+    scaffold = tmp_path / "scaffold"
+    scaffold.mkdir()
+    for name in ("agent.py", ".env.example"):
+        (scaffold / name).write_text(name)
+    module.assert_init_cli_output(
+        f"{scaffold / 'agent.py'}\n{scaffold / '.env.example'}\n",
+        scaffold,
+    )
+
+    registry = tmp_path / "installed-registry"
+    destination = tmp_path / "echo-copy"
+    (registry / "echo").mkdir(parents=True)
+    destination.mkdir()
+    output: list[str] = []
+    for name in ("echo.py", "echo.ts"):
+        body = f"packaged {name}\n"
+        (registry / "echo" / name).write_text(body)
+        copied = destination / name
+        copied.write_text(body)
+        output.append(f"  wrote {copied.resolve()}")
+    output.append("Installed integration: echo v0.1.0")
+    module.assert_echo_cli_output("\n".join(output), destination, registry)
+
+    module.assert_list_integrations_output(
+        "  echo             [beta] v0.1.0    " + module.EXPECTED_ECHO_DESCRIPTION
+    )
+
+    (destination / "echo.py").write_text("checkout source must not be accepted")
+    with pytest.raises(SystemExit, match="packaged Echo assets"):
+        module.assert_echo_cli_output("\n".join(output), destination, registry)
+    with pytest.raises(SystemExit, match="omitted the packaged Echo entry"):
+        module.assert_list_integrations_output("No integrations available.")
+
+
+def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> None:
+    script = (SDK_ROOT / "scripts" / "release_smoke.py").read_text()
+    tiers = json.loads(
+        (REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json").read_text()
+    )
+
+    assert tiers["cliCommands"]["python"]["stable"] == [
+        "add",
+        "init",
+        "list-integrations",
+    ]
+
+    for required in (
+        '"init",',
+        '"--provider",',
+        '"mock",',
+        '"--yes",',
+        'lines.get("text")',
+        'lines.get("turn_id")',
+        'lines.get("final_sequence", "0")',
+        'EXPECTED_MOCK_REPLY = "mock"',
+        "cold_result = assert_scaffold_output(cold_output)",
+        "warm_result = assert_scaffold_output(warm_output)",
+        "assert_matching_scaffold_outputs(cold_result, warm_result)",
+        "coldSetupToOutputMs",
+        "warmRunMs",
+        '"add", "echo", "--out"',
+        '"list-integrations"',
+        "assert_init_cli_output(init_output, scaffold)",
+        "assert_echo_cli_output(add_output, integration, registry)",
+        "assert_list_integrations_output(list_output)",
+        'environment.pop("PYTHONPATH", None)',
+        'environment.pop("PYTHONHOME", None)',
+        'environment["PYTHONNOUSERSITE"] = "1"',
+        "copied.read_bytes() != packaged.read_bytes()",
+    ):
+        assert required in script
+
+
+def test_release_smoke_rejects_wrong_or_nondeterministic_mock_output() -> None:
+    module = _load_script("release_smoke.py")
+    valid = "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
+
+    assert module.assert_scaffold_output(valid) == ("mock", 1)
+    with pytest.raises(SystemExit, match="exact deterministic mock reply"):
+        module.assert_scaffold_output(
+            "text=plausible but wrong\nturn_id=turn-1\nfinal_sequence=1\n"
+        )
+    with pytest.raises(SystemExit, match="cold and warm scaffold outputs differed"):
+        module.assert_matching_scaffold_outputs(("mock", 1), ("mock", 2))
+
+
+def test_python_package_metadata_has_canonical_project_urls() -> None:
+    pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
+
+    assert pyproject["project"]["urls"] == {
+        "Documentation": "https://github.com/enkyuan/alloy/blob/main/docs/kaji/README.md",
+        "Issues": "https://github.com/enkyuan/alloy/issues",
+        "Repository": "https://github.com/enkyuan/alloy",
+    }
 
 
 def test_release_smoke_normalizes_signal_exit_status(
@@ -142,6 +262,7 @@ def test_archive_verifier_compares_all_packaged_contract_bytes() -> None:
         "RECORD hash mismatch",
         "RECORD size mismatch",
         "Requires-Dist differs from pyproject",
+        "Project-URL differs from pyproject",
         "setup.cfg is not the canonical",
         "SOURCES.txt differs from expected source manifest",
         "MAX_ARCHIVE_MEMBER_BYTES",
@@ -158,11 +279,13 @@ def test_adversarial_archive_verifier_covers_generated_metadata_and_size_bombs()
 
     for expected in (
         "mutate_metadata",
+        "mutate_wheel_project_url_extra",
         "mutate_entry_point",
         "mutate_recorded_payload",
         "mutate_oversized_metadata",
         "mutate_setup_cfg",
         "mutate_sdist_metadata",
+        "mutate_sdist_project_url_mismatch",
         "archive verifier rejected all adversarial metadata cases",
     ):
         assert expected in script

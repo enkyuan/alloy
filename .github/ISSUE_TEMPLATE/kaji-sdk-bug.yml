@@ -1,0 +1,75 @@
+name: Kaji SDK bug
+description: Report a reproducible, redacted Python or TypeScript SDK problem
+title: "[Kaji SDK]: "
+labels: ["kaji", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report vulnerabilities here. Use the private route in SECURITY.md.
+        Remove keys, prompts, tool arguments/results, metadata, and provider bodies.
+  - type: dropdown
+    id: language
+    attributes:
+      label: SDK language
+      options: [Python, TypeScript]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SDK version
+      placeholder: "0.2.0b1 or 0.2.0-beta.1"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime version
+      description: Python or Node version
+    validations:
+      required: true
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler version
+      description: TypeScript version, or N/A for Python
+    validations:
+      required: true
+  - type: input
+    id: package-manager
+    attributes:
+      label: Package manager
+      description: uv/pip, npm, or Bun and its version
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+    validations:
+      required: true
+  - type: input
+    id: error-code
+    attributes:
+      label: Error code
+      description: Stable Kaji error code, if present
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Smallest source and exact offline command that reproduces the issue
+    validations:
+      required: true
+  - type: textarea
+    id: event
+    attributes:
+      label: Redacted event excerpt
+      description: Structural IDs, type, sequence, error_code, phase, retryable, and outcome only
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction confirmation
+      options:
+        - label: I removed credentials, prompts, tool arguments/results, metadata, and raw provider bodies.
+          required: true

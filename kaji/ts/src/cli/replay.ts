@@ -1,9 +1,4 @@
-/**
- * `kaji replay <session.jsonl>` — parse a JSONL event log and render it
- * to stdout in one of three formats: tree (default), summary, or json.
- *
- * All file I/O happens here; `render.ts` is pure (no I/O).
- */
+/** Fail-closed JSONL replay with a closed, redaction-safe output projection. */
 import {
   validateNewEvent,
   validateStoredEvent,
@@ -16,11 +11,22 @@ import { readTextFile } from "@/cli/bun-io";
 export interface ReplayOptions {
   log?: (msg: string) => void;
   err?: (msg: string) => void;
+  noColor?: boolean;
+  verbose?: boolean;
+}
+
+function usage(err: (message: string) => void, message?: string): number {
+  if (message !== undefined) err(`Error: ${message}`);
+  err(
+    "usage: kaji replay <session.jsonl> [--format tree|summary|json] " +
+      "[--filter <kind>] [--grep <pattern>] [--tail]",
+  );
+  return 2;
 }
 
 export async function replay(argv: string[], opts: ReplayOptions): Promise<number> {
-  const log = opts.log ?? ((m: string) => process.stdout.write(m + "\n"));
-  const err = opts.err ?? ((m: string) => process.stderr.write(m + "\n"));
+  const log = opts.log ?? ((message: string) => process.stdout.write(message + "\n"));
+  const err = opts.err ?? ((message: string) => process.stderr.write(message + "\n"));
 
   let format: "tree" | "summary" | "json" = "tree";
   let file: string | undefined;
@@ -28,90 +34,88 @@ export async function replay(argv: string[], opts: ReplayOptions): Promise<numbe
   let grepPattern: string | undefined;
   let tail = false;
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]!;
     if (arg === "--format" || arg === "-f") {
-      const fmt = argv[++i];
-      if (fmt === "tree" || fmt === "summary" || fmt === "json") {
-        format = fmt;
-      } else {
-        err(`--format must be tree, summary, or json`);
-        return 1;
+      const value = argv[++index];
+      if (value === undefined) return usage(err, "--format requires a value");
+      if (value !== "tree" && value !== "summary" && value !== "json") {
+        return usage(err, "--format must be tree, summary, or json");
       }
-    } else if (arg === "--filter") {
-      filterKind = argv[++i];
-    } else if (arg === "--grep") {
-      grepPattern = argv[++i];
+      format = value;
+    } else if (arg === "--filter" || arg === "--grep") {
+      const value = argv[++index];
+      if (value === undefined || value.startsWith("--")) {
+        return usage(err, `${arg} requires a value`);
+      }
+      if (arg === "--filter") filterKind = value;
+      else grepPattern = value;
     } else if (arg === "--tail") {
       tail = true;
-    } else if (!arg.startsWith("-")) {
+    } else if (arg.startsWith("-")) {
+      return usage(err, `unknown argument: ${arg}`);
+    } else if (file === undefined) {
       file = arg;
+    } else {
+      return usage(err, `unexpected path argument: ${arg}`);
     }
   }
 
-  if (!file) {
-    err(
-      "usage: kaji replay <session.jsonl> [--format tree|summary|json] " +
-        "[--filter <kind>] [--grep <pattern>] [--tail]",
-    );
-    return 1;
-  }
+  if (file === undefined) return usage(err);
 
   let raw: string;
   try {
     raw = await readTextFile(file);
   } catch {
-    err(`Cannot read file: ${file}`);
+    err("error_code=REPLAY_READ_FAILED reason=unreadable_file");
     return 1;
   }
 
   const events: Array<KajiEventType | StoredKajiEventType> = [];
-  let nonBlankLines = 0;
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    nonBlankLines++;
+  const lines = raw.split("\n");
+  for (let index = 0; index < lines.length; index++) {
+    const trimmed = lines[index]!.trim();
+    if (trimmed.length === 0) continue;
+    let value: unknown;
     try {
-      const value: unknown = JSON.parse(trimmed);
+      value = JSON.parse(trimmed);
+    } catch {
+      err(`error_code=INVALID_REPLAY_LOG line=${index + 1} reason=invalid_json`);
+      return 1;
+    }
+    try {
       const parsed =
         value !== null && typeof value === "object" && "sequence" in value
           ? validateStoredEvent(value)
           : validateNewEvent(value);
       events.push(parsed);
-      // Silently skip invalid / unrecognised event shapes
     } catch {
-      // Skip non-JSON lines
+      err(`error_code=INVALID_REPLAY_LOG line=${index + 1} reason=invalid_event`);
+      return 1;
     }
   }
 
-  // A non-empty file that yields zero events is almost always the wrong file
-  // or a corrupt log, not a legitimately empty session — warn instead of
-  // silently succeeding with no output.
-  if (nonBlankLines > 0 && events.length === 0) {
-    err(`Warning: ${file} has ${nonBlankLines} line(s) but no parseable kaji events.`);
-  }
-
   let filtered = events;
-  if (filterKind) {
-    filtered = filtered.filter((e) => e.type === filterKind);
+  if (filterKind !== undefined) filtered = filtered.filter((event) => event.type === filterKind);
+  if (grepPattern !== undefined) {
+    let expression: RegExp;
+    try {
+      expression = new RegExp(grepPattern, "i");
+    } catch {
+      err("error_code=INVALID_REPLAY_FILTER reason=invalid_pattern");
+      return 1;
+    }
+    filtered = filtered.filter((event) => expression.test(JSON.stringify(event)));
   }
-  if (grepPattern) {
-    const re = new RegExp(grepPattern, "i");
-    filtered = filtered.filter((e) => re.test(JSON.stringify(e)));
-  }
-  if (tail) {
-    filtered = filtered.slice(-20);
-  }
+  if (tail) filtered = filtered.slice(-20);
 
-  let output: string;
-  if (format === "tree") {
-    output = renderTree(filtered);
-  } else if (format === "summary") {
-    output = renderSummary(filtered);
-  } else {
-    output = renderJson(filtered);
-  }
-
+  const color = !opts.noColor;
+  const output =
+    format === "tree"
+      ? renderTree(filtered, { color })
+      : format === "summary"
+        ? renderSummary(filtered, { color })
+        : renderJson(filtered);
   log(output);
   return 0;
 }

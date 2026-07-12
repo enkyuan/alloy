@@ -164,7 +164,7 @@ export class OpenAIProvider implements ModelProvider {
     return this.opts.model;
   }
 
-  protected async createClient(): Promise<OpenAI> {
+  protected async createClient(): Promise<object> {
     const { default: OpenAIDefault } = await import("openai");
     return new OpenAIDefault({
       apiKey: this.opts.apiKey,
@@ -178,7 +178,7 @@ export class OpenAIProvider implements ModelProvider {
     if (this.client !== null) return this.client;
     // Dynamic import so the package is optional at bundle time.
     try {
-      this.client = await this.createClient();
+      this.client = (await this.createClient()) as OpenAI;
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("OpenAI provider requires the openai package.", {

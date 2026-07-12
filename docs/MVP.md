@@ -200,10 +200,10 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
   bun run test:integration tests/integration/openai-tools.test.ts
 ```
 
-Live tests are optional and skip without keys. After OpenAI passes, test
-Anthropic, Python Gemini native, TS Gemini via the OpenAI-compatible factory,
-then Kimi/OpenRouter. TS Kimi and Gemini are OpenAI-compatible factories, not
-native provider implementations.
+These developer tests may skip without keys, but a skip is not release
+evidence. The protected release requires OpenAI and Anthropic normalized tool
+loops in Python and TypeScript on one exact commit; either missing credential
+blocks release. Native Gemini and Kimi remain experimental.
 
 For release readiness, run the cross-SDK gate from the repository root:
 
@@ -222,11 +222,10 @@ uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
-Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
-It is not a provider-readiness signal. With `KAJI_REQUIRE_LIVE_KEYS=1`, the
-same no-key state fails loudly. A release cannot be called live-ready until this
-command exits with `PASS: OpenAI live tool-loop readiness verified` while
-`OPENAI_API_KEY` is set:
+Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
+It is not provider evidence. The protected `live_provider_proof.py` gate
+requires both OpenAI and Anthropic credentials and fails loudly if either is
+absent.
 
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py

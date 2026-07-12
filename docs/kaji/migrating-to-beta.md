@@ -615,6 +615,38 @@ Replace checks for `INVALID_INTEGRATION_MANIFEST` or
 exception class and JSON Pointer to distinguish the document. Experimental
 CLI opt-in denial now uses `INTEGRATION_EXPERIMENTAL`.
 
+Each manifest tool now carries executable `parameters`, `parallel_safe`, and
+optional `timeout_ms` metadata. Stable Echo metadata must exactly match the
+registered `ToolSpec`; run `kaji/scripts/check_integration_abi.py --explain`
+and resolve every `INTEGRATION_ABI_MISMATCH` before release.
+
+## Whole-turn deadline and provider quarantine
+
+The runtime now applies one effective deadline to queue wait, provider open and
+streaming, approval, and tool work. Python caller deadlines use absolute
+monotonic seconds in `deadline_monotonic`. TypeScript's removed absolute
+`deadlineMs` field is now `deadlineAtMs`; use `deadlineAfter(timeoutMs)` when
+starting from a duration. Delete application-owned cancellation timers that
+attempt to duplicate the runtime's 120-second work limit.
+
+`TURN_TIMEOUT` now carries phase, retryability, and `not_started`, `failed`, or
+`unknown` outcome. A provider that ignores the 5-second cancellation grace
+raises `PROVIDER_CANCELLATION_CONTRACT_VIOLATION` and quarantines the session.
+Drain and replace it before another turn, or restart if it never settles.
+
+## Durable results and coalesced deltas
+
+Tool and workflow success results are validated as detached canonical JSON
+before idempotency completion and persistence. They must use finite values,
+I-JSON-safe integers, and fit the 64 KiB result limit; the complete stored
+event must fit 1 MiB. Invalid values now fail with `INVALID_TOOL_RESULT`
+instead of poisoning later replay.
+
+Provider text, tool arguments, total response bytes, and tool-call count are
+bounded. Durable deltas may be coalesced into chunks of at most 4 KiB. Only the
+ordered concatenated text is stable; do not rely on vendor chunk boundaries or
+one durable delta per provider chunk.
+
 ## Compatibility removal horizon
 
 Legacy executor/Boolean-approval adapters and unsequenced replay are

@@ -85,11 +85,11 @@ describe("kaji list-integrations", () => {
     });
     expect(code).toBe(0);
     const output = lines.join("\n");
-    expect(output).toMatch(/echo\s+Echo a string back\./);
-    expect(output).toMatch(/weather\s+Look up the weather\./);
+    expect(output).toMatch(/^echo\s+\[beta\]\s+v0\.1\.0\s+Echo a string back\.$/m);
+    expect(output).toMatch(/^weather\s+\[beta\]\s+v0\.1\.0\s+Look up the weather\.$/m);
   });
 
-  it("marks experimental entries while leaving beta entries unmarked", async () => {
+  it("prints the exact tier and version for beta and experimental entries", async () => {
     writeIntegration(registryRoot, "echo", "Echo a string back.");
     writeIntegration(registryRoot, "weather", "Look up the weather.");
     writeFileSync(
@@ -109,8 +109,10 @@ describe("kaji list-integrations", () => {
       log: (message) => lines.push(message),
     });
     expect(code).toBe(0);
-    expect(lines.join("\n")).toMatch(/^echo\s+Echo a string back\./m);
-    expect(lines.join("\n")).toMatch(/^weather \[experimental\]\s+Look up the weather\./m);
+    expect(lines.join("\n")).toMatch(/^echo\s+\[beta\]\s+v0\.1\.0\s+Echo a string back\.$/m);
+    expect(lines.join("\n")).toMatch(
+      /^weather\s+\[experimental\]\s+v0\.1\.0\s+Look up the weather\.$/m,
+    );
   });
 
   it("returns 1 when the packaged index is missing", async () => {

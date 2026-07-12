@@ -22,6 +22,26 @@ journal assigns a sequence. Every runtime event from a turn carries the same
 non-empty turn ID. Use `(session_id, sequence)` as the durable cursor and
 `turn_id` for correlation.
 
+The in-memory event store owns one non-nesting commit lane per session. Direct
+store calls and every journal/committer over the same store share that lane, so
+sequence allocation, ID reservation, append, subscription attachment, and
+fanout are atomic for one session without a process-global event lock.
+Cross-session order is deliberately unspecified. Lanes are released only when
+their holder and waiter counts both reach zero.
+
+## Whole-turn deadlines and quarantine
+
+One effective work deadline covers the session queue, provider open/stream,
+approval, and tools. The configured default is 120 seconds; an earlier caller
+deadline may tighten it. Caller return is bounded by that work deadline plus a
+5-second cancellation grace for cooperative provider shutdown.
+
+If a provider ignores cancellation beyond the grace period, Kaji records
+`PROVIDER_CANCELLATION_CONTRACT_VIOLATION` and leaves that session quarantined
+behind the still-owned lease. Call `drain_providers()` or `drainProviders()`
+before another turn. Closing rejects new work but cannot force-kill hostile
+in-process code; restart the process if the operation never settles.
+
 ## Bounded replay and context
 
 A cold runtime pages the retained store once. A warm runtime reads only the

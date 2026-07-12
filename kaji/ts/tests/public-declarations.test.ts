@@ -5,15 +5,65 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "..");
 const dist = resolve(root, "dist");
 
-describe("public declarations", () => {
-  it("exposes the bounded network transport contract from the package root", () => {
-    const esm = resolve(dist, "index.d.ts");
-    const cjs = resolve(dist, "index.d.cts");
-    if (!existsSync(esm) || !existsSync(cjs)) return;
-    if (statSync(esm).mtimeMs < statSync(resolve(root, "src/integrations/safe-fetch.ts")).mtimeMs)
-      return;
+function readFreshDeclaration(file: string, sourceFiles: string[]): string {
+  const declarationPath = resolve(dist, file);
+  expect(existsSync(declarationPath), `${file} must exist; run the package build first`).toBe(true);
+  const builtAt = statSync(declarationPath).mtimeMs;
+  for (const sourceFile of sourceFiles) {
+    const sourcePath = resolve(root, sourceFile);
+    expect(
+      builtAt,
+      `${file} is older than ${sourceFile}; rebuild declarations before running this gate`,
+    ).toBeGreaterThanOrEqual(statSync(sourcePath).mtimeMs);
+  }
+  return readFileSync(declarationPath, "utf8");
+}
 
-    for (const declaration of [readFileSync(esm, "utf8"), readFileSync(cjs, "utf8")]) {
+describe("public declarations", () => {
+  it("classifies every built root export exactly once and syncs the generated docs", () => {
+    const declaration = readFreshDeclaration("index.d.ts", ["src/index.ts"]);
+    const blocks = [...declaration.matchAll(/^export \{ (.*?) \}(?: from .*?)?;$/gm)];
+    expect(blocks.length).toBeGreaterThan(0);
+    const declaredExports = blocks.flatMap((match) =>
+      match[1]!.split(", ").map(
+        (item) =>
+          item
+            .replace(/^type /, "")
+            .split(" as ")
+            .at(-1)!,
+      ),
+    );
+    const exports = new Set(declaredExports);
+    expect(exports.size).toBe(declaredExports.length);
+    const contract = JSON.parse(
+      readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
+    );
+    const tiers = contract.publicExports.typescript as Record<string, string[]>;
+    const classified = Object.values(tiers).flat();
+
+    expect(new Set(classified).size).toBe(classified.length);
+    expect(new Set(classified)).toEqual(exports);
+
+    const fragment = [
+      "### TypeScript public exports",
+      ...["stable", "experimental", "deprecated"].map(
+        (tier) =>
+          `- ${tier[0]!.toUpperCase()}${tier.slice(1)}: ${tiers[tier]!.map((name) => `\`${name}\``).join(", ")}`,
+      ),
+    ].join("\n");
+    const docs = readFileSync(resolve(root, "../../docs/kaji/api-parity.md"), "utf8");
+    const actual = docs.match(
+      /<!-- public-exports:typescript:start -->\n([\s\S]*?)\n<!-- public-exports:typescript:end -->/,
+    )?.[1];
+    expect(actual).toBe(fragment);
+  });
+
+  it("exposes the bounded network transport contract from the package root", () => {
+    const sources = ["src/index.ts", "src/integrations/safe-fetch.ts"];
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", sources),
+      readFreshDeclaration("index.d.cts", sources),
+    ]) {
       expect(declaration).toContain("interface SafeFetchPolicy");
       expect(declaration).toContain("interface BoundNetworkTransport");
       expect(declaration).toContain("function safeRequest(");
@@ -21,12 +71,11 @@ describe("public declarations", () => {
   });
 
   it("exposes tool validation classes from both module formats", () => {
-    const esm = resolve(dist, "index.d.ts");
-    const cjs = resolve(dist, "index.d.cts");
-    if (!existsSync(esm) || !existsSync(cjs)) return;
-    if (statSync(esm).mtimeMs < statSync(resolve(root, "src/tools/validation.ts")).mtimeMs) return;
-
-    for (const declaration of [readFileSync(esm, "utf8"), readFileSync(cjs, "utf8")]) {
+    const sources = ["src/index.ts", "src/tools/validation.ts"];
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", sources),
+      readFreshDeclaration("index.d.cts", sources),
+    ]) {
       expect(declaration).toContain("normalizeProviderError");
       expect(declaration).toContain("NormalizedProviderError");
       expect(declaration).toContain("ToolArgumentValidationError");
@@ -62,21 +111,24 @@ describe("public declarations", () => {
   });
 
   it("does not expose provider test hooks after build", () => {
-    const openaiDts = resolve(dist, "openai.d.ts");
-    const anthropicDts = resolve(dist, "anthropic.d.ts");
-    if (!existsSync(openaiDts) || !existsSync(anthropicDts)) return;
-    const newestProviderSource = Math.max(
-      statSync(resolve(root, "src/providers/openai.ts")).mtimeMs,
-      statSync(resolve(root, "src/providers/anthropic.ts")).mtimeMs,
-    );
-    const oldestProviderDts = Math.min(statSync(openaiDts).mtimeMs, statSync(anthropicDts).mtimeMs);
-    if (oldestProviderDts < newestProviderSource) return;
-
-    const openai = readFileSync(openaiDts, "utf8");
-    const anthropic = readFileSync(anthropicDts, "utf8");
+    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai.ts"]);
+    const anthropic = readFreshDeclaration("anthropic.d.ts", ["src/providers/anthropic.ts"]);
 
     expect(openai).not.toContain("OpenAIProviderTestHooks");
     expect(anthropic).not.toContain("AnthropicProviderTestHooks");
+  });
+
+  it("keeps optional provider peers out of root declarations", () => {
+    const sources = ["src/index.ts", "src/providers/openai.ts", "src/providers/anthropic.ts"];
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", sources),
+      readFreshDeclaration("index.d.cts", sources),
+    ]) {
+      expect(declaration).not.toMatch(/from ["']openai["']/);
+      expect(declaration).not.toMatch(/from ["']@anthropic-ai\/sdk["']/);
+      expect(declaration).not.toContain("Promise<OpenAI>");
+      expect(declaration).not.toContain("Promise<Anthropic>");
+    }
   });
 });
 

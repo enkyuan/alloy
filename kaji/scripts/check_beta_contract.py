@@ -30,6 +30,7 @@ PACKAGE_CONTRACT_TARGETS = (
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 REQUIRED_JSON = {
     "beta-core-v1.json",
+    "cli/init-cases-v1.json",
     "feature-tiers-v1.json",
     "errors/error-codes.json",
     "errors/provider-normalization.json",
@@ -44,6 +45,7 @@ REQUIRED_JSON = {
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
     "providers/cost-conformance.json",
+    "release/tthw-evidence-v1.schema.json",
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
@@ -1540,6 +1542,160 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
             )
 
 
+def check_cli_init_cases(document: dict[str, Any]) -> None:
+    path = CONTRACTS / "cli" / "init-cases-v1.json"
+    if document.get("schemaVersion") != 1:
+        raise fail(path, "/schemaVersion", "expected 1")
+    if document.get("grammar") != (
+        "kaji [--no-color] [--verbose] init [path] "
+        "--provider mock|openai|anthropic --yes --force"
+    ):
+        raise fail(path, "/grammar", "canonical init grammar differs")
+    if document.get("defaults") != {"path": ".", "provider": "mock"}:
+        raise fail(path, "/defaults", "canonical init defaults differ")
+    if document.get("exitCodes") != {
+        "successOrHelp": 0,
+        "validationRuntimeOrConflict": 1,
+        "usage": 2,
+    }:
+        raise fail(path, "/exitCodes", "canonical CLI exit codes differ")
+    cases = document.get("cases")
+    if not isinstance(cases, list):
+        raise fail(path, "/cases", "expected an array")
+    names: list[str] = []
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            raise fail(path, f"/cases/{index}", "expected an object")
+        name = case.get("name")
+        args = case.get("args")
+        if not isinstance(name, str) or not name:
+            raise fail(path, f"/cases/{index}/name", "expected a non-empty string")
+        if not isinstance(args, list) or not all(
+            isinstance(value, str) for value in args
+        ):
+            raise fail(path, f"/cases/{index}/args", "expected string arguments")
+        if case.get("exitCode") not in {0, 1, 2}:
+            raise fail(path, f"/cases/{index}/exitCode", "expected 0, 1, or 2")
+        if case.get("setup") not in {None, "existing-file"}:
+            raise fail(
+                path,
+                f"/cases/{index}/setup",
+                "expected existing-file when setup is present",
+            )
+        if "typescriptOnly" in case and not isinstance(case["typescriptOnly"], bool):
+            raise fail(
+                path,
+                f"/cases/{index}/typescriptOnly",
+                "expected a boolean",
+            )
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise fail(path, "/cases", "case names must be unique")
+    required = {
+        "defaults",
+        "explicit-path",
+        "mock-provider",
+        "openai-provider",
+        "anthropic-provider",
+        "yes",
+        "force",
+        "unknown-provider",
+        "missing-provider-value",
+        "existing-file-refusal",
+        "deprecated-out",
+        "conflicting-path-out",
+    }
+    if set(names) < required:
+        raise fail(
+            path, "/cases", f"missing required cases: {sorted(required - set(names))}"
+        )
+
+
+def public_export_tiers(document: dict[str, Any]) -> dict[str, dict[str, list[str]]]:
+    path = CONTRACTS / "feature-tiers-v1.json"
+    matrix = document.get("publicExports")
+    if not isinstance(matrix, dict) or set(matrix) != {"python", "typescript"}:
+        raise fail(path, "/publicExports", "expected python and typescript exports")
+    for runtime, tiers in matrix.items():
+        if not isinstance(tiers, dict) or set(tiers) != {
+            "stable",
+            "experimental",
+            "deprecated",
+        }:
+            raise fail(
+                path,
+                f"/publicExports/{runtime}",
+                "expected stable, experimental, and deprecated arrays",
+            )
+        classified: set[str] = set()
+        for tier in ("stable", "experimental", "deprecated"):
+            values = tiers[tier]
+            if (
+                not isinstance(values, list)
+                or not all(isinstance(value, str) and value for value in values)
+                or values != sorted(set(values))
+            ):
+                raise fail(
+                    path,
+                    f"/publicExports/{runtime}/{tier}",
+                    "expected sorted unique export names",
+                )
+            overlap = classified.intersection(values)
+            if overlap:
+                raise fail(
+                    path,
+                    f"/publicExports/{runtime}/{tier}",
+                    f"exports classified twice: {sorted(overlap)}",
+                )
+            classified.update(values)
+    return matrix
+
+
+def render_public_exports_fragment(runtime: str, tiers: dict[str, list[str]]) -> str:
+    title = "Python" if runtime == "python" else "TypeScript"
+    lines = [f"### {title} public exports"]
+    for tier in ("stable", "experimental", "deprecated"):
+        values = ", ".join(f"`{value}`" for value in tiers[tier])
+        lines.append(f"- {tier.title()}: {values}")
+    return "\n".join(lines)
+
+
+def check_public_exports(document: dict[str, Any]) -> None:
+    import kaji
+
+    path = CONTRACTS / "feature-tiers-v1.json"
+    matrix = public_export_tiers(document)
+    python_exports = {value for values in matrix["python"].values() for value in values}
+    if python_exports != set(kaji.__all__):
+        raise fail(
+            path,
+            "/publicExports/python",
+            "classification must exactly cover kaji.__all__",
+        )
+
+    docs_path = ROOT / "docs" / "kaji" / "api-parity.md"
+    try:
+        docs = docs_path.read_text()
+    except OSError as exc:
+        raise fail(docs_path, "/", str(exc)) from exc
+    for runtime, tiers in matrix.items():
+        marker = re.search(
+            rf"<!-- public-exports:{runtime}:start -->\n(.*?)\n"
+            rf"<!-- public-exports:{runtime}:end -->",
+            docs,
+            re.DOTALL,
+        )
+        if marker is None:
+            raise fail(docs_path, f"/#public-exports:{runtime}", "missing fragment")
+        expected = render_public_exports_fragment(runtime, tiers)
+        if marker.group(1) != expected:
+            raise fail(
+                docs_path,
+                f"/#public-exports:{runtime}",
+                "generated public-export fragment differs from contract",
+            )
+
+
 def check_beta_limits(document: dict[str, Any]) -> None:
     path = CONTRACTS / "beta-core-v1.json"
     expected = {
@@ -1693,6 +1849,8 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_provider_costs(documents["providers/cost-conformance.json"])
     check_packaged_contracts()
     check_cli_command_tiers(documents["feature-tiers-v1.json"])
+    check_cli_init_cases(documents["cli/init-cases-v1.json"])
+    check_public_exports(documents["feature-tiers-v1.json"])
     return documents, feature_sets(documents["feature-tiers-v1.json"])
 
 

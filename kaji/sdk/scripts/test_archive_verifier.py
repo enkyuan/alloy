@@ -109,6 +109,18 @@ def mutate_metadata(files: WheelFiles) -> None:
     rewrite_record(files)
 
 
+def mutate_wheel_project_url_extra(files: WheelFiles) -> None:
+    path = next(name for name in files if name.endswith(".dist-info/METADATA"))
+    _info, payload = files[path]
+    headers, body = payload.split(b"\n\n", 1)
+    replace_wheel_file(
+        files,
+        ".dist-info/METADATA",
+        headers + b"\nProject-URL: Attacker, https://attacker.invalid/kaji\n\n" + body,
+    )
+    rewrite_record(files)
+
+
 def mutate_entry_point(files: WheelFiles) -> None:
     replace_wheel_file(
         files,
@@ -166,6 +178,21 @@ def mutate_sdist_metadata(files: TarFiles) -> None:
         "/PKG-INFO",
         headers + b"\nRequires-Dist: attacker-package\n\n" + body,
     )
+
+
+def mutate_sdist_project_url_mismatch(files: TarFiles) -> None:
+    root_pkg = next(
+        payload
+        for member, payload in files
+        if member.name.endswith("/PKG-INFO") and member.name.count("/") == 1
+    )
+    if root_pkg is None:
+        fail("sdist PKG-INFO cannot be read")
+    original = b"Project-URL: Repository, https://github.com/enkyuan/alloy"
+    replacement = b"Project-URL: Repository, https://attacker.invalid/kaji"
+    if original not in root_pkg:
+        fail("sdist PKG-INFO canonical Project-URL is missing")
+    replace_sdist_file(files, "/PKG-INFO", root_pkg.replace(original, replacement))
 
 
 def run_case(
@@ -237,6 +264,12 @@ def main() -> None:
                 mutate_entry_point,
                 None,
             ),
+            (
+                "wheel-project-url-extra",
+                "Project-URL differs from pyproject",
+                mutate_wheel_project_url_extra,
+                None,
+            ),
             ("wheel-record", "RECORD hash mismatch", mutate_recorded_payload, None),
             (
                 "wheel-oversized-metadata",
@@ -250,6 +283,12 @@ def main() -> None:
                 "Requires-Dist differs from pyproject",
                 None,
                 mutate_sdist_metadata,
+            ),
+            (
+                "sdist-project-url-mismatch",
+                "Project-URL differs from pyproject",
+                None,
+                mutate_sdist_project_url_mismatch,
             ),
         ]
         for name, expected, wheel_mutation, sdist_mutation in cases:

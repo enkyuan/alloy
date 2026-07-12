@@ -119,11 +119,16 @@ def test_post_beta_migration_uses_the_canonical_tool_context_type() -> None:
 
 def test_task16_docs_cover_the_operating_contract_without_promotion_claims() -> None:
     required = {
+        "README.md",
+        "api-parity.md",
+        "cli.md",
         "production-beta.md",
         "concurrency-and-ordering.md",
         "tool-contracts.md",
         "integration-manifests.md",
         "migrating-to-beta.md",
+        "releasing.md",
+        "testing.md",
         "troubleshooting.md",
     }
     assert required.issubset({path.name for path in DOCS.glob("*.md")})
@@ -145,20 +150,78 @@ def test_task16_docs_cover_the_operating_contract_without_promotion_claims() -> 
     ):
         assert phrase.lower() in combined.lower()
 
-    status_docs = [
+    repository_status_docs = [
         REPO_ROOT / "kaji" / "RELEASE_MATRIX.md",
-        REPO_ROOT / "kaji" / "sdk" / "README.md",
-        REPO_ROOT / "kaji" / "ts" / "README.md",
         REPO_ROOT / "kaji" / "sdk" / "CHANGELOG.md",
         REPO_ROOT / "kaji" / "ts" / "CHANGELOG.md",
         REPO_ROOT / "docs" / "MVP.md",
     ]
-    status = "\n".join(path.read_text() for path in status_docs)
+    status = "\n".join(path.read_text() for path in repository_status_docs)
     assert "production beta candidate" not in status.lower()
     assert "beta candidate for the core" not in status.lower()
     assert "ToolPlanner.execute_scatter_gather" not in status
     assert "ToolPlanner.executeScatterGather" not in status
     assert "promotion is blocked" in status.lower()
+
+
+def test_package_readmes_have_permanent_status_neutral_canonical_links() -> None:
+    expected = (
+        "> Canonical documentation: "
+        "https://github.com/enkyuan/alloy/blob/main/docs/kaji/README.md\n"
+        "> Release status and evidence: "
+        "https://github.com/enkyuan/alloy/blob/main/kaji/RELEASE_MATRIX.md"
+    )
+    blocks: list[str] = []
+    for path in (
+        REPO_ROOT / "kaji" / "sdk" / "README.md",
+        REPO_ROOT / "kaji" / "ts" / "README.md",
+    ):
+        text = path.read_text()
+        marker = re.search(
+            r"<!-- canonical-status-links:start -->\n(.*?)\n"
+            r"<!-- canonical-status-links:end -->",
+            text,
+            re.DOTALL,
+        )
+        assert marker is not None
+        blocks.append(marker.group(1))
+        assert "> **Status:**" not in text
+        assert "promotion is blocked" not in text.lower()
+        assert "pre-beta release implementation" not in text.lower()
+        assert re.search(r"\]\(\.\./", text) is None
+    assert blocks == [expected, expected]
+
+    typescript_readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
+    assert "Node 22 or 24" in typescript_readme
+    assert "Node 22+" not in typescript_readme
+    assert "TypeScript 5.7" in typescript_readme
+    assert "current TypeScript 6" in typescript_readme
+
+
+def test_trust_and_feedback_surfaces_are_complete() -> None:
+    security = (REPO_ROOT / "SECURITY.md").read_text()
+    contributing = (REPO_ROOT / "CONTRIBUTING.md").read_text()
+    support = (REPO_ROOT / "SUPPORT.md").read_text()
+    issue = (REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "kaji-sdk-bug.yml").read_text()
+
+    for phrase in ("private", "supported beta versions", "response", "redact"):
+        assert phrase in security.lower()
+    for phrase in ("stable", "experimental", "local checks"):
+        assert phrase in contributing.lower()
+    for phrase in ("best effort", "support boundary", "30-day"):
+        assert phrase in support.lower()
+    for phrase in (
+        "SDK language",
+        "SDK version",
+        "runtime",
+        "compiler",
+        "package manager",
+        "operating system",
+        "minimal reproduction",
+        "error code",
+        "redacted event excerpt",
+    ):
+        assert phrase.lower() in issue.lower()
 
 
 def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
@@ -238,7 +301,13 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     assert "installed-quickstart:python:start" in python_smoke
     assert "exec(compile(match.group(1)" in python_smoke
     assert "installed-quickstart:typescript:start" in ts_smoke
-    assert (
-        'runCommand(nodeBinary, [tsc, "--project", "tsconfig.docs.json"])' in ts_smoke
+    assert re.search(
+        r'runCommand\(\s*"docs:compile-typescript-current",\s*nodeBinary,\s*'
+        r'\[\s*tsc,\s*"--project",\s*"tsconfig\.docs\.json"\s*,?\s*\]\s*\)',
+        ts_smoke,
     )
-    assert 'runCommand(nodeBinary, ["compiled-docs/docs-quickstart.mjs"])' in ts_smoke
+    assert re.search(
+        r'runCommand\(\s*"docs:run",\s*nodeBinary,\s*'
+        r'\[\s*"compiled-docs/docs-quickstart\.mjs"\s*\]\s*\)',
+        ts_smoke,
+    )

@@ -25,6 +25,8 @@ python or typescript project.
 | [`kaji/ts`](kaji/ts) | kaji | `@kaji/sdk`: typescript runtime port | typescript |
 
 each package has its own readme with setup instructions and architecture details.
+the canonical kaji operating path starts at [`docs/kaji/README.md`](docs/kaji/README.md),
+with current release evidence in [`kaji/RELEASE_MATRIX.md`](kaji/RELEASE_MATRIX.md).
 
 ## architecture
 

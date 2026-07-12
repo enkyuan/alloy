@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import sys
 from tempfile import TemporaryDirectory
+import time
 
 from _repo_process import (
     PACKAGE_COMMAND_BUDGET,
@@ -22,6 +24,11 @@ from _repo_process import (
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SDK_ROOT / "scripts"
+EXPECTED_MOCK_REPLY = "mock"
+EXPECTED_ECHO_DESCRIPTION = (
+    "Trivial echo integration. Two pure functions, no auth, no network. "
+    "Proves the cross-language registry contract."
+)
 
 
 def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
@@ -34,10 +41,129 @@ def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -
         ) from None
 
 
+def run_capture(
+    command: list[str],
+    *,
+    cwd: Path = SDK_ROOT,
+    budget: CommandBudget = PACKAGE_COMMAND_BUDGET,
+    environment: dict[str, str] | None = None,
+) -> str:
+    """Run a bounded command and return UTF-8 stdout."""
+
+    try:
+        completed = run_checked(
+            command,
+            cwd=cwd,
+            budget=budget,
+            capture=True,
+            env=environment,
+        )
+    except CommandExitError as error:
+        raise SystemExit(
+            error.returncode if error.returncode >= 0 else 128 - error.returncode
+        ) from None
+    try:
+        return completed.stdout.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        raise SystemExit("FAIL: installed scaffold emitted non-UTF-8 output") from None
+
+
 def venv_python(venv: Path) -> Path:
     if os.name == "nt":
         return venv / "Scripts" / "python.exe"
     return venv / "bin" / "python"
+
+
+def venv_kaji(venv: Path) -> Path:
+    if os.name == "nt":
+        return venv / "Scripts" / "kaji.exe"
+    return venv / "bin" / "kaji"
+
+
+def artifact_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    environment.pop("PYTHONHOME", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTHONNOUSERSITE"] = "1"
+    return environment
+
+
+def installed_registry_root(venv: Path) -> Path:
+    candidates = [
+        venv / "Lib" / "site-packages" / "kaji" / "integrations" / "registry",
+        *venv.glob("lib/python*/site-packages/kaji/integrations/registry"),
+    ]
+    matches = [candidate.resolve() for candidate in candidates if candidate.is_dir()]
+    if len(matches) != 1:
+        raise SystemExit(
+            "FAIL: installed artifact registry could not be located uniquely"
+        )
+    try:
+        matches[0].relative_to(venv.resolve())
+    except ValueError:
+        raise SystemExit(
+            "FAIL: integration registry was not loaded from the artifact venv"
+        ) from None
+    return matches[0]
+
+
+def assert_init_cli_output(output: str, scaffold: Path) -> None:
+    expected = (scaffold / "agent.py", scaffold / ".env.example")
+    if any(not path.is_file() or str(path) not in output for path in expected):
+        raise SystemExit(
+            "FAIL: installed init did not report and write its scaffold files"
+        )
+
+
+def assert_echo_cli_output(output: str, destination: Path, registry: Path) -> None:
+    for name in ("echo.py", "echo.ts"):
+        copied = destination / name
+        packaged = registry / "echo" / name
+        if not copied.is_file() or copied.read_bytes() != packaged.read_bytes():
+            raise SystemExit(
+                "FAIL: installed add did not copy the packaged Echo assets"
+            )
+        if f"wrote {copied.resolve()}" not in output:
+            raise SystemExit(
+                "FAIL: installed add did not report every copied Echo asset"
+            )
+    if "Installed integration: echo v0.1.0" not in output:
+        raise SystemExit("FAIL: installed add did not report the Echo integration")
+
+
+def assert_list_integrations_output(output: str) -> None:
+    expected = re.compile(
+        rf"^  echo\s+\[beta\]\s+v0\.1\.0\s+{re.escape(EXPECTED_ECHO_DESCRIPTION)}$",
+        re.MULTILINE,
+    )
+    if expected.search(output) is None:
+        raise SystemExit(
+            "FAIL: installed list-integrations omitted the packaged Echo entry"
+        )
+
+
+def assert_scaffold_output(output: str) -> tuple[str, int]:
+    lines = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    if lines.get("text") != EXPECTED_MOCK_REPLY:
+        raise SystemExit(
+            "FAIL: installed scaffold omitted the exact deterministic mock reply"
+        )
+    if not lines.get("turn_id"):
+        raise SystemExit("FAIL: installed scaffold omitted a non-empty turn id")
+    try:
+        final_sequence = int(lines.get("final_sequence", "0"))
+    except ValueError:
+        final_sequence = 0
+    if final_sequence <= 0:
+        raise SystemExit("FAIL: installed scaffold omitted a positive final sequence")
+    return EXPECTED_MOCK_REPLY, final_sequence
+
+
+def assert_matching_scaffold_outputs(
+    cold: tuple[str, int], warm: tuple[str, int]
+) -> None:
+    if cold != warm:
+        raise SystemExit("FAIL: cold and warm scaffold outputs differed")
 
 
 def release_smoke(dist_dir: Path) -> None:
@@ -98,6 +224,7 @@ def release_smoke(dist_dir: Path) -> None:
             raise SystemExit(f"FAIL: expected wheel and sdist under {dist_dir}")
 
         for package in (wheel, sdist):
+            cold_started = time.perf_counter()
             safe_name = re.sub(r"[^a-zA-Z0-9]", "-", package.name)
             venv = workdir / f"venv-{safe_name}"
             run([sys.executable, "-m", "venv", str(venv)])
@@ -136,6 +263,71 @@ def release_smoke(dist_dir: Path) -> None:
                 ]
             )
             run([str(python), str(SCRIPTS / "smoke_install.py")])
+
+            artifact_workdir = workdir / f"artifact-{safe_name}"
+            artifact_workdir.mkdir()
+            environment = artifact_environment()
+            registry = installed_registry_root(venv)
+            kaji = str(venv_kaji(venv))
+
+            scaffold = workdir / f"scaffold-{safe_name}"
+            init_output = run_capture(
+                [
+                    kaji,
+                    "--no-color",
+                    "init",
+                    str(scaffold),
+                    "--provider",
+                    "mock",
+                    "--yes",
+                ],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            assert_init_cli_output(init_output, scaffold)
+
+            integration = workdir / f"integration-{safe_name}"
+            add_output = run_capture(
+                [kaji, "--no-color", "add", "echo", "--out", str(integration)],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            assert_echo_cli_output(add_output, integration, registry)
+
+            list_output = run_capture(
+                [kaji, "--no-color", "list-integrations"],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            assert_list_integrations_output(list_output)
+
+            cold_output = run_capture(
+                [str(python), "agent.py"],
+                cwd=scaffold,
+                environment=environment,
+            )
+            cold_ms = round((time.perf_counter() - cold_started) * 1000, 3)
+            cold_result = assert_scaffold_output(cold_output)
+
+            warm_started = time.perf_counter()
+            warm_output = run_capture(
+                [str(python), "agent.py"],
+                cwd=scaffold,
+                environment=environment,
+            )
+            warm_ms = round((time.perf_counter() - warm_started) * 1000, 3)
+            warm_result = assert_scaffold_output(warm_output)
+            assert_matching_scaffold_outputs(cold_result, warm_result)
+            print(
+                json.dumps(
+                    {
+                        "artifact": package.name,
+                        "coldSetupToOutputMs": cold_ms,
+                        "warmRunMs": warm_ms,
+                    },
+                    sort_keys=True,
+                )
+            )
 
     run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
     print("PASS: release smoke verified")

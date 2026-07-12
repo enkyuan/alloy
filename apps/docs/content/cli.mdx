@@ -29,7 +29,7 @@ projects, generates Python or TypeScript OpenAPI handlers, and manages the
 packaged integration registry.
 
 ```bash
-kaji init ./my-agent --provider openai --yes
+kaji init ./my-agent --provider mock --yes
 kaji gen --spec openapi.yaml --out tools/ --lang python
 kaji list-integrations
 kaji add echo --out ./integrations
@@ -48,17 +48,24 @@ Installing `@kaji/sdk` exposes a small CLI for the packaged TypeScript registry
 and replay tooling. It is not the standalone scaffold/diagnostics package.
 
 ```bash
-kaji init --out ./my-agent
+kaji init ./my-agent --provider mock --yes
 kaji list-integrations
 kaji add echo --out ./integrations
 kaji add http --out ./integrations --allow-experimental
 kaji replay ./session.jsonl --format summary
 ```
 
-The embedded `init` accepts `--out` and `--force`; it scaffolds TypeScript only.
+The embedded `init` uses the same positional path, provider, `--yes`, and
+`--force` grammar as Python. TypeScript temporarily accepts deprecated `--out`
+with one stderr warning, but maintained examples use the positional path.
 Experimental integrations require `--allow-experimental`. `replay` accepts
 `tree`, `summary`, or `json` output plus optional `--filter`, `--grep`, and
 `--tail` arguments.
+
+Both embedded SDK CLIs accept global `--no-color` and `--verbose` before the
+command. Successful data uses stdout, diagnostics use stderr, and exits are 0
+for success/help, 1 for validation/runtime/file conflicts, and 2 for usage.
+Replay output is a closed redaction-safe projection.
 
 ## Standalone cross-language CLI
 

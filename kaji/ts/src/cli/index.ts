@@ -14,6 +14,14 @@ export interface RunOptions {
   schemaRoot?: string;
   log?: (msg: string) => void;
   err?: (msg: string) => void;
+  noColor?: boolean;
+  verbose?: boolean;
+  /** @internal Source-test seam; packaged CLI calls the pinned worker process. */
+  initWorkerRunner?: (
+    out: string,
+    files: Readonly<Record<string, string>>,
+    force: boolean,
+  ) => Promise<void>;
 }
 
 export interface Command {
@@ -37,7 +45,7 @@ export const COMMANDS: Record<string, Command> = {
   },
   init: {
     describe: "Scaffold a new TypeScript Kaji project.",
-    usage: "kaji init [--out <dir>] [--force]",
+    usage: "kaji init [path] [--provider mock|openai|anthropic] [--yes] [--force]",
     run: (rest, opts) => init(rest, opts),
   },
   "list-integrations": {
@@ -54,7 +62,7 @@ export const COMMANDS: Record<string, Command> = {
 };
 
 function printHelp(log: (m: string) => void): void {
-  log("usage: kaji <command> [args]");
+  log("usage: kaji [--no-color] [--verbose] <command> [args]");
   log("");
   log("commands:");
   for (const name of Object.keys(COMMANDS).sort()) {
@@ -66,10 +74,24 @@ function printHelp(log: (m: string) => void): void {
 export async function runCli(argv: string[], opts: RunOptions): Promise<number> {
   const log = opts.log ?? ((m: string) => console.log(m));
   const err = opts.err ?? ((m: string) => console.error(m));
-  const [cmd, ...rest] = argv;
+  let index = 0;
+  let noColor = opts.noColor ?? false;
+  let verbose = opts.verbose ?? false;
+  while (index < argv.length) {
+    if (argv[index] === "--no-color") {
+      noColor = true;
+      index++;
+    } else if (argv[index] === "--verbose") {
+      verbose = true;
+      index++;
+    } else {
+      break;
+    }
+  }
+  const [cmd, ...rest] = argv.slice(index);
   if (cmd === undefined) {
     printHelp(log);
-    return 1;
+    return 0;
   }
   if (cmd === "-h" || cmd === "--help") {
     printHelp(log);
@@ -79,11 +101,11 @@ export async function runCli(argv: string[], opts: RunOptions): Promise<number> 
   if (!handler) {
     err(`Unknown command: ${cmd}`);
     printHelp(err);
-    return 1;
+    return 2;
   }
   if (rest[0] === "-h" || rest[0] === "--help") {
     log(`usage: ${handler.usage}`);
     return 0;
   }
-  return handler.run(rest, opts);
+  return handler.run(rest, { ...opts, noColor, verbose });
 }

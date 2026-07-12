@@ -1,5 +1,40 @@
 # Troubleshooting
 
+## `INVALID_TOOL_RESULT`
+
+The handler returned a value that cannot cross the durable JSON boundary or
+exceeds 64 KiB. Inspect the safe subject/JSON Pointer and tool name, then return
+finite JSON within the I-JSON integer range. The outcome is `unknown`; do not
+automatically retry a tool that may have produced an external effect.
+
+## `TURN_TIMEOUT`
+
+Inspect `phase`, configured/effective limit, `retryable`, and `outcome`.
+Queue and pre-execution approval timeouts are `not_started` and may be retried
+under application policy. Active tool and provider-stream timeouts require
+manual outcome review. The default work limit is 120 seconds plus at most a
+5-second provider cancellation grace.
+
+## `PROVIDER_CANCELLATION_CONTRACT_VIOLATION`
+
+The provider ignored cancellation beyond the grace period and the session is
+quarantined. Drain and replace the provider, then close the runtime. If the
+operation never settles, restart the process; do not start another turn for
+that session.
+
+## `PROVIDER_OUTPUT_LIMIT`
+
+The diagnostic names only the closed text, tool-argument, total-response, or
+tool-count dimension and its configured limit. Reduce model output or the tool
+schema. Do not log the rejected provider body.
+
+## `INTEGRATION_ABI_MISMATCH`
+
+Use the redacted JSON Pointer, expected/actual field, and remediation command.
+Update the canonical manifest or executable runtime metadata, then run
+`kaji/scripts/check_integration_abi.py --explain`. Do not bypass the Echo
+stable-ABI check.
+
 ## `MISSING_TOOL_IDENTITY`
 
 The runtime offered at least one tool but the turn had no principal. Pass a
@@ -44,6 +79,10 @@ Stable replay requires one session, contiguous unique sequences, and no mixed
 legacy rows. Fully unsequenced historical logs must use the named legacy replay
 function, then be migrated offline. Timestamp sorting is not a stable replay
 contract.
+
+The TypeScript CLI also fails closed on any corrupt JSONL line. Its human and
+JSON output are safe projections and never include prompts, assistant text,
+tool arguments/results, arbitrary metadata, keys, or raw cause strings.
 
 ## Integration is experimental
 

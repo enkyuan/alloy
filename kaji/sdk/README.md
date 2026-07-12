@@ -4,16 +4,13 @@
 import the pieces you need and compose them. The core is dependency-injected and
 infra-free (no database, Supabase, FastAPI, or web server required).
 
-> **Status:** pre-beta release implementation; promotion is blocked pending
-> same-commit protected release evidence. The embedded stable core has local
-> deterministic coverage, but the Python floor/latest matrix, required keyed
-> OpenAI proof (and Anthropic only when configured),
-> full benchmark, 30-minute soak, signed tag, provenance, and publication proof
-> must pass before a production-beta label. Python-only Redis, voice/TTS, and
-> RAG/retrieval remain experimental.
+<!-- canonical-status-links:start -->
+> Canonical documentation: https://github.com/enkyuan/alloy/blob/main/docs/kaji/README.md
+> Release status and evidence: https://github.com/enkyuan/alloy/blob/main/kaji/RELEASE_MATRIX.md
+<!-- canonical-status-links:end -->
 
-See [**Kaji MVP**](../../docs/MVP.md) for the full five-step developer path and scope
-definition.
+See [**Kaji MVP**](https://github.com/enkyuan/alloy/blob/main/docs/MVP.md) for
+the full five-step developer path and scope definition.
 
 ## Install
 
@@ -95,20 +92,14 @@ async def main():
         .build()
     )
 
-    token = kaji.CancellationToken()
     loop = asyncio.get_running_loop()
-    cancel_at = loop.call_later(30, token.cancel)
-    try:
-        result = await runtime.turn(
-            "Weather in Seattle?",
-            cancellation_token=token,
-            context=kaji.TurnContext(
-                principal_id="quickstart",
-                deadline_monotonic=loop.time() + 30,
-            ),
-        )
-    finally:
-        cancel_at.cancel()
+    result = await runtime.turn(
+        "Weather in Seattle?",
+        context=kaji.TurnContext(
+            principal_id="quickstart",
+            deadline_monotonic=loop.time() + 30,
+        ),
+    )
     print(result.text, result.session_id, result.turn_id)
     print([(event.id, event.sequence, event.turn_id) for event in result.events])
 
@@ -124,12 +115,12 @@ the redaction-safe `type`, `code`, `service`, `action`, `status`, and
 `retryable` fields. The normalizer accepts Kaji provider errors, not arbitrary
 vendor exceptions.
 
-See [`docs/kaji/production-beta.md`](../../docs/kaji/production-beta.md) for
+See [`docs/kaji/production-beta.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/production-beta.md) for
 the installed-package version of both first-success examples and exact default
 limits. Operating details are in
-[`concurrency-and-ordering.md`](../../docs/kaji/concurrency-and-ordering.md),
-[`tool-contracts.md`](../../docs/kaji/tool-contracts.md), and
-[`troubleshooting.md`](../../docs/kaji/troubleshooting.md).
+[`concurrency-and-ordering.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/concurrency-and-ordering.md),
+[`tool-contracts.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/tool-contracts.md), and
+[`troubleshooting.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/troubleshooting.md).
 Call `runtime.effective_limits()` to inspect the immutable
 `EffectiveRuntimeLimits` resolved for one runtime.
 
@@ -237,9 +228,10 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
 ```
 
 The live test registers a read-only probe tool, verifies the model calls it,
-and verifies the runtime emits final assistant text using the tool result. It
-skips automatically when `OPENAI_API_KEY` is absent. After OpenAI passes, test
-providers in this order: Anthropic, Python Gemini native, then Kimi/OpenRouter.
+and verifies the runtime emits final assistant text using the tool result.
+Release evidence requires protected OpenAI and Anthropic tool loops in both
+SDKs on one exact commit. A missing credential blocks that release evidence.
+Native Gemini and Kimi remain experimental and are evaluated separately.
 
 For the cross-SDK release gate, run from the repository root:
 
@@ -258,11 +250,9 @@ uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
-Without `OPENAI_API_KEY`, the first command proves import and skip hygiene only.
-It is not a provider-readiness signal. With `KAJI_REQUIRE_LIVE_KEYS=1`, the
-same no-key state fails loudly. A release cannot be called live-ready until this
-command exits with `PASS: OpenAI live tool-loop readiness verified` while
-`OPENAI_API_KEY` is set:
+Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
+It is not provider evidence. The protected release mode requires both
+`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` and fails when either is absent.
 
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
@@ -275,7 +265,7 @@ The same keyed proof can be included in the wrapper with
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
   `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
-  event bus/store are the pre-beta embedded-agent surface.
+  event store/journal form the embedded-agent compatibility surface.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities exist for early adopters but are not production-hardened.
@@ -283,9 +273,9 @@ The same keyed proof can be included in the wrapper with
   TypeScript. TS Gemini/Kimi remain OpenAI-compatible factories rather than
   native provider implementations.
 
-See [`kaji/RELEASE_MATRIX.md`](../RELEASE_MATRIX.md) for the cross-SDK release
-matrix and the exact distinction between stable core, experimental Python-only
-surfaces, and TypeScript surfaces that are not ported.
+See https://github.com/enkyuan/alloy/blob/main/kaji/RELEASE_MATRIX.md for the
+cross-SDK release matrix and the exact distinction between stable core,
+experimental Python-only surfaces, and TypeScript surfaces that are not ported.
 
 The beta promise is the core agent loop. Redis realtime/history, voice/TTS,
 `DocumentRAG`, native Gemini/Kimi, and tool retrieval remain outside the beta
@@ -387,7 +377,7 @@ ANTHROPIC_API_KEY=... uv run pytest -m integration tests/integration/test_anthro
 
 The SDK test suite needs no environment. The service tests under
 `kaji/serve/tests/` cover the FastAPI app and workers; those need Postgres
-(see [`kaji/serve/README.md`](../serve/README.md)).
+(see [`kaji/serve/README.md`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md)).
 
 ## Testing without API keys
 
@@ -530,7 +520,7 @@ production, not a requirement for using it. It runs as three processes over Redi
 
 FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
 nodes, and TaskIQ workers are **not** in the SDK -- they live in the separate
-[`kaji-serve`](../serve/README.md) distribution.
+[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) distribution.
 
 ## Module layout
 
@@ -570,11 +560,11 @@ configuration is needed to `import kaji`.
 | `DATABASE_URL` | kaji-serve only | Postgres connection |
 | `SUPABASE_ANON_KEY` | kaji-serve only | Supabase auth |
 
-See [`.env.example`](../../.env.example) for the full list.
+See [`.env.example`](https://github.com/enkyuan/alloy/blob/main/.env.example) for the full list.
 
 ## Project layout notes
 
 The repo ships **two distributions**: `kaji` (this SDK) and
-[`kaji-serve`](../serve/README.md) (the reference FastAPI + workers
+[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) (the reference FastAPI + workers
 service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.

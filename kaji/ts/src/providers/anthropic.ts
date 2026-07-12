@@ -197,7 +197,7 @@ export class AnthropicProvider implements ModelProvider {
     return this.opts.model;
   }
 
-  protected async createClient(): Promise<Anthropic> {
+  protected async createClient(): Promise<object> {
     const { default: AnthropicDefault } = await import("@anthropic-ai/sdk");
     return new AnthropicDefault({ apiKey: this.opts.apiKey, maxRetries: 0 });
   }
@@ -205,7 +205,7 @@ export class AnthropicProvider implements ModelProvider {
   private async getClient(): Promise<Anthropic> {
     if (this.client !== null) return this.client;
     try {
-      this.client = await this.createClient();
+      this.client = (await this.createClient()) as Anthropic;
     } catch (error) {
       if (error instanceof ProviderError) throw error;
       throw new ProviderConfigError("Anthropic provider requires the @anthropic-ai/sdk package.", {

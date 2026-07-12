@@ -9,21 +9,22 @@ def agent_template(provider: str) -> str:
 from __future__ import annotations
 
 import asyncio
-import os
 
 import kaji
 
 
 async def main() -> None:
-    provider_name = os.environ.get("KAJI_MODEL_PROVIDER", {provider!r})
     runtime = (
         kaji.AgentBuilder()
-        .provider(kaji.get_provider(provider_name))
+        .provider(kaji.get_provider("{provider}"))
         .system_prompt("You are a helpful assistant.")
         .build()
     )
     result = await runtime.turn("Say hello.")
-    print(result.text)
+    final_sequence = max(event.sequence or 0 for event in result.events)
+    print(f"text={{result.text}}")
+    print(f"turn_id={{result.turn_id}}")
+    print(f"final_sequence={{final_sequence}}")
 
 
 if __name__ == "__main__":
@@ -32,11 +33,12 @@ if __name__ == "__main__":
 
 
 def env_template(provider: str) -> str:
-    return f"""# kaji
+    credentials = {
+        "mock": "# No provider credentials required.",
+        "openai": "# OPENAI_API_KEY=sk-...",
+        "anthropic": "# ANTHROPIC_API_KEY=sk-ant-...",
+    }
+    return f"""# kaji provider: {provider}
 KAJI_MODEL_PROVIDER={provider}
-
-# OPENAI_API_KEY=sk-...
-# ANTHROPIC_API_KEY=sk-ant-...
-# GEMINI_API_KEY=...
-# KIMI_API_KEY=...
+{credentials[provider]}
 """

@@ -13,6 +13,14 @@ Tool arguments persisted in durable events must be finite JSON and no larger
 than 65,536 UTF-8 bytes in canonical form. The limit is not configurable in
 the beta contract.
 
+Tool and workflow results cross the same durable boundary before idempotency
+bookkeeping or success-event construction. Values are detached canonical JSON:
+cycles, class instances, functions, non-finite numbers, lone surrogates, and
+integers outside the I-JSON safe range fail. A tool result is limited to 64 KiB
+and the whole stored event to 1 MiB. `INVALID_TOOL_RESULT` reports the tool,
+closed durable-value subject/pointer, `outcome=unknown`, and the limit without
+including the rejected value.
+
 ## Identity and risk
 
 Every enabled tool requires one explicit risk:
