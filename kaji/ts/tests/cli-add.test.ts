@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -674,6 +675,7 @@ describe("kaji add", () => {
         runtime: "typescript",
         renameEntry: async (source, destination) => {
           if (source.includes(".echo.kaji-stage-")) {
+            rmSync(out, { recursive: true });
             mkdirSync(out);
             writeFileSync(join(out, "owner.txt"), concurrent);
           }
@@ -683,6 +685,75 @@ describe("kaji add", () => {
     ).rejects.toThrow();
     expect(readFileSync(join(out, "owner.txt"), "utf8")).toBe(concurrent);
   });
+
+  it.each([false, true])(
+    "rejects concurrent destination creation before absent reservation (nonempty=%s)",
+    async (nonempty) => {
+      const realRegistry = join(__dirname, "..", "registry");
+      const index = await loadRegistryIndex(realRegistry);
+      const echo = await loadManifest(realRegistry, "echo", { index });
+      const out = join(tmp, `reservation-create-${nonempty}`);
+      const concurrent = "concurrent owner bytes\n";
+
+      await expect(
+        installIntegrationBundle({
+          manifest: echo,
+          entry: index.integrations.echo!,
+          destination: out,
+          runtime: "typescript",
+          beforeReservationCreate: async (destination) => {
+            mkdirSync(destination);
+            if (nonempty) writeFileSync(join(destination, "owner.txt"), concurrent);
+          },
+        }),
+      ).rejects.toThrow("Destination changed");
+      expect(existsSync(out)).toBe(true);
+      if (nonempty) {
+        expect(readFileSync(join(out, "owner.txt"), "utf8")).toBe(concurrent);
+      } else {
+        expect(readdirSync(out)).toEqual([]);
+      }
+    },
+  );
+
+  it.each(["mutate", "replace"] as const)(
+    "preserves reservation %s before absent publish",
+    async (mode) => {
+      const realRegistry = join(__dirname, "..", "registry");
+      const index = await loadRegistryIndex(realRegistry);
+      const echo = await loadManifest(realRegistry, "echo", { index });
+      const out = join(tmp, `reservation-${mode}`);
+      const concurrent = "concurrent owner bytes\n";
+      let replacementIdentity: string | undefined;
+
+      await expect(
+        installIntegrationBundle({
+          manifest: echo,
+          entry: index.integrations.echo!,
+          destination: out,
+          runtime: "typescript",
+          beforeReservationPublish: async (destination) => {
+            if (mode === "mutate") {
+              writeFileSync(join(destination, "owner.txt"), concurrent);
+            } else {
+              rmSync(destination, { recursive: true });
+              mkdirSync(destination);
+              const metadata = lstatSync(destination);
+              replacementIdentity = `${metadata.dev}:${metadata.ino}`;
+            }
+          },
+        }),
+      ).rejects.toThrow("Destination changed");
+      expect(existsSync(out)).toBe(true);
+      if (mode === "mutate") {
+        expect(readFileSync(join(out, "owner.txt"), "utf8")).toBe(concurrent);
+      } else {
+        const metadata = lstatSync(out);
+        expect(`${metadata.dev}:${metadata.ino}`).toBe(replacementIdentity);
+        expect(readdirSync(out)).toEqual([]);
+      }
+    },
+  );
 
   it("rejects --check --force before creating the default destination", async () => {
     const previous = process.cwd();

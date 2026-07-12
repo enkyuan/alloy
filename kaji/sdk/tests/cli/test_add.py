@@ -335,6 +335,7 @@ def test_absent_publish_never_deletes_new_destination(
 
     def create_then_rename(self: Path, target: Path) -> Path:
         if self.name.startswith(".echo.kaji-stage-"):
+            destination.rmdir()
             destination.mkdir()
             (destination / "owner.txt").write_bytes(concurrent)
         return original(self, target)
@@ -344,6 +345,75 @@ def test_absent_publish_never_deletes_new_destination(
         install_integration_bundle(load_manifest("echo"), destination, runtime="python")
 
     assert (destination / "owner.txt").read_bytes() == concurrent
+
+
+@pytest.mark.parametrize("nonempty", [False, True])
+def test_absent_reservation_rejects_concurrent_destination_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nonempty: bool
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    concurrent = b"concurrent owner bytes\n"
+    original = Path.mkdir
+    injected = False
+
+    def create_before_reservation(self: Path, *args, **kwargs) -> None:
+        nonlocal injected
+        if self == destination and not injected:
+            injected = True
+            original(self)
+            if nonempty:
+                (self / "owner.txt").write_bytes(concurrent)
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", create_before_reservation)
+    with pytest.raises(ManifestError, match="Destination changed"):
+        install_integration_bundle(load_manifest("echo"), destination, runtime="python")
+
+    assert destination.is_dir()
+    if nonempty:
+        assert (destination / "owner.txt").read_bytes() == concurrent
+    else:
+        assert list(destination.iterdir()) == []
+
+
+@pytest.mark.parametrize("mode", ["mutate", "replace"])
+def test_absent_reservation_preserves_mutation_or_replacement_before_publish(
+    tmp_path: Path, mode: str
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    concurrent = b"concurrent owner bytes\n"
+    replacement_identity: list[tuple[int, int]] = []
+
+    def race(path: Path) -> None:
+        if mode == "mutate":
+            (path / "owner.txt").write_bytes(concurrent)
+        else:
+            path.rmdir()
+            path.mkdir()
+            metadata = path.lstat()
+            replacement_identity.append((metadata.st_dev, metadata.st_ino))
+
+    with pytest.raises(ManifestError, match="Destination changed"):
+        install_integration_bundle(
+            load_manifest("echo"),
+            destination,
+            runtime="python",
+            _before_reservation_publish=race,
+        )
+
+    assert destination.is_dir()
+    if mode == "mutate":
+        assert (destination / "owner.txt").read_bytes() == concurrent
+    else:
+        metadata = destination.lstat()
+        assert (metadata.st_dev, metadata.st_ino) == replacement_identity[0]
+        assert list(destination.iterdir()) == []
 
 
 def test_staging_copy_failure_leaves_the_old_bundle_byte_identical(

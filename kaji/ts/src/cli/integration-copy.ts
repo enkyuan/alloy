@@ -10,6 +10,7 @@ import {
   readdir,
   realpath,
   rename,
+  rmdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -54,6 +55,9 @@ interface InstallOptions extends CopyContext {
   readonly force?: boolean;
   /** @internal Deterministic rollback test seam. */
   readonly renameEntry?: (source: string, destination: string) => Promise<void>;
+  /** @internal Deterministic absent-reservation race seams. */
+  readonly beforeReservationCreate?: (destination: string) => Promise<void>;
+  readonly beforeReservationPublish?: (destination: string) => Promise<void>;
 }
 
 interface Provenance {
@@ -67,6 +71,12 @@ interface Provenance {
   readonly manifestSha256: string;
   readonly license: Readonly<{ identifier: string; url: string; sha256: string }>;
   readonly files: Readonly<Record<string, string>>;
+}
+
+interface ReservationIdentity {
+  readonly dev: number;
+  readonly ino: number;
+  readonly ctimeMs: number;
 }
 
 const SIDECAR = ".kaji-integration-provenance.json";
@@ -392,6 +402,40 @@ async function safeParent(destination: string): Promise<string> {
   return canonicalParent;
 }
 
+async function reservationIdentity(destination: string): Promise<ReservationIdentity> {
+  let metadata;
+  let entries: string[];
+  try {
+    metadata = await lstat(destination);
+    entries = await readdir(destination);
+  } catch {
+    throw new Error("Destination changed during integration copy");
+  }
+  if (metadata.isSymbolicLink() || !metadata.isDirectory() || entries.length !== 0) {
+    throw new Error("Destination changed during integration copy");
+  }
+  return { dev: metadata.dev, ino: metadata.ino, ctimeMs: metadata.ctimeMs };
+}
+
+async function matchesEmptyReservation(
+  destination: string,
+  identity: ReservationIdentity,
+): Promise<boolean> {
+  try {
+    const metadata = await lstat(destination);
+    return (
+      !metadata.isSymbolicLink() &&
+      metadata.isDirectory() &&
+      metadata.dev === identity.dev &&
+      metadata.ino === identity.ino &&
+      metadata.ctimeMs === identity.ctimeMs &&
+      (await readdir(destination)).length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function installIntegrationBundle(options: InstallOptions): Promise<BundleStatus> {
   const lexicalContext = { ...options, destination: resolve(options.destination) };
   const initial = await classifyIntegrationBundle(lexicalContext);
@@ -410,6 +454,7 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
   const backup = join(parent, `.${options.manifest.name}.kaji-backup-${randomUUID()}`);
   const renameEntry = options.renameEntry ?? rename;
   let wroteBackup = false;
+  let reservation: ReservationIdentity | undefined;
   try {
     for (const [index, relativePath] of options.manifest.files.entries()) {
       const source = await safeSource(options.manifest, index);
@@ -444,6 +489,23 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
         }
         throw new Error("Destination changed during integration copy");
       }
+    } else if (initial.state === "absent" && initial.observed === "absent") {
+      await options.beforeReservationCreate?.(context.destination);
+      try {
+        await mkdir(context.destination);
+      } catch (error) {
+        if (errno(error, "EEXIST")) {
+          throw new Error("Destination changed during integration copy");
+        }
+        throw error;
+      }
+      reservation = await reservationIdentity(context.destination);
+    }
+    if (reservation !== undefined) {
+      await options.beforeReservationPublish?.(context.destination);
+      if (!(await matchesEmptyReservation(context.destination, reservation))) {
+        throw new Error("Destination changed during integration copy");
+      }
     }
     try {
       await renameEntry(staging, context.destination);
@@ -454,6 +516,7 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
       }
       throw error;
     }
+    reservation = undefined;
     if (wroteBackup) {
       await rm(backup, { recursive: true, force: true });
       wroteBackup = false;
@@ -469,6 +532,12 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
     if (wroteBackup && !(await exists(context.destination)) && (await exists(backup))) {
       await renameEntry(backup, context.destination);
+    }
+    if (
+      reservation !== undefined &&
+      (await matchesEmptyReservation(context.destination, reservation))
+    ) {
+      await rmdir(context.destination);
     }
   }
 }

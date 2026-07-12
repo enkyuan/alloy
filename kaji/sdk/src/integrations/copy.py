@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
@@ -337,12 +338,46 @@ def _safe_parent(destination: Path) -> Path:
     return destination.parent
 
 
+_ReservationIdentity = tuple[int, int, int]
+
+
+def _reservation_identity(destination: Path) -> _ReservationIdentity:
+    try:
+        metadata = destination.lstat()
+        empty = not any(destination.iterdir())
+    except OSError:
+        raise ManifestError("Destination changed during integration copy") from None
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or not empty
+    ):
+        raise ManifestError("Destination changed during integration copy")
+    return metadata.st_dev, metadata.st_ino, metadata.st_ctime_ns
+
+
+def _matches_empty_reservation(
+    destination: Path, identity: _ReservationIdentity
+) -> bool:
+    try:
+        metadata = destination.lstat()
+        return (
+            not stat.S_ISLNK(metadata.st_mode)
+            and stat.S_ISDIR(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino, metadata.st_ctime_ns) == identity
+            and not any(destination.iterdir())
+        )
+    except OSError:
+        return False
+
+
 def install_integration_bundle(
     manifest: Manifest,
     destination: Path,
     *,
     runtime: Literal["python", "typescript"],
     force: bool = False,
+    _before_reservation_publish: Callable[[Path], None] | None = None,
 ) -> BundleStatus:
     lexical = Path(os.path.abspath(os.fspath(destination)))
     initial = classify_integration_bundle(manifest, lexical, runtime=runtime)
@@ -361,6 +396,7 @@ def install_integration_bundle(
     )
     backup = parent / f".{destination.name}.kaji-backup-{uuid4().hex}"
     wrote_backup = False
+    reservation: _ReservationIdentity | None = None
     try:
         for relative in manifest.files:
             source = _safe_source(manifest, relative)
@@ -393,6 +429,20 @@ def install_integration_bundle(
                     backup.rename(destination)
                     wrote_backup = False
                 raise ManifestError("Destination changed during integration copy")
+        elif initial.state == "absent" and initial._observed == "absent":
+            try:
+                destination.mkdir()
+            except FileExistsError:
+                raise ManifestError(
+                    "Destination changed during integration copy"
+                ) from None
+            reservation = _reservation_identity(destination)
+
+        if reservation is not None:
+            if _before_reservation_publish is not None:
+                _before_reservation_publish(destination)
+            if not _matches_empty_reservation(destination, reservation):
+                raise ManifestError("Destination changed during integration copy")
         try:
             staging.rename(destination)
         except Exception:
@@ -404,6 +454,7 @@ def install_integration_bundle(
                 backup.rename(destination)
                 wrote_backup = False
             raise
+        reservation = None
         if wrote_backup:
             shutil.rmtree(backup)
             wrote_backup = False
@@ -423,3 +474,7 @@ def install_integration_bundle(
             and not os.path.lexists(destination)
         ):
             backup.rename(destination)
+        if reservation is not None and _matches_empty_reservation(
+            destination, reservation
+        ):
+            destination.rmdir()
