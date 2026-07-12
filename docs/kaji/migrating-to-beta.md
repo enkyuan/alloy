@@ -544,8 +544,8 @@ Legacy API-key auth and tools without risk are rejected:
 ```
 <!-- docs-test:manifest-before:end -->
 
-The beta manifest uses a closed auth variant, explicit risk, and validated
-installation metadata:
+The beta manifest uses a closed auth variant, executable tool metadata, and
+validated installation metadata:
 
 <!-- docs-test:manifest-after:start -->
 ```json
@@ -561,7 +561,20 @@ installation metadata:
     "docs": "https://example.com/auth"
   },
   "files": ["index.ts"],
-  "tools": [{ "name": "say", "description": "Echo input.", "risk": "read" }],
+  "tools": [
+    {
+      "name": "say",
+      "description": "Echo input.",
+      "parameters": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } },
+        "required": ["message"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    }
+  ],
   "extras": ["echo"],
   "peerDeps": { "zod": ">=4.3 <5" }
 }

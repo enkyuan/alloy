@@ -41,7 +41,15 @@ function writeIntegration(root: string, name: string, description: string): void
       description,
       auth: { kind: "none" },
       files: ["index.ts"],
-      tools: [{ name: "run", description: "Run the integration.", risk: "read" }],
+      tools: [
+        {
+          name: "run",
+          description: "Run the integration.",
+          parameters: {},
+          risk: "read",
+          parallel_safe: false,
+        },
+      ],
     }),
   );
   writeFileSync(join(integrationRoot, "index.ts"), "// fixture\n");

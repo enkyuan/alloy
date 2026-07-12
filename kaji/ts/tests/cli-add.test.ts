@@ -66,7 +66,15 @@ describe("kaji add", () => {
         description: "demo ts",
         auth: { kind: "env", env: "DEMO_API_KEY" },
         files: ["demo.ts"],
-        tools: [{ name: "ping", description: "ping", risk: "read" }],
+        tools: [
+          {
+            name: "ping",
+            description: "ping",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     writeFileSync(join(registry, "demo-ts/demo.ts"), "export const x = 1;\n");
@@ -79,7 +87,15 @@ describe("kaji add", () => {
         description: "demo py",
         auth: { kind: "none" },
         files: ["demo.py"],
-        tools: [{ name: "noop", description: "noop", risk: "read" }],
+        tools: [
+          {
+            name: "noop",
+            description: "noop",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     writeFileSync(join(registry, "demo-py/demo.py"), "# py\n");
@@ -222,7 +238,15 @@ describe("kaji add", () => {
         description: "evil",
         auth: { kind: "none" },
         files: ["../../../etc/foo.ts"],
-        tools: [{ name: "x", description: "x", risk: "read" }],
+        tools: [
+          {
+            name: "x",
+            description: "x",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     const code = await add(["evil", "--out", join(tmp, "integrations")], {
@@ -248,7 +272,15 @@ describe("kaji add", () => {
         description: "evil",
         auth: { kind: "none" },
         files: ["/etc/foo.ts"],
-        tools: [{ name: "x", description: "x", risk: "read" }],
+        tools: [
+          {
+            name: "x",
+            description: "x",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     const code = await add(["evil-abs", "--out", join(tmp, "integrations")], {
@@ -274,7 +306,15 @@ describe("kaji add", () => {
         description: "bad",
         auth: { kind: "magic" },
         files: ["bad.ts"],
-        tools: [{ name: "x", description: "x", risk: "read" }],
+        tools: [
+          {
+            name: "x",
+            description: "x",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     writeFileSync(join(bad, "bad.ts"), "// bad\n");
@@ -306,7 +346,15 @@ describe("kaji add", () => {
         description: "evil",
         auth: { kind: "none" },
         files: ["sub/foo.ts"],
-        tools: [{ name: "x", description: "x", risk: "read" }],
+        tools: [
+          {
+            name: "x",
+            description: "x",
+            parameters: {},
+            risk: "read",
+            parallel_safe: false,
+          },
+        ],
       }),
     );
     writeFileSync(join(evilDir, "sub/foo.ts"), "// evil\n");

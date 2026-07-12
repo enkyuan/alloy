@@ -78,7 +78,7 @@
       "uniqueItems": true,
       "items": {
         "type": "object",
-        "required": ["name", "description", "risk"],
+        "required": ["name", "description", "parameters", "risk", "parallel_safe"],
         "additionalProperties": false,
         "properties": {
           "name": {
@@ -86,9 +86,12 @@
             "pattern": "^[a-z][a-z0-9_]*$"
           },
           "description": { "type": "string", "minLength": 1 },
+          "parameters": { "type": "object" },
           "risk": {
             "enum": ["read", "write", "external_effect", "destructive", "admin"]
-          }
+          },
+          "parallel_safe": { "type": "boolean" },
+          "timeout_ms": { "type": "integer", "minimum": 1 }
         }
       }
     },

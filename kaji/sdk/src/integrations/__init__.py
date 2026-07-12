@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, cast
+from types import MappingProxyType
+from typing import Any, Optional, cast
 
 from kaji.integrations.validation import (
     IndexValidationError,
@@ -38,7 +40,10 @@ class IntegrationNotFound(KeyError):
 class ManifestTool:
     name: str
     description: str
-    risk: Optional[ToolRisk] = None
+    parameters: Mapping[str, object]
+    risk: ToolRisk
+    parallel_safe: bool
+    timeout_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +94,16 @@ def _registry_root() -> Path:
     filesystem package (no zipimport), so this is safe.
     """
     return Path(__file__).resolve().parent / "registry"
+
+
+def _freeze_json(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {str(key): _freeze_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_freeze_json(item) for item in value)
+    return value
 
 
 def _read_index() -> dict[str, RegistryEntry]:
@@ -194,7 +209,10 @@ def load_manifest(name: str) -> Manifest:
             ManifestTool(
                 name=t["name"],
                 description=t["description"],
-                risk=t.get("risk"),
+                parameters=cast(Mapping[str, object], _freeze_json(t["parameters"])),
+                risk=t["risk"],
+                parallel_safe=t["parallel_safe"],
+                timeout_ms=t.get("timeout_ms"),
             )
             for t in data["tools"]
         ),

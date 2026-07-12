@@ -6,9 +6,45 @@
   "auth": { "kind": "env", "env": "BRAVE_API_KEY", "optional": true },
   "files": ["index.ts"],
   "tools": [
-    { "name": "fetch", "description": "Fetch a URL and extract readable text (reader mode).", "risk": "read" },
-    { "name": "fetch_raw", "description": "Fetch a URL and return raw HTML/text.", "risk": "read" },
-    { "name": "search", "description": "Web search via Brave Search API.", "risk": "read" }
+    {
+      "name": "fetch",
+      "description": "Fetch a URL and extract readable text (reader mode).",
+      "parameters": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "format": "uri" } },
+        "required": ["url"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "fetch_raw",
+      "description": "Fetch a URL and return raw HTML/text.",
+      "parameters": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "format": "uri" } },
+        "required": ["url"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "search",
+      "description": "Web search via Brave Search API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "count": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 }
+        },
+        "required": ["query"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    }
   ],
   "peerDeps": {}
 }

@@ -6,10 +6,68 @@
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [
-    { "name": "fetch", "description": "HTTP GET a URL and return the response body.", "risk": "read" },
-    { "name": "post", "description": "HTTP POST JSON to a URL.", "risk": "write" },
-    { "name": "put", "description": "HTTP PUT JSON to a URL.", "risk": "write" },
-    { "name": "delete", "description": "HTTP DELETE a URL.", "risk": "write" }
+    {
+      "name": "fetch",
+      "description": "HTTP GET a URL and return the response body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "post",
+      "description": "HTTP POST JSON to a URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "body": {},
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+        },
+        "required": ["url", "body"],
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "parallel_safe": false
+    },
+    {
+      "name": "put",
+      "description": "HTTP PUT JSON to a URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "body": {},
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+        },
+        "required": ["url", "body"],
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "parallel_safe": false
+    },
+    {
+      "name": "delete",
+      "description": "HTTP DELETE a URL.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+        },
+        "required": ["url"],
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "parallel_safe": false
+    }
   ],
   "peerDeps": {}
 }

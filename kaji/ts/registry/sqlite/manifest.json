@@ -6,9 +6,46 @@
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [
-    { "name": "query", "description": "Run a SELECT query and return rows.", "risk": "read" },
-    { "name": "exec", "description": "Execute an explicitly allowed destructive SQL statement.", "risk": "destructive" },
-    { "name": "schema", "description": "List CREATE TABLE statements for application tables.", "risk": "read" }
+    {
+      "name": "query",
+      "description": "Run a SELECT query and return rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sql": { "type": "string" },
+          "params": { "type": "array", "items": {} }
+        },
+        "required": ["sql"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "exec",
+      "description": "Execute an explicitly allowed destructive SQL statement.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sql": { "type": "string" },
+          "params": { "type": "array", "items": {} }
+        },
+        "required": ["sql"],
+        "additionalProperties": false
+      },
+      "risk": "destructive",
+      "parallel_safe": false
+    },
+    {
+      "name": "schema",
+      "description": "List CREATE TABLE statements for application tables.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    }
   ],
   "peerDeps": { "better-sqlite3": "^9" }
 }

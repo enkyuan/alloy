@@ -6,10 +6,56 @@
   "auth": { "kind": "none" },
   "files": ["index.ts"],
   "tools": [
-    { "name": "list", "description": "List files in a directory.", "risk": "read" },
-    { "name": "read", "description": "Read a file's contents.", "risk": "read" },
-    { "name": "write", "description": "Write content to a file.", "risk": "write" },
-    { "name": "glob", "description": "Glob for files matching a pattern.", "risk": "read" }
+    {
+      "name": "list",
+      "description": "List files in a directory.",
+      "parameters": {
+        "type": "object",
+        "properties": { "path": { "type": "string", "default": "." } },
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "read",
+      "description": "Read a file's contents.",
+      "parameters": {
+        "type": "object",
+        "properties": { "path": { "type": "string" } },
+        "required": ["path"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    },
+    {
+      "name": "write",
+      "description": "Write content to a file.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"],
+        "additionalProperties": false
+      },
+      "risk": "write",
+      "parallel_safe": false
+    },
+    {
+      "name": "glob",
+      "description": "Glob for files matching a pattern.",
+      "parameters": {
+        "type": "object",
+        "properties": { "pattern": { "type": "string" } },
+        "required": ["pattern"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    }
   ],
   "peerDeps": {}
 }

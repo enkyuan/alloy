@@ -95,6 +95,25 @@ def test_tool_decorator_auto_registers():
     assert getattr(handler, "__func__", None) is type(integration).retrieve_charge
 
 
+def test_tool_decorator_exposes_execution_settings_for_manifest_inspection() -> None:
+    class BatchIntegration(Integration):
+        namespace = "batch"
+
+        @tool(
+            description="Run a bounded batch.",
+            parameters={"type": "object"},
+            risk="read",
+            parallel_safe=True,
+            timeout_ms=250,
+        )
+        async def run(self, ctx: ToolContext, args: dict) -> dict:
+            return {}
+
+    spec, _ = BatchIntegration().tools()[0]
+    assert spec.parallel_safe is True
+    assert spec.timeout_ms == 250
+
+
 def test_tool_decorator_namespace_prefix():
     """After register(), tool names are provider-safe and retain catalog names."""
 

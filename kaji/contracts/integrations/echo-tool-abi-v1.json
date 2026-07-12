@@ -1,15 +1,7 @@
 {
-  "name": "echo",
-  "version": "0.1.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
   "namespace": "echo",
-  "description": "Trivial echo integration. Two pure functions, no auth, no network. Proves the cross-language registry contract.",
-  "auth": {
-    "kind": "none"
-  },
-  "files": [
-    "echo.py",
-    "echo.ts"
-  ],
   "tools": [
     {
       "name": "say",
@@ -18,13 +10,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "message": {
-            "type": "string"
-          }
+          "message": { "type": "string" }
         },
-        "required": [
-          "message"
-        ],
+        "required": ["message"],
         "additionalProperties": false
       },
       "risk": "read",
@@ -37,13 +25,9 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "message": {
-            "type": "string"
-          }
+          "message": { "type": "string" }
         },
-        "required": [
-          "message"
-        ],
+        "required": ["message"],
         "additionalProperties": false
       },
       "risk": "read",

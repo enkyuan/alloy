@@ -7,7 +7,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "env" }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -18,7 +18,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "env", "env": "api_key" }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -30,7 +30,7 @@
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "env", "env": "API_KEY", "scopes": ["read"] },
         "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -41,7 +41,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "oauth" }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -52,7 +52,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "oauth", "scopes": [] }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -64,7 +64,7 @@
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "oauth", "scopes": ["read", "read"] },
         "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -76,7 +76,7 @@
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "oauth", "scopes": ["read"], "env": "API_KEY" },
         "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -87,7 +87,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none", "env": "API_KEY" }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -99,7 +99,7 @@
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "env", "env": "API_KEY", "docs": "not a uri" },
         "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -110,7 +110,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["index.ts"],
-        "tools": [{ "name": "x", "description": "x" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "parallel_safe": false }]
       },
       "expectedPath": "/tools/0",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -121,9 +121,163 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["index.ts"],
-        "tools": [{ "description": "x", "risk": "read" }]
+        "tools": [{ "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/tools/0",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool missing parameters",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool missing parallel safe classification",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read" }]
+      },
+      "expectedPath": "/tools/0",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool has invalid Draft 2020-12 parameter schema",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "not-a-json-type" }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/type",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool has unsupported parameter schema dialect",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "$schema": "https://json-schema.org/draft/2019-09/schema" }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/$schema",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool has invalid regular expression pattern",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "[" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool has invalid schema identifier",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "$id": "not uri with spaces", "type": "object" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/$id",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses ECMAScript named capture",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "(?<name>a)" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses Python named capture",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "(?P<name>a)" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses inline flags",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "(?i:a)" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses atomic groups",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "(?>a)" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses Python anchors",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "\\A[a-z]+\\Z" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses Unicode properties",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "\\p{Letter}+" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool pattern uses backreferences",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": { "type": "object", "properties": { "value": { "type": "string", "pattern": "(a)\\1" } } }, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/tools/0/parameters/properties/value/pattern",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "tool has non-positive timeout",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "none" }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false, "timeout_ms": 0 }]
+      },
+      "expectedPath": "/tools/0/timeout_ms",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
@@ -133,8 +287,8 @@
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["index.ts"],
         "tools": [
-          { "name": "x", "description": "first", "risk": "read" },
-          { "name": "x", "description": "second", "risk": "write" }
+          { "name": "x", "description": "first", "parameters": {}, "risk": "read", "parallel_safe": false },
+          { "name": "x", "description": "second", "parameters": {}, "risk": "write", "parallel_safe": false }
         ]
       },
       "expectedPath": "/tools/1/name",
@@ -146,7 +300,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["/tmp/index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/files/0",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -157,7 +311,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["../index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/files/0",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -168,7 +322,7 @@
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
         "auth": { "kind": "none" }, "files": ["index.ts", "index.ts"],
-        "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/files",
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
@@ -222,7 +376,7 @@
         "actual/manifest.json": {
           "name": "actual", "version": "0.1.0", "namespace": "actual", "description": "actual",
           "auth": { "kind": "none" }, "files": ["index.ts"],
-          "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+          "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
         }
       },
       "files": ["actual/index.ts"],
@@ -256,7 +410,7 @@
         "x/manifest.json": {
           "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
           "auth": { "kind": "none" }, "files": ["missing.ts"],
-          "tools": [{ "name": "x", "description": "x", "risk": "read" }]
+          "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
         }
       },
       "files": [],

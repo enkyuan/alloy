@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -58,7 +59,20 @@ def _valid_manifest(name: str, files: list[str]) -> dict[str, Any]:
         "description": name,
         "auth": {"kind": "none"},
         "files": files,
-        "tools": [{"name": "run", "description": "Run.", "risk": "read"}],
+        "tools": [
+            {
+                "name": "run",
+                "description": "Run.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"value": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+                "risk": "read",
+                "parallel_safe": False,
+                "timeout_ms": 250,
+            }
+        ],
     }
 
 
@@ -92,6 +106,41 @@ def test_load_manifest_returns_parsed_manifest() -> None:
     assert manifest.stability == "beta"
     assert manifest.runtimes == ("python", "typescript")
     assert {tool.name for tool in manifest.tools} == {"say", "shout"}
+    for tool in manifest.tools:
+        assert isinstance(tool.parameters, MappingProxyType)
+        assert tool.risk == "read"
+        assert tool.parallel_safe is False
+        assert tool.timeout_ms is None
+
+
+def test_load_manifest_freezes_nested_parameter_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import kaji.integrations as integrations
+
+    root = tmp_path / "registry"
+    root.mkdir()
+    (root / "index.json").write_text(
+        json.dumps(_index({"frozen": _entry("frozen/manifest.json")}))
+    )
+    directory = root / "frozen"
+    directory.mkdir()
+    manifest = _valid_manifest("frozen", ["index.ts"])
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    (directory / "index.ts").write_text("// fixture\n")
+    monkeypatch.setattr(integrations, "_registry_root", lambda: root)
+
+    loaded = load_manifest("frozen").tools[0]
+    assert loaded.name == "run"
+    assert loaded.description == "Run."
+    assert loaded.risk == "read"
+    assert loaded.parallel_safe is False
+    assert loaded.timeout_ms == 250
+    properties = loaded.parameters["properties"]
+    assert isinstance(properties, MappingProxyType)
+    mutable: Any = properties
+    with pytest.raises(TypeError):
+        mutable["other"] = {"type": "number"}
 
 
 def test_packaged_schemas_match_canonical_contracts() -> None:

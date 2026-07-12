@@ -7,8 +7,13 @@ the Python loader handles the manifest and installs both files.
 
 from __future__ import annotations
 
+import importlib.util
+import json
 from pathlib import Path
+import shutil
+import sys
 
+import pytest
 from kaji.integrations import install_integration, load_manifest
 
 
@@ -39,6 +44,138 @@ def test_echo_py_template_sets_echo_namespace():
     assert echo_mod.shout.namespace == "echo"
     assert echo_mod.say.spec.name == "say"
     assert echo_mod.shout.spec.name == "shout"
+
+
+def test_echo_executable_specs_match_authoritative_abi() -> None:
+    from kaji.integrations.registry.echo import echo as echo_mod
+
+    root = Path(__file__).resolve().parents[3]
+    contract = json.loads(
+        (root / "kaji/contracts/integrations/echo-tool-abi-v1.json").read_text()
+    )
+    actual = []
+    for tool in echo_mod.tools:
+        spec = tool.spec
+        actual.append(
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "parameters": spec.parameters,
+                "risk": spec.risk,
+                "parallel_safe": spec.parallel_safe,
+                **(
+                    {"timeout_ms": spec.timeout_ms}
+                    if spec.timeout_ms is not None
+                    else {}
+                ),
+            }
+        )
+
+    assert {tool.namespace for tool in echo_mod.tools} == {contract["namespace"]}
+    assert sorted(actual, key=lambda tool: tool["name"]) == contract["tools"]
+    assert echo_mod.tools == (echo_mod.say, echo_mod.shout)
+
+
+def test_bundled_typescript_echo_is_the_authoritative_source_copy() -> None:
+    root = Path(__file__).resolve().parents[3]
+    source = root / "kaji/ts/registry/echo/index.ts"
+    bundled = root / "kaji/sdk/src/integrations/registry/echo/echo.ts"
+    assert bundled.read_bytes() == source.read_bytes()
+
+
+def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
+    root = Path(__file__).resolve().parents[3]
+    contract = json.loads(
+        (root / "kaji/contracts/integrations/echo-tool-abi-v1.json").read_text()
+    )
+    python_manifest = json.loads(
+        (root / "kaji/sdk/src/integrations/registry/echo/manifest.json").read_text()
+    )
+    typescript_manifest = json.loads(
+        (root / "kaji/ts/registry/echo/manifest.json").read_text()
+    )
+
+    for manifest in (python_manifest, typescript_manifest):
+        assert manifest["namespace"] == contract["namespace"]
+        assert manifest["tools"] == contract["tools"]
+    assert python_manifest["files"] == ["echo.py", "echo.ts"]
+    assert typescript_manifest["files"] == ["index.ts"]
+    assert typescript_manifest["peerDeps"] == {}
+
+
+def _load_repo_script(name: str, path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.syspath_prepend(str(path.parent))
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_integration_sync_detects_newline_byte_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(__file__).resolve().parents[3]
+    sync = _load_repo_script(
+        "sync_integration_contracts_bytes",
+        root / "kaji/scripts/sync_integration_contracts.py",
+        monkeypatch,
+    )
+    source = tmp_path / "index.ts"
+    copy = tmp_path / "echo.ts"
+    source.write_bytes(b"export const value = 1;\n")
+    copy.write_bytes(b"export const value = 1;\r\n")
+    monkeypatch.setattr(sync, "COPIES", {})
+    monkeypatch.setattr(sync, "ECHO_MANIFESTS", ())
+    monkeypatch.setattr(sync, "ECHO_TYPESCRIPT_SOURCE", source)
+    monkeypatch.setattr(sync, "ECHO_TYPESCRIPT_COPY", copy)
+
+    assert sync.check(), "LF and CRLF sources must not compare as byte-identical"
+    assert sync._diff_bytes(b"\x80", b"\x81", copy, source)
+
+
+def test_typescript_cli_mismatch_reaches_python_explain_redacted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = Path(__file__).resolve().parents[3]
+    source_ts = root / "kaji/ts"
+    temporary_ts = tmp_path / "ts"
+    shutil.copytree(source_ts / "src", temporary_ts / "src")
+    shutil.copytree(source_ts / "contracts", temporary_ts / "contracts")
+    (temporary_ts / "scripts").mkdir(parents=True)
+    (temporary_ts / "registry/echo").mkdir(parents=True)
+    shutil.copy2(source_ts / "scripts/integration-abi.ts", temporary_ts / "scripts")
+    shutil.copy2(source_ts / "package.json", temporary_ts)
+    shutil.copy2(source_ts / "tsconfig.json", temporary_ts)
+    (temporary_ts / "node_modules").symlink_to(
+        source_ts / "node_modules", target_is_directory=True
+    )
+    echo_source = (source_ts / "registry/echo/index.ts").read_text()
+    drifted = echo_source.replace(
+        "Object.freeze([say, shout] as const)",
+        "Object.freeze([say] as const)",
+    )
+    assert drifted != echo_source
+    (temporary_ts / "registry/echo/index.ts").write_text(drifted)
+
+    checker = _load_repo_script(
+        "check_integration_abi_explain",
+        root / "kaji/scripts/check_integration_abi.py",
+        monkeypatch,
+    )
+    monkeypatch.setattr(checker, "TYPESCRIPT_SDK", temporary_ts)
+    bun = shutil.which("bun") or "/opt/homebrew/bin/bun"
+    monkeypatch.setenv(
+        "PATH", f"{Path(bun).parent}:{Path(sys.executable).parent}:/usr/bin:/bin"
+    )
+
+    assert checker.main(["--explain"]) == 1
+    captured = capsys.readouterr()
+    assert "INTEGRATION_ABI_MISMATCH at /exports/shout" in captured.err
+    assert "listed in tools" not in captured.err
+    assert "unlisted BoundTool export" not in captured.err
 
 
 def test_echo_py_tools_register_without_collision(tmp_path: Path):

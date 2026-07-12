@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-import type { ToolRisk } from "@/tools/registry";
+import type { JSONSchema, ToolRisk } from "@/tools/registry";
 
 export type IntegrationValidationCode = "INTEGRATION_SCHEMA_INVALID";
 export type IntegrationStability = "experimental" | "beta";
@@ -86,9 +86,12 @@ export type IntegrationAuth =
   | { kind: "oauth"; scopes: string[]; docs?: string };
 
 export interface IntegrationManifestTool {
-  name: string;
-  description: string;
-  risk: IntegrationToolRisk;
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: JSONSchema;
+  readonly risk: IntegrationToolRisk;
+  readonly parallel_safe: boolean;
+  readonly timeout_ms?: number;
 }
 
 export interface IntegrationManifestDocument {
@@ -122,10 +125,37 @@ export interface RegistryLoaderOptions {
 interface SchemaValidators {
   manifest: ValidateFunction;
   index: ValidateFunction;
+  parameterSchemaErrors(schema: unknown): readonly ErrorObject[];
+  uriReference(value: string): boolean;
+  regex(value: string): boolean;
 }
 
 const validatorCache = new Map<string, Promise<SchemaValidators>>();
 const validatorCacheLimit = 16;
+const draft202012 = "https://json-schema.org/draft/2020-12/schema";
+const singleSubschemaKeys = [
+  "additionalProperties",
+  "contains",
+  "contentSchema",
+  "else",
+  "if",
+  "items",
+  "not",
+  "propertyNames",
+  "then",
+  "unevaluatedItems",
+  "unevaluatedProperties",
+] as const;
+const mappingSubschemaKeys = [
+  "$defs",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+] as const;
+const arraySubschemaKeys = ["allOf", "anyOf", "oneOf", "prefixItems"] as const;
+const portablePatternEscapes = new Set("\\.^$*+?{}[]()|/-");
+const portableClassEscapes = new Set("\\[]-^");
+const portableRepeatLimit = 9999;
 
 function jsonPointer(path: string): string {
   return path.length === 0 ? "/" : path;
@@ -160,6 +190,204 @@ function validationError(
     : new IndexValidationError(path, message);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Validate Kaji's deliberately small Python/ECMAScript regex intersection.
+ *
+ * The subset is printable ASCII literals, capturing groups, alternation,
+ * ^/$, ASCII character classes/ranges, greedy quantifiers, and escapes of
+ * regex punctuation. It excludes (? extensions, dot, shorthand/Unicode
+ * classes, backreferences, lazy/possessive quantifiers, and non-ASCII syntax.
+ */
+function isPortablePattern(pattern: string): boolean {
+  if (
+    pattern.length === 0 ||
+    [...pattern].some((character) => {
+      const code = character.codePointAt(0)!;
+      return code < 0x20 || code > 0x7e;
+    })
+  ) {
+    return false;
+  }
+
+  let index = 0;
+
+  function consumeClass(): boolean {
+    index += 1;
+    if (pattern[index] === "^") index += 1;
+    const tokens: Array<readonly [value: string, range: boolean, escaped: boolean]> = [];
+    while (index < pattern.length && pattern[index] !== "]") {
+      const character = pattern[index]!;
+      if (character === "[") return false;
+      if (character === "\\") {
+        const escaped = pattern[index + 1];
+        if (escaped === undefined || !portableClassEscapes.has(escaped)) return false;
+        tokens.push([escaped, false, true]);
+        index += 2;
+        continue;
+      }
+      tokens.push([character, character === "-", false]);
+      index += 1;
+    }
+    if (index >= pattern.length || tokens.length === 0) return false;
+    index += 1;
+
+    for (let token = 0; token + 1 < tokens.length; token++) {
+      const left = tokens[token]!;
+      const right = tokens[token + 1]!;
+      if (!left[2] && !right[2] && left[0] === right[0] && "&|~".includes(left[0])) {
+        return false;
+      }
+    }
+
+    let cursor = tokens[0]![1] ? 1 : 0;
+    while (cursor < tokens.length) {
+      if (tokens[cursor]![1]) {
+        if (cursor !== tokens.length - 1) return false;
+        cursor += 1;
+        continue;
+      }
+      if (cursor + 1 < tokens.length && tokens[cursor + 1]![1]) {
+        if (cursor + 1 === tokens.length - 1) {
+          cursor += 2;
+          continue;
+        }
+        const endpoint = tokens[cursor + 2]!;
+        if (endpoint[1] || tokens[cursor]![0].codePointAt(0)! > endpoint[0].codePointAt(0)!) {
+          return false;
+        }
+        cursor += 3;
+        continue;
+      }
+      cursor += 1;
+    }
+    return true;
+  }
+
+  function consumeQuantifier(): boolean {
+    if (index >= pattern.length) return true;
+    if ("*+?".includes(pattern[index]!)) {
+      index += 1;
+    } else if (pattern[index] === "{") {
+      index += 1;
+      const lowerStart = index;
+      while (index < pattern.length && /[0-9]/.test(pattern[index]!)) index += 1;
+      const lowerText = pattern.slice(lowerStart, index);
+      if (lowerText.length === 0 || lowerText.length > 4) return false;
+      const lower = Number(lowerText);
+      let upper: number | undefined = lower;
+      if (pattern[index] === ",") {
+        index += 1;
+        const upperStart = index;
+        while (index < pattern.length && /[0-9]/.test(pattern[index]!)) index += 1;
+        const upperText = pattern.slice(upperStart, index);
+        if (upperText.length > 4) return false;
+        upper = upperText.length === 0 ? undefined : Number(upperText);
+      }
+      if (pattern[index] !== "}") return false;
+      index += 1;
+      if (
+        lower > portableRepeatLimit ||
+        (upper !== undefined && (upper > portableRepeatLimit || upper < lower))
+      ) {
+        return false;
+      }
+    } else {
+      return true;
+    }
+    return index >= pattern.length || !"*+?{".includes(pattern[index]!);
+  }
+
+  function consumeExpression(nested: boolean): boolean {
+    let branchHasAtom = false;
+    while (index < pattern.length) {
+      const character = pattern[index]!;
+      if (character === ")") return nested && branchHasAtom;
+      if (character === "|") {
+        if (!branchHasAtom) return false;
+        branchHasAtom = false;
+        index += 1;
+        continue;
+      }
+      if ("*+?{.]}".includes(character) || character === "}") return false;
+      if ("^$".includes(character)) {
+        index += 1;
+        continue;
+      }
+      if (character === "(") {
+        if (pattern[index + 1] === "?") return false;
+        index += 1;
+        if (!consumeExpression(true) || pattern[index] !== ")") return false;
+        index += 1;
+      } else if (character === "[") {
+        if (!consumeClass()) return false;
+      } else if (character === "\\") {
+        const escaped = pattern[index + 1];
+        if (escaped === undefined || !portablePatternEscapes.has(escaped)) return false;
+        index += 2;
+      } else {
+        index += 1;
+      }
+      branchHasAtom = true;
+      if (!consumeQuantifier()) return false;
+    }
+    return !nested && branchHasAtom;
+  }
+
+  return consumeExpression(false) && index === pattern.length;
+}
+
+function parameterSchemaIssue(
+  schema: Record<string, unknown>,
+  validators: Pick<SchemaValidators, "regex" | "uriReference">,
+  path: readonly (string | number)[] = [],
+): readonly (string | number)[] | undefined {
+  const dialect = schema["$schema"];
+  if (typeof dialect === "string" && dialect !== draft202012) return [...path, "$schema"];
+  const identifier = schema["$id"];
+  if (typeof identifier === "string" && !validators.uriReference(identifier)) {
+    return [...path, "$id"];
+  }
+  const pattern = schema["pattern"];
+  if (typeof pattern === "string" && (!isPortablePattern(pattern) || !validators.regex(pattern))) {
+    return [...path, "pattern"];
+  }
+
+  for (const keyword of singleSubschemaKeys) {
+    const child = schema[keyword];
+    if (!isRecord(child)) continue;
+    const issue = parameterSchemaIssue(child, validators, [...path, keyword]);
+    if (issue !== undefined) return issue;
+  }
+  for (const keyword of mappingSubschemaKeys) {
+    const children = schema[keyword];
+    if (!isRecord(children)) continue;
+    for (const name of Object.keys(children).sort()) {
+      const child = children[name];
+      if (!isRecord(child)) continue;
+      const issue = parameterSchemaIssue(child, validators, [...path, keyword, name]);
+      if (issue !== undefined) return issue;
+    }
+  }
+  for (const keyword of arraySubschemaKeys) {
+    const children = schema[keyword];
+    if (!Array.isArray(children)) continue;
+    for (const [index, child] of children.entries()) {
+      if (!isRecord(child)) continue;
+      const issue = parameterSchemaIssue(child, validators, [...path, keyword, index]);
+      if (issue !== undefined) return issue;
+    }
+  }
+  return undefined;
+}
+
+function schemaIssuePointer(path: readonly (string | number)[]): string {
+  return `/${path.map((part) => pointerPart(String(part))).join("/")}`;
+}
+
 async function readSchema(path: string): Promise<object> {
   const contents = await readFile(path, "utf8");
   return JSON.parse(contents) as object;
@@ -176,9 +404,21 @@ async function schemaValidators(schemaRoot: string): Promise<SchemaValidators> {
       ]);
       const ajv = new Ajv2020({ allErrors: true, strict: true });
       addFormats(ajv);
+      const uriReference = ajv.compile({ type: "string", format: "uri-reference" });
+      const regex = ajv.compile({ type: "string", format: "regex" });
       return {
         manifest: ajv.compile(manifestSchema),
         index: ajv.compile(indexSchema),
+        parameterSchemaErrors(schema: unknown): readonly ErrorObject[] {
+          if (ajv.validateSchema(schema as object)) return [];
+          return [...(ajv.errors ?? [])];
+        },
+        uriReference(value: string): boolean {
+          return uriReference(value) as boolean;
+        },
+        regex(value: string): boolean {
+          return regex(value) as boolean;
+        },
       };
     })();
     validatorCache.set(root, cached);
@@ -197,13 +437,32 @@ export async function validateManifestDocument(
   document: unknown,
   options: { schemaRoot: string },
 ): Promise<IntegrationManifestDocument> {
-  const validate = (await schemaValidators(options.schemaRoot)).manifest;
+  const validators = await schemaValidators(options.schemaRoot);
+  const validate = validators.manifest;
   if (!validate(document)) {
     throw validationError("manifest", validate.errors ?? []);
   }
   const manifest = document as IntegrationManifestDocument;
   const seen = new Set<string>();
   for (const [index, tool] of manifest.tools.entries()) {
+    const issue = parameterSchemaIssue(tool.parameters, validators);
+    if (issue !== undefined) {
+      const path = `/tools/${index}/parameters${schemaIssuePointer(issue)}`;
+      throw new ManifestValidationError(
+        path,
+        `Integration manifest has an unsupported parameter schema at ${path}`,
+      );
+    }
+    const parameterErrors = validators.parameterSchemaErrors(tool.parameters);
+    if (parameterErrors.length > 0) {
+      const error = firstError(parameterErrors);
+      const suffix = jsonPointer(error.instancePath);
+      const path = `/tools/${index}/parameters${suffix === "/" ? "" : suffix}`;
+      throw new ManifestValidationError(
+        path,
+        `Integration manifest has an invalid parameter schema at ${path}`,
+      );
+    }
     if (seen.has(tool.name)) {
       const path = `/tools/${index}/name`;
       throw new ManifestValidationError(

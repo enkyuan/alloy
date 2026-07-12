@@ -227,6 +227,22 @@ def test_contract_checker_rejects_integration_schema_drift(tmp_path: Path) -> No
     assert "/cases/0/document/description" in str(caught.value)
 
 
+def test_contract_checker_rejects_invalid_echo_abi_parameter_schema(
+    tmp_path: Path,
+) -> None:
+    checker, contracts = _integration_checker(tmp_path)
+    abi_path = contracts / "integrations" / "echo-tool-abi-v1.json"
+    abi = json.loads(abi_path.read_text())
+    abi["tools"][0]["parameters"]["type"] = "not-a-json-type"
+    abi_path.write_text(json.dumps(abi))
+
+    with pytest.raises(checker.ContractError) as caught:
+        _check_integration_contracts(checker)
+
+    assert str(abi_path) in str(caught.value)
+    assert "/tools/0/parameters/type" in str(caught.value)
+
+
 REGISTRY_INVALID_CASE_NAMES = (
     "index key does not match manifest name",
     "index points to missing manifest",
@@ -256,7 +272,15 @@ def _repair_registry_case(case: dict[str, Any]) -> None:
             "description": integration_name,
             "auth": {"kind": "none"},
             "files": ["index.ts"],
-            "tools": [{"name": "run", "description": "Run.", "risk": "read"}],
+            "tools": [
+                {
+                    "name": "run",
+                    "description": "Run.",
+                    "parameters": {},
+                    "risk": "read",
+                    "parallel_safe": False,
+                }
+            ],
         }
         case["manifests"][manifest_path] = manifest
     manifest["name"] = integration_name

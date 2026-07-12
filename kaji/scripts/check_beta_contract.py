@@ -13,6 +13,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError, ValidationError
+from kaji.integrations.validation import parameter_schema_issue
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,6 +39,7 @@ REQUIRED_JSON = {
     "events/stored-kaji-event-v1.schema.json",
     "integrations/conformance-invalid.json",
     "integrations/conformance-valid.json",
+    "integrations/echo-tool-abi-v1.json",
     "parity/expected-normalized.json",
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
@@ -992,6 +994,15 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
         "index": Draft202012Validator(index_schema, format_checker=FormatChecker()),
     }
 
+    def parameter_schema_path(parameters: dict[str, Any]) -> str | None:
+        issue = parameter_schema_issue(parameters)
+        if issue is not None:
+            return pointer(issue)
+        schema_error = check_schema(parameters)
+        if schema_error is None:
+            return None
+        return pointer(schema_error.absolute_path)
+
     valid_path = CONTRACTS / "integrations" / "conformance-valid.json"
     valid_cases = documents["integrations/conformance-valid.json"].get("cases")
     if not isinstance(valid_cases, list) or not valid_cases:
@@ -1017,6 +1028,52 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
                 f"{base}/document{error_path if error_path != '/' else ''}",
                 error.message,
             )
+        if target == "manifest":
+            for tool_index, tool in enumerate(case["document"]["tools"]):
+                schema_path = parameter_schema_path(tool["parameters"])
+                if schema_path is None:
+                    continue
+                location = f"{base}/document/tools/{tool_index}/parameters"
+                if schema_path != "/":
+                    location += schema_path
+                raise fail(
+                    valid_path, location, "invalid Draft 2020-12 parameter schema"
+                )
+
+    abi_path = CONTRACTS / "integrations" / "echo-tool-abi-v1.json"
+    abi = documents["integrations/echo-tool-abi-v1.json"]
+    if set(abi) != {"$schema", "version", "namespace", "tools"}:
+        raise fail(abi_path, "/", "expected the closed Echo ABI envelope")
+    if abi.get("version") != "1.0.0":
+        raise fail(abi_path, "/version", "expected '1.0.0'")
+    if abi.get("namespace") != "echo":
+        raise fail(abi_path, "/namespace", "expected 'echo'")
+    tools = abi.get("tools")
+    if not isinstance(tools, list) or not tools:
+        raise fail(abi_path, "/tools", "expected a non-empty tool array")
+    abi_manifest = {
+        "name": "echo",
+        "version": "0.1.0",
+        "namespace": "echo",
+        "description": "Echo ABI contract.",
+        "auth": {"kind": "none"},
+        "files": ["index.ts"],
+        "tools": tools,
+    }
+    error = first_error(validators["manifest"], abi_manifest)
+    if error is not None:
+        error_path = pointer(error.absolute_path)
+        raise fail(abi_path, error_path, error.message)
+    tool_names = [tool["name"] for tool in tools]
+    if tool_names != sorted(set(tool_names)):
+        raise fail(abi_path, "/tools", "tools must have unique names in sorted order")
+    for tool_index, tool in enumerate(tools):
+        schema_path = parameter_schema_path(tool["parameters"])
+        if schema_path is not None:
+            location = f"/tools/{tool_index}/parameters"
+            if schema_path != "/":
+                location += schema_path
+            raise fail(abi_path, location, "invalid Draft 2020-12 parameter schema")
 
     invalid_path = CONTRACTS / "integrations" / "conformance-invalid.json"
     invalid_cases = documents["integrations/conformance-invalid.json"].get("cases")
@@ -1027,6 +1084,12 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
             CONTRACTS / "errors" / "error-codes.json",
             "/codes",
             "missing INTEGRATION_SCHEMA_INVALID",
+        )
+    if "INTEGRATION_ABI_MISMATCH" not in codes:
+        raise fail(
+            CONTRACTS / "errors" / "error-codes.json",
+            "/codes",
+            "missing INTEGRATION_ABI_MISMATCH",
         )
     for index, case in enumerate(invalid_cases):
         base = f"/cases/{index}"
@@ -1079,13 +1142,22 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
                 pointer(error.absolute_path) if error is not None else None
             )
             if target == "manifest" and error is None:
-                seen: set[str] = set()
                 for tool_index, tool in enumerate(document["tools"]):
-                    name = tool["name"]
-                    if name in seen:
-                        actual_path = f"/tools/{tool_index}/name"
-                        break
-                    seen.add(name)
+                    schema_path = parameter_schema_path(tool["parameters"])
+                    if schema_path is None:
+                        continue
+                    actual_path = f"/tools/{tool_index}/parameters"
+                    if schema_path != "/":
+                        actual_path += schema_path
+                    break
+                seen: set[str] = set()
+                if actual_path is None:
+                    for tool_index, tool in enumerate(document["tools"]):
+                        name = tool["name"]
+                        if name in seen:
+                            actual_path = f"/tools/{tool_index}/name"
+                            break
+                        seen.add(name)
             if actual_path is None:
                 raise fail(
                     invalid_path,

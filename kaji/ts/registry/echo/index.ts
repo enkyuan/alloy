@@ -8,13 +8,16 @@
 import { functionTool } from "@kaji/sdk";
 import * as z from "zod";
 
+const messageParameters = z.strictObject({ message: z.string() });
+
 export const say = functionTool(
   {
     name: "say",
     namespace: "echo",
     description: "Return the input string unchanged.",
-    parameters: z.object({ message: z.string() }),
+    parameters: messageParameters,
     risk: "read",
+    parallel_safe: false,
   },
   async ({ message }) => ({ message }),
 );
@@ -24,8 +27,12 @@ export const shout = functionTool(
     name: "shout",
     namespace: "echo",
     description: "Return the input string uppercased.",
-    parameters: z.object({ message: z.string() }),
+    parameters: messageParameters,
     risk: "read",
+    parallel_safe: false,
   },
   async ({ message }) => ({ message: message.toUpperCase() }),
 );
+
+/** Side-effect-free metadata source for registry ABI verification. */
+export const tools = Object.freeze([say, shout] as const);

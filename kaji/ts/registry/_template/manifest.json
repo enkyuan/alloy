@@ -5,6 +5,17 @@
   "description": "Integration template",
   "auth": { "kind": "none" },
   "files": ["index.ts"],
-  "tools": [],
+  "tools": [
+    {
+      "name": "run",
+      "description": "Describe what this tool does.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
+    }
+  ],
   "peerDeps": {}
 }

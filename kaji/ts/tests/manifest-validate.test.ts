@@ -111,6 +111,24 @@ describe("integration contract conformance", () => {
       }
     });
   }
+
+  it("returns every executable tool ABI field without defaulting it away", async () => {
+    const testCase = validCases.find(
+      (candidate) => candidate.name === "manifest with optional environment authentication",
+    );
+    expect(testCase?.target).toBe("manifest");
+    const manifest = await validateManifestDocument(testCase!.document, {
+      schemaRoot: registryRoot,
+    });
+    expect(manifest.tools[0]).toMatchObject({
+      name: "search",
+      description: "Search text.",
+      parameters: { type: "object" },
+      risk: "read",
+      parallel_safe: true,
+      timeout_ms: 1000,
+    });
+  });
 });
 
 describe("real registry", () => {
@@ -121,6 +139,11 @@ describe("real registry", () => {
     for (const name of names) {
       const manifest = await loadManifest(registryRoot, name, { index });
       expect(manifest.name).toBe(name);
+      for (const tool of manifest.tools) {
+        expect(tool.parameters).toEqual(expect.any(Object));
+        expect(typeof tool.parallel_safe).toBe("boolean");
+        if (tool.timeout_ms !== undefined) expect(tool.timeout_ms).toBeGreaterThan(0);
+      }
     }
   });
 
@@ -164,7 +187,15 @@ describe("real registry", () => {
           description: "escape",
           auth: { kind: "none" },
           files: ["index.ts"],
-          tools: [{ name: "escape", description: "escape", risk: "read" }],
+          tools: [
+            {
+              name: "escape",
+              description: "escape",
+              parameters: {},
+              risk: "read",
+              parallel_safe: false,
+            },
+          ],
         }),
       );
       writeFileSync(join(outside, "index.ts"), "// outside\n");
@@ -211,7 +242,15 @@ describe("real registry", () => {
           description: "linked",
           auth: { kind: "none" },
           files: ["index.ts"],
-          tools: [{ name: "linked", description: "linked", risk: "read" }],
+          tools: [
+            {
+              name: "linked",
+              description: "linked",
+              parameters: {},
+              risk: "read",
+              parallel_safe: false,
+            },
+          ],
         }),
       );
       writeFileSync(join(outside, "index.ts"), "// outside\n");

@@ -11,7 +11,27 @@
         "description": "Echo text.",
         "auth": { "kind": "none" },
         "files": ["index.ts"],
-        "tools": [{ "name": "say", "description": "Echo text.", "risk": "read" }]
+        "tools": [
+          {
+            "name": "say",
+            "description": "Echo text.",
+            "parameters": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "type": "object",
+              "properties": {
+                "message": {
+                  "$id": "https://kaji.dev/schemas/echo-message-v1.json",
+                  "type": "string",
+                  "pattern": "^[a-z]+$"
+                }
+              },
+              "required": ["message"],
+              "additionalProperties": false
+            },
+            "risk": "read",
+            "parallel_safe": false
+          }
+        ]
       }
     },
     {
@@ -29,7 +49,24 @@
           "docs": "https://example.com/auth"
         },
         "files": ["index.ts"],
-        "tools": [{ "name": "search", "description": "Search text.", "risk": "read" }]
+        "tools": [
+          {
+            "name": "search",
+            "description": "Search text.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string",
+                  "pattern": "^(red|blue)-[0-9]{1,3}$"
+                }
+              }
+            },
+            "risk": "read",
+            "parallel_safe": true,
+            "timeout_ms": 1000
+          }
+        ]
       }
     },
     {
@@ -46,7 +83,15 @@
           "docs": "https://example.com/oauth"
         },
         "files": ["mail/index.ts"],
-        "tools": [{ "name": "read", "description": "Read mail.", "risk": "read" }]
+        "tools": [
+          {
+            "name": "read",
+            "description": "Read mail.",
+            "parameters": { "type": "object" },
+            "risk": "read",
+            "parallel_safe": false
+          }
+        ]
       }
     },
     {

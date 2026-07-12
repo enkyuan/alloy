@@ -3,18 +3,50 @@
   "version": "0.1.0",
   "namespace": "echo",
   "description": "Trivial echo integration. Two pure functions, no auth, no network. Proves the cross-language registry contract.",
-  "auth": { "kind": "none" },
-  "files": ["index.ts"],
+  "auth": {
+    "kind": "none"
+  },
+  "files": [
+    "index.ts"
+  ],
   "tools": [
     {
       "name": "say",
       "description": "Return the input string unchanged.",
-      "risk": "read"
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
     },
     {
       "name": "shout",
       "description": "Return the input string uppercased.",
-      "risk": "read"
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": false
     }
   ],
   "peerDeps": {}
