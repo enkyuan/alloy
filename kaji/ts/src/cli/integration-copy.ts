@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   readdir,
   realpath,
   rename,
@@ -13,7 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, parse, relative, resolve, sep } from "node:path";
 
 import Ajv2020, { type ValidateFunction } from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
@@ -75,6 +76,12 @@ const CONTRACTS_ROOT = join(PACKAGE_ROOT, "contracts/integrations");
 const PACKAGE_LICENSE = join(PACKAGE_ROOT, "LICENSE");
 const LICENSE_IDENTIFIER = "PolyForm-Noncommercial-1.0.0";
 const LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0";
+const SYSTEM_ROOT_ALIASES = [
+  ["/var", "/private/var"],
+  ["/tmp", "/private/tmp"],
+] as const;
+
+class UnsafeDestinationError extends Error {}
 
 function digest(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -246,6 +253,57 @@ async function observedToken(provenance: Provenance, destination: string): Promi
   return digest(canonicalJson({ provenance, files }));
 }
 
+function errno(error: unknown, code: string): boolean {
+  return (error as NodeJS.ErrnoException).code === code;
+}
+
+async function lexicalDestination(input: string): Promise<string> {
+  let destination = resolve(input);
+  for (const [alias, target] of SYSTEM_ROOT_ALIASES) {
+    const suffix = relative(alias, destination);
+    if (suffix.startsWith("..") || suffix.split(sep).includes("..")) continue;
+    let metadata;
+    try {
+      metadata = await lstat(alias);
+    } catch (error) {
+      if (errno(error, "ENOENT")) continue;
+      throw new UnsafeDestinationError("Destination path is unsafe");
+    }
+    if (!metadata.isSymbolicLink()) return destination;
+    let linked: string;
+    try {
+      linked = resolve(dirname(alias), await readlink(alias));
+    } catch {
+      throw new UnsafeDestinationError("Destination path is unsafe");
+    }
+    if (linked !== target) throw new UnsafeDestinationError("Destination path is unsafe");
+    destination = resolve(target, suffix);
+    break;
+  }
+  return destination;
+}
+
+async function validatedDestination(input: string): Promise<string> {
+  const destination = await lexicalDestination(input);
+  const root = parse(destination).root;
+  const parts = relative(root, destination).split(sep).filter(Boolean);
+  let current = root;
+  for (const [index, part] of parts.entries()) {
+    current = join(current, part);
+    let metadata;
+    try {
+      metadata = await lstat(current);
+    } catch (error) {
+      if (errno(error, "ENOENT")) break;
+      throw new UnsafeDestinationError("Destination path is unsafe");
+    }
+    if (metadata.isSymbolicLink() || (index < parts.length - 1 && !metadata.isDirectory())) {
+      throw new UnsafeDestinationError("Destination path is unsafe");
+    }
+  }
+  return destination;
+}
+
 function status(
   state: BundleState,
   reasonCode: string,
@@ -257,7 +315,16 @@ function status(
 }
 
 export async function classifyIntegrationBundle(context: CopyContext): Promise<BundleStatus> {
-  const destination = resolve(context.destination);
+  const lexical = resolve(context.destination);
+  let destination: string;
+  try {
+    destination = await validatedDestination(lexical);
+  } catch (error) {
+    if (error instanceof UnsafeDestinationError) {
+      return status("modified", "unsafe_destination", lexical, "unsafe");
+    }
+    throw error;
+  }
   if (!(await exists(destination))) return status("absent", "not_installed", destination, "absent");
   const metadata = await lstat(destination);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
@@ -313,21 +380,21 @@ export async function classifyIntegrationBundle(context: CopyContext): Promise<B
 }
 
 async function safeParent(destination: string): Promise<string> {
+  destination = await validatedDestination(destination);
   const parent = dirname(destination);
-  let probe = parent;
-  while (!(await exists(probe)) && probe !== dirname(probe)) probe = dirname(probe);
-  if ((await lstat(probe)).isSymbolicLink()) throw new Error("Destination parent is unsafe");
   await mkdir(parent, { recursive: true });
-  const metadata = await lstat(parent);
+  destination = await validatedDestination(destination);
+  const canonicalParent = dirname(destination);
+  const metadata = await lstat(canonicalParent);
   if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
     throw new Error("Destination parent is unsafe");
   }
-  return parent;
+  return canonicalParent;
 }
 
 export async function installIntegrationBundle(options: InstallOptions): Promise<BundleStatus> {
-  const context = { ...options, destination: resolve(options.destination) };
-  const initial = await classifyIntegrationBundle(context);
+  const lexicalContext = { ...options, destination: resolve(options.destination) };
+  const initial = await classifyIntegrationBundle(lexicalContext);
   if (initial.state === "current") return initial;
   if (initial.state === "outdated" && options.force !== true) {
     throw new BundleTransitionError(initial);
@@ -335,6 +402,7 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
   if (initial.state === "modified" || initial.state === "demoted") {
     throw new BundleTransitionError(initial);
   }
+  const context = { ...lexicalContext, destination: initial.destination };
 
   const provenance = await expectedProvenance(context);
   const parent = await safeParent(context.destination);
@@ -364,6 +432,18 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
     if (initial.state === "outdated" || initial.observed === "empty") {
       await renameEntry(context.destination, backup);
       wroteBackup = true;
+      const moved = await classifyIntegrationBundle({ ...context, destination: backup });
+      if (
+        moved.state !== initial.state ||
+        moved.reasonCode !== initial.reasonCode ||
+        moved.observed !== initial.observed
+      ) {
+        if (!(await exists(context.destination))) {
+          await renameEntry(backup, context.destination);
+          wroteBackup = false;
+        }
+        throw new Error("Destination changed during integration copy");
+      }
     }
     try {
       await renameEntry(staging, context.destination);

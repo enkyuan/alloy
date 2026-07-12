@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import tempfile
 from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
@@ -28,6 +29,10 @@ _LEGACY_NULL_ABI = frozenset({"fs", "http", "sqlite", "web"})
 _SIDECAR = ".kaji-integration-provenance.json"
 _LICENSE_IDENTIFIER = "PolyForm-Noncommercial-1.0.0"
 _LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0"
+_SYSTEM_ROOT_ALIASES = (
+    (Path("/var"), Path("/private/var")),
+    (Path("/tmp"), Path("/private/tmp")),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,13 +203,61 @@ def _observed_token(provenance: dict[str, object], destination: Path) -> str:
     return _digest(_canonical_bytes({"provenance": provenance, "files": snapshot}))
 
 
+def _lexical_destination(destination: Path) -> Path:
+    absolute = Path(os.path.abspath(os.fspath(destination)))
+    for alias, target in _SYSTEM_ROOT_ALIASES:
+        try:
+            suffix = absolute.relative_to(alias)
+        except ValueError:
+            continue
+        try:
+            metadata = alias.lstat()
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISLNK(metadata.st_mode):
+            return absolute
+        try:
+            linked = Path(os.path.abspath(alias.parent / alias.readlink()))
+        except OSError:
+            raise ManifestError("Destination path is unsafe") from None
+        if linked != target:
+            raise ManifestError("Destination path is unsafe")
+        return target / suffix
+    return absolute
+
+
+def _validated_destination(destination: Path) -> Path:
+    destination = _lexical_destination(destination)
+    current = Path(destination.anchor)
+    parts = destination.parts[1:]
+    for index, part in enumerate(parts):
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            break
+        except OSError:
+            raise ManifestError("Destination path is unsafe") from None
+        if stat.S_ISLNK(metadata.st_mode) or (
+            index < len(parts) - 1 and not stat.S_ISDIR(metadata.st_mode)
+        ):
+            raise ManifestError("Destination path is unsafe")
+    return destination
+
+
 def classify_integration_bundle(
     manifest: Manifest,
     destination: Path,
     *,
     runtime: Literal["python", "typescript"],
 ) -> BundleStatus:
-    destination = destination.resolve()
+    lexical = Path(os.path.abspath(os.fspath(destination)))
+    try:
+        destination = _validated_destination(lexical)
+    except ManifestError:
+        return BundleStatus(
+            "modified", "unsafe_destination", lexical, _observed="unsafe"
+        )
     if not os.path.lexists(destination):
         return BundleStatus("absent", "not_installed", destination, _observed="absent")
     if destination.is_symlink() or not destination.is_dir():
@@ -274,16 +327,14 @@ def classify_integration_bundle(
 
 
 def _safe_parent(destination: Path) -> Path:
+    destination = _validated_destination(destination)
     parent = destination.parent
-    probe = parent
-    while not probe.exists() and probe != probe.parent:
-        probe = probe.parent
-    if probe.is_symlink():
-        raise ManifestError("Destination parent cannot be a symlink")
     parent.mkdir(parents=True, exist_ok=True)
-    if parent.is_symlink() or not parent.is_dir():
+    destination = _validated_destination(destination)
+    metadata = destination.parent.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
         raise ManifestError("Destination parent is unsafe")
-    return parent
+    return destination.parent
 
 
 def install_integration_bundle(
@@ -293,14 +344,15 @@ def install_integration_bundle(
     runtime: Literal["python", "typescript"],
     force: bool = False,
 ) -> BundleStatus:
-    destination = destination.resolve()
-    initial = classify_integration_bundle(manifest, destination, runtime=runtime)
+    lexical = Path(os.path.abspath(os.fspath(destination)))
+    initial = classify_integration_bundle(manifest, lexical, runtime=runtime)
     if initial.state == "current":
         return initial
     if initial.state == "outdated" and not force:
         raise BundleTransitionError(initial)
     if initial.state in {"modified", "demoted"}:
         raise BundleTransitionError(initial)
+    destination = initial.destination
 
     provenance = _expected_provenance(manifest, runtime)
     parent = _safe_parent(destination)
@@ -331,10 +383,24 @@ def install_integration_bundle(
         if initial.state == "outdated" or initial._observed == "empty":
             destination.rename(backup)
             wrote_backup = True
+            moved = classify_integration_bundle(manifest, backup, runtime=runtime)
+            if (moved.state, moved.reason_code, moved._observed) != (
+                initial.state,
+                initial.reason_code,
+                initial._observed,
+            ):
+                if not os.path.lexists(destination):
+                    backup.rename(destination)
+                    wrote_backup = False
+                raise ManifestError("Destination changed during integration copy")
         try:
             staging.rename(destination)
         except Exception:
-            if wrote_backup and backup.exists() and not destination.exists():
+            if (
+                wrote_backup
+                and os.path.lexists(backup)
+                and not os.path.lexists(destination)
+            ):
                 backup.rename(destination)
                 wrote_backup = False
             raise
@@ -349,7 +415,11 @@ def install_integration_bundle(
             _observed_token(provenance, destination),
         )
     finally:
-        if staging.exists():
+        if os.path.lexists(staging):
             shutil.rmtree(staging, ignore_errors=True)
-        if wrote_backup and backup.exists() and not destination.exists():
+        if (
+            wrote_backup
+            and os.path.lexists(backup)
+            and not os.path.lexists(destination)
+        ):
             backup.rename(destination)

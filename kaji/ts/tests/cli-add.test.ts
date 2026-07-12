@@ -583,6 +583,107 @@ describe("kaji add", () => {
     expect(existsSync(out)).toBe(true);
   });
 
+  it("rejects a final destination symlink without writing its victim", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const victim = join(tmp, "final-symlink-victim");
+    const out = join(tmp, "final-symlink");
+    mkdirSync(victim);
+    symlinkSync(victim, out, "dir");
+
+    await expect(
+      installIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: out,
+        runtime: "typescript",
+      }),
+    ).rejects.toThrow("unsafe_destination");
+    expect(existsSync(join(victim, "index.ts"))).toBe(false);
+    expect(lstatSync(out).isSymbolicLink()).toBe(true);
+  });
+
+  it("rejects a nested ancestor symlink without writing its victim", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const victim = join(tmp, "ancestor-symlink-victim");
+    const ancestor = join(tmp, "ancestor-symlink");
+    mkdirSync(victim);
+    symlinkSync(victim, ancestor, "dir");
+
+    await expect(
+      installIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: join(ancestor, "nested", "echo"),
+        runtime: "typescript",
+      }),
+    ).rejects.toThrow("unsafe_destination");
+    expect(existsSync(join(victim, "nested"))).toBe(false);
+    expect(lstatSync(ancestor).isSymbolicLink()).toBe(true);
+  });
+
+  it("restores an edit made between live recheck and backup rename", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "rename-race");
+    const context = {
+      manifest: echo,
+      entry: index.integrations.echo!,
+      destination: out,
+      runtime: "typescript" as const,
+    };
+    await installIntegrationBundle(context);
+    const sidecar = join(out, ".kaji-integration-provenance.json");
+    const provenance = JSON.parse(readFileSync(sidecar, "utf8"));
+    provenance.sdkVersion = "0.0.0-old";
+    writeFileSync(sidecar, JSON.stringify(provenance));
+    const concurrent = "// concurrent owner edit\n";
+
+    await expect(
+      installIntegrationBundle({
+        ...context,
+        force: true,
+        renameEntry: async (source, destination) => {
+          if (source.endsWith("rename-race")) {
+            writeFileSync(join(source, "index.ts"), concurrent);
+          }
+          await renameAsync(source, destination);
+        },
+      }),
+    ).rejects.toThrow("Destination changed");
+    expect(readFileSync(join(out, "index.ts"), "utf8")).toBe(concurrent);
+    expect(existsSync(out)).toBe(true);
+  });
+
+  it("does not delete a destination created as an absent stage publishes", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "absent-race");
+    const concurrent = "concurrent owner bytes\n";
+
+    await expect(
+      installIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: out,
+        runtime: "typescript",
+        renameEntry: async (source, destination) => {
+          if (source.includes(".echo.kaji-stage-")) {
+            mkdirSync(out);
+            writeFileSync(join(out, "owner.txt"), concurrent);
+          }
+          await renameAsync(source, destination);
+        },
+      }),
+    ).rejects.toThrow();
+    expect(readFileSync(join(out, "owner.txt"), "utf8")).toBe(concurrent);
+  });
+
   it("rejects --check --force before creating the default destination", async () => {
     const previous = process.cwd();
     process.chdir(tmp);

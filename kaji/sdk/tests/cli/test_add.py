@@ -256,6 +256,96 @@ def test_outdated_swap_rolls_back_when_second_rename_fails(
     assert not list(tmp_path.glob(".echo.kaji-*"))
 
 
+def test_install_rejects_final_destination_symlink_without_victim_writes(
+    tmp_path: Path,
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    destination = tmp_path / "echo"
+    destination.symlink_to(victim, target_is_directory=True)
+
+    with pytest.raises(FileExistsError, match="unsafe_destination"):
+        install_integration_bundle(load_manifest("echo"), destination, runtime="python")
+
+    assert list(victim.iterdir()) == []
+    assert destination.is_symlink()
+
+
+def test_install_rejects_nested_ancestor_symlink_without_victim_writes(
+    tmp_path: Path,
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    ancestor = tmp_path / "linked-parent"
+    ancestor.symlink_to(victim, target_is_directory=True)
+    destination = ancestor / "nested" / "echo"
+
+    with pytest.raises(FileExistsError, match="unsafe_destination"):
+        install_integration_bundle(load_manifest("echo"), destination, runtime="python")
+
+    assert list(victim.iterdir()) == []
+    assert ancestor.is_symlink()
+
+
+def test_outdated_swap_restores_edit_made_between_recheck_and_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    assert main(["add", "echo", "--out", str(destination)]) == 0
+    sidecar = destination / ".kaji-integration-provenance.json"
+    provenance = json.loads(sidecar.read_text())
+    provenance["sdkVersion"] = "0.0.0-old"
+    sidecar.write_text(json.dumps(provenance))
+    concurrent = b"# concurrent owner edit\n"
+    original = Path.rename
+
+    def edit_then_rename(self: Path, target: Path) -> Path:
+        if self == destination:
+            (destination / "echo.py").write_bytes(concurrent)
+        return original(self, target)
+
+    monkeypatch.setattr(Path, "rename", edit_then_rename)
+    with pytest.raises(ManifestError, match="Destination changed"):
+        install_integration_bundle(
+            load_manifest("echo"), destination, runtime="python", force=True
+        )
+
+    assert (destination / "echo.py").read_bytes() == concurrent
+    assert not list(tmp_path.glob(".echo.kaji-*"))
+
+
+def test_absent_publish_never_deletes_new_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    concurrent = b"concurrent owner bytes\n"
+    original = Path.rename
+
+    def create_then_rename(self: Path, target: Path) -> Path:
+        if self.name.startswith(".echo.kaji-stage-"):
+            destination.mkdir()
+            (destination / "owner.txt").write_bytes(concurrent)
+        return original(self, target)
+
+    monkeypatch.setattr(Path, "rename", create_then_rename)
+    with pytest.raises(OSError):
+        install_integration_bundle(load_manifest("echo"), destination, runtime="python")
+
+    assert (destination / "owner.txt").read_bytes() == concurrent
+
+
 def test_staging_copy_failure_leaves_the_old_bundle_byte_identical(
     tmp_path: Path, monkeypatch
 ) -> None:

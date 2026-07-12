@@ -112,8 +112,8 @@ describe("GitHub registry bundle", () => {
       specs,
       policy: new ToolPolicy({ requireApprovalFor: new Set(["external_effect"]) }),
       approvalHandler: async () => false,
-      executor: async (invocation) =>
-        registry.execute(invocation.name, { ...invocation.arguments }, invocation.context),
+      executor: async (toolName, toolArgs, toolContext) =>
+        registry.execute(toolName, { ...toolArgs }, toolContext),
     });
     const results = await planner.executeBatch(
       "session",
