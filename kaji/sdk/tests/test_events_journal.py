@@ -12,7 +12,7 @@ from kaji.infra.events.errors import (
     EventStoreCapacityError,
 )
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
-from kaji.infra.events.schemas import StoredKajiEvent, UserMessage
+from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
 from kaji.infra.events.store import AppendResult, InMemoryEventStore
 
 
@@ -293,6 +293,133 @@ async def test_subscribe_handshake_has_no_backlog_live_gap_or_duplicates() -> No
     live = await live_task
     assert await anext(stream) is live
     await _close(stream)
+
+
+@pytest.mark.asyncio
+async def test_shared_store_fanout_reaches_other_journals_and_direct_appends() -> None:
+    store = InMemoryEventStore()
+    reader = InMemoryEventJournal(store)
+    writer = InMemoryEventJournal(store)
+    subscription = await reader.open_subscription("shared")
+
+    through_writer = await writer.commit(
+        UserMessage(id="writer", session_id="shared", content="writer")
+    )
+    through_store = await store.append(
+        UserMessage(id="direct", session_id="shared", content="direct")
+    )
+
+    assert [await anext(subscription), await anext(subscription)] == [
+        through_writer,
+        through_store.event,
+    ]
+    await subscription.aclose()
+    assert store.active_session_lane_count == 0
+    assert store.active_listener_count == 0
+
+
+@pytest.mark.asyncio
+async def test_stable_journal_does_not_serialize_unrelated_sessions() -> None:
+    class BlockingStore(InMemoryEventStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+            if draft.session_id == "blocked":
+                self.entered.set()
+                await self.release.wait()
+            return await super()._insert_reserved(draft)
+
+    store = BlockingStore()
+    journal = InMemoryEventJournal(store)
+    blocked = asyncio.create_task(
+        journal.commit(UserMessage(id="blocked", session_id="blocked", content="one"))
+    )
+    await store.entered.wait()
+
+    unrelated = await asyncio.wait_for(
+        journal.commit(UserMessage(id="free", session_id="free", content="one")),
+        timeout=0.1,
+    )
+    assert unrelated.sequence == 1
+    assert not blocked.done()
+
+    store.release.set()
+    assert (await blocked).sequence == 1
+    assert store.active_session_lane_count == 0
+
+
+@pytest.mark.asyncio
+async def test_queued_same_session_commit_cannot_overtake_fanout() -> None:
+    class BlockingStore(InMemoryEventStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+            if draft.id == "first":
+                self.entered.set()
+                await self.release.wait()
+            return await super()._insert_reserved(draft)
+
+    store = BlockingStore()
+    journal = InMemoryEventJournal(store)
+    subscription = await journal.open_subscription("same")
+    first = asyncio.create_task(
+        journal.commit(UserMessage(id="first", session_id="same", content="one"))
+    )
+    await store.entered.wait()
+    second = asyncio.create_task(
+        journal.commit(UserMessage(id="second", session_id="same", content="two"))
+    )
+    await asyncio.sleep(0)
+
+    store.release.set()
+    await asyncio.gather(first, second)
+    assert [await anext(subscription), await anext(subscription)] == [
+        first.result(),
+        second.result(),
+    ]
+    await subscription.aclose()
+
+
+@pytest.mark.asyncio
+async def test_split_capacity_is_reserved_before_cross_session_persistence() -> None:
+    class BlockingBus(InMemoryEventBus):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def publish(self, event: StoredKajiEvent) -> str:
+            self.entered.set()
+            await self.release.wait()
+            raise RuntimeError("publish unavailable")
+
+    store = InMemoryEventStore()
+    bus = BlockingBus()
+    journal = SplitEventJournal(store, bus, max_pending_events=1)
+    first = asyncio.create_task(
+        journal.commit(UserMessage(id="first", session_id="first", content="one"))
+    )
+    await bus.entered.wait()
+
+    with pytest.raises(EventStoreCapacityError):
+        await asyncio.wait_for(
+            journal.commit(
+                UserMessage(id="second", session_id="second", content="two")
+            ),
+            timeout=0.1,
+        )
+    assert await store.last_sequence("second") == 0
+
+    bus.release.set()
+    with pytest.raises(EventDeliveryError):
+        await first
+    assert journal.pending_event_ids == {"first"}
 
 
 @pytest.mark.asyncio

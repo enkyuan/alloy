@@ -9,7 +9,7 @@ import {
 } from "@/events/errors";
 import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
 import type { EventBusProtocol, EventBusSubscribeOptions } from "@/events/protocols";
-import { KajiEvent, type StoredKajiEvent } from "@/events/schemas";
+import { KajiEvent, type NewKajiEvent, type StoredKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore, type AppendResult } from "@/events/store";
 import { EventType } from "@/events/types";
 import type { MetricMeasurement, MetricsSink } from "@/observability";
@@ -49,6 +49,35 @@ class CountingStore extends InMemoryEventStore {
     this.appendCalls += 1;
     if (this.failAppend) throw new Error("append failed");
     return super.append(event);
+  }
+}
+
+class BlockingInsertStore extends InMemoryEventStore {
+  readonly entered: Promise<void>;
+  private enter!: () => void;
+  private readonly release: Promise<void>;
+  private unblock!: () => void;
+
+  constructor() {
+    super();
+    this.entered = new Promise((resolve) => {
+      this.enter = resolve;
+    });
+    this.release = new Promise((resolve) => {
+      this.unblock = resolve;
+    });
+  }
+
+  releaseBlocked(): void {
+    this.unblock();
+  }
+
+  protected override async insertReserved(event: NewKajiEvent): Promise<AppendResult> {
+    if (event.session_id === "blocked") {
+      this.enter();
+      await this.release;
+    }
+    return super.insertReserved(event);
   }
 }
 
@@ -263,6 +292,50 @@ describe("event delivery", () => {
     await subscription.return?.();
   });
 
+  it("fans out shared-store commits from another committer and direct appends", async () => {
+    const store = new InMemoryEventStore();
+    const reader = new InMemoryEventCommitter(store);
+    const writer = new InMemoryEventCommitter(store);
+    const subscription = reader.subscribe("shared");
+
+    const throughWriter = await writer.commit(message("writer", "shared"));
+    const throughStore = await store.append(message("direct", "shared"));
+
+    expect((await subscription.next()).value).toEqual(throughWriter);
+    expect((await subscription.next()).value).toEqual(throughStore.event);
+    await subscription.return?.();
+    expect(store.activeSessionLaneCount).toBe(0);
+    expect(store.activeListenerCount).toBe(0);
+  });
+
+  it("does not serialize stable commits for unrelated sessions", async () => {
+    const store = new BlockingInsertStore();
+    const committer = new InMemoryEventCommitter(store);
+    const blocked = committer.commit(message("blocked", "blocked"));
+    await store.entered;
+
+    await expect(committer.commit(message("free", "free"))).resolves.toMatchObject({
+      sequence: 1,
+    });
+    store.releaseBlocked();
+    await expect(blocked).resolves.toMatchObject({ sequence: 1 });
+    expect(store.activeSessionLaneCount).toBe(0);
+  });
+
+  it("does not let a queued same-session commit overtake fanout", async () => {
+    const store = new BlockingInsertStore();
+    const committer = new InMemoryEventCommitter(store);
+    const subscription = committer.subscribe("blocked");
+    const first = committer.commit(message("first", "blocked"));
+    await store.entered;
+    const second = committer.commit(message("second", "blocked"));
+
+    store.releaseBlocked();
+    const stored = await Promise.all([first, second]);
+    expect([(await subscription.next()).value, (await subscription.next()).value]).toEqual(stored);
+    await subscription.return?.();
+  });
+
   it("does not fan out an identical duplicate", async () => {
     const committer = new InMemoryEventCommitter();
     const subscription = committer.subscribe("s1");
@@ -336,11 +409,12 @@ describe("event delivery", () => {
       KajiEvent.parse({ id: "closed", type: EventType.SESSION_CLOSED, session_id: "closed" }),
     );
     const subscription = committer.subscribe("closed");
+    const captured = await subscription.next();
 
     await committer.commit(message("new-session", "new"));
 
     expect(await store.getEvents("closed")).toEqual([]);
-    expect((await subscription.next()).value?.id).toBe("closed");
+    expect(captured.value?.id).toBe("closed");
     await subscription.return?.();
   });
 
@@ -557,6 +631,41 @@ describe("event delivery", () => {
     expect(store.appendCalls).toBe(2);
     expect(await store.lastSequence("s1")).toBe(2);
     expect(committer.pendingEventIds()).toEqual(["a", "b"]);
+  });
+
+  it("reserves split capacity before a cross-session append", async () => {
+    let entered!: () => void;
+    let release!: () => void;
+    const publishEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const publishRelease = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bus: EventBusProtocol<StoredKajiEvent> = {
+      async publish() {
+        entered();
+        await publishRelease;
+        throw new Error("publish failed");
+      },
+      subscribe() {
+        return (async function* () {})();
+      },
+      close() {},
+    };
+    const store = new InMemoryEventStore();
+    const committer = new SplitEventCommitter(store, bus, { maxPendingEvents: 1 });
+    const first = committer.commit(message("first", "first"));
+    await publishEntered;
+
+    await expect(committer.commit(message("second", "second"))).rejects.toBeInstanceOf(
+      EventStoreCapacityError,
+    );
+    expect(await store.lastSequence("second")).toBe(0);
+
+    release();
+    await expect(first).rejects.toBeInstanceOf(EventDeliveryError);
+    expect(committer.pendingEventIds()).toEqual(["first"]);
   });
 
   it("deduplicates a pending retry with reordered nested keys", async () => {

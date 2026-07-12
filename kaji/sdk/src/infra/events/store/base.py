@@ -1,5 +1,7 @@
 """EventStore protocol -- the interface every persistent backend implements."""
 
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -45,3 +47,37 @@ class EventStore(Protocol):
     async def last_sequence(self, session_id: str) -> int:
         """Return the latest session-local sequence, or zero when absent."""
         ...
+
+
+SessionEventListener = Callable[[StoredKajiEvent], bool]
+
+
+class EventStoreSession(Protocol):
+    """Operations valid only while a store-owned session lane is held."""
+
+    async def append_locked(self, event: NewKajiEvent) -> AppendResult: ...
+
+    def get_events_locked(
+        self,
+        *,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[StoredKajiEvent]: ...
+
+    def last_sequence_locked(self) -> int: ...
+
+    def attach_listener_locked(self, listener: SessionEventListener) -> None: ...
+
+    def detach_listener_locked(self, listener: SessionEventListener) -> None: ...
+
+
+@runtime_checkable
+class SessionTransactionalEventStore(EventStore, Protocol):
+    """Internal capability for atomic session-scoped append and fanout."""
+
+    @property
+    def session_transactions_enabled(self) -> bool: ...
+
+    def session_transaction(
+        self, session_id: str
+    ) -> AbstractAsyncContextManager[EventStoreSession]: ...

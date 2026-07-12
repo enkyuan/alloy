@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import * as eventErrors from "@/events/errors";
 import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
-import { KajiEvent } from "@/events/schemas";
-import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent, type NewKajiEvent } from "@/events/schemas";
+import { InMemoryEventStore, type AppendResult } from "@/events/store";
 import { EventType } from "@/events/types";
+import { NestedEventTransactionError } from "@/internal/keyed-serial";
 
 function userMessage(
   sessionId: string,
@@ -19,6 +20,35 @@ function userMessage(
     content,
     timestamp,
   });
+}
+
+class BarrierStore extends InMemoryEventStore {
+  readonly entered: Promise<void>;
+  private enter!: () => void;
+  private readonly release: Promise<void>;
+  private unblock!: () => void;
+
+  constructor(private readonly blockedSession: string) {
+    super();
+    this.entered = new Promise((resolve) => {
+      this.enter = resolve;
+    });
+    this.release = new Promise((resolve) => {
+      this.unblock = resolve;
+    });
+  }
+
+  releaseBlocked(): void {
+    this.unblock();
+  }
+
+  protected override async insertReserved(event: NewKajiEvent): Promise<AppendResult> {
+    if (event.session_id === this.blockedSession) {
+      this.enter();
+      await this.release;
+    }
+    return super.insertReserved(event);
+  }
 }
 
 describe("InMemoryEventStore", () => {
@@ -136,6 +166,117 @@ describe("InMemoryEventStore", () => {
     await expect(store.append(userMessage("s1", "different", 1, "event-1"))).rejects.toBeInstanceOf(
       EventIdConflictError,
     );
+  });
+
+  it("lets an unrelated session commit while another store lane is blocked", async () => {
+    const store = new BarrierStore("blocked");
+    const blocked = store.append(userMessage("blocked", "one", 1, "blocked"));
+    await store.entered;
+
+    await expect(store.append(userMessage("free", "one", 1, "free"))).resolves.toMatchObject({
+      event: { sequence: 1 },
+    });
+
+    store.releaseBlocked();
+    await expect(blocked).resolves.toMatchObject({ event: { sequence: 1 } });
+    expect(store.activeSessionLaneCount).toBe(0);
+  });
+
+  it("keeps same-session commits FIFO and releases lane state", async () => {
+    const store = new BarrierStore("same");
+    const first = store.append(userMessage("same", "one", 1, "first"));
+    await store.entered;
+    const second = store.append(userMessage("same", "two", 2, "second"));
+    let secondSettled = false;
+    void second.finally(() => {
+      secondSettled = true;
+    });
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+
+    store.releaseBlocked();
+    await expect(first).resolves.toMatchObject({ event: { sequence: 1 } });
+    await expect(second).resolves.toMatchObject({ event: { sequence: 2 } });
+    expect(store.activeSessionLaneCount).toBe(0);
+    expect(store.activeIdReservationCount).toBe(0);
+  });
+
+  it("rejects nested store transactions instead of deadlocking", async () => {
+    const store = new InMemoryEventStore();
+    await expect(
+      store.sessionTransaction("s1", () => store.sessionTransaction("s1", async () => undefined)),
+    ).rejects.toBeInstanceOf(NestedEventTransactionError);
+    expect(store.activeSessionLaneCount).toBe(0);
+  });
+
+  it("rejects a child transaction while its inherited parent marker is active", async () => {
+    const store = new InMemoryEventStore();
+    await store.sessionTransaction("parent", async () => {
+      const child = Promise.resolve().then(() =>
+        store.append(userMessage("child", "one", 1, "child")),
+      );
+      await expect(child).rejects.toBeInstanceOf(NestedEventTransactionError);
+    });
+    expect(store.activeSessionLaneCount).toBe(0);
+  });
+
+  it("allows a child created during a hold to commit after release", async () => {
+    const store = new InMemoryEventStore();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let child!: Promise<AppendResult>;
+
+    await store.sessionTransaction("parent", async () => {
+      child = gate.then(() => store.append(userMessage("delayed", "one", 1, "delayed")));
+    });
+    release();
+
+    await expect(child).resolves.toMatchObject({ inserted: true });
+    expect(store.activeSessionLaneCount).toBe(0);
+  });
+
+  it("does not evict a closed session while its lane is active", async () => {
+    const store = new InMemoryEventStore({ maxSessions: 1 });
+    await store.append(
+      KajiEvent.parse({ id: "closed", type: EventType.SESSION_CLOSED, session_id: "closed" }),
+    );
+    let entered!: () => void;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const holder = store.sessionTransaction("closed", async () => {
+      entered();
+      await held;
+    });
+    await started;
+
+    await expect(store.append(userMessage("new", "one", 1, "new"))).rejects.toBeInstanceOf(
+      EventStoreCapacityError,
+    );
+    release();
+    await holder;
+    await expect(store.append(userMessage("new", "one", 1, "new"))).resolves.toMatchObject({
+      event: { sequence: 1 },
+    });
+  });
+
+  it("rejects a cross-session id conflict while the owner is blocked", async () => {
+    const store = new BarrierStore("owner");
+    const owner = store.append(userMessage("owner", "one", 1, "shared"));
+    await store.entered;
+
+    await expect(
+      store.append(userMessage("other", "different", 1, "shared")),
+    ).rejects.toBeInstanceOf(EventIdConflictError);
+    store.releaseBlocked();
+    await expect(owner).resolves.toMatchObject({ inserted: true });
+    expect(store.activeIdReservationCount).toBe(0);
   });
 
   it("deep-clones and freezes stored event payloads", async () => {

@@ -14,7 +14,13 @@ import {
   snapshotNewEvent,
   validateStoredEvent,
 } from "@/events/schemas";
-import { InMemoryEventStore, type EventStore } from "@/events/store";
+import {
+  type EventStore,
+  type EventStoreSession,
+  InMemoryEventStore,
+  type SessionEventListener,
+  supportsSessionTransactions,
+} from "@/events/store";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 
 class SerialExecutor {
@@ -35,6 +41,7 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
   private backlog: readonly StoredKajiEvent[] | undefined;
   private backlogIndex = 0;
   private closed = false;
+  private detached = false;
 
   constructor(
     private readonly inner: RingBufferSubscription<StoredKajiEvent>,
@@ -43,6 +50,8 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
       | { readonly attached: false; readonly error: unknown }
     >,
     afterSequence: number,
+    private readonly detach: () => Promise<void>,
+    private readonly onClose: () => void,
   ) {
     this.cursor = afterSequence;
   }
@@ -63,7 +72,7 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
         return { value: event, done: false };
       }
       const next = await this.inner.next();
-      if (next.done) this.closed = true;
+      if (next.done) await this.close();
       return next;
     } catch (error) {
       await this.close();
@@ -84,9 +93,18 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
   }
 
   private async close(): Promise<void> {
-    if (this.closed) return;
-    this.closed = true;
-    await this.inner.return();
+    if (!this.closed) {
+      this.closed = true;
+      await this.inner.return();
+    }
+    if (this.detached) return;
+    this.detached = true;
+    try {
+      await this.ready;
+      await this.detach();
+    } finally {
+      this.onClose();
+    }
   }
 }
 
@@ -103,6 +121,10 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
     private readonly subscriberCapacity: number,
     afterSequence: number,
     private readonly metrics: MetricsSink,
+    private readonly readyBacklog?: Promise<
+      | { readonly ready: true; readonly backlog: readonly StoredKajiEvent[] }
+      | { readonly ready: false; readonly error: unknown }
+    >,
   ) {
     this.cursor = afterSequence;
   }
@@ -111,21 +133,27 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
     if (this.closed) return { value: undefined, done: true };
     try {
       if (this.backlog === undefined) {
-        const backlog = (
-          await this.store.getEvents(this.sessionId, {
-            afterSequence: this.cursor,
-            limit: this.subscriberCapacity + 1,
-          })
-        ).map(validateStoredEvent);
-        recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
-        if (backlog.length > this.subscriberCapacity) {
-          recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
-          throw new EventBufferOverflowError(
-            this.cursor,
-            await this.store.lastSequence(this.sessionId),
-          );
+        if (this.readyBacklog !== undefined) {
+          const result = await this.readyBacklog;
+          if (!result.ready) throw result.error;
+          this.backlog = result.backlog;
+        } else {
+          const backlog = (
+            await this.store.getEvents(this.sessionId, {
+              afterSequence: this.cursor,
+              limit: this.subscriberCapacity + 1,
+            })
+          ).map(validateStoredEvent);
+          recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
+          if (backlog.length > this.subscriberCapacity) {
+            recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
+            throw new EventBufferOverflowError(
+              this.cursor,
+              await this.store.lastSequence(this.sessionId),
+            );
+          }
+          this.backlog = backlog;
         }
-        this.backlog = backlog;
       }
       const backlogEvent = this.backlog[this.backlogIndex];
       if (backlogEvent !== undefined) {
@@ -180,12 +208,18 @@ export interface SplitEventCommitterOptions {
   metricsSink?: MetricsSink;
 }
 
+interface PendingSlot {
+  active: boolean;
+}
+
 /** Stable single-process append + fanout boundary. */
 export class InMemoryEventCommitter implements EventCommitter {
   private readonly serial = new SerialExecutor();
   private readonly subscribers = new Map<string, Set<RingBufferSubscription<StoredKajiEvent>>>();
   private readonly subscriberCapacity: number;
   private readonly metrics: MetricsSink;
+  private readonly transactionalStore;
+  private readonly subscriptions = new Set<AttachedSubscription>();
 
   constructor(
     readonly store: EventStore = new InMemoryEventStore(),
@@ -193,6 +227,7 @@ export class InMemoryEventCommitter implements EventCommitter {
   ) {
     this.subscriberCapacity = options.subscriberCapacity ?? 1_024;
     this.metrics = options.metricsSink ?? NOOP_METRICS;
+    this.transactionalStore = supportsSessionTransactions(store) ? store : undefined;
     if (!Number.isInteger(this.subscriberCapacity) || this.subscriberCapacity <= 0) {
       throw new RangeError("subscriberCapacity must be a positive integer");
     }
@@ -200,25 +235,38 @@ export class InMemoryEventCommitter implements EventCommitter {
 
   commit(event: NewKajiEventType): Promise<StoredKajiEvent> {
     const validated = snapshotNewEvent(event);
-    return this.serial.run(async () => {
-      let result;
-      try {
-        result = await this.store.append(validated);
-      } catch (cause) {
-        recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
-        if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
-          throw cause;
-        }
-        throw new EventDeliveryError("append", validated.id, false, { cause });
+    if (this.transactionalStore !== undefined) {
+      return this.transactionalStore.sessionTransaction(validated.session_id, (transaction) =>
+        this.commitWith(validated, transaction),
+      );
+    }
+    return this.serial.run(() => this.commitWith(validated));
+  }
+
+  private async commitWith(
+    validated: NewKajiEventType,
+    transaction?: EventStoreSession,
+  ): Promise<StoredKajiEvent> {
+    let result;
+    try {
+      result =
+        transaction === undefined
+          ? await this.store.append(validated)
+          : await transaction.appendLocked(validated);
+    } catch (cause) {
+      recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
+      if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
+        throw cause;
       }
-      const stored = validateStoredEvent(result.event);
-      if (result.inserted) {
-        for (const subscriber of this.subscribers.get(stored.session_id) ?? []) {
-          subscriber.push(stored);
-        }
+      throw new EventDeliveryError("append", validated.id, false, { cause });
+    }
+    const stored = transaction === undefined ? validateStoredEvent(result.event) : result.event;
+    if (result.inserted && transaction === undefined) {
+      for (const subscriber of this.subscribers.get(stored.session_id) ?? []) {
+        subscriber.push(stored);
       }
-      return stored;
-    });
+    }
+    return stored;
   }
 
   subscribe(
@@ -241,36 +289,66 @@ export class InMemoryEventCommitter implements EventCommitter {
       afterSequence,
       this.metrics,
     );
-    const ready = this.serial.run(async () => {
+    let listener: SessionEventListener | undefined;
+    const attach = async (transaction?: EventStoreSession) => {
       try {
         const backlog = (
-          await this.store.getEvents(sessionId, {
-            afterSequence,
-            limit: this.subscriberCapacity + 1,
-          })
+          transaction === undefined
+            ? await this.store.getEvents(sessionId, {
+                afterSequence,
+                limit: this.subscriberCapacity + 1,
+              })
+            : transaction.getEventsLocked({
+                afterSequence,
+                limit: this.subscriberCapacity + 1,
+              })
         ).map(validateStoredEvent);
         recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
         if (backlog.length > this.subscriberCapacity) {
           recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
           throw new EventBufferOverflowError(
             afterSequence,
-            await this.store.lastSequence(sessionId),
+            transaction === undefined
+              ? await this.store.lastSequence(sessionId)
+              : transaction.lastSequenceLocked(),
           );
         }
-        if (!inner.isClosed) subscribers.add(inner);
+        if (!inner.isClosed) {
+          subscribers.add(inner);
+          if (transaction !== undefined) {
+            listener = (event) => {
+              inner.push(event);
+              return !inner.isClosed;
+            };
+            transaction.attachListenerLocked(listener);
+          }
+        }
         return { attached: true, backlog } as const;
       } catch (error) {
         inner.close();
         return { attached: false, error } as const;
       }
-    });
-    return new AttachedSubscription(inner, ready, afterSequence);
+    };
+    const ready =
+      this.transactionalStore === undefined
+        ? this.serial.run(() => attach())
+        : this.transactionalStore.sessionTransaction(sessionId, attach);
+    const detach = async () => {
+      if (this.transactionalStore === undefined || listener === undefined) return;
+      await this.transactionalStore.sessionTransaction(sessionId, async (transaction) => {
+        transaction.detachListenerLocked(listener!);
+      });
+    };
+    const subscription = new AttachedSubscription(inner, ready, afterSequence, detach, () =>
+      this.subscriptions.delete(subscription),
+    );
+    this.subscriptions.add(subscription);
+    return subscription;
   }
 
-  close(): void {
-    for (const subscribers of this.subscribers.values()) {
-      for (const subscriber of [...subscribers]) subscriber.close();
-    }
+  async close(): Promise<void> {
+    await Promise.all([...this.subscriptions].map((subscription) => subscription.return()));
+    this.subscriptions.clear();
     this.subscribers.clear();
   }
 }
@@ -281,6 +359,8 @@ export class SplitEventCommitter implements EventCommitter {
   private readonly pending = new Map<string, StoredKajiEvent>();
   private readonly subscriberCapacity: number;
   private readonly metrics: MetricsSink;
+  private readonly transactionalStore;
+  private pendingReservations = 0;
   readonly maxPendingEvents: number;
 
   constructor(
@@ -290,6 +370,7 @@ export class SplitEventCommitter implements EventCommitter {
   ) {
     this.subscriberCapacity = options.subscriberCapacity ?? 1_024;
     this.metrics = options.metricsSink ?? NOOP_METRICS;
+    this.transactionalStore = supportsSessionTransactions(store) ? store : undefined;
     this.maxPendingEvents = options.maxPendingEvents ?? 1_024;
     if (!Number.isInteger(this.subscriberCapacity) || this.subscriberCapacity <= 0) {
       throw new RangeError("subscriberCapacity must be a positive integer");
@@ -301,10 +382,22 @@ export class SplitEventCommitter implements EventCommitter {
 
   commit(input: NewKajiEventType): Promise<StoredKajiEvent> {
     const event = snapshotNewEvent(input);
-    return this.serial.run(() => this.commitUnlocked(event));
+    let slot: PendingSlot;
+    try {
+      slot = this.reservePendingSlot(event);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const operation = (transaction?: EventStoreSession) =>
+      this.commitUnlocked(event, slot, transaction);
+    const result =
+      this.transactionalStore !== undefined
+        ? this.transactionalStore.sessionTransaction(event.session_id, operation)
+        : this.serial.run(() => operation());
+    return result.finally(() => this.releasePendingSlot(slot));
   }
 
-  private async commitUnlocked(event: NewKajiEventType): Promise<StoredKajiEvent> {
+  private reservePendingSlot(event: NewKajiEventType): PendingSlot {
     const pending = this.pending.get(event.id);
     if (pending !== undefined) {
       const { sequence: _, ...original } = pending;
@@ -312,19 +405,43 @@ export class SplitEventCommitter implements EventCommitter {
         recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
         throw new EventIdConflictError(event.id);
       }
-      return this.publishPendingUnlocked(event.id);
+      return { active: false };
     }
-    if (this.pending.size >= this.maxPendingEvents) {
+    if (this.pending.size + this.pendingReservations >= this.maxPendingEvents) {
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
       throw new EventStoreCapacityError(
         event.session_id,
         `Pending delivery outbox reached its capacity of ${this.maxPendingEvents}; event ${event.id} was not persisted`,
       );
     }
+    this.pendingReservations += 1;
+    return { active: true };
+  }
+
+  private releasePendingSlot(slot: PendingSlot): void {
+    if (!slot.active) return;
+    this.pendingReservations -= 1;
+    slot.active = false;
+  }
+
+  private promotePendingSlot(slot: PendingSlot, event: StoredKajiEvent): void {
+    this.pending.set(event.id, event);
+    this.releasePendingSlot(slot);
+  }
+
+  private async commitUnlocked(
+    event: NewKajiEventType,
+    slot: PendingSlot,
+    transaction?: EventStoreSession,
+  ): Promise<StoredKajiEvent> {
+    if (this.pending.has(event.id)) return this.publishPendingUnlocked(event.id);
 
     let result;
     try {
-      result = await this.store.append(event);
+      result =
+        transaction === undefined
+          ? await this.store.append(event)
+          : await transaction.appendLocked(event);
     } catch (cause) {
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "append" });
       if (cause instanceof EventIdConflictError || cause instanceof EventStoreCapacityError) {
@@ -332,10 +449,10 @@ export class SplitEventCommitter implements EventCommitter {
       }
       throw new EventDeliveryError("append", event.id, false, { cause });
     }
-    const stored = validateStoredEvent(result.event);
+    const stored = transaction === undefined ? validateStoredEvent(result.event) : result.event;
     if (!result.inserted) return stored;
     if (this.hasPendingForSession(stored.session_id)) {
-      this.pending.set(stored.id, stored);
+      this.promotePendingSlot(slot, stored);
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
       throw new EventDeliveryError("publish", stored.id, true, {
         cause: new Error(
@@ -346,7 +463,7 @@ export class SplitEventCommitter implements EventCommitter {
     try {
       await this.bus.publish(stored);
     } catch (cause) {
-      this.pending.set(stored.id, stored);
+      this.promotePendingSlot(slot, stored);
       recordMetric(this.metrics, "kaji.journal.failures", 1, { stage: "publish" });
       throw new EventDeliveryError("publish", stored.id, true, { cause });
     }
@@ -354,6 +471,13 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   retryPublish(eventId: string): Promise<StoredKajiEvent> {
+    const event = this.pending.get(eventId);
+    if (event === undefined) return Promise.reject(new Error(`No pending event ${eventId}`));
+    if (this.transactionalStore !== undefined) {
+      return this.transactionalStore.sessionTransaction(event.session_id, () =>
+        this.publishPendingUnlocked(eventId),
+      );
+    }
     return this.serial.run(() => this.publishPendingUnlocked(eventId));
   }
 
@@ -394,6 +518,25 @@ export class SplitEventCommitter implements EventCommitter {
   ): AsyncIterableIterator<StoredKajiEvent> {
     const afterSequence = options.afterSequence ?? 0;
     const live = this.bus.subscribe(sessionId, { afterSequence });
+    const readyBacklog = this.transactionalStore
+      ?.sessionTransaction(sessionId, async (transaction) => {
+        const backlog = transaction
+          .getEventsLocked({
+            afterSequence,
+            limit: this.subscriberCapacity + 1,
+          })
+          .map(validateStoredEvent);
+        recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
+        if (backlog.length > this.subscriberCapacity) {
+          recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
+          throw new EventBufferOverflowError(afterSequence, transaction.lastSequenceLocked());
+        }
+        return backlog;
+      })
+      .then(
+        (backlog) => ({ ready: true, backlog }) as const,
+        (error: unknown) => ({ ready: false, error }) as const,
+      );
     return new SplitSubscription(
       live,
       this.store,
@@ -401,6 +544,7 @@ export class SplitEventCommitter implements EventCommitter {
       this.subscriberCapacity,
       afterSequence,
       this.metrics,
+      readyBacklog,
     );
   }
 

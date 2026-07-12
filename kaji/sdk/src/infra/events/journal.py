@@ -22,6 +22,11 @@ from kaji.infra.events.schemas import (
     revalidate_stored_event,
 )
 from kaji.infra.events.store import EventStore, InMemoryEventStore
+from kaji.infra.events.store.base import (
+    EventStoreSession,
+    SessionEventListener,
+    SessionTransactionalEventStore,
+)
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
@@ -33,6 +38,12 @@ from kaji.infra.observability.protocols import (
 class _Subscriber:
     queue: asyncio.Queue[StoredKajiEvent | EventBufferOverflowError]
     last_sequence: int
+    listener: SessionEventListener | None = None
+
+
+@dataclass(slots=True)
+class _PendingSlot:
+    active: bool
 
 
 class _InMemoryJournalSubscription:
@@ -97,6 +108,12 @@ class InMemoryEventJournal:
         self._metrics = metrics_sink
         self._lock = asyncio.Lock()
         self._subscribers: dict[str, list[_Subscriber]] = defaultdict(list)
+        self._transactional_store = (
+            self.store
+            if isinstance(self.store, SessionTransactionalEventStore)
+            and self.store.session_transactions_enabled
+            else None
+        )
 
     @staticmethod
     def _sequence(event: StoredKajiEvent) -> int:
@@ -125,48 +142,70 @@ class InMemoryEventJournal:
             )
         )
 
+    def _deliver(self, subscriber: _Subscriber, event: StoredKajiEvent) -> bool:
+        latest = self._sequence(event)
+        if subscriber.queue.full():
+            self._overflow(event.session_id, subscriber, latest)
+            return False
+        subscriber.queue.put_nowait(event)
+        record_metric(
+            self._metrics,
+            "kaji.subscriber.lag_events",
+            subscriber.queue.qsize(),
+        )
+        return True
+
+    async def _commit_with(
+        self,
+        event: NewKajiEvent,
+        transaction: EventStoreSession | None,
+    ) -> StoredKajiEvent:
+        try:
+            result = (
+                await transaction.append_locked(event)
+                if transaction is not None
+                else await self.store.append(event)
+            )
+        except EventInfrastructureError:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="append",
+            )
+            raise
+        except Exception as exc:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="append",
+            )
+            raise EventDeliveryError(
+                phase="append",
+                event_id=event.id,
+                persisted=False,
+            ) from exc
+
+        stored = (
+            require_stored_event(result.event)
+            if transaction is not None
+            else revalidate_stored_event(result.event)
+        )
+        if result.inserted and transaction is None:
+            for subscriber in list(self._subscribers.get(stored.session_id, ())):
+                self._deliver(subscriber, stored)
+        return stored
+
     async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
         event = revalidate_new_event(event)
+        if self._transactional_store is not None:
+            async with self._transactional_store.session_transaction(
+                event.session_id
+            ) as transaction:
+                return await self._commit_with(event, transaction)
         async with self._lock:
-            try:
-                result = await self.store.append(event)
-            except EventInfrastructureError:
-                record_metric(
-                    self._metrics,
-                    "kaji.journal.failures",
-                    1,
-                    stage="append",
-                )
-                raise
-            except Exception as exc:
-                record_metric(
-                    self._metrics,
-                    "kaji.journal.failures",
-                    1,
-                    stage="append",
-                )
-                raise EventDeliveryError(
-                    phase="append",
-                    event_id=event.id,
-                    persisted=False,
-                ) from exc
-
-            stored = revalidate_stored_event(result.event)
-            if not result.inserted:
-                return stored
-
-            latest = self._sequence(stored)
-            for subscriber in list(self._subscribers.get(stored.session_id, ())):
-                if subscriber.queue.full():
-                    self._overflow(stored.session_id, subscriber, latest)
-                else:
-                    subscriber.queue.put_nowait(stored)
-                    record_metric(
-                        self._metrics,
-                        "kaji.subscriber.lag_events",
-                        subscriber.queue.qsize(),
-                    )
-            return stored
+            return await self._commit_with(event, None)
 
     async def subscribe(
         self,
@@ -197,6 +236,41 @@ class InMemoryEventJournal:
             queue=asyncio.Queue(maxsize=self.subscriber_queue_capacity),
             last_sequence=after_sequence,
         )
+        if self._transactional_store is not None:
+            async with self._transactional_store.session_transaction(
+                session_id
+            ) as transaction:
+                backlog = [
+                    revalidate_stored_event(event)
+                    for event in transaction.get_events_locked(
+                        after_sequence=after_sequence,
+                        limit=self.subscriber_queue_capacity + 1,
+                    )
+                ]
+                record_metric(
+                    self._metrics,
+                    "kaji.subscriber.lag_events",
+                    len(backlog),
+                )
+                if len(backlog) > self.subscriber_queue_capacity:
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.overflow",
+                        1,
+                        stage="lag",
+                    )
+                    raise EventBufferOverflowError(
+                        last_sequence=after_sequence,
+                        latest_sequence=transaction.last_sequence_locked(),
+                    )
+                subscriber.listener = lambda event: self._deliver(subscriber, event)
+                transaction.attach_listener_locked(subscriber.listener)
+                return _InMemoryJournalSubscription(
+                    self,
+                    session_id,
+                    subscriber,
+                    backlog,
+                )
         async with self._lock:
             backlog = [
                 revalidate_stored_event(event)
@@ -238,6 +312,12 @@ class InMemoryEventJournal:
         session_id: str,
         subscriber: _Subscriber,
     ) -> None:
+        if self._transactional_store is not None and subscriber.listener is not None:
+            async with self._transactional_store.session_transaction(
+                session_id
+            ) as transaction:
+                transaction.detach_listener_locked(subscriber.listener)
+            return
         async with self._lock:
             subscribers = self._subscribers.get(session_id)
             if subscribers is not None and subscriber in subscribers:
@@ -323,7 +403,15 @@ class SplitEventJournal:
         self.max_pending_events = max_pending_events
         self._metrics = metrics_sink
         self._lock = asyncio.Lock()
+        self._pending_lock = asyncio.Lock()
         self._pending: dict[str, StoredKajiEvent] = {}
+        self._pending_reservations = 0
+        self._transactional_store = (
+            self.store
+            if isinstance(self.store, SessionTransactionalEventStore)
+            and self.store.session_transactions_enabled
+            else None
+        )
 
     @property
     def pending_event_ids(self) -> frozenset[str]:
@@ -365,18 +453,20 @@ class SplitEventJournal:
                 event_id=event.id,
                 persisted=True,
             ) from exc
-        self._pending.pop(event.id, None)
+        async with self._pending_lock:
+            self._pending.pop(event.id, None)
 
     async def _drain_pending_through(self, event: StoredKajiEvent) -> None:
         for pending in self._ordered_pending_through(event):
             await self._publish_pending(pending)
 
-    async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
-        event = revalidate_new_event(event)
-        async with self._lock:
+    async def _reserve_pending_slot(self, event: NewKajiEvent) -> _PendingSlot:
+        async with self._pending_lock:
+            if event.id in self._pending:
+                return _PendingSlot(active=False)
             if (
-                len(self._pending) >= self.max_pending_events
-                and event.id not in self._pending
+                len(self._pending) + self._pending_reservations
+                >= self.max_pending_events
             ):
                 record_metric(
                     self._metrics,
@@ -390,57 +480,119 @@ class SplitEventJournal:
                     f"({self.max_pending_events} pending events); "
                     "retry pending delivery before appending a new event",
                 )
-            try:
-                result = await self.store.append(event)
-            except EventInfrastructureError:
-                record_metric(
-                    self._metrics,
-                    "kaji.journal.failures",
-                    1,
-                    stage="append",
-                )
-                raise
-            except Exception as exc:
-                record_metric(
-                    self._metrics,
-                    "kaji.journal.failures",
-                    1,
-                    stage="append",
-                )
-                raise EventDeliveryError(
-                    phase="append",
-                    event_id=event.id,
-                    persisted=False,
-                ) from exc
+            self._pending_reservations += 1
+            return _PendingSlot(active=True)
 
-            stored = revalidate_stored_event(result.event)
-            if not result.inserted:
-                if stored.id in self._pending:
-                    await self._drain_pending_through(stored)
-                return stored
+    async def _release_pending_slot(self, slot: _PendingSlot) -> None:
+        if not slot.active:
+            return
+        async with self._pending_lock:
+            if slot.active:
+                self._pending_reservations -= 1
+                slot.active = False
 
-            has_earlier_pending = any(
-                pending.session_id == stored.session_id
-                and self._sequence(pending) < self._sequence(stored)
-                for pending in self._pending.values()
+    async def _promote_pending_slot(
+        self,
+        slot: _PendingSlot,
+        event: StoredKajiEvent,
+    ) -> None:
+        async with self._pending_lock:
+            self._pending[event.id] = event
+            if slot.active:
+                self._pending_reservations -= 1
+                slot.active = False
+
+    async def _commit_with(
+        self,
+        event: NewKajiEvent,
+        slot: _PendingSlot,
+        transaction: EventStoreSession | None,
+    ) -> StoredKajiEvent:
+        try:
+            result = (
+                await transaction.append_locked(event)
+                if transaction is not None
+                else await self.store.append(event)
             )
-            self._pending[stored.id] = stored
-            if has_earlier_pending:
-                record_metric(
-                    self._metrics,
-                    "kaji.journal.failures",
-                    1,
-                    stage="publish",
-                )
-                raise EventDeliveryError(
-                    phase="publish",
-                    event_id=stored.id,
-                    persisted=True,
-                )
-            await self._publish_pending(stored)
+        except EventInfrastructureError:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="append",
+            )
+            raise
+        except Exception as exc:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="append",
+            )
+            raise EventDeliveryError(
+                phase="append",
+                event_id=event.id,
+                persisted=False,
+            ) from exc
+
+        stored = (
+            require_stored_event(result.event)
+            if transaction is not None
+            else revalidate_stored_event(result.event)
+        )
+        if not result.inserted:
+            if stored.id in self._pending:
+                await self._drain_pending_through(stored)
             return stored
 
+        has_earlier_pending = any(
+            pending.session_id == stored.session_id
+            and self._sequence(pending) < self._sequence(stored)
+            for pending in self._pending.values()
+        )
+        await self._promote_pending_slot(slot, stored)
+        if has_earlier_pending:
+            record_metric(
+                self._metrics,
+                "kaji.journal.failures",
+                1,
+                stage="publish",
+            )
+            raise EventDeliveryError(
+                phase="publish",
+                event_id=stored.id,
+                persisted=True,
+            )
+        await self._publish_pending(stored)
+        return stored
+
+    async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
+        event = revalidate_new_event(event)
+        slot = await self._reserve_pending_slot(event)
+        try:
+            if self._transactional_store is not None:
+                async with self._transactional_store.session_transaction(
+                    event.session_id
+                ) as transaction:
+                    return await self._commit_with(event, slot, transaction)
+            async with self._lock:
+                return await self._commit_with(event, slot, None)
+        finally:
+            await self._release_pending_slot(slot)
+
     async def retry_pending(self, event_id: str) -> StoredKajiEvent:
+        candidate = self._pending.get(event_id)
+        if candidate is None:
+            raise KeyError(f"no pending event {event_id!r}")
+        if self._transactional_store is not None:
+            async with self._transactional_store.session_transaction(
+                candidate.session_id
+            ):
+                event = self._pending.get(event_id)
+                if event is None:
+                    raise KeyError(f"no pending event {event_id!r}")
+                await self._drain_pending_through(event)
+                return event
         async with self._lock:
             event = self._pending.get(event_id)
             if event is None:
@@ -475,6 +627,40 @@ class SplitEventJournal:
 
         live: EventSubscription | None = None
         try:
+            if self._transactional_store is not None:
+                async with self._transactional_store.session_transaction(
+                    session_id
+                ) as transaction:
+                    candidate = self.bus.subscribe(
+                        session_id, after_sequence=after_sequence
+                    )
+                    if not isinstance(candidate, EventSubscription):
+                        raise TypeError("event subscriptions must implement aclose()")
+                    live = candidate
+                    backlog = [
+                        revalidate_stored_event(event)
+                        for event in transaction.get_events_locked(
+                            after_sequence=after_sequence,
+                            limit=self.subscriber_queue_capacity + 1,
+                        )
+                    ]
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.lag_events",
+                        len(backlog),
+                    )
+                    if len(backlog) > self.subscriber_queue_capacity:
+                        record_metric(
+                            self._metrics,
+                            "kaji.subscriber.overflow",
+                            1,
+                            stage="lag",
+                        )
+                        raise EventBufferOverflowError(
+                            last_sequence=after_sequence,
+                            latest_sequence=transaction.last_sequence_locked(),
+                        )
+                return _SplitJournalSubscription(live, backlog, after_sequence)
             async with self._lock:
                 candidate = self.bus.subscribe(
                     session_id, after_sequence=after_sequence

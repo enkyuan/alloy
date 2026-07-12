@@ -5,8 +5,28 @@ import pytest
 
 from kaji.infra.events import errors as event_errors
 from kaji.infra.events.errors import EventIdConflictError, EventStoreCapacityError
-from kaji.infra.events.schemas import SessionClosed, ToolCallCompleted, UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.infra.events.lanes import NestedEventTransactionError
+from kaji.infra.events.schemas import (
+    NewKajiEvent,
+    SessionClosed,
+    ToolCallCompleted,
+    UserMessage,
+)
+from kaji.infra.events.store import AppendResult, InMemoryEventStore
+
+
+class _BarrierStore(InMemoryEventStore):
+    def __init__(self, blocked_session: str) -> None:
+        super().__init__()
+        self.blocked_session = blocked_session
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+        if draft.session_id == self.blocked_session:
+            self.entered.set()
+            await self.release.wait()
+        return await super()._insert_reserved(draft)
 
 
 @pytest.mark.asyncio
@@ -95,6 +115,205 @@ async def test_concurrent_appends_assign_contiguous_session_sequences() -> None:
 
     assert sorted(result.event.sequence for result in results) == list(range(1, 51))
     assert await store.last_sequence("s1") == 50
+
+
+@pytest.mark.asyncio
+async def test_session_lane_does_not_block_an_unrelated_session() -> None:
+    store = _BarrierStore("blocked")
+    blocked = asyncio.create_task(
+        store.append(UserMessage(id="blocked", session_id="blocked", content="one"))
+    )
+    await store.entered.wait()
+
+    unrelated = await asyncio.wait_for(
+        store.append(UserMessage(id="free", session_id="free", content="one")),
+        timeout=0.1,
+    )
+    assert unrelated.event.sequence == 1
+    assert not blocked.done()
+
+    store.release.set()
+    assert (await blocked).event.sequence == 1
+    assert store._lanes.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_same_session_lane_is_fifo_and_cleans_up_after_cancellation() -> None:
+    store = _BarrierStore("same")
+    first = asyncio.create_task(
+        store.append(UserMessage(id="first", session_id="same", content="one"))
+    )
+    await store.entered.wait()
+    second = asyncio.create_task(
+        store.append(UserMessage(id="second", session_id="same", content="two"))
+    )
+    await asyncio.sleep(0)
+    assert not second.done()
+
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    store.release.set()
+    assert (await second).event.sequence == 1
+    assert store.active_session_lane_count == 0
+    assert store.active_id_reservation_count == 0
+
+
+@pytest.mark.asyncio
+async def test_double_cancel_before_insert_cannot_strand_id_reservation() -> None:
+    class PreInsertStore(InMemoryEventStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.proceed = asyncio.Event()
+
+        async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+            self.entered.set()
+            await self.proceed.wait()
+            return await super()._insert_reserved(draft)
+
+    store = PreInsertStore()
+    event = UserMessage(id="cancel-before", session_id="cancel-before", content="one")
+    owner = asyncio.create_task(store.append(event))
+    await store.entered.wait()
+    await store._metadata_lock.acquire()
+    store.proceed.set()
+    await asyncio.sleep(0)
+    owner.cancel()
+    await asyncio.sleep(0)
+    owner.cancel()
+    store._metadata_lock.release()
+
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    assert store.active_id_reservation_count == 0
+    assert store.active_session_lane_count == 0
+    inserted = await asyncio.wait_for(store.append(event), timeout=0.1)
+    assert inserted.inserted is True
+
+
+@pytest.mark.asyncio
+async def test_double_cancel_after_insert_settles_id_reservation() -> None:
+    class PostInsertStore(InMemoryEventStore):
+        def __init__(self) -> None:
+            super().__init__()
+            self.inserted = asyncio.Event()
+            self.proceed = asyncio.Event()
+
+        async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+            result = await super()._insert_reserved(draft)
+            self.inserted.set()
+            await self.proceed.wait()
+            return result
+
+    store = PostInsertStore()
+    event = UserMessage(id="cancel-after", session_id="cancel-after", content="one")
+    owner = asyncio.create_task(store.append(event))
+    await store.inserted.wait()
+    await store._metadata_lock.acquire()
+    owner.cancel()
+    await asyncio.sleep(0)
+    owner.cancel()
+    store._metadata_lock.release()
+
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    assert store.active_id_reservation_count == 0
+    assert store.active_session_lane_count == 0
+    duplicate = await asyncio.wait_for(store.append(event), timeout=0.1)
+    assert duplicate.inserted is False
+    assert duplicate.event.sequence == 1
+
+
+@pytest.mark.asyncio
+async def test_nested_session_transaction_fails_instead_of_deadlocking() -> None:
+    store = InMemoryEventStore()
+
+    async with store.session_transaction("s1"):
+        with pytest.raises(NestedEventTransactionError):
+            async with store.session_transaction("s1"):
+                raise AssertionError("nested transaction unexpectedly entered")
+
+    assert store.active_session_lane_count == 0
+
+
+@pytest.mark.asyncio
+async def test_child_transaction_during_parent_hold_fails_immediately() -> None:
+    store = InMemoryEventStore()
+
+    async with store.session_transaction("parent"):
+        child = asyncio.create_task(
+            store.append(UserMessage(id="child", session_id="child", content="one"))
+        )
+        with pytest.raises(NestedEventTransactionError):
+            await asyncio.wait_for(child, timeout=0.1)
+
+    assert store.active_session_lane_count == 0
+
+
+@pytest.mark.asyncio
+async def test_child_created_during_hold_can_commit_after_parent_releases() -> None:
+    store = InMemoryEventStore()
+    release = asyncio.Event()
+
+    async def delayed_append() -> AppendResult:
+        await release.wait()
+        return await store.append(
+            UserMessage(id="delayed", session_id="delayed", content="one")
+        )
+
+    async with store.session_transaction("parent"):
+        child = asyncio.create_task(delayed_append())
+    release.set()
+
+    assert (await asyncio.wait_for(child, timeout=0.1)).inserted is True
+    assert store.active_session_lane_count == 0
+
+
+@pytest.mark.asyncio
+async def test_active_closed_session_is_not_evicted() -> None:
+    store = InMemoryEventStore(max_sessions=1)
+    await store.append(SessionClosed(id="closed", session_id="closed"))
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hold_closed() -> None:
+        async with store.session_transaction("closed"):
+            entered.set()
+            await release.wait()
+
+    holder = asyncio.create_task(hold_closed())
+    await entered.wait()
+    with pytest.raises(EventStoreCapacityError):
+        await store.append(UserMessage(id="new", session_id="new", content="one"))
+    release.set()
+    await holder
+
+    inserted = await store.append(
+        UserMessage(id="new", session_id="new", content="one")
+    )
+    assert inserted.event.sequence == 1
+
+
+@pytest.mark.asyncio
+async def test_cross_session_id_conflict_does_not_wait_for_blocked_owner() -> None:
+    store = _BarrierStore("owner")
+    owner = asyncio.create_task(
+        store.append(UserMessage(id="shared", session_id="owner", content="one"))
+    )
+    await store.entered.wait()
+
+    with pytest.raises(EventIdConflictError):
+        await asyncio.wait_for(
+            store.append(
+                UserMessage(id="shared", session_id="other", content="different")
+            ),
+            timeout=0.1,
+        )
+
+    store.release.set()
+    assert (await owner).inserted is True
+    assert store.active_id_reservation_count == 0
 
 
 @pytest.mark.asyncio
