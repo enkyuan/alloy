@@ -259,3 +259,14 @@ def test_parity_contract_package_is_declared() -> None:
     assert package_dir["kaji.contracts.integrations"] == "src/contracts/integrations"
     assert package_data["kaji.contracts.parity"] == ["*.json"]
     assert package_data["kaji.contracts.integrations"] == ["*.json"]
+
+
+def test_provider_cost_contract_package_is_declared() -> None:
+    pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
+    packages = set(pyproject["tool"]["setuptools"]["packages"])
+    package_dir = pyproject["tool"]["setuptools"]["package-dir"]
+    package_data = pyproject["tool"]["setuptools"]["package-data"]
+
+    assert "kaji.contracts.providers" in packages
+    assert package_dir["kaji.contracts.providers"] == "src/contracts/providers"
+    assert package_data["kaji.contracts.providers"] == ["*.json"]

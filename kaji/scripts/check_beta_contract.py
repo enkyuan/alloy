@@ -43,6 +43,7 @@ REQUIRED_JSON = {
     "parity/expected-normalized.json",
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
+    "providers/cost-conformance.json",
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
@@ -70,10 +71,79 @@ REQUIRED_EVENT_NEGATIVE_CASES = {
     "stored-missing-sequence",
     "unsafe-integral-number",
 }
+SAFE_JSON_INTEGER_MAX = 9_007_199_254_740_991
+REQUIRED_PROVIDER_COST_CASES = [
+    "tie-even-down",
+    "tie-even-up",
+    "carry-across-unit",
+    "sum-before-rounding",
+    "gemini-small",
+    "gemini-large",
+    "maximum-safe-token-counts",
+    "unknown-model",
+]
+PROVIDER_RATE_MAX_SIGNIFICANT_DIGITS = 32
+PROVIDER_RATE_MAX_FRACTIONAL_DIGITS = 32
+PROVIDER_RATE_MAX_ABSOLUTE_EXPONENT = 32
+PROVIDER_RATE_MAX_TEXT_LENGTH = 65
+PROVIDER_RATE_DECIMAL = re.compile(r"^(0|[1-9][0-9]*)(?:\.([0-9]*[1-9]))?$")
+PROVIDER_RATE_SCIENTIFIC = re.compile(r"^([1-9])(?:\.([0-9]*[1-9]))?e(-?[1-9][0-9]*)$")
+REQUIRED_INVALID_PROVIDER_RATES = [
+    ("negative-number", "number", "-0.1"),
+    ("negative-string", "string", "-0.1"),
+    ("nan-number", "number", "NaN"),
+    ("nan-string", "string", "NaN"),
+    ("infinity-number", "number", "Infinity"),
+    ("infinity-string", "string", "Infinity"),
+    ("empty", "string", ""),
+    ("leading-zero", "string", "01"),
+    ("bare-fraction", "string", ".5"),
+    ("trailing-point", "string", "1."),
+    ("trailing-fraction-zero", "string", "1.0"),
+    ("uppercase-exponent", "string", "1E1"),
+    ("positive-exponent-sign", "string", "1e+1"),
+    ("zero-exponent", "string", "1e0"),
+    ("leading-zero-exponent", "string", "1e01"),
+    ("wide-scientific-significand", "string", "12e1"),
+    (
+        "excessive-significant-digits",
+        "string",
+        "1.23456789012345678901234567890123",
+    ),
+    (
+        "excessive-fractional-digits",
+        "string",
+        "0.000000000000000000000000000000001",
+    ),
+    ("excessive-positive-exponent", "string", "1e33"),
+    ("excessive-negative-exponent", "string", "1e-33"),
+]
 
 
 class ContractError(RuntimeError):
     pass
+
+
+def provider_rate_is_valid(value: str) -> bool:
+    if not 0 < len(value) <= PROVIDER_RATE_MAX_TEXT_LENGTH:
+        return False
+    match = PROVIDER_RATE_DECIMAL.fullmatch(value)
+    exponent = 0
+    if match is None:
+        match = PROVIDER_RATE_SCIENTIFIC.fullmatch(value)
+        if match is None:
+            return False
+        exponent_text = match.group(3).removeprefix("-")
+        if len(exponent_text) > 2:
+            return False
+        exponent = int(match.group(3))
+    fraction = match.group(2) or ""
+    significant = (match.group(1) + fraction).lstrip("0") or "0"
+    return (
+        len(significant) <= PROVIDER_RATE_MAX_SIGNIFICANT_DIGITS
+        and len(fraction) <= PROVIDER_RATE_MAX_FRACTIONAL_DIGITS
+        and abs(exponent) <= PROVIDER_RATE_MAX_ABSOLUTE_EXPONENT
+    )
 
 
 def pointer(parts: Any) -> str:
@@ -152,6 +222,134 @@ def check_tool_risk_vocabulary(documents: dict[str, dict[str, Any]]) -> None:
                 location,
                 f"expected canonical tool risks {EXPECTED_TOOL_RISKS!r}",
             )
+
+
+def check_provider_costs(document: dict[str, Any]) -> None:
+    path = CONTRACTS / "providers" / "cost-conformance.json"
+    if set(document) != {
+        "$schema",
+        "contractVersion",
+        "arithmetic",
+        "cases",
+        "invalidTokenCounts",
+        "invalidRates",
+    }:
+        raise fail(path, "/", "invalid provider cost fixture envelope")
+    if document["contractVersion"] != "1.0.0":
+        raise fail(path, "/contractVersion", "expected 1.0.0")
+    if document["arithmetic"] != {
+        "currency": "USD",
+        "tokensPerRateUnit": 1_000_000,
+        "fractionalDigits": 10,
+        "rounding": "half_even",
+        "tokenMaximum": SAFE_JSON_INTEGER_MAX,
+        "conversion": "canonical_decimal_to_host_number",
+        "rateSyntax": {
+            "form": "canonical_non_negative_decimal_or_single_digit_scientific_ascii",
+            "maxSignificantDigits": PROVIDER_RATE_MAX_SIGNIFICANT_DIGITS,
+            "maxFractionalDigits": PROVIDER_RATE_MAX_FRACTIONAL_DIGITS,
+            "maxAbsoluteExponent": PROVIDER_RATE_MAX_ABSOLUTE_EXPONENT,
+        },
+    }:
+        raise fail(path, "/arithmetic", "invalid provider cost arithmetic contract")
+
+    cases = document["cases"]
+    if not isinstance(cases, list) or not cases:
+        raise fail(path, "/cases", "expected a non-empty array")
+    names: list[str] = []
+    canonical_pattern = re.compile(r"(?:0|[1-9][0-9]*)(?:\.[0-9]{0,9}[1-9])?\Z")
+    for index, case in enumerate(cases):
+        location = f"/cases/{index}"
+        if not isinstance(case, dict):
+            raise fail(path, location, "expected an object")
+        common = {
+            "name",
+            "inputTokens",
+            "outputTokens",
+            "expectedCanonicalUsd",
+        }
+        if set(case) not in (common | {"model"}, common | {"rates"}):
+            raise fail(path, location, "expected exactly one model or rates field")
+        name = case["name"]
+        if not isinstance(name, str) or not name:
+            raise fail(path, f"{location}/name", "expected a non-empty string")
+        names.append(name)
+        for field in ("inputTokens", "outputTokens"):
+            value = case[field]
+            if type(value) is not int or not 0 <= value <= SAFE_JSON_INTEGER_MAX:
+                raise fail(
+                    path,
+                    f"{location}/{field}",
+                    "expected a non-negative I-JSON safe integer",
+                )
+        expected = case["expectedCanonicalUsd"]
+        if (
+            not isinstance(expected, str)
+            or canonical_pattern.fullmatch(expected) is None
+        ):
+            raise fail(
+                path,
+                f"{location}/expectedCanonicalUsd",
+                "expected canonical USD with at most 10 fractional digits",
+            )
+        if "model" in case:
+            if not isinstance(case["model"], str) or not case["model"]:
+                raise fail(path, f"{location}/model", "expected a non-empty string")
+        else:
+            rates = case["rates"]
+            if not isinstance(rates, dict) or set(rates) != {
+                "inputPer1M",
+                "outputPer1M",
+            }:
+                raise fail(path, f"{location}/rates", "invalid rate pair")
+            for field, value in rates.items():
+                if not isinstance(value, str) or not provider_rate_is_valid(value):
+                    raise fail(
+                        path,
+                        f"{location}/rates/{field}",
+                        "expected a bounded canonical non-negative rate",
+                    )
+    if names != REQUIRED_PROVIDER_COST_CASES:
+        raise fail(path, "/cases", "provider cost cases or order differ")
+
+    invalid = document["invalidTokenCounts"]
+    expected_invalid = (
+        ("negative", -1, int),
+        ("fractional", 0.5, float),
+        ("boolean", True, bool),
+        ("unsafe", SAFE_JSON_INTEGER_MAX + 1, int),
+    )
+    if not isinstance(invalid, list) or len(invalid) != len(expected_invalid):
+        raise fail(path, "/invalidTokenCounts", "invalid token fixtures differ")
+    for index, (case, (name, value, value_type)) in enumerate(
+        zip(invalid, expected_invalid, strict=True)
+    ):
+        location = f"/invalidTokenCounts/{index}"
+        if not isinstance(case, dict) or set(case) != {"name", "value"}:
+            raise fail(path, location, "invalid token fixture envelope")
+        if (
+            case["name"] != name
+            or type(case["value"]) is not value_type
+            or case["value"] != value
+        ):
+            raise fail(path, location, "invalid token fixture differs")
+
+    invalid_rates = document["invalidRates"]
+    if not isinstance(invalid_rates, list) or len(invalid_rates) != len(
+        REQUIRED_INVALID_PROVIDER_RATES
+    ):
+        raise fail(path, "/invalidRates", "invalid rate fixtures differ")
+    for index, (case, expected) in enumerate(
+        zip(invalid_rates, REQUIRED_INVALID_PROVIDER_RATES, strict=True)
+    ):
+        location = f"/invalidRates/{index}"
+        if not isinstance(case, dict) or set(case) != {"name", "kind", "value"}:
+            raise fail(path, location, "invalid rate fixture envelope")
+        actual = (case["name"], case["kind"], case["value"])
+        if actual != expected:
+            raise fail(path, location, "invalid rate fixture differs")
+        if provider_rate_is_valid(case["value"]):
+            raise fail(path, f"{location}/value", "invalid rate fixture is valid")
 
 
 def load_contract_documents() -> dict[str, dict[str, Any]]:
@@ -1492,6 +1690,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_tools(documents, codes)
     check_integrations(documents, codes)
     check_parity(documents)
+    check_provider_costs(documents["providers/cost-conformance.json"])
     check_packaged_contracts()
     check_cli_command_tiers(documents["feature-tiers-v1.json"])
     return documents, feature_sets(documents["feature-tiers-v1.json"])

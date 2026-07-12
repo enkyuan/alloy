@@ -53,6 +53,7 @@ packages = [
     "kaji.contracts.events",
     "kaji.contracts.integrations",
     "kaji.contracts.parity",
+    "kaji.contracts.providers",
     "kaji.contracts.tools",
     "kaji.core",
     "kaji.infra",
@@ -86,6 +87,7 @@ kaji = "src"
 "kaji.contracts.events" = "src/contracts/events"
 "kaji.contracts.integrations" = "src/contracts/integrations"
 "kaji.contracts.parity" = "src/contracts/parity"
+"kaji.contracts.providers" = "src/contracts/providers"
 "kaji.contracts.tools" = "src/contracts/tools"
 "kaji.core" = "src/core"
 "kaji.infra" = "src/infra"
@@ -122,6 +124,7 @@ kaji = [
 "kaji.contracts.events" = ["*.json"]
 "kaji.contracts.integrations" = ["*.json"]
 "kaji.contracts.parity" = ["*.json"]
+"kaji.contracts.providers" = ["*.json"]
 "kaji.contracts.tools" = ["*.json"]
 
 [dependency-groups]

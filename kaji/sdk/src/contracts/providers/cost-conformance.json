@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "contractVersion": "1.0.0",
+  "arithmetic": {
+    "currency": "USD",
+    "tokensPerRateUnit": 1000000,
+    "fractionalDigits": 10,
+    "rounding": "half_even",
+    "tokenMaximum": 9007199254740991,
+    "conversion": "canonical_decimal_to_host_number",
+    "rateSyntax": {
+      "form": "canonical_non_negative_decimal_or_single_digit_scientific_ascii",
+      "maxSignificantDigits": 32,
+      "maxFractionalDigits": 32,
+      "maxAbsoluteExponent": 32
+    }
+  },
+  "cases": [
+    {
+      "name": "tie-even-down",
+      "rates": { "inputPer1M": "5e-5", "outputPer1M": "0" },
+      "inputTokens": 1,
+      "outputTokens": 0,
+      "expectedCanonicalUsd": "0"
+    },
+    {
+      "name": "tie-even-up",
+      "rates": { "inputPer1M": "5e-5", "outputPer1M": "0" },
+      "inputTokens": 3,
+      "outputTokens": 0,
+      "expectedCanonicalUsd": "0.0000000002"
+    },
+    {
+      "name": "carry-across-unit",
+      "rates": { "inputPer1M": "0.99999999995", "outputPer1M": "0" },
+      "inputTokens": 1000000,
+      "outputTokens": 0,
+      "expectedCanonicalUsd": "1"
+    },
+    {
+      "name": "sum-before-rounding",
+      "rates": { "inputPer1M": "0.00003", "outputPer1M": "0.00003" },
+      "inputTokens": 1,
+      "outputTokens": 1,
+      "expectedCanonicalUsd": "0.0000000001"
+    },
+    {
+      "name": "gemini-small",
+      "model": "gemini-1.5-flash",
+      "inputTokens": 7949,
+      "outputTokens": 3594,
+      "expectedCanonicalUsd": "0.001674375"
+    },
+    {
+      "name": "gemini-large",
+      "model": "gemini-1.5-pro",
+      "inputTokens": 7634695068019977,
+      "outputTokens": 4642980045805002,
+      "expectedCanonicalUsd": "32758269064.04998125"
+    },
+    {
+      "name": "maximum-safe-token-counts",
+      "model": "gemini-1.5-pro",
+      "inputTokens": 9007199254740991,
+      "outputTokens": 9007199254740991,
+      "expectedCanonicalUsd": "56294995342.13119375"
+    },
+    {
+      "name": "unknown-model",
+      "model": "unknown-model",
+      "inputTokens": 123,
+      "outputTokens": 456,
+      "expectedCanonicalUsd": "0"
+    }
+  ],
+  "invalidTokenCounts": [
+    { "name": "negative", "value": -1 },
+    { "name": "fractional", "value": 0.5 },
+    { "name": "boolean", "value": true },
+    { "name": "unsafe", "value": 9007199254740992 }
+  ],
+  "invalidRates": [
+    { "name": "negative-number", "kind": "number", "value": "-0.1" },
+    { "name": "negative-string", "kind": "string", "value": "-0.1" },
+    { "name": "nan-number", "kind": "number", "value": "NaN" },
+    { "name": "nan-string", "kind": "string", "value": "NaN" },
+    { "name": "infinity-number", "kind": "number", "value": "Infinity" },
+    { "name": "infinity-string", "kind": "string", "value": "Infinity" },
+    { "name": "empty", "kind": "string", "value": "" },
+    { "name": "leading-zero", "kind": "string", "value": "01" },
+    { "name": "bare-fraction", "kind": "string", "value": ".5" },
+    { "name": "trailing-point", "kind": "string", "value": "1." },
+    { "name": "trailing-fraction-zero", "kind": "string", "value": "1.0" },
+    { "name": "uppercase-exponent", "kind": "string", "value": "1E1" },
+    { "name": "positive-exponent-sign", "kind": "string", "value": "1e+1" },
+    { "name": "zero-exponent", "kind": "string", "value": "1e0" },
+    { "name": "leading-zero-exponent", "kind": "string", "value": "1e01" },
+    { "name": "wide-scientific-significand", "kind": "string", "value": "12e1" },
+    {
+      "name": "excessive-significant-digits",
+      "kind": "string",
+      "value": "1.23456789012345678901234567890123"
+    },
+    {
+      "name": "excessive-fractional-digits",
+      "kind": "string",
+      "value": "0.000000000000000000000000000000001"
+    },
+    { "name": "excessive-positive-exponent", "kind": "string", "value": "1e33" },
+    { "name": "excessive-negative-exponent", "kind": "string", "value": "1e-33" }
+  ]
+}

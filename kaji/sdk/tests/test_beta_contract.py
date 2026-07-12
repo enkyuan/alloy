@@ -191,3 +191,37 @@ def test_event_contract_checker_rejects_structural_mutations() -> None:
     ]
     with pytest.raises(contract_error, match="required negative cases"):
         check_events(removed_negative, codes)
+
+
+def test_provider_cost_checker_rejects_contract_drift() -> None:
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="beta_contract_test")
+    document = checker["load_contract_documents"]()["providers/cost-conformance.json"]
+    contract_error = checker["ContractError"]
+    check_provider_costs = checker["check_provider_costs"]
+
+    arithmetic = deepcopy(document)
+    arithmetic["arithmetic"]["rounding"] = "half_up"
+    with pytest.raises(contract_error, match="arithmetic contract"):
+        check_provider_costs(arithmetic)
+
+    extra_case_field = deepcopy(document)
+    extra_case_field["cases"][0]["currency"] = "USD"
+    with pytest.raises(contract_error, match="exactly one model or rates"):
+        check_provider_costs(extra_case_field)
+
+    invalid_rate = deepcopy(document)
+    invalid_rate["cases"][0]["rates"]["inputPer1M"] = "1e33"
+    with pytest.raises(
+        contract_error, match=r"/cases/0/rates/inputPer1M.*bounded canonical"
+    ):
+        check_provider_costs(invalid_rate)
+
+    missing_invalid = deepcopy(document)
+    missing_invalid["invalidTokenCounts"].pop()
+    with pytest.raises(contract_error, match="invalid token fixtures"):
+        check_provider_costs(missing_invalid)
+
+    missing_invalid_rate = deepcopy(document)
+    missing_invalid_rate["invalidRates"].pop()
+    with pytest.raises(contract_error, match="invalid rate fixtures"):
+        check_provider_costs(missing_invalid_rate)
