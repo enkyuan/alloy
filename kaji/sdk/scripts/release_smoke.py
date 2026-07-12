@@ -8,20 +8,30 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
 from tempfile import TemporaryDirectory
+
+from _repo_process import (
+    PACKAGE_COMMAND_BUDGET,
+    PACKAGE_ORCHESTRATOR_BUDGET,
+    CommandBudget,
+    CommandExitError,
+    run_checked,
+)
 
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SDK_ROOT / "scripts"
 
 
-def run(command: list[str]) -> None:
+def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
     """Run one release command from the SDK root and fail on any error."""
-    status = subprocess.run(command, cwd=SDK_ROOT, check=False).returncode
-    if status != 0:
-        raise SystemExit(status if status >= 0 else 128 - status)
+    try:
+        run_checked(command, cwd=SDK_ROOT, budget=budget)
+    except CommandExitError as error:
+        raise SystemExit(
+            error.returncode if error.returncode >= 0 else 128 - error.returncode
+        ) from None
 
 
 def venv_python(venv: Path) -> Path:
@@ -55,7 +65,8 @@ def release_smoke(dist_dir: Path) -> None:
             sys.executable,
             str(SCRIPTS / "test_archive_verifier.py"),
             str(dist_dir),
-        ]
+        ],
+        budget=PACKAGE_ORCHESTRATOR_BUDGET,
     )
 
     temporary_parent = Path(os.environ.get("TMPDIR") or "/tmp")

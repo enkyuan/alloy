@@ -25,6 +25,7 @@ jobs:
   kaji-ts:
     name: kaji/ts
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: kaji/ts
@@ -52,6 +53,7 @@ jobs:
   kaji-ts-install-smoke:
     name: kaji/ts install smoke / Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -78,6 +80,7 @@ jobs:
   auth:
     name: ryo/auth
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: ryo/auth
@@ -94,6 +97,7 @@ jobs:
   ui:
     name: packages/ui
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: packages/ui

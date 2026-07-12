@@ -3,7 +3,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 
@@ -14,6 +14,9 @@ REPO_ROOT = SDK_ROOT.parents[1]
 
 def _load_script(name: str) -> ModuleType:
     path = SDK_ROOT / "scripts" / name
+    scripts = str(path.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
     spec = importlib.util.spec_from_file_location(f"test_{path.stem}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -39,7 +42,11 @@ def test_release_smoke_preserves_build_verify_install_order(
 
     monkeypatch.setattr(module, "SDK_ROOT", sdk_root)
     monkeypatch.setattr(module, "SCRIPTS", scripts)
-    monkeypatch.setattr(module, "run", commands.append)
+    monkeypatch.setattr(
+        module,
+        "run",
+        lambda command, **_kwargs: commands.append(command),
+    )
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
     module.release_smoke(Path("dist"))
@@ -79,11 +86,11 @@ def test_release_smoke_normalizes_signal_exit_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_script("release_smoke.py")
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=-15),
-    )
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise module.CommandExitError(-15)
+
+    monkeypatch.setattr(module, "run_checked", fail)
 
     with pytest.raises(SystemExit, match="143"):
         module.run(["tool"])

@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import pytest
 
@@ -17,6 +17,9 @@ OPENAI_LOOP_CHECK = REPO_ROOT / "kaji" / "scripts" / "verify_openai_loop.py"
 
 def _load_root_script(name: str) -> ModuleType:
     path = REPO_ROOT / "kaji" / "scripts" / name
+    scripts = str(path.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
     spec = importlib.util.spec_from_file_location(f"test_{path.stem}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -80,11 +83,11 @@ def test_root_script_runners_normalize_signal_exit_status(
     script: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _load_root_script(script)
-    monkeypatch.setattr(
-        module.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=-15),
-    )
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise module.CommandExitError(-15)
+
+    monkeypatch.setattr(module, "run_checked", fail)
 
     if script == "verify_openai_loop.py":
         status = module.run_command(["tool"], cwd=REPO_ROOT, environment={})

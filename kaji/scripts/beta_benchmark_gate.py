@@ -10,9 +10,15 @@ import json
 import os
 from pathlib import Path
 import platform
-import subprocess
 import sys
 from typing import Any
+
+from process_runner import (
+    BENCHMARK_COMMAND_BUDGET,
+    METADATA_BUDGET,
+    CommandError,
+    run_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -22,12 +28,16 @@ BASELINE_PATH = ROOT / "kaji" / "benchmarks" / "beta-baseline.json"
 
 
 def _command_version(command: list[str]) -> str:
-    return subprocess.run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    return (
+        run_checked(
+            command,
+            cwd=ROOT,
+            budget=METADATA_BUDGET,
+            capture=True,
+        )
+        .stdout.decode("utf-8")
+        .strip()
+    )
 
 
 def _cpu_model() -> str:
@@ -112,16 +122,15 @@ def _runtime_command(runtime: str, case: str, samples: int, warmups: int) -> lis
 
 
 def _run_case(runtime: str, case: str, samples: int, warmups: int) -> dict[str, Any]:
-    completed = subprocess.run(
+    completed = run_checked(
         _runtime_command(runtime, case, samples, warmups),
         cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
+        budget=BENCHMARK_COMMAND_BUDGET,
+        capture=True,
     )
     try:
-        result = json.loads(completed.stdout)
-    except json.JSONDecodeError as error:
+        result = json.loads(completed.stdout.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RuntimeError(f"{runtime} {case} emitted non-JSON stdout") from error
     required = {
         "schemaVersion",
@@ -314,7 +323,7 @@ def main() -> int:
             for runtime in results:
                 for case in CASES:
                     results[runtime][case] = _run_case(runtime, case, samples, warmups)
-        except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
+        except (OSError, CommandError, RuntimeError) as error:
             failures.append(str(error))
 
     if all(results.values()) and all(

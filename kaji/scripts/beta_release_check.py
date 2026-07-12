@@ -4,12 +4,30 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
+
+from process_runner import (
+    CommandBudget,
+    CommandError,
+    CompletedCommand,
+    CommandExitError,
+    CommandOutputLimitError,
+    CommandInterruptedError,
+    CommandStartError,
+    CommandTimeoutError,
+    LOCAL_COMMAND_BUDGET,
+    LOCAL_ORCHESTRATOR_BUDGET,
+    PACKAGE_COMMAND_BUDGET,
+    PACKAGE_ORCHESTRATOR_BUDGET,
+    PROVIDER_ORCHESTRATOR_BUDGET,
+    RELEASE_COMMAND_BUDGET,
+    run_checked as run_process,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +42,75 @@ class GateFailure(RuntimeError):
     def __init__(self, status: int) -> None:
         self.status = status
         super().__init__(f"gate exited with status {status}")
+
+
+@dataclass(frozen=True, slots=True)
+class Gate:
+    label: str
+    directory: Path
+    command: tuple[str, ...]
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET
+
+
+TS_COMMON_GATES = (
+    Gate("TypeScript typecheck", TYPESCRIPT, ("bun", "run", "typecheck")),
+    Gate("TypeScript build", TYPESCRIPT, ("bun", "run", "build")),
+    Gate("TypeScript unit tests", TYPESCRIPT, ("bun", "run", "test")),
+    Gate(
+        "TypeScript package smoke",
+        TYPESCRIPT,
+        ("bun", "run", "package:smoke"),
+        PACKAGE_ORCHESTRATOR_BUDGET,
+    ),
+)
+
+
+TS_RELEASE_GATES = (
+    Gate("TypeScript format", TYPESCRIPT, ("bun", "run", "format:check")),
+    Gate("TypeScript lint", TYPESCRIPT, ("bun", "run", "lint")),
+    Gate(
+        "TypeScript typecheck (release)",
+        TYPESCRIPT,
+        ("bun", "run", "typecheck"),
+    ),
+    Gate(
+        "TypeScript registry typecheck",
+        TYPESCRIPT,
+        ("bun", "run", "typecheck:registry"),
+    ),
+    Gate(
+        "TypeScript registry validation",
+        TYPESCRIPT,
+        ("bun", "run", "validate:registry"),
+    ),
+    Gate(
+        "TypeScript integration validation",
+        TYPESCRIPT,
+        ("bun", "run", "check:integrations"),
+    ),
+    Gate("TypeScript build (release)", TYPESCRIPT, ("bun", "run", "build")),
+    Gate("TypeScript tests (release)", TYPESCRIPT, ("bun", "run", "test")),
+    Gate(
+        "TypeScript quickstart (release)",
+        TYPESCRIPT,
+        ("bun", "run", "test:quickstart"),
+    ),
+    Gate(
+        "TypeScript package smoke (release)",
+        TYPESCRIPT,
+        ("bun", "run", "package:smoke"),
+        PACKAGE_ORCHESTRATOR_BUDGET,
+    ),
+    Gate("TypeScript publint", TYPESCRIPT, ("bun", "x", "publint")),
+)
+
+
+def common_gates() -> tuple[Gate, ...]:
+    return TS_COMMON_GATES
+
+
+def release_gates() -> tuple[Gate, ...]:
+    return TS_RELEASE_GATES
 
 
 def section(label: str) -> None:
@@ -44,18 +131,31 @@ def run_checked(
     *,
     cwd: Path,
     environment: dict[str, str],
-) -> None:
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET,
+    capture: bool = False,
+    check: bool = True,
+) -> CompletedCommand:
     try:
-        completed = subprocess.run(
+        return run_process(
             command,
             cwd=cwd,
             env=environment,
-            check=False,
+            budget=budget,
+            capture=capture,
+            check=check,
         )
-    except FileNotFoundError as error:
-        fail(f"command not found: {error.filename}", status=127)
-    if completed.returncode != 0:
-        raise GateFailure(process_status(completed.returncode))
+    except CommandExitError as error:
+        raise GateFailure(process_status(error.returncode)) from None
+    except CommandStartError:
+        fail("release command could not be started", status=127)
+    except CommandTimeoutError:
+        fail("release command exceeded its time budget")
+    except CommandOutputLimitError as error:
+        fail(f"release command exceeded its {error.stream} capture budget")
+    except CommandInterruptedError as error:
+        raise GateFailure(128 + error.signum) from None
+    except CommandError as error:
+        fail(f"release command failed: {error}")
 
 
 def run_in_dir(
@@ -63,9 +163,21 @@ def run_in_dir(
     directory: Path,
     command: list[str],
     environment: dict[str, str],
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET,
 ) -> None:
     section(label)
-    run_checked(command, cwd=directory, environment=environment)
+    run_checked(command, cwd=directory, environment=environment, budget=budget)
+
+
+def run_gates(gates: tuple[Gate, ...], environment: dict[str, str]) -> None:
+    for gate in gates:
+        run_in_dir(
+            gate.label,
+            gate.directory,
+            list(gate.command),
+            environment,
+            gate.budget,
+        )
 
 
 def require_command(command: str, reason: str, environment: dict[str, str]) -> None:
@@ -103,6 +215,7 @@ def run_no_key_live_skip(environment: dict[str, str]) -> None:
         [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
         cwd=ROOT,
         environment=child_environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
     )
 
 
@@ -112,24 +225,21 @@ def run_required_key_failure(environment: dict[str, str]) -> None:
     child_environment.pop("OPENAI_API_KEY", None)
     child_environment.pop("KAJI_LIVE_OPENAI_MODEL", None)
     child_environment["KAJI_REQUIRE_LIVE_KEYS"] = "1"
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
-            cwd=ROOT,
-            env=child_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            check=False,
-            text=True,
-        )
-    except FileNotFoundError as error:
-        fail(f"command not found: {error.filename}", status=127)
+    completed = run_checked(
+        [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
+        cwd=ROOT,
+        environment=child_environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
+        capture=True,
+        check=False,
+    )
     if completed.returncode != 2:
         fail(
             "required OpenAI key check returned "
             f"{process_status(completed.returncode)} instead of 2"
         )
-    print(completed.stdout, end="" if completed.stdout.endswith("\n") else "\n")
+    output = (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
+    print(output, end="" if output.endswith("\n") else "\n")
 
 
 def run_common_checks(environment: dict[str, str]) -> None:
@@ -153,6 +263,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "kaji/scripts/check_sdk_parity.py",
         ],
         environment,
+        LOCAL_ORCHESTRATOR_BUDGET,
     )
     run_in_dir(
         "Shared beta contract",
@@ -166,6 +277,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "kaji/scripts/check_beta_contract.py",
         ],
         environment,
+        LOCAL_ORCHESTRATOR_BUDGET,
     )
     run_in_dir(
         "Packaged beta contract synchronization",
@@ -200,32 +312,9 @@ def run_common_checks(environment: dict[str, str]) -> None:
         ROOT,
         [sys.executable, str(SCRIPTS / "run_beta_benchmarks.py"), "--quick"],
         environment,
+        RELEASE_COMMAND_BUDGET,
     )
-
-    run_in_dir(
-        "TypeScript unit tests",
-        TYPESCRIPT,
-        ["bun", "run", "test"],
-        environment,
-    )
-    run_in_dir(
-        "TypeScript typecheck",
-        TYPESCRIPT,
-        ["bun", "run", "typecheck"],
-        environment,
-    )
-    run_in_dir(
-        "TypeScript build",
-        TYPESCRIPT,
-        ["bun", "run", "build"],
-        environment,
-    )
-    run_in_dir(
-        "TypeScript package smoke",
-        TYPESCRIPT,
-        ["bun", "run", "package:smoke"],
-        environment,
-    )
+    run_gates(common_gates(), environment)
 
     run_in_dir(
         "Python unit tests",
@@ -245,6 +334,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "concise",
         ],
         environment,
+        LOCAL_ORCHESTRATOR_BUDGET,
     )
     run_in_dir(
         "Python lint",
@@ -257,6 +347,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
         SDK,
         ["uv", "run", "python", "scripts/release_smoke.py"],
         environment,
+        RELEASE_COMMAND_BUDGET,
     )
 
 
@@ -294,6 +385,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "concise",
             ],
             environment,
+            LOCAL_ORCHESTRATOR_BUDGET,
         )
         run_in_dir(
             "Python tests (release)",
@@ -306,6 +398,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
             SDK,
             ["uv", "run", "python", "scripts/release_smoke.py"],
             environment,
+            RELEASE_COMMAND_BUDGET,
         )
         distributions = sorted(
             path for path in (SDK / "dist").iterdir() if not path.name.startswith(".")
@@ -325,31 +418,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
             environment,
         )
 
-        for label, command in (
-            ("TypeScript format", ["bun", "run", "format:check"]),
-            ("TypeScript lint", ["bun", "run", "lint"]),
-            ("TypeScript typecheck (release)", ["bun", "run", "typecheck"]),
-            (
-                "TypeScript registry typecheck",
-                ["bun", "run", "typecheck:registry"],
-            ),
-            (
-                "TypeScript registry validation",
-                ["bun", "run", "validate:registry"],
-            ),
-            (
-                "TypeScript integration validation",
-                ["bun", "run", "check:integrations"],
-            ),
-            ("TypeScript tests (release)", ["bun", "run", "test"]),
-            ("TypeScript build (release)", ["bun", "run", "build"]),
-            (
-                "TypeScript package smoke (release)",
-                ["bun", "run", "package:smoke"],
-            ),
-            ("TypeScript publint", ["bun", "x", "publint"]),
-        ):
-            run_in_dir(label, TYPESCRIPT, command, environment)
+        run_gates(release_gates(), environment)
 
         attw_environment = environment.copy()
         attw_environment["npm_config_cache"] = str(release_temporary / "attw-npm-cache")
@@ -358,6 +427,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
             TYPESCRIPT,
             ["bun", "x", "attw", "--pack", "."],
             attw_environment,
+            PACKAGE_COMMAND_BUDGET,
         )
 
         section("Locked production dependency audits")
@@ -448,6 +518,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
             TYPESCRIPT,
             ["bun", "scripts/smoke_package.mts", str(tarball)],
             environment,
+            PACKAGE_ORCHESTRATOR_BUDGET,
         )
         run_in_dir(
             "Reverify final Python artifacts",
@@ -479,7 +550,13 @@ def run_release_checks(environment: dict[str, str]) -> None:
         else:
             metadata_command.extend(["--artifacts-dir", str(artifacts)])
             label = "Local package metadata and checksum manifest"
-        run_in_dir(label, ROOT, metadata_command, environment)
+        run_in_dir(
+            label,
+            ROOT,
+            metadata_command,
+            environment,
+            LOCAL_ORCHESTRATOR_BUDGET,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -507,6 +584,7 @@ def main() -> int:
                     [sys.executable, str(SCRIPTS / "live_provider_proof.py")],
                     cwd=ROOT,
                     environment=environment,
+                    budget=RELEASE_COMMAND_BUDGET,
                 )
             else:
                 print("SKIP: not requested; no keyed provider evidence is claimed.")

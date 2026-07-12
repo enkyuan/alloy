@@ -7,11 +7,17 @@ import json
 import math
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+from process_runner import (
+    CommandBudget,
+    CommandError,
+    CommandExitError,
+    run_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,6 +30,7 @@ PYTHON_EXPORTER = PYTHON_SDK / "scripts" / "export_parity.py"
 TYPESCRIPT_EXPORTER = TYPESCRIPT_SDK / "scripts" / "export_parity.ts"
 ARTIFACTS = ROOT / ".artifacts" / "kaji-parity"
 TIMEOUT_SECONDS = 60
+EXPORTER_BUDGET = CommandBudget(timeout_seconds=TIMEOUT_SECONDS)
 
 
 class ParityError(RuntimeError):
@@ -135,27 +142,19 @@ def run_exporter(
     environment: dict[str, str],
 ) -> bytes:
     try:
-        result = subprocess.run(
+        result = run_checked(
             command,
             cwd=cwd,
             env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=TIMEOUT_SECONDS,
-            check=False,
+            budget=EXPORTER_BUDGET,
+            capture=True,
         )
-    except subprocess.TimeoutExpired as error:
+    except CommandExitError as error:
         raise ParityError(
-            f"{name} exporter timed out after {TIMEOUT_SECONDS}s"
-        ) from error
-    except OSError as error:
-        raise ParityError(f"could not start {name} exporter: {error}") from error
-    if result.returncode != 0:
-        diagnostics = result.stderr.decode("utf-8", errors="replace").strip()
-        suffix = f"\nstderr:\n{diagnostics}" if diagnostics else ""
-        raise ParityError(
-            f"{name} exporter exited with status {result.returncode}{suffix}"
-        )
+            f"{name} exporter exited with status {error.returncode}"
+        ) from None
+    except CommandError as error:
+        raise ParityError(f"{name} exporter failed: {error}") from None
     return result.stdout
 
 

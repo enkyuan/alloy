@@ -98,6 +98,27 @@ describe("kaji replay", () => {
     expect(out).toMatch(/duration=/);
   });
 
+  it("--format summary groups interleaved sessions in first-seen order", async () => {
+    const mixedSessionsPath = join(tmpDir, "mixed-sessions.jsonl");
+    writeFileSync(
+      mixedSessionsPath,
+      [
+        `{"type":"user.message","session_id":"sess-2","id":"s2-1","version":"1.0","timestamp":1000,"metadata":{},"content":"first"}`,
+        `{"type":"user.message","session_id":"sess-1","id":"s1-1","version":"1.0","timestamp":1001,"metadata":{},"content":"second"}`,
+        `{"type":"user.message","session_id":"sess-2","id":"s2-2","version":"1.0","timestamp":1002,"metadata":{},"content":"third"}`,
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const { code, out } = await run([mixedSessionsPath, "--format", "summary"]);
+    const lines = out.split("\n").filter((line) => line.length > 0);
+
+    expect(code).toBe(0);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/Session .*sess-2.*turns=2/);
+    expect(lines[1]).toMatch(/Session .*sess-1.*turns=1/);
+  });
+
   it("--format json renders a JSON array", async () => {
     const { code, out } = await run([fixturePath, "--format", "json"]);
     expect(code).toBe(0);

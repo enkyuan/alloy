@@ -10,13 +10,18 @@ import csv
 import hashlib
 import io
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from _repo_process import PACKAGE_COMMAND_BUDGET, run_checked  # noqa: E402
 
 
 WheelFiles = dict[str, tuple[zipfile.ZipInfo, bytes]]
@@ -191,13 +196,14 @@ def run_case(
         sdist_mutation(sdist_files)
         write_sdist(case_sdist, sdist_files)
 
-    completed = subprocess.run(
+    completed = run_checked(
         [sys.executable, str(verifier), str(case_dir)],
+        cwd=Path.cwd(),
+        budget=PACKAGE_COMMAND_BUDGET,
+        capture=True,
         check=False,
-        capture_output=True,
-        text=True,
     )
-    output = completed.stdout + completed.stderr
+    output = (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
     if completed.returncode == 0:
         fail(f"archive verifier accepted adversarial {name} case")
     if expected_error not in output:

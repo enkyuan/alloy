@@ -5,22 +5,41 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import subprocess
 import sys
+
+from process_runner import (
+    PROVIDER_ORCHESTRATOR_BUDGET,
+    PROVIDER_PROOF_BUDGET,
+    CommandBudget,
+    CommandExitError,
+    CommandStartError,
+    run_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
 OPENAI_LOOP_CHECK = Path(__file__).with_name("verify_openai_loop.py")
 
 
-def run(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
+def run(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    budget: CommandBudget = PROVIDER_PROOF_BUDGET,
+) -> int:
     try:
-        status = subprocess.run(
-            command, cwd=cwd, env=environment, check=False
-        ).returncode
-        return status if status >= 0 else 128 - status
-    except FileNotFoundError as error:
-        print(f"FAIL: command not found: {error.filename}", file=sys.stderr)
+        run_checked(
+            command,
+            cwd=cwd,
+            env=environment,
+            budget=budget,
+        )
+        return 0
+    except CommandExitError as error:
+        return error.returncode if error.returncode >= 0 else 128 - error.returncode
+    except CommandStartError:
+        print("FAIL: command could not be started", file=sys.stderr)
         return 127
 
 
@@ -39,6 +58,7 @@ def main() -> int:
         [sys.executable, str(OPENAI_LOOP_CHECK)],
         cwd=ROOT,
         environment=openai_environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
     )
     if status != 0:
         return status

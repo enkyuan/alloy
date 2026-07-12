@@ -158,6 +158,7 @@ def test_orchestrator_child_environment_is_a_minimal_allowlist(
     }
     for key, value in poisoned.items():
         monkeypatch.setenv(key, value)
+    monkeypatch.syspath_prepend(str(PARITY_CHECK.parent))
     module = runpy.run_path(str(PARITY_CHECK), run_name="parity_check_test")
 
     environment = module["sanitized_environment"](

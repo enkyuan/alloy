@@ -43,6 +43,16 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
         "bun run check:integrations",
     ):
         assert command in lint
+    assert ts.count("timeout-minutes:") == 4
+
+
+def test_release_workflows_bound_every_job() -> None:
+    rehearsal = _read(".github/workflows/kaji.beta.yml")
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+
+    assert rehearsal.count("timeout-minutes:") == 4
+    assert publish.count("timeout-minutes:") == 13
+    assert "timeout-minutes: 75" in publish
 
 
 def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
@@ -57,7 +67,7 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
         '"anthropic",',
         '"build-requirements.txt",',
         '["bun", "audit", "--production"]',
-        '["bun", "x", "publint"]',
+        '("bun", "x", "publint")',
         '["bun", "x", "attw", "--pack", "."]',
         "verify_package_metadata.py",
         "verify_npm_package.py",

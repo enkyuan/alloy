@@ -17,6 +17,7 @@ concurrency:
 jobs:
   verify-tag:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       tag-name: ${{ steps.tag.outputs.tag-name }}
       tag-object: ${{ steps.tag.outputs.tag-object }}
@@ -79,6 +80,7 @@ jobs:
   offline-gates:
     needs: verify-tag
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -177,6 +179,7 @@ jobs:
   python-compat:
     needs: verify-tag
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -196,6 +199,7 @@ jobs:
   node-compat:
     needs: verify-tag
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -220,6 +224,7 @@ jobs:
     needs: [verify-tag, offline-gates, performance, python-compat, node-compat]
     if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: kaji-beta
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

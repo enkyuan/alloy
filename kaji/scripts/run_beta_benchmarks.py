@@ -7,9 +7,17 @@ import argparse
 import json
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
+
+from process_runner import (
+    BENCHMARK_ORCHESTRATOR_BUDGET,
+    LOCAL_COMMAND_BUDGET,
+    CommandBudget,
+    CommandExitError,
+    CommandStartError,
+    run_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,12 +38,19 @@ def commands() -> tuple[list[str], list[str]] | None:
     return None
 
 
-def run(command: list[str], *, cwd: Path = ROOT) -> int:
+def run(
+    command: list[str],
+    *,
+    cwd: Path = ROOT,
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET,
+) -> int:
     try:
-        status = subprocess.run(command, cwd=cwd, check=False).returncode
-        return status if status >= 0 else 128 - status
-    except FileNotFoundError as error:
-        print(f"FAIL: command not found: {error.filename}", file=sys.stderr)
+        run_checked(command, cwd=cwd, budget=budget)
+        return 0
+    except CommandExitError as error:
+        return error.returncode if error.returncode >= 0 else 128 - error.returncode
+    except CommandStartError:
+        print("FAIL: command could not be started", file=sys.stderr)
         return 127
 
 
@@ -78,8 +93,7 @@ def main() -> int:
             [
                 "bun",
                 "run",
-                "vitest",
-                "run",
+                "test",
                 "tests/runtime-complexity.test.ts",
                 "tests/runtime-faults.test.ts",
                 "tests/event-delivery.test.ts",
@@ -103,7 +117,8 @@ def main() -> int:
                     "quick",
                     "--output",
                     str(output),
-                ]
+                ],
+                budget=BENCHMARK_ORCHESTRATOR_BUDGET,
             )
             if status != 0:
                 return status
@@ -131,7 +146,8 @@ def main() -> int:
                 "full",
                 "--output",
                 str(artifacts / "results.json"),
-            ]
+            ],
+            budget=BENCHMARK_ORCHESTRATOR_BUDGET,
         )
         if status == 0:
             print("PASS: full benchmark budgets and calibrated regression baseline")
@@ -147,7 +163,8 @@ def main() -> int:
             str(artifacts / "calibration-results.json"),
             "--candidate-baseline",
             str(artifacts / "beta-baseline.candidate.json"),
-        ]
+        ],
+        budget=BENCHMARK_ORCHESTRATOR_BUDGET,
     )
     if status == 0:
         print("PASS: candidate baseline written for review")

@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import subprocess
 import sys
 from tempfile import TemporaryDirectory
+
+from _repo_process import LOCAL_COMMAND_BUDGET, CommandExitError, run_checked
 
 
 def main() -> int:
@@ -29,18 +30,23 @@ def main() -> int:
     with TemporaryDirectory(prefix="kaji-ty-") as tmp:
         shim_root = Path(tmp)
         os.symlink(source_root, shim_root / "kaji", target_is_directory=True)
-        return subprocess.call(
-            [
-                *command,
-                "check",
-                "--extra-search-path",
-                str(shim_root),
-                "src",
-                "tests",
-                *sys.argv[1:],
-            ],
-            cwd=sdk_root,
-        )
+        try:
+            run_checked(
+                [
+                    *command,
+                    "check",
+                    "--extra-search-path",
+                    str(shim_root),
+                    "src",
+                    "tests",
+                    *sys.argv[1:],
+                ],
+                cwd=sdk_root,
+                budget=LOCAL_COMMAND_BUDGET,
+            )
+        except CommandExitError as error:
+            return error.returncode if error.returncode >= 0 else 128 - error.returncode
+        return 0
 
 
 if __name__ == "__main__":

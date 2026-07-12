@@ -9,7 +9,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import tarfile
 import tomllib
 import zipfile
@@ -17,6 +16,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from verify_npm_package import verify_npm_tarball
+from process_runner import METADATA_BUDGET, CommandError, run_checked
 
 PYTHON_VERSION = "0.2.0b1"
 TYPESCRIPT_VERSION = "0.2.0-beta.1"
@@ -46,15 +46,15 @@ def find_one(directory: Path, pattern: str, label: str) -> Path:
 
 def tool_version(command: str, *args: str) -> str:
     try:
-        completed = subprocess.run(
+        completed = run_checked(
             [command, *args],
-            check=True,
-            capture_output=True,
-            text=True,
+            cwd=Path.cwd(),
+            budget=METADATA_BUDGET,
+            capture=True,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, CommandError) as error:
         fail(f"could not query {command} version: {type(error).__name__}")
-    output = (completed.stdout or completed.stderr).strip().splitlines()
+    output = (completed.stdout or completed.stderr).decode("utf-8").strip().splitlines()
     if not output:
         fail(f"{command} version command returned no output")
     match = re.search(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?", output[0])

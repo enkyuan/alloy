@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
+import json
 import subprocess
 import os
+import shutil
 import sys
 from pathlib import Path
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -16,6 +21,31 @@ RULE_DIR = REPO_ROOT / "tools" / "ast-grep" / "rules"
 RULE_TEST_DIR = REPO_ROOT / "tools" / "ast-grep" / "rule-tests"
 SGCONFIG = REPO_ROOT / "sgconfig.yml"
 AST_GREP_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ast-grep.yml"
+
+
+def _load_beta_gate():
+    scripts = str(BETA_GATE.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location("test_beta_gate_module", BETA_GATE)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_root_script(name: str):
+    path = BETA_GATE.parent / name
+    scripts = str(path.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location(f"test_{path.stem}_module", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_beta_release_check_python_syntax() -> None:
@@ -92,8 +122,178 @@ def test_beta_release_check_wraps_required_gates() -> None:
     assert "SKIP: ast-grep CLI not installed" not in script
 
     parity = script.index('"Cross-SDK behavioral parity"')
-    assert parity < script.index('"TypeScript package smoke"')
+    assert parity < script.index("run_gates(common_gates(), environment)")
     assert parity < script.index('"Python artifact smoke"')
+
+
+def test_typescript_build_precedes_every_artifact_consumer() -> None:
+    module = _load_beta_gate()
+    common = [gate.label for gate in module.common_gates()]
+    release = [gate.label for gate in module.release_gates()]
+
+    assert common.index("TypeScript build") < common.index("TypeScript unit tests")
+    assert common.index("TypeScript build") < common.index("TypeScript package smoke")
+    assert release.index("TypeScript build (release)") < release.index(
+        "TypeScript tests (release)"
+    )
+    assert release.index("TypeScript build (release)") < release.index(
+        "TypeScript package smoke (release)"
+    )
+
+
+def test_canonical_typescript_test_script_selects_node() -> None:
+    package = json.loads((REPO_ROOT / "kaji" / "ts" / "package.json").read_text())
+    command = package["scripts"]["test"]
+
+    assert command.startswith(
+        'PATH="${PATH#*:}:/usr/local/bin:/opt/homebrew/bin" /bin/sh -c '
+    )
+    assert 'exec "$(command -v node)"' in command
+    assert '"$@"' in command
+    assert "vitest" in command
+    assert ("bun", "run", "test") in {
+        gate.command for gate in _load_beta_gate().common_gates()
+    }
+
+
+def test_release_wrapper_builds_before_consumers_from_checkout_without_dist(
+    tmp_path: Path,
+) -> None:
+    checkout = tmp_path / "checkout"
+    scripts = checkout / "kaji" / "scripts"
+    sdk = checkout / "kaji" / "sdk"
+    typescript = checkout / "kaji" / "ts"
+    scripts.mkdir(parents=True)
+    sdk.mkdir(parents=True)
+    typescript.mkdir(parents=True)
+    shutil.copy2(BETA_GATE, scripts / BETA_GATE.name)
+    shutil.copy2(
+        REPO_ROOT / "kaji" / "scripts" / "process_runner.py",
+        scripts / "process_runner.py",
+    )
+    (scripts / "run_beta_benchmarks.py").write_text("raise SystemExit(0)\n")
+    (scripts / "verify_openai_loop.py").write_text(
+        "import os\n"
+        "if os.environ.get('KAJI_REQUIRE_LIVE_KEYS') == '1':\n"
+        "    print('FAIL: OPENAI_API_KEY required for live readiness')\n"
+        "    raise SystemExit(2)\n"
+        "print('SKIP: OPENAI_API_KEY not set')\n"
+    )
+
+    home = tmp_path / "home"
+    binaries = home / ".local" / "bin"
+    binaries.mkdir(parents=True)
+    log = tmp_path / "commands.log"
+    fake_tool = f"""#!{sys.executable}
+import os
+from pathlib import Path
+import shutil
+import sys
+
+name = Path(sys.argv[0]).name
+args = sys.argv[1:]
+checkout = Path(os.environ["FAKE_CHECKOUT"])
+with Path(os.environ["FAKE_LOG"]).open("a", encoding="utf-8") as stream:
+    stream.write(name + "|" + str(Path.cwd()) + "|" + " ".join(args) + "\\n")
+
+if name == "bun":
+    dist = checkout / "kaji" / "ts" / "dist"
+    if args[:2] == ["run", "build"]:
+        dist.mkdir(parents=True, exist_ok=True)
+        (dist / "index.js").write_text("built")
+    consumer = args[:2] in (["run", "test"], ["run", "test:quickstart"], ["run", "package:smoke"])
+    consumer = consumer or (args and args[0] == "scripts/smoke_package.mts")
+    if consumer and not dist.is_dir():
+        print("artifact consumer ran before build", file=sys.stderr)
+        raise SystemExit(17)
+
+if name == "uv":
+    if "scripts/release_smoke.py" in args:
+        dist = checkout / "kaji" / "sdk" / "dist"
+        dist.mkdir(parents=True, exist_ok=True)
+        (dist / "kaji.whl").write_bytes(b"wheel")
+        (dist / "kaji.tar.gz").write_bytes(b"sdist")
+        shutil.rmtree(checkout / "kaji" / "ts" / "dist", ignore_errors=True)
+    if "--output-file" in args:
+        output = Path(args[args.index("--output-file") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("requirements")
+
+if name == "npm" and args and args[0] == "pack":
+    destination = Path(args[args.index("--pack-destination") + 1])
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / "kaji-sdk-0.2.0-beta.1.tgz").write_bytes(b"npm")
+"""
+    for name in ("bun", "node", "npm", "uv"):
+        executable = binaries / name
+        executable.write_text(fake_tool)
+        executable.chmod(0o755)
+
+    assert not (typescript / "dist").exists()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "FAKE_CHECKOUT": str(checkout),
+            "FAKE_LOG": str(log),
+            "HOME": str(home),
+            "PATH": str(binaries),
+        }
+    )
+    completed = subprocess.run(
+        [sys.executable, str(scripts / "beta_release_check.py"), "--release"],
+        cwd=checkout,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    output = completed.stdout.strip().splitlines()
+    assert output[-1] == (
+        "PASS: offline release rehearsal; keyed/provider/publish readiness NOT claimed"
+    )
+    assert "PASS: Kaji beta checks completed" not in completed.stdout
+    commands = log.read_text().splitlines()
+    build_indices = [
+        index
+        for index, command in enumerate(commands)
+        if command.endswith("|run build")
+    ]
+    test_indices = [
+        index for index, command in enumerate(commands) if command.endswith("|run test")
+    ]
+    assert len(build_indices) == len(test_indices) == 2
+    assert all(build < test for build, test in zip(build_indices, test_indices))
+
+
+def test_soak_budget_is_duration_plus_cleanup_margin() -> None:
+    module = _load_root_script("run_beta_soak.py")
+
+    assert module.soak_minutes("0.25") == 0.25
+    for invalid in ("0", "-1", "nan", "inf", "not-a-number"):
+        with pytest.raises(ValueError):
+            module.soak_minutes(invalid)
+
+    source = (BETA_GATE.parent / "run_beta_soak.py").read_text()
+    assert "run_parallel_checked" in source
+    assert "minutes * 60 + 120" in source
+    assert "subprocess" not in source
+
+
+def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
+    module = _load_root_script("process_runner.py")
+
+    assert module.BENCHMARK_COMMAND_BUDGET.timeout_seconds == 600
+    assert (
+        module.BENCHMARK_ORCHESTRATOR_BUDGET.timeout_seconds
+        > module.BENCHMARK_COMMAND_BUDGET.timeout_seconds
+    )
+    assert (
+        module.RELEASE_COMMAND_BUDGET.timeout_seconds
+        > module.BENCHMARK_ORCHESTRATOR_BUDGET.timeout_seconds
+    )
 
 
 def test_root_package_pins_structural_and_benchmark_gates() -> None:

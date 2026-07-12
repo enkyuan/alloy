@@ -4,11 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 import shutil
-import signal
-import subprocess
 import sys
+
+from process_runner import (
+    LOCAL_COMMAND_BUDGET,
+    CommandBudget,
+    CommandError,
+    CommandExitError,
+    CommandInterruptedError,
+    CommandSpec,
+    run_checked,
+    run_parallel_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,29 +40,23 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class Terminated(RuntimeError):
-    """The runner received a termination signal."""
-
-    def __init__(self, signum: int) -> None:
-        self.signum = signum
-        super().__init__(f"received signal {signum}")
-
-
-def terminate(processes: list[subprocess.Popen[bytes]]) -> None:
-    for process in processes:
-        if process.poll() is None:
-            process.terminate()
-    for process in processes:
-        if process.poll() is None:
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+def soak_minutes(value: str) -> float:
+    try:
+        minutes = float(value)
+    except ValueError as error:
+        raise ValueError("minutes must be a positive finite number") from error
+    if not math.isfinite(minutes) or minutes <= 0:
+        raise ValueError("minutes must be a positive finite number")
+    return minutes
 
 
 def main() -> int:
     args = parse_args()
+    try:
+        minutes = soak_minutes(args.minutes)
+    except ValueError as error:
+        print(f"FAIL: {error}", file=sys.stderr)
+        return 2
     python = python_command()
     if python is None:
         print("uv or kaji/sdk/.venv is required", file=sys.stderr)
@@ -62,20 +66,14 @@ def main() -> int:
     artifacts.mkdir(parents=True, exist_ok=True)
     python_result = artifacts / "python.json"
     typescript_result = artifacts / "typescript.json"
-    processes: list[subprocess.Popen[bytes]] = []
-
-    def handle_termination(signum: int, _frame: object) -> None:
-        raise Terminated(signum)
-
-    previous_sigterm = signal.signal(signal.SIGTERM, handle_termination)
-
+    soak_budget = CommandBudget(
+        timeout_seconds=minutes * 60 + 120,
+        max_output_bytes=4 * 1024 * 1024,
+    )
     try:
-        with (
-            python_result.open("w", encoding="utf-8") as python_output,
-            typescript_result.open("w", encoding="utf-8") as typescript_output,
-        ):
-            processes.append(
-                subprocess.Popen(
+        python_completed, typescript_completed = run_parallel_checked(
+            (
+                CommandSpec(
                     [
                         *python,
                         str(SDK / "benchmarks" / "runtime_soak.py"),
@@ -90,11 +88,10 @@ def main() -> int:
                         "--json",
                     ],
                     cwd=ROOT,
-                    stdout=python_output,
-                )
-            )
-            processes.append(
-                subprocess.Popen(
+                    budget=soak_budget,
+                    capture=True,
+                ),
+                CommandSpec(
                     [
                         "bun",
                         str(ROOT / "kaji" / "ts" / "benchmarks" / "runtime-soak.ts"),
@@ -107,26 +104,25 @@ def main() -> int:
                         "--json",
                     ],
                     cwd=ROOT,
-                    stdout=typescript_output,
-                )
+                    budget=soak_budget,
+                    capture=True,
+                ),
             )
-            python_status = processes[0].wait()
-            typescript_status = processes[1].wait()
-    except OSError as error:
-        terminate(processes)
-        print(f"FAIL: command not found: {error.filename}", file=sys.stderr)
-        return 127 if isinstance(error, FileNotFoundError) else 126
+        )
+        python_result.write_bytes(python_completed.stdout)
+        typescript_result.write_bytes(typescript_completed.stdout)
     except KeyboardInterrupt:
-        terminate(processes)
         return 130
-    except Terminated as error:
-        terminate(processes)
+    except CommandInterruptedError as error:
         return 128 + error.signum
-    finally:
-        signal.signal(signal.SIGTERM, previous_sigterm)
+    except CommandExitError:
+        return 1
+    except CommandError as error:
+        print(f"FAIL: soak child process failed: {error}", file=sys.stderr)
+        return 1
 
     try:
-        gate_status = subprocess.run(
+        run_checked(
             [
                 *python,
                 str(GATE),
@@ -140,14 +136,13 @@ def main() -> int:
                 str(artifacts / "results.json"),
             ],
             cwd=ROOT,
-            check=False,
-        ).returncode
-    except FileNotFoundError as error:
-        print(f"FAIL: command not found: {error.filename}", file=sys.stderr)
+            budget=LOCAL_COMMAND_BUDGET,
+        )
+    except CommandExitError:
+        return 1
+    except CommandError:
         return 127
 
-    if python_status != 0 or typescript_status != 0 or gate_status != 0:
-        return 1
     print("PASS: Python and TypeScript soak budgets")
     return 0
 

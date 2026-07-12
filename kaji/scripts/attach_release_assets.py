@@ -6,32 +6,52 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, NoReturn
+
+from process_runner import (
+    CommandBudget,
+    CommandError,
+    CommandExitError,
+    CompletedCommand,
+    run_checked,
+)
+
+
+RELEASE_NETWORK_BUDGET = CommandBudget(timeout_seconds=900)
 
 
 def fail(message: str) -> NoReturn:
     raise SystemExit(f"FAIL: {message}")
 
 
-def run(*command: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(*command: str, check: bool = True) -> CompletedCommand:
     try:
-        return subprocess.run(
-            command, capture_output=True, check=check, text=True, timeout=120
+        return run_checked(
+            command,
+            cwd=Path.cwd(),
+            budget=RELEASE_NETWORK_BUDGET,
+            capture=True,
+            check=check,
         )
-    except subprocess.TimeoutExpired:
-        fail(f"GitHub command timed out: {' '.join(command[:3])}")
+    except CommandExitError as error:
+        fail(f"GitHub command failed with status {error.returncode}")
+    except CommandError as error:
+        fail(f"GitHub command failed: {error}")
+
+
+def output(data: bytes) -> str:
+    return data.decode("utf-8", errors="replace")
 
 
 def release(repo: str, tag: str) -> dict[str, Any] | None:
     completed = run("gh", "api", f"repos/{repo}/releases/tags/{tag}", check=False)
     if completed.returncode == 0:
-        return json.loads(completed.stdout)
-    if "HTTP 404" in completed.stderr:
+        return json.loads(output(completed.stdout))
+    if "HTTP 404" in output(completed.stderr):
         return None
-    fail(f"could not read GitHub release: {completed.stderr.strip()}")
+    fail(f"could not read GitHub release: {output(completed.stderr).strip()}")
 
 
 def sha256(path: Path) -> str:
@@ -119,7 +139,9 @@ def main() -> None:
             check=False,
         )
         if completed.returncode != 0:
-            fail(f"could not create GitHub prerelease: {completed.stderr.strip()}")
+            fail(
+                f"could not create GitHub prerelease: {output(completed.stderr).strip()}"
+            )
         metadata = release(args.repo, args.tag)
         if metadata is None:
             fail("created GitHub prerelease could not be read back")
@@ -162,7 +184,8 @@ def main() -> None:
             )
             if completed.returncode != 0:
                 fail(
-                    f"could not upload missing release asset {name}: {completed.stderr.strip()}"
+                    f"could not upload missing release asset {name}: "
+                    f"{output(completed.stderr).strip()}"
                 )
             metadata = release(args.repo, args.tag)
             if metadata is None:

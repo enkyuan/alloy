@@ -5,8 +5,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import subprocess
 import sys
+
+from process_runner import (
+    PROVIDER_PROOF_BUDGET,
+    CommandExitError,
+    CommandStartError,
+    run_checked,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,12 +21,17 @@ DEFAULT_MODEL = "gpt-5.4-mini"
 
 def run_command(command: list[str], *, cwd: Path, environment: dict[str, str]) -> int:
     try:
-        status = subprocess.run(
-            command, cwd=cwd, env=environment, check=False
-        ).returncode
-        return status if status >= 0 else 128 - status
-    except FileNotFoundError as error:
-        print(f"FAIL: command not found: {error.filename}", file=sys.stderr)
+        run_checked(
+            command,
+            cwd=cwd,
+            env=environment,
+            budget=PROVIDER_PROOF_BUDGET,
+        )
+        return 0
+    except CommandExitError as error:
+        return error.returncode if error.returncode >= 0 else 128 - error.returncode
+    except CommandStartError:
+        print("FAIL: command could not be started", file=sys.stderr)
         return 127
 
 

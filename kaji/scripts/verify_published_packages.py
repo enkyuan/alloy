@@ -7,7 +7,6 @@ import argparse
 import base64
 import hashlib
 import json
-import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -15,6 +14,12 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
+
+from process_runner import (
+    METADATA_BUDGET,
+    CommandError,
+    run_checked,
+)
 
 
 PYPI_URL = "https://pypi.org/pypi/kaji/0.2.0b1/json"
@@ -115,16 +120,16 @@ def parse_integrity(integrity: str) -> tuple[str, bytes]:
 
 
 def verify_npm(entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    completed = subprocess.run(
+    completed = run_checked(
         ["npm", "view", NPM_SPEC, "dist", "--json", f"--registry={NPM_REGISTRY}"],
-        capture_output=True,
+        cwd=Path.cwd(),
+        budget=METADATA_BUDGET,
+        capture=True,
         check=False,
-        text=True,
-        timeout=30,
     )
     if completed.returncode != 0:
         raise RuntimeError("npm metadata is not available yet")
-    dist = json.loads(completed.stdout)
+    dist = json.loads(completed.stdout.decode("utf-8"))
     tarball_url = dist.get("tarball")
     integrity = dist.get("integrity")
     if not isinstance(tarball_url, str) or not isinstance(integrity, str):
@@ -178,7 +183,7 @@ def main() -> None:
             VerificationMismatch,
             OSError,
             RuntimeError,
-            subprocess.SubprocessError,
+            CommandError,
             urllib.error.URLError,
             json.JSONDecodeError,
         ) as error:

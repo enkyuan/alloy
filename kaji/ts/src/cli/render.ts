@@ -50,8 +50,19 @@ interface SessionGroup {
 }
 
 function groupBySessions(events: readonly RenderableEvent[]): SessionGroup[] {
-  const map = Map.groupBy(events, (e) => e.session_id);
-  return [...map].map(([sessionId, evts]) => ({ sessionId, events: evts }));
+  const groups = new Map<string, RenderableEvent[]>();
+  for (const event of events) {
+    const group = groups.get(event.session_id);
+    if (group === undefined) {
+      groups.set(event.session_id, [event]);
+    } else {
+      group.push(event);
+    }
+  }
+  return [...groups].map(([sessionId, groupedEvents]) => ({
+    sessionId,
+    events: groupedEvents,
+  }));
 }
 
 interface ToolCallInfo {
