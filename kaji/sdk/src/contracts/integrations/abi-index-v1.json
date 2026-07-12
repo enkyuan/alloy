@@ -1,6 +1,7 @@
 {
   "schemaVersion": "1.0.0",
   "integrations": {
-    "echo": "echo-tool-abi-v1.json"
+    "echo": "echo-tool-abi-v1.json",
+    "github": "github-tool-abi-v1.json"
   }
 }

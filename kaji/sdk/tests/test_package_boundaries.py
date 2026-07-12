@@ -130,24 +130,24 @@ def test_runtime_tools_do_not_import_legacy_tool_definition() -> None:
     )
 
 
-def test_sdk_does_not_ship_third_party_integration_registry() -> None:
-    """Third-party integration examples must not be packaged as SDK surface."""
+def test_sdk_third_party_integration_registry_uses_the_closed_allowlist() -> None:
+    """Only reviewed GitHub/Gmail provider bundles may ship."""
     registry_root = PACKAGE_ROOT / "integrations" / "registry"
-    forbidden = {"github", "gmail", "gcal"}
+    known = {"github", "gmail", "gcal"}
+    allowed = {"github", "gmail"}
     shipped = (
         {
             path.name
             for path in registry_root.iterdir()
-            if path.is_dir() and path.name in forbidden
+            if path.is_dir() and path.name in known
         }
         if registry_root.exists()
         else set()
     )
 
-    assert shipped == set(), (
-        "Third-party integration registry modules are shipped in the SDK: "
-        + ", ".join(sorted(shipped))
-    )
+    assert shipped == {"github"}
+    assert shipped <= allowed
+    assert "gcal" not in shipped
 
 
 def test_sdk_does_not_ship_legacy_tooldefinition_surface() -> None:

@@ -33,7 +33,7 @@ export interface Command {
 export const COMMANDS: Record<string, Command> = {
   add: {
     describe: "Copy an integration's TypeScript source into your project.",
-    usage: "kaji add <name> [--out <dir>] [--force] [--allow-experimental]",
+    usage: "kaji add <name> [--out <dir>] [--force] [--allow-experimental] [--check] [--json]",
     run: (rest, opts) =>
       Promise.resolve(
         add(rest, {

@@ -5,7 +5,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { assertCliListOutput, EXPECTED_ECHO_DESCRIPTION } from "../scripts/cli_assertions";
+import {
+  assertCliListOutput,
+  EXPECTED_ECHO_DESCRIPTION,
+  EXPECTED_GITHUB_DESCRIPTION,
+} from "../scripts/cli_assertions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
@@ -60,7 +64,8 @@ describe("npm contract artifact", () => {
     expect(() =>
       assertCliListOutput(
         `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\n` +
-          "fs    [experimental]  v0.1.0  Filesystem integration.",
+          "fs    [experimental]  v0.1.0  Filesystem integration.\n" +
+          `github  [experimental]  v0.1.0  ${EXPECTED_GITHUB_DESCRIPTION}`,
       ),
     ).not.toThrow();
   });
@@ -76,6 +81,11 @@ describe("npm contract artifact", () => {
         `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}`,
     ],
     ["malformed sibling row", `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\nmalformed`],
+    [
+      "missing GitHub row",
+      `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\n` +
+        "fs  [experimental]  v0.1.0  Filesystem integration.",
+    ],
   ])("rejects the %s", (_label, output) => {
     expect(() => assertCliListOutput(output)).toThrow();
   });
@@ -138,16 +148,22 @@ describe("npm contract artifact", () => {
       "`${manager}:${stage}-install`",
       "`${manager}:cli-init`",
       "`${manager}:cli-add`",
+      "`${manager}:cli-inspect`",
       "`${manager}:cli-list`",
       "`${manager}:cli-replay`",
       "assertCliInitOutput(initOutput, generated)",
       "assertCliAddOutput(addOutput, echo, installedPackageRoot)",
+      "assertExperimentalDenial(denialOutput, deniedGithub)",
+      "assertGithubCliAddOutput(githubOutput, github, installedPackageRoot)",
       "assertCliListOutput(listOutput)",
       "assertCliReplayOutput(replayOutput)",
       '[cli, "--no-color", "add", "echo", "--out", echo]',
+      '[cli, "--no-color", "add", "github", "--out", deniedGithub]',
+      '[cli, "--no-color", "add", "github", "--allow-experimental", "--out", github]',
       '[cli, "--no-color", "list-integrations"]',
       '[cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
       'join(installedPackageRoot, "registry/echo/index.ts")',
+      'join(installedPackageRoot, "registry/github/index.ts")',
       "readFileSync(copied).equals(readFileSync(packaged))",
       'type: "session.created"',
       "sequence: 1",

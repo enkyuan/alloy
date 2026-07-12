@@ -10,7 +10,6 @@ to use them directly without copying.
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -235,56 +234,25 @@ def install_integration(
     dest: Path,
     *,
     force: bool = False,
+    allow_experimental: bool = False,
 ) -> list[Path]:
     """Copy an integration's files into ``dest``.
 
-    Returns the list of paths written. Skips (without overwriting) any file
-    already at the destination unless ``force=True``. Raises if the file
-    exists and ``force`` is false; the caller (typically the CLI) is
-    expected to surface a clear message.
-
-    Rejects manifests whose ``files`` entries are absolute or contain ``..``
-    to prevent path-traversal writes outside ``dest``.
+    Returns the copied manifest paths. A current bundle is a safe no-op;
+    ``force`` replaces only an unmodified same-provider outdated bundle.
     """
     manifest = load_manifest(name)
-    for rel in manifest.files:
-        rel_path = Path(rel)
-        if rel_path.is_absolute() or ".." in rel_path.parts:
-            raise ManifestError(
-                f"Manifest {manifest.path} contains unsafe file path: {rel!r}"
-            )
-    try:
-        dest.mkdir(parents=True, exist_ok=True)
-        resolved_dest = dest.resolve()
-    except (OSError, RuntimeError):
-        raise ManifestError("Destination path cannot be resolved safely") from None
-    written: list[Path] = []
-    for file_index, rel in enumerate(manifest.files):
-        src = _contained_path(
-            manifest.root, rel, path=f"/files/{file_index}", index=False
+    if manifest.stability == "experimental" and not allow_experimental:
+        raise ManifestError(
+            f"Integration {name!r} is experimental; pass allow_experimental=True"
         )
-        if not src.is_file():
-            raise ManifestValidationError(
-                f"/files/{file_index}",
-                "Integration manifest references a missing file",
-            )
-        # Preserve any sub-directory structure declared in the manifest so an
-        # integration can ship multiple files like ["foo.py", "lib/bar.py"].
-        target = dest / rel
-        # Defense in depth: even with the .. check above, anchor the resolved
-        # target under the resolved dest before any filesystem write.
-        try:
-            target.resolve().relative_to(resolved_dest)
-        except (OSError, RuntimeError, ValueError):
-            raise ManifestError(f"Refusing to write outside dest: {target}") from None
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and not force:
-            raise FileExistsError(
-                f"{target} already exists. Pass --force to overwrite."
-            )
-        shutil.copy2(src, target)
-        written.append(target)
-    return written
+    from kaji.integrations.copy import install_integration_bundle
+
+    return list(
+        install_integration_bundle(
+            manifest, dest, runtime="python", force=force
+        ).written
+    )
 
 
 # Internal adapters intentionally stay out of the top-level ``kaji`` API.

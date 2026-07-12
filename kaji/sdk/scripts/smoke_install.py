@@ -102,6 +102,17 @@ for entry in list_integrations():
             sys.exit(1)
         print(f"  ok: {entry}/{rel}")
 
+from kaji.integrations.registry.github.github import inspect_integration  # noqa: E402
+
+github_tools = inspect_integration().tools()
+if len(github_tools) != 6:
+    print(
+        "FAIL: side-effect-free GitHub inspector returned the wrong ABI",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+print("  ok: github inspector")
+
 # ---------------------------------------------------------------------------
 # 5. The canonical docs quickstart runs against this installed artifact.
 # ---------------------------------------------------------------------------

@@ -1,0 +1,644 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/integrations/github-api-conformance-v1.json",
+  "version": "1.0.0",
+  "repository": "octo/widgets",
+  "token": "fixture-token",
+  "cases": [
+    {
+      "name": "search code",
+      "operation": "search_code",
+      "input": { "query": "needle", "page": 1, "per_page": 2 },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "total_count": 1,
+            "items": [
+              {
+                "path": "src/lib.py",
+                "sha": "abc123",
+                "repository": { "full_name": "octo/widgets" },
+                "text_matches": [{ "fragment": "the needle is here" }]
+              }
+            ]
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/search/code?page=1&per_page=2&q=needle%20repo%3Aocto%2Fwidgets",
+          "headers": {
+            "accept": "application/vnd.github.text-match+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "items": [{ "fragment": "the needle is here", "path": "src/lib.py", "sha": "abc123" }],
+          "total_count": 1
+        }
+      }
+    },
+    {
+      "name": "get file",
+      "operation": "get_file",
+      "input": { "path": "src/lib.py", "ref": "main" },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "type": "file",
+            "path": "src/lib.py",
+            "sha": "def456",
+            "size": 6,
+            "encoding": "base64",
+            "content": "aGVsbG8K"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/contents/src/lib.py?ref=main",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "content": "hello\n",
+          "content_omitted": false,
+          "path": "src/lib.py",
+          "sha": "def456",
+          "size": 6
+        }
+      }
+    },
+    {
+      "name": "omit large file without partial content",
+      "operation": "get_file",
+      "input": { "path": "large.txt" },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "type": "file",
+            "path": "large.txt",
+            "sha": "large456",
+            "size": 49153,
+            "encoding": "base64",
+            "content": ""
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/contents/large.txt",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "content_omitted": true,
+          "path": "large.txt",
+          "sha": "large456",
+          "size": 49153
+        }
+      }
+    },
+    {
+      "name": "list issues",
+      "operation": "list_issues",
+      "input": { "state": "closed", "page": 2, "per_page": 2 },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json",
+            "link": "<https://api.github.com/page/3>; rel=next"
+          },
+          "json": [
+            { "number": 7, "state": "closed", "title": "Fixed", "body": "Issue body" },
+            { "number": 8, "state": "open", "title": "Open", "body": null }
+          ]
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues?page=2&per_page=2&state=closed",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "items": [
+            { "body_preview": "Issue body", "number": 7, "state": "closed", "title": "Fixed" },
+            { "body_preview": "", "number": 8, "state": "open", "title": "Open" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "get issue",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "number": 7,
+            "state": "open",
+            "title": "Bug",
+            "body": "Details",
+            "html_url": "https://github.com/octo/widgets/issues/7"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "body": "Details",
+          "number": 7,
+          "state": "open",
+          "title": "Bug",
+          "url": "https://github.com/octo/widgets/issues/7"
+        }
+      }
+    },
+    {
+      "name": "create issue",
+      "operation": "create_issue",
+      "input": { "title": "Bug", "body": "Details" },
+      "responses": [
+        {
+          "status": 201,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "number": 9,
+            "state": "open",
+            "title": "Bug",
+            "body": "Details",
+            "html_url": "https://github.com/octo/widgets/issues/9"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Details\",\"title\":\"Bug\"}"
+        }
+      ],
+      "expected": {
+        "result": {
+          "body": "Details",
+          "number": 9,
+          "state": "open",
+          "title": "Bug",
+          "url": "https://github.com/octo/widgets/issues/9"
+        }
+      }
+    },
+    {
+      "name": "add comment",
+      "operation": "add_comment",
+      "input": { "issue_number": 7, "body": "Looks good" },
+      "responses": [
+        {
+          "status": 201,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "id": 101,
+            "html_url": "https://github.com/octo/widgets/issues/7#issuecomment-101",
+            "body": "Looks good"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues/7/comments",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Looks good\"}"
+        }
+      ],
+      "expected": {
+        "result": {
+          "id": 101,
+          "url": "https://github.com/octo/widgets/issues/7#issuecomment-101"
+        }
+      }
+    },
+    {
+      "name": "empty search result",
+      "operation": "search_code",
+      "input": { "query": "absent", "page": 1, "per_page": 10 },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": { "total_count": 0, "items": [] }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/search/code?page=1&per_page=10&q=absent%20repo%3Aocto%2Fwidgets",
+          "headers": {
+            "accept": "application/vnd.github.text-match+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "result": { "items": [], "total_count": 0 } }
+    },
+    {
+      "name": "401 requires authentication",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [
+        { "status": 401, "headers": { "content-type": "application/json" }, "body": "private-auth-body" }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_AUTH_REQUIRED", "outcome": "failed", "retryable": false } }
+    },
+    {
+      "name": "permission 403 is not rate limit",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [
+        { "status": 403, "headers": { "content-type": "application/json" }, "body": "private-permission-body" }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": false } }
+    },
+    {
+      "name": "secondary rate limit retries one read",
+      "operation": "search_code",
+      "input": { "query": "needle", "page": 1, "per_page": 2 },
+      "responses": [
+        {
+          "status": 403,
+          "headers": { "retry-after": "0", "x-ratelimit-remaining": "1", "x-ratelimit-reset": "1" },
+          "body": "private-rate-body"
+        },
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": { "total_count": 0, "items": [] }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/search/code?page=1&per_page=2&q=needle%20repo%3Aocto%2Fwidgets",
+          "headers": {
+            "accept": "application/vnd.github.text-match+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        },
+        {
+          "method": "GET",
+          "path_and_query": "/search/code?page=1&per_page=2&q=needle%20repo%3Aocto%2Fwidgets",
+          "headers": {
+            "accept": "application/vnd.github.text-match+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected_sleeps": [0],
+      "expected": { "result": { "items": [], "total_count": 0 } }
+    },
+    {
+      "name": "404 is confirmed read failure",
+      "operation": "get_issue",
+      "input": { "issue_number": 404 },
+      "responses": [
+        { "status": 404, "headers": { "content-type": "application/json" }, "body": "private-not-found" }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/404",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": false } }
+    },
+    {
+      "name": "422 is confirmed mutation rejection",
+      "operation": "create_issue",
+      "input": { "title": "Bug", "body": "Details" },
+      "responses": [
+        { "status": 422, "headers": { "content-type": "application/json" }, "body": "private-validation" }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Details\",\"title\":\"Bug\"}"
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": false } }
+    },
+    {
+      "name": "429 mutation is not retried",
+      "operation": "add_comment",
+      "input": { "issue_number": 7, "body": "Looks good" },
+      "responses": [
+        { "status": 429, "headers": { "retry-after": "0", "x-ratelimit-remaining": "0" }, "body": "private-rate" }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues/7/comments",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Looks good\"}"
+        }
+      ],
+      "expected_sleeps": [],
+      "expected": { "error": { "code": "INTEGRATION_RATE_LIMITED", "outcome": "failed", "retryable": true } }
+    },
+    {
+      "name": "malformed JSON read is certified read failure",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [
+        { "status": 200, "headers": { "content-type": "application/json" }, "body": "{not-json" }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true } }
+    },
+    {
+      "name": "malformed JSON after POST is unknown",
+      "operation": "create_issue",
+      "input": { "title": "Bug", "body": "Details" },
+      "responses": [
+        { "status": 201, "headers": { "content-type": "application/json" }, "body": "{private-not-json" }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Details\",\"title\":\"Bug\"}"
+        }
+      ],
+      "expected": { "exception": "unknown" }
+    },
+    {
+      "name": "oversize transport read is certified read failure",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [{ "transport_error": "response_limit" }],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true } }
+    },
+    {
+      "name": "request cancellation propagates",
+      "operation": "get_issue",
+      "input": { "issue_number": 7 },
+      "responses": [{ "transport_error": "cancelled" }],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/issues/7",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "exception": "cancelled" }
+    },
+    {
+      "name": "connection loss after write dispatch is unknown",
+      "operation": "create_issue",
+      "input": { "title": "Bug", "body": "Details" },
+      "responses": [{ "transport_error": "connection" }],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/repos/octo/widgets/issues",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token",
+            "content-type": "application/json"
+          },
+          "body": "{\"body\":\"Details\",\"title\":\"Bug\"}"
+        }
+      ],
+      "expected": { "exception": "unknown" }
+    },
+    {
+      "name": "mismatched search repository rejects whole response",
+      "operation": "search_code",
+      "input": { "query": "needle", "page": 1, "per_page": 10 },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "total_count": 1,
+            "items": [
+              {
+                "path": "private.txt",
+                "sha": "bad",
+                "repository": { "full_name": "other/private" },
+                "text_matches": [{ "fragment": "private-fragment" }]
+              }
+            ]
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/search/code?page=1&per_page=10&q=needle%20repo%3Aocto%2Fwidgets",
+          "headers": {
+            "accept": "application/vnd.github.text-match+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true } }
+    },
+    {
+      "name": "scope qualifier rejected before token",
+      "operation": "search_code",
+      "input": { "query": "Needle ORG:other", "page": 1, "per_page": 10 },
+      "responses": [],
+      "expected_requests": [],
+      "expected_token_calls": 0,
+      "expected": { "error": { "code": "INTEGRATION_POLICY_REJECTED", "outcome": "failed", "retryable": false } }
+    },
+    {
+      "name": "invalid base64 file is certified read failure",
+      "operation": "get_file",
+      "input": { "path": "bad.txt" },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "type": "file",
+            "path": "bad.txt",
+            "sha": "bad64",
+            "size": 3,
+            "encoding": "base64",
+            "content": "***="
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/contents/bad.txt",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true } }
+    },
+    {
+      "name": "invalid UTF-8 file is certified read failure",
+      "operation": "get_file",
+      "input": { "path": "binary.txt" },
+      "responses": [
+        {
+          "status": 200,
+          "headers": { "content-type": "application/json" },
+          "json": {
+            "type": "file",
+            "path": "binary.txt",
+            "sha": "badutf8",
+            "size": 1,
+            "encoding": "base64",
+            "content": "/w=="
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/repos/octo/widgets/contents/binary.txt",
+          "headers": {
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer fixture-token"
+          },
+          "body": null
+        }
+      ],
+      "expected": { "error": { "code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true } }
+    }
+  ],
+  "durable_result_boundaries": [
+    { "name": "last accepted byte", "serialized_bytes": 65536, "accepted": true },
+    { "name": "first rejected byte", "serialized_bytes": 65537, "accepted": false }
+  ]
+}

@@ -17,6 +17,11 @@
       "stability": "experimental",
       "runtimes": ["typescript"]
     },
+    "github": {
+      "manifest": "github/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["python", "typescript"]
+    },
     "sqlite": {
       "manifest": "sqlite/manifest.json",
       "stability": "experimental",

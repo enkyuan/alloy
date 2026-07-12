@@ -6,6 +6,11 @@
       "manifest": "echo/manifest.json",
       "stability": "beta",
       "runtimes": ["python", "typescript"]
+    },
+    "github": {
+      "manifest": "github/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["python", "typescript"]
     }
   }
 }

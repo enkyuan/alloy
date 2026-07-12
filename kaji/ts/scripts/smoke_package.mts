@@ -20,6 +20,7 @@ type SmokePhase =
   | `${PackageManager}:${InstallStage}-install`
   | `${PackageManager}:cli-init`
   | `${PackageManager}:cli-add`
+  | `${PackageManager}:cli-inspect`
   | `${PackageManager}:cli-list`
   | `${PackageManager}:cli-replay`
   | `${PackageManager}:compile-typescript-5.7`
@@ -65,6 +66,7 @@ async function runCommand(
   cwd = installRoot,
   environment: NodeJS.ProcessEnv = baseEnvironment,
   timeoutMs = LOCAL_TIMEOUT_MS,
+  expectedStatus = 0,
 ): Promise<string> {
   try {
     const completed = await runBoundedCommand({
@@ -74,7 +76,13 @@ async function runCommand(
       env: environment,
       timeoutMs,
       maxOutputBytes: MAX_OUTPUT_BYTES,
+      check: false,
     });
+    if (completed.status !== expectedStatus) {
+      throw new CommandError(
+        `release command exited with status ${completed.status}, expected ${expectedStatus}`,
+      );
+    }
     return completed.stdout;
   } catch (error) {
     if (error instanceof CommandError) {
@@ -158,6 +166,53 @@ function assertCliAddOutput(
   }
   if (!output.includes(`Wrote 1 file(s) to ${resolve(destination)}`)) {
     throw new Error("installed add did not report the copied Echo asset");
+  }
+}
+
+function assertExperimentalDenial(output: string, destination: string): void {
+  if (!output.includes("experimental") || !output.includes("--allow-experimental")) {
+    throw new Error("installed add did not explain the experimental opt-in");
+  }
+  if (existsSync(destination)) {
+    throw new Error("denied experimental add created its destination");
+  }
+}
+
+function assertGithubCliAddOutput(
+  output: string,
+  destination: string,
+  installedPackageRoot: string,
+): void {
+  const packagedRoot = join(installedPackageRoot, "registry/github");
+  const manifest = JSON.parse(readFileSync(join(packagedRoot, "manifest.json"), "utf8")) as {
+    files: string[];
+  };
+  for (const name of manifest.files) {
+    const copied = join(destination, name);
+    const packaged = join(packagedRoot, name);
+    if (!existsSync(copied) || !readFileSync(copied).equals(readFileSync(packaged))) {
+      throw new Error("installed add did not copy the packaged GitHub assets");
+    }
+  }
+  const provenance = JSON.parse(
+    readFileSync(join(destination, ".kaji-integration-provenance.json"), "utf8"),
+  ) as {
+    integration?: string;
+    runtime?: string;
+    abiSha256?: string | null;
+    files?: Record<string, string>;
+  };
+  if (
+    provenance.integration !== "github" ||
+    provenance.runtime !== "typescript" ||
+    !provenance.abiSha256 ||
+    JSON.stringify(Object.keys(provenance.files ?? {}).sort()) !==
+      JSON.stringify([...manifest.files].sort())
+  ) {
+    throw new Error("installed GitHub provenance is incomplete");
+  }
+  if (!output.includes(`Wrote ${manifest.files.length} file(s) to ${resolve(destination)}`)) {
+    throw new Error("installed add did not report the copied GitHub assets");
   }
 }
 
@@ -264,6 +319,39 @@ async function runScaffold(
     environment,
   );
   assertCliAddOutput(addOutput, echo, installedPackageRoot);
+
+  const deniedGithub = join(root, "denied-github");
+  const denialOutput = await runCommand(
+    `${manager}:cli-add`,
+    cliCommand,
+    [cli, "--no-color", "add", "github", "--out", deniedGithub],
+    bootstrap,
+    environment,
+    LOCAL_TIMEOUT_MS,
+    1,
+  );
+  assertExperimentalDenial(denialOutput, deniedGithub);
+
+  const github = join(root, "github");
+  const githubOutput = await runCommand(
+    `${manager}:cli-add`,
+    cliCommand,
+    [cli, "--no-color", "add", "github", "--allow-experimental", "--out", github],
+    bootstrap,
+    environment,
+  );
+  assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
+  const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));
+  await runCommand(
+    `${manager}:cli-inspect`,
+    "bun",
+    [
+      "--eval",
+      `const { inspectIntegration } = await import(${githubModule}); if (inspectIntegration().tools().length !== 6) process.exit(1);`,
+    ],
+    bootstrap,
+    environment,
+  );
 
   const listOutput = await runCommand(
     `${manager}:cli-list`,

@@ -18,7 +18,10 @@ import {
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { rename as renameAsync } from "node:fs/promises";
 import { add } from "@/cli/add";
+import { classifyIntegrationBundle, installIntegrationBundle } from "@/cli/integration-copy";
+import { loadManifest, loadRegistryIndex } from "@/integrations/registry-loader";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaRoot = join(__dirname, "..", "registry");
@@ -46,21 +49,21 @@ describe("kaji add", () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "kaji-add-"));
     registry = join(tmp, "registry");
-    mkdirSync(join(registry, "demo-ts"), { recursive: true });
-    mkdirSync(join(registry, "demo-py"), { recursive: true });
+    mkdirSync(join(registry, "fs"), { recursive: true });
+    mkdirSync(join(registry, "http"), { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
       JSON.stringify(
         registryIndex({
-          "demo-ts": "demo-ts/manifest.json",
-          "demo-py": "demo-py/manifest.json",
+          fs: "fs/manifest.json",
+          http: "http/manifest.json",
         }),
       ),
     );
     writeFileSync(
-      join(registry, "demo-ts/manifest.json"),
+      join(registry, "fs/manifest.json"),
       JSON.stringify({
-        name: "demo-ts",
+        name: "fs",
         version: "0.1.0",
         namespace: "demo",
         description: "demo ts",
@@ -77,11 +80,11 @@ describe("kaji add", () => {
         ],
       }),
     );
-    writeFileSync(join(registry, "demo-ts/demo.ts"), "export const x = 1;\n");
+    writeFileSync(join(registry, "fs/demo.ts"), "export const x = 1;\n");
     writeFileSync(
-      join(registry, "demo-py/manifest.json"),
+      join(registry, "http/manifest.json"),
       JSON.stringify({
-        name: "demo-py",
+        name: "http",
         version: "0.1.0",
         namespace: "demo",
         description: "demo py",
@@ -98,13 +101,13 @@ describe("kaji add", () => {
         ],
       }),
     );
-    writeFileSync(join(registry, "demo-py/demo.py"), "# py\n");
+    writeFileSync(join(registry, "http/demo.py"), "# py\n");
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("copies .ts files into --out", async () => {
     const out = join(tmp, "integrations");
-    const code = await add(["demo-ts", "--out", out], {
+    const code = await add(["fs", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -115,11 +118,11 @@ describe("kaji add", () => {
   it("refuses experimental integrations without creating the output directory", async () => {
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify(registryIndex({ "demo-ts": "demo-ts/manifest.json" }, "experimental")),
+      JSON.stringify(registryIndex({ fs: "fs/manifest.json" }, "experimental")),
     );
     const out = join(tmp, "experimental-out");
     const logs: string[] = [];
-    const code = await add(["demo-ts", "--out", out], {
+    const code = await add(["fs", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),
@@ -127,17 +130,17 @@ describe("kaji add", () => {
     expect(code).toBe(1);
     expect(existsSync(out)).toBe(false);
     expect(logs).toEqual([
-      "INTEGRATION_EXPERIMENTAL at /integrations/demo-ts/stability: Integration 'demo-ts' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
+      "INTEGRATION_EXPERIMENTAL at /integrations/fs/stability: Integration 'fs' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
     ]);
   });
 
   it("copies an experimental integration only with explicit opt-in", async () => {
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify(registryIndex({ "demo-ts": "demo-ts/manifest.json" }, "experimental")),
+      JSON.stringify(registryIndex({ fs: "fs/manifest.json" }, "experimental")),
     );
     const out = join(tmp, "experimental-out");
-    const code = await add(["demo-ts", "--allow-experimental", "--out", out], {
+    const code = await add(["fs", "--allow-experimental", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -148,7 +151,7 @@ describe("kaji add", () => {
   it("rejects unknown flags before loading or copying", async () => {
     const out = join(tmp, "unknown-flag-out");
     const logs: string[] = [];
-    const code = await add(["demo-ts", "--unsafe", "--out", out], {
+    const code = await add(["fs", "--unsafe", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),
@@ -158,17 +161,17 @@ describe("kaji add", () => {
     expect(logs.join("\n")).toMatch(/Unknown argument: --unsafe/);
   });
 
-  it("skips integrations with no .ts files", async () => {
+  it("copies every manifest-declared native asset", async () => {
     const out = join(tmp, "integrations");
     const logs: string[] = [];
-    const code = await add(["demo-py", "--out", out], {
+    const code = await add(["http", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (m) => logs.push(m),
     });
     expect(code).toBe(0);
-    expect(existsSync(join(out, "demo.py"))).toBe(false);
-    expect(logs.some((l) => l.toLowerCase().includes("no typescript"))).toBe(true);
+    expect(existsSync(join(out, "demo.py"))).toBe(true);
+    expect(existsSync(join(out, ".kaji-integration-provenance.json"))).toBe(true);
   });
 
   it("returns 1 on unknown name", async () => {
@@ -179,27 +182,27 @@ describe("kaji add", () => {
     expect(code).toBe(1);
   });
 
-  it("returns 1 on collision without --force", async () => {
+  it("classifies an unprovenanced collision as modified", async () => {
     const out = join(tmp, "integrations");
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "demo.ts"), "existing\n");
-    const code = await add(["demo-ts", "--out", out], {
+    const code = await add(["fs", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
-    expect(code).toBe(1);
+    expect(code).toBe(5);
   });
 
   it("overwrites on collision with --force", async () => {
     const out = join(tmp, "integrations");
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "demo.ts"), "existing\n");
-    const code = await add(["demo-ts", "--out", out, "--force"], {
+    const code = await add(["fs", "--out", out, "--force"], {
       registryRoot: registry,
       schemaRoot,
     });
-    expect(code).toBe(0);
-    expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
+    expect(code).toBe(5);
+    expect(readFileSync(join(out, "demo.ts"), "utf8")).toBe("existing\n");
   });
 
   it("rejects a final destination symlink with --force without changing its victim", async () => {
@@ -210,16 +213,16 @@ describe("kaji add", () => {
     symlinkSync(victim, join(out, "demo.ts"));
     const logs: string[] = [];
 
-    const code = await add(["demo-ts", "--out", out, "--force"], {
+    const code = await add(["fs", "--out", out, "--force"], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),
     });
 
-    expect(code).toBe(1);
+    expect(code).toBe(5);
     expect(readFileSync(victim, "utf8")).toBe("do not overwrite\n");
     expect(lstatSync(join(out, "demo.ts")).isSymbolicLink()).toBe(true);
-    expect(logs.join("\n")).toMatch(/symlink/i);
+    expect(logs.join("\n")).toMatch(/missing_provenance/);
   });
 
   it("rejects manifests with path-traversal in files[]", async () => {
@@ -369,7 +372,7 @@ describe("kaji add", () => {
       registryRoot: registry,
       schemaRoot,
     });
-    expect(code).toBe(1);
+    expect(code).toBe(5);
     // The file must NOT have been written to the symlink target.
     expect(existsSync(join(outsideTarget, "foo.ts"))).toBe(false);
   });
@@ -389,7 +392,209 @@ describe("kaji add", () => {
   it("does not ship unindexed Python-only integrations in the real TS registry", () => {
     const realRegistry = join(__dirname, "..", "registry");
     expect(existsSync(join(realRegistry, "gcal"))).toBe(false);
-    expect(existsSync(join(realRegistry, "github"))).toBe(false);
+    expect(existsSync(join(realRegistry, "github"))).toBe(true);
     expect(existsSync(join(realRegistry, "gmail"))).toBe(false);
+  });
+
+  it("uses a provider-scoped default destination", async () => {
+    const previous = process.cwd();
+    process.chdir(tmp);
+    try {
+      const code = await add(["echo"], {
+        registryRoot: join(__dirname, "..", "registry"),
+      });
+      expect(code).toBe(0);
+      expect(existsSync(join(tmp, "integrations/echo/index.ts"))).toBe(true);
+      expect(existsSync(join(tmp, "integrations/index.ts"))).toBe(false);
+    } finally {
+      process.chdir(previous);
+    }
+  });
+
+  it("quarantines GitHub then copies every declared owner asset with provenance", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const out = join(tmp, "github");
+    expect(await add(["github", "--out", out], { registryRoot: realRegistry })).toBe(1);
+    expect(existsSync(out)).toBe(false);
+
+    const logs: string[] = [];
+    expect(
+      await add(["github", "--allow-experimental", "--out", out], {
+        registryRoot: realRegistry,
+        log: (message) => logs.push(message),
+      }),
+    ).toBe(0);
+    for (const name of [
+      "index.ts",
+      "client.ts",
+      "github_vitest.ts",
+      "owner-fixtures.json",
+      "LICENSE",
+      ".kaji-integration-provenance.json",
+    ]) {
+      expect(existsSync(join(out, name))).toBe(true);
+    }
+    const provenance = JSON.parse(
+      readFileSync(join(out, ".kaji-integration-provenance.json"), "utf8"),
+    );
+    expect(provenance).toMatchObject({
+      integration: "github",
+      runtime: "typescript",
+      stability: "experimental",
+    });
+    expect(provenance.abiSha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(logs.join("\n")).toContain("fine-grained token");
+  });
+
+  it("renders the closed JSON shape for absent, current, modified, and outdated", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const out = join(tmp, "echo-states");
+    const run = async (args: string[]) => {
+      const logs: string[] = [];
+      const code = await add(args, {
+        registryRoot: realRegistry,
+        log: (message) => logs.push(message),
+      });
+      return { code, row: JSON.parse(logs.at(-1)!) as Record<string, unknown> };
+    };
+
+    const absent = await run(["echo", "--check", "--json", "--out", out]);
+    expect(absent.code).toBe(3);
+    expect(Object.keys(absent.row)).toEqual([
+      "state",
+      "integration",
+      "runtime",
+      "destination",
+      "reason_code",
+      "next_command",
+    ]);
+    expect(absent.row.state).toBe("absent");
+
+    expect(await add(["echo", "--out", out], { registryRoot: realRegistry })).toBe(0);
+    expect((await run(["echo", "--check", "--json", "--out", out])).row.reason_code).toBe(
+      "up_to_date",
+    );
+
+    writeFileSync(join(out, "index.ts"), "// owner edit\n");
+    const modified = await run(["echo", "--force", "--json", "--out", out]);
+    expect(modified).toMatchObject({ code: 5, row: { reason_code: "local_changes" } });
+    expect(readFileSync(join(out, "index.ts"), "utf8")).toBe("// owner edit\n");
+
+    const outdatedOut = join(tmp, "echo-outdated");
+    expect(await add(["echo", "--out", outdatedOut], { registryRoot: realRegistry })).toBe(0);
+    const sidecar = join(outdatedOut, ".kaji-integration-provenance.json");
+    const provenance = JSON.parse(readFileSync(sidecar, "utf8"));
+    provenance.sdkVersion = "0.0.0-old";
+    writeFileSync(sidecar, JSON.stringify(provenance));
+    expect(await run(["echo", "--check", "--json", "--out", outdatedOut])).toMatchObject({
+      code: 4,
+      row: { reason_code: "upstream_changed" },
+    });
+    expect(
+      await add(["echo", "--force", "--out", outdatedOut], { registryRoot: realRegistry }),
+    ).toBe(0);
+  });
+
+  it("classifies runtime mismatch, cross-provider content, and demotion", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "classification");
+    await installIntegrationBundle({
+      manifest: echo,
+      entry: index.integrations.echo!,
+      destination: out,
+      runtime: "typescript",
+    });
+
+    const sidecar = join(out, ".kaji-integration-provenance.json");
+    const provenance = JSON.parse(readFileSync(sidecar, "utf8"));
+    provenance.runtime = "python";
+    writeFileSync(sidecar, JSON.stringify(provenance));
+    expect(
+      await classifyIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: out,
+        runtime: "typescript",
+      }),
+    ).toMatchObject({ state: "modified", reasonCode: "runtime_mismatch" });
+
+    const cross = join(tmp, "cross");
+    await installIntegrationBundle({
+      manifest: echo,
+      entry: index.integrations.echo!,
+      destination: cross,
+      runtime: "typescript",
+    });
+    const github = await loadManifest(realRegistry, "github", { index });
+    expect(
+      await classifyIntegrationBundle({
+        manifest: github,
+        entry: index.integrations.github!,
+        destination: cross,
+        runtime: "typescript",
+      }),
+    ).toMatchObject({ state: "modified", reasonCode: "cross_provider" });
+
+    expect(
+      await classifyIntegrationBundle({
+        manifest: { ...echo, stability: "experimental" },
+        entry: { ...index.integrations.echo!, stability: "experimental" },
+        destination: cross,
+        runtime: "typescript",
+      }),
+    ).toMatchObject({ state: "demoted", reasonCode: "stability_demoted" });
+  });
+
+  it("restores the old bundle when the staged publish rename fails", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "rollback");
+    const context = {
+      manifest: echo,
+      entry: index.integrations.echo!,
+      destination: out,
+      runtime: "typescript" as const,
+    };
+    await installIntegrationBundle(context);
+    const sidecar = join(out, ".kaji-integration-provenance.json");
+    const provenance = JSON.parse(readFileSync(sidecar, "utf8"));
+    provenance.sdkVersion = "0.0.0-old";
+    writeFileSync(sidecar, JSON.stringify(provenance));
+    const before = {
+      source: readFileSync(join(out, "index.ts")),
+      sidecar: readFileSync(sidecar),
+    };
+
+    await expect(
+      installIntegrationBundle({
+        ...context,
+        force: true,
+        renameEntry: async (source, destination) => {
+          if (source.includes(".echo.kaji-stage-")) throw new Error("publish failed");
+          await renameAsync(source, destination);
+        },
+      }),
+    ).rejects.toThrow("publish failed");
+    expect(readFileSync(join(out, "index.ts"))).toEqual(before.source);
+    expect(readFileSync(sidecar)).toEqual(before.sidecar);
+    expect(existsSync(out)).toBe(true);
+  });
+
+  it("rejects --check --force before creating the default destination", async () => {
+    const previous = process.cwd();
+    process.chdir(tmp);
+    try {
+      expect(
+        await add(["echo", "--check", "--force"], {
+          registryRoot: join(__dirname, "..", "registry"),
+        }),
+      ).toBe(2);
+      expect(existsSync(join(tmp, "integrations/echo"))).toBe(false);
+    } finally {
+      process.chdir(previous);
+    }
   });
 });

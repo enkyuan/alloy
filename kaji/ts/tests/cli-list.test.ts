@@ -192,4 +192,17 @@ describe("kaji list-integrations", () => {
     expect(code).toBe(1);
     expect(stderr.join("\n")).toMatch(/INTEGRATION_SCHEMA_INVALID at \/:/);
   });
+
+  it("lists the packaged GitHub bundle as experimental", async () => {
+    const lines: string[] = [];
+    const code = await listIntegrations([], {
+      registryRoot: join(here, "..", "registry"),
+      log: (message) => lines.push(message),
+    });
+
+    expect(code).toBe(0);
+    expect(lines.join("\n")).toMatch(
+      /^github\s+\[experimental\]\s+v0\.1\.0\s+Repository-scoped GitHub code, issue, and comment tools\.$/m,
+    );
+  });
 });

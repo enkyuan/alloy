@@ -33,17 +33,18 @@ is checked against the machine feature contract and both registry indexes by
 | Echo integration | Stable core | Stable core | integration tests |
 
 The echo integration is the only catalog entry inside the first beta promise.
-HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
+GitHub, HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
 
 ## Catalog Stability
 
 <!-- beta-integrations: echo -->
-<!-- experimental-integrations: fs,http,sqlite,web -->
+<!-- experimental-integrations: fs,github,http,sqlite,web -->
 
 | Integration | Stability | Runtimes |
 | --- | --- | --- |
 | echo | beta | python, typescript |
 | fs | experimental | typescript |
+| github | experimental | python, typescript |
 | http | experimental | typescript |
 | sqlite | experimental | typescript |
 | web | experimental | typescript |

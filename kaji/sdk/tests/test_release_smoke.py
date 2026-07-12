@@ -58,6 +58,8 @@ def test_release_smoke_preserves_build_verify_install_order(
     monkeypatch.setattr(module, "installed_registry_root", lambda _venv: tmp_path)
     monkeypatch.setattr(module, "assert_init_cli_output", lambda *_args: None)
     monkeypatch.setattr(module, "assert_echo_cli_output", lambda *_args: None)
+    monkeypatch.setattr(module, "assert_experimental_denial", lambda *_args: None)
+    monkeypatch.setattr(module, "assert_github_cli_output", lambda *_args: None)
     monkeypatch.setattr(module, "assert_list_integrations_output", lambda *_args: None)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
@@ -97,6 +99,10 @@ def test_release_smoke_preserves_build_verify_install_order(
         sum(command[1:4] == ["--no-color", "add", "echo"] for command in commands) == 2
     )
     assert (
+        sum(command[1:4] == ["--no-color", "add", "github"] for command in commands)
+        == 4
+    )
+    assert (
         sum(command[1:3] == ["--no-color", "list-integrations"] for command in commands)
         == 2
     )
@@ -130,7 +136,10 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
     module.assert_echo_cli_output("\n".join(output), destination, registry)
 
     module.assert_list_integrations_output(
-        "  echo             [beta] v0.1.0    " + module.EXPECTED_ECHO_DESCRIPTION
+        "  echo             [beta]  v0.1.0  "
+        + module.EXPECTED_ECHO_DESCRIPTION
+        + "\n  github           [experimental]  v0.1.0  "
+        + module.EXPECTED_GITHUB_DESCRIPTION
     )
 
     (destination / "echo.py").write_text("checkout source must not be accepted")
@@ -167,6 +176,12 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         "coldSetupToOutputMs",
         "warmRunMs",
         '"add", "echo", "--out"',
+        '"add", "github", "--out"',
+        '"--allow-experimental"',
+        "assert_experimental_denial(denial_output, denied_github)",
+        "assert_github_cli_output(github_output, github, registry)",
+        "from kaji.integrations.registry.github.github import inspect_integration; ",
+        '"assert len(inspect_integration().tools()) == 6"',
         '"list-integrations"',
         "assert_init_cli_output(init_output, scaffold)",
         "assert_echo_cli_output(add_output, integration, registry)",
@@ -363,10 +378,15 @@ def test_registry_namespace_packages_are_declared() -> None:
 
     assert "kaji.integrations.registry" in packages
     assert "kaji.integrations.registry.echo" in packages
+    assert "kaji.integrations.registry.github" in packages
     assert package_dir["kaji.integrations.registry"] == "src/integrations/registry"
     assert (
         package_dir["kaji.integrations.registry.echo"]
         == "src/integrations/registry/echo"
+    )
+    assert (
+        package_dir["kaji.integrations.registry.github"]
+        == "src/integrations/registry/github"
     )
 
 

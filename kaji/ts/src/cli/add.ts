@@ -1,114 +1,130 @@
-/**
- * `kaji add <name>` — copy a registry integration's TypeScript source into
- * the consumer's project.
- *
- * Mirrors `kaji.cli.add` in Python: read the on-disk registry index, resolve
- * the manifest, validate its required keys, copy only `.ts` files into
- * `--out`. The Python loader copies every file in `manifest.files` verbatim;
- * the TS CLI is language-scoped because TS consumers don't want `.py` files
- * arriving in their tree.
- *
- * Returns a process exit code:
- *  0  success (or "no TypeScript files; skipped" — a valid outcome).
- *  1  unknown integration, missing manifest, validation failure, or collision
- *     without `--force`.
- */
-import { randomUUID } from "node:crypto";
-import { constants, existsSync, mkdirSync, realpathSync } from "node:fs";
-import { copyFile, lstat, rename, rm } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+/** `kaji add`: rollback-safe copied integration bundle installation. */
+import { join, resolve } from "node:path";
+
+import {
+  BundleTransitionError,
+  classifyIntegrationBundle,
+  installIntegrationBundle,
+  type BundleStatus,
+} from "@/cli/integration-copy";
 import {
   formatIntegrationError,
   IntegrationExperimentalError,
   loadManifest,
   loadRegistryIndex,
-  resolveManifestFile,
   type LoadedIntegrationManifest,
   type RegistryIndexDocument,
 } from "@/integrations/registry-loader";
 
 export interface AddOptions {
-  /** Absolute path to a registry directory (one with `index.json`). */
-  registryRoot: string;
-  /** Directory containing the packaged integration schemas. Defaults to registryRoot. */
-  schemaRoot?: string;
-  /** Sink for human-readable progress + error messages. Defaults to console.log. */
-  log?: (msg: string) => void;
+  readonly registryRoot: string;
+  readonly schemaRoot?: string;
+  readonly log?: (message: string) => void;
 }
 
-function errorCode(error: unknown): string | undefined {
-  return error instanceof Error && "code" in error
-    ? (error as NodeJS.ErrnoException).code
-    : undefined;
+interface Args {
+  readonly name: string;
+  readonly out?: string;
+  readonly force: boolean;
+  readonly allowExperimental: boolean;
+  readonly check: boolean;
+  readonly json: boolean;
 }
 
-async function rejectDestinationSymlink(destination: string): Promise<void> {
-  try {
-    if ((await lstat(destination)).isSymbolicLink()) {
-      throw new Error(`Refusing to overwrite destination symlink: ${destination}`);
-    }
-  } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error;
+function parseArgs(argv: string[], log: (message: string) => void): Args | undefined {
+  const name = argv[0];
+  if (name === undefined || name.startsWith("-")) {
+    log("usage: kaji add <name> [--out <dir>] [--force] [--allow-experimental] [--check] [--json]");
+    return undefined;
   }
+  let out: string | undefined;
+  let force = false;
+  let allowExperimental = false;
+  let check = false;
+  let json = false;
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index]!;
+    if (argument === "--out") {
+      const value = argv[++index];
+      if (value === undefined || value.startsWith("--")) {
+        log("--out requires a value");
+        return undefined;
+      }
+      out = value;
+    } else if (argument === "--force") {
+      force = true;
+    } else if (argument === "--allow-experimental") {
+      allowExperimental = true;
+    } else if (argument === "--check") {
+      check = true;
+    } else if (argument === "--json") {
+      json = true;
+    } else {
+      log(`Unknown argument: ${argument}`);
+      return undefined;
+    }
+  }
+  if (check && force) {
+    log("--check cannot be combined with --force");
+    return undefined;
+  }
+  return { name, out, force, allowExperimental, check, json };
 }
 
-async function copyToDestination(
-  source: string,
-  destination: string,
-  force: boolean,
-): Promise<void> {
-  await rejectDestinationSymlink(destination);
-  if (!force) {
-    // COPYFILE_EXCL makes a final-component swap fail instead of following it.
-    await copyFile(source, destination, constants.COPYFILE_EXCL);
+function exitCode(status: BundleStatus): number {
+  return { current: 0, absent: 3, outdated: 4, modified: 5, demoted: 6 }[status.state];
+}
+
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@+-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function nextCommand(status: BundleStatus, manifest: LoadedIntegrationManifest): string {
+  const command = ["bunx", "--package", "@kaji/sdk", "kaji", "add", manifest.name];
+  if (manifest.stability === "experimental") command.push("--allow-experimental");
+  command.push("--out", status.destination);
+  if (status.state === "outdated") command.push("--force");
+  else if (status.state !== "absent") command.push("--check");
+  return command.map(shellQuote).join(" ");
+}
+
+function renderStatus(
+  status: BundleStatus,
+  manifest: LoadedIntegrationManifest,
+  json: boolean,
+  log: (message: string) => void,
+): void {
+  const next_command = nextCommand(status, manifest);
+  if (json) {
+    log(
+      JSON.stringify({
+        state: status.state,
+        integration: manifest.name,
+        runtime: "typescript",
+        destination: status.destination,
+        reason_code: status.reasonCode,
+        next_command,
+      }),
+    );
     return;
   }
+  log(`${status.state}: ${manifest.name} at ${status.destination} (${status.reasonCode})`);
+  log(`next: ${next_command}`);
+}
 
-  // Build the replacement beside the destination, then rename it atomically.
-  // rename(2) replaces a raced-in final symlink entry; it never follows that
-  // symlink to the victim. The second lstat still rejects symlinks observed
-  // before the atomic replacement.
-  const temporary = join(
-    dirname(destination),
-    `.${basename(destination)}.kaji-${randomUUID()}.tmp`,
-  );
-  try {
-    await copyFile(source, temporary, constants.COPYFILE_EXCL);
-    await rejectDestinationSymlink(destination);
-    await rename(temporary, destination);
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined);
+function setupGuidance(manifest: LoadedIntegrationManifest, log: (message: string) => void): void {
+  if (manifest.name === "github" && manifest.auth.kind === "env") {
+    log("next: set GITHUB_TOKEN to a fine-grained token limited to the configured repositories");
+    log(`docs: ${manifest.auth.docs}`);
+  } else if (manifest.auth.kind === "env") {
+    log(`next: set ${manifest.auth.env} in your environment`);
   }
 }
 
 export async function add(argv: string[], opts: AddOptions): Promise<number> {
-  const log = opts.log ?? ((m: string) => console.log(m));
-  const name = argv[0];
-  if (!name || name.startsWith("-")) {
-    log("usage: kaji add <name> [--out <dir>] [--force] [--allow-experimental]");
-    return 1;
-  }
-
-  let out = "./integrations";
-  let force = false;
-  let allowExperimental = false;
-  for (let i = 1; i < argv.length; i++) {
-    if (argv[i] === "--out") {
-      const next = argv[++i];
-      if (next === undefined) {
-        log("--out requires a value");
-        return 1;
-      }
-      out = next;
-    } else if (argv[i] === "--force") {
-      force = true;
-    } else if (argv[i] === "--allow-experimental") {
-      allowExperimental = true;
-    } else {
-      log(`Unknown argument: ${argv[i]}`);
-      return 1;
-    }
-  }
+  const log = opts.log ?? ((message: string) => console.log(message));
+  const args = parseArgs(argv, log);
+  if (args === undefined) return argv.includes("--check") && argv.includes("--force") ? 2 : 1;
 
   let index: RegistryIndexDocument;
   try {
@@ -117,21 +133,20 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     log(formatIntegrationError(error));
     return 1;
   }
-
-  const entry = index.integrations[name];
+  const entry = index.integrations[args.name];
   if (entry === undefined) {
     const available = Object.keys(index.integrations).sort().join(", ") || "(none)";
-    log(`Unknown integration: '${name}'. Available: ${available}`);
+    log(`Unknown integration: '${args.name}'. Available: ${available}`);
     return 1;
   }
-  if (entry.stability === "experimental" && !allowExperimental) {
-    log(formatIntegrationError(new IntegrationExperimentalError(name)));
+  if (entry.stability === "experimental" && !args.allowExperimental && !args.check) {
+    log(formatIntegrationError(new IntegrationExperimentalError(args.name)));
     return 1;
   }
 
   let manifest: LoadedIntegrationManifest;
   try {
-    manifest = await loadManifest(opts.registryRoot, name, {
+    manifest = await loadManifest(opts.registryRoot, args.name, {
       schemaRoot: opts.schemaRoot,
       index,
     });
@@ -139,79 +154,37 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     log(formatIntegrationError(error));
     return 1;
   }
+  const destination = resolve(args.out ?? join("./integrations", args.name));
+  const context = { manifest, entry, destination, runtime: "typescript" as const };
+  if (args.check) {
+    try {
+      const status = await classifyIntegrationBundle(context);
+      renderStatus(status, manifest, args.json, log);
+      return exitCode(status);
+    } catch (error) {
+      log(error instanceof Error ? error.message : "Integration check failed");
+      return 1;
+    }
+  }
 
-  const tsFiles = manifest.files
-    .map((file, index) => ({ file, index }))
-    .filter(({ file }) => file.endsWith(".ts"));
-  if (tsFiles.length === 0) {
-    log(`Skipping '${name}': no TypeScript source files in this integration (Python only).`);
+  let status: BundleStatus;
+  try {
+    status = await installIntegrationBundle({ ...context, force: args.force });
+  } catch (error) {
+    if (error instanceof BundleTransitionError) {
+      renderStatus(error.status, manifest, args.json, log);
+      return exitCode(error.status);
+    }
+    log(error instanceof Error ? error.message : "Integration copy failed");
+    return 1;
+  }
+  if (args.json) {
+    renderStatus(status, manifest, true, log);
     return 0;
   }
-
-  // Anchor every destination under the resolved --out so even a future bug
-  // in the manifest check can't escape it. We materialise --out first so
-  // realpath can resolve it, then re-check each destination's REAL parent
-  // (following symlinks) against the real --out — purely lexical containment
-  // is bypassable when --out/sub is a symlink pointing outside.
-  const resolvedOut = resolve(out);
-  mkdirSync(resolvedOut, { recursive: true });
-  const realOut = realpathSync(resolvedOut);
-  for (const { file: f, index } of tsFiles) {
-    try {
-      await resolveManifestFile(manifest, index);
-    } catch (error) {
-      log(formatIntegrationError(error));
-      return 1;
-    }
-    const dest = resolve(resolvedOut, f);
-    const rel = relative(resolvedOut, dest);
-    if (rel.startsWith("..") || isAbsolute(rel) || rel.split(sep).includes("..")) {
-      log(`Refusing to write outside --out: ${dest}`);
-      return 1;
-    }
-    // Realpath check: walk to the deepest existing ancestor of dest and
-    // confirm it sits under realOut. Catches symlink escapes that the
-    // string-level check above would miss (e.g. --out/sub -> /tmp/elsewhere).
-    let probe = dirname(dest);
-    while (!existsSync(probe) && probe !== dirname(probe)) {
-      probe = dirname(probe);
-    }
-    if (existsSync(probe)) {
-      const realProbe = realpathSync(probe);
-      const realRel = relative(realOut, realProbe);
-      if (
-        realRel !== "" &&
-        (realRel.startsWith("..") || isAbsolute(realRel) || realRel.split(sep).includes(".."))
-      ) {
-        log(`Refusing to write through symlinked parent: ${dest} -> ${realProbe}`);
-        return 1;
-      }
-    }
-    if (existsSync(dest) && !force) {
-      log(`File exists: ${dest} (use --force to overwrite)`);
-      return 1;
-    }
-  }
-
-  for (const { file: f, index } of tsFiles) {
-    let src: string;
-    try {
-      // Re-resolve immediately before copying so a swapped source symlink is
-      // rechecked against the manifest directory containment boundary.
-      src = await resolveManifestFile(manifest, index);
-    } catch (error) {
-      log(formatIntegrationError(error));
-      return 1;
-    }
-    const dest = resolve(resolvedOut, f);
-    mkdirSync(dirname(dest), { recursive: true });
-    try {
-      await copyToDestination(src, dest, force);
-    } catch (error) {
-      log(formatIntegrationError(error));
-      return 1;
-    }
-  }
-  log(`Wrote ${tsFiles.length} file(s) to ${resolvedOut}`);
+  if (status.written.length > 0)
+    log(`Wrote ${status.written.length} file(s) to ${status.destination}`);
+  else log(`Current integration: ${manifest.name} at ${status.destination}`);
+  setupGuidance(manifest, log);
   return 0;
 }

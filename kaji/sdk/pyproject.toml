@@ -65,6 +65,7 @@ packages = [
     "kaji.integrations",
     "kaji.integrations.registry",
     "kaji.integrations.registry.echo",
+    "kaji.integrations.registry.github",
     "kaji.knowledge",
     "kaji.modalities",
     "kaji.modalities.text",
@@ -99,6 +100,7 @@ kaji = "src"
 "kaji.integrations" = "src/integrations"
 "kaji.integrations.registry" = "src/integrations/registry"
 "kaji.integrations.registry.echo" = "src/integrations/registry/echo"
+"kaji.integrations.registry.github" = "src/integrations/registry/github"
 "kaji.knowledge" = "src/knowledge"
 "kaji.modalities" = "src/modalities"
 "kaji.modalities.text" = "src/modalities/text"
@@ -119,6 +121,7 @@ kaji = [
     "integrations/registry/**/*.json",
     "integrations/registry/**/*.py",
     "integrations/registry/**/*.ts",
+    "integrations/registry/**/LICENSE",
 ]
 "kaji.contracts" = ["*.json", "*.md"]
 "kaji.contracts.errors" = ["*.json"]

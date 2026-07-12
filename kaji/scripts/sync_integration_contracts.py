@@ -28,6 +28,27 @@ COPIES = {
         / "index.schema.json",
         ROOT / "kaji" / "ts" / "registry" / "index.schema.json",
     ),
+    ROOT / "LICENSE": (
+        ROOT
+        / "kaji"
+        / "sdk"
+        / "src"
+        / "integrations"
+        / "registry"
+        / "github"
+        / "LICENSE",
+        ROOT / "kaji" / "ts" / "registry" / "github" / "LICENSE",
+    ),
+    ROOT / "kaji" / "ts" / "registry" / "github" / "github_pytest.py": (
+        ROOT
+        / "kaji"
+        / "sdk"
+        / "src"
+        / "integrations"
+        / "registry"
+        / "github"
+        / "github_pytest.py",
+    ),
 }
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
 PYTHON_REGISTRY = ROOT / "kaji" / "sdk" / "src" / "integrations" / "registry"
@@ -86,7 +107,7 @@ def _manifests(name: str) -> tuple[Path, Path]:
     )
 
 
-def _typescript_source_copies(name: str) -> list[tuple[Path, Path]]:
+def _registry_asset_copies(name: str) -> list[tuple[Path, Path]]:
     python_manifest = json.loads((PYTHON_REGISTRY / name / "manifest.json").read_text())
     typescript_manifest = json.loads(
         (TYPESCRIPT_REGISTRY / name / "manifest.json").read_text()
@@ -94,8 +115,6 @@ def _typescript_source_copies(name: str) -> list[tuple[Path, Path]]:
     python_files = set(python_manifest["files"])
     copies: list[tuple[Path, Path]] = []
     for relative in typescript_manifest["files"]:
-        if not relative.endswith(".ts"):
-            continue
         target_relative = f"{name}.ts" if relative == "index.ts" else relative
         if target_relative not in python_files:
             raise ValueError(
@@ -118,7 +137,7 @@ def write() -> None:
     for name, abi_path in _abi_contracts().items():
         for manifest in _manifests(name):
             manifest.write_text(_expected_manifest(manifest, abi_path))
-        for source, target in _typescript_source_copies(name):
+        for source, target in _registry_asset_copies(name):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
 
@@ -151,7 +170,7 @@ def check() -> list[str]:
             expected = _expected_manifest(manifest, abi_path).encode()
             actual = manifest.read_bytes() if manifest.exists() else b""
             diffs.extend(_diff_bytes(actual, expected, manifest, abi_path))
-        for source, target in _typescript_source_copies(name):
+        for source, target in _registry_asset_copies(name):
             expected_source = source.read_bytes()
             actual_source = target.read_bytes() if target.exists() else b""
             diffs.extend(_diff_bytes(actual_source, expected_source, target, source))

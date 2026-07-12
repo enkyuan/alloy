@@ -1,5 +1,7 @@
 export const EXPECTED_ECHO_DESCRIPTION =
   "Trivial echo integration. Two pure functions, no auth, no network. Proves the cross-language registry contract.";
+export const EXPECTED_GITHUB_DESCRIPTION =
+  "Repository-scoped GitHub code, issue, and comment tools.";
 
 interface IntegrationRow {
   name: string;
@@ -36,5 +38,17 @@ export function assertCliListOutput(output: string): void {
     echo.description !== EXPECTED_ECHO_DESCRIPTION
   ) {
     throw new Error("installed list-integrations emitted a non-canonical Echo row");
+  }
+  const githubRows = rows.filter((row) => row?.name === "github");
+  if (githubRows.length !== 1) {
+    throw new Error("installed list-integrations omitted the canonical GitHub row");
+  }
+  const github = githubRows[0]!;
+  if (
+    github.tier !== "experimental" ||
+    github.version !== "0.1.0" ||
+    github.description !== EXPECTED_GITHUB_DESCRIPTION
+  ) {
+    throw new Error("installed list-integrations emitted a non-canonical GitHub row");
   }
 }

@@ -29,6 +29,7 @@ EXPECTED_ECHO_DESCRIPTION = (
     "Trivial echo integration. Two pure functions, no auth, no network. "
     "Proves the cross-language registry contract."
 )
+EXPECTED_GITHUB_DESCRIPTION = "Repository-scoped GitHub code, issue, and comment tools."
 
 
 def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
@@ -47,6 +48,7 @@ def run_capture(
     cwd: Path = SDK_ROOT,
     budget: CommandBudget = PACKAGE_COMMAND_BUDGET,
     environment: dict[str, str] | None = None,
+    expected_status: int = 0,
 ) -> str:
     """Run a bounded command and return UTF-8 stdout."""
 
@@ -57,11 +59,16 @@ def run_capture(
             budget=budget,
             capture=True,
             env=environment,
+            check=False,
         )
     except CommandExitError as error:
         raise SystemExit(
             error.returncode if error.returncode >= 0 else 128 - error.returncode
         ) from None
+    if completed.returncode != expected_status:
+        raise SystemExit(
+            f"FAIL: installed command exited {completed.returncode}, expected {expected_status}"
+        )
     try:
         return completed.stdout.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
@@ -131,14 +138,61 @@ def assert_echo_cli_output(output: str, destination: Path, registry: Path) -> No
         raise SystemExit("FAIL: installed add did not report the Echo integration")
 
 
+def assert_experimental_denial(output: str, destination: Path) -> None:
+    if "experimental" not in output or "--allow-experimental" not in output:
+        raise SystemExit("FAIL: installed add did not explain the experimental opt-in")
+    if destination.exists():
+        raise SystemExit("FAIL: denied experimental add created its destination")
+
+
+def assert_github_cli_output(output: str, destination: Path, registry: Path) -> None:
+    packaged_root = registry / "github"
+    manifest = json.loads((packaged_root / "manifest.json").read_text())
+    for name in manifest["files"]:
+        copied = destination / name
+        packaged = packaged_root / name
+        if not copied.is_file() or copied.read_bytes() != packaged.read_bytes():
+            raise SystemExit(
+                "FAIL: installed add did not copy the packaged GitHub assets"
+            )
+        if f"wrote {copied.resolve()}" not in output:
+            raise SystemExit(
+                "FAIL: installed add did not report every copied GitHub asset"
+            )
+    provenance = json.loads(
+        (destination / ".kaji-integration-provenance.json").read_text()
+    )
+    if (
+        provenance.get("integration") != "github"
+        or provenance.get("runtime") != "python"
+        or not provenance.get("abiSha256")
+        or set(provenance.get("files", {})) != set(manifest["files"])
+    ):
+        raise SystemExit("FAIL: installed GitHub provenance is incomplete")
+    if (destination / "LICENSE").read_bytes() != (
+        packaged_root / "LICENSE"
+    ).read_bytes():
+        raise SystemExit("FAIL: installed GitHub license differs from the package")
+    if "Installed integration: github v0.1.0" not in output:
+        raise SystemExit("FAIL: installed add did not report the GitHub integration")
+
+
 def assert_list_integrations_output(output: str) -> None:
-    expected = re.compile(
+    echo = re.compile(
         rf"^  echo\s+\[beta\]\s+v0\.1\.0\s+{re.escape(EXPECTED_ECHO_DESCRIPTION)}$",
         re.MULTILINE,
     )
-    if expected.search(output) is None:
+    github = re.compile(
+        rf"^  github\s+\[experimental\]\s+v0\.1\.0\s+{re.escape(EXPECTED_GITHUB_DESCRIPTION)}$",
+        re.MULTILINE,
+    )
+    if echo.search(output) is None:
         raise SystemExit(
             "FAIL: installed list-integrations omitted the packaged Echo entry"
+        )
+    if github.search(output) is None:
+        raise SystemExit(
+            "FAIL: installed list-integrations omitted the packaged GitHub entry"
         )
 
 
@@ -293,6 +347,41 @@ def release_smoke(dist_dir: Path) -> None:
                 environment=environment,
             )
             assert_echo_cli_output(add_output, integration, registry)
+
+            denied_github = workdir / f"denied-github-{safe_name}"
+            denial_output = run_capture(
+                [kaji, "--no-color", "add", "github", "--out", str(denied_github)],
+                cwd=artifact_workdir,
+                environment=environment,
+                expected_status=1,
+            )
+            assert_experimental_denial(denial_output, denied_github)
+
+            github = workdir / f"github-{safe_name}"
+            github_output = run_capture(
+                [
+                    kaji,
+                    "--no-color",
+                    "add",
+                    "github",
+                    "--allow-experimental",
+                    "--out",
+                    str(github),
+                ],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            assert_github_cli_output(github_output, github, registry)
+            run_capture(
+                [
+                    str(python),
+                    "-c",
+                    "from kaji.integrations.registry.github.github import inspect_integration; "
+                    "assert len(inspect_integration().tools()) == 6",
+                ],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
 
             list_output = run_capture(
                 [kaji, "--no-color", "list-integrations"],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -94,7 +95,7 @@ def _write_registry_case(root: Path, case: dict[str, Any]) -> str:
 
 def test_list_integrations_includes_known_names() -> None:
     names = list_integrations()
-    assert names == ["echo"]
+    assert names == ["echo", "github"]
 
 
 def test_load_manifest_returns_parsed_manifest() -> None:
@@ -311,20 +312,35 @@ def test_install_integration_copies_files(tmp_path: Path) -> None:
     target = tmp_path / "echo.py"
     assert "async def say" in target.read_text()
     assert "kaji.function_tool" in target.read_text()
+    assert (tmp_path / ".kaji-integration-provenance.json").is_file()
 
 
-def test_install_integration_refuses_overwrite_without_force(tmp_path: Path) -> None:
+def test_install_integration_current_bundle_is_a_safe_noop(tmp_path: Path) -> None:
     install_integration("echo", tmp_path)
-    with pytest.raises(FileExistsError):
-        install_integration("echo", tmp_path)
+    assert install_integration("echo", tmp_path) == []
 
 
-def test_install_integration_overwrites_with_force(tmp_path: Path) -> None:
+def test_install_integration_force_rejects_local_modifications(tmp_path: Path) -> None:
     install_integration("echo", tmp_path)
     target = tmp_path / "echo.py"
     target.write_text("# modified by user\n")
-    install_integration("echo", tmp_path, force=True)
-    assert "async def say" in target.read_text()
+    with pytest.raises(FileExistsError, match="modified"):
+        install_integration("echo", tmp_path, force=True)
+    assert target.read_text() == "# modified by user\n"
+
+
+def test_copy_classification_detects_stability_demotion(tmp_path: Path) -> None:
+    from kaji.integrations.copy import classify_integration_bundle
+
+    install_integration("echo", tmp_path)
+    demoted = replace(load_manifest("echo"), stability="experimental")
+
+    status = classify_integration_bundle(demoted, tmp_path, runtime="python")
+    assert (status.state, status.reason_code, status.exit_code) == (
+        "demoted",
+        "stability_demoted",
+        6,
+    )
 
 
 def test_manifest_validation_catches_missing_keys(
@@ -455,7 +471,7 @@ def test_install_rejects_destination_symlink_escape(tmp_path: Path) -> None:
     outside.mkdir()
     (destination / "echo.py").symlink_to(outside / "echo.py")
 
-    with pytest.raises(ManifestError, match="outside dest"):
+    with pytest.raises(FileExistsError, match="modified"):
         install_integration("echo", destination, force=True)
 
     assert not (outside / "echo.py").exists()
