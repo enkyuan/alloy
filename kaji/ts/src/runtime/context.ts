@@ -3,7 +3,7 @@
  * message construction in `kaji.runtime.agents.runtime`.
  */
 import type { ProviderMessage } from "@/providers/base";
-import type { Message } from "@/sessions/replay";
+import type { Message, MessageToolCall } from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 import { systemClock, type Clock } from "@/internal/uuid";
 
@@ -320,14 +320,31 @@ function textCharacters(value: string): number {
   return Array.from(value).length;
 }
 
+export interface ContextToolCallMeasurement {
+  readonly characters: number;
+  readonly argumentBytes: number;
+}
+
+function toolCallCharacters(call: MessageToolCall, argumentsJson: string): number {
+  return textCharacters(call.id) + textCharacters(call.name) + textCharacters(argumentsJson);
+}
+
+/** Measure one newly projected call without revisiting earlier assistant calls. */
+export function measureContextToolCall(call: MessageToolCall): ContextToolCallMeasurement {
+  const argumentsJson = canonicalJson(call.args);
+  return {
+    characters: toolCallCharacters(call, argumentsJson),
+    argumentBytes: new TextEncoder().encode(argumentsJson).byteLength,
+  };
+}
+
 /** Count semantic text visible to the model, including structured tool payloads. */
-function messageCharacters(message: Message): number {
+export function contextMessageCharacters(message: Message): number {
   let count = textCharacters(message.content);
   if (message.role === "assistant") {
     for (const call of message.toolCalls ?? []) {
-      count += textCharacters(call.id);
-      count += textCharacters(call.name);
-      count += textCharacters(canonicalJson(call.args));
+      const argumentsJson = canonicalJson(call.args);
+      count += toolCallCharacters(call, argumentsJson);
     }
   } else if (message.role === "tool") {
     count += textCharacters(message.name ?? "");
@@ -336,7 +353,7 @@ function messageCharacters(message: Message): number {
   return count;
 }
 
-function providerMessage(message: Message): ProviderMessage {
+export function projectProviderMessage(message: Message): ProviderMessage {
   if (message.role === "tool") {
     return {
       role: "tool",
@@ -356,7 +373,7 @@ function providerMessage(message: Message): ProviderMessage {
   };
 }
 
-function providerMessageCharacters(message: ProviderMessage): number {
+export function contextProviderMessageCharacters(message: ProviderMessage): number {
   let count = textCharacters(message.content);
   if (message.role === "assistant") {
     for (const call of message.toolCalls ?? []) {
@@ -371,7 +388,7 @@ function providerMessageCharacters(message: ProviderMessage): number {
   return count;
 }
 
-export function buildContext(
+export function buildContextFromMessages(
   messages: readonly Message[],
   systemPrompt?: string,
   window: ContextWindow = DEFAULT_CONTEXT_WINDOW,
@@ -380,7 +397,7 @@ export function buildContext(
   validateContextWindow(window);
   const groups = turnGroups(messages);
   const groupCharacters = groups.map((group) =>
-    group.reduce((total, message) => total + messageCharacters(message), 0),
+    group.reduce((total, message) => total + contextMessageCharacters(message), 0),
   );
 
   if (groups.length > 0 && window.maxCharacters !== null) {
@@ -406,13 +423,13 @@ export function buildContext(
   const result: ProviderMessage[] = [];
   if (systemPrompt) result.push({ role: "system", content: systemPrompt });
   for (const group of groups.slice(keptStart)) {
-    for (const message of group) result.push(providerMessage(message));
+    for (const message of group) result.push(projectProviderMessage(message));
   }
   recordMetric(metricsSink, "kaji.context.messages", result.length, {});
   recordMetric(
     metricsSink,
     "kaji.context.characters",
-    result.reduce((total, message) => total + providerMessageCharacters(message), 0),
+    result.reduce((total, message) => total + contextProviderMessageCharacters(message), 0),
     {},
   );
   return {
@@ -425,6 +442,15 @@ export function buildContext(
         .reduce((total, count) => total + count, 0),
     },
   };
+}
+
+export function buildContext(
+  messages: readonly Message[],
+  systemPrompt?: string,
+  window: ContextWindow = DEFAULT_CONTEXT_WINDOW,
+  metricsSink: MetricsSink = NOOP_METRICS,
+): ContextBuildResult {
+  return buildContextFromMessages(messages, systemPrompt, window, metricsSink);
 }
 
 export function buildMessages(

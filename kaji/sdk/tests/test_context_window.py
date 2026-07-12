@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
@@ -16,6 +17,7 @@ from kaji.infra.events.schemas import (
     UserMessage,
     require_stored_event,
 )
+from kaji.infra.events.replay import SessionState
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.context import (
@@ -41,7 +43,6 @@ def _stored(event: Any) -> StoredKajiEvent:
 
 def test_projector_applies_ten_thousand_tool_events_once() -> None:
     projector = SessionProjector("projection-10k")
-    messages = projector.state.messages
     sequence = 0
 
     def apply(event: Any) -> None:
@@ -78,11 +79,14 @@ def test_projector_applies_ten_thousand_tool_events_once() -> None:
             )
         )
 
-    assert projector.state.messages is messages
     assert projector.cursor == 10_000
     assert projector.applied_events == 10_000
-    assert len(projector.state.messages) == 8_000
-    assert projector.state.messages[-1]["content"] == "done-1999"
+    snapshot = projector.state
+    assert len(snapshot.messages) == 8_000
+    assert snapshot.messages[-1]["content"] == "done-1999"
+    assert projector.context_index_stats.cold_events == 10_000
+    assert projector.context_index_stats.scanned_tool_calls == 2_000
+    assert projector.context_index_stats.persistent_copied_payload_bytes == 0
 
 
 def test_projection_separates_batches_and_groups_parallel_calls() -> None:
@@ -168,16 +172,10 @@ def test_projector_rejects_mixed_sessions_and_non_contiguous_sequences() -> None
 
 
 def test_context_window_keeps_complete_current_tool_group() -> None:
-    projector = SessionProjector("context")
-    events = [
-        UserMessage(session_id="context", content="old", sequence=1),
-        # A completed response makes the old conversational group complete.
-        # Projector tests cover the event-to-message transformation separately.
-    ]
-    for event in events:
-        projector.apply(_stored(event))
-    projector.state.messages.extend(
-        [
+    state = SessionState(
+        session_id="context",
+        messages=[
+            {"role": "user", "content": "old"},
             {"role": "assistant", "content": "bye"},
             {"role": "user", "content": "current"},
             {
@@ -191,11 +189,11 @@ def test_context_window_keeps_complete_current_tool_group() -> None:
                 "content": "done",
                 "tool_call_id": "call-1",
             },
-        ]
+        ],
     )
 
     result = build_context(
-        projector.state,
+        state,
         SystemPrompt("system"),
         window=ContextWindow(max_turns=1, max_characters=100),
     )
@@ -214,9 +212,9 @@ def test_context_window_keeps_complete_current_tool_group() -> None:
 
 
 def test_context_window_rejects_user_while_tool_call_is_pending() -> None:
-    projector = SessionProjector("interleaved")
-    projector.state.messages.extend(
-        [
+    state = SessionState(
+        session_id="interleaved",
+        messages=[
             {"role": "user", "content": "ancient"},
             {"role": "assistant", "content": "done"},
             {"role": "user", "content": "start"},
@@ -238,61 +236,63 @@ def test_context_window_rejects_user_while_tool_call_is_pending() -> None:
                 "content": "result",
                 "tool_call_id": "call-1",
             },
-        ]
+        ],
     )
 
     with pytest.raises(ContextIntegrityError, match="user message.*pending"):
         build_context(
-            projector.state,
+            state,
             SystemPrompt("system"),
             window=ContextWindow(max_turns=1, max_characters=1_000),
         )
 
 
 def test_context_window_rejects_unmatched_current_tool_request() -> None:
-    projector = SessionProjector("pending-current")
-    projector.state.messages.extend(
-        [
+    state = SessionState(
+        session_id="pending-current",
+        messages=[
             {"role": "user", "content": "start"},
             {
                 "role": "assistant",
                 "content": "",
                 "tool_calls": [{"id": "call-1", "name": "lookup", "arguments": {}}],
             },
-        ]
+        ],
     )
 
     with pytest.raises(ContextIntegrityError, match="matching results"):
-        build_context(projector.state, SystemPrompt("system"))
+        build_context(state, SystemPrompt("system"))
 
 
 def test_context_window_rejects_orphan_tool_results() -> None:
-    projector = SessionProjector("orphan")
-    projector.state.messages.append(
-        {
-            "role": "tool",
-            "name": "lookup",
-            "content": "result",
-            "tool_call_id": "missing",
-        }
+    state = SessionState(
+        session_id="orphan",
+        messages=[
+            {
+                "role": "tool",
+                "name": "lookup",
+                "content": "result",
+                "tool_call_id": "missing",
+            }
+        ],
     )
 
     with pytest.raises(ContextIntegrityError, match="Orphan tool result"):
-        build_context(projector.state, SystemPrompt("system"))
+        build_context(state, SystemPrompt("system"))
 
 
 def test_context_window_drops_whole_turns_by_character_limit() -> None:
-    projector = SessionProjector("characters")
-    projector.state.messages.extend(
-        [
+    state = SessionState(
+        session_id="characters",
+        messages=[
             {"role": "user", "content": "1234"},
             {"role": "assistant", "content": "5678"},
             {"role": "user", "content": "12345"},
-        ]
+        ],
     )
 
     result = build_context(
-        projector.state,
+        state,
         SystemPrompt("system"),
         window=ContextWindow(max_turns=None, max_characters=5),
     )
@@ -304,17 +304,17 @@ def test_context_window_drops_whole_turns_by_character_limit() -> None:
 
 
 def test_context_window_rejects_current_turn_overflow() -> None:
-    projector = SessionProjector("overflow")
-    projector.state.messages.extend(
-        [
+    state = SessionState(
+        session_id="overflow",
+        messages=[
             {"role": "user", "content": "12345"},
             {"role": "assistant", "content": "67"},
-        ]
+        ],
     )
 
     with pytest.raises(ContextWindowOverflowError) as caught:
         build_context(
-            projector.state,
+            state,
             SystemPrompt("system"),
             window=ContextWindow(max_turns=1, max_characters=6),
         )
@@ -324,7 +324,7 @@ def test_context_window_rejects_current_turn_overflow() -> None:
 
 
 def test_context_window_counts_structured_tool_payloads() -> None:
-    projector = SessionProjector("structured")
+    state = SessionState(session_id="structured")
     old_turn = [
         {"role": "user", "content": "old"},
         {
@@ -345,10 +345,10 @@ def test_context_window_counts_structured_tool_payloads() -> None:
             "tool_call_id": "c",
         },
     ]
-    projector.state.messages.extend([*old_turn, {"role": "user", "content": "now"}])
+    state.messages.extend([*old_turn, {"role": "user", "content": "now"}])
 
     result = build_context(
-        projector.state,
+        state,
         SystemPrompt("system"),
         window=ContextWindow(max_turns=None, max_characters=10),
     )
@@ -356,7 +356,7 @@ def test_context_window_counts_structured_tool_payloads() -> None:
     assert [message["content"] for message in result.messages[1:]] == ["now"]
     assert result.diagnostics.dropped_characters == 41
 
-    projector.state.messages[:] = [
+    state.messages[:] = [
         {"role": "user", "content": "now"},
         {
             "role": "assistant",
@@ -378,7 +378,7 @@ def test_context_window_counts_structured_tool_payloads() -> None:
     ]
     with pytest.raises(ContextWindowOverflowError) as caught:
         build_context(
-            projector.state,
+            state,
             SystemPrompt("system"),
             window=ContextWindow(max_turns=None, max_characters=30),
         )
@@ -506,6 +506,20 @@ class _TextProvider(ModelProvider):
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         self.seen_messages = messages
         yield ModelResponseChunk(delta=self.text)
+
+
+class _RagChunk:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+class _RecordingRag:
+    def __init__(self) -> None:
+        self.queries: list[tuple[str, int]] = []
+
+    async def retrieve(self, query: str, *, top_k: int) -> list[_RagChunk]:
+        self.queries.append((query, top_k))
+        return [_RagChunk("grounded fact")]
 
 
 def _ownership_values(messages: List[Dict[str, Any]]) -> list[str]:
@@ -719,6 +733,55 @@ async def test_runtime_exposes_context_drop_diagnostics() -> None:
     assert diagnostics.dropped_turns == 1
     assert diagnostics.dropped_messages == 2
     assert diagnostics.dropped_characters == 6
+
+
+@pytest.mark.asyncio
+async def test_runtime_rag_reads_latest_user_from_projection_index() -> None:
+    store = InMemoryEventStore()
+    provider = _TextProvider("answer")
+    rag = _RecordingRag()
+    runtime = AgentRuntime(
+        bus=None,
+        store=store,
+        provider=provider,
+        planner=ToolPlanner(executor=lambda _name, _args: _unused_executor()),
+        rag=rag,
+        rag_top_k=3,
+    )
+
+    await runtime.turn("indexed question", session_id="rag")
+
+    assert rag.queries == [("indexed question", 3)]
+    assert provider.seen_messages[0]["content"].startswith("## Relevant context")
+    assert runtime._projectors["rag"].context_index_stats.latest_user_accesses == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_exposes_context_index_stats_without_creating_projectors() -> (
+    None
+):
+    store = InMemoryEventStore()
+    runtime = AgentRuntime(
+        bus=None,
+        store=store,
+        provider=_TextProvider("answer"),
+        planner=ToolPlanner(executor=lambda _name, _args: _unused_executor()),
+    )
+
+    assert runtime.projection_cache_size == 0
+    assert runtime.context_index_stats("missing") is None
+    assert runtime.projection_cache_size == 0
+
+    await runtime.turn("indexed question", session_id="stats")
+    stats = runtime.context_index_stats("stats")
+    assert stats is not None
+    assert stats.full_cold_builds == 1
+    assert stats.suffix_calls == 1
+    with pytest.raises(FrozenInstanceError):
+        setattr(stats, "suffix_calls", 999)
+    repeated = runtime.context_index_stats("stats")
+    assert repeated == stats
+    assert repeated is not stats
 
 
 @pytest.mark.asyncio

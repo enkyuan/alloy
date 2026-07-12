@@ -20,6 +20,7 @@ import type { EventStore } from "@/events/store";
 import { SplitEventCommitter } from "@/events/committer";
 import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
 import { SessionProjector } from "@/sessions/projector";
+import type { ContextIndexStats } from "@/sessions/context-index";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import {
@@ -57,7 +58,6 @@ import {
   assertNoLegacyDeadline,
   assertNonEmptyContextId,
   assertValidDeadline,
-  buildContext,
   normalizePrincipalId,
   snapshotContextMetadata,
   validateContextWindow,
@@ -528,7 +528,7 @@ export class AgentRuntime {
   private projectorFor(sessionId: string): SessionProjector {
     let projector = this.projectors.get(sessionId);
     if (projector === undefined) {
-      projector = new SessionProjector(sessionId, this.metrics);
+      projector = new SessionProjector(sessionId, this.metrics, this.contextWindow);
       this.projectors.set(sessionId, projector);
       this.trimProjectionCache();
     } else {
@@ -606,6 +606,11 @@ export class AgentRuntime {
   contextDiagnostics(sessionId: string): ContextDiagnostics | undefined {
     const diagnostics = this.contextDiagnosticsBySession.get(sessionId);
     return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
+  }
+
+  /** Read index counters without creating a session projector. */
+  contextIndexStats(sessionId: string): Readonly<ContextIndexStats> | undefined {
+    return this.projectors.get(sessionId)?.contextIndexStats;
   }
 
   private async runCoordinated<T>(
@@ -834,12 +839,10 @@ export class AgentRuntime {
         // cold replay of consecutive tool-only iterations.
         await emit({ type: EventType.AGENT_REASONING_STARTED });
 
-        const state = this.projectorFor(sessionId).state;
-        const providerContext = buildContext(
-          state.messages,
+        const projector = this.projectorFor(sessionId);
+        const providerContext = projector.buildProjectedContext(
           this.systemPrompt,
           this.contextWindow,
-          this.metrics,
         );
         this.contextDiagnosticsBySession.set(
           sessionId,

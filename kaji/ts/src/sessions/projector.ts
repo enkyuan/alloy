@@ -1,11 +1,19 @@
 import type { EventStore } from "@/events/store";
 import { validateStoredEvent, type StoredKajiEvent } from "@/events/schemas";
-import { applyEvent, createSessionState, type SessionState } from "@/sessions/replay";
+import {
+  applyEvent,
+  cloneSessionState,
+  createSessionState,
+  type SessionState,
+} from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
+import { ContextIndex, type ContextIndexStats } from "@/sessions/context-index";
+import type { ContextBuildResult, ContextWindow } from "@/runtime/context";
 
 /** Incremental projection that owns one session-local sequence cursor. */
 export class SessionProjector {
-  readonly state: SessionState;
+  private readonly projectionState: SessionState;
+  private readonly contextIndex: ContextIndex;
   lastSequence = 0;
   appliedEvents = 0;
   initialized = false;
@@ -13,8 +21,15 @@ export class SessionProjector {
   constructor(
     readonly sessionId: string,
     private readonly metrics: MetricsSink = NOOP_METRICS,
+    contextWindow?: Readonly<ContextWindow>,
   ) {
-    this.state = createSessionState(sessionId);
+    this.projectionState = createSessionState(sessionId);
+    this.contextIndex = new ContextIndex(this.projectionState, contextWindow);
+  }
+
+  /** Return a deep snapshot; projection state remains privately owned. */
+  get state(): SessionState {
+    return cloneSessionState(this.projectionState);
   }
 
   apply(event: StoredKajiEvent): void {
@@ -29,7 +44,9 @@ export class SessionProjector {
     if (event.sequence !== expected) {
       throw new Error(`Cannot project sequence ${event.sequence}; expected sequence ${expected}`);
     }
-    applyEvent(this.state, event);
+    this.contextIndex.assertProjectionOwned();
+    const messageIndex = applyEvent(this.projectionState, event);
+    this.contextIndex.apply(messageIndex);
     this.lastSequence = event.sequence;
     this.appliedEvents++;
   }
@@ -46,6 +63,19 @@ export class SessionProjector {
       onApplied?.(event);
     }
     this.initialized = true;
+    this.contextIndex.sealColdBuild();
     return events.length;
+  }
+
+  get contextIndexStats(): Readonly<ContextIndexStats> {
+    return this.contextIndex.stats;
+  }
+
+  buildProjectedContext(systemPrompt?: string, window?: ContextWindow): ContextBuildResult {
+    return this.contextIndex.suffix(systemPrompt, window, this.metrics);
+  }
+
+  latestUserContent(): string | undefined {
+    return this.contextIndex.latestUserContent();
   }
 }

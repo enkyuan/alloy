@@ -1,5 +1,8 @@
 """Incremental per-session projection over a sequenced event log."""
 
+from copy import deepcopy
+from typing import Any, Dict, Optional
+
 from kaji.infra.events.replay import SessionState, apply_event
 from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
 from kaji.infra.events.store import EventStore
@@ -8,6 +11,12 @@ from kaji.infra.observability.protocols import (
     NOOP_METRICS,
     record_metric,
 )
+from kaji.runtime.agents.context import (
+    ContextBuildResult,
+    ContextWindow,
+)
+from kaji.runtime.agents.prompts import SystemPrompt
+from kaji.runtime.sessions.context_index import ContextIndex, ContextIndexStats
 
 
 class SessionProjector:
@@ -18,8 +27,10 @@ class SessionProjector:
         session_id: str,
         *,
         metrics_sink: MetricsSink = NOOP_METRICS,
+        context_window: ContextWindow | None = None,
     ) -> None:
-        self.state = SessionState(session_id=session_id)
+        self._state = SessionState(session_id=session_id)
+        self._context_index = ContextIndex(self._state, context_window)
         self.cursor = 0
         self.applied_events = 0
         self.initialized = False
@@ -27,7 +38,12 @@ class SessionProjector:
 
     @property
     def session_id(self) -> str:
-        return self.state.session_id
+        return self._state.session_id
+
+    @property
+    def state(self) -> SessionState:
+        """Return a detached snapshot; projection state remains privately owned."""
+        return deepcopy(self._state)
 
     def apply(self, event: StoredKajiEvent) -> None:
         self._apply_validated(revalidate_stored_event(event))
@@ -40,7 +56,9 @@ class SessionProjector:
             raise ValueError(
                 f"Cannot project sequence {event.sequence}; expected sequence {expected}"
             )
-        apply_event(self.state, event)
+        self._context_index.assert_projection_owned()
+        message_index = apply_event(self._state, event)
+        self._context_index.apply(message_index)
         self.cursor = event.sequence
         self.applied_events += 1
 
@@ -57,4 +75,29 @@ class SessionProjector:
         for event in events:
             self._apply_validated(event)
         self.initialized = True
+        self._context_index.seal_cold_build()
         return len(events)
+
+    @property
+    def context_index_stats(self) -> ContextIndexStats:
+        """Return an immutable snapshot of internal index operation counts."""
+        return self._context_index.stats
+
+    def build_projected_context(
+        self,
+        prompt: SystemPrompt,
+        variables: Optional[Dict[str, Any]] = None,
+        *,
+        window: ContextWindow | None = None,
+    ) -> ContextBuildResult:
+        """Build provider context from the projection-owned bounded suffix."""
+        return self._context_index.suffix(
+            prompt,
+            variables,
+            window=window,
+            metrics_sink=self._metrics,
+        )
+
+    def latest_user_content(self) -> str | None:
+        """Return the indexed latest user message without scanning history."""
+        return self._context_index.latest_user_content()

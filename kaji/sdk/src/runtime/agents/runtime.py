@@ -24,7 +24,6 @@ from kaji.runtime.agents.context import (
     ContextWindow,
     MissingToolIdentityError,
     TurnContext,
-    build_context,
 )
 from kaji.runtime.agents.approval import ApprovalHandler, LegacyApprovalCallback
 from kaji.runtime.agents.planner import (
@@ -69,6 +68,7 @@ from kaji.infra.observability.protocols import (
 )
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import TokenMetrics
+from kaji.runtime.sessions.context_index import ContextIndexStats
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
@@ -235,7 +235,11 @@ class AgentRuntime:
         self.turn_limits = turn_execution_limits or TurnExecutionLimits()
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
-        self.context_window = context_window or ContextWindow()
+        resolved_context_window = context_window or ContextWindow()
+        self.context_window = ContextWindow(
+            max_turns=resolved_context_window.max_turns,
+            max_characters=resolved_context_window.max_characters,
+        )
         store_capacity = getattr(store, "max_sessions", 1_000)
         self._projection_cache_capacity = (
             store_capacity
@@ -553,7 +557,11 @@ class AgentRuntime:
     def _projector_for(self, session_id: str) -> SessionProjector:
         projector = self._projectors.get(session_id)
         if projector is None:
-            projector = SessionProjector(session_id, metrics_sink=self._metrics)
+            projector = SessionProjector(
+                session_id,
+                metrics_sink=self._metrics,
+                context_window=self.context_window,
+            )
             self._projectors[session_id] = projector
             self._trim_projection_cache()
         else:
@@ -662,6 +670,11 @@ class AgentRuntime:
     def context_diagnostics(self, session_id: str) -> ContextDiagnostics | None:
         """Return diagnostics from the latest provider context for a session."""
         return self._context_diagnostics.get(session_id)
+
+    def context_index_stats(self, session_id: str) -> ContextIndexStats | None:
+        """Return index counters without creating a session projector."""
+        projector = self._projectors.get(session_id)
+        return None if projector is None else projector.context_index_stats
 
     async def _emit(self, event: NewKajiEvent) -> StoredKajiEvent:
         return await self.append_event(event)
@@ -1057,20 +1070,13 @@ class AgentRuntime:
             await emit_turn_event(AgentReasoningStarted(session_id=session_id))
 
             # 1. Reuse the projection advanced by each committed event.
-            state = self._projector_for(session_id).state
+            projector = self._projector_for(session_id)
 
             # 1a. RAG: retrieve chunks relevant to the latest user message and
             # prepend them to the system prompt so the model has grounded context.
             rag_system_prefix = ""
             if self._rag is not None:
-                last_user = next(
-                    (
-                        m["content"]
-                        for m in reversed(state.messages)
-                        if m["role"] == "user"
-                    ),
-                    None,
-                )
+                last_user = projector.latest_user_content()
                 if last_user:
                     try:
                         chunks = await self._rag.retrieve(
@@ -1092,11 +1098,9 @@ class AgentRuntime:
                 if rag_system_prefix
                 else self.prompt
             )
-            context = build_context(
-                state,
+            context = projector.build_projected_context(
                 prompt_for_turn,
                 window=self.context_window,
-                metrics_sink=self._metrics,
             )
             self._context_diagnostics[session_id] = context.diagnostics
             messages = context.messages

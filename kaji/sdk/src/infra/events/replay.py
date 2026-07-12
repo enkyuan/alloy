@@ -130,15 +130,21 @@ def replay_legacy_session(
     return state
 
 
-def apply_event(state: SessionState, event: StoredKajiEvent) -> None:
+def apply_event(
+    state: SessionState,
+    event: StoredKajiEvent,
+) -> int | None:
     """Apply one persisted event to an existing session projection in place."""
     stored = require_stored_event(event)
     if stored.session_id != state.session_id:
         raise ValueError("Cannot project events from mixed sessions")
-    _apply_event(state, stored)
+    return _apply_event(state, stored)
 
 
-def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> None:
+def _apply_event(
+    state: SessionState,
+    event: KajiEvent | StoredKajiEvent,
+) -> int | None:
     if event.type == EventType.SESSION_CREATED:
         state.is_active = True
     elif event.type == EventType.SESSION_CLOSED:
@@ -150,13 +156,16 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
     elif event.type == EventType.USER_MESSAGE:
         state.messages.append({"role": "user", "content": event.content})
         state._last_assistant_index = None
+        return len(state.messages) - 1
     elif event.type == EventType.AGENT_MESSAGE_COMPLETED:
         state.messages.append({"role": "assistant", "content": event.content})
         state._last_assistant_index = len(state.messages) - 1
+        return state._last_assistant_index
     elif event.type == EventType.TRANSCRIPT_FINAL:
         # For voice sessions, final transcript acts as a user message.
         state.messages.append({"role": "user", "content": event.text})
         state._last_assistant_index = None
+        return len(state.messages) - 1
     elif event.type == EventType.TOOL_CALL_REQUESTED:
         # Synthesise an assistant turn when the model produced tool calls with
         # no text. Retaining its index makes repeated one-event application O(1).
@@ -173,6 +182,7 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
                 "arguments": deepcopy(event.tool_args),
             }
         )
+        return state._last_assistant_index
     elif event.type == EventType.TOOL_APPROVAL_REQUESTED:
         assert event.turn_id is not None
         state.pending_approvals.add(
@@ -212,6 +222,7 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
                 "tool_call_id": event.tool_call_id,
             }
         )
+        return len(state.messages) - 1
     elif event.type == EventType.TOOL_CALL_FAILED:
         if event.turn_id is not None:
             state.pending_approvals.discard(
@@ -231,3 +242,5 @@ def _apply_event(state: SessionState, event: KajiEvent | StoredKajiEvent) -> Non
                 "tool_call_id": event.tool_call_id,
             }
         )
+        return len(state.messages) - 1
+    return None

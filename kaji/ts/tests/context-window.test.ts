@@ -8,6 +8,7 @@ import type { ProviderMessage } from "@/providers/base";
 import { buildContext, ContextIntegrityError, ContextWindowOverflowError } from "@/runtime/context";
 import { AgentRuntime } from "@/runtime/runtime";
 import { SessionProjector } from "@/sessions/projector";
+import type { Message } from "@/sessions/replay";
 import type { ToolSpec } from "@/tools/registry";
 
 function stored(input: Record<string, unknown>) {
@@ -28,9 +29,8 @@ function nestedToolArgs(event: unknown): { nested: { value: string } } {
 }
 
 describe("SessionProjector", () => {
-  it("applies 10,000 events exactly once without replacing the message array", () => {
+  it("applies 10,000 events while indexing each tool call once", () => {
     const projector = new SessionProjector("projection-10k");
-    const messages = projector.state.messages;
 
     let sequence = 0;
     const apply = (input: Record<string, unknown>) => {
@@ -56,11 +56,16 @@ describe("SessionProjector", () => {
       apply({ type: EventType.AGENT_MESSAGE_COMPLETED, content: `done-${batch}` });
     }
 
-    expect(projector.state.messages).toBe(messages);
     expect(projector.lastSequence).toBe(10_000);
     expect(projector.appliedEvents).toBe(10_000);
-    expect(projector.state.messages).toHaveLength(8_000);
-    expect(projector.state.messages.at(-1)?.content).toBe("done-1999");
+    const snapshot = projector.state;
+    expect(snapshot.messages).toHaveLength(8_000);
+    expect(snapshot.messages.at(-1)?.content).toBe("done-1999");
+    expect(projector.contextIndexStats).toMatchObject({
+      coldEvents: 10_000,
+      scannedToolCalls: 2_000,
+      persistentCopiedPayloadBytes: 0,
+    });
   });
 
   it("separates consecutive batches while grouping parallel calls", () => {
@@ -136,8 +141,7 @@ describe("SessionProjector", () => {
 
 describe("complete-turn context window", () => {
   it("keeps a current assistant/tool group intact", () => {
-    const projector = new SessionProjector("context");
-    projector.state.messages.push(
+    const messages: Message[] = [
       { role: "user", content: "old" },
       { role: "assistant", content: "bye" },
       { role: "user", content: "current" },
@@ -147,9 +151,9 @@ describe("complete-turn context window", () => {
         toolCalls: [{ id: "call-1", name: "lookup", args: {} }],
       },
       { role: "tool", content: "done", name: "lookup", toolCallId: "call-1" },
-    );
+    ];
 
-    const result = buildContext(projector.state.messages, "system", {
+    const result = buildContext(messages, "system", {
       maxTurns: 1,
       maxCharacters: 100,
     });
@@ -170,8 +174,7 @@ describe("complete-turn context window", () => {
   });
 
   it("rejects a new user while a tool call is pending", () => {
-    const projector = new SessionProjector("interleaved");
-    projector.state.messages.push(
+    const messages: Message[] = [
       { role: "user", content: "ancient" },
       { role: "assistant", content: "done" },
       { role: "user", content: "start" },
@@ -182,10 +185,10 @@ describe("complete-turn context window", () => {
       },
       { role: "user", content: "interrupt" },
       { role: "tool", content: "result", name: "lookup", toolCallId: "call-1" },
-    );
+    ];
 
     expect(() =>
-      buildContext(projector.state.messages, "system", {
+      buildContext(messages, "system", {
         maxTurns: 1,
         maxCharacters: 1_000,
       }),
@@ -212,14 +215,13 @@ describe("complete-turn context window", () => {
   });
 
   it("drops whole turns by character limit", () => {
-    const projector = new SessionProjector("characters");
-    projector.state.messages.push(
+    const messages: Message[] = [
       { role: "user", content: "1234" },
       { role: "assistant", content: "5678" },
       { role: "user", content: "12345" },
-    );
+    ];
 
-    const result = buildContext(projector.state.messages, "system", {
+    const result = buildContext(messages, "system", {
       maxTurns: null,
       maxCharacters: 5,
     });
@@ -233,14 +235,13 @@ describe("complete-turn context window", () => {
   });
 
   it("throws when the current complete turn exceeds the character cap", () => {
-    const projector = new SessionProjector("overflow");
-    projector.state.messages.push(
+    const messages: Message[] = [
       { role: "user", content: "12345" },
       { role: "assistant", content: "67" },
-    );
+    ];
 
     try {
-      buildContext(projector.state.messages, "system", {
+      buildContext(messages, "system", {
         maxTurns: 1,
         maxCharacters: 6,
       });
@@ -253,8 +254,7 @@ describe("complete-turn context window", () => {
   });
 
   it("counts structured tool names, ids, and canonical JSON arguments", () => {
-    const projector = new SessionProjector("structured");
-    projector.state.messages.push(
+    const messages: Message[] = [
       { role: "user", content: "old" },
       {
         role: "assistant",
@@ -263,18 +263,18 @@ describe("complete-turn context window", () => {
       },
       { role: "tool", content: "ok", name: "lookup", toolCallId: "c" },
       { role: "user", content: "now" },
-    );
+    ];
 
-    const result = buildContext(projector.state.messages, "system", {
+    const result = buildContext(messages, "system", {
       maxTurns: null,
       maxCharacters: 10,
     });
     expect(result.messages.slice(1).map((message) => message.content)).toEqual(["now"]);
     expect(result.diagnostics.droppedCharacters).toBe(41);
 
-    projector.state.messages.splice(
+    messages.splice(
       0,
-      projector.state.messages.length,
+      messages.length,
       { role: "user", content: "now" },
       {
         role: "assistant",
@@ -284,7 +284,7 @@ describe("complete-turn context window", () => {
       { role: "tool", content: "", name: "n", toolCallId: "c" },
     );
     expect(() =>
-      buildContext(projector.state.messages, "system", {
+      buildContext(messages, "system", {
         maxTurns: null,
         maxCharacters: 30,
       }),
@@ -527,6 +527,30 @@ describe("AgentRuntime incremental projection", () => {
     }
 
     expect(runtime.projectionCacheSize).toBe(2);
+  });
+
+  it("exposes immutable context-index stats without creating projectors", async () => {
+    const store = new InMemoryEventStore();
+    const runtime = new AgentRuntime({
+      provider: textProvider("answer"),
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
+
+    expect(runtime.projectionCacheSize).toBe(0);
+    expect(runtime.contextIndexStats("missing")).toBeUndefined();
+    expect(runtime.projectionCacheSize).toBe(0);
+
+    await runtime.turn("indexed question", { sessionId: "stats" });
+    const stats = runtime.contextIndexStats("stats")!;
+    expect(stats).toMatchObject({ fullColdBuilds: 1, suffixCalls: 1 });
+    expect(Object.isFrozen(stats)).toBe(true);
+    expect(() => {
+      (stats as { suffixCalls: number }).suffixCalls = 999;
+    }).toThrow();
+    const repeated = runtime.contextIndexStats("stats");
+    expect(repeated).toEqual(stats);
+    expect(repeated).not.toBe(stats);
   });
 
   it("isolates store input, append results, and reads", async () => {

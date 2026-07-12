@@ -68,7 +68,17 @@ export interface SessionState {
   totalCostUsd: number;
 }
 
-const lastAssistants = new WeakMap<SessionState, Message>();
+const lastAssistantIndexes = new WeakMap<SessionState, number>();
+
+/** Deep-clone a state value while preserving its hidden replay cursor. */
+export function cloneSessionState(state: SessionState): SessionState {
+  const snapshot = structuredClone(state);
+  const lastAssistantIndex = lastAssistantIndexes.get(state);
+  if (lastAssistantIndex !== undefined) {
+    lastAssistantIndexes.set(snapshot, lastAssistantIndex);
+  }
+  return snapshot;
+}
 
 /** Create an empty projection for incremental application. */
 export function createSessionState(sessionId: string): SessionState {
@@ -136,14 +146,14 @@ export function replayLegacySession(events: readonly KajiEvent[]): SessionState 
 }
 
 /** Apply one persisted event to an existing session projection in place. */
-export function applyEvent(state: SessionState, event: StoredKajiEvent): void {
+export function applyEvent(state: SessionState, event: StoredKajiEvent): number | null {
   if (event.session_id !== state.sessionId) {
     throw new Error("Cannot project events from mixed sessions");
   }
-  applyKajiEvent(state, event);
+  return applyKajiEvent(state, event);
 }
 
-function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent): void {
+function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent): number | null {
   switch (event.type) {
     case EventType.SESSION_CREATED:
       state.isActive = true;
@@ -154,17 +164,17 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
     case EventType.AGENT_REASONING_STARTED:
       // One explicit provider-output/tool batch starts here. Parallel calls
       // share the following assistant; the next iteration gets a fresh one.
-      lastAssistants.delete(state);
+      lastAssistantIndexes.delete(state);
       break;
     case EventType.USER_MESSAGE:
       state.messages.push({ role: "user", content: event.content });
-      lastAssistants.delete(state);
-      break;
+      lastAssistantIndexes.delete(state);
+      return state.messages.length - 1;
     case EventType.AGENT_MESSAGE_COMPLETED:
       {
         const lastAssistant = { role: "assistant", content: event.content } as Message;
         state.messages.push(lastAssistant);
-        lastAssistants.set(state, lastAssistant);
+        lastAssistantIndexes.set(state, state.messages.length - 1);
       }
       if (event.tokens) {
         state.totalTokens.input += event.tokens.input;
@@ -173,28 +183,28 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
       if (event.cost_usd) {
         state.totalCostUsd += event.cost_usd;
       }
-      break;
+      return state.messages.length - 1;
     case EventType.TRANSCRIPT_FINAL:
       // For voice sessions, the final transcript acts as a user message.
       state.messages.push({ role: "user", content: event.text });
-      lastAssistants.delete(state);
-      break;
-    case EventType.TOOL_CALL_REQUESTED:
-      {
-        let lastAssistant = lastAssistants.get(state);
-        if (lastAssistant === undefined) {
-          lastAssistant = { role: "assistant", content: "", toolCalls: [] };
-          state.messages.push(lastAssistant);
-          lastAssistants.set(state, lastAssistant);
-        }
-        lastAssistant.toolCalls ??= [];
-        lastAssistant.toolCalls.push({
-          id: event.tool_call_id,
-          name: event.tool_name,
-          args: structuredClone(event.tool_args),
-        });
+      lastAssistantIndexes.delete(state);
+      return state.messages.length - 1;
+    case EventType.TOOL_CALL_REQUESTED: {
+      let lastAssistantIndex = lastAssistantIndexes.get(state);
+      if (lastAssistantIndex === undefined) {
+        state.messages.push({ role: "assistant", content: "", toolCalls: [] });
+        lastAssistantIndex = state.messages.length - 1;
+        lastAssistantIndexes.set(state, lastAssistantIndex);
       }
-      break;
+      const lastAssistant = state.messages[lastAssistantIndex]!;
+      lastAssistant.toolCalls ??= [];
+      lastAssistant.toolCalls.push({
+        id: event.tool_call_id,
+        name: event.tool_name,
+        args: structuredClone(event.tool_args),
+      });
+      return lastAssistantIndex;
+    }
     case EventType.TOOL_CALL_COMPLETED:
       state.messages.push({
         role: "tool",
@@ -205,7 +215,7 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
         // not match the originating request.
         toolCallId: event.tool_call_id,
       });
-      break;
+      return state.messages.length - 1;
     case EventType.TOOL_CALL_FAILED:
       // Record the failure as a tool message so the agent loop sees the error
       // in history and can react, instead of re-requesting the same tool on
@@ -221,7 +231,7 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
           approvalKey(event.turn_id, event.tool_call_id, event.tool_name),
         );
       }
-      break;
+      return state.messages.length - 1;
     case EventType.TOOL_APPROVAL_REQUESTED:
       {
         const key = approvalKey(event.turn_id, event.tool_call_id, event.tool_name);
@@ -250,6 +260,7 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
     default:
       break;
   }
+  return null;
 }
 
 /** Compatibility only: new writes are always sequenced by the store. */
