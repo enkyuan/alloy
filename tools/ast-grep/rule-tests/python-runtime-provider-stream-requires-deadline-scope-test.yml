@@ -1,0 +1,20 @@
+id: python-runtime-provider-stream-requires-deadline-scope
+valid:
+  - |
+      async def run(self):
+          async for chunk in deadline_scope.consume(self.provider.generate_stream(messages)):
+              yield chunk
+  - |
+      async def run(self):
+          stream = self.provider.generate_stream(messages)
+          async for chunk in provider_scope.consume(stream):
+              yield chunk
+invalid:
+  - |
+      async def run(self):
+          async for chunk in self.provider.generate_stream(messages):
+              yield chunk
+  - |
+      async def run(self):
+          async for delta in self.provider.generate_stream(messages, tools=tools):
+              collect(delta)

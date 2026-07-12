@@ -1,0 +1,71 @@
+id: ts-runtime-no-stream-string-concatenation
+valid:
+  - |
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        const parts: string[] = [];
+        for await (const chunk of deadlineScope.consume(this.provider.generateStream(messages))) {
+          parts.push(chunk.text);
+        }
+      }
+  - |
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        byteCount += encodedSize;
+        for await (const chunk of this.provider.generateStream(messages)) {
+          accumulator.append(chunk.text);
+        }
+      }
+  - |
+      const providerStream = this.provider.generateStream(messages);
+      for await (const chunk of deadlineScope.consume(providerStream)) {
+        accumulator.append(chunk.text);
+      }
+  - |
+      const providerStream = this.provider.generateStream(messages);
+      for await (const chunk of deadlineScope.consume(cachedStream)) {
+        const rebuilt = buildContext(history);
+        response += chunk.text;
+      }
+  - |
+      for (const event of events) {
+        response += event.text;
+        const providerStream = this.provider.generateStream(messages);
+      }
+  - |
+      const providerStream: AsyncIterable<ModelResponseChunk> = this.provider.generateStream(messages);
+      for await (const chunk of deadlineScope.consume(providerStream)) {
+        accumulator.append(chunk.text);
+      }
+invalid:
+  - |
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        for await (const chunk of this.provider.generateStream(messages)) {
+          response += chunk.text;
+        }
+      }
+  - |
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        let content = "";
+        for await (const chunk of deadlineScope.consume(this.provider.generateStream(messages))) {
+          content += chunk.text;
+        }
+      }
+  - |
+      for await (const chunk of this.provider.generateStream(messages)) {
+        text += chunk.text;
+      }
+  - |
+      const providerStream = this.provider.generateStream(messages);
+      for await (const chunk of deadlineScope.consume(providerStream)) {
+        const rebuilt = buildContext(history);
+        response += chunk.text;
+      }
+  - |
+      const providerStream: AsyncIterable<ModelResponseChunk> = this.provider.generateStream(messages);
+      for await (const chunk of providerStream) {
+        response += chunk.text;
+      }
+  - |
+      const providerStream: AsyncIterable<ModelResponseChunk> = this.provider.generateStream(messages);
+      for await (const chunk of deadlineScope.consume(providerStream)) {
+        content += chunk.text;
+      }

@@ -1,0 +1,29 @@
+id: ts-release-command-runner-only
+valid:
+  - |
+      import { runCommand } from "./command.js";
+      await runCommand("git", ["status"]);
+  - |
+      await runner.run(command, { timeoutMs: budget });
+  - |
+      import { spawn as spawnWorker } from "./worker-pool.js";
+      spawnWorker(job);
+  - |
+      const workerPool = await import("./worker-pool.js");
+      workerPool.spawn(job);
+invalid:
+  - |
+      import { spawn } from "node:child_process";
+      spawn("git", ["status"]);
+  - |
+      import * as childProcess from "node:child_process";
+      childProcess.execFileSync("git", ["status"]);
+  - |
+      import { spawn as runChild } from 'node:child_process';
+      runChild("git", ["status"]);
+  - |
+      const childProcess = await import("node:child_process");
+      childProcess.spawn("git", ["status"]);
+  - |
+      const { execFileSync: runChild } = await import("child_process");
+      runChild("git", ["status"]);

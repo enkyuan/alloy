@@ -1,0 +1,55 @@
+id: python-runtime-no-stream-string-concatenation
+language: Python
+severity: error
+message: Accumulate provider text in the bounded RuntimeStreamAccumulator.
+files:
+  - "kaji/sdk/src/runtime/agents/runtime.py"
+rule:
+  all:
+    - any:
+        - pattern: response += $DELTA
+        - pattern: content += $DELTA
+        - pattern: text += $DELTA
+    - inside:
+        any:
+          - pattern:
+              context: |
+                async for $CHUNK in self.provider.generate_stream($$$ARGS):
+                    $$$BODY
+              selector: for_statement
+          - pattern:
+              context: |
+                async for $CHUNK in $SCOPE.consume(self.provider.generate_stream($$$ARGS)):
+                    $$$BODY
+              selector: for_statement
+          - all:
+              - pattern:
+                  context: |
+                    async for $CHUNK in $STREAM:
+                        $$$BODY
+                  selector: for_statement
+              - follows:
+                  any:
+                    - pattern:
+                        context: $STREAM = self.provider.generate_stream($$$ARGS)
+                        selector: expression_statement
+                    - pattern:
+                        context: "$STREAM: $TYPE = self.provider.generate_stream($$$ARGS)"
+                        selector: expression_statement
+                  stopBy: end
+          - all:
+              - pattern:
+                  context: |
+                    async for $CHUNK in $SCOPE.consume($STREAM):
+                        $$$BODY
+                  selector: for_statement
+              - follows:
+                  any:
+                    - pattern:
+                        context: $STREAM = self.provider.generate_stream($$$ARGS)
+                        selector: expression_statement
+                    - pattern:
+                        context: "$STREAM: $TYPE = self.provider.generate_stream($$$ARGS)"
+                        selector: expression_statement
+                  stopBy: end
+        stopBy: end

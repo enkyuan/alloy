@@ -1,0 +1,11 @@
+id: python-sdk-no-service-imports
+valid:
+  - |
+      from kaji.runtime.agents import Agent
+  - |
+      import httpx
+invalid:
+  - |
+      from fastapi import FastAPI
+  - |
+      import sqlalchemy

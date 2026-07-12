@@ -1,0 +1,47 @@
+id: python-events-no-untyped-durable-result
+valid:
+  - |
+      class Completed(BaseEvent):
+          result: JsonValue
+  - |
+      class Scratch:
+          result: Any
+  - |
+      class Completed(BaseEvent):
+          result: JsonValue | None
+  - |
+      class Completed(BaseEvent):
+          result: Optional[JsonValue]
+  - |
+      class Completed(AuditMixin, BaseEvent):
+          result: JsonValue
+  - |
+      class Scratch(AuditMixin):
+          event_type = BaseEvent
+          result: Any
+  - |
+      class Scratch(AuditMixin, EventBase):
+          result: Optional[Any]
+invalid:
+  - |
+      class Completed(BaseEvent):
+          result: Any
+  - |
+      class Failed(BaseEvent):
+          message: str
+          result: Any
+  - |
+      class Completed(BaseEvent):
+          result: Any | None
+  - |
+      class Completed(BaseEvent):
+          result: Optional[Any]
+  - |
+      class Completed(BaseEvent):
+          result: typing.Any
+  - |
+      class Completed(AuditMixin, BaseEvent):
+          result: Any
+  - |
+      class Completed(AuditMixin, BaseEvent, Serializable):
+          result: Optional[Any]

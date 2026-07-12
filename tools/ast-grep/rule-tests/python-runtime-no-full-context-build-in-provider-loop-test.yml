@@ -1,0 +1,68 @@
+id: python-runtime-no-full-context-build-in-provider-loop
+valid:
+  - |
+      context = build_context(events)
+      for event in events:
+          consume(event)
+  - |
+      for iteration in range(max_iterations):
+          context = projector.build_projected_context(state)
+          async for chunk in deadline_scope.consume(self.provider.generate_stream(context)):
+              yield chunk
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          accumulator.append(chunk.text)
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(cached_stream):
+          rebuilt = build_context(history)
+          response += chunk.text
+  - |
+      for event in events:
+          rebuilt = build_context(history)
+          provider_stream = self.provider.generate_stream(messages)
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          accumulator.append(chunk.text)
+invalid:
+  - |
+      for iteration in range(max_iterations):
+          context = build_context(events)
+          async for chunk in deadline_scope.consume(self.provider.generate_stream(context)):
+              yield chunk
+  - |
+      for iteration in range(max_iterations):
+          messages = build_context_from_messages(history)
+          async for chunk in self.provider.generate_stream(messages):
+              yield chunk
+  - |
+      async for chunk in self.provider.generate_stream(messages):
+          rebuilt = build_messages(history)
+          consume(chunk, rebuilt)
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          rebuilt = build_context(history)
+          response += chunk.text
+  - |
+      for iteration in range(max_iterations):
+          provider_stream = self.provider.generate_stream(messages)
+          rebuilt = build_context(history)
+          async for chunk in deadline_scope.consume(provider_stream):
+              yield chunk
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in provider_stream:
+          rebuilt = build_context(history)
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          rebuilt = build_context_from_messages(history)
+  - |
+      for iteration in range(max_iterations):
+          provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+          rebuilt = build_messages(history)
+          async for chunk in deadline_scope.consume(provider_stream):
+              yield chunk

@@ -1,0 +1,109 @@
+id: ts-runtime-no-full-context-build-in-provider-loop
+language: TypeScript
+severity: error
+message: Runtime provider iterations must use projection-indexed context, not full-scan helpers.
+files:
+  - "kaji/ts/src/runtime/runtime.ts"
+rule:
+  all:
+    - any:
+        - pattern: buildContext($$$CONTEXT_ARGS)
+        - pattern: buildContextFromMessages($$$CONTEXT_ARGS)
+        - pattern: buildMessages($$$CONTEXT_ARGS)
+    - inside:
+        any:
+          - pattern:
+              context: |
+                for await (const $CHUNK of this.provider.generateStream($$$PROVIDER_ARGS)) {
+                  $$$BODY
+                }
+              selector: for_in_statement
+          - pattern:
+              context: |
+                for await (const $CHUNK of $SCOPE.consume(this.provider.generateStream($$$PROVIDER_ARGS))) {
+                  $$$BODY
+                }
+              selector: for_in_statement
+          - all:
+              - any:
+                  - kind: for_statement
+                  - kind: for_in_statement
+              - has:
+                  any:
+                    - pattern:
+                        context: |
+                          for await (const $CHUNK of this.provider.generateStream($$$PROVIDER_ARGS)) {
+                            $$$BODY
+                          }
+                        selector: for_in_statement
+                    - pattern:
+                        context: |
+                          for await (const $CHUNK of $SCOPE.consume(this.provider.generateStream($$$PROVIDER_ARGS))) {
+                            $$$BODY
+                          }
+                        selector: for_in_statement
+                  stopBy: end
+          - all:
+              - any:
+                  - kind: for_statement
+                  - kind: for_in_statement
+              - has:
+                  any:
+                    - pattern: const $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: let $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: var $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: "const $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "let $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "var $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                  stopBy: end
+              - has:
+                  any:
+                    - pattern:
+                        context: |
+                          for await (const $CHUNK of $STREAM) {
+                            $$$BODY
+                          }
+                        selector: for_in_statement
+                    - pattern:
+                        context: |
+                          for await (const $CHUNK of $SCOPE.consume($STREAM)) {
+                            $$$BODY
+                          }
+                        selector: for_in_statement
+                  stopBy: end
+          - all:
+              - pattern:
+                  context: |
+                    for await (const $CHUNK of $STREAM) {
+                      $$$BODY
+                    }
+                  selector: for_in_statement
+              - follows:
+                  any:
+                    - pattern: const $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: let $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: var $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: "const $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "let $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "var $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                  stopBy: end
+          - all:
+              - pattern:
+                  context: |
+                    for await (const $CHUNK of $SCOPE.consume($STREAM)) {
+                      $$$BODY
+                    }
+                  selector: for_in_statement
+              - follows:
+                  any:
+                    - pattern: const $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: let $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: var $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                    - pattern: "const $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "let $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: "var $STREAM: $TYPE = this.provider.generateStream($$$PROVIDER_ARGS)"
+                    - pattern: $STREAM = this.provider.generateStream($$$PROVIDER_ARGS)
+                  stopBy: end
+        stopBy: end

@@ -1,0 +1,11 @@
+id: python-core-no-upward-imports
+valid:
+  - |
+      from kaji.core.errors import KajiError
+  - |
+      import hashlib
+invalid:
+  - |
+      from kaji.runtime.agents import Agent
+  - |
+      import redis.asyncio

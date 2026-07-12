@@ -1,0 +1,14 @@
+id: python-release-no-bare-popen-wait
+language: Python
+severity: error
+message: Popen waits require a timeout and the centralized terminate/kill/reap path.
+files:
+  - "kaji/scripts/**/*.py"
+rule:
+  any:
+    - pattern: process.wait()
+    - pattern: proc.wait()
+    - pattern: child.wait()
+    - pattern: self.process.wait()
+    - pattern: self.proc.wait()
+    - pattern: self.child.wait()

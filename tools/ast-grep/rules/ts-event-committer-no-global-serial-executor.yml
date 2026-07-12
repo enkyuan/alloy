@@ -1,0 +1,26 @@
+id: ts-event-committer-no-global-serial-executor
+language: TypeScript
+severity: error
+message: Event committers must not share a module-global SerialExecutor across sessions.
+files:
+  - "kaji/ts/src/events/committer.ts"
+rule:
+  any:
+    - all:
+        - any:
+            - pattern: const $SERIAL = new SerialExecutor()
+            - pattern: let $SERIAL = new SerialExecutor()
+            - pattern: var $SERIAL = new SerialExecutor()
+            - pattern: "const $SERIAL: SerialExecutor = new SerialExecutor()"
+            - pattern: "let $SERIAL: SerialExecutor = new SerialExecutor()"
+            - pattern: "var $SERIAL: SerialExecutor = new SerialExecutor()"
+        - not:
+            inside:
+              kind: statement_block
+              stopBy: end
+    - all:
+        - kind: public_field_definition
+        - regex: '\bstatic\b'
+        - has:
+            pattern: new SerialExecutor()
+            stopBy: end

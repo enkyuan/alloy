@@ -1,0 +1,11 @@
+id: ts-no-provider-value-imports
+valid:
+  - |
+      import type OpenAI from "openai";
+  - |
+      const { default: OpenAI } = await import("openai");
+invalid:
+  - |
+      import OpenAI from "openai";
+  - |
+      import { Anthropic } from "@anthropic-ai/sdk";

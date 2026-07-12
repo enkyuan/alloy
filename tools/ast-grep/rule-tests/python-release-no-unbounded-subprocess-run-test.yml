@@ -1,0 +1,11 @@
+id: python-release-no-unbounded-subprocess-run
+valid:
+  - |
+      result = run_checked(["git", "status"], timeout_s=30)
+  - |
+      result = process_runner.run_checked(command, timeout_s=budget)
+invalid:
+  - |
+      result = subprocess.run(["git", "status"])
+  - |
+      subprocess.run(command, check=True, timeout=30)

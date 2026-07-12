@@ -1,0 +1,21 @@
+id: python-provider-no-tool-argument-string-concatenation
+valid:
+  - |
+      for fragment in fragments:
+          arguments.append(fragment)
+  - |
+      while reader.has_data():
+          byte_count += reader.read_size()
+invalid:
+  - |
+      for fragment in fragments:
+          call["arguments"] += fragment
+  - |
+      while reader.has_data():
+          args_raw = args_raw + reader.read()
+  - |
+      for fragment in fragments:
+          args = args + fragment
+  - |
+      for fragment in fragments:
+          call["args"] = call["args"] + fragment

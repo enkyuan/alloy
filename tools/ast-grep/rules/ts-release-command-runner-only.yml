@@ -1,0 +1,32 @@
+id: ts-release-command-runner-only
+language: TypeScript
+severity: error
+message: TypeScript release scripts must execute commands through scripts/command.ts.
+files:
+  - "kaji/ts/scripts/**/*.ts"
+  - "kaji/ts/scripts/**/*.mts"
+  - "kaji/ts/scripts/**/*.cts"
+ignores:
+  - "kaji/ts/scripts/command.ts"
+rule:
+  any:
+    - all:
+        - kind: import_statement
+        - regex: '(?:\b(?:execFileSync|spawnSync|execFile|spawn)\b|^import\s+\*\s+as\b)'
+        - regex: 'from\s+["''](?:node:)?child_process["'']'
+    - pattern: execFileSync($$$ARGS)
+    - pattern: spawnSync($$$ARGS)
+    - pattern: execFile($$$ARGS)
+    - pattern: spawn($$$ARGS)
+    - pattern: childProcess.execFileSync($$$ARGS)
+    - pattern: childProcess.spawnSync($$$ARGS)
+    - pattern: childProcess.execFile($$$ARGS)
+    - pattern: childProcess.spawn($$$ARGS)
+    - pattern: child_process.execFileSync($$$ARGS)
+    - pattern: child_process.spawnSync($$$ARGS)
+    - pattern: child_process.execFile($$$ARGS)
+    - pattern: child_process.spawn($$$ARGS)
+    - pattern: require("node:child_process")
+    - pattern: require("child_process")
+    - pattern: import("node:child_process")
+    - pattern: import("child_process")

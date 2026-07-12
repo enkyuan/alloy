@@ -1,0 +1,28 @@
+id: python-provider-no-tool-argument-string-concatenation
+language: Python
+severity: error
+message: Accumulate streamed tool arguments in LinearStringParts, never repeated string concatenation.
+files:
+  - "kaji/sdk/src/runtime/providers/openai.py"
+  - "kaji/sdk/src/runtime/providers/anthropic.py"
+  - "kaji/sdk/src/runtime/providers/kimi.py"
+rule:
+  all:
+    - any:
+        - pattern: arguments += $FRAGMENT
+        - pattern: args += $FRAGMENT
+        - pattern: args_raw += $FRAGMENT
+        - pattern: raw_arguments += $FRAGMENT
+        - pattern: $CALL["arguments"] += $FRAGMENT
+        - pattern: $CALL["args"] += $FRAGMENT
+        - pattern: arguments = $BASE + $FRAGMENT
+        - pattern: args = $BASE + $FRAGMENT
+        - pattern: args_raw = $BASE + $FRAGMENT
+        - pattern: raw_arguments = $BASE + $FRAGMENT
+        - pattern: $CALL["arguments"] = $BASE + $FRAGMENT
+        - pattern: $CALL["args"] = $BASE + $FRAGMENT
+    - inside:
+        stopBy: end
+        any:
+          - kind: for_statement
+          - kind: while_statement

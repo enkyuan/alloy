@@ -7,9 +7,11 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import platform
+import statistics
 import sys
 from typing import Any
 
@@ -22,9 +24,19 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CASES = ("replay10k", "crossSession100", "sameSession25", "toolBatch100")
+CASES = (
+    "replay10k",
+    "crossSession100",
+    "sameSession25",
+    "toolBatch100",
+    "context10kIterations5",
+    "crossSessionCommit100",
+    "streamDeltas10k",
+    "toolArgDeltas10k",
+)
 BUDGETS_PATH = ROOT / "kaji" / "benchmarks" / "beta-budgets.json"
 BASELINE_PATH = ROOT / "kaji" / "benchmarks" / "beta-baseline.json"
+BENCHMARK_SEED = 13
 
 
 def _command_version(command: list[str]) -> str:
@@ -105,7 +117,7 @@ def _runtime_command(runtime: str, case: str, samples: int, warmups: int) -> lis
         "--warmups",
         str(warmups),
         "--seed",
-        "13",
+        str(BENCHMARK_SEED),
         "--json",
     ]
     if runtime == "python":
@@ -132,6 +144,8 @@ def _run_case(runtime: str, case: str, samples: int, warmups: int) -> dict[str, 
         result = json.loads(completed.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise RuntimeError(f"{runtime} {case} emitted non-JSON stdout") from error
+    if not isinstance(result, dict):
+        raise RuntimeError(f"{runtime} {case} result is not an object")
     required = {
         "schemaVersion",
         "runtime",
@@ -148,12 +162,232 @@ def _run_case(runtime: str, case: str, samples: int, warmups: int) -> dict[str, 
         raise RuntimeError(f"{runtime} {case} is missing fields: {', '.join(missing)}")
     if result["schemaVersion"] != 1 or result["runtime"] != runtime:
         raise RuntimeError(f"{runtime} {case} has the wrong schema identity")
-    if result["case"] != case or len(result["sampleResults"]) != samples:
+    if result["seed"] != BENCHMARK_SEED:
+        raise RuntimeError(f"{runtime} {case} returned the wrong seed")
+    sample_results = result["sampleResults"]
+    if not isinstance(sample_results, list):
+        raise RuntimeError(f"{runtime} {case} sampleResults is not an array")
+    if (
+        result["case"] != case
+        or result["samples"] != samples
+        or result["warmups"] != warmups
+        or len(sample_results) != samples
+    ):
         raise RuntimeError(f"{runtime} {case} has inconsistent sample metadata")
-    for sample in result["sampleResults"]:
+    for index, sample in enumerate(sample_results, 1):
+        if not isinstance(sample, dict):
+            raise RuntimeError(f"{runtime} {case} sample {index} is not an object")
         if not {"durationMs", "peakMiB"} <= sample.keys():
             raise RuntimeError(f"{runtime} {case} sample is missing duration or RSS")
+    _validate_result_aggregates(runtime, case, result)
     return result
+
+
+def _validate_result_aggregates(
+    runtime: str, case: str, result: dict[str, Any]
+) -> None:
+    label = f"{runtime} {case}"
+    sample_results = result.get("sampleResults")
+    if not isinstance(sample_results, list) or not sample_results:
+        raise RuntimeError(f"{label} sampleResults must be a non-empty array")
+
+    durations: list[float] = []
+    peaks: list[float] = []
+    for index, sample in enumerate(sample_results, 1):
+        if not isinstance(sample, dict):
+            raise RuntimeError(f"{label} sample {index} is not an object")
+        for field, values in (("durationMs", durations), ("peakMiB", peaks)):
+            value = sample.get(field)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or value < 0
+            ):
+                raise RuntimeError(
+                    f"{label} sample {index} {field} must be finite and non-negative"
+                )
+            values.append(float(value))
+
+    for field in ("medianMs", "maxPeakMiB"):
+        value = result.get(field)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or value < 0
+        ):
+            raise RuntimeError(f"{label} {field} must be finite and non-negative")
+
+    if result["medianMs"] != statistics.median(durations):
+        raise RuntimeError(f"{label} medianMs does not match sample median")
+    if result["maxPeakMiB"] != max(peaks):
+        raise RuntimeError(f"{label} maxPeakMiB does not match sample maximum")
+
+
+def _sample_failures(
+    runtime: str,
+    case: str,
+    sample: dict[str, Any],
+    budget: dict[str, Any],
+    sample_number: int | None = None,
+) -> list[str]:
+    label = f"{runtime} {case}"
+    if sample_number is not None:
+        label += f" sample {sample_number}"
+    failures: list[str] = []
+
+    def number(field: str) -> float | None:
+        value = sample.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            failures.append(f"{label} {field} is missing or non-numeric")
+            return None
+        numeric = float(value)
+        if not math.isfinite(numeric) or numeric < 0:
+            failures.append(f"{label} {field} is non-finite or negative")
+            return None
+        return numeric
+
+    def exact(field: str, expected: int | float) -> None:
+        value = number(field)
+        if value is not None and value != expected:
+            failures.append(f"{label} {field} {value:g} != {expected}")
+
+    def capped(field: str, maximum: int | float) -> None:
+        value = number(field)
+        if value is not None and value > maximum:
+            failures.append(f"{label} {field} {value:g} exceeds {maximum}")
+
+    def minimum(field: str, expected: int | float) -> None:
+        value = number(field)
+        if value is not None and value < expected:
+            failures.append(f"{label} {field} {value:g} is below {expected}")
+
+    number("durationMs")
+    number("peakMiB")
+    if case == "replay10k":
+        expected = budget["expectedEvents"]
+        exact("eventsApplied", expected)
+        exact("cursor", expected)
+    elif case == "crossSession100":
+        exact("turns", 100)
+        minimum("maxActive", budget["minOverlappingSessions"])
+        capped("maxActive", budget["maxOverlappingSessions"])
+        exact("coordinatorEntries", 0)
+        exact("coordinatorWaiters", 0)
+    elif case == "sameSession25":
+        exact("turns", 25)
+        exact("maxActive", budget["maxActive"])
+        exact("coordinatorEntries", 0)
+        exact("coordinatorWaiters", 0)
+    elif case == "toolBatch100":
+        exact("maxActive", budget["maxActive"])
+        exact("calls", 100)
+        exact("stuckCalls", 0)
+    elif case == "context10kIterations5":
+        exact("historyEvents", 10_000)
+        exact("fullHistoryScans", budget["maxFullHistoryScans"])
+        exact("providerIterations", budget["maxProviderIterations"])
+        exact("coldEvents", 10_000)
+        exact("incrementalEvents", 21)
+        exact("suffixCalls", 5)
+        capped("copiedPayloadBytes", budget["maxCopiedPayloadBytes"])
+        retained = number("retainedTurns")
+        entries = number("turnIndexEntries")
+        if retained is not None and retained <= 0:
+            failures.append(f"{label} retainedTurns must be nonzero")
+        elif retained is not None and entries is not None:
+            ratio = entries / retained
+            if ratio > budget["maxIndexEntriesPerRetainedTurn"]:
+                failures.append(
+                    f"{label} turnIndexEntries/retainedTurns {ratio:.3f} exceeds "
+                    f"{budget['maxIndexEntriesPerRetainedTurn']}"
+                )
+        capped("sentinelEntries", budget["maxSentinelEntries"])
+        total = number("totalIndexEntries")
+        sentinel = number("sentinelEntries")
+        if total is not None and entries is not None and sentinel is not None:
+            if total != entries + sentinel:
+                failures.append(
+                    f"{label} totalIndexEntries does not equal turnIndexEntries + "
+                    "sentinelEntries"
+                )
+        capped("maxVisitedTurnEntries", budget["maxSuffixTurnVisits"])
+        capped("incrementalRssBytes", budget["maxIncrementalRssBytes"])
+        capped("timerLeaks", budget["maxTimerLeaks"])
+        capped("providerTaskLeaks", budget["maxProviderTaskLeaks"])
+    elif case == "crossSessionCommit100":
+        exact("sessions", 100)
+        exact("commits", 100)
+        minimum("overlappingSessions", budget["minOverlappingSessions"])
+        exact("contiguousSessions", 100)
+        capped("laneEntriesAfter", budget["maxLaneEntriesAfter"])
+        capped("reservationEntriesAfter", budget["maxReservationEntriesAfter"])
+    elif case == "streamDeltas10k":
+        exact("characters", budget["expectedCharacters"])
+        capped("deltaEvents", budget["maxDeltaEvents"])
+        exact("inputFragments", budget["expectedCharacters"])
+        delta_events = number("deltaEvents")
+        delta_joins = number("deltaJoinOperations")
+        if (
+            delta_events is not None
+            and delta_joins is not None
+            and delta_events != delta_joins
+        ):
+            failures.append(f"{label} deltaJoinOperations must equal deltaEvents")
+        exact("responseJoinOperations", 1)
+        exact("providerTextMaxBytes", budget["maxProviderTextBytes"])
+        exact("providerResponseMaxBytes", budget["maxProviderResponseBytes"])
+        exact("completionEvents", 1)
+        exact("completionEventsAfterFailure", 0)
+        capped("timerLeaks", budget["maxTimerLeaks"])
+        capped("providerTaskLeaks", budget["maxProviderTaskLeaks"])
+    elif case == "toolArgDeltas10k":
+        exact("argumentBytes", budget["maxArgumentBytes"])
+        exact("responseMaxBytes", budget["maxResponseBytes"])
+        exact("argumentFragments", 10_000)
+        exact("rawFragments", 10_002)
+        exact("fragmentJoins", budget["maxFragmentJoins"])
+        exact("overLimitBytes", budget["maxArgumentBytes"] + 1)
+        if sample.get("overLimitRejectedBeforeParse") is not True:
+            failures.append(f"{label} overLimitRejectedBeforeParse is not true")
+        capped("iteratorLeaks", budget["maxIteratorLeaks"])
+        capped("parserLeaks", budget["maxParserLeaks"])
+        capped("providerTaskLeaks", budget["maxProviderTaskLeaks"])
+    else:
+        failures.append(f"{label} has no semantic validator")
+    return failures
+
+
+def _case_failures(
+    runtime: str,
+    case: str,
+    result: dict[str, Any],
+    budgets: dict[str, Any],
+    include_timing: bool,
+) -> list[str]:
+    _validate_result_aggregates(runtime, case, result)
+    failures: list[str] = []
+    for index, sample in enumerate(result.get("sampleResults", ()), 1):
+        if not isinstance(sample, dict):
+            failures.append(f"{runtime} {case} sample {index} is not an object")
+            continue
+        failures.extend(_sample_failures(runtime, case, sample, budgets[case], index))
+    budget = budgets[case]
+    if include_timing and "maxMedianMs" in budget:
+        maximum = budget["maxMedianMs"]
+        if result["medianMs"] > maximum:
+            failures.append(
+                f"{runtime} {case} median {result['medianMs']:.2f} ms exceeds {maximum} ms"
+            )
+    if include_timing and "maxPeakMiB" in budget:
+        maximum = budget["maxPeakMiB"]
+        if result["maxPeakMiB"] > maximum:
+            failures.append(
+                f"{runtime} {case} peak RSS {result['maxPeakMiB']:.2f} MiB exceeds "
+                f"{maximum} MiB"
+            )
+    return failures
 
 
 def _absolute_failures(
@@ -164,72 +398,107 @@ def _absolute_failures(
     include_timing: bool,
 ) -> list[str]:
     failures: list[str] = []
-    replay = results["replay10k"]
-    for sample in replay["sampleResults"]:
-        if sample.get("eventsApplied") != 10_000 or sample.get("cursor") != 10_000:
-            failures.append(f"{runtime} replay10k did not apply exactly 10,000 events")
-            break
-    if replay["maxPeakMiB"] > budgets["replay10k"]["maxPeakMiB"]:
-        failures.append(
-            f"{runtime} replay10k peak RSS {replay['maxPeakMiB']:.2f} MiB exceeds "
-            f"{budgets['replay10k']['maxPeakMiB']} MiB"
+    for case in CASES:
+        if case not in results:
+            failures.append(f"{runtime} results are missing {case}")
+            continue
+        failures.extend(
+            _case_failures(runtime, case, results[case], budgets, include_timing)
         )
-    for case in ("sameSession25", "toolBatch100"):
-        expected = budgets[case]["maxActive"]
-        if results[case].get("maxActive") != expected:
-            failures.append(
-                f"{runtime} {case} maxActive {results[case].get('maxActive')} != {expected}"
-            )
-    cross = results["crossSession100"]
-    if not 2 <= cross.get("maxActive", 0) <= 100:
-        failures.append(
-            f"{runtime} crossSession100 did not demonstrate bounded session overlap"
-        )
-    for case in ("crossSession100", "sameSession25"):
-        for sample in results[case]["sampleResults"]:
-            if (
-                sample.get("coordinatorEntries") != 0
-                or sample.get("coordinatorWaiters") != 0
-            ):
-                failures.append(f"{runtime} {case} leaked coordinator state")
-                break
-    if any(
-        sample.get("stuckCalls") != 0
-        for sample in results["toolBatch100"]["sampleResults"]
-    ):
-        failures.append(f"{runtime} toolBatch100 leaked tool handlers")
-    if include_timing:
-        for case in ("replay10k", "crossSession100"):
-            maximum = budgets[case]["maxMedianMs"]
-            if results[case]["medianMs"] > maximum:
-                failures.append(
-                    f"{runtime} {case} median {results[case]['medianMs']:.2f} ms exceeds "
-                    f"{maximum} ms"
-                )
     return failures
 
 
+def _include_timing(mode: str) -> bool:
+    return mode == "full"
+
+
 def _baseline_fingerprint(baseline: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(baseline, dict):
+        raise RuntimeError("baseline must be an object")
+    runner = baseline.get("runner")
+    versions = baseline.get("versions")
+    dependency_lock_hash = baseline.get("dependencyLockHash")
+    if not isinstance(runner, dict):
+        raise RuntimeError("baseline runner must be an object")
+    if not isinstance(versions, dict):
+        raise RuntimeError("baseline versions must be an object")
+    if not isinstance(dependency_lock_hash, str):
+        raise RuntimeError("baseline dependencyLockHash must be a string")
     return {
-        "runner": baseline["runner"],
-        "versions": baseline["versions"],
-        "dependencyLockHash": baseline["dependencyLockHash"],
+        "runner": runner,
+        "versions": versions,
+        "dependencyLockHash": dependency_lock_hash,
     }
 
 
 def _validate_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> None:
+    if not isinstance(baseline, dict):
+        raise RuntimeError("baseline must be an object")
     if baseline.get("schemaVersion") != 1 or baseline.get("status") != "calibrated":
         raise RuntimeError("beta baseline is uncalibrated")
     if _baseline_fingerprint(baseline) != current:
         raise RuntimeError("benchmark runner fingerprint does not match the baseline")
+    evidence: dict[str, dict[str, Any]] = {}
+    for field in ("medians", "rawSamples", "maxPeakMiB", "rawPeakMiB"):
+        value = baseline.get(field)
+        if not isinstance(value, dict):
+            raise RuntimeError(f"baseline {field} must be an object")
+        evidence[field] = value
     for runtime in ("python", "typescript"):
-        medians = baseline.get("medians", {}).get(runtime, {})
-        raw = baseline.get("rawSamples", {}).get(runtime, {})
+        runtime_evidence: dict[str, dict[str, Any]] = {}
+        for field, values in evidence.items():
+            value = values.get(runtime)
+            if not isinstance(value, dict):
+                raise RuntimeError(f"baseline {field}.{runtime} must be an object")
+            runtime_evidence[field] = value
+        medians = runtime_evidence["medians"]
+        raw = runtime_evidence["rawSamples"]
+        peak = runtime_evidence["maxPeakMiB"]
+        raw_peak = runtime_evidence["rawPeakMiB"]
         if set(medians) != set(CASES) or set(raw) != set(CASES):
             raise RuntimeError(f"baseline is missing {runtime} cases")
+        if set(peak) != set(CASES) or set(raw_peak) != set(CASES):
+            raise RuntimeError(f"baseline is missing {runtime} RSS cases")
+        for case in CASES:
+            if not isinstance(raw[case], list):
+                raise RuntimeError(
+                    f"baseline rawSamples.{runtime}.{case} must be an array"
+                )
+            if not isinstance(raw_peak[case], list):
+                raise RuntimeError(
+                    f"baseline rawPeakMiB.{runtime}.{case} must be an array"
+                )
         if any(len(raw[case]) != 5 for case in CASES):
             raise RuntimeError(
                 f"baseline {runtime} raw samples must contain five values"
+            )
+        if any(len(raw_peak[case]) != 5 for case in CASES):
+            raise RuntimeError(
+                f"baseline {runtime} raw RSS samples must contain five values"
+            )
+        numeric_evidence = [*medians.values(), *peak.values()]
+        numeric_evidence.extend(value for values in raw.values() for value in values)
+        numeric_evidence.extend(
+            value for values in raw_peak.values() for value in values
+        )
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or value < 0
+            for value in numeric_evidence
+        ):
+            raise RuntimeError(
+                f"baseline {runtime} timing and RSS values must be finite "
+                "non-negative numbers"
+            )
+        if any(peak[case] != max(raw_peak[case]) for case in CASES):
+            raise RuntimeError(
+                f"baseline {runtime} RSS aggregate does not match raw samples"
+            )
+        if any(medians[case] != statistics.median(raw[case]) for case in CASES):
+            raise RuntimeError(
+                f"baseline {runtime} duration median does not match raw samples"
             )
 
 
@@ -242,6 +511,7 @@ def _regression_failures(
     multiplier = 1 + percent / 100
     for runtime in ("python", "typescript"):
         for case in CASES:
+            _validate_result_aggregates(runtime, case, results[runtime][case])
             measured = results[runtime][case]["medianMs"]
             maximum = baseline["medians"][runtime][case] * multiplier
             if measured > maximum:
@@ -249,12 +519,40 @@ def _regression_failures(
                     f"{runtime} {case} median {measured:.2f} ms exceeds "
                     f"{percent}% regression limit {maximum:.2f} ms"
                 )
+            measured_peak = results[runtime][case]["maxPeakMiB"]
+            maximum_peak = baseline["maxPeakMiB"][runtime][case] * multiplier
+            if measured_peak > maximum_peak:
+                failures.append(
+                    f"{runtime} {case} peak RSS {measured_peak:.2f} MiB exceeds "
+                    f"{percent}% regression limit {maximum_peak:.2f} MiB"
+                )
     return failures
+
+
+def _require_case_coverage(
+    results: dict[str, dict[str, dict[str, Any]]],
+) -> None:
+    for runtime in ("python", "typescript"):
+        cases = results.get(runtime, {})
+        missing = sorted(set(CASES) - set(cases))
+        extra = sorted(set(cases) - set(CASES))
+        if missing:
+            raise RuntimeError(f"missing {runtime} cases: {', '.join(missing)}")
+        if extra:
+            raise RuntimeError(f"unexpected {runtime} cases: {', '.join(extra)}")
 
 
 def _candidate_baseline(
     results: dict[str, dict[str, dict[str, Any]]], current: dict[str, Any]
 ) -> dict[str, Any]:
+    _require_case_coverage(results)
+    for runtime in ("python", "typescript"):
+        for case in CASES:
+            _validate_result_aggregates(runtime, case, results[runtime][case])
+            if len(results[runtime][case].get("sampleResults", ())) != 5:
+                raise RuntimeError(
+                    f"candidate {runtime} {case} must contain five measured samples"
+                )
     return {
         "schemaVersion": 1,
         "status": "calibrated",
@@ -269,6 +567,26 @@ def _candidate_baseline(
             runtime: {
                 case: [
                     sample["durationMs"]
+                    for sample in results[runtime][case]["sampleResults"]
+                ]
+                for case in CASES
+            }
+            for runtime in ("python", "typescript")
+        },
+        "maxPeakMiB": {
+            runtime: {
+                case: max(
+                    sample["peakMiB"]
+                    for sample in results[runtime][case]["sampleResults"]
+                )
+                for case in CASES
+            }
+            for runtime in ("python", "typescript")
+        },
+        "rawPeakMiB": {
+            runtime: {
+                case: [
+                    sample["peakMiB"]
                     for sample in results[runtime][case]["sampleResults"]
                 ]
                 for case in CASES
@@ -294,9 +612,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     budgets = json.loads(BUDGETS_PATH.read_text())
-    baseline = json.loads(BASELINE_PATH.read_text())
     current = fingerprint()
     failures: list[str] = []
+    baseline: dict[str, Any] | None = None
 
     if args.mode == "calibrate":
         if os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1":
@@ -309,9 +627,20 @@ def main() -> int:
             failures.append("calibration requires --candidate-baseline")
     elif args.mode == "full":
         try:
+            loaded_baseline = json.loads(BASELINE_PATH.read_text())
+            if not isinstance(loaded_baseline, dict):
+                raise RuntimeError("baseline must be an object")
+            baseline = loaded_baseline
             _validate_baseline(baseline, current)
-        except (KeyError, RuntimeError) as error:
-            failures.append(str(error))
+        except (
+            OSError,
+            UnicodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+        ) as error:
+            failures.append(f"beta baseline is invalid: {error}")
 
     samples, warmups = (1, 1) if args.mode == "quick" else (5, 2)
     results: dict[str, dict[str, dict[str, Any]]] = {
@@ -335,10 +664,10 @@ def main() -> int:
                     runtime,
                     results[runtime],
                     budgets,
-                    include_timing=args.mode != "quick",
+                    include_timing=_include_timing(args.mode),
                 )
             )
-        if args.mode == "full":
+        if args.mode == "full" and baseline is not None:
             failures.extend(
                 _regression_failures(
                     results, baseline, float(budgets["regressionPercent"])

@@ -1,0 +1,11 @@
+id: no-generic-ts-cancelled-error
+valid:
+  - |
+      throw new CancellationError();
+  - |
+      throwIfCancellationRequested(token);
+invalid:
+  - |
+      throw new Error("Cancelled");
+  - |
+      throw new Error("Agent run was cancelled");

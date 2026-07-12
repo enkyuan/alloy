@@ -1,0 +1,11 @@
+id: python-release-no-bare-popen-wait
+valid:
+  - |
+      process.wait(timeout=5)
+  - |
+      await event.wait()
+invalid:
+  - |
+      process.wait()
+  - |
+      child.wait()

@@ -1,0 +1,22 @@
+id: python-events-no-untyped-durable-result
+language: Python
+severity: error
+message: Durable BaseEvent result fields must use JsonValue, never Any.
+files:
+  - "kaji/sdk/src/infra/events/**/*.py"
+rule:
+  all:
+    - pattern: "result: $TYPE"
+    - has:
+        any:
+          - pattern: Any
+          - pattern: typing.Any
+        stopBy: end
+    - inside:
+        all:
+          - kind: class_definition
+          - has:
+              field: superclasses
+              pattern: BaseEvent
+              stopBy: end
+        stopBy: end

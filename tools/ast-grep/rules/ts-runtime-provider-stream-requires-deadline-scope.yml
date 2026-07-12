@@ -1,0 +1,8 @@
+id: ts-runtime-provider-stream-requires-deadline-scope
+language: TypeScript
+severity: error
+message: Iterate provider streams through the deadline cancellation scope.
+files:
+  - "kaji/ts/src/runtime/runtime.ts"
+rule:
+  pattern: for await (const $CHUNK of this.provider.generateStream($$$ARGS)) { $$$BODY }

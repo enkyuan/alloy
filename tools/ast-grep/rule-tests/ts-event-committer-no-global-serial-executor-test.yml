@@ -1,0 +1,43 @@
+id: ts-event-committer-no-global-serial-executor
+valid:
+  - |
+      class InMemoryEventCommitter {
+        private readonly customStoreSerial = new SerialExecutor();
+      }
+  - |
+      class SplitEventCommitter {
+        private readonly publicationSerial = new SerialExecutor();
+      }
+  - |
+      function createSerialExecutor() {
+        const localSerial = new SerialExecutor();
+        return localSerial;
+      }
+  - |
+      class InMemoryEventCommitter {
+        private readonly serial: SerialExecutor = new SerialExecutor();
+      }
+  - |
+      function createTypedSerialExecutor() {
+        const localSerial: SerialExecutor = new SerialExecutor();
+        return localSerial;
+      }
+  - |
+      class InMemoryEventCommitter {
+        private readonly serial = new SerialExecutor();
+      }
+invalid:
+  - |
+      const sharedSerial = new SerialExecutor();
+  - |
+      let globalSerial = new SerialExecutor();
+  - |
+      const shared: SerialExecutor = new SerialExecutor();
+  - |
+      class InMemoryEventCommitter {
+        static readonly serial = new SerialExecutor();
+      }
+  - |
+      class InMemoryEventCommitter {
+        private static readonly serial: SerialExecutor = new SerialExecutor();
+      }

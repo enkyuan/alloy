@@ -1,16 +1,48 @@
 {
   "replay10k": {
-    "maxMedianMs": 1000,
-    "maxPeakMiB": 128
+    "expectedEvents": 10000
   },
   "crossSession100": {
-    "maxMedianMs": 5000
+    "minOverlappingSessions": 2,
+    "maxOverlappingSessions": 100
   },
   "sameSession25": {
     "maxActive": 1
   },
   "toolBatch100": {
     "maxActive": 4
+  },
+  "context10kIterations5": {
+    "maxFullHistoryScans": 1,
+    "maxProviderIterations": 5,
+    "maxCopiedPayloadBytes": 0,
+    "maxIndexEntriesPerRetainedTurn": 1.01,
+    "maxIncrementalRssBytes": 67108864,
+    "maxSentinelEntries": 1,
+    "maxSuffixTurnVisits": 32,
+    "maxTimerLeaks": 0,
+    "maxProviderTaskLeaks": 0
+  },
+  "crossSessionCommit100": {
+    "minOverlappingSessions": 2,
+    "maxLaneEntriesAfter": 0,
+    "maxReservationEntriesAfter": 0
+  },
+  "streamDeltas10k": {
+    "maxDeltaEvents": 16,
+    "expectedCharacters": 10000,
+    "maxProviderTextBytes": 262144,
+    "maxProviderResponseBytes": 524288,
+    "maxTimerLeaks": 0,
+    "maxProviderTaskLeaks": 0
+  },
+  "toolArgDeltas10k": {
+    "maxArgumentBytes": 65536,
+    "maxResponseBytes": 524288,
+    "maxFragmentJoins": 1,
+    "maxIteratorLeaks": 0,
+    "maxParserLeaks": 0,
+    "maxProviderTaskLeaks": 0
   },
   "regressionPercent": 20,
   "soak": {

@@ -1,0 +1,19 @@
+id: ts-provider-no-tool-argument-string-concatenation
+valid:
+  - |
+      for (const fragment of fragments) {
+        argumentsParts.push(fragment);
+      }
+  - |
+      while (reader.hasData()) {
+        byteCount += reader.readSize();
+      }
+invalid:
+  - |
+      for (const fragment of fragments) {
+        call.arguments += fragment;
+      }
+  - |
+      while (reader.hasData()) {
+        argsRaw = argsRaw + reader.read();
+      }

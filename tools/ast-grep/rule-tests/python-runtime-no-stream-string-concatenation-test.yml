@@ -1,0 +1,55 @@
+id: python-runtime-no-stream-string-concatenation
+valid:
+  - |
+      for iteration in range(max_iterations):
+          parts = []
+          async for chunk in deadline_scope.consume(self.provider.generate_stream(messages)):
+              parts.append(chunk.text)
+  - |
+      for iteration in range(max_iterations):
+          byte_count += encoded_size
+          async for chunk in self.provider.generate_stream(messages):
+              accumulator.append(chunk.text)
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          accumulator.append(chunk.text)
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(cached_stream):
+          rebuilt = build_context(history)
+          response += chunk.text
+  - |
+      for event in events:
+          response += event.text
+          provider_stream = self.provider.generate_stream(messages)
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          accumulator.append(chunk.text)
+invalid:
+  - |
+      for iteration in range(max_iterations):
+          async for chunk in self.provider.generate_stream(messages):
+              response += chunk.text
+  - |
+      for iteration in range(max_iterations):
+          content = ""
+          async for chunk in deadline_scope.consume(self.provider.generate_stream(messages)):
+              content += chunk.text
+  - |
+      async for chunk in self.provider.generate_stream(messages):
+          text += chunk.text
+  - |
+      provider_stream = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          rebuilt = build_context(history)
+          response += chunk.text
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in provider_stream:
+          response += chunk.text
+  - |
+      provider_stream: AsyncIterator[ModelResponseChunk] = self.provider.generate_stream(messages)
+      async for chunk in deadline_scope.consume(provider_stream):
+          content += chunk.text

@@ -1,0 +1,11 @@
+id: python-runtime-no-legacy-tooldefinition
+valid:
+  - |
+      from kaji.runtime.tools.registry import ToolSpec
+  - |
+      from .registry import ToolSpec
+invalid:
+  - |
+      from kaji.types.tool import ToolDefinition
+  - |
+      import kaji.types.tool

@@ -1,0 +1,10 @@
+id: python-release-no-unbounded-subprocess-run
+language: Python
+severity: error
+message: Run release commands through process_runner.run_checked with an explicit budget.
+files:
+  - "kaji/scripts/**/*.py"
+ignores:
+  - "kaji/scripts/process_runner.py"
+rule:
+  pattern: subprocess.run($$$ARGS)

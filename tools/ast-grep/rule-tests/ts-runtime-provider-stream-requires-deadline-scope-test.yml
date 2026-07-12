@@ -1,0 +1,28 @@
+id: ts-runtime-provider-stream-requires-deadline-scope
+valid:
+  - |
+      async function run() {
+        for await (const chunk of deadlineScope.consume(this.provider.generateStream(messages))) {
+          yieldChunk(chunk);
+        }
+      }
+  - |
+      async function run() {
+        const stream = this.provider.generateStream(messages);
+        for await (const chunk of providerScope.consume(stream)) {
+          yieldChunk(chunk);
+        }
+      }
+invalid:
+  - |
+      async function run() {
+        for await (const chunk of this.provider.generateStream(messages)) {
+          yieldChunk(chunk);
+        }
+      }
+  - |
+      async function run() {
+        for await (const delta of this.provider.generateStream(messages, tools)) {
+          collect(delta);
+        }
+      }

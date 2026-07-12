@@ -1,0 +1,13 @@
+id: python-runtime-provider-stream-requires-deadline-scope
+language: Python
+severity: error
+message: Iterate provider streams through ProviderDeadlineScope.consume().
+files:
+  - "kaji/sdk/src/runtime/agents/runtime.py"
+rule:
+  pattern:
+    context: |
+      async def _guard():
+          async for $CHUNK in self.provider.generate_stream($$$ARGS):
+              $$$BODY
+    selector: for_statement

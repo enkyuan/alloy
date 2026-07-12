@@ -1,0 +1,94 @@
+id: python-runtime-no-full-context-build-in-provider-loop
+language: Python
+severity: error
+message: Runtime provider iterations must use projection-indexed context, not full-scan helpers.
+files:
+  - "kaji/sdk/src/runtime/agents/runtime.py"
+rule:
+  all:
+    - any:
+        - pattern: build_context($$$CONTEXT_ARGS)
+        - pattern: build_context_from_messages($$$CONTEXT_ARGS)
+        - pattern: build_messages($$$CONTEXT_ARGS)
+    - inside:
+        any:
+          - pattern:
+              context: |
+                async for $CHUNK in self.provider.generate_stream($$$PROVIDER_ARGS):
+                    $$$BODY
+              selector: for_statement
+          - pattern:
+              context: |
+                async for $CHUNK in $SCOPE.consume(self.provider.generate_stream($$$PROVIDER_ARGS)):
+                    $$$BODY
+              selector: for_statement
+          - all:
+              - kind: for_statement
+              - has:
+                  any:
+                    - pattern:
+                        context: |
+                          async for $CHUNK in self.provider.generate_stream($$$PROVIDER_ARGS):
+                              $$$BODY
+                        selector: for_statement
+                    - pattern:
+                        context: |
+                          async for $CHUNK in $SCOPE.consume(self.provider.generate_stream($$$PROVIDER_ARGS)):
+                              $$$BODY
+                        selector: for_statement
+                  stopBy: end
+          - all:
+              - kind: for_statement
+              - has:
+                  any:
+                    - pattern:
+                        context: $STREAM = self.provider.generate_stream($$$PROVIDER_ARGS)
+                        selector: expression_statement
+                    - pattern:
+                        context: "$STREAM: $TYPE = self.provider.generate_stream($$$PROVIDER_ARGS)"
+                        selector: expression_statement
+                  stopBy: end
+              - has:
+                  any:
+                    - pattern:
+                        context: |
+                          async for $CHUNK in $STREAM:
+                              $$$BODY
+                        selector: for_statement
+                    - pattern:
+                        context: |
+                          async for $CHUNK in $SCOPE.consume($STREAM):
+                              $$$BODY
+                        selector: for_statement
+                  stopBy: end
+          - all:
+              - pattern:
+                  context: |
+                    async for $CHUNK in $STREAM:
+                        $$$BODY
+                  selector: for_statement
+              - follows:
+                  any:
+                    - pattern:
+                        context: $STREAM = self.provider.generate_stream($$$PROVIDER_ARGS)
+                        selector: expression_statement
+                    - pattern:
+                        context: "$STREAM: $TYPE = self.provider.generate_stream($$$PROVIDER_ARGS)"
+                        selector: expression_statement
+                  stopBy: end
+          - all:
+              - pattern:
+                  context: |
+                    async for $CHUNK in $SCOPE.consume($STREAM):
+                        $$$BODY
+                  selector: for_statement
+              - follows:
+                  any:
+                    - pattern:
+                        context: $STREAM = self.provider.generate_stream($$$PROVIDER_ARGS)
+                        selector: expression_statement
+                    - pattern:
+                        context: "$STREAM: $TYPE = self.provider.generate_stream($$$PROVIDER_ARGS)"
+                        selector: expression_statement
+                  stopBy: end
+        stopBy: end

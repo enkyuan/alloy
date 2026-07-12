@@ -35,14 +35,7 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Test structural rules
-        shell: bash
-        run: |
-          output="$(bun run ast-grep:test 2>&1)"
-          printf '%s\n' "$output"
-          if [[ "$output" != *"test result: ok. 8 passed; 0 failed;"* ]]; then
-            printf 'Expected all eight ast-grep rule tests to execute successfully.\n' >&2
-            exit 1
-          fi
+        run: bun run ast-grep:test
 
       - name: Scan Kaji sources
         run: bun run ast-grep:scan

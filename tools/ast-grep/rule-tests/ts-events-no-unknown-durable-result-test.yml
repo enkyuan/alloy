@@ -1,0 +1,11 @@
+id: ts-events-no-unknown-durable-result
+valid:
+  - |
+      const completed = event({ type: z.literal("completed"), result: durableSubjectValue });
+  - |
+      const scratch = { result: z.unknown() };
+invalid:
+  - |
+      const completed = event({ type: z.literal("completed"), result: z.unknown() });
+  - |
+      const failed = event({ result: z.unknown(), message: z.string() });
