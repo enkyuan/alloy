@@ -46,6 +46,7 @@ import {
   type ToolExecutionLimits,
 } from "@/tools/execution";
 import type { ToolExecutionError } from "@/tools/execution-errors";
+import type { IntegrationRecoveryReason } from "@/integrations/recovery";
 import type { MetricsSink, TraceSink } from "@/observability";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { ToolPolicy } from "@/tools/policy";
@@ -87,6 +88,9 @@ export type ToolCallResult =
       error_path?: string;
       retryable?: boolean;
       outcome?: "not_started" | "failed" | "unknown";
+      reason_code?: IntegrationRecoveryReason;
+      recovery_code?: string;
+      doc_url?: string;
     };
 
 export type ToolExecutor = (
@@ -178,6 +182,9 @@ interface FailureDraft {
   readonly error_path?: string;
   readonly retryable?: boolean;
   readonly outcome?: "not_started" | "failed" | "unknown";
+  readonly reason_code?: IntegrationRecoveryReason;
+  readonly recovery_code?: string;
+  readonly doc_url?: string;
   readonly turnTimeoutPhase?: Extract<TurnPhase, "approval" | "tool">;
 }
 
@@ -218,6 +225,13 @@ function failureFromExecution(error: ToolExecutionError): FailureDraft {
     error_code: error.error_code,
     retryable: error.retryable,
     outcome: error.outcome,
+    ...(error.reason_code === undefined
+      ? {}
+      : {
+          reason_code: error.reason_code,
+          recovery_code: error.recovery_code,
+          doc_url: error.doc_url,
+        }),
   };
 }
 
@@ -559,6 +573,13 @@ export class ToolPlanner {
               ...(slot.error_path === undefined ? {} : { error_path: slot.error_path }),
               ...(slot.retryable === undefined ? {} : { retryable: slot.retryable }),
               ...(slot.outcome === undefined ? {} : { outcome: slot.outcome }),
+              ...(slot.reason_code === undefined
+                ? {}
+                : {
+                    reason_code: slot.reason_code,
+                    recovery_code: slot.recovery_code,
+                    doc_url: slot.doc_url,
+                  }),
             };
       results.push(result);
       try {
@@ -1128,6 +1149,13 @@ export class ToolPlanner {
       ...(draft.error_path === undefined ? {} : { error_path: draft.error_path }),
       ...(draft.retryable === undefined ? {} : { retryable: draft.retryable }),
       ...(draft.outcome === undefined ? {} : { outcome: draft.outcome }),
+      ...(draft.reason_code === undefined
+        ? {}
+        : {
+            reason_code: draft.reason_code,
+            recovery_code: draft.recovery_code,
+            doc_url: draft.doc_url,
+          }),
     });
   }
 

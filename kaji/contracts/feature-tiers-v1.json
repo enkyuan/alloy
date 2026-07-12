@@ -12,6 +12,25 @@
       "experimental": []
     }
   },
+  "packageSubpaths": {
+    "typescript": {
+      "./integrations": {
+        "tier": "experimental",
+        "exports": [
+          "BoundedResponse",
+          "FixedOriginRequester",
+          "IntegrationAuthRequiredError",
+          "IntegrationExecutionError",
+          "IntegrationPolicyError",
+          "IntegrationRateLimitedError",
+          "IntegrationTransientReadError",
+          "createGitHubRequester",
+          "createGmailRequester",
+          "snapshotIntegrationResult"
+        ]
+      }
+    }
+  },
   "publicExports": {
     "python": {
       "stable": [

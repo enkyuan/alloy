@@ -18,6 +18,7 @@ import {
   type DurableJsonSubject,
 } from "@/events/errors";
 import { EventType } from "@/events/types";
+import { isClosedRecoveryTuple } from "@/integrations/recovery";
 import {
   canonicalJsonValue,
   cloneAndFreezeJson,
@@ -226,6 +227,19 @@ export const ToolCallFailed = event({
   error_path: z.string().optional(),
   retryable: z.boolean().optional(),
   outcome: z.enum(["not_started", "failed", "unknown"]).optional(),
+  reason_code: z.string().optional(),
+  recovery_code: z.string().optional(),
+  doc_url: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (
+    !isClosedRecoveryTuple(value.reason_code, value.recovery_code, value.doc_url, value.error_code)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["reason_code"],
+      message: "integration recovery metadata must be a closed tuple",
+    });
+  }
 });
 
 export const ToolApprovalRequested = event({
@@ -405,6 +419,19 @@ function wirePreflight(value: unknown, stored: boolean): Record<string, unknown>
     throw new EventSchemaIncompatibleError("/");
   }
   const document = value as Record<string, unknown>;
+  if (
+    [document.reason_code, document.recovery_code, document.doc_url].some(
+      (field) => field !== undefined,
+    ) &&
+    !isClosedRecoveryTuple(
+      document.reason_code,
+      document.recovery_code,
+      document.doc_url,
+      document.error_code,
+    )
+  ) {
+    throw new EventSchemaIncompatibleError("/reason_code");
+  }
   for (const field of ["id", "version", "timestamp", "type", "session_id"] as const) {
     if (!(field in document)) throw new EventSchemaIncompatibleError(`/${field}`);
   }

@@ -238,6 +238,15 @@ class _TerminalDraft:
                 "error_code": outcome.failure.error_code,
                 "retryable": outcome.failure.retryable,
                 "outcome": outcome.failure.outcome,
+                **(
+                    {
+                        "reason_code": outcome.failure.reason_code,
+                        "recovery_code": outcome.failure.recovery_code,
+                        "doc_url": outcome.failure.doc_url,
+                    }
+                    if outcome.failure.reason_code is not None
+                    else {}
+                ),
             },
             turn_timeout=timeout,
         )

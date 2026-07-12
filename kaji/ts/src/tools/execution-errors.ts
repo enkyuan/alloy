@@ -1,9 +1,19 @@
+import {
+  closedRecoveryFields,
+  closedTransportFailureFields,
+  type IntegrationRecoveryFields,
+  type IntegrationRecoveryReason,
+} from "@/integrations/recovery";
+
 export type ToolFailureOutcome = "not_started" | "failed" | "unknown";
 
 export interface ToolFailureFields {
   readonly error_code: string;
   readonly retryable: boolean;
   readonly outcome: ToolFailureOutcome;
+  readonly reason_code?: IntegrationRecoveryReason;
+  readonly recovery_code?: string;
+  readonly doc_url?: string;
 }
 
 /** Stable public tool failure without retaining the originating exception. */
@@ -13,10 +23,20 @@ export class ToolExecutionError extends Error implements ToolFailureFields {
     readonly error_code: string,
     readonly retryable: boolean,
     readonly outcome: ToolFailureOutcome,
+    recovery?: IntegrationRecoveryFields,
   ) {
     super(message);
     this.name = "ToolExecutionError";
+    if (recovery !== undefined) {
+      this.reason_code = recovery.reason_code;
+      this.recovery_code = recovery.recovery_code;
+      this.doc_url = recovery.doc_url;
+    }
   }
+
+  readonly reason_code?: IntegrationRecoveryReason;
+  readonly recovery_code?: string;
+  readonly doc_url?: string;
 }
 
 export class DurableToolResultTombstone extends ToolExecutionError {
@@ -62,6 +82,7 @@ export function snapshotToolExecutionError(error: ToolExecutionError): ToolExecu
     error.error_code,
     error.retryable,
     error.outcome,
+    closedRecoveryFields(error),
   );
   snapshot.name = error.name;
   return Object.freeze(snapshot);
@@ -119,12 +140,14 @@ export function toolStartRecordFailed(_cause: unknown): ToolExecutionError {
   );
 }
 
-export function toolExecutionUnknown(_cause: unknown): ToolExecutionError {
+export function toolExecutionUnknown(cause: unknown): ToolExecutionError {
+  const transport = closedTransportFailureFields(cause);
   return new ToolExecutionError(
     "Tool execution failed with an unknown outcome",
-    "TOOL_EXECUTION_FAILED",
+    transport?.error_code ?? "TOOL_EXECUTION_FAILED",
     false,
     "unknown",
+    transport,
   );
 }
 
@@ -147,6 +170,7 @@ export function normalizeStartedToolFailure(cause: unknown): ToolExecutionError 
     cause.error_code,
     cause.outcome === "failed" && cause.retryable,
     cause.outcome,
+    closedRecoveryFields(cause),
   );
 }
 import {

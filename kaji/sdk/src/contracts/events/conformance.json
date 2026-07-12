@@ -20,10 +20,13 @@
       "sequence": 2,
       "tool_call_id": "call-1",
       "tool_name": "lookup",
-      "error": "Invalid tool arguments",
-      "error_code": "INVALID_TOOL_ARGUMENTS",
+      "error": "Tool execution failed",
+      "error_code": "INTEGRATION_POLICY_REJECTED",
       "retryable": false,
-      "outcome": "not_started",
+      "outcome": "failed",
+      "reason_code": "policy_rejected",
+      "recovery_code": "REVIEW_INTEGRATION_POLICY",
+      "doc_url": "https://kaji.dev/docs/integrations/recovery-v1#policy-rejected",
       "metadata": {}
     },
     {

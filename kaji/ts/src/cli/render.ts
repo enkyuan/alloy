@@ -2,6 +2,11 @@
 import { createHash } from "node:crypto";
 import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
+import {
+  closedRecoveryFields,
+  recoveryForReason,
+  type IntegrationRecoveryReason,
+} from "@/integrations/recovery";
 
 type RenderableEvent = KajiEvent | StoredKajiEvent;
 
@@ -24,6 +29,9 @@ export interface SafeReplayEvent {
   phase?: string;
   retryable?: boolean;
   outcome?: string;
+  reason_code?: IntegrationRecoveryReason;
+  recovery_code?: string;
+  doc_url?: string;
 }
 
 const SAFE_EVENT_TYPES = new Set<string>(Object.values(EventType));
@@ -63,6 +71,13 @@ export const REPLAY_SAFE_ERROR_CODES = [
   "INTEGRATION_SCHEMA_INVALID",
   "INTEGRATION_ABI_MISMATCH",
   "INTEGRATION_EXPERIMENTAL",
+  "INTEGRATION_API_ERROR",
+  "INTEGRATION_AUTH_REQUIRED",
+  "INTEGRATION_AUTH_ERROR",
+  "INTEGRATION_RATE_LIMITED",
+  "INTEGRATION_POLICY_REJECTED",
+  "INTEGRATION_REDIRECT_REJECTED",
+  "INTEGRATION_RESPONSE_LIMIT",
 ] as const;
 const SAFE_ERROR_CODES = new Set<string>(REPLAY_SAFE_ERROR_CODES);
 const SAFE_PHASES = new Set(["queue", "provider_open", "provider_stream", "approval", "tool"]);
@@ -133,6 +148,8 @@ export function safeReplayEvent(event: RenderableEvent): SafeReplayEvent {
   if ("outcome" in event && typeof event.outcome === "string") {
     safe.outcome = safeLiteral(event.outcome, SAFE_OUTCOMES, "unknown");
   }
+  const recovery = closedRecoveryFields(event);
+  if (recovery !== undefined) Object.assign(safe, recovery);
   return safe;
 }
 
@@ -185,6 +202,17 @@ function diagnostic(event: SafeReplayEvent): string {
   ];
   const hint = RECOVERY_HINTS[event.error_code];
   if (hint !== undefined) fields.push(`recovery=${hint}`);
+  if (event.reason_code !== undefined) {
+    const recovery = recoveryForReason(event.reason_code);
+    fields.push(
+      `reason=${event.reason_code}`,
+      `recovery=${event.recovery_code}`,
+      `doc=${event.doc_url}`,
+      `problem=${JSON.stringify(recovery.problem)}`,
+      `cause=${JSON.stringify(recovery.cause)}`,
+      `fix=${JSON.stringify(recovery.fix)}`,
+    );
+  }
   return ` ${fields.join(" ")}`;
 }
 

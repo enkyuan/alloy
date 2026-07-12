@@ -285,3 +285,31 @@ def install_integration(
         shutil.copy2(src, target)
         written.append(target)
     return written
+
+
+# Internal adapters intentionally stay out of the top-level ``kaji`` API.
+from kaji.integrations.errors import (  # noqa: E402
+    IntegrationAuthError as _IntegrationAuthError,
+    IntegrationAuthRequiredError as _IntegrationAuthRequiredError,
+    IntegrationExecutionError as _IntegrationExecutionError,
+    IntegrationPolicyError as _IntegrationPolicyError,
+    IntegrationRateLimitedError as _IntegrationRateLimitedError,
+    IntegrationTransientReadError as _IntegrationTransientReadError,
+    IntegrationTransportError as _IntegrationTransportError,
+)
+from kaji.integrations.fixed_origin import (  # noqa: E402
+    FixedOriginClient as _FixedOriginClient,
+    IntegrationResponse as _IntegrationResponse,
+)
+
+_FIXED_ORIGIN_INTERNALS = (
+    _IntegrationAuthError,
+    _IntegrationAuthRequiredError,
+    _IntegrationExecutionError,
+    _IntegrationPolicyError,
+    _IntegrationRateLimitedError,
+    _IntegrationTransientReadError,
+    _IntegrationTransportError,
+    _FixedOriginClient,
+    _IntegrationResponse,
+)

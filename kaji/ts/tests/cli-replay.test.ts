@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { replay } from "@/cli/replay";
-import { REPLAY_SAFE_ERROR_CODES } from "@/cli/render";
+import { REPLAY_SAFE_ERROR_CODES, safeReplayEvent } from "@/cli/render";
 
 // ---------------------------------------------------------------------------
 // Shared fixture
@@ -271,6 +271,67 @@ describe("kaji replay", () => {
       expect(out).not.toContain("api_key");
       expect(out).not.toContain("raw provider cause");
     }
+  });
+
+  it("renders only contract-owned integration recovery text", async () => {
+    const failurePath = join(tmpDir, "integration-recovery.jsonl");
+    writeFileSync(
+      failurePath,
+      JSON.stringify({
+        type: "tool.call.failed",
+        session_id: "session",
+        turn_id: "turn",
+        id: "valid",
+        version: "1.0",
+        timestamp: 5000,
+        sequence: 1,
+        metadata: {},
+        tool_name: "integration",
+        tool_call_id: "call",
+        error: "provider secret",
+        error_code: "INTEGRATION_AUTH_REQUIRED",
+        retryable: false,
+        outcome: "failed",
+        reason_code: "github_token_missing",
+        recovery_code: "CONFIGURE_GITHUB_TOKEN",
+        doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+      }),
+      "utf-8",
+    );
+
+    const tree = await run([failurePath, "--format", "tree"]);
+    expect(tree.out).toContain("reason=github_token_missing");
+    expect(tree.out).toContain('problem="GitHub authentication is required."');
+    expect(tree.out).toContain("CONFIGURE_GITHUB_TOKEN");
+    expect(tree.out).not.toContain("HOSTILE_SECRET");
+    expect(tree.out).not.toContain("evil.invalid");
+    expect(tree.out).not.toContain("provider secret");
+
+    const json = await run([failurePath, "--format", "json"]);
+    const projected = JSON.parse(json.out) as Array<Record<string, unknown>>;
+    expect(projected[0]).toMatchObject({
+      reason_code: "github_token_missing",
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+    });
+    const hostile = safeReplayEvent({
+      type: "tool.call.failed",
+      session_id: "session",
+      turn_id: "turn",
+      id: "invalid",
+      version: "1.0",
+      timestamp: 5001,
+      metadata: {},
+      tool_name: "integration",
+      tool_call_id: "call-2",
+      error: "another secret",
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+      retryable: false,
+      outcome: "failed",
+      reason_code: "github_token_missing",
+      recovery_code: "HOSTILE_SECRET",
+      doc_url: "https://evil.invalid/secret",
+    } as never);
+    expect(hostile).not.toHaveProperty("reason_code");
   });
 
   it("pseudonymizes tool identity and result pointer for invalid tool results", async () => {

@@ -39,6 +39,9 @@ class ToolIdempotencyFailure:
     retryable: bool
     outcome: Literal["not_started", "failed", "unknown"]
     subject: DurableJsonSubject | None = None
+    reason_code: str | None = None
+    recovery_code: str | None = None
+    doc_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

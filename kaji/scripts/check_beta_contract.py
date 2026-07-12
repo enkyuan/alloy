@@ -33,6 +33,7 @@ REQUIRED_JSON = {
     "cli/init-cases-v1.json",
     "feature-tiers-v1.json",
     "errors/error-codes.json",
+    "errors/integration-recovery-v1.json",
     "errors/provider-normalization.json",
     "events/conformance.json",
     "events/conformance-invalid.json",
@@ -615,6 +616,66 @@ def error_codes(documents: dict[str, dict[str, Any]]) -> set[str]:
     return set(codes)
 
 
+def integration_recovery_entries(
+    document: dict[str, Any], codes: set[str]
+) -> dict[str, dict[str, str]]:
+    path = CONTRACTS / "errors" / "integration-recovery-v1.json"
+    if set(document) != {"$schema", "$id", "version", "entries"}:
+        raise fail(path, "/", "unexpected integration recovery contract fields")
+    if document.get("version") != "1.0.0":
+        raise fail(path, "/version", "expected 1.0.0")
+    entries = document.get("entries")
+    if not isinstance(entries, dict) or not entries:
+        raise fail(path, "/entries", "expected a non-empty object")
+    expected_fields = {
+        "errorCode",
+        "recoveryCode",
+        "docUrl",
+        "problem",
+        "cause",
+        "fix",
+    }
+    for reason, entry in entries.items():
+        location = f"/entries/{reason}"
+        if (
+            not isinstance(reason, str)
+            or re.fullmatch(r"[a-z][a-z0-9_]*", reason) is None
+        ):
+            raise fail(path, location, "expected a stable snake-case reason")
+        if not isinstance(entry, dict) or set(entry) != expected_fields:
+            raise fail(path, location, "unexpected recovery fields")
+        if entry["errorCode"] not in codes:
+            raise fail(path, f"{location}/errorCode", "unknown error code")
+        if re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", entry["recoveryCode"]) is None:
+            raise fail(path, f"{location}/recoveryCode", "invalid recovery code")
+        if not entry["docUrl"].startswith(
+            "https://kaji.dev/docs/integrations/recovery-v1#"
+        ):
+            raise fail(path, f"{location}/docUrl", "unexpected documentation origin")
+        for field in ("problem", "cause", "fix"):
+            value = entry[field]
+            if not isinstance(value, str) or not value or "{" in value or "}" in value:
+                raise fail(
+                    path, f"{location}/{field}", "expected fixed redaction-safe text"
+                )
+    from kaji.integrations.recovery import INTEGRATION_RECOVERY  # noqa: PLC0415
+
+    runtime_entries = {
+        reason: {
+            "errorCode": recovery.error_code,
+            "recoveryCode": recovery.recovery_code,
+            "docUrl": recovery.doc_url,
+            "problem": recovery.problem,
+            "cause": recovery.cause,
+            "fix": recovery.fix,
+        }
+        for reason, recovery in INTEGRATION_RECOVERY.items()
+    }
+    if entries != runtime_entries:
+        raise fail(path, "/entries", "Python recovery map differs from the contract")
+    return entries
+
+
 def runtime_event_types() -> set[str]:
     python_source = (
         ROOT / "kaji" / "sdk" / "src" / "infra" / "events" / "types.py"
@@ -800,6 +861,16 @@ def event_validation_pointer(
     if unexpected:
         return pointer([unexpected[0]])
 
+    recovery_fields = tuple(
+        value.get(field) for field in ("reason_code", "recovery_code", "doc_url")
+    )
+    if any(field is not None for field in recovery_fields):
+        recovery_validator = Draft202012Validator(
+            schema["$defs"]["integrationRecoveryFields"]
+        )
+        if not recovery_validator.is_valid(value):
+            return "/reason_code"
+
     validator = Draft202012Validator(
         {
             "$schema": DRAFT_2020_12,
@@ -820,7 +891,15 @@ def event_validation_pointer(
     return min(candidates, key=lambda item: (item == "/", item)) if candidates else "/"
 
 
-def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
+def check_events(
+    documents: dict[str, dict[str, Any]],
+    codes: set[str],
+    recoveries: dict[str, dict[str, str]] | None = None,
+) -> None:
+    if recoveries is None:
+        recoveries = integration_recovery_entries(
+            documents["errors/integration-recovery-v1.json"], codes
+        )
     path = CONTRACTS / "events" / "conformance.json"
     events = documents["events/conformance.json"].get("events")
     if not isinstance(events, list) or not events:
@@ -914,6 +993,27 @@ def check_events(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
                 raise fail(path, f"{location}/retryable", "expected a boolean")
             if event.get("outcome") not in {"not_started", "failed", "unknown"}:
                 raise fail(path, f"{location}/outcome", "unknown tool outcome")
+            recovery_values = tuple(
+                event.get(field)
+                for field in ("reason_code", "recovery_code", "doc_url")
+            )
+            if any(value is not None for value in recovery_values):
+                reason_code, recovery_code, doc_url = recovery_values
+                recovery = recoveries.get(reason_code)
+                if recovery is None or (
+                    recovery_code,
+                    doc_url,
+                    event.get("error_code"),
+                ) != (
+                    recovery["recoveryCode"],
+                    recovery["docUrl"],
+                    recovery["errorCode"],
+                ):
+                    raise fail(
+                        path,
+                        f"{location}/reason_code",
+                        "integration recovery tuple differs from the closed contract",
+                    )
             if all(
                 isinstance(event.get(field), str) and event[field]
                 for field in ("turn_id", "tool_call_id", "tool_name")
@@ -1650,6 +1750,54 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
             )
 
 
+def check_package_subpaths(document: dict[str, Any]) -> None:
+    path = CONTRACTS / "feature-tiers-v1.json"
+    expected = {
+        "typescript": {
+            "./integrations": {
+                "tier": "experimental",
+                "exports": [
+                    "BoundedResponse",
+                    "FixedOriginRequester",
+                    "IntegrationAuthRequiredError",
+                    "IntegrationExecutionError",
+                    "IntegrationPolicyError",
+                    "IntegrationRateLimitedError",
+                    "IntegrationTransientReadError",
+                    "createGitHubRequester",
+                    "createGmailRequester",
+                    "snapshotIntegrationResult",
+                ],
+            }
+        }
+    }
+    if document.get("packageSubpaths") != expected:
+        raise fail(path, "/packageSubpaths", "unexpected package subpath contract")
+
+    package_path = ROOT / "kaji" / "ts" / "package.json"
+    package = load_json(package_path)
+    subpath = package.get("exports", {}).get("./integrations")
+    if not isinstance(subpath, dict):
+        raise fail(
+            package_path, "/exports/~1integrations", "missing integrations export"
+        )
+    expected_targets = {
+        "./dist/integrations.js",
+        "./dist/integrations.cjs",
+        "./dist/integrations.d.ts",
+        "./dist/integrations.d.cts",
+    }
+    actual_targets = set(
+        re.findall(
+            r"\./dist/integrations\.(?:js|cjs|d\.ts|d\.cts)", json.dumps(subpath)
+        )
+    )
+    if actual_targets != expected_targets:
+        raise fail(
+            package_path, "/exports/~1integrations", "unexpected integrations targets"
+        )
+
+
 def check_cli_init_cases(document: dict[str, Any]) -> None:
     path = CONTRACTS / "cli" / "init-cases-v1.json"
     if document.get("schemaVersion") != 1:
@@ -1950,13 +2098,17 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_beta_limits(documents["beta-core-v1.json"])
     check_tool_risk_vocabulary(documents)
     codes = error_codes(documents)
-    check_events(documents, codes)
+    recoveries = integration_recovery_entries(
+        documents["errors/integration-recovery-v1.json"], codes
+    )
+    check_events(documents, codes, recoveries)
     check_tools(documents, codes)
     check_integrations(documents, codes)
     check_parity(documents)
     check_provider_costs(documents["providers/cost-conformance.json"])
     check_packaged_contracts()
     check_cli_command_tiers(documents["feature-tiers-v1.json"])
+    check_package_subpaths(documents["feature-tiers-v1.json"])
     check_cli_init_cases(documents["cli/init-cases-v1.json"])
     check_public_exports(documents["feature-tiers-v1.json"])
     return documents, feature_sets(documents["feature-tiers-v1.json"])

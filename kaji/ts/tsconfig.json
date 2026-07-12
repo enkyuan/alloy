@@ -9,6 +9,7 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
+      "@kaji/sdk/integrations": ["./src/integrations/public.ts"],
       "@kaji/sdk": ["./src/index.ts"],
       "@/*": ["./src/*"]
     },

@@ -410,14 +410,18 @@ import * as sdk from "@kaji/sdk";
 import * as testing from "@kaji/sdk/testing";
 import * as openai from "@kaji/sdk/openai";
 import * as anthropic from "@kaji/sdk/anthropic";
+import * as integrations from "@kaji/sdk/integrations";
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 `;
   const cjs = `
 const sdk = require("@kaji/sdk");
 const testing = require("@kaji/sdk/testing");
 const openai = require("@kaji/sdk/openai");
 const anthropic = require("@kaji/sdk/anthropic");
+const integrations = require("@kaji/sdk/integrations");
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 `;
   writeFileSync(join(installRoot, "smoke.mjs"), esm);
   writeFileSync(join(installRoot, "smoke.cjs"), cjs);

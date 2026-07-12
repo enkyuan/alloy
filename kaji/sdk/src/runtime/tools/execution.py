@@ -59,6 +59,20 @@ _STARTED_LOOKUP_TIMEOUT_SECONDS = 0.1
 logger = logging.getLogger(__name__)
 
 
+def _integration_recovery_fields(value: object) -> dict[str, str]:
+    from kaji.integrations.recovery import closed_recovery_fields  # noqa: PLC0415
+
+    return closed_recovery_fields(value)
+
+
+def _integration_transport_failure_fields(value: object) -> dict[str, str]:
+    from kaji.integrations.recovery import (  # noqa: PLC0415
+        closed_transport_failure_fields,
+    )
+
+    return closed_transport_failure_fields(value)
+
+
 class ToolExecutionError(RuntimeError):
     """A handler-certified failure known to have produced no side effect."""
 
@@ -102,6 +116,9 @@ class _ToolExecutionFailure:
     error_code: str
     retryable: bool
     outcome: Literal["not_started", "failed", "unknown"]
+    reason_code: str | None = None
+    recovery_code: str | None = None
+    doc_url: str | None = None
     cause: BaseException | None = field(default=None, repr=False, compare=False)
     turn_timeout: bool = field(default=False, repr=False, compare=False)
 
@@ -158,6 +175,9 @@ def _ledger_failure(failure: _ToolExecutionFailure) -> ToolIdempotencyFailure:
         error_code=failure.error_code,
         retryable=failure.retryable,
         outcome=failure.outcome,
+        reason_code=failure.reason_code,
+        recovery_code=failure.recovery_code,
+        doc_url=failure.doc_url,
     )
 
 
@@ -178,6 +198,9 @@ def _from_resolution(
             error_code=failure.error_code,
             retryable=failure.retryable,
             outcome=failure.outcome,
+            reason_code=failure.reason_code,
+            recovery_code=failure.recovery_code,
+            doc_url=failure.doc_url,
         )
     )
 
@@ -1004,20 +1027,25 @@ class ToolExecutionController:
                     claim_resolved = True
                     return _ToolExecutionOutcome(result=snapshot)
                 if isinstance(completed.cause, ToolExecutionError):
+                    recovery = _integration_recovery_fields(completed.cause)
                     failure = _ToolExecutionFailure(
                         error=_PUBLIC_EXECUTION_FAILURE,
                         error_code=completed.cause.error_code,
                         retryable=completed.cause.retryable,
                         outcome=completed.cause.outcome,
+                        **recovery,
                         cause=completed.cause,
                     )
                     await self.ledger.retryable_failure(claim, _ledger_failure(failure))
                 else:
+                    recovery = _integration_transport_failure_fields(completed.cause)
+                    error_code = recovery.pop("error_code", "TOOL_EXECUTION_FAILED")
                     failure = _ToolExecutionFailure(
                         error=_PUBLIC_EXECUTION_FAILURE,
-                        error_code="TOOL_EXECUTION_FAILED",
+                        error_code=error_code,
                         retryable=False,
                         outcome="unknown",
+                        **recovery,
                         cause=completed.cause,
                     )
                     await self.ledger.unknown_outcome(claim, _ledger_failure(failure))

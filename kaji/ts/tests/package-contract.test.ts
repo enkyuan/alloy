@@ -212,6 +212,10 @@ describe("npm contract artifact", () => {
       for (const required of [
         "dist/cli/bin.js",
         "dist/cli/init-worker.js",
+        "dist/integrations.js",
+        "dist/integrations.cjs",
+        "dist/integrations.d.ts",
+        "dist/integrations.d.cts",
         "registry/index.json",
         "registry/schema.json",
       ]) {

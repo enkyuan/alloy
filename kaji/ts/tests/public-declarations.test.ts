@@ -20,6 +20,52 @@ function readFreshDeclaration(file: string, sourceFiles: string[]): string {
 }
 
 describe("public declarations", () => {
+  it("exposes only the experimental fixed-origin integration surface", () => {
+    const sources = [
+      "src/integrations/public.ts",
+      "src/integrations/fixed-origin.ts",
+      "src/integrations/safe-fetch.ts",
+    ];
+    const contract = JSON.parse(
+      readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
+    ) as { packageSubpaths: { typescript: { "./integrations": { exports: string[] } } } };
+    for (const declaration of [
+      readFreshDeclaration("integrations.d.ts", sources),
+      readFreshDeclaration("integrations.d.cts", sources),
+    ]) {
+      const allowed = contract.packageSubpaths.typescript["./integrations"].exports;
+      for (const name of allowed) {
+        expect(declaration).toContain(name);
+      }
+      const exportBlock = declaration.match(/^export \{ (.*?) \};$/m)?.[1];
+      expect(exportBlock).toBeDefined();
+      const exports = exportBlock!.split(", ").map((item) => item.replace(/^type /, ""));
+      expect(exports.sort()).toEqual([...allowed].sort());
+      const executionError = declaration.match(
+        /declare class IntegrationExecutionError extends ToolExecutionError \{[\s\S]*?\n\}/,
+      )?.[0];
+      expect(executionError).toContain('constructor(reasonCode: "api_rejected");');
+      expect(executionError).not.toContain("errorCode");
+      expect(executionError).not.toContain("retryable");
+      for (const internal of [
+        "FixedOriginTestTransport",
+        "FixedOriginTestResponse",
+        "fixedOriginForTest",
+        "IntegrationTransportError",
+        "IntegrationAuthError",
+        "INTEGRATION_RECOVERY",
+        "closedRecoveryFields",
+        "closedTransportFailureFields",
+        "FixedOriginPolicy",
+        "NodeHttpsTransport",
+        "CERTIFIED_FAILURES",
+        "CertifiedIntegrationReason",
+      ]) {
+        expect(declaration).not.toContain(internal);
+      }
+    }
+  });
+
   it("classifies every built root export exactly once and syncs the generated docs", () => {
     const declaration = readFreshDeclaration("index.d.ts", ["src/index.ts"]);
     const blocks = [...declaration.matchAll(/^export \{ (.*?) \}(?: from .*?)?;$/gm)];

@@ -8,6 +8,25 @@
       "type": "string",
       "minLength": 1
     },
+    "integrationRecoveryFields": {
+      "oneOf": [
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_REQUIRED" }, "reason_code": { "const": "github_token_missing" }, "recovery_code": { "const": "CONFIGURE_GITHUB_TOKEN" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#github-token" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_REQUIRED" }, "reason_code": { "const": "gmail_grant_missing" }, "recovery_code": { "const": "CONNECT_GMAIL" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#gmail-grant" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_ERROR" }, "reason_code": { "const": "keychain_missing" }, "recovery_code": { "const": "RESTORE_KEYCHAIN" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#keychain-missing" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_ERROR" }, "reason_code": { "const": "keychain_locked" }, "recovery_code": { "const": "UNLOCK_KEYCHAIN" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#keychain-locked" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_ERROR" }, "reason_code": { "const": "keychain_corrupt" }, "recovery_code": { "const": "RESET_GMAIL_GRANT" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#keychain-corrupt" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_ERROR" }, "reason_code": { "const": "keychain_unsupported" }, "recovery_code": { "const": "USE_SUPPORTED_KEYCHAIN" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#keychain-unsupported" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_AUTH_REQUIRED" }, "reason_code": { "const": "gmail_scope_drift" }, "recovery_code": { "const": "RECONNECT_GMAIL" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#gmail-scope-drift" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_POLICY_REJECTED" }, "reason_code": { "const": "policy_rejected" }, "recovery_code": { "const": "REVIEW_INTEGRATION_POLICY" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#policy-rejected" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_API_ERROR" }, "reason_code": { "const": "api_rejected" }, "recovery_code": { "const": "REVIEW_PROVIDER_REJECTION" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#api-rejected" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_API_ERROR" }, "reason_code": { "const": "transient_read_failed" }, "recovery_code": { "const": "RETRY_INTEGRATION_READ" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#transient-read" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_RATE_LIMITED" }, "reason_code": { "const": "rate_limited" }, "recovery_code": { "const": "RETRY_AFTER_RATE_LIMIT" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#rate-limited" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_REDIRECT_REJECTED" }, "reason_code": { "const": "redirect_rejected" }, "recovery_code": { "const": "REJECT_PROVIDER_REDIRECT" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#redirect-rejected" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "INTEGRATION_RESPONSE_LIMIT" }, "reason_code": { "const": "response_limit_exceeded" }, "recovery_code": { "const": "REDUCE_INTEGRATION_RESPONSE" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#response-limit" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "TOOL_EXECUTION_FAILED" }, "reason_code": { "const": "github_mutation_unknown" }, "recovery_code": { "const": "RECONCILE_GITHUB_MUTATION" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#github-mutation-unknown" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] },
+        { "properties": { "error_code": { "const": "TOOL_EXECUTION_FAILED" }, "reason_code": { "const": "gmail_mutation_unknown" }, "recovery_code": { "const": "RECONCILE_GMAIL_MUTATION" }, "doc_url": { "const": "https://kaji.dev/docs/integrations/recovery-v1#gmail-mutation-unknown" } }, "required": ["error_code", "reason_code", "recovery_code", "doc_url"] }
+      ]
+    },
     "safeInteger": {
       "type": "integer",
       "minimum": -9007199254740991,
@@ -647,6 +666,15 @@
                 "failed",
                 "unknown"
               ]
+            },
+            "reason_code": {
+              "type": "string"
+            },
+            "recovery_code": {
+              "type": "string"
+            },
+            "doc_url": {
+              "type": "string"
             }
           },
           "required": [
@@ -656,6 +684,18 @@
             "tool_call_id",
             "error"
           ]
+        },
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["reason_code"] },
+              { "required": ["recovery_code"] },
+              { "required": ["doc_url"] }
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/integrationRecoveryFields"
+          }
         }
       ],
       "unevaluatedProperties": false

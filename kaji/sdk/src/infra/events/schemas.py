@@ -29,6 +29,7 @@ from pydantic import (
     TypeAdapter,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from kaji.infra.events.errors import (
@@ -316,11 +317,33 @@ class ToolCallFailed(BaseEvent):
     outcome: Optional[Literal["not_started", "failed", "unknown"]] = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    reason_code: Optional[str] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    recovery_code: Optional[str] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    doc_url: Optional[str] = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("error")
     @classmethod
     def _bounded_error(cls, value: str) -> str:
         return _bounded_unicode_text(value, "error")
+
+    @model_validator(mode="after")
+    def _closed_recovery_tuple(self) -> "ToolCallFailed":
+        from kaji.integrations.recovery import (  # noqa: PLC0415
+            is_closed_recovery_tuple,
+        )
+
+        if not is_closed_recovery_tuple(
+            self.reason_code,
+            self.recovery_code,
+            self.doc_url,
+            self.error_code,
+        ):
+            raise ValueError("integration recovery metadata must be a closed tuple")
+        return self
 
 
 class ToolApprovalRequested(BaseEvent):

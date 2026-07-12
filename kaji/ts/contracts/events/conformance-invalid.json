@@ -13,6 +13,8 @@
     { "name": "extra-field", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "extra": true }, "path": "/extra" },
     { "name": "draft-has-sequence", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "sequence": 1 }, "path": "/sequence" },
     { "name": "stored-missing-sequence", "kind": "stored", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s" }, "path": "/sequence" },
-    { "name": "unsafe-integral-number", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "metadata": { "n": 9007199254740992 } }, "path": "/metadata/n" }
+    { "name": "unsafe-integral-number", "kind": "new", "event": { "id": "e", "type": "session.created", "version": "1.0", "timestamp": 0, "session_id": "s", "metadata": { "n": 9007199254740992 } }, "path": "/metadata/n" },
+    { "name": "partial-integration-recovery", "kind": "new", "event": { "id": "e", "type": "tool.call.failed", "version": "1.0", "timestamp": 0, "session_id": "s", "turn_id": "t", "tool_name": "integration", "tool_call_id": "c", "error": "Tool execution failed", "reason_code": "policy_rejected" }, "path": "/reason_code" },
+    { "name": "mismatched-integration-recovery", "kind": "new", "event": { "id": "e", "type": "tool.call.failed", "version": "1.0", "timestamp": 0, "session_id": "s", "turn_id": "t", "tool_name": "integration", "tool_call_id": "c", "error": "Tool execution failed", "reason_code": "policy_rejected", "recovery_code": "CONNECT_GMAIL", "doc_url": "https://kaji.dev/docs/integrations/recovery-v1#policy-rejected" }, "path": "/reason_code" }
   ]
 }
