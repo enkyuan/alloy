@@ -1,16 +1,18 @@
 /** Rollback-safe copied integration bundle provenance and publication. */
 import { createHash, randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { constants } from "node:fs";
 import {
   copyFile,
   lstat,
   mkdir,
   mkdtemp,
+  open,
   readFile,
   readlink,
   readdir,
   realpath,
   rename,
-  rmdir,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -58,6 +60,8 @@ interface InstallOptions extends CopyContext {
   /** @internal Deterministic absent-reservation race seams. */
   readonly beforeReservationCreate?: (destination: string) => Promise<void>;
   readonly beforeReservationPublish?: (destination: string) => Promise<void>;
+  readonly afterReservationCheck?: (destination: string) => Promise<void>;
+  readonly beforeReservationCleanup?: (destination: string) => Promise<void>;
 }
 
 interface Provenance {
@@ -90,6 +94,8 @@ const SYSTEM_ROOT_ALIASES = [
   ["/var", "/private/var"],
   ["/tmp", "/private/tmp"],
 ] as const;
+const RESERVATION_WORKER_TIMEOUT_MS = 15_000;
+const RESERVATION_WORKER_OUTPUT_LIMIT = 8 * 1024;
 
 class UnsafeDestinationError extends Error {}
 
@@ -436,6 +442,153 @@ async function matchesEmptyReservation(
   }
 }
 
+async function pathHasReservationIdentity(
+  destination: string,
+  identity: ReservationIdentity,
+): Promise<boolean> {
+  try {
+    const metadata = await lstat(destination);
+    return (
+      !metadata.isSymbolicLink() &&
+      metadata.isDirectory() &&
+      metadata.dev === identity.dev &&
+      metadata.ino === identity.ino
+    );
+  } catch {
+    return false;
+  }
+}
+
+function reservationWorkerPath(): string {
+  return fileURLToPath(
+    new URL(
+      import.meta.url.endsWith(".ts")
+        ? "./integration-copy-worker.mjs"
+        : "./integration-copy-worker.js",
+      import.meta.url,
+    ),
+  );
+}
+
+async function invokeReservationWorker(
+  destination: string,
+  staging: string,
+  relativePaths: readonly string[],
+  identity: ReservationIdentity,
+  afterCheck: (() => Promise<void>) | undefined,
+): Promise<void> {
+  const environment = { ...process.env };
+  delete environment.NODE_OPTIONS;
+  delete environment.NODE_PATH;
+
+  await new Promise<void>((resolveWorker, rejectWorker) => {
+    const child = spawn(
+      process.execPath,
+      [
+        reservationWorkerPath(),
+        identity.dev.toString(),
+        identity.ino.toString(),
+        staging,
+        ...relativePaths,
+      ],
+      {
+        cwd: destination,
+        env: environment,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
+    let output = "";
+    let outputBytes = 0;
+    let prepared = false;
+    let succeeded = false;
+    let settled = false;
+    let hookError: Error | undefined;
+    const timer = setTimeout(() => child.kill("SIGTERM"), RESERVATION_WORKER_TIMEOUT_MS);
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error === undefined) resolveWorker();
+      else rejectWorker(error);
+    };
+    const authorize = async () => {
+      try {
+        await afterCheck?.();
+        if (!child.stdin.destroyed && child.stdin.writable) child.stdin.end("commit\n");
+      } catch (error) {
+        hookError = error instanceof Error ? error : new Error(String(error));
+        child.kill("SIGTERM");
+      }
+    };
+    const consumeLine = (line: string) => {
+      if (!prepared && line === "prepared") {
+        prepared = true;
+        void authorize();
+      } else if (prepared && !succeeded && line === "ok") {
+        succeeded = true;
+      } else {
+        child.kill("SIGTERM");
+      }
+    };
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.byteLength;
+      if (outputBytes > RESERVATION_WORKER_OUTPUT_LIMIT) {
+        child.kill("SIGTERM");
+        return;
+      }
+      output += chunk.toString("utf8");
+      for (;;) {
+        const newline = output.indexOf("\n");
+        if (newline < 0) break;
+        const line = output.slice(0, newline);
+        output = output.slice(newline + 1);
+        consumeLine(line);
+      }
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.byteLength;
+      if (outputBytes > RESERVATION_WORKER_OUTPUT_LIMIT) child.kill("SIGTERM");
+    });
+    child.stdin.on("error", () => child.kill("SIGTERM"));
+    child.on("error", () => finish(new Error("Destination changed during integration copy")));
+    child.on("close", (code) => {
+      if (hookError !== undefined) finish(hookError);
+      else if (code === 0 && prepared && succeeded && output.length === 0) finish();
+      else finish(new Error("Destination changed during integration copy"));
+    });
+  });
+}
+
+async function populateReservation(
+  destination: string,
+  staging: string,
+  relativePaths: readonly string[],
+  identity: ReservationIdentity,
+  afterCheck: (() => Promise<void>) | undefined,
+): Promise<void> {
+  let directory;
+  try {
+    directory = await open(
+      destination,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+  } catch {
+    throw new Error("Destination changed during integration copy");
+  }
+  try {
+    const metadata = await directory.stat();
+    if (!metadata.isDirectory() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
+      throw new Error("Destination changed during integration copy");
+    }
+    await invokeReservationWorker(destination, staging, relativePaths, identity, afterCheck);
+  } finally {
+    await directory.close();
+  }
+}
+
 export async function installIntegrationBundle(options: InstallOptions): Promise<BundleStatus> {
   const lexicalContext = { ...options, destination: resolve(options.destination) };
   const initial = await classifyIntegrationBundle(lexicalContext);
@@ -506,6 +659,30 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
       if (!(await matchesEmptyReservation(context.destination, reservation))) {
         throw new Error("Destination changed during integration copy");
       }
+      await populateReservation(
+        context.destination,
+        staging,
+        [...options.manifest.files, SIDECAR],
+        reservation,
+        options.afterReservationCheck === undefined
+          ? undefined
+          : () => options.afterReservationCheck!(context.destination),
+      );
+      const installed = await classifyIntegrationBundle(context);
+      if (
+        installed.state !== "current" ||
+        !(await pathHasReservationIdentity(context.destination, reservation))
+      ) {
+        throw new Error("Destination changed during integration copy");
+      }
+      reservation = undefined;
+      return status(
+        "current",
+        "installed",
+        context.destination,
+        installed.observed,
+        options.manifest.files.map((relativePath) => join(context.destination, relativePath)),
+      );
     }
     try {
       await renameEntry(staging, context.destination);
@@ -516,7 +693,6 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
       }
       throw error;
     }
-    reservation = undefined;
     if (wroteBackup) {
       await rm(backup, { recursive: true, force: true });
       wroteBackup = false;
@@ -533,11 +709,10 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
     if (wroteBackup && !(await exists(context.destination)) && (await exists(backup))) {
       await renameEntry(backup, context.destination);
     }
-    if (
-      reservation !== undefined &&
-      (await matchesEmptyReservation(context.destination, reservation))
-    ) {
-      await rmdir(context.destination);
+    if (reservation !== undefined) {
+      // Node has no identity-conditional rmdir. Leave a failed reservation
+      // fail-closed rather than risk deleting a concurrently replaced path.
+      await options.beforeReservationCleanup?.(context.destination);
     }
   }
 }

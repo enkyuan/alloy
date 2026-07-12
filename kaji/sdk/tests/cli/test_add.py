@@ -324,25 +324,26 @@ def test_outdated_swap_restores_edit_made_between_recheck_and_rename(
 
 
 def test_absent_publish_never_deletes_new_destination(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     from kaji.integrations import load_manifest
     from kaji.integrations.copy import install_integration_bundle
 
     destination = tmp_path / "echo"
     concurrent = b"concurrent owner bytes\n"
-    original = Path.rename
 
-    def create_then_rename(self: Path, target: Path) -> Path:
-        if self.name.startswith(".echo.kaji-stage-"):
-            destination.rmdir()
-            destination.mkdir()
-            (destination / "owner.txt").write_bytes(concurrent)
-        return original(self, target)
+    def replace_after_check(path: Path) -> None:
+        path.rmdir()
+        path.mkdir()
+        (path / "owner.txt").write_bytes(concurrent)
 
-    monkeypatch.setattr(Path, "rename", create_then_rename)
-    with pytest.raises(OSError):
-        install_integration_bundle(load_manifest("echo"), destination, runtime="python")
+    with pytest.raises(ManifestError, match="Destination changed"):
+        install_integration_bundle(
+            load_manifest("echo"),
+            destination,
+            runtime="python",
+            _after_reservation_check=replace_after_check,
+        )
 
     assert (destination / "owner.txt").read_bytes() == concurrent
 
@@ -414,6 +415,66 @@ def test_absent_reservation_preserves_mutation_or_replacement_before_publish(
         metadata = destination.lstat()
         assert (metadata.st_dev, metadata.st_ino) == replacement_identity[0]
         assert list(destination.iterdir()) == []
+
+
+def test_absent_postcheck_empty_replacement_receives_no_publication_writes(
+    tmp_path: Path,
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    replacement_identity: list[tuple[int, int]] = []
+
+    def replace_after_check(path: Path) -> None:
+        path.rmdir()
+        path.mkdir()
+        metadata = path.lstat()
+        replacement_identity.append((metadata.st_dev, metadata.st_ino))
+
+    with pytest.raises(ManifestError, match="Destination changed"):
+        install_integration_bundle(
+            load_manifest("echo"),
+            destination,
+            runtime="python",
+            _after_reservation_check=replace_after_check,
+        )
+
+    metadata = destination.lstat()
+    assert (metadata.st_dev, metadata.st_ino) == replacement_identity[0]
+    assert list(destination.iterdir()) == []
+
+
+def test_absent_cleanup_never_removes_postcheck_empty_replacement(
+    tmp_path: Path,
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "echo"
+    replacement_identity: list[tuple[int, int]] = []
+
+    def stop_after_check(_path: Path) -> None:
+        raise RuntimeError("stop before publication")
+
+    def replace_before_cleanup(path: Path) -> None:
+        path.rmdir()
+        path.mkdir()
+        metadata = path.lstat()
+        replacement_identity.append((metadata.st_dev, metadata.st_ino))
+
+    with pytest.raises(RuntimeError, match="stop before publication"):
+        install_integration_bundle(
+            load_manifest("echo"),
+            destination,
+            runtime="python",
+            _after_reservation_check=stop_after_check,
+            _before_reservation_cleanup=replace_before_cleanup,
+        )
+
+    metadata = destination.lstat()
+    assert (metadata.st_dev, metadata.st_ino) == replacement_identity[0]
+    assert list(destination.iterdir()) == []
 
 
 def test_staging_copy_failure_leaves_the_old_bundle_byte_identical(

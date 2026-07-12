@@ -30,7 +30,12 @@ export default defineConfig([
   },
   {
     // `kaji` CLI. ESM only; tsup strips shebangs unless restored via banner.
-    entry: ["src/cli/bin.ts", "src/cli/index.ts", "src/cli/init-worker.ts"],
+    entry: [
+      "src/cli/bin.ts",
+      "src/cli/index.ts",
+      "src/cli/init-worker.ts",
+      "src/cli/integration-copy-worker.mjs",
+    ],
     format: ["esm"],
     outDir: "dist/cli",
     sourcemap: true,

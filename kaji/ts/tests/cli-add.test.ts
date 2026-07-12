@@ -673,16 +673,13 @@ describe("kaji add", () => {
         entry: index.integrations.echo!,
         destination: out,
         runtime: "typescript",
-        renameEntry: async (source, destination) => {
-          if (source.includes(".echo.kaji-stage-")) {
-            rmSync(out, { recursive: true });
-            mkdirSync(out);
-            writeFileSync(join(out, "owner.txt"), concurrent);
-          }
-          await renameAsync(source, destination);
+        afterReservationCheck: async (destination) => {
+          rmSync(destination, { recursive: true });
+          mkdirSync(destination);
+          writeFileSync(join(destination, "owner.txt"), concurrent);
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("Destination changed");
     expect(readFileSync(join(out, "owner.txt"), "utf8")).toBe(concurrent);
   });
 
@@ -754,6 +751,63 @@ describe("kaji add", () => {
       }
     },
   );
+
+  it("does not write to an empty replacement after the reservation check", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "reservation-postcheck-replacement");
+    let replacementIdentity: string | undefined;
+
+    await expect(
+      installIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: out,
+        runtime: "typescript",
+        afterReservationCheck: async (destination) => {
+          rmSync(destination, { recursive: true });
+          mkdirSync(destination);
+          const metadata = lstatSync(destination);
+          replacementIdentity = `${metadata.dev}:${metadata.ino}`;
+        },
+      }),
+    ).rejects.toThrow("Destination changed");
+
+    const metadata = lstatSync(out);
+    expect(`${metadata.dev}:${metadata.ino}`).toBe(replacementIdentity);
+    expect(readdirSync(out)).toEqual([]);
+  });
+
+  it("does not remove an empty replacement during failed reservation cleanup", async () => {
+    const realRegistry = join(__dirname, "..", "registry");
+    const index = await loadRegistryIndex(realRegistry);
+    const echo = await loadManifest(realRegistry, "echo", { index });
+    const out = join(tmp, "reservation-cleanup-replacement");
+    let replacementIdentity: string | undefined;
+
+    await expect(
+      installIntegrationBundle({
+        manifest: echo,
+        entry: index.integrations.echo!,
+        destination: out,
+        runtime: "typescript",
+        afterReservationCheck: async () => {
+          throw new Error("stop before publication");
+        },
+        beforeReservationCleanup: async (destination) => {
+          rmSync(destination, { recursive: true });
+          mkdirSync(destination);
+          const metadata = lstatSync(destination);
+          replacementIdentity = `${metadata.dev}:${metadata.ino}`;
+        },
+      }),
+    ).rejects.toThrow("stop before publication");
+
+    const metadata = lstatSync(out);
+    expect(`${metadata.dev}:${metadata.ino}`).toBe(replacementIdentity);
+    expect(readdirSync(out)).toEqual([]);
+  });
 
   it("rejects --check --force before creating the default destination", async () => {
     const previous = process.cwd();

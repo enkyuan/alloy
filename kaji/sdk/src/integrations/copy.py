@@ -9,7 +9,7 @@ from hashlib import sha256
 from importlib.metadata import PackageNotFoundError, distribution, version
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import shutil
 import stat
 import tempfile
@@ -371,6 +371,95 @@ def _matches_empty_reservation(
         return False
 
 
+def _open_reservation(destination: Path, identity: _ReservationIdentity) -> int:
+    try:
+        directory_flag = os.O_DIRECTORY
+        nofollow_flag = os.O_NOFOLLOW
+        supports_dir_fd = os.supports_dir_fd
+    except AttributeError:
+        raise ManifestError(
+            "Descriptor-bound integration publication is unsupported"
+        ) from None
+    if os.open not in supports_dir_fd or os.mkdir not in supports_dir_fd:
+        raise ManifestError("Descriptor-bound integration publication is unsupported")
+    try:
+        descriptor = os.open(destination, os.O_RDONLY | directory_flag | nofollow_flag)
+    except OSError:
+        raise ManifestError("Destination changed during integration copy") from None
+    metadata = os.fstat(descriptor)
+    if (metadata.st_dev, metadata.st_ino) != identity[:2]:
+        os.close(descriptor)
+        raise ManifestError("Destination changed during integration copy")
+    return descriptor
+
+
+def _path_has_reservation_identity(
+    destination: Path, identity: _ReservationIdentity
+) -> bool:
+    try:
+        metadata = destination.lstat()
+        return (
+            not stat.S_ISLNK(metadata.st_mode)
+            and stat.S_ISDIR(metadata.st_mode)
+            and (metadata.st_dev, metadata.st_ino) == identity[:2]
+        )
+    except OSError:
+        return False
+
+
+def _copy_staged_file(staging: Path, relative: str, reservation_fd: int) -> None:
+    path = PurePosixPath(relative)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ManifestError("Staged integration path is unsafe")
+
+    directory_fd = os.dup(reservation_fd)
+    try:
+        directory_flag = os.O_DIRECTORY
+        nofollow_flag = os.O_NOFOLLOW
+        for part in path.parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o755, dir_fd=directory_fd)
+            except FileExistsError:
+                pass
+            child_fd = os.open(
+                part,
+                os.O_RDONLY | directory_flag | nofollow_flag,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = child_fd
+
+        source = staging / relative
+        mode = stat.S_IMODE(source.stat().st_mode) or 0o600
+        target_fd = os.open(
+            path.parts[-1],
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow_flag,
+            mode,
+            dir_fd=directory_fd,
+        )
+        try:
+            with (
+                source.open("rb") as source_stream,
+                os.fdopen(target_fd, "wb", closefd=False) as target_stream,
+            ):
+                shutil.copyfileobj(source_stream, target_stream)
+        finally:
+            os.close(target_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _copy_staged_bundle(
+    staging: Path, relative_paths: tuple[str, ...], reservation_fd: int
+) -> None:
+    for relative in relative_paths:
+        _copy_staged_file(staging, relative, reservation_fd)
+
+
 def install_integration_bundle(
     manifest: Manifest,
     destination: Path,
@@ -378,6 +467,8 @@ def install_integration_bundle(
     runtime: Literal["python", "typescript"],
     force: bool = False,
     _before_reservation_publish: Callable[[Path], None] | None = None,
+    _after_reservation_check: Callable[[Path], None] | None = None,
+    _before_reservation_cleanup: Callable[[Path], None] | None = None,
 ) -> BundleStatus:
     lexical = Path(os.path.abspath(os.fspath(destination)))
     initial = classify_integration_bundle(manifest, lexical, runtime=runtime)
@@ -397,6 +488,7 @@ def install_integration_bundle(
     backup = parent / f".{destination.name}.kaji-backup-{uuid4().hex}"
     wrote_backup = False
     reservation: _ReservationIdentity | None = None
+    reservation_fd: int | None = None
     try:
         for relative in manifest.files:
             source = _safe_source(manifest, relative)
@@ -437,12 +529,44 @@ def install_integration_bundle(
                     "Destination changed during integration copy"
                 ) from None
             reservation = _reservation_identity(destination)
+            reservation_fd = _open_reservation(destination, reservation)
 
         if reservation is not None:
             if _before_reservation_publish is not None:
                 _before_reservation_publish(destination)
             if not _matches_empty_reservation(destination, reservation):
                 raise ManifestError("Destination changed during integration copy")
+            if _after_reservation_check is not None:
+                _after_reservation_check(destination)
+            if reservation_fd is None:
+                raise ManifestError(
+                    "Descriptor-bound integration publication is unsupported"
+                )
+            try:
+                _copy_staged_bundle(
+                    staging, (*manifest.files, _SIDECAR), reservation_fd
+                )
+            except OSError:
+                if not _path_has_reservation_identity(destination, reservation):
+                    raise ManifestError(
+                        "Destination changed during integration copy"
+                    ) from None
+                raise
+            installed = classify_integration_bundle(
+                manifest, destination, runtime=runtime
+            )
+            if installed.state != "current" or not _path_has_reservation_identity(
+                destination, reservation
+            ):
+                raise ManifestError("Destination changed during integration copy")
+            reservation = None
+            return BundleStatus(
+                "current",
+                "installed",
+                destination,
+                tuple(destination / relative for relative in manifest.files),
+                installed._observed,
+            )
         try:
             staging.rename(destination)
         except Exception:
@@ -454,7 +578,6 @@ def install_integration_bundle(
                 backup.rename(destination)
                 wrote_backup = False
             raise
-        reservation = None
         if wrote_backup:
             shutil.rmtree(backup)
             wrote_backup = False
@@ -474,7 +597,13 @@ def install_integration_bundle(
             and not os.path.lexists(destination)
         ):
             backup.rename(destination)
-        if reservation is not None and _matches_empty_reservation(
-            destination, reservation
-        ):
-            destination.rmdir()
+        try:
+            if reservation is not None:
+                # Portable rmdir has no identity condition. Leave a failed
+                # reservation fail-closed rather than risk deleting a path
+                # that another actor replaced after the final check.
+                if _before_reservation_cleanup is not None:
+                    _before_reservation_cleanup(destination)
+        finally:
+            if reservation_fd is not None:
+                os.close(reservation_fd)
