@@ -19,6 +19,16 @@ export class ToolExecutionError extends Error implements ToolFailureFields {
   }
 }
 
+export class DurableToolResultTombstone extends ToolExecutionError {
+  constructor(
+    readonly subject: DurableJsonSubject,
+    readonly durableCode: "INVALID_DURABLE_VALUE" | "EVENT_PAYLOAD_TOO_LARGE",
+  ) {
+    super("Invalid durable tool result", durableCode, false, "unknown");
+    this.name = "DurableToolResultTombstone";
+  }
+}
+
 export class IdempotencyCapacityError extends ToolExecutionError {
   constructor() {
     super(
@@ -44,6 +54,9 @@ export class IdempotencyConflictError extends ToolExecutionError {
 }
 
 export function snapshotToolExecutionError(error: ToolExecutionError): ToolExecutionError {
+  if (error instanceof DurableToolResultTombstone) {
+    return Object.freeze(new DurableToolResultTombstone(error.subject, error.durableCode));
+  }
   const snapshot = new ToolExecutionError(
     error.message,
     error.error_code,
@@ -52,6 +65,27 @@ export function snapshotToolExecutionError(error: ToolExecutionError): ToolExecu
   );
   snapshot.name = error.name;
   return Object.freeze(snapshot);
+}
+
+export function invalidToolResult(): ToolExecutionError {
+  return new ToolExecutionError("Invalid tool result", "INVALID_TOOL_RESULT", false, "unknown");
+}
+
+export function durableToolResultTombstone(
+  error: InvalidDurableValueError | DurableJsonLimitError,
+): DurableToolResultTombstone {
+  return new DurableToolResultTombstone(error.subject, error.code);
+}
+
+export function publicToolExecutionError(error: ToolExecutionError): ToolExecutionError {
+  const subject = (error as ToolExecutionError & { readonly subject?: unknown }).subject;
+  if (
+    subject === "tool_result" &&
+    (error.error_code === "INVALID_DURABLE_VALUE" || error.error_code === "EVENT_PAYLOAD_TOO_LARGE")
+  ) {
+    return invalidToolResult();
+  }
+  return error;
 }
 
 export function toolCancelled(outcome: "not_started" | "unknown"): ToolExecutionError {
@@ -115,3 +149,8 @@ export function normalizeStartedToolFailure(cause: unknown): ToolExecutionError 
     cause.outcome,
   );
 }
+import {
+  DurableJsonLimitError,
+  InvalidDurableValueError,
+  type DurableJsonSubject,
+} from "@/events/errors";

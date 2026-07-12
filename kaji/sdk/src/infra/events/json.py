@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any
+from typing import Any, TypeAlias, cast
+
+from kaji.infra.events.errors import (
+    DURABLE_JSON_SUBJECTS,
+    DurableJsonLimitError,
+    DurableJsonSubject,
+    InvalidDurableValueError,
+)
 
 
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
+JsonScalar: TypeAlias = None | bool | int | float | str
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 def _is_unsafe_integral_number(value: int | float) -> bool:
@@ -72,6 +81,12 @@ def canonical_json(value: Any, *, subject: str = "JSON value") -> str:
     """Encode a strict JSON value with the shared ECMAScript number policy."""
 
     def encode(item: Any, ancestors: set[int]) -> str:
+        item_type = type(item)
+        # ``isinstance`` may consult a hostile instance's ``__class__`` hook.
+        if item_type is not list and item_type is not dict:
+            item_mro = type.__getattribute__(item_type, "__mro__")
+            if any(base is list or base is dict for base in item_mro[1:]):
+                raise TypeError(f"{subject} contains non-JSON value")
         if item is None:
             return "null"
         if isinstance(item, bool):
@@ -83,13 +98,13 @@ def canonical_json(value: Any, *, subject: str = "JSON value") -> str:
             return _canonical_integer(item, subject)
         if isinstance(item, float):
             return _canonical_float(item, subject)
-        if isinstance(item, (list, dict)):
+        if item_type is list or item_type is dict:
             identity = id(item)
             if identity in ancestors:
                 raise TypeError(f"{subject} must be acyclic")
             ancestors.add(identity)
             try:
-                if isinstance(item, list):
+                if item_type is list:
                     return (
                         "[" + ",".join(encode(child, ancestors) for child in item) + "]"
                     )
@@ -116,4 +131,34 @@ def canonical_json(value: Any, *, subject: str = "JSON value") -> str:
     return encode(value, set())
 
 
-__all__ = ["MAX_SAFE_INTEGER", "canonical_json"]
+def durable_json_snapshot(
+    value: object,
+    *,
+    subject: DurableJsonSubject,
+    max_bytes: int,
+) -> JsonValue:
+    """Return a detached canonical snapshot for one durable JSON subject."""
+
+    if subject not in DURABLE_JSON_SUBJECTS:
+        raise ValueError("durable JSON subject must use the closed vocabulary")
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0:
+        raise ValueError("max_bytes must be a non-negative integer")
+    try:
+        encoded = canonical_json(value, subject=subject)
+    except (TypeError, ValueError, RecursionError):
+        raise InvalidDurableValueError(subject) from None
+    if len(encoded.encode("utf-8")) > max_bytes:
+        raise DurableJsonLimitError(subject, max_bytes)
+    try:
+        return cast(JsonValue, json.loads(encoded))
+    except RecursionError:
+        raise InvalidDurableValueError(subject) from None
+
+
+__all__ = [
+    "JsonScalar",
+    "JsonValue",
+    "MAX_SAFE_INTEGER",
+    "canonical_json",
+    "durable_json_snapshot",
+]

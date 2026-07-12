@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { EventSchemaIncompatibleError } from "@/events/errors";
+import * as eventSchemas from "@/events/schemas";
+import { canonicalJsonValue } from "@/events/json";
 import {
   KajiEvent,
   MAX_DURABLE_TOOL_ARGUMENT_BYTES,
@@ -8,6 +10,100 @@ import {
 } from "@/events/schemas";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
+
+function snapshotNewEvent(value: unknown): unknown {
+  const snapshot = (
+    eventSchemas as typeof eventSchemas & {
+      snapshotNewEvent?: (input: unknown) => unknown;
+    }
+  ).snapshotNewEvent;
+  expect(snapshot).toBeTypeOf("function");
+  return snapshot!(value);
+}
+
+function jsonValueOfSize(size: number, multibyte: boolean): Record<string, string> {
+  const emptySize = new TextEncoder().encode('{"value":""}').byteLength;
+  const remaining = size - emptySize;
+  return {
+    value: multibyte
+      ? "😀".repeat(Math.floor(remaining / 4)) + "x".repeat(remaining % 4)
+      : "x".repeat(remaining),
+  };
+}
+
+it.each([false, true])(
+  "bounds durable tool results by exact UTF-8 bytes (multibyte=%s)",
+  (multibyte) => {
+    const maxBytes = (
+      eventSchemas as typeof eventSchemas & {
+        MAX_DURABLE_TOOL_RESULT_BYTES?: number;
+      }
+    ).MAX_DURABLE_TOOL_RESULT_BYTES;
+    expect(maxBytes).toBe(65_536);
+    const base = {
+      id: "tool-result",
+      version: "1.0",
+      timestamp: 1,
+      type: EventType.TOOL_CALL_COMPLETED,
+      session_id: "session",
+      turn_id: "turn",
+      tool_name: "tool",
+      tool_call_id: "call",
+      metadata: {},
+    };
+
+    expect(() =>
+      snapshotNewEvent({ ...base, result: jsonValueOfSize(maxBytes!, multibyte) }),
+    ).not.toThrow();
+    expect(() =>
+      snapshotNewEvent({ ...base, result: jsonValueOfSize(maxBytes! + 1, multibyte) }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "EVENT_PAYLOAD_TOO_LARGE",
+        subject: "tool_result",
+        maxBytes,
+      }),
+    );
+  },
+);
+
+it.each([false, true])(
+  "bounds the whole durable event by exact UTF-8 bytes (multibyte=%s)",
+  (multibyte) => {
+    const maxBytes = (
+      eventSchemas as typeof eventSchemas & {
+        MAX_DURABLE_EVENT_BYTES?: number;
+      }
+    ).MAX_DURABLE_EVENT_BYTES;
+    expect(maxBytes).toBe(1_048_576);
+    const base = {
+      id: "whole-event",
+      version: "1.0",
+      timestamp: 1,
+      type: EventType.USER_MESSAGE,
+      session_id: "session",
+      content: "",
+      metadata: {},
+    };
+    const baseBytes = new TextEncoder().encode(canonicalJsonValue(base)).byteLength;
+    const remaining = maxBytes! - baseBytes;
+    const content = multibyte
+      ? "😀".repeat(Math.floor(remaining / 4)) + "x".repeat(remaining % 4)
+      : "x".repeat(remaining);
+
+    expect(new TextEncoder().encode(canonicalJsonValue({ ...base, content })).byteLength).toBe(
+      maxBytes,
+    );
+    expect(() => snapshotNewEvent({ ...base, content })).not.toThrow();
+    expect(() => snapshotNewEvent({ ...base, content: `${content}x` })).toThrowError(
+      expect.objectContaining({
+        code: "EVENT_PAYLOAD_TOO_LARGE",
+        subject: "event",
+        maxBytes,
+      }),
+    );
+  },
+);
 
 function argumentsOfSize(size: number, marker = "", multibyte = false): Record<string, string> {
   const emptySize = new TextEncoder().encode(JSON.stringify({ value: "" })).byteLength;

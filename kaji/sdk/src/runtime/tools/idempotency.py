@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
-from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -13,6 +12,10 @@ import time
 from typing import Any, Callable, Literal, Protocol
 import uuid
 from weakref import WeakKeyDictionary
+
+from kaji.infra.events.errors import DurableJsonSubject
+from kaji.infra.events.json import durable_json_snapshot
+from kaji.infra.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
 
 
 _DEFAULT_MAX_ENTRIES = 10_000
@@ -35,6 +38,7 @@ class ToolIdempotencyFailure:
     error_code: str
     retryable: bool
     outcome: Literal["not_started", "failed", "unknown"]
+    subject: DurableJsonSubject | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,7 +130,11 @@ def _copy_resolution(
     resolution: ToolIdempotencyResolution,
 ) -> ToolIdempotencyResolution:
     return ToolIdempotencyResolution(
-        result=deepcopy(resolution.result),
+        result=durable_json_snapshot(
+            resolution.result,
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        ),
         failure=resolution.failure,
     )
 
@@ -225,7 +233,11 @@ class InMemoryToolIdempotencyLedger:
                         tool_call_id=tool_call_id,
                         claim_token=entry.token,
                         resolution=ToolIdempotencyResolution(
-                            result=deepcopy(entry.result)
+                            result=durable_json_snapshot(
+                                entry.result,
+                                subject="tool_result",
+                                max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+                            )
                         ),
                     )
                 return ToolIdempotencyClaim(
@@ -276,8 +288,16 @@ class InMemoryToolIdempotencyLedger:
             entry.wait_state.started = True
 
     async def complete(self, claim: ToolIdempotencyClaim, result: Any) -> None:
-        detached = deepcopy(result)
-        waiter_result = deepcopy(detached)
+        detached = durable_json_snapshot(
+            result,
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        )
+        waiter_result = durable_json_snapshot(
+            detached,
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        )
         async with self._lock:
             entry = self._owner_entry(claim)
             now = self._clock()

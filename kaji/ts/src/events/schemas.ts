@@ -11,13 +11,26 @@ import * as z from "zod";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
 import { defaultUuid } from "@/internal/uuid";
-import { EventSchemaIncompatibleError } from "@/events/errors";
+import {
+  DurableJsonLimitError,
+  EventSchemaIncompatibleError,
+  InvalidDurableValueError,
+  type DurableJsonSubject,
+} from "@/events/errors";
 import { EventType } from "@/events/types";
-import { canonicalJsonValue, cloneAndFreezeJson, type DeepReadonly } from "@/events/json";
+import {
+  canonicalJsonValue,
+  cloneAndFreezeJson,
+  durableJsonSnapshot,
+  type DeepReadonly,
+  type JsonValue,
+} from "@/events/json";
 import newEventSchema from "../../contracts/events/new-kaji-event-v1.schema.json";
 import storedEventSchema from "../../contracts/events/stored-kaji-event-v1.schema.json";
 
 export const MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024;
+export const MAX_DURABLE_TOOL_RESULT_BYTES = 64 * 1024;
+export const MAX_DURABLE_EVENT_BYTES = 1024 * 1024;
 
 export function durableToolArgumentsSize(value: Record<string, unknown>): number {
   return new TextEncoder().encode(canonicalJsonValue(value, "tool arguments")).byteLength;
@@ -38,6 +51,26 @@ const durableJsonObject = z.record(z.string(), durableJsonValue).superRefine((va
     ctx.addIssue({ code: "custom", message: "event value must contain only JSON values" });
   }
 });
+
+function durableSubjectValue(subject: DurableJsonSubject, maxBytes: number) {
+  return z.unknown().superRefine((value, ctx) => {
+    try {
+      durableJsonSnapshot(value, subject, maxBytes);
+    } catch {
+      ctx.addIssue({ code: "custom", message: `${subject} must be bounded durable JSON` });
+    }
+  });
+}
+
+function durableSubjectObject(subject: DurableJsonSubject) {
+  return z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+    try {
+      durableJsonSnapshot(value, subject, MAX_DURABLE_EVENT_BYTES);
+    } catch {
+      ctx.addIssue({ code: "custom", message: `${subject} must be bounded durable JSON` });
+    }
+  });
+}
 
 const durableToolArguments = durableJsonObject.superRefine((value, ctx) => {
   let size: number;
@@ -63,7 +96,7 @@ const baseShape = {
   timestamp: z.number().default(() => Date.now() / 1000),
   session_id: nonEmptyId,
   turn_id: nonEmptyId.optional(),
-  metadata: durableJsonObject.default(() => ({})),
+  metadata: durableSubjectObject("event_metadata").default(() => ({})),
 };
 
 function maxUnicodeCodePoints(field: string) {
@@ -116,7 +149,7 @@ export const MemoryRetrievalStarted = event({
 export const MemoryRetrievalCompleted = event({
   type: z.literal(EventType.MEMORY_RETRIEVAL_COMPLETED),
   query: z.string(),
-  documents: z.array(z.record(z.string(), z.unknown())),
+  documents: z.array(durableSubjectObject("memory_document")),
 });
 
 export const AgentReasoningStarted = event({
@@ -141,7 +174,7 @@ export const AgentMessageCompleted = event({
 export const AgentTurnExhausted = event({
   type: z.literal(EventType.AGENT_TURN_EXHAUSTED),
   max_iterations: z.number().int().nonnegative(),
-  pending_tool_calls: z.array(z.record(z.string(), z.unknown())),
+  pending_tool_calls: z.array(durableSubjectObject("pending_tool_call")),
   reason: z.string().nullish(),
 });
 
@@ -171,7 +204,7 @@ export const ToolCallCompleted = event({
   turn_id: z.string().min(1),
   tool_name: z.string().min(1),
   tool_call_id: z.string().min(1),
-  result: z.unknown(),
+  result: durableSubjectValue("tool_result", MAX_DURABLE_TOOL_RESULT_BYTES),
   tokens: z
     .object({ input: z.number().int().nonnegative(), output: z.number().int().nonnegative() })
     .strict()
@@ -233,7 +266,7 @@ export const WorkflowStarted = event({
 export const WorkflowCompleted = event({
   type: z.literal(EventType.WORKFLOW_COMPLETED),
   workflow_name: z.string(),
-  result: z.unknown(),
+  result: durableSubjectValue("workflow_result", MAX_DURABLE_EVENT_BYTES),
 });
 
 export const WorkflowFailed = event({
@@ -389,8 +422,137 @@ function zodIssuePointer(error: z.ZodError): string {
   return `/${path.map(pointerSegment).join("/")}`;
 }
 
-function validateWireEvent(value: unknown, stored: boolean): KajiEvent {
-  const document = wirePreflight(value, stored);
+function durableErrorPointer(error: InvalidDurableValueError | DurableJsonLimitError): string {
+  const pointers: Record<DurableJsonSubject, string> = {
+    tool_result: "/result",
+    workflow_result: "/result",
+    event_metadata: "/metadata",
+    memory_document: "/documents",
+    pending_tool_call: "/pending_tool_calls",
+    event: "/",
+  };
+  return pointers[error.subject];
+}
+
+function ownDataValue(
+  document: Record<string, unknown>,
+  key: string,
+  subject: DurableJsonSubject,
+): { readonly present: false } | { readonly present: true; readonly value: unknown } {
+  const descriptor = Object.getOwnPropertyDescriptor(document, key);
+  if (descriptor === undefined) return { present: false };
+  if (!descriptor.enumerable || !("value" in descriptor)) {
+    throw new InvalidDurableValueError(subject);
+  }
+  return { present: true, value: descriptor.value };
+}
+
+function snapshotArrayItems(value: unknown, subject: DurableJsonSubject): void {
+  if (!Array.isArray(value)) throw new InvalidDurableValueError(subject);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  for (let index = 0; index < value.length; index++) {
+    const descriptor = descriptors[String(index)];
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) {
+      throw new InvalidDurableValueError(subject);
+    }
+    durableJsonSnapshot(descriptor.value, subject, MAX_DURABLE_EVENT_BYTES);
+  }
+}
+
+function snapshotEventSubjects(document: Record<string, unknown>): void {
+  const metadata = ownDataValue(document, "metadata", "event_metadata");
+  if (metadata.present) {
+    durableJsonSnapshot(metadata.value, "event_metadata", MAX_DURABLE_EVENT_BYTES);
+  }
+  const type = ownDataValue(document, "type", "event");
+  if (!type.present) return;
+  if (type.value === EventType.TOOL_CALL_COMPLETED) {
+    const result = ownDataValue(document, "result", "tool_result");
+    if (result.present) {
+      durableJsonSnapshot(result.value, "tool_result", MAX_DURABLE_TOOL_RESULT_BYTES);
+    }
+  } else if (type.value === EventType.WORKFLOW_COMPLETED) {
+    const result = ownDataValue(document, "result", "workflow_result");
+    if (result.present) {
+      durableJsonSnapshot(result.value, "workflow_result", MAX_DURABLE_EVENT_BYTES);
+    }
+  } else if (type.value === EventType.MEMORY_RETRIEVAL_COMPLETED) {
+    const documents = ownDataValue(document, "documents", "event");
+    if (documents.present) snapshotArrayItems(documents.value, "memory_document");
+  } else if (type.value === EventType.AGENT_TURN_EXHAUSTED) {
+    const pending = ownDataValue(document, "pending_tool_calls", "event");
+    if (pending.present) snapshotArrayItems(pending.value, "pending_tool_call");
+  }
+}
+
+function durableEventSnapshot(value: unknown): DeepReadonly<JsonValue> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    snapshotEventSubjects(value as Record<string, unknown>);
+  }
+  return durableJsonSnapshot(value, "event", MAX_DURABLE_EVENT_BYTES);
+}
+
+function descriptorSafeWireSnapshot(value: unknown, ancestors = new Set<object>()): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (ancestors.has(value)) throw new InvalidDurableValueError("event");
+  const isArray = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (!isArray && prototype !== Object.prototype && prototype !== null) {
+    throw new InvalidDurableValueError("event");
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new InvalidDurableValueError("event");
+  }
+
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const clone: Record<string, unknown> | unknown[] = isArray ? [] : Object.create(prototype);
+  ancestors.add(value);
+  try {
+    for (const [key, descriptor] of Object.entries(descriptors)) {
+      if (isArray && key === "length") continue;
+      if (!descriptor.enumerable || !("value" in descriptor)) {
+        throw new InvalidDurableValueError("event");
+      }
+      Object.defineProperty(clone, key, {
+        value: descriptorSafeWireSnapshot(descriptor.value, ancestors),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    if (isArray && (clone as unknown[]).length !== value.length) {
+      throw new InvalidDurableValueError("event");
+    }
+    return Object.freeze(clone);
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function validateWireEvent(
+  value: unknown,
+  stored: boolean,
+): { readonly event: KajiEvent; readonly document: Record<string, unknown> } {
+  let durableFailure: InvalidDurableValueError | DurableJsonLimitError | undefined;
+  let snapshot: DeepReadonly<JsonValue>;
+  try {
+    snapshot = durableEventSnapshot(value);
+  } catch (error) {
+    if (error instanceof InvalidDurableValueError || error instanceof DurableJsonLimitError) {
+      durableFailure = error;
+      try {
+        snapshot = descriptorSafeWireSnapshot(value) as DeepReadonly<JsonValue>;
+      } catch {
+        throw new EventSchemaIncompatibleError(durableErrorPointer(error));
+      }
+    } else {
+      throw new EventSchemaIncompatibleError("/");
+    }
+  }
+  if (typeof snapshot !== "object" || snapshot === null || Array.isArray(snapshot)) {
+    throw new EventSchemaIncompatibleError("/");
+  }
+  const document = wirePreflight(snapshot, stored);
   const validator = stored ? storedWireValidator : newWireValidator;
   const eventType = document.type as string;
   if (!validator(document)) {
@@ -400,34 +562,35 @@ function validateWireEvent(value: unknown, stored: boolean): KajiEvent {
       firstSchemaErrorPointer(selected.errors ?? validator.errors),
     );
   }
-  try {
-    canonicalJsonValue(document, "event");
-  } catch {
-    for (const [field, item] of Object.entries(document)) {
-      try {
-        canonicalJsonValue(item, "event");
-      } catch {
-        throw new EventSchemaIncompatibleError(`/${pointerSegment(field)}`);
-      }
-    }
-    throw new EventSchemaIncompatibleError("/");
+  if (durableFailure !== undefined) {
+    throw new EventSchemaIncompatibleError(durableErrorPointer(durableFailure));
   }
   const candidate = stored
     ? Object.fromEntries(Object.entries(document).filter(([key]) => key !== "sequence"))
     : document;
   const parsed = KajiEvent.safeParse(candidate);
   if (!parsed.success) throw new EventSchemaIncompatibleError(zodIssuePointer(parsed.error));
-  return parsed.data;
+  return { event: parsed.data, document };
 }
 
 /** Validate an untouched new-event mapping before constructor defaults can run. */
 export function validateNewEvent(value: unknown): NewKajiEvent {
-  return validateWireEvent(value, false);
+  return validateWireEvent(value, false).event;
+}
+
+/** Subject-aware in-process snapshot used before store/committer admission. */
+export function snapshotNewEvent(value: unknown): NewKajiEvent {
+  return validateNewEvent(durableEventSnapshot(value));
+}
+
+/** Subject-aware stored-candidate snapshot used before backend mutation. */
+export function snapshotStoredEventForAppend(value: unknown): StoredKajiEvent {
+  return validateStoredEvent(durableEventSnapshot(value));
 }
 
 /** Validate an untouched stored-event mapping before constructor defaults can run. */
 export function validateStoredEvent(value: unknown): StoredKajiEvent {
-  const event = validateWireEvent(value, true);
-  const sequence = (value as { sequence: number }).sequence;
+  const { event, document } = validateWireEvent(value, true);
+  const sequence = document.sequence as number;
   return cloneAndFreezeJson({ ...event, sequence });
 }

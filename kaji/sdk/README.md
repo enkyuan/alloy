@@ -318,6 +318,7 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
 | `Integration` | Namespace-scoped tool bundle base class |
 | `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |
+| `InvalidDurableValueError`, `DurableJsonLimitError` | Durable event boundary failures for non-JSON values and oversized UTF-8 payloads |
 | `UserMessage` | Convenience constructor for the initial `user.message` event |
 | `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
 | `SessionStore`, `InMemorySessionStore`, `SessionRecord` | Cross-session index keyed by user (process-local default; postgres opt-in) |

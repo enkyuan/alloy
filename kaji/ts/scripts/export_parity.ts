@@ -667,7 +667,7 @@ function replayJsonEvents(result: unknown, replayRejectedValue = false): StoredE
       result,
     },
   ];
-  return raw.map((payload, index) => {
+  const events = raw.map((payload, index) => {
     const event = KajiEvent.parse({
       id: `json-event-${index + 1}`,
       version: "1.0",
@@ -675,10 +675,17 @@ function replayJsonEvents(result: unknown, replayRejectedValue = false): StoredE
       session_id: "session-json",
       metadata: {},
       ...payload,
+      ...(replayRejectedValue && payload.type === EventType.TOOL_CALL_COMPLETED
+        ? { result: null }
+        : {}),
     });
     const stored = { ...event, sequence: index + 1 } as StoredEvent;
     return replayRejectedValue ? stored : StoredKajiEvent.parse(stored);
   });
+  if (replayRejectedValue) {
+    (events.at(-1)! as Extract<StoredEvent, { type: "tool.call.completed" }>).result = result;
+  }
+  return events;
 }
 
 function runReplay(scenario: JsonObject): JsonObject {

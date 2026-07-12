@@ -1,4 +1,7 @@
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
+import { DurableJsonLimitError, InvalidDurableValueError } from "@/events/errors";
+import { durableJsonSnapshot } from "@/events/json";
+import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 import { logRedactedFailure } from "@/internal/safe-logging";
 import {
   NOOP_METRICS,
@@ -11,7 +14,10 @@ import {
 } from "@/observability";
 import {
   ToolExecutionError,
+  durableToolResultTombstone,
+  invalidToolResult,
   normalizeStartedToolFailure,
+  publicToolExecutionError,
   snapshotToolExecutionError,
   toolCancelled,
   toolExecutionUnknown,
@@ -164,9 +170,20 @@ function invocationFingerprint(name: string, args: Readonly<Record<string, unkno
 }
 
 function fromLedger(outcome: ToolLedgerOutcome): ToolExecutionControllerOutcome {
-  return outcome.status === "completed"
-    ? { status: "completed", result: structuredClone(outcome.result) }
-    : { status: "failed", error: outcome.error };
+  if (outcome.status === "failed") {
+    return { status: "failed", error: publicToolExecutionError(outcome.error) };
+  }
+  try {
+    return {
+      status: "completed",
+      result: durableJsonSnapshot(outcome.result, "tool_result", MAX_DURABLE_TOOL_RESULT_BYTES),
+    };
+  } catch (error) {
+    if (error instanceof InvalidDurableValueError || error instanceof DurableJsonLimitError) {
+      return { status: "failed", error: invalidToolResult() };
+    }
+    throw error;
+  }
 }
 
 function snapshotExecutionRequestContext(context: unknown): ToolExecutionContext {
@@ -327,11 +344,11 @@ export class ToolExecutionController {
     }
     if (claimResult.status === "completed") {
       linked.cleanup();
-      return { status: "completed", result: claimResult.result };
+      return fromLedger({ status: "completed", result: claimResult.result });
     }
     if (claimResult.status === "unknown") {
       linked.cleanup();
-      return { status: "failed", error: claimResult.error };
+      return { status: "failed", error: publicToolExecutionError(claimResult.error) };
     }
 
     const claim = claimResult.claim;
@@ -427,9 +444,24 @@ export class ToolExecutionController {
     });
     const outcome = await Promise.race([settled, abort]);
     if (outcome.status === "completed") {
+      let snapshot;
       try {
-        await this.ledger.complete(claim, outcome.result);
-        return outcome;
+        snapshot = durableJsonSnapshot(
+          outcome.result,
+          "tool_result",
+          MAX_DURABLE_TOOL_RESULT_BYTES,
+        );
+      } catch (cause) {
+        if (cause instanceof InvalidDurableValueError || cause instanceof DurableJsonLimitError) {
+          const error = invalidToolResult();
+          await this.ledger.unknownOutcome(claim, durableToolResultTombstone(cause));
+          return { status: "failed", error };
+        }
+        throw cause;
+      }
+      try {
+        await this.ledger.complete(claim, snapshot);
+        return { status: "completed", result: snapshot };
       } catch (cause) {
         const error = toolExecutionUnknown(cause);
         await this.ledger.unknownOutcome(claim, error);

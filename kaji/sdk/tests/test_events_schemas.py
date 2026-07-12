@@ -1,6 +1,7 @@
 import json
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
@@ -8,9 +9,11 @@ from pydantic import TypeAdapter, ValidationError
 
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.schemas import (
+    AgentTurnExhausted,
     AgentTurnFailed,
     KajiEvent,
     AgentMessageCompleted,
+    MemoryRetrievalCompleted,
     SessionCreated,
     StoredKajiEvent,
     ToolCallCompleted,
@@ -19,11 +22,14 @@ from kaji.infra.events.schemas import (
     ToolCallStarted,
     ToolApprovalRejected,
     UserMessage,
+    WorkflowCompleted,
     event_defaults,
+    revalidate_new_event,
     require_stored_event,
     validate_new_event_python,
     validate_stored_event_python,
 )
+from kaji.infra.events import errors as event_errors
 from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.types import EventType
 from kaji.runtime.determinism import SYSTEM_CLOCK
@@ -50,6 +56,124 @@ class _FixedIds:
     def next(self, scope: object) -> str:
         del scope
         return self.value
+
+
+def _event_with_durable_subject(subject: str, value: object):
+    base: dict[str, Any] = {
+        "id": f"event-{subject}",
+        "session_id": "session",
+        "timestamp": 1.0,
+    }
+    if subject == "tool_result":
+        event = ToolCallCompleted(
+            **base,
+            turn_id="turn",
+            tool_name="tool",
+            tool_call_id="call",
+            result={},
+        )
+        cast(Any, event).result = value
+        return event
+    if subject == "workflow_result":
+        event = WorkflowCompleted(**base, workflow_name="workflow", result={})
+        cast(Any, event).result = value
+        return event
+    if subject == "event_metadata":
+        event = UserMessage(**base, content="hello")
+        cast(Any, event).metadata = {"value": value}
+        return event
+    if subject == "memory_document":
+        event = MemoryRetrievalCompleted(
+            **base,
+            query="query",
+            documents=[{}],
+        )
+        cast(Any, event.documents[0])["value"] = value
+        return event
+    if subject == "pending_tool_call":
+        event = AgentTurnExhausted(
+            **base,
+            max_iterations=1,
+            pending_tool_calls=[{}],
+        )
+        cast(Any, event.pending_tool_calls[0])["value"] = value
+        return event
+    if subject == "event":
+        event = UserMessage(**base, content="hello")
+        cast(Any, event).content = value
+        return event
+    raise AssertionError(f"unhandled subject {subject}")
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "tool_result",
+        "workflow_result",
+        "event_metadata",
+        "memory_document",
+        "pending_tool_call",
+        "event",
+    ],
+)
+def test_in_process_durable_subjects_retain_typed_invalid_classification(
+    subject: str,
+) -> None:
+    event = _event_with_durable_subject(subject, object())
+    error_type = getattr(event_errors, "InvalidDurableValueError")
+
+    with pytest.raises(error_type) as captured:
+        revalidate_new_event(event)
+
+    assert captured.value.code == "INVALID_DURABLE_VALUE"
+    assert captured.value.subject == subject
+
+
+@pytest.mark.parametrize(
+    ("subject", "limit"),
+    [
+        ("tool_result", 65_536),
+        ("workflow_result", 1_048_576),
+        ("event_metadata", 1_048_576),
+        ("memory_document", 1_048_576),
+        ("pending_tool_call", 1_048_576),
+        ("event", 1_048_576),
+    ],
+)
+def test_in_process_durable_subjects_retain_typed_limit_classification(
+    subject: str,
+    limit: int,
+) -> None:
+    event = _event_with_durable_subject(subject, "😀" * (limit // 4 + 1))
+    error_type = getattr(event_errors, "DurableJsonLimitError")
+
+    with pytest.raises(error_type) as captured:
+        revalidate_new_event(event)
+
+    assert captured.value.code == "EVENT_PAYLOAD_TOO_LARGE"
+    assert captured.value.subject == subject
+    assert captured.value.max_bytes == limit
+
+
+def test_raw_wire_durable_failure_remains_event_schema_incompatible() -> None:
+    document: dict[str, Any] = {
+        "id": "event",
+        "version": "1.0",
+        "timestamp": 1.0,
+        "type": EventType.TOOL_CALL_COMPLETED,
+        "session_id": "session",
+        "turn_id": "turn",
+        "tool_name": "tool",
+        "tool_call_id": "call",
+        "result": object(),
+        "metadata": {},
+    }
+
+    with pytest.raises(EventSchemaIncompatibleError) as captured:
+        validate_new_event_python(document)
+
+    assert captured.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
+    assert captured.value.path == "/result"
 
 
 def test_event_validation():

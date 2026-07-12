@@ -2,13 +2,56 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypeAlias
+
+
+DurableJsonSubject: TypeAlias = Literal[
+    "tool_result",
+    "workflow_result",
+    "event_metadata",
+    "memory_document",
+    "pending_tool_call",
+    "event",
+]
+DURABLE_JSON_SUBJECTS = frozenset(
+    {
+        "tool_result",
+        "workflow_result",
+        "event_metadata",
+        "memory_document",
+        "pending_tool_call",
+        "event",
+    }
+)
 
 
 class EventInfrastructureError(RuntimeError):
     """Base class for machine-classifiable event infrastructure failures."""
 
     code: str
+
+
+class InvalidDurableValueError(EventInfrastructureError):
+    """An in-process value cannot be represented by the durable JSON contract."""
+
+    code = "INVALID_DURABLE_VALUE"
+
+    def __init__(self, subject: DurableJsonSubject) -> None:
+        self.subject = subject
+        super().__init__(f"invalid durable JSON value for {subject}")
+
+
+class DurableJsonLimitError(EventInfrastructureError):
+    """A durable JSON value exceeds its canonical UTF-8 byte budget."""
+
+    code = "EVENT_PAYLOAD_TOO_LARGE"
+
+    def __init__(self, subject: DurableJsonSubject, max_bytes: int) -> None:
+        self.subject = subject
+        self.max_bytes = max_bytes
+        super().__init__(
+            f"durable JSON value for {subject} exceeds {max_bytes} UTF-8 bytes"
+        )
 
 
 class EventSchemaIncompatibleError(EventInfrastructureError):

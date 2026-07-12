@@ -17,6 +17,7 @@ import { EventType } from "@/events/types";
 import { MockProvider } from "@/providers/mock";
 import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
 import { replaySession } from "@/sessions/replay";
+import { SessionProjector } from "@/sessions/projector";
 import { ToolExecutionController } from "@/tools/execution";
 import {
   IdempotencyCapacityError,
@@ -126,6 +127,177 @@ describe("tool idempotency ledger", () => {
       wallClock.mockRestore();
       monotonic.mockRestore();
     }
+  });
+});
+
+function deeplyNestedResult(depth = 10_000): unknown {
+  let value: unknown = null;
+  for (let index = 0; index < depth; index++) value = { nested: value };
+  return value;
+}
+
+describe("durable tool results", () => {
+  it.each([
+    ["function", () => undefined, "INVALID_DURABLE_VALUE"],
+    ["nested function", { nested: () => undefined }, "INVALID_DURABLE_VALUE"],
+    ["NaN", Number.NaN, "INVALID_DURABLE_VALUE"],
+    ["unsafe integer", 2 ** 53, "INVALID_DURABLE_VALUE"],
+    ["deeply nested", deeplyNestedResult(), "INVALID_DURABLE_VALUE"],
+    ["oversized", { value: "😀".repeat(16_385) }, "EVENT_PAYLOAD_TOO_LARGE"],
+  ] as const)(
+    "maps %s to one public failure and a replayable internal tombstone",
+    async (_label, bad, internalCode) => {
+      const ledger = new InMemoryToolIdempotencyLedger();
+      const controller = new ToolExecutionController({ ledger, limits: { timeoutMs: null } });
+      const execute = vi.fn().mockResolvedValue(bad);
+      const request = {
+        name: "tool",
+        args: {},
+        context: {
+          principalId: "principal",
+          sessionId: "invalid-result",
+          turnId: "turn",
+          requestId: "request",
+          traceId: "trace",
+          toolCallId: "call",
+          idempotencyKey: "invalid-result:call",
+          signal: new AbortController().signal,
+          metadata: {},
+        },
+        exclusive: false,
+        onStarted: async () => {},
+        execute,
+      };
+
+      await expect(controller.execute(request)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          message: "Invalid tool result",
+          error_code: "INVALID_TOOL_RESULT",
+          retryable: false,
+          outcome: "unknown",
+        },
+      });
+      expect(execute).toHaveBeenCalledOnce();
+
+      const tombstone = await ledger.claim("invalid-result", "call", '["tool",{}]');
+      expect(tombstone).toMatchObject({
+        status: "unknown",
+        error: { error_code: internalCode, subject: "tool_result" },
+      });
+
+      await expect(controller.execute(request)).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          error_code: "INVALID_TOOL_RESULT",
+          retryable: false,
+          outcome: "unknown",
+        },
+      });
+      expect(execute).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps ledger completion I/O failures distinct from invalid results", async () => {
+    const backing = new InMemoryToolIdempotencyLedger();
+    const ledger: ToolIdempotencyLedger = {
+      claim: (...args) => backing.claim(...args),
+      async complete() {
+        throw new Error("ledger unavailable");
+      },
+      retryableFailure: (...args) => backing.retryableFailure(...args),
+      unknownOutcome: (...args) => backing.unknownOutcome(...args),
+      releaseCompleted: (...args) => backing.releaseCompleted(...args),
+    };
+    const controller = new ToolExecutionController({ ledger, limits: { timeoutMs: null } });
+    const execute = vi.fn().mockResolvedValue({ ok: true });
+    const request = {
+      name: "tool",
+      args: {},
+      context: {
+        principalId: "principal",
+        sessionId: "ledger-failure",
+        turnId: "turn",
+        requestId: "request",
+        traceId: "trace",
+        toolCallId: "call",
+        idempotencyKey: "ledger-failure:call",
+        signal: new AbortController().signal,
+        metadata: {},
+      },
+      exclusive: false,
+      onStarted: async () => {},
+      execute,
+    };
+
+    await expect(controller.execute(request)).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TOOL_EXECUTION_FAILED", retryable: false, outcome: "unknown" },
+    });
+    const tombstone = await backing.claim("ledger-failure", "call", '["tool",{}]');
+    expect(tombstone).toMatchObject({
+      status: "unknown",
+      error: { error_code: "TOOL_EXECUTION_FAILED" },
+    });
+    expect((tombstone as { error?: { subject?: unknown } }).error?.subject).toBeUndefined();
+
+    await expect(controller.execute(request)).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TOOL_EXECUTION_FAILED" },
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("keeps runtime turns and projection healthy after a hostile result", async () => {
+    const store = new InMemoryEventStore();
+    const execute = vi.fn().mockResolvedValue({ bad: () => undefined });
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ toolCall: { name: "poison", args: {} } }))
+      .integration({
+        register(registry) {
+          registry.register(
+            {
+              name: "poison",
+              description: "Return a hostile value",
+              parameters: {},
+              risk: "write",
+            },
+            execute,
+          );
+        },
+      })
+      .build({ store });
+
+    const first = await runtime.turn("call it", {
+      sessionId: "invalid-tool-result",
+      context: { principalId: "principal" },
+    });
+    const failures = first.events.filter((event) => event.type === EventType.TOOL_CALL_FAILED);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      error: "Invalid tool result",
+      error_code: "INVALID_TOOL_RESULT",
+      retryable: false,
+      outcome: "unknown",
+    });
+    expect(first.events.some((event) => event.type === EventType.TOOL_CALL_COMPLETED)).toBe(false);
+    expect(first.events.at(-1)?.type).toBe(EventType.AGENT_MESSAGE_COMPLETED);
+    expect(execute).toHaveBeenCalledOnce();
+
+    const projector = new SessionProjector("invalid-tool-result");
+    await expect(projector.sync(store)).resolves.toBeGreaterThan(0);
+    const firstHistory = await store.getEvents("invalid-tool-result");
+    expect(() => replaySession(firstHistory)).not.toThrow();
+
+    const second = await runtime.turn("continue", {
+      sessionId: "invalid-tool-result",
+      context: { principalId: "principal" },
+    });
+    expect(second.text).not.toBe("");
+    expect(second.events.at(-1)?.type).toBe(EventType.AGENT_MESSAGE_COMPLETED);
+    expect(execute).toHaveBeenCalledOnce();
+    const secondHistory = await store.getEvents("invalid-tool-result");
+    expect(() => replaySession(secondHistory)).not.toThrow();
   });
 });
 

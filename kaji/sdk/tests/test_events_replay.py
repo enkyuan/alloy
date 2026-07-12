@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 from kaji.infra.events.errors import EventSchemaIncompatibleError
@@ -106,7 +108,7 @@ def test_replay_renders_every_json_tool_result_canonically(
                 turn_id="turn-json",
                 tool_name="fixture",
                 tool_call_id="call-json",
-                result=result,
+                result=cast(Any, result),
                 sequence=1,
             )
         )
@@ -126,16 +128,16 @@ def test_replay_renders_every_json_tool_result_canonically(
     ],
 )
 def test_replay_rejects_values_outside_the_shared_json_domain(result: object) -> None:
-    events = _stored(
-        ToolCallCompleted(
-            session_id="s-json-invalid",
-            turn_id="turn-json-invalid",
-            tool_name="fixture",
-            tool_call_id="call-json-invalid",
-            result=result,
-            sequence=1,
-        )
+    event = ToolCallCompleted(
+        session_id="s-json-invalid",
+        turn_id="turn-json-invalid",
+        tool_name="fixture",
+        tool_call_id="call-json-invalid",
+        result={},
+        sequence=1,
     )
+    cast(Any, event).result = result
+    events = _stored(event)
 
     with pytest.raises(EventSchemaIncompatibleError) as raised:
         replay_session(events)

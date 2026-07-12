@@ -4,6 +4,8 @@ import {
   snapshotToolExecutionError,
   type ToolExecutionError,
 } from "@/tools/execution-errors";
+import { durableJsonSnapshot } from "@/events/json";
+import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 
 export type ToolLedgerOutcome =
   | { readonly status: "completed"; readonly result: unknown }
@@ -64,7 +66,7 @@ function keyFor(sessionId: string, toolCallId: string): string {
 }
 
 function detachResult(result: unknown): unknown {
-  return structuredClone(result);
+  return durableJsonSnapshot(result, "tool_result", MAX_DURABLE_TOOL_RESULT_BYTES);
 }
 
 function assertPositiveInteger(value: number, name: string): void {

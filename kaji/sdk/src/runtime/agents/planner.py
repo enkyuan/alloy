@@ -209,6 +209,18 @@ class _TerminalDraft:
     def from_execution(cls, outcome: _ToolExecutionOutcome) -> _TerminalDraft:
         if outcome.failure is None:
             return cls(result=outcome.result)
+        if outcome.failure.error_code in {
+            "INVALID_DURABLE_VALUE",
+            "EVENT_PAYLOAD_TOO_LARGE",
+        }:
+            return cls(
+                error="Invalid tool result",
+                fields={
+                    "error_code": "INVALID_TOOL_RESULT",
+                    "retryable": False,
+                    "outcome": "unknown",
+                },
+            )
         return cls(
             error=outcome.failure.error,
             fields={

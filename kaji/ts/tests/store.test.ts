@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import * as eventErrors from "@/events/errors";
 import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
 import { KajiEvent } from "@/events/schemas";
 import { InMemoryEventStore } from "@/events/store";
@@ -21,6 +22,82 @@ function userMessage(
 }
 
 describe("InMemoryEventStore", () => {
+  it("rejects durable poison before admission and preserves sequence one", async () => {
+    const store = new InMemoryEventStore();
+    const poisoned = KajiEvent.parse({
+      id: "poisoned",
+      type: EventType.TOOL_CALL_COMPLETED,
+      version: "1.0",
+      timestamp: 1,
+      session_id: "durable-boundary",
+      turn_id: "turn",
+      tool_name: "tool",
+      tool_call_id: "call",
+      result: {},
+      metadata: {},
+    });
+    (poisoned as { result: unknown }).result = () => undefined;
+    const InvalidDurableValueError = (
+      eventErrors as typeof eventErrors & {
+        InvalidDurableValueError?: new (...args: never[]) => Error;
+      }
+    ).InvalidDurableValueError;
+    expect(InvalidDurableValueError).toBeTypeOf("function");
+    await expect(store.append(poisoned)).rejects.toBeInstanceOf(InvalidDurableValueError!);
+    expect(await store.getEvents("durable-boundary")).toEqual([]);
+    expect(await store.lastSequence("durable-boundary")).toBe(0);
+
+    let getterCalls = 0;
+    const accessor: Record<string, unknown> = {
+      id: "accessor",
+      type: EventType.TOOL_CALL_COMPLETED,
+      version: "1.0",
+      timestamp: 2,
+      session_id: "durable-boundary",
+      turn_id: "turn",
+      tool_name: "tool",
+      tool_call_id: "accessor-call",
+      metadata: {},
+    };
+    Object.defineProperty(accessor, "result", {
+      enumerable: true,
+      get() {
+        getterCalls++;
+        return { secret: "sk-accessor-secret" };
+      },
+    });
+    await expect(store.append(accessor as never)).rejects.toMatchObject({
+      code: "INVALID_DURABLE_VALUE",
+      subject: "tool_result",
+    });
+    expect(getterCalls).toBe(0);
+    expect(await store.getEvents("durable-boundary")).toEqual([]);
+
+    const oversized = KajiEvent.parse({
+      id: "oversized",
+      type: EventType.USER_MESSAGE,
+      version: "1.0",
+      timestamp: 3,
+      session_id: "durable-boundary",
+      content: "😀".repeat(Math.floor(1_048_576 / 4) + 1),
+      metadata: {},
+    });
+    const DurableJsonLimitError = (
+      eventErrors as typeof eventErrors & {
+        DurableJsonLimitError?: new (...args: never[]) => Error;
+      }
+    ).DurableJsonLimitError;
+    expect(DurableJsonLimitError).toBeTypeOf("function");
+    await expect(store.append(oversized)).rejects.toBeInstanceOf(DurableJsonLimitError!);
+    expect(await store.getEvents("durable-boundary")).toEqual([]);
+
+    const accepted = await store.append(userMessage("durable-boundary", "ok", 4, "accepted"));
+    expect(accepted.event.sequence).toBe(1);
+    expect((await store.getEvents("durable-boundary")).map((event) => event.id)).toEqual([
+      "accepted",
+    ]);
+  });
+
   it("preserves append order when timestamps are equal or backdated", async () => {
     const store = new InMemoryEventStore();
     await store.append(userMessage("s1", "first", 200));

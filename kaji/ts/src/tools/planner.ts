@@ -189,6 +189,18 @@ type PlannedCall =
   | { readonly status: "recording_failed"; readonly call: NormalizedCall; readonly error: unknown };
 
 function failureFromExecution(error: ToolExecutionError): FailureDraft {
+  if (
+    error.error_code === "INVALID_DURABLE_VALUE" ||
+    error.error_code === "EVENT_PAYLOAD_TOO_LARGE"
+  ) {
+    return {
+      status: "failed",
+      error: "Invalid tool result",
+      error_code: "INVALID_TOOL_RESULT",
+      retryable: false,
+      outcome: "unknown",
+    };
+  }
   return {
     status: "failed",
     error: error.message,

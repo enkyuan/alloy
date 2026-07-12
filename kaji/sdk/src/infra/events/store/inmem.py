@@ -13,10 +13,8 @@ from kaji.infra.events.schemas import (
     StoredKajiEvent,
     revalidate_new_event,
     revalidate_stored_event,
-    require_stored_event,
-    validate_event_python,
 )
-from kaji.infra.events.store.base import AppendResult
+from kaji.infra.events.store.base import AppendResult, prepare_stored_event
 
 
 class InMemoryEventStore:
@@ -66,7 +64,18 @@ class InMemoryEventStore:
                 return AppendResult(event=self._copy_stored(existing), inserted=False)
 
             bucket = self._events.get(draft.session_id)
+            is_new_session = bucket is None
             if bucket is None:
+                bucket = []
+
+            if len(bucket) >= self.max_events_per_session:
+                raise EventStoreCapacityError(
+                    draft.session_id,
+                    f"session reached {self.max_events_per_session} events",
+                )
+
+            stored = prepare_stored_event(draft, len(bucket) + 1)
+            if is_new_session:
                 if (
                     len(self._events) >= self.max_sessions
                     and not self._evict_closed_session()
@@ -75,18 +84,7 @@ class InMemoryEventStore:
                         draft.session_id,
                         f"all {self.max_sessions} session slots are active",
                     )
-                bucket = []
                 self._events[draft.session_id] = bucket
-
-            if len(bucket) >= self.max_events_per_session:
-                raise EventStoreCapacityError(
-                    draft.session_id,
-                    f"session reached {self.max_events_per_session} events",
-                )
-
-            stored_payload = draft.model_dump(mode="python")
-            stored_payload["sequence"] = len(bucket) + 1
-            stored = require_stored_event(validate_event_python(stored_payload))
             bucket.append(stored)
             self._events_by_id[stored.id] = stored
             self._events.move_to_end(stored.session_id)

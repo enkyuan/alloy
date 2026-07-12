@@ -3,13 +3,25 @@
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent
+from kaji.infra.events.schemas import (
+    NewKajiEvent,
+    StoredKajiEvent,
+    revalidate_stored_event_for_append,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class AppendResult:
     event: StoredKajiEvent
     inserted: bool
+
+
+def prepare_stored_event(event: NewKajiEvent, sequence: int) -> StoredKajiEvent:
+    """Build and validate the stored candidate before a backend mutates state."""
+
+    payload = event.model_dump(mode="python")
+    payload["sequence"] = sequence
+    return revalidate_stored_event_for_append(payload)
 
 
 @runtime_checkable

@@ -1,3 +1,41 @@
+export type DurableJsonSubject =
+  | "tool_result"
+  | "workflow_result"
+  | "event_metadata"
+  | "memory_document"
+  | "pending_tool_call"
+  | "event";
+
+export const DURABLE_JSON_SUBJECTS: ReadonlySet<string> = new Set<DurableJsonSubject>([
+  "tool_result",
+  "workflow_result",
+  "event_metadata",
+  "memory_document",
+  "pending_tool_call",
+  "event",
+]);
+
+export class InvalidDurableValueError extends Error {
+  readonly code = "INVALID_DURABLE_VALUE" as const;
+
+  constructor(readonly subject: DurableJsonSubject) {
+    super(`Invalid durable JSON value for ${subject}`);
+    this.name = "InvalidDurableValueError";
+  }
+}
+
+export class DurableJsonLimitError extends Error {
+  readonly code = "EVENT_PAYLOAD_TOO_LARGE" as const;
+
+  constructor(
+    readonly subject: DurableJsonSubject,
+    readonly maxBytes: number,
+  ) {
+    super(`Durable JSON value for ${subject} exceeds ${maxBytes} UTF-8 bytes`);
+    this.name = "DurableJsonLimitError";
+  }
+}
+
 export class EventSchemaIncompatibleError extends Error {
   readonly code = "EVENT_SCHEMA_INCOMPATIBLE";
 

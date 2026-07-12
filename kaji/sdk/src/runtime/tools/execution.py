@@ -10,6 +10,9 @@ import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
 from kaji.core.safe_logging import log_no_throw, log_redacted_failure
+from kaji.infra.events.errors import DurableJsonLimitError, InvalidDurableValueError
+from kaji.infra.events.json import durable_json_snapshot
+from kaji.infra.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
@@ -46,6 +49,7 @@ _PUBLIC_TIMEOUT = "Tool execution timed out"
 _PUBLIC_CAPACITY = "Tool execution capacity exhausted"
 _PUBLIC_CONFLICT = "Tool invocation conflicts with an existing idempotency key"
 _PUBLIC_INVALID_ARGUMENTS = "Invalid tool arguments"
+_PUBLIC_INVALID_RESULT = "Invalid tool result"
 _STARTED_LOOKUP_TIMEOUT_SECONDS = 0.1
 
 logger = logging.getLogger(__name__)
@@ -151,13 +155,43 @@ def _from_resolution(
 ) -> _ToolExecutionOutcome:
     if resolution.failure is None:
         return _ToolExecutionOutcome(result=resolution.result)
+    failure = resolution.failure
+    if failure.subject == "tool_result" and failure.error_code in {
+        "INVALID_DURABLE_VALUE",
+        "EVENT_PAYLOAD_TOO_LARGE",
+    }:
+        return _ToolExecutionOutcome(failure=_invalid_tool_result())
     return _ToolExecutionOutcome(
         failure=_ToolExecutionFailure(
-            error=resolution.failure.error,
-            error_code=resolution.failure.error_code,
-            retryable=resolution.failure.retryable,
-            outcome=resolution.failure.outcome,
+            error=failure.error,
+            error_code=failure.error_code,
+            retryable=failure.retryable,
+            outcome=failure.outcome,
         )
+    )
+
+
+def _invalid_tool_result(
+    cause: BaseException | None = None,
+) -> _ToolExecutionFailure:
+    return _ToolExecutionFailure(
+        error=_PUBLIC_INVALID_RESULT,
+        error_code="INVALID_TOOL_RESULT",
+        retryable=False,
+        outcome="unknown",
+        cause=cause,
+    )
+
+
+def _durable_result_tombstone(
+    error: InvalidDurableValueError | DurableJsonLimitError,
+) -> ToolIdempotencyFailure:
+    return ToolIdempotencyFailure(
+        error="Invalid durable tool result",
+        error_code=error.code,
+        retryable=False,
+        outcome="unknown",
+        subject=error.subject,
     )
 
 
@@ -938,7 +972,20 @@ class ToolExecutionController:
                 completed = settlement.result()
                 if completed.cause is None:
                     try:
-                        await self.ledger.complete(claim, completed.result)
+                        snapshot = durable_json_snapshot(
+                            completed.result,
+                            subject="tool_result",
+                            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+                        )
+                    except (InvalidDurableValueError, DurableJsonLimitError) as error:
+                        failure = _invalid_tool_result(error)
+                        await self.ledger.unknown_outcome(
+                            claim, _durable_result_tombstone(error)
+                        )
+                        claim_resolved = True
+                        return _ToolExecutionOutcome(failure=failure)
+                    try:
+                        await self.ledger.complete(claim, snapshot)
                     except Exception as error:
                         failure = _ToolExecutionFailure(
                             error=_PUBLIC_EXECUTION_FAILURE,
@@ -953,7 +1000,7 @@ class ToolExecutionController:
                         claim_resolved = True
                         return _ToolExecutionOutcome(failure=failure)
                     claim_resolved = True
-                    return _ToolExecutionOutcome(result=completed.result)
+                    return _ToolExecutionOutcome(result=snapshot)
                 if isinstance(completed.cause, ToolExecutionError):
                     failure = _ToolExecutionFailure(
                         error=_PUBLIC_EXECUTION_FAILURE,

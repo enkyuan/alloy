@@ -1,3 +1,10 @@
+import {
+  DURABLE_JSON_SUBJECTS,
+  DurableJsonLimitError,
+  InvalidDurableValueError,
+  type DurableJsonSubject,
+} from "@/events/errors";
+
 export type DeepReadonly<T> = T extends (...args: never[]) => unknown
   ? T
   : T extends readonly (infer TItem)[]
@@ -7,6 +14,8 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown
       : T;
 
 export const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+export type JsonScalar = null | boolean | number | string;
+export type JsonValue = JsonScalar | JsonValue[] | { [key: string]: JsonValue };
 
 /** Clone a JSON-safe value and freeze every object and array in the clone. */
 export function cloneAndFreezeJson<T>(value: T): DeepReadonly<T> {
@@ -114,6 +123,30 @@ export function canonicalJsonValue(value: unknown, subject = "JSON value"): stri
   };
 
   return encode(value);
+}
+
+/** Validate, size-check, detach, and freeze one durable JSON value. */
+export function durableJsonSnapshot(
+  value: unknown,
+  subject: string,
+  maxBytes: number,
+): DeepReadonly<JsonValue> {
+  if (!DURABLE_JSON_SUBJECTS.has(subject)) {
+    throw new RangeError("Durable JSON subject must use the closed vocabulary");
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError("maxBytes must be a non-negative safe integer");
+  }
+  let encoded: string;
+  try {
+    encoded = canonicalJsonValue(value, subject);
+  } catch {
+    throw new InvalidDurableValueError(subject as DurableJsonSubject);
+  }
+  if (new TextEncoder().encode(encoded).byteLength > maxBytes) {
+    throw new DurableJsonLimitError(subject as DurableJsonSubject, maxBytes);
+  }
+  return cloneAndFreezeJson(JSON.parse(encoded) as JsonValue);
 }
 
 function cloneJsonValue(value: unknown, ancestors: WeakSet<object>): unknown {

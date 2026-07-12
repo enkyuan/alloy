@@ -11,7 +11,7 @@ import {
   type KajiEvent,
   type NewKajiEvent as NewKajiEventType,
   type StoredKajiEvent,
-  validateNewEvent,
+  snapshotNewEvent,
   validateStoredEvent,
 } from "@/events/schemas";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
@@ -199,7 +199,7 @@ export class InMemoryEventCommitter implements EventCommitter {
   }
 
   commit(event: NewKajiEventType): Promise<StoredKajiEvent> {
-    const validated = validateNewEvent(structuredClone(event));
+    const validated = snapshotNewEvent(event);
     return this.serial.run(async () => {
       let result;
       try {
@@ -211,7 +211,7 @@ export class InMemoryEventCommitter implements EventCommitter {
         }
         throw new EventDeliveryError("append", validated.id, false, { cause });
       }
-      const stored = validateStoredEvent(structuredClone(result.event));
+      const stored = validateStoredEvent(result.event);
       if (result.inserted) {
         for (const subscriber of this.subscribers.get(stored.session_id) ?? []) {
           subscriber.push(stored);
@@ -300,7 +300,7 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   commit(input: NewKajiEventType): Promise<StoredKajiEvent> {
-    const event = validateNewEvent(structuredClone(input));
+    const event = snapshotNewEvent(input);
     return this.serial.run(() => this.commitUnlocked(event));
   }
 
@@ -332,7 +332,7 @@ export class SplitEventCommitter implements EventCommitter {
       }
       throw new EventDeliveryError("append", event.id, false, { cause });
     }
-    const stored = validateStoredEvent(structuredClone(result.event));
+    const stored = validateStoredEvent(result.event);
     if (!result.inserted) return stored;
     if (this.hasPendingForSession(stored.session_id)) {
       this.pending.set(stored.id, stored);

@@ -469,7 +469,8 @@ describe("bounded tool execution", () => {
     const resultA = (waiterA as { result: { nested: { value: number } } }).result;
     const resultB = (waiterB as { result: { nested: { value: number } } }).result;
     const resultC = (waiterC as { result: { nested: { value: number } } }).result;
-    resultA.nested.value = 99;
+    expect(Object.isFrozen(resultA)).toBe(true);
+    expect(Object.isFrozen(resultA.nested)).toBe(true);
     expect(resultB.nested.value).toBe(1);
     expect(resultC.nested.value).toBe(1);
     expect(resultA).not.toBe(resultB);

@@ -15,6 +15,10 @@ EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_event_migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "sdk" / "src" / "contracts"
+EVENT_SCHEMAS = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json",
+    REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json",
+)
 
 
 def test_beta_contract_defaults_are_public_and_stable() -> None:
@@ -35,6 +39,18 @@ def test_beta_contract_defaults_are_public_and_stable() -> None:
     assert contract["events"]["maxDurableToolResultBytes"] == 65_536
     assert contract["events"]["maxDurableEventBytes"] == 1_048_576
     assert contract["events"]["inMemoryStoreMaxEventsPerSession"] == 10_000
+
+
+def test_event_schemas_annotate_durable_event_and_tool_result_caps() -> None:
+    for path in EVENT_SCHEMAS:
+        schema = json.loads(path.read_text())
+        assert schema["x-maxSerializedBytes"] == 1_048_576
+        assert (
+            schema["$defs"]["toolCallCompleted"]["allOf"][1]["properties"]["result"][
+                "x-maxSerializedBytes"
+            ]
+            == 65_536
+        )
 
 
 def test_python_package_contract_copy_matches_canonical_files() -> None:

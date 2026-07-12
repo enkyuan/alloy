@@ -4,7 +4,8 @@ import { EventType } from "@/events/types";
 import {
   type NewKajiEvent as NewKajiEventType,
   type StoredKajiEvent,
-  validateNewEvent,
+  snapshotNewEvent,
+  snapshotStoredEventForAppend,
   validateStoredEvent,
 } from "@/events/schemas";
 
@@ -41,7 +42,7 @@ function draftOf(event: StoredKajiEvent): unknown {
 }
 
 function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
-  return validateStoredEvent(structuredClone(event));
+  return validateStoredEvent(event);
 }
 
 export class InMemoryEventStore implements EventStore {
@@ -63,7 +64,7 @@ export class InMemoryEventStore implements EventStore {
   }
 
   async append(input: NewKajiEventType): Promise<AppendResult> {
-    const event = validateNewEvent(structuredClone(input));
+    const event = snapshotNewEvent(input);
     const existing = this.eventsById.get(event.id);
     if (existing !== undefined) {
       if (!structurallyEqualJson(draftOf(existing), event)) {
@@ -73,10 +74,9 @@ export class InMemoryEventStore implements EventStore {
     }
 
     let session = this.sessions.get(event.session_id);
+    const isNewSession = session === undefined;
     if (session === undefined) {
-      this.admitSession(event.session_id);
-      session = { events: [], closed: false, lastAccess: ++this.clock };
-      this.sessions.set(event.session_id, session);
+      session = { events: [], closed: false, lastAccess: 0 };
     }
     if (session.events.length >= this.maxEventsPerSession) {
       throw new EventStoreCapacityError(
@@ -85,7 +85,14 @@ export class InMemoryEventStore implements EventStore {
       );
     }
 
-    const stored = validateStoredEvent({ ...event, sequence: session.events.length + 1 });
+    const stored = snapshotStoredEventForAppend({
+      ...event,
+      sequence: session.events.length + 1,
+    });
+    if (isNewSession) {
+      this.admitSession(event.session_id);
+      this.sessions.set(event.session_id, session);
+    }
     session.events.push(stored);
     session.closed = event.type === EventType.SESSION_CLOSED;
     session.lastAccess = ++this.clock;

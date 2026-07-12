@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from dataclasses import fields
 import math
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal, Never
 
 import pytest
 
 from kaji.infra.events.store.inmem import InMemoryEventStore
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.types import EventType
+from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator
@@ -368,30 +369,284 @@ async def test_same_call_id_in_different_sessions_tracks_both_active_tasks() -> 
     assert await controller.drain_tools(1) == []
 
 
+def _deeply_nested_result(depth: int = 2_000) -> object:
+    value: object = None
+    for _ in range(depth):
+        value = {"nested": value}
+    return value
+
+
+def _hostile_container_result(
+    kind: Literal["dict", "list"], calls: list[str]
+) -> object:
+    def hostile(name: str) -> Never:
+        calls.append(name)
+        raise AssertionError(f"hostile container hook called: {name}")
+
+    if kind == "dict":
+
+        class HostileDict(dict[str, object]):
+            def __iter__(self) -> Iterator[str]:
+                hostile("__iter__")
+
+            def __getattribute__(self, name: str) -> Any:
+                hostile(f"__getattribute__:{name}")
+
+        return HostileDict({"safe": True})
+
+    class HostileList(list[object]):
+        def __iter__(self) -> Iterator[object]:
+            hostile("__iter__")
+
+        def __getattribute__(self, name: str) -> Any:
+            hostile(f"__getattribute__:{name}")
+
+    return HostileList([True])
+
+
 @pytest.mark.asyncio
-async def test_result_snapshot_failure_becomes_unknown_tombstone() -> None:
-    class Uncopyable:
-        def __deepcopy__(self, _memo):
-            raise RuntimeError("cannot detach")
-
-    controller = ToolExecutionController()
+@pytest.mark.parametrize(
+    ("bad", "internal_code"),
+    [
+        (object(), "INVALID_DURABLE_VALUE"),
+        ({"nested": object()}, "INVALID_DURABLE_VALUE"),
+        (float("nan"), "INVALID_DURABLE_VALUE"),
+        (2**53, "INVALID_DURABLE_VALUE"),
+        pytest.param(
+            _deeply_nested_result(),
+            "INVALID_DURABLE_VALUE",
+            id="deeply-nested",
+        ),
+        ({"value": "😀" * 16_385}, "EVENT_PAYLOAD_TOO_LARGE"),
+    ],
+)
+async def test_invalid_tool_result_becomes_public_failure_and_internal_tombstone(
+    bad: object,
+    internal_code: str,
+) -> None:
+    ledger = InMemoryToolIdempotencyLedger()
+    controller = ToolExecutionController(ledger=ledger)
     spec = ToolSpec(name="tool", description="tool", parameters={}, risk="write")
+    executions = 0
 
-    async def executor(_invocation: ToolInvocation) -> Uncopyable:
-        return Uncopyable()
+    async def executor(_invocation: ToolInvocation) -> object:
+        nonlocal executions
+        executions += 1
+        return bad
 
     outcome = await controller.execute(
-        _invocation("uncopyable"), spec, executor, _noop_started
+        _invocation("invalid-result"), spec, executor, _noop_started
+    )
+    assert outcome.failure is not None
+    assert outcome.failure.error == "Invalid tool result"
+    assert outcome.failure.error_code == "INVALID_TOOL_RESULT"
+    assert outcome.failure.retryable is False
+    assert outcome.failure.outcome == "unknown"
+    assert executions == 1
+
+    tombstone = await _claim(ledger, "invalid-result")
+    assert tombstone.kind == "unknown"
+    assert tombstone.resolution is not None
+    assert tombstone.resolution.failure is not None
+    assert tombstone.resolution.failure.error_code == internal_code
+    assert tombstone.resolution.failure.subject == "tool_result"
+
+    replay = await controller.execute(
+        _invocation("invalid-result"), spec, executor, _noop_started
+    )
+    assert replay.failure is not None
+    assert replay.failure.error_code == "INVALID_TOOL_RESULT"
+    assert replay.failure.retryable is False
+    assert replay.failure.outcome == "unknown"
+    assert executions == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["dict", "list"])
+async def test_hostile_container_result_is_tombstoned_without_calling_hooks(
+    kind: Literal["dict", "list"],
+) -> None:
+    class RecordingLedger(InMemoryToolIdempotencyLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            self.completed_ids: list[str] = []
+            self.unknown_ids: list[str] = []
+
+        async def complete(self, claim: ToolIdempotencyClaim, result: Any) -> None:
+            self.completed_ids.append(claim.tool_call_id)
+            await super().complete(claim, result)
+
+        async def unknown_outcome(
+            self,
+            claim: ToolIdempotencyClaim,
+            failure: ToolIdempotencyFailure,
+        ) -> None:
+            self.unknown_ids.append(claim.tool_call_id)
+            await super().unknown_outcome(claim, failure)
+
+    calls: list[str] = []
+    hostile = _hostile_container_result(kind, calls)
+    ledger = RecordingLedger()
+    controller = ToolExecutionController(ledger=ledger)
+    spec = ToolSpec(name="tool", description="tool", parameters={}, risk="write")
+    executions = 0
+
+    async def executor(_invocation: ToolInvocation) -> object:
+        nonlocal executions
+        executions += 1
+        return hostile
+
+    first = await controller.execute(
+        _invocation("hostile-result"), spec, executor, _noop_started
+    )
+    assert first.failure is not None
+    assert first.failure.error == "Invalid tool result"
+    assert first.failure.error_code == "INVALID_TOOL_RESULT"
+    assert first.failure.retryable is False
+    assert first.failure.outcome == "unknown"
+    assert calls == []
+    assert executions == 1
+    assert ledger.completed_ids == []
+    assert ledger.unknown_ids == ["hostile-result"]
+
+    tombstone = await _claim(ledger, "hostile-result")
+    assert tombstone.kind == "unknown"
+    assert tombstone.resolution is not None
+    assert tombstone.resolution.failure is not None
+    assert tombstone.resolution.failure.error_code == "INVALID_DURABLE_VALUE"
+    assert tombstone.resolution.failure.subject == "tool_result"
+
+    replay = await controller.execute(
+        _invocation("hostile-result"), spec, executor, _noop_started
+    )
+    assert replay.failure is not None
+    assert replay.failure.error == "Invalid tool result"
+    assert replay.failure.error_code == "INVALID_TOOL_RESULT"
+    assert replay.failure.retryable is False
+    assert replay.failure.outcome == "unknown"
+    assert calls == []
+    assert executions == 1
+    assert ledger.completed_ids == []
+    assert ledger.unknown_ids == ["hostile-result"]
+
+    async def healthy_executor(
+        _invocation: ToolInvocation,
+    ) -> dict[str, bool]:
+        return {"ok": True}
+
+    healthy = await controller.execute(
+        _invocation("healthy-result"), spec, healthy_executor, _noop_started
+    )
+    assert healthy.failure is None
+    assert healthy.result == {"ok": True}
+    assert ledger.completed_ids == ["healthy-result"]
+    assert ledger.unknown_ids == ["hostile-result"]
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_ledger_completion_io_failure_remains_distinct_from_invalid_result() -> (
+    None
+):
+    class BrokenCompleteLedger(InMemoryToolIdempotencyLedger):
+        async def complete(self, claim: Any, result: Any) -> None:
+            del claim, result
+            raise RuntimeError("ledger unavailable")
+
+    ledger = BrokenCompleteLedger()
+    controller = ToolExecutionController(ledger=ledger)
+    spec = ToolSpec(name="tool", description="tool", parameters={}, risk="write")
+    executions = 0
+
+    async def executor(_invocation: ToolInvocation) -> dict[str, bool]:
+        nonlocal executions
+        executions += 1
+        return {"ok": True}
+
+    outcome = await controller.execute(
+        _invocation("ledger-failure"), spec, executor, _noop_started
     )
     assert outcome.failure is not None
     assert outcome.failure.error_code == "TOOL_EXECUTION_FAILED"
+    assert outcome.failure.retryable is False
     assert outcome.failure.outcome == "unknown"
 
+    tombstone = await _claim(ledger, "ledger-failure")
+    assert tombstone.kind == "unknown"
+    assert tombstone.resolution is not None
+    assert tombstone.resolution.failure is not None
+    assert tombstone.resolution.failure.error_code == "TOOL_EXECUTION_FAILED"
+    assert tombstone.resolution.failure.subject is None
+
     replay = await controller.execute(
-        _invocation("uncopyable"), spec, executor, _noop_started
+        _invocation("ledger-failure"), spec, executor, _noop_started
     )
     assert replay.failure is not None
-    assert replay.failure.outcome == "unknown"
+    assert replay.failure.error_code == "TOOL_EXECUTION_FAILED"
+    assert executions == 1
+
+
+@pytest.mark.asyncio
+async def test_invalid_tool_result_does_not_poison_runtime_or_projection() -> None:
+    executions = 0
+
+    class PoisonIntegration:
+        def register(self, registry: Any) -> None:
+            spec = ToolSpec(
+                name="poison",
+                description="Return a hostile value",
+                parameters={"type": "object", "properties": {}},
+                risk="write",
+            )
+
+            async def poison(_context: Any, _arguments: Any) -> object:
+                nonlocal executions
+                executions += 1
+                return {"bad": object()}
+
+            registry.register(spec)(poison)
+
+    store = InMemoryEventStore()
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider())
+        .integration(PoisonIntegration())
+        .build(store=store)
+    )
+    context = TurnContext(principal_id="principal")
+
+    first = await runtime.turn(
+        "call it",
+        session_id="invalid-tool-result",
+        context=context,
+    )
+    failures = [
+        event for event in first.events if event.type == EventType.TOOL_CALL_FAILED
+    ]
+    assert len(failures) == 1
+    assert failures[0].error == "Invalid tool result"
+    assert failures[0].error_code == "INVALID_TOOL_RESULT"
+    assert failures[0].retryable is False
+    assert failures[0].outcome == "unknown"
+    assert not any(
+        event.type == EventType.TOOL_CALL_COMPLETED for event in first.events
+    )
+    assert first.events[-1].type == EventType.AGENT_MESSAGE_COMPLETED
+    assert executions == 1
+
+    projector = SessionProjector("invalid-tool-result")
+    await projector.sync(store)
+    replay_session(await store.get_events("invalid-tool-result"))
+
+    second = await runtime.turn(
+        "continue",
+        session_id="invalid-tool-result",
+        context=context,
+    )
+    assert second.text == "mock"
+    assert second.events[-1].type == EventType.AGENT_MESSAGE_COMPLETED
+    assert executions == 1
+    replay_session(await store.get_events("invalid-tool-result"))
 
 
 @pytest.mark.asyncio

@@ -31,8 +31,12 @@ from pydantic import (
     field_validator,
 )
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.json import canonical_json
+from kaji.infra.events.errors import (
+    DurableJsonLimitError,
+    EventSchemaIncompatibleError,
+    InvalidDurableValueError,
+)
+from kaji.infra.events.json import canonical_json, durable_json_snapshot
 from kaji.infra.events.types import EventType
 from kaji.runtime.determinism import (
     Clock,
@@ -47,6 +51,8 @@ _EVENT_ID_FACTORY: ContextVar[IdFactory] = ContextVar(
 )
 _EVENT_CLOCK: ContextVar[Clock] = ContextVar("kaji_event_clock", default=SYSTEM_CLOCK)
 MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024
+MAX_DURABLE_TOOL_RESULT_BYTES = 64 * 1024
+MAX_DURABLE_EVENT_BYTES = 1024 * 1024
 _REQUIRED_WIRE_FIELDS = ("id", "version", "timestamp", "type", "session_id")
 
 
@@ -119,8 +125,11 @@ class BaseEvent(BaseModel):
     @field_validator("metadata", mode="before")
     @classmethod
     def _metadata_is_durable_json(cls, value: Any) -> Any:
-        canonical_json(value, subject="event metadata")
-        return value
+        return durable_json_snapshot(
+            value,
+            subject="event_metadata",
+            max_bytes=MAX_DURABLE_EVENT_BYTES,
+        )
 
 
 class SessionCreated(BaseEvent):
@@ -164,7 +173,21 @@ class MemoryRetrievalCompleted(BaseEvent):
         EventType.MEMORY_RETRIEVAL_COMPLETED
     )
     query: str
-    documents: List[Dict[str, Any]]
+    documents: List[Dict[str, JsonValue]]
+
+    @field_validator("documents", mode="before")
+    @classmethod
+    def _documents_are_durable_json(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            durable_json_snapshot(
+                document,
+                subject="memory_document",
+                max_bytes=MAX_DURABLE_EVENT_BYTES,
+            )
+            for document in value
+        ]
 
 
 class AgentReasoningStarted(BaseEvent):
@@ -193,8 +216,22 @@ class AgentMessageCompleted(BaseEvent):
 class AgentTurnExhausted(BaseEvent):
     type: Literal[EventType.AGENT_TURN_EXHAUSTED] = EventType.AGENT_TURN_EXHAUSTED
     max_iterations: int = Field(ge=0)
-    pending_tool_calls: List[Dict[str, Any]]
+    pending_tool_calls: List[Dict[str, JsonValue]]
     reason: Optional[str] = None
+
+    @field_validator("pending_tool_calls", mode="before")
+    @classmethod
+    def _pending_calls_are_durable_json(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return value
+        return [
+            durable_json_snapshot(
+                call,
+                subject="pending_tool_call",
+                max_bytes=MAX_DURABLE_EVENT_BYTES,
+            )
+            for call in value
+        ]
 
 
 class AgentTurnFailed(BaseEvent):
@@ -235,9 +272,18 @@ class ToolCallCompleted(BaseEvent):
     turn_id: str = Field(min_length=1)
     tool_name: str = Field(min_length=1)
     tool_call_id: str = Field(min_length=1)
-    result: Any
+    result: JsonValue
     tokens: Optional[EventTokenUsage] = None
     cost_usd: Optional[float] = Field(default=None, ge=0)
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def _result_is_durable_json(cls, value: Any) -> Any:
+        return durable_json_snapshot(
+            value,
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        )
 
 
 class ToolCallFailed(BaseEvent):
@@ -317,7 +363,16 @@ class WorkflowStarted(BaseEvent):
 class WorkflowCompleted(BaseEvent):
     type: Literal[EventType.WORKFLOW_COMPLETED] = EventType.WORKFLOW_COMPLETED
     workflow_name: str
-    result: Any
+    result: JsonValue
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def _result_is_durable_json(cls, value: Any) -> Any:
+        return durable_json_snapshot(
+            value,
+            subject="workflow_result",
+            max_bytes=MAX_DURABLE_EVENT_BYTES,
+        )
 
 
 class WorkflowFailed(BaseEvent):
@@ -492,16 +547,81 @@ def _pydantic_error_pointer(error: ValidationError) -> str:
     return _json_pointer(location)
 
 
+def _durable_error_pointer(
+    error: InvalidDurableValueError | DurableJsonLimitError,
+) -> str:
+    return {
+        "tool_result": "/result",
+        "workflow_result": "/result",
+        "event_metadata": "/metadata",
+        "memory_document": "/documents",
+        "pending_tool_call": "/pending_tool_calls",
+        "event": "/",
+    }[error.subject]
+
+
+def _snapshot_event_subjects(document: dict[str, Any]) -> None:
+    if "metadata" in document:
+        durable_json_snapshot(
+            document["metadata"],
+            subject="event_metadata",
+            max_bytes=MAX_DURABLE_EVENT_BYTES,
+        )
+    event_type = document.get("type")
+    if event_type == EventType.TOOL_CALL_COMPLETED and "result" in document:
+        durable_json_snapshot(
+            document["result"],
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        )
+    elif event_type == EventType.WORKFLOW_COMPLETED and "result" in document:
+        durable_json_snapshot(
+            document["result"],
+            subject="workflow_result",
+            max_bytes=MAX_DURABLE_EVENT_BYTES,
+        )
+    elif event_type == EventType.MEMORY_RETRIEVAL_COMPLETED:
+        documents = document.get("documents")
+        if isinstance(documents, list):
+            for item in documents:
+                durable_json_snapshot(
+                    item,
+                    subject="memory_document",
+                    max_bytes=MAX_DURABLE_EVENT_BYTES,
+                )
+    elif event_type == EventType.AGENT_TURN_EXHAUSTED:
+        pending = document.get("pending_tool_calls")
+        if isinstance(pending, list):
+            for item in pending:
+                durable_json_snapshot(
+                    item,
+                    subject="pending_tool_call",
+                    max_bytes=MAX_DURABLE_EVENT_BYTES,
+                )
+
+
+def _durable_event_snapshot(value: object) -> object:
+    if isinstance(value, dict):
+        _snapshot_event_subjects(cast(dict[str, Any], value))
+    return durable_json_snapshot(
+        value,
+        subject="event",
+        max_bytes=MAX_DURABLE_EVENT_BYTES,
+    )
+
+
 def _validate_wire_event(value: object, *, stored: bool) -> KajiEvent:
     document = _wire_preflight(value, stored=stored)
     schema_path = _first_schema_error_pointer(document, stored=stored)
     if schema_path is not None:
         raise EventSchemaIncompatibleError(schema_path)
     try:
-        canonical_json(document, subject="event")
-        return _EVENT_ADAPTER.validate_python(document)
+        snapshot = _durable_event_snapshot(document)
+        return _EVENT_ADAPTER.validate_python(snapshot)
     except EventSchemaIncompatibleError:
         raise
+    except (InvalidDurableValueError, DurableJsonLimitError) as error:
+        raise EventSchemaIncompatibleError(_durable_error_pointer(error)) from None
     except ValidationError as error:
         raise EventSchemaIncompatibleError(_pydantic_error_pointer(error)) from None
     except (TypeError, ValueError):
@@ -584,8 +704,22 @@ def require_new_event(event: KajiEvent) -> NewKajiEvent:
 
 def revalidate_new_event(event: object) -> NewKajiEvent:
     """Detach and fully revalidate a mutable draft at a durable boundary."""
-    value = event.model_dump(mode="python") if isinstance(event, BaseEvent) else event
-    return validate_new_event_python(value)
+    value = (
+        event.model_dump(mode="python", warnings=False)
+        if isinstance(event, BaseEvent)
+        else event
+    )
+    return validate_new_event_python(_durable_event_snapshot(value))
+
+
+def revalidate_stored_event_for_append(event: object) -> StoredKajiEvent:
+    """Snapshot an in-process stored candidate before any store mutation."""
+    value = (
+        event.model_dump(mode="python", warnings=False)
+        if isinstance(event, BaseEvent)
+        else event
+    )
+    return validate_stored_event_python(_durable_event_snapshot(value))
 
 
 def require_stored_event(event: KajiEvent | StoredKajiEvent) -> StoredKajiEvent:
@@ -598,5 +732,9 @@ def revalidate_stored_event(
     event: object,
 ) -> StoredKajiEvent:
     """Detach and fully revalidate a store result before replay or delivery."""
-    value = event.model_dump(mode="python") if isinstance(event, BaseEvent) else event
+    value = (
+        event.model_dump(mode="python", warnings=False)
+        if isinstance(event, BaseEvent)
+        else event
+    )
     return validate_stored_event_python(value)

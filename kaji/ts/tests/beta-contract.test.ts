@@ -10,6 +10,10 @@ const contractPath = resolve(__dirname, "../../contracts/beta-core-v1.json");
 const canonicalPath = resolve(__dirname, "../../contracts/beta-core-v1.json");
 const packagedPath = resolve(__dirname, "../contracts/beta-core-v1.json");
 const eventFixturePath = resolve(__dirname, "../../contracts/events/conformance.json");
+const eventSchemaPaths = [
+  resolve(__dirname, "../../contracts/events/new-kaji-event-v1.schema.json"),
+  resolve(__dirname, "../../contracts/events/stored-kaji-event-v1.schema.json"),
+] as const;
 
 describe("production-beta contract", () => {
   it("pins the production-beta compatibility defaults", () => {
@@ -37,6 +41,16 @@ describe("production-beta contract", () => {
 
   it("ships a byte-identical package copy", () => {
     expect(readFileSync(packagedPath)).toEqual(readFileSync(canonicalPath));
+  });
+
+  it("annotates whole-event and tool-result durable byte caps", () => {
+    for (const path of eventSchemaPaths) {
+      const schema = JSON.parse(readFileSync(path, "utf8"));
+      expect(schema["x-maxSerializedBytes"]).toBe(1_048_576);
+      expect(
+        schema.$defs.toolCallCompleted.allOf[1].properties.result["x-maxSerializedBytes"],
+      ).toBe(65_536);
+    }
   });
 
   it("parses and replays every canonical approval lifecycle fixture row", () => {

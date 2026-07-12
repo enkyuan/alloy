@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kaji.dev/contracts/events/new-kaji-event-v1.schema.json",
   "title": "New Kaji event",
+  "x-maxSerializedBytes": 1048576,
   "$defs": {
     "nonEmptyId": {
       "type": "string",
@@ -553,7 +554,8 @@
               "$ref": "#/$defs/nonEmptyId"
             },
             "result": {
-              "$ref": "#/$defs/jsonValue"
+              "$ref": "#/$defs/jsonValue",
+              "x-maxSerializedBytes": 65536
             },
             "tokens": {
               "oneOf": [

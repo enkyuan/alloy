@@ -669,7 +669,9 @@ JSON_REPLAY_RESULTS: dict[str, Any] = {
 }
 
 
-def replay_json_events(result: Any) -> list[StoredKajiEvent]:
+def replay_json_events(
+    result: Any, *, replay_rejected_value: bool = False
+) -> list[StoredKajiEvent]:
     raw = [
         {"type": "session.created"},
         {
@@ -684,10 +686,10 @@ def replay_json_events(result: Any) -> list[StoredKajiEvent]:
             "turn_id": "turn-json",
             "tool_name": "fixture",
             "tool_call_id": "call-json",
-            "result": result,
+            "result": None if replay_rejected_value else result,
         },
     ]
-    return [
+    events = [
         require_stored_event(
             EVENT_ADAPTER.validate_python(
                 {
@@ -703,6 +705,9 @@ def replay_json_events(result: Any) -> list[StoredKajiEvent]:
         )
         for index, payload in enumerate(raw, start=1)
     ]
+    if replay_rejected_value:
+        cast(Any, events[-1]).result = result
+    return events
 
 
 def run_replay(scenario: dict[str, Any]) -> dict[str, Any]:
@@ -711,7 +716,10 @@ def run_replay(scenario: dict[str, Any]) -> dict[str, Any]:
     events = (
         replay_events()
         if fixture == "approvals-completed-failed"
-        else replay_json_events(JSON_REPLAY_RESULTS[fixture])
+        else replay_json_events(
+            JSON_REPLAY_RESULTS[fixture],
+            replay_rejected_value=fixture == "json-unrepresentable-integer",
+        )
     )
     if fixture == "json-unrepresentable-integer":
         try:

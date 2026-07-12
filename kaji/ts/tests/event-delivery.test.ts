@@ -18,6 +18,29 @@ function message(id: string, sessionId = "s1") {
   return KajiEvent.parse({ id, type: EventType.USER_MESSAGE, session_id: sessionId, content: id });
 }
 
+function storedToolResultAccessor(id: string, onRead: () => void): Record<string, unknown> {
+  const row: Record<string, unknown> = {
+    ...KajiEvent.parse({
+      id,
+      type: EventType.TOOL_CALL_COMPLETED,
+      session_id: "s1",
+      turn_id: "turn-1",
+      tool_name: "tool",
+      tool_call_id: "call-1",
+      result: {},
+    }),
+    sequence: 8,
+  };
+  Object.defineProperty(row, "result", {
+    enumerable: true,
+    get() {
+      onRead();
+      return { secret: "sk-custom-store-accessor" };
+    },
+  });
+  return row;
+}
+
 class CountingStore extends InMemoryEventStore {
   appendCalls = 0;
   failAppend = false;
@@ -369,6 +392,43 @@ describe("event delivery", () => {
     },
   );
 
+  it("snapshots a custom-store append result before field validation or fanout", async () => {
+    let getterCalls = 0;
+    const row = storedToolResultAccessor("raw-stable-accessor", () => {
+      getterCalls += 1;
+    });
+    const committer = new InMemoryEventCommitter(new RawAppendStore(row));
+    const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+    await expect(committer.commit(message("live-input"))).rejects.toMatchObject({
+      code: "EVENT_SCHEMA_INCOMPATIBLE",
+      path: "/result",
+    } satisfies Partial<EventSchemaIncompatibleError>);
+    expect(getterCalls).toBe(0);
+    expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+    expect((subscription as unknown as { inner: { size: number } }).inner.size).toBe(0);
+    await subscription.return?.();
+  });
+
+  it("snapshots a custom-store backlog row before field validation or return", async () => {
+    let getterCalls = 0;
+    const row = storedToolResultAccessor("raw-stable-backlog-accessor", () => {
+      getterCalls += 1;
+    });
+    const committer = new InMemoryEventCommitter(new RawBacklogStore(row));
+    const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+    await expect(subscription.next()).rejects.toMatchObject({
+      code: "EVENT_SCHEMA_INCOMPATIBLE",
+      path: "/result",
+    } satisfies Partial<EventSchemaIncompatibleError>);
+    expect(getterCalls).toBe(0);
+    expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+    expect(
+      (committer as unknown as { subscribers: Map<string, Set<unknown>> }).subscribers.size,
+    ).toBe(0);
+  });
+
   it.each(["id", "version", "timestamp"])(
     "validates a stable custom-store live result missing %s before fanout",
     async (field) => {
@@ -389,6 +449,24 @@ describe("event delivery", () => {
       expect(subscribers.size).toBe(0);
     },
   );
+
+  it("snapshots a custom live row before field validation or cursor advancement", async () => {
+    let getterCalls = 0;
+    const row = storedToolResultAccessor("raw-split-bus-accessor", () => {
+      getterCalls += 1;
+    });
+    const bus = new RawLiveBus(row);
+    const committer = new SplitEventCommitter(new InMemoryEventStore(), bus);
+    const subscription = committer.subscribe("s1", { afterSequence: 7 });
+
+    await expect(subscription.next()).rejects.toMatchObject({
+      code: "EVENT_SCHEMA_INCOMPATIBLE",
+      path: "/result",
+    } satisfies Partial<EventSchemaIncompatibleError>);
+    expect(getterCalls).toBe(0);
+    expect((subscription as unknown as { cursor: number }).cursor).toBe(7);
+    expect(bus.closedSubscriptions).toBe(1);
+  });
 
   it("bounds the stable backlog snapshot before attaching live delivery", async () => {
     const store = new PagingStore();

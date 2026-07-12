@@ -13,6 +13,19 @@ function ev(input: Record<string, unknown>) {
   });
 }
 
+function invalidToolResultEvent(result: unknown) {
+  const event = ev({
+    type: EventType.TOOL_CALL_COMPLETED,
+    session_id: "s-json-invalid",
+    tool_name: "fixture",
+    tool_call_id: "call-json-invalid",
+    result: {},
+    timestamp: 1,
+  });
+  (event as { result: unknown }).result = result;
+  return event;
+}
+
 describe("replayLegacySession", () => {
   it("projects a conversation from the event log", () => {
     const state = replayLegacySession([
@@ -129,16 +142,7 @@ describe("replayLegacySession", () => {
     ["Map", new Map([["visible", true]])],
   ])("rejects non-plain %s tool results", (_label, result) => {
     try {
-      replayLegacySession([
-        ev({
-          type: EventType.TOOL_CALL_COMPLETED,
-          session_id: "s-json-invalid",
-          tool_name: "fixture",
-          tool_call_id: "call-json-invalid",
-          result,
-          timestamp: 1,
-        }),
-      ]);
+      replayLegacySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -150,16 +154,7 @@ describe("replayLegacySession", () => {
     const result = { visible: true, [Symbol("hidden")]: false };
 
     try {
-      replayLegacySession([
-        ev({
-          type: EventType.TOOL_CALL_COMPLETED,
-          session_id: "s-json-invalid",
-          tool_name: "fixture",
-          tool_call_id: "call-json-invalid",
-          result,
-          timestamp: 1,
-        }),
-      ]);
+      replayLegacySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -169,16 +164,7 @@ describe("replayLegacySession", () => {
 
   it("rejects an exact integer represented outside the Number domain", () => {
     try {
-      replayLegacySession([
-        ev({
-          type: EventType.TOOL_CALL_COMPLETED,
-          session_id: "s-json-invalid",
-          tool_name: "fixture",
-          tool_call_id: "call-json-invalid",
-          result: 9007199254740993n,
-          timestamp: 1,
-        }),
-      ]);
+      replayLegacySession([invalidToolResultEvent(9007199254740993n)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -188,16 +174,7 @@ describe("replayLegacySession", () => {
 
   it.each([2 ** 53, -(2 ** 53)])("rejects unsafe integral number %s", (result) => {
     try {
-      replayLegacySession([
-        ev({
-          type: EventType.TOOL_CALL_COMPLETED,
-          session_id: "s-json-invalid",
-          tool_name: "fixture",
-          tool_call_id: "call-json-invalid",
-          result,
-          timestamp: 1,
-        }),
-      ]);
+      replayLegacySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);

@@ -35,11 +35,13 @@ export {
   type SplitEventCommitterOptions,
 } from "@/events/committer";
 export {
+  DurableJsonLimitError,
   EventBufferOverflowError,
   EventDeliveryError,
   EventIdConflictError,
   EventSchemaIncompatibleError,
   EventStoreCapacityError,
+  InvalidDurableValueError,
 } from "@/events/errors";
 export { type EventStore, InMemoryEventStore } from "@/events/store";
 

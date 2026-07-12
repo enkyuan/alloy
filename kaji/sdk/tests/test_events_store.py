@@ -1,10 +1,60 @@
 import asyncio
+from typing import Any, cast
 
 import pytest
 
+from kaji.infra.events import errors as event_errors
 from kaji.infra.events.errors import EventIdConflictError, EventStoreCapacityError
-from kaji.infra.events.schemas import SessionClosed, UserMessage
+from kaji.infra.events.schemas import SessionClosed, ToolCallCompleted, UserMessage
 from kaji.infra.events.store import InMemoryEventStore
+
+
+@pytest.mark.asyncio
+async def test_rejected_direct_appends_admit_no_row_and_preserve_sequence_one() -> None:
+    store = InMemoryEventStore()
+    poisoned = ToolCallCompleted(
+        id="poisoned",
+        session_id="durable-boundary",
+        turn_id="turn",
+        tool_name="tool",
+        tool_call_id="call",
+        result={},
+        timestamp=1.0,
+    )
+    cast(Any, poisoned).result = object()
+
+    invalid_type = getattr(event_errors, "InvalidDurableValueError")
+    with pytest.raises(invalid_type) as invalid:
+        await store.append(poisoned)
+    assert invalid.value.subject == "tool_result"
+    assert await store.get_events("durable-boundary") == []
+    assert await store.last_sequence("durable-boundary") == 0
+
+    oversized = UserMessage(
+        id="oversized",
+        session_id="durable-boundary",
+        content="😀" * (1_048_576 // 4 + 1),
+        timestamp=2.0,
+    )
+    limit_type = getattr(event_errors, "DurableJsonLimitError")
+    with pytest.raises(limit_type) as limited:
+        await store.append(oversized)
+    assert limited.value.subject == "event"
+    assert await store.get_events("durable-boundary") == []
+    assert await store.last_sequence("durable-boundary") == 0
+
+    accepted = await store.append(
+        UserMessage(
+            id="accepted",
+            session_id="durable-boundary",
+            content="ok",
+            timestamp=3.0,
+        )
+    )
+    assert accepted.event.sequence == 1
+    assert [event.id for event in await store.get_events("durable-boundary")] == [
+        "accepted"
+    ]
 
 
 @pytest.mark.asyncio
@@ -81,7 +131,7 @@ async def test_store_deeply_isolates_drafts_append_results_and_reads() -> None:
 
     inserted = await store.append(draft)
     draft.turn_id = "turn-mutated-draft"
-    draft.metadata["nested"]["value"] = "mutated-draft"
+    cast(dict[str, Any], draft.metadata["nested"])["value"] = "mutated-draft"
     inserted.event.turn_id = "turn-mutated-result"
     inserted.event.metadata["nested"]["value"] = "mutated-result"
 

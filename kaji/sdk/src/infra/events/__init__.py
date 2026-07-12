@@ -1,11 +1,13 @@
 from .bus import EventBus, InMemoryEventBus
 from .errors import (
+    DurableJsonLimitError,
     EventBufferOverflowError,
     EventDeliveryError,
     EventIdConflictError,
     EventInfrastructureError,
     EventSchemaIncompatibleError,
     EventStoreCapacityError,
+    InvalidDurableValueError,
 )
 from .journal import InMemoryEventJournal, SplitEventJournal
 from .protocols import EventBusProtocol, EventJournal
@@ -59,6 +61,8 @@ __all__ = [
     "EventStore",
     "InMemoryEventStore",
     "EventInfrastructureError",
+    "InvalidDurableValueError",
+    "DurableJsonLimitError",
     "EventIdConflictError",
     "EventSchemaIncompatibleError",
     "EventStoreCapacityError",

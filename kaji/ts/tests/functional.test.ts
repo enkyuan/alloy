@@ -158,7 +158,7 @@ describe("functionTool", () => {
           transformed: string;
         },
         context: ToolExecutionContext,
-      ) => ({ args, context }),
+      ) => ({ args, context: { principalId: context.principalId } }),
     );
     const bound = functionTool(
       {
@@ -181,7 +181,10 @@ describe("functionTool", () => {
     const directContext = toolContext("user-1");
     const result = await bound.handler(original, directContext);
 
-    expect(result).toEqual({ args: original, context: directContext });
+    expect(result).toEqual({
+      args: original,
+      context: { principalId: directContext.principalId },
+    });
     expect(handler).toHaveBeenCalledWith(original, directContext);
     expect(handler.mock.calls[0]![0]).not.toBe(original);
     expect(transformCalls).toBe(1);
