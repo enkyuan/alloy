@@ -1040,3 +1040,71 @@ def test_release_docs_reference_beta_release_check() -> None:
     assert "KAJI_RUN_KEYED_LIVE=1" in combined
     assert "SDK/service boundary" in combined
     assert "TypeScript optional provider imports" in combined
+
+
+def test_release_matrix_names_pending_protected_pr_gate_truthfully() -> None:
+    matrix = (REPO_ROOT / "kaji" / "RELEASE_MATRIX.md").read_text()
+    row = next(
+        line
+        for line in matrix.splitlines()
+        if line.startswith("| Shared schemas and registry |")
+    )
+
+    assert "`Kaji beta PR gate` / `Kaji beta PR gate`" in row
+    assert row.endswith("| locally proven; protected PR run pending |")
+    assert "passed" not in row.lower()
+
+
+@pytest.mark.parametrize(
+    ("environment", "image_digest", "expected"),
+    [
+        (
+            {"KAJI_BENCHMARK_PINNED_RUNNER": "1"},
+            "pinned",
+            "calibration requires KAJI_BENCHMARK_CALIBRATION=1",
+        ),
+        (
+            {"KAJI_BENCHMARK_CALIBRATION": "1"},
+            "pinned",
+            "calibration requires KAJI_BENCHMARK_PINNED_RUNNER=1",
+        ),
+        (
+            {
+                "KAJI_BENCHMARK_CALIBRATION": "1",
+                "KAJI_BENCHMARK_PINNED_RUNNER": "1",
+            },
+            "local-unpinned",
+            "calibration requires a pinned runner image digest",
+        ),
+    ],
+)
+def test_beta_benchmark_calibration_fails_closed_without_runner_guards(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    environment: dict[str, str],
+    image_digest: str,
+    expected: str,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    output = tmp_path / "calibration.json"
+    monkeypatch.delenv("KAJI_BENCHMARK_CALIBRATION", raising=False)
+    monkeypatch.delenv("KAJI_BENCHMARK_PINNED_RUNNER", raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            mode="calibrate",
+            output=output,
+            candidate_baseline=tmp_path / "candidate.json",
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "fingerprint",
+        lambda: {"runner": {"imageDigest": image_digest}},
+    )
+
+    assert module.main() == 1
+    assert expected in json.loads(output.read_text())["failures"]

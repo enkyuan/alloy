@@ -7,19 +7,60 @@ on:
       - "kaji/ts/**"
       - "ryo/auth/**"
       - "packages/ui/**"
+      - "kaji/contracts/**"
+      - "kaji/scripts/**"
+      - "kaji/benchmarks/**"
+      - "kaji/RELEASE_MATRIX.md"
+      - "docs/kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
       - "bun.lock"
       - "package.json"
+      - "kaji/sdk/uv.lock"
       - ".github/actions/setup-bun-cache/**"
+      - ".github/actions/setup-python-uv/**"
+      - ".github/workflows/python.lint.yml"
+      - ".github/workflows/python.format.yml"
+      - ".github/workflows/python.test.yml"
+      - ".github/workflows/ts.lint.yml"
+      - ".github/workflows/ts.format.yml"
       - ".github/workflows/ts.test.yml"
+      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/kaji.benchmark.yml"
+      - ".github/workflows/kaji.beta-pr.yml"
+      - ".github/workflows/kaji.beta.yml"
+      - ".github/workflows/kaji.beta-publish.yml"
   pull_request:
     paths:
       - "kaji/ts/**"
       - "ryo/auth/**"
       - "packages/ui/**"
+      - "kaji/contracts/**"
+      - "kaji/scripts/**"
+      - "kaji/benchmarks/**"
+      - "kaji/RELEASE_MATRIX.md"
+      - "docs/kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
       - "bun.lock"
       - "package.json"
+      - "kaji/sdk/uv.lock"
       - ".github/actions/setup-bun-cache/**"
+      - ".github/actions/setup-python-uv/**"
+      - ".github/workflows/python.lint.yml"
+      - ".github/workflows/python.format.yml"
+      - ".github/workflows/python.test.yml"
+      - ".github/workflows/ts.lint.yml"
+      - ".github/workflows/ts.format.yml"
       - ".github/workflows/ts.test.yml"
+      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/kaji.benchmark.yml"
+      - ".github/workflows/kaji.beta-pr.yml"
+      - ".github/workflows/kaji.beta.yml"
+      - ".github/workflows/kaji.beta-publish.yml"
+
+permissions:
+  contents: read
 
 jobs:
   kaji-ts:
@@ -30,7 +71,7 @@ jobs:
       run:
         working-directory: kaji/ts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -62,9 +103,9 @@ jobs:
       run:
         working-directory: kaji/ts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
 
@@ -85,7 +126,7 @@ jobs:
       run:
         working-directory: ryo/auth
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -102,7 +143,7 @@ jobs:
       run:
         working-directory: packages/ui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:

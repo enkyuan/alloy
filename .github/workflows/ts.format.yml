@@ -21,15 +21,19 @@ on:
       - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/ts.format.yml"
 
+permissions:
+  contents: read
+
 jobs:
   kaji-ts:
     name: kaji/ts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: kaji/ts
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -41,11 +45,12 @@ jobs:
   auth:
     name: ryo/auth
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: ryo/auth
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -57,11 +62,12 @@ jobs:
   ui:
     name: packages/ui
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: packages/ui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:

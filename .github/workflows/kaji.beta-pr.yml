@@ -1,0 +1,50 @@
+name: Kaji beta PR gate
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kaji-beta-pr-gate:
+    name: Kaji beta PR gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          sync-args: --frozen
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: .
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+
+      - name: Check the production-beta contract
+        run: uv run --project kaji/sdk python kaji/scripts/check_beta_contract.py
+
+      - name: Check packaged beta contracts
+        run: uv run --project kaji/sdk python kaji/scripts/sync_beta_contracts.py --check
+
+      - name: Check packaged integration contracts
+        run: uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
+
+      - name: Check the integration ABI
+        run: uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain
+
+      - name: Check SDK parity
+        run: uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py
+
+      - name: Run structural guards
+        run: bun run audit:ast-grep
+
+      - name: Run quick beta benchmarks
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --quick

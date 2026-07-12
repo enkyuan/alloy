@@ -114,7 +114,7 @@ TypeScript optional provider imports, and cancellation error shape.
 | --- | --- | --- | --- |
 | Offline release rehearsal | `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
 | Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py` | Yes; 59 deterministic scenarios | Locally proven |
-| Shared schemas and registry | `check_beta_contract.py` plus both sync checks | Yes | Locally proven |
+| Shared schemas and registry | `Kaji beta PR gate` / `Kaji beta PR gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.beta.yml` and `kaji.beta-publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |

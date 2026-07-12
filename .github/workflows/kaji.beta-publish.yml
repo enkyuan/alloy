@@ -25,7 +25,7 @@ jobs:
     steps:
       - name: Verify exact signed annotated beta tag
         id: tag
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           EXPECTED_TAGGER_EMAIL: ${{ vars.KAJI_RELEASE_SIGNER_EMAIL }}
         with:
@@ -82,10 +82,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
       - uses: ./.github/actions/setup-bun-cache
@@ -127,14 +127,14 @@ jobs:
           exit "$status"
       - name: Upload offline gate/test summary
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-offline-evidence
           path: .artifacts/kaji-offline-evidence
           if-no-files-found: error
       - name: Upload exact release artifacts
         if: ${{ steps.offline.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
@@ -148,10 +148,10 @@ jobs:
       KAJI_BENCHMARK_PINNED_RUNNER: "1"
       KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST: ${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
@@ -170,7 +170,7 @@ jobs:
           mkdir -p .artifacts/kaji-performance-evidence
           cp .artifacts/kaji-benchmarks/results.json .artifacts/kaji-performance-evidence/benchmark-results.json
           cp .artifacts/kaji-soak/results.json .artifacts/kaji-performance-evidence/soak-results.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-performance-evidence
           path: .artifacts/kaji-performance-evidence
@@ -185,7 +185,7 @@ jobs:
       matrix:
         python-version: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
       - uses: ./.github/actions/setup-python-uv
@@ -205,10 +205,10 @@ jobs:
       matrix:
         node-version: ["22", "24"]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
       - uses: ./.github/actions/setup-bun-cache
@@ -231,10 +231,10 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-status.txt
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
       - uses: ./.github/actions/setup-bun-cache
@@ -248,7 +248,7 @@ jobs:
           python-version: "3.14"
           sync-args: --frozen --extra openai --extra anthropic
       - run: uv run --project kaji/sdk python kaji/scripts/live_provider_proof.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-provider-status
           path: provider-status.txt
@@ -264,10 +264,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
       - uses: ./.github/actions/setup-bun-cache
@@ -275,19 +275,19 @@ jobs:
           working-directory: kaji/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-offline-evidence
           path: .artifacts/kaji-evidence
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-provider-status
           path: .artifacts/kaji-evidence
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-performance-evidence
           path: .artifacts/kaji-evidence
@@ -305,7 +305,7 @@ jobs:
           python3 kaji/sdk/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Generate SBOM
-        uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d
+        uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d # v0.20.10
         with:
           path: .artifacts/kaji-release
           format: spdx-json
@@ -313,7 +313,7 @@ jobs:
           upload-artifact: false
       - name: Attest exact artifacts and retained evidence
         id: provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             .artifacts/kaji-release/kaji-0.2.0b1-py3-none-any.whl
@@ -344,7 +344,7 @@ jobs:
             --arg bundle "provenance.bundle.jsonl" \
             '{schemaVersion: 1, attestationId: $id, attestationUrl: $url, bundle: $bundle}' \
             >.artifacts/kaji-evidence/provenance.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-supply-chain-evidence
           path: .artifacts/kaji-evidence
@@ -356,7 +356,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
       - name: Forbid resuming a partial publication by rerunning the workflow
@@ -398,7 +398,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           registry-url: https://registry.npmjs.org
@@ -457,10 +457,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
@@ -488,7 +488,7 @@ jobs:
           commit: ${{ needs.verify-tag.outputs.commit }}
           tagger_email: ${{ vars.KAJI_RELEASE_SIGNER_EMAIL }}
       - name: Publish exact Python beta through trusted publishing
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           packages-dir: .artifacts/python-dist
 
@@ -502,10 +502,10 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           registry-url: https://registry.npmjs.org
@@ -514,7 +514,7 @@ jobs:
           working-directory: kaji/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
@@ -548,13 +548,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
@@ -658,7 +658,7 @@ jobs:
           echo "release-ready=$RELEASE_READY" >>"$GITHUB_OUTPUT"
       - name: Preserve publication outcome and recovery directions
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-publication-status
           path: .artifacts/kaji-publication-status
@@ -677,18 +677,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-supply-chain-evidence
           path: .artifacts/kaji-evidence
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-publication-status
           path: .artifacts/kaji-publication-status

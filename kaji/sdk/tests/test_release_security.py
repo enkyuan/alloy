@@ -8,6 +8,7 @@ import httpx
 import json
 import logging
 from pathlib import Path
+import re
 import traceback
 from types import SimpleNamespace
 from typing import Any, cast
@@ -41,6 +42,23 @@ from kaji.runtime.providers.openai import OpenAIProvider
 from kaji.runtime.tools.execution import ToolExecutionController
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.tools.retriever import ToolRetriever
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+REVIEWED_ACTION_PINS = {
+    "actions/checkout": "34e114876b0b11c390a56381ad16ebd13914f8d5",
+    "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+    "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    "actions/github-script": "f28e40c7f34bde8b3046d885e986cb6290c5673b",
+    "actions/attest-build-provenance": "e8998f949152b193b063cb0ec769d69d929409be",
+    "anchore/sbom-action": "fbfd9c6c189226748411491745178e0c2017392d",
+    "pypa/gh-action-pypi-publish": "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
+    "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+    "astral-sh/setup-uv": "caf0cab7a618c569241d31dcd442f54681755d39",
+    "oven-sh/setup-bun": "0c5077e51419868618aeaa5fe8019c62421857d6",
+    "actions/cache": "0057852bfaa89a56745cba8c7296529d2fc39830",
+}
 
 
 def _assert_sanitized_provider_error(error: ServiceError, secret: str) -> None:
@@ -1064,3 +1082,36 @@ async def test_realtime_and_secret_storage_failure_logs_are_redacted(
     rendered = caplog.text + repr([record.__dict__ for record in caplog.records])
     assert secret not in rendered
     assert "details redacted" in caplog.text
+
+
+def test_kaji_ci_uses_only_reviewed_action_pins_with_release_annotations() -> None:
+    relatives = (
+        ".github/workflows/python.test.yml",
+        ".github/workflows/python.lint.yml",
+        ".github/workflows/python.format.yml",
+        ".github/workflows/ts.test.yml",
+        ".github/workflows/ts.lint.yml",
+        ".github/workflows/ts.format.yml",
+        ".github/workflows/ast-grep.yml",
+        ".github/workflows/kaji.benchmark.yml",
+        ".github/workflows/kaji.beta-pr.yml",
+        ".github/workflows/kaji.beta.yml",
+        ".github/workflows/kaji.beta-publish.yml",
+        ".github/actions/setup-python-uv/action.yml",
+        ".github/actions/setup-bun-cache/action.yml",
+    )
+
+    for relative in relatives:
+        source = (REPO_ROOT / relative).read_text()
+        references = re.findall(
+            r"^\s*(?:-\s*)?uses:\s+([^\s#]+)(?:\s+#\s+([^\s]+))?\s*$",
+            source,
+            re.MULTILINE,
+        )
+        for reference, release in references:
+            if reference.startswith("./"):
+                continue
+            action, revision = reference.rsplit("@", 1)
+            assert revision == REVIEWED_ACTION_PINS[action]
+            assert re.fullmatch(r"[0-9a-f]{40}", revision)
+            assert re.fullmatch(r"v\d[^\s]*", release)

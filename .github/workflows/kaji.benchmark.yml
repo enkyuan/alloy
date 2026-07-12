@@ -40,8 +40,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
@@ -57,7 +57,7 @@ jobs:
         run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --full
       - name: Upload raw benchmark samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-beta-benchmarks-${{ github.run_id }}
           path: .artifacts/kaji-benchmarks/
@@ -73,8 +73,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
@@ -90,7 +90,7 @@ jobs:
         run: uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30
       - name: Upload soak and heap samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-beta-soak-${{ github.run_id }}
           path: .artifacts/kaji-soak/
@@ -104,8 +104,8 @@ jobs:
     env:
       KAJI_BENCHMARK_CALIBRATION: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
@@ -121,7 +121,7 @@ jobs:
         run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --calibrate
       - name: Upload candidate baseline and raw samples
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-beta-baseline-candidate-${{ github.run_id }}
           path: .artifacts/kaji-benchmarks/

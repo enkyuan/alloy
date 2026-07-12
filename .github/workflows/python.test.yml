@@ -6,24 +6,70 @@ on:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
+      - "kaji/contracts/**"
+      - "kaji/scripts/**"
+      - "kaji/benchmarks/**"
+      - "kaji/RELEASE_MATRIX.md"
+      - "docs/kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
+      - "package.json"
+      - "bun.lock"
+      - "kaji/sdk/uv.lock"
       - ".github/actions/setup-python-uv/**"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/python.lint.yml"
+      - ".github/workflows/python.format.yml"
       - ".github/workflows/python.test.yml"
+      - ".github/workflows/ts.lint.yml"
+      - ".github/workflows/ts.format.yml"
+      - ".github/workflows/ts.test.yml"
+      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/kaji.benchmark.yml"
+      - ".github/workflows/kaji.beta-pr.yml"
+      - ".github/workflows/kaji.beta.yml"
+      - ".github/workflows/kaji.beta-publish.yml"
   pull_request:
     paths:
       - "kaji/sdk/**"
       - "kaji/serve/**"
+      - "kaji/contracts/**"
+      - "kaji/scripts/**"
+      - "kaji/benchmarks/**"
+      - "kaji/RELEASE_MATRIX.md"
+      - "docs/kaji/**"
+      - "tools/ast-grep/**"
+      - "sgconfig.yml"
+      - "package.json"
+      - "bun.lock"
+      - "kaji/sdk/uv.lock"
       - ".github/actions/setup-python-uv/**"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/python.lint.yml"
+      - ".github/workflows/python.format.yml"
       - ".github/workflows/python.test.yml"
+      - ".github/workflows/ts.lint.yml"
+      - ".github/workflows/ts.format.yml"
+      - ".github/workflows/ts.test.yml"
+      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/kaji.benchmark.yml"
+      - ".github/workflows/kaji.beta-pr.yml"
+      - ".github/workflows/kaji.beta.yml"
+      - ".github/workflows/kaji.beta-publish.yml"
+
+permissions:
+  contents: read
 
 jobs:
   sdk:
     name: kaji/sdk
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: kaji/sdk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
@@ -36,7 +82,7 @@ jobs:
         run: uv run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-sdk
           path: kaji/sdk/coverage.xml
@@ -45,6 +91,7 @@ jobs:
   sdk-install-smoke:
     name: kaji/sdk install smoke / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +102,7 @@ jobs:
       run:
         working-directory: kaji/sdk
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
@@ -70,6 +117,7 @@ jobs:
   serve:
     name: kaji/serve
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -94,7 +142,7 @@ jobs:
       run:
         working-directory: kaji/serve
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
@@ -104,7 +152,7 @@ jobs:
         run: uv run pytest tests/ --cov=kaji_serve --cov-report=xml --cov-fail-under=35
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-serve
           path: kaji/serve/coverage.xml
