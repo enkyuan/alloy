@@ -7,6 +7,7 @@ import { functionTool } from "@/integrations/functional";
 import {
   executableIntegrationAbi,
   discoverIntegrationTools,
+  inspectIntegrationModule,
   IntegrationAbiMismatchError,
   compareExecutableIntegrationAbi,
   compareManifestAbi,
@@ -76,6 +77,16 @@ describe("integration manifest executable ABI", () => {
     expect(compare).toThrowError(/INTEGRATION_ABI_MISMATCH/);
   });
 
+  it("fails when any indexed executable differs from its canonical ABI", () => {
+    const executable = {
+      namespace: "echo",
+      tools: [{ ...declaredSay, risk: "external_effect" as const }],
+    };
+    expect(() => compareExecutableIntegrationAbi(manifest([declaredSay]), executable)).toThrow(
+      /INTEGRATION_ABI_MISMATCH at \/tools\/0\/risk/,
+    );
+  });
+
   it.each([
     ["description", "/tools/0/description", { description: "drift" }],
     ["risk", "/tools/0/risk", { risk: "write" as const }],
@@ -86,6 +97,23 @@ describe("integration manifest executable ABI", () => {
     expect(() => compareManifestAbi(manifest([declaredSay]), [spec(override)])).toThrowError(
       expect.objectContaining<Partial<IntegrationAbiMismatchError>>({
         pointer,
+      }),
+    );
+  });
+
+  it.each([
+    ["missing", {}],
+    ["non-boolean", { parallel_safe: "false" }],
+  ])("rejects %s executable parallel_safe metadata", (_case, override) => {
+    const malformed: Record<string, unknown> = { ...spec(), ...override };
+    if (_case === "missing") delete malformed.parallel_safe;
+
+    expect(() =>
+      compareManifestAbi(manifest([declaredSay]), [malformed as unknown as ToolSpec]),
+    ).toThrowError(
+      expect.objectContaining<Partial<IntegrationAbiMismatchError>>({
+        code: "INTEGRATION_ABI_MISMATCH",
+        pointer: "/tools/0/parallel_safe",
       }),
     );
   });
@@ -115,6 +143,12 @@ describe("integration manifest executable ABI", () => {
     expect(() => compareManifestAbi(manifest([declaredSay]), [spec(), spec()])).toThrowError(
       expect.objectContaining({ pointer: "/tools/1/name" }),
     );
+  });
+
+  it("rejects duplicate manifest tool names", () => {
+    expect(() =>
+      compareManifestAbi(manifest([declaredSay, { ...declaredSay }]), [spec()]),
+    ).toThrowError(expect.objectContaining({ pointer: "/tools/1/name" }));
   });
 
   it("ignores JSON object key order while comparing parameter schemas", () => {
@@ -147,6 +181,36 @@ describe("integration manifest executable ABI", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it("loads executable metadata through the generic inspector entry point", () => {
+    const handler = vi.fn();
+    const tools = vi.fn(() => [[spec(), handler] as const]);
+    const inspectIntegration = vi.fn(() => ({ namespace: "echo", tools }));
+
+    expect(inspectIntegrationModule({ inspectIntegration })).toEqual({
+      namespace: "echo",
+      tools: [declaredSay],
+    });
+    expect(inspectIntegration).toHaveBeenCalledOnce();
+    expect(tools).toHaveBeenCalledOnce();
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing inspector without exposing module values", () => {
+    expect(() => inspectIntegrationModule({})).toThrowError(
+      expect.objectContaining({ pointer: "/inspectIntegration" }),
+    );
+  });
+
+  it("redacts top-level inspector errors", () => {
+    const inspect = () => {
+      throw new Error("secret inspector failure");
+    };
+    const run = () => inspectIntegrationModule({ inspectIntegration: inspect });
+
+    expect(run).toThrowError(expect.objectContaining({ pointer: "/inspectIntegration" }));
+    expect(run).not.toThrowError(/secret inspector failure/);
+  });
+
   it("rejects mixed executable namespaces", () => {
     expect(() =>
       executableIntegrationAbi([echoTools[0], { namespace: "other", spec: echoTools[1].spec }]),
@@ -177,5 +241,20 @@ describe("integration manifest executable ABI", () => {
     });
     expect(output).not.toContain("listed in tools");
     expect(output).not.toContain("unlisted BoundTool export");
+  });
+
+  it("summarizes primitive mismatches without printing rejected values", () => {
+    const output = integrationAbiJson(() => {
+      throw new IntegrationAbiMismatchError("/tools/0/timeout_ms", true, 12345);
+    });
+    expect(JSON.parse(output)).toEqual({
+      error: {
+        code: "INTEGRATION_ABI_MISMATCH",
+        pointer: "/tools/0/timeout_ms",
+        expected: "<boolean>",
+        actual: "<number>",
+      },
+    });
+    expect(output).not.toContain("12345");
   });
 });

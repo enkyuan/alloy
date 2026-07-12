@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 import shutil
 import sys
+from types import SimpleNamespace
 
 import pytest
 from kaji.integrations import install_integration, load_manifest
@@ -113,7 +114,8 @@ def _load_repo_script(name: str, path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_integration_sync_detects_newline_byte_drift(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = Path(__file__).resolve().parents[3]
     sync = _load_repo_script(
@@ -125,13 +127,95 @@ def test_integration_sync_detects_newline_byte_drift(
     copy = tmp_path / "echo.ts"
     source.write_bytes(b"export const value = 1;\n")
     copy.write_bytes(b"export const value = 1;\r\n")
-    monkeypatch.setattr(sync, "COPIES", {})
-    monkeypatch.setattr(sync, "ECHO_MANIFESTS", ())
-    monkeypatch.setattr(sync, "ECHO_TYPESCRIPT_SOURCE", source)
-    monkeypatch.setattr(sync, "ECHO_TYPESCRIPT_COPY", copy)
-
-    assert sync.check(), "LF and CRLF sources must not compare as byte-identical"
+    assert sync._diff_bytes(copy.read_bytes(), source.read_bytes(), copy, source), (
+        "LF and CRLF sources must not compare as byte-identical"
+    )
     assert sync._diff_bytes(b"\x80", b"\x81", copy, source)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    ["/absolute.json", "C:/absolute.json", "../escape.json", "missing.json"],
+)
+def test_abi_index_rejects_unsafe_or_missing_contract_paths(
+    relative: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(__file__).resolve().parents[3]
+    checker = _load_repo_script(
+        "check_integration_abi_index_paths",
+        root / "kaji/scripts/check_integration_abi.py",
+        monkeypatch,
+    )
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    index = contracts / "abi-index-v1.json"
+    index.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0.0",
+                "integrations": {"echo": relative},
+            }
+        )
+    )
+    monkeypatch.setattr(checker, "CONTRACTS", contracts)
+    monkeypatch.setattr(checker, "ABI_INDEX", index)
+
+    with pytest.raises(checker.IntegrationAbiCheckError):
+        checker._abi_contracts()
+
+
+def test_python_abi_inspector_is_required_and_redacts_top_level_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[3]
+    checker = _load_repo_script(
+        "check_integration_abi_inspector_errors",
+        root / "kaji/scripts/check_integration_abi.py",
+        monkeypatch,
+    )
+    monkeypatch.setattr(
+        checker.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(),
+    )
+    with pytest.raises(checker.IntegrationAbiMismatchError) as missing:
+        checker._python_document("echo")
+    assert missing.value.pointer == "/inspect_integration"
+
+    def inspect_integration():
+        raise RuntimeError("secret inspector failure")
+
+    monkeypatch.setattr(
+        checker.importlib,
+        "import_module",
+        lambda _name: SimpleNamespace(inspect_integration=inspect_integration),
+    )
+    with pytest.raises(checker.IntegrationAbiMismatchError) as failed:
+        checker._python_document("echo")
+    assert failed.value.pointer == "/inspect_integration"
+    assert "secret inspector failure" not in str(failed.value)
+
+
+def test_abi_normalization_rejects_duplicate_manifest_tool_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[3]
+    checker = _load_repo_script(
+        "check_integration_abi_duplicate_names",
+        root / "kaji/scripts/check_integration_abi.py",
+        monkeypatch,
+    )
+    tool = {
+        "name": "say",
+        "description": "Say.",
+        "parameters": {},
+        "risk": "read",
+        "parallel_safe": False,
+    }
+
+    with pytest.raises(checker.IntegrationAbiMismatchError) as caught:
+        checker._normalized_tools([tool, dict(tool)], "manifest")
+    assert caught.value.pointer == "/tools/1/name"
 
 
 def test_typescript_cli_mismatch_reaches_python_explain_redacted(
@@ -173,9 +257,7 @@ def test_typescript_cli_mismatch_reaches_python_explain_redacted(
 
     assert checker.main(["--explain"]) == 1
     captured = capsys.readouterr()
-    assert "INTEGRATION_ABI_MISMATCH at /exports/shout" in captured.err
-    assert "listed in tools" not in captured.err
-    assert "unlisted BoundTool export" not in captured.err
+    assert "INTEGRATION_ABI_MISMATCH at /tools/1" in captured.err
 
 
 def test_echo_py_tools_register_without_collision(tmp_path: Path):

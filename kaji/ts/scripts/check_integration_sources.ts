@@ -9,20 +9,28 @@ import {
   loadRegistryIndex,
   type LoadedIntegrationManifest,
 } from "../src/integrations/registry-loader";
-import { compareExecutableIntegrationAbi, echoExecutableAbi } from "./integration-abi";
+import { compareExecutableIntegrationAbi, loadExecutableIntegrationAbi } from "./integration-abi";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const registryRoot = join(scriptsDirectory, "..", "registry");
+const abiIndexPath = join(
+  scriptsDirectory,
+  "..",
+  "..",
+  "contracts",
+  "integrations",
+  "abi-index-v1.json",
+);
 const requiredHeaderPrefix = "// This is YOUR";
 
 async function checkIntegrationSources(): Promise<number> {
   try {
     const registryIndex = await loadRegistryIndex(registryRoot);
     const integrationNames = Object.keys(registryIndex.integrations).sort();
-    let echoManifest: LoadedIntegrationManifest | undefined;
+    const manifests = new Map<string, LoadedIntegrationManifest>();
     for (const name of integrationNames) {
       const manifest = await loadManifest(registryRoot, name, { index: registryIndex });
-      if (name === "echo") echoManifest = manifest;
+      manifests.set(name, manifest);
       for (const file of manifest.files.filter((candidate) => candidate.endsWith(".ts"))) {
         const sourceText = await readFile(join(manifest.root, file), "utf8");
         if (!sourceText.startsWith(requiredHeaderPrefix)) {
@@ -33,8 +41,14 @@ async function checkIntegrationSources(): Promise<number> {
       }
       console.log(`  ✓ ${name}`);
     }
-    if (echoManifest === undefined) throw new Error("stable Echo manifest is missing");
-    compareExecutableIntegrationAbi(echoManifest, echoExecutableAbi());
+    const abiIndex = JSON.parse(await readFile(abiIndexPath, "utf8")) as {
+      integrations: Record<string, string>;
+    };
+    for (const name of Object.keys(abiIndex.integrations).sort()) {
+      const manifest = manifests.get(name);
+      if (manifest === undefined) throw new Error(`indexed integration '${name}' is missing`);
+      compareExecutableIntegrationAbi(manifest, await loadExecutableIntegrationAbi(name));
+    }
     console.log(
       `\ncheck passed: ${integrationNames.length}/${integrationNames.length} integrations OK`,
     );

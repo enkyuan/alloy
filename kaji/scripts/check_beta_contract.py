@@ -40,6 +40,8 @@ REQUIRED_JSON = {
     "events/stored-kaji-event-v1.schema.json",
     "integrations/conformance-invalid.json",
     "integrations/conformance-valid.json",
+    "integrations/abi-index-v1.json",
+    "integrations/copy-provenance-v1.schema.json",
     "integrations/echo-tool-abi-v1.json",
     "parity/expected-normalized.json",
     "parity/scenarios.json",
@@ -372,6 +374,9 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
             documents[relative] = document
             continue
         if relative == "parity/expected-normalized.json":
+            documents[relative] = document
+            continue
+        if relative == "integrations/abi-index-v1.json":
             documents[relative] = document
             continue
         if document.get("$schema") != DRAFT_2020_12:
@@ -1240,40 +1245,143 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
                     valid_path, location, "invalid Draft 2020-12 parameter schema"
                 )
 
-    abi_path = CONTRACTS / "integrations" / "echo-tool-abi-v1.json"
-    abi = documents["integrations/echo-tool-abi-v1.json"]
-    if set(abi) != {"$schema", "version", "namespace", "tools"}:
-        raise fail(abi_path, "/", "expected the closed Echo ABI envelope")
-    if abi.get("version") != "1.0.0":
-        raise fail(abi_path, "/version", "expected '1.0.0'")
-    if abi.get("namespace") != "echo":
-        raise fail(abi_path, "/namespace", "expected 'echo'")
-    tools = abi.get("tools")
-    if not isinstance(tools, list) or not tools:
-        raise fail(abi_path, "/tools", "expected a non-empty tool array")
-    abi_manifest = {
-        "name": "echo",
-        "version": "0.1.0",
-        "namespace": "echo",
-        "description": "Echo ABI contract.",
-        "auth": {"kind": "none"},
-        "files": ["index.ts"],
-        "tools": tools,
+    abi_index_path = CONTRACTS / "integrations" / "abi-index-v1.json"
+    abi_index = documents["integrations/abi-index-v1.json"]
+    if set(abi_index) != {"schemaVersion", "integrations"}:
+        raise fail(abi_index_path, "/", "expected the closed ABI index envelope")
+    if abi_index.get("schemaVersion") != "1.0.0":
+        raise fail(abi_index_path, "/schemaVersion", "expected '1.0.0'")
+    abi_entries = abi_index.get("integrations")
+    if not isinstance(abi_entries, dict) or not abi_entries:
+        raise fail(abi_index_path, "/integrations", "expected a non-empty object")
+    for integration_name, relative in sorted(abi_entries.items()):
+        entry_path = f"/integrations/{integration_name}"
+        if (
+            not isinstance(integration_name, str)
+            or re.fullmatch(r"[a-z][a-z0-9_-]*", integration_name) is None
+        ):
+            raise fail(abi_index_path, entry_path, "invalid integration name")
+        if not isinstance(relative, str):
+            raise fail(abi_index_path, entry_path, "expected a relative path")
+        posix_path = PurePosixPath(relative)
+        if (
+            not relative
+            or "\\" in relative
+            or posix_path.is_absolute()
+            or re.match(r"^[A-Za-z]:", relative) is not None
+            or any(part in {"", ".", ".."} for part in relative.split("/"))
+        ):
+            raise fail(abi_index_path, entry_path, "expected a safe relative path")
+        relative_key = f"integrations/{posix_path.as_posix()}"
+        if relative_key not in documents:
+            raise fail(abi_index_path, entry_path, "referenced ABI file is missing")
+        abi_path = CONTRACTS / relative_key
+        abi = documents[relative_key]
+        if set(abi) != {"$schema", "version", "namespace", "tools"}:
+            raise fail(abi_path, "/", "expected a closed integration ABI envelope")
+        if abi.get("version") != "1.0.0":
+            raise fail(abi_path, "/version", "expected '1.0.0'")
+        if abi.get("namespace") != integration_name:
+            raise fail(abi_path, "/namespace", "must match the ABI index key")
+        tools = abi.get("tools")
+        if not isinstance(tools, list) or not tools:
+            raise fail(abi_path, "/tools", "expected a non-empty tool array")
+        abi_manifest = {
+            "name": integration_name,
+            "version": "0.1.0",
+            "namespace": integration_name.replace("-", "_"),
+            "description": "Integration ABI contract.",
+            "auth": {"kind": "none"},
+            "files": ["index.ts"],
+            "tools": tools,
+        }
+        error = first_error(validators["manifest"], abi_manifest)
+        if error is not None:
+            error_path = pointer(error.absolute_path)
+            raise fail(abi_path, error_path, error.message)
+        tool_names = [tool["name"] for tool in tools]
+        if tool_names != sorted(set(tool_names)):
+            raise fail(
+                abi_path, "/tools", "tools must have unique names in sorted order"
+            )
+        for tool_index, tool in enumerate(tools):
+            schema_path = parameter_schema_path(tool["parameters"])
+            if schema_path is not None:
+                location = f"/tools/{tool_index}/parameters"
+                if schema_path != "/":
+                    location += schema_path
+                raise fail(abi_path, location, "invalid Draft 2020-12 parameter schema")
+
+    provenance_path = CONTRACTS / "integrations" / "copy-provenance-v1.schema.json"
+    provenance = documents["integrations/copy-provenance-v1.schema.json"]
+    provenance_validator = Draft202012Validator(
+        provenance, format_checker=FormatChecker()
+    )
+    digest = "0" * 64
+    sample_provenance = {
+        "schemaVersion": "1.0.0",
+        "integration": "fs",
+        "sdkVersion": "0.1.0",
+        "runtime": "typescript",
+        "stability": "experimental",
+        "registryEntrySha256": digest,
+        "abiSha256": None,
+        "manifestSha256": digest,
+        "license": {
+            "identifier": "PolyForm-Noncommercial-1.0.0",
+            "url": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+            "sha256": digest,
+        },
+        "files": {"index.ts": digest},
     }
-    error = first_error(validators["manifest"], abi_manifest)
-    if error is not None:
-        error_path = pointer(error.absolute_path)
-        raise fail(abi_path, error_path, error.message)
-    tool_names = [tool["name"] for tool in tools]
-    if tool_names != sorted(set(tool_names)):
-        raise fail(abi_path, "/tools", "tools must have unique names in sorted order")
-    for tool_index, tool in enumerate(tools):
-        schema_path = parameter_schema_path(tool["parameters"])
-        if schema_path is not None:
-            location = f"/tools/{tool_index}/parameters"
-            if schema_path != "/":
-                location += schema_path
-            raise fail(abi_path, location, "invalid Draft 2020-12 parameter schema")
+    for legacy_name in ("fs", "http", "sqlite", "web"):
+        legacy_provenance = deepcopy(sample_provenance)
+        legacy_provenance["integration"] = legacy_name
+        if first_error(provenance_validator, legacy_provenance) is not None:
+            raise fail(
+                provenance_path,
+                "/",
+                "schema rejects valid legacy copied-bundle provenance",
+            )
+
+    echo_provenance = deepcopy(sample_provenance)
+    echo_provenance.update(
+        {
+            "integration": "echo",
+            "runtime": "python",
+            "abiSha256": digest,
+            "files": {"echo.py": digest},
+        }
+    )
+    if first_error(provenance_validator, echo_provenance) is not None:
+        raise fail(provenance_path, "/", "schema rejects valid Echo provenance")
+    echo_provenance["abiSha256"] = None
+    if first_error(provenance_validator, echo_provenance) is None:
+        raise fail(
+            provenance_path,
+            "/properties/abiSha256",
+            "schema permits null ABI digest for indexed Echo",
+        )
+
+    missing_runtime = deepcopy(sample_provenance)
+    del missing_runtime["runtime"]
+    if first_error(provenance_validator, missing_runtime) is None:
+        raise fail(
+            provenance_path, "/required", "schema permits missing runtime identity"
+        )
+    invalid_runtime = deepcopy(sample_provenance)
+    invalid_runtime["runtime"] = "ruby"
+    if first_error(provenance_validator, invalid_runtime) is None:
+        raise fail(
+            provenance_path, "/properties/runtime", "schema permits unknown runtime"
+        )
+
+    self_referential = deepcopy(sample_provenance)
+    self_referential["files"] = {".kaji-integration-provenance.json": digest}
+    if first_error(provenance_validator, self_referential) is None:
+        raise fail(
+            provenance_path, "/properties/files", "schema permits self-reference"
+        )
 
     invalid_path = CONTRACTS / "integrations" / "conformance-invalid.json"
     invalid_cases = documents["integrations/conformance-invalid.json"].get("cases")

@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Optional, cast
+from typing import Any, Literal, cast
 
 from kaji.integrations.validation import (
     IndexValidationError,
@@ -46,12 +46,15 @@ class ManifestTool:
     timeout_ms: int | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ManifestAuth:
-    kind: str  # "env" | "oauth" | "none"
-    env: Optional[str] = None
+    kind: Literal["none", "env", "oauth"]
+    env: str | None = None
     optional: bool = False
-    docs: Optional[str] = None
+    docs: str | None = None
+    provider: Literal["google"] | None = None
+    client_id_env: str | None = None
+    client_secret_env: str | None = None
     scopes: tuple[str, ...] = ()
 
 
@@ -202,6 +205,9 @@ def load_manifest(name: str) -> Manifest:
             env=auth.get("env"),
             optional=auth.get("optional", False),
             docs=auth.get("docs"),
+            provider=auth.get("provider"),
+            client_id_env=auth.get("clientIdEnv"),
+            client_secret_env=auth.get("clientSecretEnv"),
             scopes=tuple(auth.get("scopes") or ()),
         ),
         files=tuple(data["files"]),

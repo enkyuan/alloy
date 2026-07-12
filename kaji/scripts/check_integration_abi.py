@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Verify stable Echo manifests against both executable tool ABIs."""
+"""Verify indexed integration manifests against both executable tool ABIs."""
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import re
 import shutil
 import sys
 import tempfile
@@ -17,13 +19,13 @@ from process_runner import CommandError, METADATA_BUDGET, run_checked
 
 ROOT = Path(__file__).resolve().parents[2]
 KAJI = ROOT / "kaji"
-CONTRACT = KAJI / "contracts" / "integrations" / "echo-tool-abi-v1.json"
+CONTRACTS = KAJI / "contracts" / "integrations"
+ABI_INDEX = CONTRACTS / "abi-index-v1.json"
 PYTHON_SDK = KAJI / "sdk"
 TYPESCRIPT_SDK = KAJI / "ts"
-MANIFESTS = (
-    PYTHON_SDK / "src" / "integrations" / "registry" / "echo" / "manifest.json",
-    TYPESCRIPT_SDK / "registry" / "echo" / "manifest.json",
-)
+PYTHON_REGISTRY = PYTHON_SDK / "src" / "integrations" / "registry"
+TYPESCRIPT_REGISTRY = TYPESCRIPT_SDK / "registry"
+_INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
 class IntegrationAbiCheckError(RuntimeError):
@@ -50,8 +52,12 @@ def _pointer_part(value: str) -> str:
 def _display(value: object) -> str:
     if value is _MISSING:
         return "<missing>"
-    if value is None or isinstance(value, (bool, int, float)):
-        return json.dumps(value)
+    if value is None:
+        return "<null>"
+    if isinstance(value, bool):
+        return "<boolean>"
+    if isinstance(value, (int, float)):
+        return "<number>"
     if isinstance(value, str):
         return f"<string length={len(value)}>"
     if isinstance(value, list):
@@ -85,6 +91,59 @@ def _load_json(path: Path) -> dict[str, Any]:
         return _load_json_bytes(path.read_bytes(), str(path))
     except OSError as error:
         raise IntegrationAbiCheckError(f"{path} could not be read") from error
+
+
+def _abi_contracts() -> dict[str, Path]:
+    document = _load_json(ABI_INDEX)
+    if set(document) != {"schemaVersion", "integrations"}:
+        raise IntegrationAbiCheckError("ABI index: / must be a closed object")
+    if document.get("schemaVersion") != "1.0.0":
+        raise IntegrationAbiCheckError(
+            "ABI index: /schemaVersion must be version 1.0.0"
+        )
+    integrations = document.get("integrations")
+    if not isinstance(integrations, dict) or not integrations:
+        raise IntegrationAbiCheckError(
+            "ABI index: /integrations must be a non-empty object"
+        )
+
+    contracts: dict[str, Path] = {}
+    root = CONTRACTS.resolve()
+    for name, relative in sorted(integrations.items()):
+        pointer = f"/integrations/{_pointer_part(str(name))}"
+        if not isinstance(name, str) or _INTEGRATION_NAME.fullmatch(name) is None:
+            raise IntegrationAbiCheckError(
+                f"ABI index: {pointer} has an invalid integration name"
+            )
+        if not isinstance(relative, str):
+            raise IntegrationAbiCheckError(
+                f"ABI index: {pointer} must be a relative path"
+            )
+        parts = relative.split("/")
+        path = PurePosixPath(relative)
+        if (
+            not relative
+            or "\\" in relative
+            or path.is_absolute()
+            or re.match(r"^[A-Za-z]:", relative) is not None
+            or any(part in {"", ".", ".."} for part in parts)
+        ):
+            raise IntegrationAbiCheckError(
+                f"ABI index: {pointer} must be a safe relative path"
+            )
+        candidate = (CONTRACTS / path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            raise IntegrationAbiCheckError(
+                f"ABI index: {pointer} resolves outside the contract root"
+            ) from None
+        if not candidate.is_file():
+            raise IntegrationAbiCheckError(
+                f"ABI index: {pointer} references a missing file"
+            )
+        contracts[name] = candidate
+    return contracts
 
 
 def _environment(*, bun: str, home: Path, temporary: Path) -> dict[str, str]:
@@ -150,7 +209,7 @@ def _run_exporter(
     return document
 
 
-def _runtime_documents() -> tuple[dict[str, Any], dict[str, Any]]:
+def _runtime_documents(integration_name: str) -> tuple[dict[str, Any], dict[str, Any]]:
     bun = shutil.which("bun")
     if bun is None:
         raise IntegrationAbiCheckError("bun was not found on PATH")
@@ -161,53 +220,83 @@ def _runtime_documents() -> tuple[dict[str, Any], dict[str, Any]]:
         environment = _environment(bun=bun, home=home, temporary=temporary)
         python = _run_exporter(
             "Python",
-            [sys.executable, str(Path(__file__).resolve()), "--python-json"],
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--python-json",
+                integration_name,
+            ],
             PYTHON_SDK,
             environment,
         )
         typescript = _run_exporter(
             "TypeScript",
-            [bun, "run", "scripts/integration-abi.ts", "--json"],
+            [bun, "run", "scripts/integration-abi.ts", "--json", integration_name],
             TYPESCRIPT_SDK,
             environment,
         )
     return python, typescript
 
 
-def _python_document() -> dict[str, Any]:
-    from kaji.integrations.registry.echo import echo  # noqa: PLC0415
-    from kaji.runtime.integrations import BoundTool  # noqa: PLC0415
-
-    declared = tuple(echo.tools)
-    exports = sorted(
-        (name, value)
-        for name, value in vars(echo).items()
-        if isinstance(value, BoundTool)
-    )
-    declared_ids = {id(tool) for tool in declared}
-    for name, tool in exports:
-        if id(tool) not in declared_ids:
-            raise IntegrationAbiMismatchError(
-                f"/exports/{_pointer_part(name)}",
-                "listed in tools",
-                "unlisted BoundTool export",
-            )
-    exported_ids = {id(tool) for _, tool in exports}
-    for index, tool in enumerate(declared):
-        if id(tool) not in exported_ids:
-            raise IntegrationAbiMismatchError(
-                f"/tools/{index}",
-                "named BoundTool export",
-                "unexported tool metadata",
-            )
-    namespaces = {tool.namespace for tool in declared}
-    if len(namespaces) != 1:
-        raise IntegrationAbiMismatchError(
-            "/namespace", "one namespace", sorted(namespaces)
+def _python_document(integration_name: str) -> dict[str, Any]:
+    try:
+        module = importlib.import_module(
+            f"kaji.integrations.registry.{integration_name}.{integration_name}"
         )
+    except Exception as error:
+        raise IntegrationAbiMismatchError(
+            "/inspect_integration", "importable integration module", error
+        ) from None
+    inspector = getattr(module, "inspect_integration", _MISSING)
+    if not callable(inspector):
+        raise IntegrationAbiMismatchError(
+            "/inspect_integration", "side-effect-free inspector function", inspector
+        )
+    try:
+        integration = inspector()
+    except Exception as error:
+        raise IntegrationAbiMismatchError(
+            "/inspect_integration", "side-effect-free inspector result", error
+        ) from None
+
+    namespace = getattr(integration, "namespace", _MISSING)
+    if not isinstance(namespace, str) or not namespace:
+        raise IntegrationAbiMismatchError(
+            "/namespace", "non-empty namespace", namespace
+        )
+    tools_method = getattr(integration, "tools", _MISSING)
+    if not callable(tools_method):
+        raise IntegrationAbiMismatchError("/tools", "metadata method", tools_method)
+    try:
+        declared = tools_method()
+    except Exception as error:
+        raise IntegrationAbiMismatchError(
+            "/tools", "side-effect-free metadata", error
+        ) from None
+    if not isinstance(declared, (list, tuple)):
+        raise IntegrationAbiMismatchError("/tools", "array of tool pairs", declared)
+
     tools: list[dict[str, Any]] = []
-    for tool in declared:
-        spec = tool.spec
+    for index, pair in enumerate(declared):
+        if not isinstance(pair, (list, tuple)) or not pair:
+            raise IntegrationAbiMismatchError(
+                f"/tools/{index}", "tool metadata pair", pair
+            )
+        spec = pair[0]
+        if not all(
+            hasattr(spec, field)
+            for field in (
+                "name",
+                "description",
+                "parameters",
+                "risk",
+                "parallel_safe",
+                "timeout_ms",
+            )
+        ):
+            raise IntegrationAbiMismatchError(
+                f"/tools/{index}", "complete tool metadata", spec
+            )
         normalized = {
             "name": spec.name,
             "description": spec.description,
@@ -219,8 +308,8 @@ def _python_document() -> dict[str, Any]:
             normalized["timeout_ms"] = spec.timeout_ms
         tools.append(normalized)
     return {
-        "namespace": next(iter(namespaces)),
-        "tools": sorted(tools, key=lambda tool: tool["name"]),
+        "namespace": namespace,
+        "tools": sorted(tools, key=lambda tool: str(tool["name"])),
     }
 
 
@@ -234,13 +323,13 @@ def _normalized_tools(tools: object, source: str) -> list[dict[str, Any]]:
                 f"{source}: /tools/{index} must be an object"
             )
         item = {
-            "name": tool.get("name"),
-            "description": tool.get("description"),
-            "parameters": tool.get("parameters"),
-            "risk": tool.get("risk"),
-            "parallel_safe": tool.get("parallel_safe", False),
+            "name": tool.get("name", _MISSING),
+            "description": tool.get("description", _MISSING),
+            "parameters": tool.get("parameters", _MISSING),
+            "risk": tool.get("risk", _MISSING),
+            "parallel_safe": tool.get("parallel_safe", _MISSING),
         }
-        if tool.get("timeout_ms") is not None:
+        if "timeout_ms" in tool:
             item["timeout_ms"] = tool["timeout_ms"]
         normalized.append(item)
     normalized.sort(key=lambda tool: str(tool["name"]))
@@ -288,46 +377,75 @@ def _first_mismatch(
     return None if expected == actual else (pointer or "/", expected, actual)
 
 
-def check_integration_abi() -> None:
-    canonical = _load_json(CONTRACT)
-    expected = {
-        "namespace": canonical.get("namespace"),
-        "tools": _normalized_tools(canonical.get("tools"), str(CONTRACT)),
-    }
-    candidates: list[tuple[str, dict[str, Any]]] = []
-    for manifest_path in MANIFESTS:
-        manifest = _load_json(manifest_path)
-        candidates.append(
-            (
-                str(manifest_path),
-                {
-                    "namespace": manifest.get("namespace"),
-                    "tools": _normalized_tools(
-                        manifest.get("tools"), str(manifest_path)
-                    ),
-                },
-            )
+def _canonical_abi(integration_name: str, path: Path) -> dict[str, Any]:
+    canonical = _load_json(path)
+    if set(canonical) != {"$schema", "version", "namespace", "tools"}:
+        raise IntegrationAbiCheckError(f"{path}: / must be a closed ABI object")
+    if canonical.get("version") != "1.0.0":
+        raise IntegrationAbiCheckError(f"{path}: /version must be version 1.0.0")
+    if canonical.get("namespace") != integration_name:
+        raise IntegrationAbiCheckError(
+            f"{path}: /namespace must match the ABI index key"
         )
-    python, typescript = _runtime_documents()
-    candidates.extend((("Python Echo", python), ("TypeScript Echo", typescript)))
-    for source, actual in candidates:
-        normalized = {
-            "namespace": actual.get("namespace"),
-            "tools": _normalized_tools(actual.get("tools"), source),
-        }
-        mismatch = _first_mismatch(expected, normalized)
-        if mismatch is not None:
-            raise IntegrationAbiMismatchError(*mismatch)
+    return {
+        "namespace": canonical.get("namespace", _MISSING),
+        "tools": _normalized_tools(canonical.get("tools", _MISSING), str(path)),
+    }
+
+
+def check_integration_abi(integration_name: str | None = None) -> tuple[str, ...]:
+    contracts = _abi_contracts()
+    if integration_name is not None:
+        if integration_name not in contracts:
+            raise IntegrationAbiCheckError(
+                "ABI index: /integrations has no requested entry"
+            )
+        contracts = {integration_name: contracts[integration_name]}
+
+    for name, contract_path in contracts.items():
+        expected = _canonical_abi(name, contract_path)
+        manifest_paths = (
+            PYTHON_REGISTRY / name / "manifest.json",
+            TYPESCRIPT_REGISTRY / name / "manifest.json",
+        )
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        for manifest_path in manifest_paths:
+            manifest = _load_json(manifest_path)
+            candidates.append(
+                (
+                    str(manifest_path),
+                    {
+                        "namespace": manifest.get("namespace", _MISSING),
+                        "tools": _normalized_tools(
+                            manifest.get("tools", _MISSING), str(manifest_path)
+                        ),
+                    },
+                )
+            )
+        python, typescript = _runtime_documents(name)
+        candidates.extend(
+            (("Python inspector", python), ("TypeScript inspector", typescript))
+        )
+        for source, actual in candidates:
+            normalized = {
+                "namespace": actual.get("namespace", _MISSING),
+                "tools": _normalized_tools(actual.get("tools", _MISSING), source),
+            }
+            mismatch = _first_mismatch(expected, normalized)
+            if mismatch is not None:
+                raise IntegrationAbiMismatchError(*mismatch)
+    return tuple(contracts)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--explain", action="store_true")
-    parser.add_argument("--python-json", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--integration")
+    parser.add_argument("--python-json", metavar="NAME", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if args.python_json:
+    if args.python_json is not None:
         try:
-            document = _python_document()
+            document = _python_document(args.python_json)
         except IntegrationAbiMismatchError as error:
             document = {
                 "error": {
@@ -340,7 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(document, sort_keys=True))
         return 0
     try:
-        check_integration_abi()
+        checked = check_integration_abi(args.integration)
     except IntegrationAbiMismatchError as error:
         detail = ""
         if args.explain:
@@ -356,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
     except IntegrationAbiCheckError as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 1
-    print("OK: Echo manifests and Python/TypeScript executable tool ABIs match")
+    print(f"OK: indexed integration ABIs match: {', '.join(checked)}")
     return 0
 
 

@@ -41,3 +41,19 @@ async def shout(message: str) -> dict:
 
 
 tools = (say, shout)
+
+
+class EchoIntegration(kaji.Integration):
+    """Side-effect-free Echo metadata bundle used by ABI inspection."""
+
+    @property
+    def namespace(self) -> str:
+        return "echo"
+
+    def tools(self):
+        return [(tool.spec, tool.handler) for tool in tools]
+
+
+def inspect_integration() -> EchoIntegration:
+    """Construct Echo without executing a tool or reading runtime state."""
+    return EchoIntegration()

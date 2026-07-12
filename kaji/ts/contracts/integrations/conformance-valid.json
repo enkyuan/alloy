@@ -79,7 +79,10 @@
         "description": "Read mail.",
         "auth": {
           "kind": "oauth",
-          "scopes": ["mail.read", "mail.send"],
+          "provider": "google",
+          "clientIdEnv": "GOOGLE_CLIENT_ID",
+          "clientSecretEnv": "GOOGLE_CLIENT_SECRET",
+          "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
           "docs": "https://example.com/oauth"
         },
         "files": ["mail/index.ts"],

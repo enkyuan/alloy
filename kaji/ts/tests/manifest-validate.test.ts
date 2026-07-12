@@ -129,6 +129,24 @@ describe("integration contract conformance", () => {
       timeout_ms: 1000,
     });
   });
+
+  it("returns the closed Google OAuth metadata unchanged", async () => {
+    const testCase = validCases.find(
+      (candidate) => candidate.name === "manifest with OAuth authentication",
+    );
+    expect(testCase?.target).toBe("manifest");
+    const manifest = await validateManifestDocument(testCase!.document, {
+      schemaRoot: registryRoot,
+    });
+    expect(manifest.auth).toEqual({
+      kind: "oauth",
+      provider: "google",
+      clientIdEnv: "GOOGLE_CLIENT_ID",
+      clientSecretEnv: "GOOGLE_CLIENT_SECRET",
+      scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+      docs: "https://example.com/oauth",
+    });
+  });
 });
 
 describe("real registry", () => {

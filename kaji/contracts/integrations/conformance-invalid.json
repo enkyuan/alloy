@@ -36,11 +36,33 @@
       "expectedCode": "INTEGRATION_SCHEMA_INVALID"
     },
     {
+      "name": "OAuth auth missing provider",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth", "clientIdEnv": "GOOGLE_CLIENT_ID", "scopes": ["read"] }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
+      "name": "OAuth auth missing client ID environment variable",
+      "target": "manifest",
+      "document": {
+        "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
+        "auth": { "kind": "oauth", "provider": "google", "scopes": ["read"] }, "files": ["index.ts"],
+        "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
+      },
+      "expectedPath": "/auth",
+      "expectedCode": "INTEGRATION_SCHEMA_INVALID"
+    },
+    {
       "name": "OAuth auth missing scopes",
       "target": "manifest",
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
-        "auth": { "kind": "oauth" }, "files": ["index.ts"],
+        "auth": { "kind": "oauth", "provider": "google", "clientIdEnv": "GOOGLE_CLIENT_ID" }, "files": ["index.ts"],
         "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
@@ -51,7 +73,7 @@
       "target": "manifest",
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
-        "auth": { "kind": "oauth", "scopes": [] }, "files": ["index.ts"],
+        "auth": { "kind": "oauth", "provider": "google", "clientIdEnv": "GOOGLE_CLIENT_ID", "scopes": [] }, "files": ["index.ts"],
         "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
       "expectedPath": "/auth",
@@ -62,7 +84,7 @@
       "target": "manifest",
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
-        "auth": { "kind": "oauth", "scopes": ["read", "read"] },
+        "auth": { "kind": "oauth", "provider": "google", "clientIdEnv": "GOOGLE_CLIENT_ID", "scopes": ["read", "read"] },
         "files": ["index.ts"],
         "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },
@@ -74,7 +96,7 @@
       "target": "manifest",
       "document": {
         "name": "x", "version": "0.1.0", "namespace": "x", "description": "x",
-        "auth": { "kind": "oauth", "scopes": ["read"], "env": "API_KEY" },
+        "auth": { "kind": "oauth", "provider": "google", "clientIdEnv": "GOOGLE_CLIENT_ID", "scopes": ["read"], "env": "API_KEY" },
         "files": ["index.ts"],
         "tools": [{ "name": "x", "description": "x", "parameters": {}, "risk": "read", "parallel_safe": false }]
       },

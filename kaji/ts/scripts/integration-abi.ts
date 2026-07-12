@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,9 +34,9 @@ function pointerPart(value: string): string {
 
 function displayValue(value: unknown): string {
   if (value === missing) return "<missing>";
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
-    return JSON.stringify(value);
-  }
+  if (value === null) return "<null>";
+  if (typeof value === "boolean") return "<boolean>";
+  if (typeof value === "number") return "<number>";
   if (typeof value === "string") return `<string length=${value.length}>`;
   if (Array.isArray(value)) return `<array length=${value.length}>`;
   if (typeof value === "object") return `<object keys=${Object.keys(value).length}>`;
@@ -73,13 +72,18 @@ export class IntegrationAbiMismatchError extends Error {
   }
 }
 
-function normalizeTool(tool: IntegrationManifestTool | ToolSpec): ManifestToolAbi {
+function normalizeTool(tool: IntegrationManifestTool | ToolSpec, index: number): ManifestToolAbi {
+  const record = tool as unknown as Record<string, unknown>;
+  const parallelSafe = Object.hasOwn(record, "parallel_safe") ? record.parallel_safe : missing;
+  if (typeof parallelSafe !== "boolean") {
+    throw new IntegrationAbiMismatchError(`/tools/${index}/parallel_safe`, "boolean", parallelSafe);
+  }
   return {
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
     risk: tool.risk,
-    parallel_safe: tool.parallel_safe ?? false,
+    parallel_safe: parallelSafe,
     ...(tool.timeout_ms === undefined ? {} : { timeout_ms: tool.timeout_ms }),
   };
 }
@@ -88,7 +92,7 @@ function normalizedTools(
   tools: readonly (IntegrationManifestTool | ToolSpec)[],
 ): readonly ManifestToolAbi[] {
   const normalized = tools
-    .map(normalizeTool)
+    .map((tool, index) => normalizeTool(tool, index))
     .sort((left, right) => left.name.localeCompare(right.name));
   for (let index = 1; index < normalized.length; index++) {
     if (normalized[index - 1]!.name === normalized[index]!.name) {
@@ -220,8 +224,75 @@ export function discoverIntegrationTools(
   return declared;
 }
 
+export function inspectIntegrationModule(module: IntegrationModule): ExecutableIntegrationAbi {
+  const inspector = module.inspectIntegration;
+  if (typeof inspector !== "function") {
+    throw new IntegrationAbiMismatchError(
+      "/inspectIntegration",
+      "side-effect-free inspector function",
+      inspector,
+    );
+  }
+
+  let integration: unknown;
+  try {
+    integration = inspector();
+  } catch (error) {
+    throw new IntegrationAbiMismatchError(
+      "/inspectIntegration",
+      "side-effect-free inspector result",
+      error,
+    );
+  }
+  if (typeof integration !== "object" || integration === null) {
+    throw new IntegrationAbiMismatchError("/inspectIntegration", "integration object", integration);
+  }
+
+  const inspected = integration as Record<string, unknown>;
+  const namespace = inspected.namespace;
+  if (typeof namespace !== "string" || namespace.length === 0) {
+    throw new IntegrationAbiMismatchError("/namespace", "non-empty namespace", namespace);
+  }
+  const toolsMethod = inspected.tools;
+  if (typeof toolsMethod !== "function") {
+    throw new IntegrationAbiMismatchError("/tools", "metadata method", toolsMethod);
+  }
+
+  let pairs: unknown;
+  try {
+    pairs = toolsMethod.call(integration);
+  } catch (error) {
+    throw new IntegrationAbiMismatchError("/tools", "side-effect-free metadata", error);
+  }
+  if (!Array.isArray(pairs)) {
+    throw new IntegrationAbiMismatchError("/tools", "array of tool pairs", pairs);
+  }
+  const specs = pairs.map((pair, index) => {
+    if (!Array.isArray(pair) || typeof pair[0] !== "object" || pair[0] === null) {
+      throw new IntegrationAbiMismatchError(`/tools/${index}`, "tool metadata pair", pair);
+    }
+    return pair[0] as ToolSpec;
+  });
+  return { namespace, tools: normalizedTools(specs) };
+}
+
 export function echoExecutableAbi(): ExecutableIntegrationAbi {
-  return executableIntegrationAbi(discoverIntegrationTools(echoModule, echoModule.tools));
+  return inspectIntegrationModule(echoModule);
+}
+
+export async function loadExecutableIntegrationAbi(
+  integrationName: string,
+): Promise<ExecutableIntegrationAbi> {
+  if (!/^[a-z][a-z0-9_-]*$/.test(integrationName)) {
+    throw new IntegrationAbiMismatchError("/integration", "safe integration name", integrationName);
+  }
+  let module: IntegrationModule;
+  try {
+    module = (await import(`../registry/${integrationName}/index.ts`)) as IntegrationModule;
+  } catch (error) {
+    throw new IntegrationAbiMismatchError("/inspectIntegration", "importable module", error);
+  }
+  return inspectIntegrationModule(module);
 }
 
 export function integrationAbiJson(
@@ -235,15 +306,25 @@ export function integrationAbiJson(
   }
 }
 
-function main(): number {
-  if (process.argv.slice(2).join(" ") !== "--json") {
-    console.error("usage: integration-abi.ts --json");
+async function integrationAbiJsonFor(integrationName: string): Promise<string> {
+  try {
+    return JSON.stringify(await loadExecutableIntegrationAbi(integrationName));
+  } catch (error) {
+    if (!(error instanceof IntegrationAbiMismatchError)) throw error;
+    return JSON.stringify({ error: error.normalized() });
+  }
+}
+
+async function main(): Promise<number> {
+  const args = process.argv.slice(2);
+  if (args.length !== 2 || args[0] !== "--json") {
+    console.error("usage: integration-abi.ts --json <integration>");
     return 2;
   }
-  console.log(integrationAbiJson());
+  console.log(await integrationAbiJsonFor(args[1]!));
   return 0;
 }
 
 if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  process.exit(main());
+  process.exit(await main());
 }

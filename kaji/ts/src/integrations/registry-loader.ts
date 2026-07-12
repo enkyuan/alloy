@@ -81,9 +81,16 @@ export interface RegistryIndexDocument {
 }
 
 export type IntegrationAuth =
-  | { kind: "none" }
-  | { kind: "env"; env: string; optional?: boolean; docs?: string }
-  | { kind: "oauth"; scopes: string[]; docs?: string };
+  | Readonly<{ kind: "none" }>
+  | Readonly<{ kind: "env"; env: string; optional?: boolean; docs?: string }>
+  | Readonly<{
+      kind: "oauth";
+      provider: "google";
+      clientIdEnv: string;
+      clientSecretEnv?: string;
+      scopes: readonly string[];
+      docs?: string;
+    }>;
 
 export interface IntegrationManifestTool {
   readonly name: string;

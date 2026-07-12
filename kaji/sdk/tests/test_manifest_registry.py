@@ -8,12 +8,14 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator, FormatChecker
 
 from kaji.integrations import (
     IntegrationNotFound,
     IntegrationValidationError,
     Manifest,
     ManifestError,
+    ManifestValidationError,
     install_integration,
     list_integrations,
     load_manifest,
@@ -113,6 +115,55 @@ def test_load_manifest_returns_parsed_manifest() -> None:
         assert tool.timeout_ms is None
 
 
+def test_oauth_manifest_requires_google_provider_and_client_id_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import kaji.integrations as integrations
+
+    root = tmp_path / "registry"
+    root.mkdir()
+    (root / "index.json").write_text(
+        json.dumps(_index({"mail": _entry("mail/manifest.json")}))
+    )
+    directory = root / "mail"
+    directory.mkdir()
+    manifest = _valid_manifest("mail", ["index.ts"])
+    manifest["auth"] = {
+        "kind": "oauth",
+        "provider": "google",
+        "clientIdEnv": "GOOGLE_CLIENT_ID",
+        "clientSecretEnv": "GOOGLE_CLIENT_SECRET",
+        "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
+    }
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    (directory / "index.ts").write_text("// fixture\n")
+    monkeypatch.setattr(integrations, "_registry_root", lambda: root)
+
+    loaded = load_manifest("mail")
+
+    assert loaded.auth.provider == "google"
+    assert loaded.auth.client_id_env == "GOOGLE_CLIENT_ID"
+    assert loaded.auth.client_secret_env == "GOOGLE_CLIENT_SECRET"
+
+
+@pytest.mark.parametrize("field", ["provider", "clientIdEnv"])
+def test_oauth_manifest_rejects_missing_required_metadata(field: str) -> None:
+    auth = {
+        "kind": "oauth",
+        "provider": "google",
+        "clientIdEnv": "GOOGLE_CLIENT_ID",
+        "scopes": ["scope"],
+    }
+    del auth[field]
+    manifest = _valid_manifest("mail", ["index.ts"])
+    manifest["auth"] = auth
+
+    with pytest.raises(ManifestValidationError) as caught:
+        validate_manifest_document(manifest)
+
+    assert caught.value.path.startswith("/auth")
+
+
 def test_load_manifest_freezes_nested_parameter_schema(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -156,6 +207,41 @@ def test_packaged_schemas_match_canonical_contracts() -> None:
         REPO_ROOT / "kaji/ts/registry/index.schema.json",
     ):
         assert packaged.read_bytes() == (CONTRACTS / "index.schema.json").read_bytes()
+
+
+def test_copy_provenance_is_closed_and_supports_demotion_detection() -> None:
+    schema = json.loads((CONTRACTS / "copy-provenance-v1.schema.json").read_text())
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
+    digest = "0" * 64
+    provenance = {
+        "schemaVersion": "1.0.0",
+        "integration": "fs",
+        "sdkVersion": "0.1.0",
+        "runtime": "typescript",
+        "stability": "experimental",
+        "registryEntrySha256": digest,
+        "abiSha256": None,
+        "manifestSha256": digest,
+        "license": {
+            "identifier": "PolyForm-Noncommercial-1.0.0",
+            "url": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+            "sha256": digest,
+        },
+        "files": {"index.ts": digest},
+    }
+
+    assert validator.is_valid(provenance)
+    assert validator.is_valid(
+        {**provenance, "integration": "echo", "abiSha256": digest}
+    )
+    assert not validator.is_valid(
+        {key: value for key, value in provenance.items() if key != "stability"}
+    )
+    assert not validator.is_valid({**provenance, "registryEntrySha256": "short"})
+    assert not validator.is_valid(
+        {**provenance, "files": {".kaji-integration-provenance.json": digest}}
+    )
+    assert not validator.is_valid({**provenance, "unexpected": True})
 
 
 def test_fixed_contract_validators_are_cached() -> None:
