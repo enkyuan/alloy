@@ -62,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument(
         "--calibrate", action="store_const", const="calibrate", dest="mode"
     )
+    parser.add_argument("--protected", action="store_true")
     return parser.parse_args()
 
 
@@ -117,6 +118,7 @@ def main() -> int:
                     "quick",
                     "--output",
                     str(output),
+                    *(["--protected"] if args.protected else []),
                 ],
                 budget=BENCHMARK_ORCHESTRATOR_BUDGET,
             )
@@ -146,6 +148,7 @@ def main() -> int:
                 "full",
                 "--output",
                 str(artifacts / "results.json"),
+                *(["--protected"] if args.protected else []),
             ],
             budget=BENCHMARK_ORCHESTRATOR_BUDGET,
         )
@@ -163,6 +166,7 @@ def main() -> int:
             str(artifacts / "calibration-results.json"),
             "--candidate-baseline",
             str(artifacts / "beta-baseline.candidate.json"),
+            *(["--protected"] if args.protected else []),
         ],
         budget=BENCHMARK_ORCHESTRATOR_BUDGET,
     )

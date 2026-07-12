@@ -143,11 +143,33 @@ jobs:
   performance:
     needs: verify-tag
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
-    timeout-minutes: 75
+    # 35-minute benchmark + 42-minute soak + 18-minute setup/validation/upload,
+    # plus a five-minute job-level shutdown margin.
+    timeout-minutes: 100
     env:
       KAJI_BENCHMARK_PINNED_RUNNER: "1"
       KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST: ${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}
+      KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+      KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      - name: Initialize exact-commit performance status before setup
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "performance_not_completed", benchmarkOutcome: "not_run",
+              soakOutcome: "not_run", validationOutcome: "not_run",
+              fingerprint: null, workflowRun: $workflowRun}' \
+            >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+      - name: Retain initial not-run performance status before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-performance-evidence-initial
+          path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}
+          if-no-files-found: error
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
@@ -163,17 +185,117 @@ jobs:
           working-directory: .
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
-      - run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --full
-      - run: uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30
-      - name: Normalize performance evidence names
+      - name: Run protected full benchmark
+        id: benchmark
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --full --protected
+      - name: Run protected 30-minute soak
+        id: soak
+        run: uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30 --protected
+      - name: Validate and normalize exact-commit performance evidence
+        id: performance-validation
         run: |
-          mkdir -p .artifacts/kaji-performance-evidence
-          cp .artifacts/kaji-benchmarks/results.json .artifacts/kaji-performance-evidence/benchmark-results.json
-          cp .artifacts/kaji-soak/results.json .artifacts/kaji-performance-evidence/soak-results.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+          benchmark=.artifacts/kaji-benchmarks/results.json
+          soak=.artifacts/kaji-soak/results.json
+          expected_fingerprint="$(
+            uv run --project kaji/sdk python -c \
+              'import json, sys; sys.path.insert(0, "kaji/scripts"); from beta_benchmark_gate import fingerprint; print(json.dumps(fingerprint(), sort_keys=True))'
+          )"
+          validate_report() {
+            jq -e \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg imageDigest "$KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST" \
+              --argjson fingerprint "$expected_fingerprint" \
+              '($commit | test("^[0-9a-f]{40}$")) and
+               ($imageDigest | test("^sha256:[0-9a-f]{64}$")) and
+               .schemaVersion == 1 and .passed == true and
+               .protected == true and .commit == $commit and
+               .fingerprint == $fingerprint and
+               .fingerprint.runner.imageDigest == $imageDigest and
+               (.fingerprint.dependencyLockHash | type == "string" and test("^[0-9a-f]{64}$")) and
+               (.fingerprint.sourceHash | type == "string" and test("^[0-9a-f]{64}$")) and
+               .fingerprint.versions.python == "3.11.9" and
+               .fingerprint.versions.node == "v22.14.0" and
+               .fingerprint.versions.bun == "1.3.11"' \
+              "$1" >/dev/null
+          }
+          validate_report "$benchmark"
+          validate_report "$soak"
+          jq -e -s \
+            '.[0].commit == .[1].commit and .[0].fingerprint == .[1].fingerprint' \
+            "$benchmark" "$soak" >/dev/null
+          cp "$benchmark" "$KAJI_PERFORMANCE_EVIDENCE_DIR/benchmark-results.json"
+          cp "$soak" "$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"
+      - name: Retain exact-run raw performance evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          BENCHMARK_OUTCOME: ${{ steps.benchmark.outcome }}
+          SOAK_OUTCOME: ${{ steps.soak.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.performance-validation.outcome }}
+        run: |
+          case "$BENCHMARK_OUTCOME" in
+            success)
+              test -d .artifacts/kaji-benchmarks
+              mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks"
+              cp -R .artifacts/kaji-benchmarks/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks/"
+              ;;
+            failure)
+              if [ -d .artifacts/kaji-benchmarks ]; then
+                mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks"
+                cp -R .artifacts/kaji-benchmarks/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks/"
+              fi
+              ;;
+          esac
+          case "$SOAK_OUTCOME" in
+            success)
+              test -d .artifacts/kaji-soak
+              mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak"
+              cp -R .artifacts/kaji-soak/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak/"
+              ;;
+            failure)
+              if [ -d .artifacts/kaji-soak ]; then
+                mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak"
+                cp -R .artifacts/kaji-soak/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak/"
+              fi
+              ;;
+          esac
+          if [ "$VALIDATION_OUTCOME" = success ]; then
+            jq --null-input \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --slurpfile benchmark "$KAJI_PERFORMANCE_EVIDENCE_DIR/benchmark-results.json" \
+              '{schemaVersion: 1, commit: $commit, conclusion: "passed",
+                failureCode: null, benchmarkOutcome: "success", soakOutcome: "success",
+                validationOutcome: "success", fingerprint: $benchmark[0].fingerprint,
+                workflowRun: $workflowRun}' \
+              >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+          else
+            if [ "$BENCHMARK_OUTCOME" != success ]; then
+              failure_code=benchmark_not_completed
+            elif [ "$SOAK_OUTCOME" != success ]; then
+              failure_code=soak_not_completed
+            else
+              failure_code=performance_validation_failed
+            fi
+            jq --null-input \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg failureCode "$failure_code" \
+              --arg benchmarkOutcome "${BENCHMARK_OUTCOME:-skipped}" \
+              --arg soakOutcome "${SOAK_OUTCOME:-skipped}" \
+              --arg validationOutcome "${VALIDATION_OUTCOME:-skipped}" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                failureCode: $failureCode, benchmarkOutcome: $benchmarkOutcome,
+                soakOutcome: $soakOutcome, validationOutcome: $validationOutcome,
+                fingerprint: null, workflowRun: $workflowRun}' \
+              >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+          fi
+      - name: Upload exact-run performance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-performance-evidence
-          path: .artifacts/kaji-performance-evidence
+          path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}
           if-no-files-found: error
 
   python-compat:
@@ -220,20 +342,125 @@ jobs:
         working-directory: kaji/ts
         run: bun run package:smoke
 
-  keyed-proof:
-    needs: [verify-tag, offline-gates, performance, python-compat, node-compat]
-    if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+  tthw-evidence:
+    needs: [verify-tag, offline-gates]
+    if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: kaji-beta
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-status.txt
+      KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+      KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
     steps:
+      - name: Initialize exact-commit TTHW status before setup
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_TTHW_EVIDENCE_DIR"
+          echo "TTHW validation did not start." >"$KAJI_TTHW_EVIDENCE_DIR/validation.log"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              exitCode: null, releaseManifestSha256: null, workflowRun: $workflowRun}' \
+            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
+      - name: Retain initial not-run TTHW status before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-tthw-evidence-initial
+          path: ${{ runner.temp }}/kaji-tthw-evidence
+          if-no-files-found: error
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: "3.14"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+      - name: Revalidate exact current-run artifacts before TTHW validation
+        env:
+          EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-release
+      - name: Validate protected exact-commit five-user TTHW evidence
+        shell: bash
+        env:
+          KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}
+        run: |
+          raw_evidence="$RUNNER_TEMP/kaji-tthw-evidence.raw.json"
+          trap 'rm -f "$raw_evidence"' EXIT
+          printf '%s' "$KAJI_TTHW_EVIDENCE_JSON" >"$raw_evidence"
+          set +e
+          uv run --project kaji/sdk --no-sync python kaji/scripts/validate_tthw_evidence.py \
+            "$raw_evidence" \
+            --release-manifest .artifacts/kaji-release/manifest.json \
+            --artifacts-dir .artifacts/kaji-release \
+            > >(tee "$KAJI_TTHW_EVIDENCE_DIR/validation.log") 2>&1
+          status=$?
+          set -e
+          manifest_sha="$(sha256sum .artifacts/kaji-release/manifest.json | cut -d ' ' -f 1)"
+          if [ "$status" -eq 0 ]; then
+            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"
+          fi
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
+            --argjson exitCode "$status" \
+            --arg releaseManifestSha256 "$manifest_sha" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              exitCode: $exitCode, releaseManifestSha256: $releaseManifestSha256,
+              workflowRun: $workflowRun}' \
+            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
+          exit "$status"
+      - name: Retain exact-commit TTHW evidence and status
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-tthw-evidence
+          path: ${{ runner.temp }}/kaji-tthw-evidence
+          if-no-files-found: error
+
+  keyed-proof:
+    needs: [verify-tag, offline-gates, performance, tthw-evidence, python-compat, node-compat]
+    if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+    runs-on: ubuntu-latest
+    # Four proofs are capped at three minutes each. Thirty minutes leaves setup
+    # and final evidence upload outside the child-process budget.
+    timeout-minutes: 30
+    environment: kaji-beta
+    env:
+      KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+      KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-evidence.json
+      KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
+    steps:
+      - name: Initialize exact-commit provider evidence before setup
+        shell: bash
+        run: |
+          jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              proofs: [
+                {sdk: "python", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "typescript", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "python", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "typescript", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"}
+              ]}' >"$KAJI_INITIAL_PROVIDER_STATUS_FILE"
+      - name: Retain initial not-run provider evidence before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-provider-evidence-initial
+          path: ${{ runner.temp }}/provider-evidence.initial.json
+          if-no-files-found: error
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.verify-tag.outputs.commit }}
+      - name: Restore not-run provider evidence after checkout
+        if: ${{ always() }}
+        run: cp "$KAJI_INITIAL_PROVIDER_STATUS_FILE" "$KAJI_PROVIDER_STATUS_FILE"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
@@ -247,16 +474,21 @@ jobs:
           working-directory: kaji/sdk
           python-version: "3.14"
           sync-args: --frozen --extra openai --extra anthropic
-      - run: uv run --project kaji/sdk python kaji/scripts/live_provider_proof.py
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - name: Run protected provider proof
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/live_provider_proof.py
+      - if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-provider-status
-          path: provider-status.txt
+          name: kaji-provider-evidence
+          path: provider-evidence.json
           if-no-files-found: error
 
   supply-chain:
-    needs: [verify-tag, offline-gates, performance, keyed-proof, python-compat, node-compat]
-    if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.keyed-proof.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+    needs: [verify-tag, offline-gates, performance, tthw-evidence, keyed-proof, python-compat, node-compat]
+    if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.keyed-proof.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -285,8 +517,12 @@ jobs:
           path: .artifacts/kaji-evidence
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-provider-status
+          name: kaji-provider-evidence
           path: .artifacts/kaji-evidence
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-tthw-evidence
+          path: .artifacts/kaji-evidence/tthw
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-performance-evidence
@@ -323,9 +559,17 @@ jobs:
             .artifacts/kaji-release/SHA256SUMS
             .artifacts/kaji-evidence/offline-gates.log
             .artifacts/kaji-evidence/offline-gate-summary.json
-            .artifacts/kaji-evidence/provider-status.txt
+            .artifacts/kaji-evidence/provider-evidence.json
+            .artifacts/kaji-evidence/tthw/status.json
+            .artifacts/kaji-evidence/tthw/validation.log
+            .artifacts/kaji-evidence/tthw/tthw-evidence.json
             .artifacts/kaji-evidence/benchmark-results.json
             .artifacts/kaji-evidence/soak-results.json
+            .artifacts/kaji-evidence/performance-status.json
+            .artifacts/kaji-evidence/raw/benchmarks/results.json
+            .artifacts/kaji-evidence/raw/soak/python.json
+            .artifacts/kaji-evidence/raw/soak/typescript.json
+            .artifacts/kaji-evidence/raw/soak/results.json
             .artifacts/kaji-evidence/sbom.spdx.json
       - name: Retain provenance bundle and attestation identity
         env:
@@ -544,55 +788,159 @@ jobs:
 
   publication-status:
     needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight, publish-python, publish-npm]
-    if: ${{ always() && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' }}
+    if: ${{ always() }}
+    outputs:
+      state: ${{ steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state }}
+      incident: ${{ steps.classify.outputs.incident || steps.initial-status.outputs.incident }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Registry polling is capped at 15 minutes, leaving ample time to classify
+    # and upload evidence after either convergence or timeout.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      attestations: read
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Initialize fail-closed publication status before setup
+        id: initial-status
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
+          PYPI_PUBLISH_RESULT: ${{ needs.publish-python.result }}
+          NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
+        run: |
+          mkdir -p .artifacts/kaji-publication-status
+          jq --null-input \
+            --arg commit "$RELEASE_COMMIT" \
+            --arg pypiPublish "$PYPI_PUBLISH_RESULT" \
+            --arg npmPublish "$NPM_PUBLISH_RESULT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, state: "unpublished",
+              previousState: "unpublished", releaseReady: false,
+              installRecommendation: false,
+              registries: {pypi: "unknown", npm: "unknown"},
+              publishJobs: {pypi: $pypiPublish, npm: $npmPublish},
+              registryVerification: "not_run",
+              incident: {code: "classification_pending", recovery: "fix_forward_next_beta"},
+              workflowRun: $workflowRun}' \
+            >.artifacts/kaji-publication-status/publication-status.json
+          {
+            echo "# Kaji beta publication status"
+            echo
+            echo "- Commit: \`$RELEASE_COMMIT\`"
+            echo "- State: **unpublished**"
+            echo "- Retained evidence: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Installation recommendation: WITHHELD: do not publish installation recommendations."
+            echo "- Incident: classification pending; preserve this workflow evidence."
+          } >.artifacts/kaji-publication-status/publication-status.md
+          echo "publication-state=unpublished" >>"$GITHUB_OUTPUT"
+          echo "incident=true" >>"$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/kaji-publication-status-initial"
+          cp .artifacts/kaji-publication-status/publication-status.json \
+            "$RUNNER_TEMP/kaji-publication-status-initial/"
+          cp .artifacts/kaji-publication-status/publication-status.md \
+            "$RUNNER_TEMP/kaji-publication-status-initial/"
+      - name: Retain initial fail-closed publication status before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          name: kaji-publication-status-initial
+          path: ${{ runner.temp }}/kaji-publication-status-initial
+          if-no-files-found: error
+      # The first attempt is the only attempt allowed to transition from the
+      # unpublished baseline. Reruns retain evidence but never query registries,
+      # reduce state, or mutate the existing prerelease.
+      - name: Guard workflow reruns before registry classification
+        if: ${{ always() && github.run_attempt != 1 }}
+        run: |
+          jq --exit-status \
+            '.state == "unpublished" and .releaseReady == false and
+             .installRecommendation == false and
+             .incident.code == "classification_pending" and
+             .publishJobs.pypi == "skipped" and .publishJobs.npm == "skipped"' \
+            .artifacts/kaji-publication-status/publication-status.json >/dev/null
+          echo "Workflow reruns cannot create a publication transition or edit the prerelease." \
+            >>"$GITHUB_STEP_SUMMARY"
+      - id: checkout
+        if: ${{ always() && github.run_attempt == 1 }}
+        continue-on-error: true
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.verify-tag.outputs.commit || github.sha }}
+      - name: Restore fail-closed publication status after checkout
+        if: ${{ always() && github.run_attempt == 1 }}
+        run: |
+          mkdir -p .artifacts/kaji-publication-status
+          cp "$RUNNER_TEMP/kaji-publication-status-initial/publication-status.json" \
+            .artifacts/kaji-publication-status/
+          cp "$RUNNER_TEMP/kaji-publication-status-initial/publication-status.md" \
+            .artifacts/kaji-publication-status/
+      - id: setup-node
+        if: ${{ always() && github.run_attempt == 1 }}
+        continue-on-error: true
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - id: setup-python
+        if: ${{ always() && github.run_attempt == 1 }}
+        continue-on-error: true
+        uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: "3.14"
+      - name: Install pinned registry-attestation verifiers
+        id: verifiers
+        if: ${{ always() && github.run_attempt == 1 }}
+        continue-on-error: true
+        run: |
+          uv tool install pypi-attestations==0.0.29
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+          npm install --global npm@11.16.0
+      - id: artifacts
+        if: ${{ always() && github.run_attempt == 1 }}
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
       - name: Revalidate artifacts before published-byte verification
+        id: artifact-check
+        if: ${{ always() && github.run_attempt == 1 && steps.checkout.outcome == 'success' && steps.artifacts.outcome == 'success' }}
+        continue-on-error: true
         env:
-          EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+          EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
         run: >-
-          python kaji/scripts/verify_release_artifacts.py
+          python3 kaji/scripts/verify_release_artifacts.py
           --artifacts-dir .artifacts/kaji-release
       - name: Poll bounded registry propagation and verify published bytes
         id: registry
-        if: ${{ needs.publish-python.result == 'success' && needs.publish-npm.result == 'success' }}
+        if: ${{ always() && github.run_attempt == 1 && needs.publish-python.result == 'success' && needs.publish-npm.result == 'success' && steps.verifiers.outcome == 'success' && steps.artifact-check.outcome == 'success' }}
         continue-on-error: true
-        run: >-
-          python kaji/scripts/verify_published_packages.py
-          --artifacts-dir .artifacts/kaji-release
-          --output .artifacts/kaji-publication-status/registry-verification.json
-          --attempts 8 --initial-delay 2 --max-delay 20
-      - name: Classify complete, partial, or ambiguous publication
-        id: classify
         env:
-          PREFLIGHT_RESULT: ${{ needs.registry-preflight.result }}
-          PUBLISHER_PREFLIGHT_RESULT: ${{ needs.publisher-preflight.result }}
-          PYTHON_JOB_RESULT: ${{ needs.publish-python.result }}
-          NPM_JOB_RESULT: ${{ needs.publish-npm.result }}
-          REGISTRY_VERIFICATION_RESULT: ${{ steps.registry.outcome }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          timeout --signal=TERM --kill-after=10s 15m \
+            python3 kaji/scripts/verify_published_packages.py \
+            --artifacts-dir .artifacts/kaji-release \
+            --output .artifacts/kaji-publication-status/registry-verification.json \
+            --downloads-dir .artifacts/kaji-publication-status/downloaded \
+            --repository "$GITHUB_REPOSITORY" \
+            --attempts 8 --initial-delay 2 --max-delay 20
+      - name: Reduce monotonic publication state
+        id: classify
+        if: ${{ always() && github.run_attempt == 1 }}
+        env:
+          RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
+          PYPI_PUBLISH_RESULT: ${{ needs.publish-python.result }}
+          NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
+        run: |
+          set +e
           mkdir -p .artifacts/kaji-publication-status
-          PYPI_HTTP="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json || true)"
+          PYPI_HTTP="$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_HTTP" in
             200) PYPI_STATE=present ;;
             404) PYPI_STATE=absent ;;
             *) PYPI_STATE=unknown ;;
           esac
-          set +e
-          NPM_OUTPUT="$(npm view @kaji/sdk@0.2.0-beta.1 version --json 2>&1)"
+          NPM_OUTPUT="$(timeout 30s npm view @kaji/sdk@0.2.0-beta.1 version --json 2>&1)"
           NPM_STATUS=$?
-          set -e
           if [ "$NPM_STATUS" -eq 0 ]; then
             NPM_STATE=present
           elif printf '%s' "$NPM_OUTPUT" | grep -q E404; then
@@ -600,62 +948,97 @@ jobs:
           else
             NPM_STATE=unknown
           fi
-          RECOVERY_REQUIRED=false
-          if [ "$PREFLIGHT_RESULT" != success ]; then
-            STATUS=preexisting_collision_or_registry_preflight_failure
-            RELEASE_READY=false
-          elif [ "$PUBLISHER_PREFLIGHT_RESULT" != success ]; then
-            STATUS=publisher_authorization_failed_no_publish_attempted
-            RELEASE_READY=false
-          elif [ "$PYTHON_JOB_RESULT" = skipped ] && [ "$NPM_JOB_RESULT" = skipped ]; then
-            STATUS=publisher_batch_not_attempted
-            RELEASE_READY=false
-          elif [ "$PYTHON_JOB_RESULT" = success ] && [ "$NPM_JOB_RESULT" = success ] && \
-               [ "$REGISTRY_VERIFICATION_RESULT" = success ]; then
-            STATUS=complete
-            RELEASE_READY=true
-          else
-            STATUS=partial_or_ambiguous
-            RELEASE_READY=false
-            RECOVERY_REQUIRED=true
-          fi
-          jq --null-input \
-            --arg status "$STATUS" \
-            --arg preflightJob "$PREFLIGHT_RESULT" \
-            --arg publisherPreflightJob "$PUBLISHER_PREFLIGHT_RESULT" \
-            --arg pythonJob "$PYTHON_JOB_RESULT" \
-            --arg npmJob "$NPM_JOB_RESULT" \
-            --arg registryVerification "$REGISTRY_VERIFICATION_RESULT" \
-            --arg pypi "$PYPI_STATE" \
-            --arg npm "$NPM_STATE" \
-            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            '{schemaVersion: 1, status: $status, jobs: {registryPreflight: $preflightJob,
-              publisherPreflight: $publisherPreflightJob, python: $pythonJob, npm: $npmJob},
-              registryVerification: $registryVerification,
-              registries: {pypi: $pypi, npm: $npm},
-              workflowRun: $workflowRun}' \
-            >.artifacts/kaji-publication-status/publication-status.json
-          {
-            echo "# Kaji beta publication status"
-            echo
-            echo "Status: **$STATUS**"
-            echo
-            echo "- PyPI job/registry: \`$PYTHON_JOB_RESULT\` / \`$PYPI_STATE\`"
-            echo "- npm job/registry: \`$NPM_JOB_RESULT\` / \`$NPM_STATE\`"
-            echo "- Exact registry-byte verification: \`$REGISTRY_VERIFICATION_RESULT\`"
-            if [ "$RECOVERY_REQUIRED" = true ]; then
-              echo
-              echo "Do not rerun or resume these registry versions. Preserve this run's artifacts."
-              echo "If PyPI is present, open https://pypi.org/manage/project/kaji/release/0.2.0b1/ and yank 0.2.0b1."
-              echo 'If npm is present, run: `npm deprecate @kaji/sdk@0.2.0-beta.1 "Unsafe beta; use the next published beta"`.'
-              echo "Fix forward with new Python and npm beta versions and a new signed tag; never reuse either version."
-            elif [ "$RELEASE_READY" != true ]; then
-              echo
-              echo "No registry publication was authorized by this run. Do not yank or deprecate a pre-existing version based on this run."
-              echo "Resolve the collision, registry lookup, or publisher authorization problem, then use new beta versions."
+          if [ -f .artifacts/kaji-publication-status/registry-verification.json ]; then
+            REGISTRY_VERIFICATION="$(jq --raw-output .status \
+              .artifacts/kaji-publication-status/registry-verification.json 2>/dev/null)"
+            if [ "$REGISTRY_VERIFICATION" != byte_verified ]; then
+              REGISTRY_VERIFICATION=failed
             fi
-          } | tee .artifacts/kaji-publication-status/publication-status.md >>"$GITHUB_STEP_SUMMARY"
-          echo "release-ready=$RELEASE_READY" >>"$GITHUB_OUTPUT"
+          else
+            REGISTRY_VERIFICATION=not_run
+          fi
+          CLASSIFY_STATUS=127
+          if [ -f kaji/scripts/verify_published_packages.py ]; then
+            python3 kaji/scripts/verify_published_packages.py state \
+              --previous-state unpublished \
+              --pypi "$PYPI_STATE" \
+              --npm "$NPM_STATE" \
+              --registry-verification "$REGISTRY_VERIFICATION" \
+              --pypi-publish-result "$PYPI_PUBLISH_RESULT" \
+              --npm-publish-result "$NPM_PUBLISH_RESULT" \
+              --commit "$RELEASE_COMMIT" \
+              --workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --output .artifacts/kaji-publication-status/publication-status.json \
+              --markdown .artifacts/kaji-publication-status/publication-status.md
+            CLASSIFY_STATUS=$?
+          fi
+          if [ "$CLASSIFY_STATUS" -ne 0 ]; then
+            case "$PYPI_STATE/$NPM_STATE" in
+              present/present) FALLBACK_STATE=both_published ;;
+              present/absent) FALLBACK_STATE=pypi_only ;;
+              absent/present) FALLBACK_STATE=npm_only ;;
+              *) FALLBACK_STATE=unpublished ;;
+            esac
+            if [ "$FALLBACK_STATE" = unpublished ] && \
+              [ "$PYPI_STATE" = absent ] && \
+              [ "$NPM_STATE" = absent ] && \
+              [ "$REGISTRY_VERIFICATION" = not_run ] && \
+              [ "$PYPI_PUBLISH_RESULT" = skipped ] && \
+              [ "$NPM_PUBLISH_RESULT" = skipped ]; then
+              FALLBACK_INCIDENT=false
+            else
+              FALLBACK_INCIDENT=true
+            fi
+            jq --null-input \
+              --arg commit "$RELEASE_COMMIT" \
+              --arg state "$FALLBACK_STATE" \
+              --arg pypi "$PYPI_STATE" --arg npm "$NPM_STATE" \
+              --arg pypiPublish "$PYPI_PUBLISH_RESULT" \
+              --arg npmPublish "$NPM_PUBLISH_RESULT" \
+              --arg verification "$REGISTRY_VERIFICATION" \
+              --argjson hasIncident "$FALLBACK_INCIDENT" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              '{schemaVersion: 1, commit: $commit, state: $state,
+                previousState: "unpublished", releaseReady: false,
+                installRecommendation: false,
+                registries: {pypi: $pypi, npm: $npm},
+                publishJobs: {pypi: $pypiPublish, npm: $npmPublish},
+                registryVerification: $verification,
+                incident: (if $hasIncident
+                  then {code: "status_classifier_unavailable", recovery: "fix_forward_next_beta"}
+                  else null
+                  end),
+                workflowRun: $workflowRun}' \
+              >.artifacts/kaji-publication-status/publication-status.json
+            {
+              echo "# Kaji beta publication status"
+              echo
+              echo "- Commit: \`$RELEASE_COMMIT\`"
+              echo "- State: **$FALLBACK_STATE**"
+              echo "- PyPI/npm: \`$PYPI_STATE\` / \`$NPM_STATE\`"
+              echo "- Publish jobs: \`$PYPI_PUBLISH_RESULT\` / \`$NPM_PUBLISH_RESULT\`"
+              echo "- Retained evidence: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              echo "- Installation recommendation: WITHHELD: do not publish installation recommendations."
+              if [ "$FALLBACK_INCIDENT" = true ]; then
+                echo "- Incident: status_classifier_unavailable; preserve evidence and fix forward."
+              else
+                echo "- Incident: None; no publish job was attempted."
+              fi
+            } >.artifacts/kaji-publication-status/publication-status.md
+          fi
+          cat .artifacts/kaji-publication-status/publication-status.md >>"$GITHUB_STEP_SUMMARY" || true
+          PUBLICATION_STATE="$(jq --raw-output .state .artifacts/kaji-publication-status/publication-status.json 2>/dev/null)"
+          case "$PUBLICATION_STATE" in
+            unpublished|pypi_only|npm_only|both_published|byte_verified) ;;
+            *) PUBLICATION_STATE=unpublished ;;
+          esac
+          echo "publication-state=$PUBLICATION_STATE" >>"$GITHUB_OUTPUT"
+          if jq --exit-status '.incident != null' \
+            .artifacts/kaji-publication-status/publication-status.json >/dev/null 2>&1; then
+            echo "incident=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "incident=false" >>"$GITHUB_OUTPUT"
+          fi
       - name: Preserve publication outcome and recovery directions
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -663,15 +1046,67 @@ jobs:
           name: kaji-publication-status
           path: .artifacts/kaji-publication-status
           if-no-files-found: error
-      - name: Fail closed on partial or ambiguous publication
-        if: ${{ steps.classify.outputs.release-ready != 'true' }}
+      - name: Require exact byte-verified publication state
+        if: ${{ always() && (steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state) != 'byte_verified' }}
         run: |
-          echo "Partial or ambiguous publication: follow the retained recovery directions." >&2
+          echo "Publication is not byte_verified; installation recommendations remain withheld." >&2
           exit 1
 
+  publication-incident:
+    needs: [verify-tag, publication-status]
+    if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.publication-status.outputs.state != 'byte_verified' && needs.publication-status.outputs.incident == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-publication-status
+          path: .artifacts/kaji-publication-status
+      - name: Create or update fail-closed incident prerelease status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_TAG: ${{ needs.verify-tag.outputs.tag-name }}
+        run: |
+          STATUS_JSON=.artifacts/kaji-publication-status/publication-status.json
+          STATUS_MD=.artifacts/kaji-publication-status/publication-status.md
+          jq --exit-status \
+            '.state != "byte_verified" and .releaseReady == false and
+             .installRecommendation == false and (.incident.code | type == "string")' \
+            "$STATUS_JSON" >/dev/null
+          grep --fixed-strings "Installation recommendation: WITHHELD" "$STATUS_MD" >/dev/null
+          ENCODED_TAG="$(jq --null-input --raw-output --arg tag "$EXPECTED_TAG" '$tag | @uri')"
+          RELEASE_JSON="$RUNNER_TEMP/kaji-incident-release.json"
+          HTTP_STATUS="$(curl --silent --show-error --max-time 30 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output "$RELEASE_JSON" --write-out '%{http_code}' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$ENCODED_TAG")"
+          case "$HTTP_STATUS" in
+            200)
+              jq --exit-status --arg tag "$EXPECTED_TAG" \
+                '.tag_name == $tag and .name == ("Kaji " + $tag) and
+                 .prerelease == true and .draft == false' \
+                "$RELEASE_JSON" >/dev/null
+              gh release edit "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" \
+                --prerelease --title "Kaji $EXPECTED_TAG" --notes-file "$STATUS_MD"
+              ;;
+            404)
+              gh release create "$EXPECTED_TAG" --repo "$GITHUB_REPOSITORY" \
+                --verify-tag --prerelease --title "Kaji $EXPECTED_TAG" \
+                --notes-file "$STATUS_MD"
+              ;;
+            *)
+              echo "GitHub prerelease lookup failed with HTTP $HTTP_STATUS" >&2
+              exit 1
+              ;;
+          esac
+
   release-evidence:
-    needs: [verify-tag, supply-chain, publication-status]
-    if: ${{ always() && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.publication-status.result == 'success' }}
+    needs: [verify-tag, tthw-evidence, supply-chain, publication-status]
+    if: ${{ always() && needs.verify-tag.result == 'success' && needs.tthw-evidence.result == 'success' && needs.supply-chain.result == 'success' && needs.publication-status.result == 'success' && needs.publication-status.outputs.state == 'byte_verified' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -722,12 +1157,27 @@ jobs:
           .artifacts/kaji-release/SHA256SUMS
           .artifacts/kaji-evidence/offline-gates.log
           .artifacts/kaji-evidence/offline-gate-summary.json
-          .artifacts/kaji-evidence/provider-status.txt
+          .artifacts/kaji-evidence/provider-evidence.json
+          .artifacts/kaji-evidence/tthw/status.json
+          .artifacts/kaji-evidence/tthw/validation.log
+          .artifacts/kaji-evidence/tthw/tthw-evidence.json
           .artifacts/kaji-evidence/benchmark-results.json
           .artifacts/kaji-evidence/soak-results.json
+          .artifacts/kaji-evidence/performance-status.json
           .artifacts/kaji-evidence/sbom.spdx.json
           .artifacts/kaji-evidence/provenance.bundle.jsonl
           .artifacts/kaji-evidence/provenance.json
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1-py3-none-any.whl
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1-py3-none-any.whl.provenance.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1-py3-none-any.whl.pypi-attestations.txt
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1-py3-none-any.whl.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1.tar.gz
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1.tar.gz.provenance.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1.tar.gz.pypi-attestations.txt
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0b1.tar.gz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.1.tgz
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.1.tgz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

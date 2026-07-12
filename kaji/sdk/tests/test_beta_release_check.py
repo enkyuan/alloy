@@ -284,6 +284,30 @@ def test_soak_budget_is_duration_plus_cleanup_margin() -> None:
     assert "subprocess" not in source
 
 
+def test_protected_soak_validates_commit_before_starting_children(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(minutes="30", protected=True),
+    )
+    monkeypatch.setattr(
+        module,
+        "release_commit",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("commit mismatch")),
+    )
+    monkeypatch.setattr(
+        module,
+        "python_command",
+        lambda: (_ for _ in ()).throw(AssertionError("child setup started")),
+    )
+
+    assert module.main() == 2
+    assert "FAIL: commit mismatch" in capsys.readouterr().err
+
+
 def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
     module = _load_root_script("process_runner.py")
 
@@ -722,9 +746,11 @@ def _complete_benchmark_baseline(module: object) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "status": "calibrated",
+        "calibrationCommit": "a" * 40,
         "runner": {"imageDigest": "pinned"},
         "versions": {"python": "3", "node": "24", "bun": "1"},
         "dependencyLockHash": "lock",
+        "sourceHash": "b" * 64,
         "medians": {
             runtime: {case: 10.0 for case in cases}
             for runtime in ("python", "typescript")
@@ -759,11 +785,9 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
             mode=mode, output=output, candidate_baseline=candidate
         ),
     )
-    monkeypatch.setattr(
-        module,
-        "fingerprint",
-        lambda: {"runner": {"imageDigest": "pinned"}},
-    )
+    current = {"runner": {"imageDigest": "pinned"}}
+    monkeypatch.setattr(module, "_checked_out_commit", lambda: "a" * 40)
+    monkeypatch.setattr(module, "fingerprint", lambda: current)
     monkeypatch.setattr(
         module,
         "_run_case",
@@ -775,7 +799,11 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
     monkeypatch.setenv("KAJI_BENCHMARK_PINNED_RUNNER", "1")
 
     assert module.main() == 1
-    assert json.loads(output.read_text())["failures"] == ["benchmark sentinel"]
+    report = json.loads(output.read_text())
+    assert report["failures"] == ["benchmark sentinel"]
+    assert report["commit"] == "a" * 40
+    assert report["fingerprint"] == current
+    assert report["protected"] is False
 
 
 def test_beta_benchmark_full_mode_reports_malformed_baseline_json(
@@ -799,6 +827,197 @@ def test_beta_benchmark_full_mode_reports_malformed_baseline_json(
     report = json.loads(output.read_text())
     assert report["passed"] is False
     assert any("baseline" in failure for failure in report["failures"])
+
+
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [
+        (None, "KAJI_RELEASE_COMMIT is required"),
+        ("A" * 40, "exactly 40 lowercase hex characters"),
+        ("b" * 40, "does not match checked-out commit"),
+    ],
+)
+def test_protected_performance_provenance_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    configured: str | None,
+    expected: str,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT", raising=False)
+    if configured is not None:
+        monkeypatch.setenv("KAJI_RELEASE_COMMIT", configured)
+    monkeypatch.setattr(module, "_checked_out_commit", lambda: "a" * 40)
+    monkeypatch.setattr(module, "fingerprint", lambda: {"runner": "exact"})
+
+    with pytest.raises(RuntimeError, match=expected):
+        module.performance_provenance(protected=True)
+
+
+def test_performance_provenance_binds_commit_and_local_mode_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    commit = "a" * 40
+    fingerprint = {
+        "runner": {"imageDigest": "sha256:pinned"},
+        "versions": {"python": "3.11.9", "node": "v22.14.0", "bun": "1.3.11"},
+        "dependencyLockHash": "b" * 64,
+    }
+    monkeypatch.setattr(module, "_checked_out_commit", lambda: commit)
+    monkeypatch.setattr(module, "fingerprint", lambda: fingerprint)
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", commit)
+
+    assert module.performance_provenance(protected=True) == {
+        "commit": commit,
+        "fingerprint": fingerprint,
+        "protected": True,
+    }
+
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT")
+    assert module.performance_provenance(protected=False) == {
+        "commit": commit,
+        "fingerprint": fingerprint,
+        "protected": False,
+    }
+
+
+def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+
+    assert module.SOURCE_TREE_ROOTS == (
+        Path("kaji/sdk/src"),
+        Path("kaji/ts/src"),
+    )
+    assert {
+        Path("kaji/sdk/benchmarks/runtime_benchmark.py"),
+        Path("kaji/ts/benchmarks/runtime-benchmark.ts"),
+        Path("kaji/sdk/benchmarks/runtime_soak.py"),
+        Path("kaji/ts/benchmarks/runtime-soak.ts"),
+        Path("kaji/scripts/beta_benchmark_gate.py"),
+        Path("kaji/scripts/run_beta_benchmarks.py"),
+        Path("kaji/scripts/beta_soak_gate.py"),
+        Path("kaji/scripts/run_beta_soak.py"),
+        Path("kaji/scripts/process_runner.py"),
+        Path("kaji/benchmarks/beta-budgets.json"),
+        Path("kaji/sdk/pyproject.toml"),
+        Path("kaji/ts/package.json"),
+        Path("kaji/ts/tsconfig.json"),
+    } <= set(module.SOURCE_INPUTS)
+    assert Path("kaji/benchmarks/beta-baseline.json") not in module.SOURCE_INPUTS
+
+
+@pytest.mark.parametrize(
+    "mutated",
+    [
+        Path("python-runtime/runtime.py"),
+        Path("typescript-runtime/runtime.ts"),
+        Path("python-benchmark.py"),
+        Path("typescript-benchmark.ts"),
+        Path("beta-budgets.json"),
+    ],
+)
+def test_performance_source_hash_rejects_mutated_inputs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mutated: Path
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    roots = (Path("python-runtime"), Path("typescript-runtime"))
+    inputs = (
+        Path("python-benchmark.py"),
+        Path("typescript-benchmark.ts"),
+        Path("beta-budgets.json"),
+    )
+    monkeypatch.setattr(module, "SOURCE_TREE_ROOTS", roots)
+    monkeypatch.setattr(module, "SOURCE_INPUTS", inputs)
+    for relative in (*inputs, *(root / "runtime.py" for root in roots)):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative.as_posix())
+    typescript_runtime = tmp_path / "typescript-runtime/runtime.py"
+    typescript_runtime.rename(tmp_path / "typescript-runtime/runtime.ts")
+
+    original = module._source_hash(tmp_path)
+    path = tmp_path / mutated
+    path.write_text(path.read_text() + "\nmutated")
+
+    assert module._source_hash(tmp_path) != original
+
+
+def test_beta_benchmark_baseline_rejects_stale_source_hash() -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    current = module._baseline_fingerprint(baseline)
+    current["sourceHash"] = "c" * 64
+
+    with pytest.raises(RuntimeError, match="source hash"):
+        module._validate_baseline(baseline, current)
+
+
+def test_uncalibrated_baseline_placeholder_stays_provenance_free_and_fails_closed() -> (
+    None
+):
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = json.loads(module.BASELINE_PATH.read_text())
+
+    assert baseline["status"] == "uncalibrated"
+    assert baseline["calibrationCommit"] is None
+    assert "sourceHash" not in baseline
+    with pytest.raises(RuntimeError, match="uncalibrated"):
+        module._validate_baseline(baseline, {})
+
+
+@pytest.mark.parametrize("commit", [None, "A" * 40, "a" * 39])
+def test_beta_benchmark_baseline_requires_valid_calibration_commit(
+    commit: str | None,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    baseline["calibrationCommit"] = commit
+    current = module._baseline_fingerprint(baseline)
+
+    with pytest.raises(RuntimeError, match="calibrationCommit"):
+        module._validate_baseline(baseline, current)
+
+
+def test_soak_report_reuses_complete_performance_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    output = tmp_path / "soak.json"
+    provenance = {
+        "commit": "a" * 40,
+        "fingerprint": {
+            "runner": {"imageDigest": "sha256:pinned"},
+            "versions": {
+                "python": "3.11.9",
+                "node": "v22.14.0",
+                "bun": "1.3.11",
+            },
+            "dependencyLockHash": "b" * 64,
+        },
+        "protected": True,
+    }
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            minutes=30.0,
+            python=tmp_path / "python.json",
+            typescript=tmp_path / "typescript.json",
+            output=output,
+            protected=True,
+        ),
+    )
+    monkeypatch.setattr(module, "performance_provenance", lambda **_kwargs: provenance)
+    monkeypatch.setattr(
+        module, "_load", lambda _path, runtime: ({"runtime": runtime}, [])
+    )
+    monkeypatch.setattr(module, "_failures", lambda *_args: [])
+
+    assert module.main() == 0
+    report = json.loads(output.read_text())
+    assert report["commit"] == provenance["commit"]
+    assert report["fingerprint"] == provenance["fingerprint"]
+    assert report["protected"] is True
 
 
 def test_beta_benchmark_full_mode_reports_malformed_nested_baseline(
@@ -946,10 +1165,13 @@ def test_beta_benchmark_candidate_records_five_rss_samples(
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     results = _complete_benchmark_results(module)
-    monkeypatch.setattr(module, "_commit", lambda: "commit")
+    current = {"sourceHash": "b" * 64}
+    monkeypatch.setattr(module, "_commit", lambda: "a" * 40)
 
-    candidate = module._candidate_baseline(results, {})
+    candidate = module._candidate_baseline(results, current)
 
+    assert candidate["calibrationCommit"] == "a" * 40
+    assert candidate["sourceHash"] == "b" * 64
     assert candidate["maxPeakMiB"]["python"]["context10kIterations5"] == 95.0
     assert candidate["rawPeakMiB"]["typescript"]["toolArgDeltas10k"] == [
         91.0,

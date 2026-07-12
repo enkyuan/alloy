@@ -8,8 +8,32 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { AgentBuilder, EventBus, EventType, InMemoryEventStore, ToolRegistry } from "@/index";
 import { AnthropicProvider } from "@/providers/anthropic";
 import { hasKey } from "./helpers";
+
+class EchoProbeIntegration {
+  register(registry: ToolRegistry): void {
+    registry.register(
+      {
+        name: "probe_echo_probe",
+        catalogName: "probe.echo_probe",
+        description: "Echo the supplied marker back to the caller.",
+        parameters: {
+          type: "object",
+          properties: { marker: { type: "string" } },
+          required: ["marker"],
+          additionalProperties: false,
+        },
+        risk: "read",
+      },
+      async (args) => ({
+        marker: String(args.marker),
+        source: "kaji-live-tool-loop",
+      }),
+    );
+  }
+}
 
 describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => {
   it("generate() returns non-empty content for a simple prompt", async () => {
@@ -38,38 +62,40 @@ describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => 
     expect(chunks.join("").trim().length).toBeGreaterThan(0);
   });
 
-  it("returns one normalized tool call", async () => {
+  it("executes a real model-requested tool and then emits final text", async () => {
     const marker = "kaji-anthropic-live-marker";
-    const provider = new AnthropicProvider({
-      apiKey: process.env.ANTHROPIC_API_KEY!,
-      model: process.env.KAJI_LIVE_ANTHROPIC_MODEL,
-      temperature: 0,
-    });
-    const response = await provider.generate(
-      [
-        {
-          role: "user",
-          content: `Call echo_probe exactly once with marker ${marker}. Do not answer with plain text.`,
-        },
-      ],
-      [
-        {
-          name: "echo_probe",
-          description: "Echo a marker for release verification.",
-          parameters: {
-            type: "object",
-            properties: { marker: { type: "string" } },
-            required: ["marker"],
-            additionalProperties: false,
-          },
-          risk: "read",
-        },
-      ],
+    const runtime = new AgentBuilder()
+      .provider(
+        new AnthropicProvider({
+          apiKey: process.env.ANTHROPIC_API_KEY!,
+          model: process.env.KAJI_LIVE_ANTHROPIC_MODEL,
+          temperature: 0,
+        }),
+      )
+      .integration(new EchoProbeIntegration())
+      .defaultContext({ principalId: "anthropic-live" })
+      .systemPrompt(
+        "You are testing SDK tool execution. You must call the `probe_echo_probe` " +
+          "tool exactly once with the marker from the user message before giving a final answer.",
+      )
+      .build({ bus: new EventBus(), store: new InMemoryEventStore() });
+
+    const result = await runtime.turn(
+      `Call \`probe_echo_probe\` with marker \`${marker}\`. ` +
+        "After the tool returns, answer with the marker value.",
+      { sessionId: "anthropic-live-tool-loop" },
     );
 
-    expect(response.toolCalls).toHaveLength(1);
-    expect(response.toolCalls[0]!.name).toBe("echo_probe");
-    expect(response.toolCalls[0]!.args).toEqual({ marker });
-    expect(response.toolCalls[0]!.id).toBeTruthy();
+    const eventTypes = result.events.map((event) => event.type);
+    const requested = result.events.filter((event) => event.type === EventType.TOOL_CALL_REQUESTED);
+    const completed = result.events.filter((event) => event.type === EventType.TOOL_CALL_COMPLETED);
+    expect(requested).toHaveLength(1);
+    expect(completed).toHaveLength(1);
+    expect(requested[0]!.tool_call_id).toBe(completed[0]!.tool_call_id);
+    expect(eventTypes).toContain(EventType.AGENT_MESSAGE_COMPLETED);
+    expect(eventTypes).not.toContain(EventType.TOOL_CALL_FAILED);
+    expect(eventTypes).not.toContain(EventType.AGENT_TURN_EXHAUSTED);
+    expect(result.toolCallEvents).toHaveLength(1);
+    expect(result.text).toContain(marker);
   });
 });

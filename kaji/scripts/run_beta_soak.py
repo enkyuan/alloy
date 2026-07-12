@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 
+from beta_benchmark_gate import release_commit
 from process_runner import (
     LOCAL_COMMAND_BUDGET,
     CommandBudget,
@@ -37,6 +38,7 @@ def python_command() -> list[str] | None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--minutes", default="30")
+    parser.add_argument("--protected", action="store_true")
     return parser.parse_args()
 
 
@@ -57,6 +59,12 @@ def main() -> int:
     except ValueError as error:
         print(f"FAIL: {error}", file=sys.stderr)
         return 2
+    if args.protected:
+        try:
+            release_commit(protected=True)
+        except (CommandError, RuntimeError) as error:
+            print(f"FAIL: {error}", file=sys.stderr)
+            return 2
     python = python_command()
     if python is None:
         print("uv or kaji/sdk/.venv is required", file=sys.stderr)
@@ -134,6 +142,7 @@ def main() -> int:
                 str(typescript_result),
                 "--output",
                 str(artifacts / "results.json"),
+                *(["--protected"] if args.protected else []),
             ],
             cwd=ROOT,
             budget=LOCAL_COMMAND_BUDGET,

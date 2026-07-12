@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from beta_benchmark_gate import performance_provenance
+
 
 ROOT = Path(__file__).resolve().parents[2]
 BUDGETS = json.loads((ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_text())[
@@ -126,11 +128,13 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--python", required=True, type=Path)
     parser.add_argument("--typescript", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--protected", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
+    provenance = performance_provenance(protected=getattr(args, "protected", False))
     failures: list[str] = []
     results: dict[str, Any] = {}
     for runtime, path in (("python", args.python), ("typescript", args.typescript)):
@@ -142,6 +146,7 @@ def main() -> int:
                 failures.extend(_failures(value, runtime, args.minutes))
     report = {
         "schemaVersion": 1,
+        **provenance,
         "requestedMinutes": args.minutes,
         "budgets": BUDGETS,
         "results": results,

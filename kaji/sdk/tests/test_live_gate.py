@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -69,6 +70,136 @@ def test_openai_loop_check_fails_without_key_when_required() -> None:
     assert "FAIL: OPENAI_API_KEY required for live readiness" in proc.stderr
     assert "Running Python OpenAI live tool-loop" not in proc.stdout
     assert "Running TypeScript OpenAI live tool-loop" not in proc.stdout
+
+
+def _configure_provider_proof(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[ModuleType, Path]:
+    module = _load_root_script("live_provider_proof.py")
+    evidence = tmp_path / "provider-evidence.json"
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-key")
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", "a" * 40)
+    monkeypatch.setenv("KAJI_PROVIDER_STATUS_FILE", str(evidence))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    return module, evidence
+
+
+def test_protected_provider_proof_requires_both_keys_and_retains_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, evidence = _configure_provider_proof(monkeypatch, tmp_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+
+    assert module.main() == 2
+
+    retained = json.loads(evidence.read_text())
+    assert retained["commit"] == "a" * 40
+    assert retained["conclusion"] == "failed"
+    assert retained["failureCode"] == "missing_required_key"
+    assert {(row["sdk"], row["provider"]) for row in retained["proofs"]} == {
+        ("python", "openai"),
+        ("typescript", "openai"),
+        ("python", "anthropic"),
+        ("typescript", "anthropic"),
+    }
+    assert {row["status"] for row in retained["proofs"]} == {"not_run"}
+
+
+def test_protected_provider_proof_runs_four_real_tool_loops_and_records_commit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, evidence = _configure_provider_proof(monkeypatch, tmp_path)
+    calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
+
+    def pass_command(
+        command: list[str], *, environment: dict[str, str], **_kwargs: object
+    ) -> int:
+        calls.append((tuple(command), environment))
+        return 0
+
+    monkeypatch.setattr(module, "run", pass_command)
+
+    assert module.main() == 0
+
+    retained = json.loads(evidence.read_text())
+    assert retained["schemaVersion"] == 1
+    assert retained["commit"] == "a" * 40
+    assert retained["conclusion"] == "passed"
+    assert [
+        (row["sdk"], row["provider"], row["status"]) for row in retained["proofs"]
+    ] == [
+        ("python", "openai", "passed"),
+        ("typescript", "openai", "passed"),
+        ("python", "anthropic", "passed"),
+        ("typescript", "anthropic", "passed"),
+    ]
+    assert all(
+        row["proof"] == "real_normalized_tool_loop" for row in retained["proofs"]
+    )
+    assert len(calls) == 4
+    commands = [command for command, _environment in calls]
+    rendered = [" ".join(command) for command in commands]
+    assert any("test_openai_tools.py" in command for command in rendered)
+    assert any("openai-tools.test.ts" in command for command in rendered)
+    assert any("test_anthropic_provider.py" in command for command in rendered)
+    assert any("anthropic-live.test.ts" in command for command in rendered)
+    assert all(
+        command[:3] == (sys.executable, "-m", "pytest") for command in commands[::2]
+    )
+    assert all("uv" not in command for command in commands)
+    for index, (_command, environment) in enumerate(calls):
+        expected_key = "OPENAI_API_KEY" if index < 2 else "ANTHROPIC_API_KEY"
+        other_key = "ANTHROPIC_API_KEY" if index < 2 else "OPENAI_API_KEY"
+        assert environment[expected_key] == (
+            "openai-test-key" if index < 2 else "anthropic-test-key"
+        )
+        assert other_key not in environment
+
+
+def test_provider_child_environment_does_not_mutate_parent() -> None:
+    module = _load_root_script("live_provider_proof.py")
+    parent = {
+        "OPENAI_API_KEY": "openai-test-key",
+        "ANTHROPIC_API_KEY": "anthropic-test-key",
+        "PATH": "/usr/bin",
+    }
+
+    openai = module._child_environment(parent, "openai")
+    anthropic = module._child_environment(parent, "anthropic")
+
+    assert openai == {"OPENAI_API_KEY": "openai-test-key", "PATH": "/usr/bin"}
+    assert anthropic == {
+        "ANTHROPIC_API_KEY": "anthropic-test-key",
+        "PATH": "/usr/bin",
+    }
+    assert set(parent) == {"OPENAI_API_KEY", "ANTHROPIC_API_KEY", "PATH"}
+
+
+def test_protected_provider_proof_uses_three_minute_per_command_budget() -> None:
+    module = _load_root_script("live_provider_proof.py")
+
+    assert module.KEYED_PROOF_BUDGET.timeout_seconds == 180
+
+
+def test_protected_provider_proof_retains_partial_rows_on_command_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module, evidence = _configure_provider_proof(monkeypatch, tmp_path)
+    statuses = iter((0, 17))
+    monkeypatch.setattr(module, "run", lambda *_args, **_kwargs: next(statuses))
+
+    assert module.main() == 17
+
+    retained = json.loads(evidence.read_text())
+    assert retained["conclusion"] == "failed"
+    assert retained["failureCode"] == "proof_command_failed"
+    assert [row["status"] for row in retained["proofs"]] == [
+        "passed",
+        "failed",
+        "not_run",
+        "not_run",
+    ]
 
 
 @pytest.mark.parametrize(

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import base64
+from email.message import Message
+import importlib.util
 import re
 import subprocess
 import sys
 import hashlib
 import json
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+import urllib.request
+
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -13,6 +20,19 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 def _read(relative: str) -> str:
     return (REPO_ROOT / relative).read_text()
+
+
+def _load_root_script(name: str) -> ModuleType:
+    path = REPO_ROOT / "kaji" / "scripts" / name
+    scripts = str(path.parent)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    spec = importlib.util.spec_from_file_location(f"test_{path.stem}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _assert_external_actions_are_sha_pinned(workflow: str) -> None:
@@ -50,9 +70,31 @@ def test_release_workflows_bound_every_job() -> None:
     rehearsal = _read(".github/workflows/kaji.beta.yml")
     publish = _read(".github/workflows/kaji.beta-publish.yml")
 
-    assert rehearsal.count("timeout-minutes:") == 4
-    assert publish.count("timeout-minutes:") == 13
-    assert "timeout-minutes: 75" in publish
+    assert rehearsal.count("timeout-minutes:") == 5
+    assert publish.count("timeout-minutes:") == 15
+    assert "timeout-minutes: 100" in publish
+    assert "timeout-minutes: 45" in publish
+
+
+def test_performance_workflow_timeouts_cover_child_and_cleanup_budgets() -> None:
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    benchmark = _read(".github/workflows/kaji.benchmark.yml")
+    performance_job = publish.split("  performance:", 1)[1].split(
+        "  python-compat:", 1
+    )[0]
+    benchmark_job = benchmark.split("  benchmark:", 1)[1].split("  soak:", 1)[0]
+    soak_job = benchmark.split("  soak:", 1)[1].split("  calibrate:", 1)[0]
+    calibrate_job = benchmark.split("  calibrate:", 1)[1]
+
+    assert "35-minute benchmark + 42-minute soak + 18-minute setup" in performance_job
+    assert "five-minute job-level shutdown margin" in performance_job
+    assert "timeout-minutes: 100" in performance_job
+    assert "35-minute benchmark + 10-minute setup/upload" in benchmark_job
+    assert "timeout-minutes: 45" in benchmark_job
+    assert "42-minute soak + 8-minute setup/upload" in soak_job
+    assert "timeout-minutes: 50" in soak_job
+    assert "35-minute calibration + 10-minute setup/upload" in calibrate_job
+    assert "timeout-minutes: 45" in calibrate_job
 
 
 def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
@@ -112,13 +154,25 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "OPENAI_API_KEY" in rehearsal
     assert "ANTHROPIC_API_KEY" in rehearsal
     assert "live_provider_proof.py" in rehearsal
-    assert "needs: [offline-release, python-compat, node-compat]" in rehearsal
+    assert (
+        "needs: [offline-release, tthw-evidence, python-compat, node-compat]"
+        in rehearsal
+    )
     assert "needs.offline-release.result == 'success'" in rehearsal
     assert "needs.python-compat.result == 'success'" in rehearsal
     assert "needs.node-compat.result == 'success'" in rehearsal
     assert "group: kaji-beta-rehearsal-0.2.0-beta.1" in rehearsal
     assert "offline-gate-summary.json" in rehearsal
     assert "if: ${{ always() }}" in rehearsal
+    rehearsal_keyed_steps = rehearsal.split("  keyed-proof:", 1)[1].split(
+        "      - uses: actions/checkout@", 1
+    )[0]
+    assert "Initialize exact-commit provider evidence before setup" in (
+        rehearsal_keyed_steps
+    )
+    assert "Retain initial not-run provider evidence before setup" in (
+        rehearsal_keyed_steps
+    )
     _assert_external_actions_are_sha_pinned(rehearsal)
     for expected in (
         "verification.verified",
@@ -147,7 +201,18 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "steps.provenance.outputs.attestation-url",
         "provenance.bundle.jsonl",
         "provenance.json",
-        "partial_or_ambiguous",
+        "provider-evidence.json",
+        "kaji-tthw-evidence",
+        "validate_tthw_evidence.py",
+        "tthw/tthw-evidence.json",
+        "pypi-attestations==0.0.29",
+        "npm@11.16.0",
+        "--downloads-dir .artifacts/kaji-publication-status/downloaded",
+        '--repository "$GITHUB_REPOSITORY"',
+        "verify_published_packages.py state",
+        "steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state",
+        "needs.publication-status.outputs.state == 'byte_verified'",
+        "installation recommendations remain withheld",
         "github.run_attempt == 1",
         "publisher-preflight:",
         "NPM_TOKEN is required",
@@ -162,8 +227,48 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "--attempts 8 --initial-delay 2 --max-delay 20",
         "attach_release_assets.py",
         "registry-verification.json",
+        "Initialize fail-closed publication status before setup",
+        '--pypi-publish-result "$PYPI_PUBLISH_RESULT"',
+        '--npm-publish-result "$NPM_PUBLISH_RESULT"',
+        "status_classifier_unavailable",
+        "Create or update fail-closed incident prerelease status",
+        "Installation recommendation: WITHHELD",
+        "Retained evidence:",
+        "no publish job was attempted",
+        "needs.publication-status.outputs.incident == 'true'",
     ):
         assert expected in publish
+    publish_keyed_steps = publish.split("  keyed-proof:", 1)[1].split(
+        "      - uses: actions/checkout@", 1
+    )[0]
+    assert "Initialize exact-commit provider evidence before setup" in (
+        publish_keyed_steps
+    )
+    assert "Retain initial not-run provider evidence before setup" in (
+        publish_keyed_steps
+    )
+    publication_status = publish.split("  publication-status:", 1)[1].split(
+        "  publication-incident:", 1
+    )[0]
+    assert "    if: ${{ always() }}" in publication_status
+    assert "      - name: Reduce monotonic publication state\n" in publication_status
+    classifier = publication_status.split(
+        "      - name: Reduce monotonic publication state\n", 1
+    )[1].split("      - name: Preserve publication outcome", 1)[0]
+    assert "        if: ${{ always() && github.run_attempt == 1 }}" in classifier
+    assert "publication-status.json" in classifier
+    assert "publication-status.md" in classifier
+    incident_job = publish.split("  publication-incident:", 1)[1].split(
+        "  release-evidence:", 1
+    )[0]
+    assert "permissions:\n      contents: write" in incident_job
+    assert '--title "Kaji $EXPECTED_TAG"' in incident_job
+    assert "--verify-tag --prerelease" in incident_job
+    assert '.name == ("Kaji " + $tag)' in incident_job
+    assert ".draft == false" in incident_job
+    assert "HTTP_STATUS" in incident_job
+    assert "github.run_attempt == 1" in incident_job
+    assert "--clobber" not in incident_job
     assert (
         publish.count("Revalidate downloaded filenames, sizes, hashes, and commit") == 3
     )
@@ -175,7 +280,10 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         )
         == 2
     )
-    assert "needs: [verify-tag, supply-chain, publication-status]" in publish
+    assert (
+        "needs: [verify-tag, tthw-evidence, supply-chain, publication-status]"
+        in publish
+    )
     assert "if-no-files-found: error" in publish
     assert "--clobber" not in publish
     for reverify, mutation in (
@@ -196,17 +304,18 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         assert between.count("uses: ./.github/actions/verify-kaji-beta-tag") == 1
         assert between.count("      - name:") == 1
     assert (
-        "needs: [verify-tag, offline-gates, performance, python-compat, node-compat]"
+        "needs: [verify-tag, offline-gates, performance, tthw-evidence, python-compat, node-compat]"
         in publish
     )
     assert (
-        "needs: [verify-tag, offline-gates, performance, keyed-proof, python-compat, node-compat]"
+        "needs: [verify-tag, offline-gates, performance, tthw-evidence, keyed-proof, python-compat, node-compat]"
         in publish
     )
     for dependency in (
         "verify-tag",
         "offline-gates",
         "performance",
+        "tthw-evidence",
         "keyed-proof",
         "python-compat",
         "node-compat",
@@ -228,7 +337,14 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "downloaded npm tarball differs from manifest" in registry
     assert "downloaded npm tarball fails registry integrity" in registry
     assert "time.sleep(delay)" in registry
-    assert "VerificationMismatch," in registry
+    assert "except VerificationMismatch as error" in registry
+    assert '"pypi-attestations",' in registry
+    assert (
+        '["npm", "audit", "signatures", "--json", "--include-attestations"]' in registry
+    )
+    assert re.search(r'"gh",\s*"attestation",\s*"verify"', registry)
+    assert '"status": "byte_verified"' in registry
+    assert '"status": "verification_failed"' in registry
     for evidence_field in (
         '"manifestCommit"',
         '"packages"',
@@ -238,6 +354,221 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         '"integrity"',
     ):
         assert evidence_field in registry
+
+
+def test_publish_performance_evidence_is_bound_before_retention() -> None:
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    performance = publish.split("  performance:", 1)[1].split("  python-compat:", 1)[0]
+
+    assert "KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}" in performance
+    assert (
+        "KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
+        in performance
+    )
+    assert "run_beta_benchmarks.py --full --protected" in performance
+    assert "run_beta_soak.py --minutes 30 --protected" in performance
+    assert performance.index(
+        "Initialize exact-commit performance status before setup"
+    ) < performance.index("actions/checkout@")
+    assert performance.index(
+        "Retain initial not-run performance status before setup"
+    ) < performance.index("actions/checkout@")
+    assert "name: kaji-performance-evidence-initial" in performance
+    validation = performance.split(
+        "      - name: Validate and normalize exact-commit performance evidence", 1
+    )[1].split("      - name: Retain exact-run raw performance evidence", 1)[0]
+    for expected in (
+        ".commit == $commit",
+        ".protected == true",
+        ".fingerprint.runner.imageDigest == $imageDigest",
+        ".fingerprint.dependencyLockHash",
+        ".fingerprint.sourceHash",
+        ".fingerprint.versions.python",
+        ".fingerprint.versions.node",
+        ".fingerprint.versions.bun",
+        'versions.python == "3.11.9"',
+        'versions.node == "v22.14.0"',
+        'versions.bun == "1.3.11"',
+        ".[0].fingerprint == .[1].fingerprint",
+        ".[0].commit == .[1].commit",
+    ):
+        assert expected in validation
+    assert performance.index(
+        "Validate and normalize exact-commit performance evidence"
+    ) < performance.index("Upload exact-run performance evidence")
+    assert (
+        'cp "$benchmark" "$KAJI_PERFORMANCE_EVIDENCE_DIR/benchmark-results.json"'
+        in validation
+    )
+    assert 'cp "$soak" "$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"' in validation
+    finalization = performance.split(
+        "      - name: Retain exact-run raw performance evidence", 1
+    )[1].split("      - name: Upload exact-run performance evidence", 1)[0]
+    assert "        if: ${{ always() }}" in finalization
+    assert "steps.benchmark.outcome" in finalization
+    assert "steps.soak.outcome" in finalization
+    assert "steps.performance-validation.outcome" in finalization
+    assert '"$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks"' in finalization
+    assert '"$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak"' in finalization
+    assert "test -d .artifacts/kaji-benchmarks" in finalization
+    assert "test -d .artifacts/kaji-soak" in finalization
+    assert 'conclusion: "passed"' in finalization
+    assert finalization.index(
+        'cp -R .artifacts/kaji-soak/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak/"'
+    ) < finalization.index('conclusion: "passed"')
+    assert "failureCode: null" in finalization
+    assert 'conclusion: "failed"' in finalization
+    upload = performance.split(
+        "      - name: Upload exact-run performance evidence", 1
+    )[1]
+    assert "        if: ${{ always() }}" in upload
+    assert "path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}" in upload
+    for retained in (
+        ".artifacts/kaji-evidence/performance-status.json",
+        ".artifacts/kaji-evidence/raw/benchmarks/results.json",
+        ".artifacts/kaji-evidence/raw/soak/python.json",
+        ".artifacts/kaji-evidence/raw/soak/typescript.json",
+        ".artifacts/kaji-evidence/raw/soak/results.json",
+    ):
+        assert retained in publish
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "upstream", "expected_commit"),
+    [
+        (".github/workflows/kaji.beta.yml", "offline-release", "${{ github.sha }}"),
+        (
+            ".github/workflows/kaji.beta-publish.yml",
+            "[verify-tag, offline-gates]",
+            "${{ needs.verify-tag.outputs.commit }}",
+        ),
+    ],
+)
+def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
+    workflow_name: str, upstream: str, expected_commit: str
+) -> None:
+    workflow = _read(workflow_name)
+    remainder = workflow.split("  tthw-evidence:", 1)[1]
+    next_job = re.search(r"\n  [a-z][a-z-]+:\n", remainder)
+    job = remainder[: next_job.start()] if next_job is not None else remainder
+    job_header, steps = job.split("    steps:", 1)
+    validation = steps.split(
+        "      - name: Validate protected exact-commit five-user TTHW evidence", 1
+    )[1].split("      - name: Retain exact-commit TTHW evidence and status", 1)[0]
+
+    assert f"needs: {upstream}" in job_header
+    assert "environment: kaji-beta" in job_header
+    assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in job_header
+    assert "secrets.KAJI_TTHW_EVIDENCE_JSON" not in job_header
+    assert workflow.count("${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}") == 1
+    assert "KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}" in (
+        validation
+    )
+    assert "validate_tthw_evidence.py" in validation
+    assert "--release-manifest .artifacts/kaji-release/manifest.json" in validation
+    assert "--artifacts-dir .artifacts/kaji-release" in validation
+    assert (
+        'if [ "$status" -eq 0 ]; then\n'
+        '            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"'
+        in validation
+    )
+    assert steps.index(
+        "Initialize exact-commit TTHW status before setup"
+    ) < steps.index("actions/checkout@")
+    assert "name: kaji-tthw-evidence-initial" in steps
+    assert "if: ${{ always() }}" in steps
+    assert "name: kaji-tthw-evidence" in steps
+    assert "status.json" in steps
+    assert "validation.log" in steps
+
+    if workflow_name.endswith("kaji.beta-publish.yml"):
+        assert "github.run_attempt == 1" in job_header
+        assert "name: kaji-tthw-evidence" in workflow
+        assert ".artifacts/kaji-evidence/tthw/status.json" in workflow
+        assert ".artifacts/kaji-evidence/tthw/validation.log" in workflow
+        assert ".artifacts/kaji-evidence/tthw/tthw-evidence.json" in workflow
+
+    docs = _read("docs/kaji/releasing.md")
+    assert "KAJI_TTHW_EVIDENCE_JSON" in docs
+    assert "Configuration alone does not claim that the cohort passed" in docs
+
+
+@pytest.mark.parametrize(
+    "workflow_name",
+    [".github/workflows/kaji.beta.yml", ".github/workflows/kaji.beta-publish.yml"],
+)
+def test_keyed_proof_secrets_are_step_scoped_and_initial_evidence_precedes_setup(
+    workflow_name: str,
+) -> None:
+    workflow = _read(workflow_name)
+    keyed_remainder = workflow.split("  keyed-proof:", 1)[1]
+    next_job = re.search(r"\n  [a-z][a-z-]+:\n", keyed_remainder)
+    keyed = (
+        keyed_remainder[: next_job.start()] if next_job is not None else keyed_remainder
+    )
+    job_environment = keyed.split("    steps:", 1)[0]
+    proof_step = keyed.split("      - name: Run protected provider proof", 1)[1].split(
+        "      - name: Retain exact-commit provider evidence", 1
+    )[0]
+
+    assert "secrets.OPENAI_API_KEY" not in job_environment
+    assert "secrets.ANTHROPIC_API_KEY" not in job_environment
+    assert keyed.count("secrets.OPENAI_API_KEY") == 1
+    assert keyed.count("secrets.ANTHROPIC_API_KEY") == 1
+    assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in proof_step
+    assert "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}" in proof_step
+    assert "uv run --project kaji/sdk --no-sync python" in proof_step
+    assert "sync-args: --frozen --extra openai --extra anthropic" in keyed
+    assert "timeout-minutes: 30" in keyed
+    assert "${{ runner.temp }}/provider-evidence.initial.json" in keyed
+    assert keyed.index("kaji-provider-evidence-initial") < keyed.index(
+        "actions/checkout@"
+    )
+    assert keyed.index("actions/checkout@") < keyed.index(
+        "Restore not-run provider evidence after checkout"
+    )
+    assert keyed.index(
+        "Restore not-run provider evidence after checkout"
+    ) < keyed.index("Run protected provider proof")
+
+
+def test_publication_reruns_are_guarded_before_queries_and_release_mutation() -> None:
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    status_job = publish.split("  publication-status:", 1)[1].split(
+        "  publication-incident:", 1
+    )[0]
+    incident_job = publish.split("  publication-incident:", 1)[1].split(
+        "  release-evidence:", 1
+    )[0]
+
+    assert status_job.index("kaji-publication-status-initial") < status_job.index(
+        "Guard workflow reruns before registry classification"
+    )
+    assert "${{ runner.temp }}/kaji-publication-status-initial" in status_job
+    assert status_job.index(
+        "Guard workflow reruns before registry classification"
+    ) < status_job.index("actions/checkout@")
+    assert status_job.index("actions/checkout@") < status_job.index(
+        "Restore fail-closed publication status after checkout"
+    )
+    assert "github.run_attempt != 1" in status_job
+    assert status_job.count("github.run_attempt == 1") >= 7
+    assert "--previous-state unpublished" in status_job
+    assert "timeout --signal=TERM --kill-after=10s 15m" in status_job
+    assert "timeout-minutes: 45" in status_job
+    assert status_job.index("timeout --signal=TERM --kill-after=10s 15m") < (
+        status_job.index("Reduce monotonic publication state")
+    )
+    assert status_job.index("Reduce monotonic publication state") < status_job.index(
+        "Preserve publication outcome and recovery directions"
+    )
+    assert (
+        "Workflow reruns cannot create a publication transition or edit the prerelease."
+        in status_job
+    )
+    assert "github.run_attempt == 1" in incident_job
+    assert "gh release edit" in incident_job
+    assert "gh release create" in incident_job
 
     artifact_verifier = _read("kaji/scripts/verify_release_artifacts.py")
     assert (
@@ -253,6 +584,922 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert ".tagger.email == $tagger" in tag_verifier
     assert "EXPECTED_TAGGER_EMAIL" in tag_verifier
     assert '.object.type == "commit" and .object.sha == $commit' in tag_verifier
+
+
+@pytest.mark.parametrize(
+    (
+        "previous",
+        "pypi",
+        "npm",
+        "verification",
+        "pypi_publish",
+        "npm_publish",
+        "expected",
+        "ready",
+    ),
+    [
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "not_run",
+            "skipped",
+            "skipped",
+            "unpublished",
+            False,
+        ),
+        (
+            "unpublished",
+            "present",
+            "absent",
+            "not_run",
+            "success",
+            "failure",
+            "pypi_only",
+            False,
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "not_run",
+            "failure",
+            "success",
+            "npm_only",
+            False,
+        ),
+        (
+            "pypi_only",
+            "present",
+            "present",
+            "not_run",
+            "success",
+            "success",
+            "both_published",
+            False,
+        ),
+        (
+            "both_published",
+            "present",
+            "present",
+            "byte_verified",
+            "success",
+            "success",
+            "byte_verified",
+            True,
+        ),
+    ],
+)
+def test_publication_state_reducer_is_monotonic_and_byte_verified_is_sole_success(
+    previous: str,
+    pypi: str,
+    npm: str,
+    verification: str,
+    pypi_publish: str,
+    npm_publish: str,
+    expected: str,
+    ready: bool,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state=previous,
+        pypi=pypi,
+        npm=npm,
+        registry_verification=verification,
+        pypi_publish_result=pypi_publish,
+        npm_publish_result=npm_publish,
+    )
+
+    assert decision.state == expected
+    assert decision.release_ready is ready
+    assert decision.install_recommendation is ready
+    assert (decision.state == "byte_verified") is ready
+
+
+@pytest.mark.parametrize(
+    ("pypi", "npm", "verification", "incident"),
+    [
+        ("absent", "absent", "not_run", None),
+        ("absent", "absent", "failed", "registry_verification_failed"),
+        ("absent", "absent", "byte_verified", "verification_state_mismatch"),
+        ("unknown", "absent", "not_run", "registry_state_unknown"),
+        ("absent", "unknown", "not_run", "registry_state_unknown"),
+        ("unknown", "unknown", "not_run", "registry_state_unknown"),
+    ],
+)
+def test_only_exact_clean_no_attempt_state_avoids_an_incident(
+    pypi: str, npm: str, verification: str, incident: str | None
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="unpublished",
+        pypi=pypi,
+        npm=npm,
+        registry_verification=verification,
+        pypi_publish_result="skipped",
+        npm_publish_result="skipped",
+    )
+
+    assert decision.state == "unpublished"
+    assert decision.incident_code == incident
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    status_job = publish.split("  publication-status:", 1)[1].split(
+        "  publication-incident:", 1
+    )[0]
+    initial = status_job.split(
+        "      - name: Initialize fail-closed publication status before setup", 1
+    )[1].split("      - name: Retain initial fail-closed publication status", 1)[0]
+    assert 'incident: {code: "classification_pending"' in initial
+    assert 'echo "incident=true" >>"$GITHUB_OUTPUT"' in initial
+    assert 'echo "incident=false" >>"$GITHUB_OUTPUT"' not in initial
+    assert '[ "$PYPI_STATE" = absent ]' in status_job
+    assert '[ "$NPM_STATE" = absent ]' in status_job
+    assert '[ "$REGISTRY_VERIFICATION" = not_run ]' in status_job
+    assert '[ "$PYPI_PUBLISH_RESULT" = skipped ]' in status_job
+    assert '[ "$NPM_PUBLISH_RESULT" = skipped ]' in status_job
+    assert "*) FALLBACK_STATE=unpublished ;;" in status_job
+
+
+def test_byte_verified_observation_cannot_be_clean_when_registries_are_absent() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="unpublished",
+        pypi="absent",
+        npm="absent",
+        registry_verification="byte_verified",
+        pypi_publish_result="skipped",
+        npm_publish_result="skipped",
+    )
+
+    assert decision.state == "unpublished"
+    assert decision.incident_code == "verification_state_mismatch"
+    assert decision.release_ready is False
+
+
+@pytest.mark.parametrize(
+    (
+        "previous",
+        "pypi",
+        "npm",
+        "verification",
+        "pypi_publish",
+        "npm_publish",
+        "incident",
+    ),
+    [
+        (
+            "pypi_only",
+            "absent",
+            "absent",
+            "not_run",
+            "failure",
+            "skipped",
+            "state_regression",
+        ),
+        (
+            "npm_only",
+            "present",
+            "absent",
+            "not_run",
+            "success",
+            "success",
+            "state_branch_mismatch",
+        ),
+        (
+            "both_published",
+            "unknown",
+            "present",
+            "not_run",
+            "success",
+            "success",
+            "registry_state_unknown",
+        ),
+        (
+            "unpublished",
+            "present",
+            "absent",
+            "byte_verified",
+            "success",
+            "failure",
+            "verification_state_mismatch",
+        ),
+        (
+            "both_published",
+            "present",
+            "present",
+            "failed",
+            "success",
+            "success",
+            "registry_verification_failed",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "not_run",
+            "failure",
+            "skipped",
+            "publish_attempt_failed",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "not_run",
+            "cancelled",
+            "skipped",
+            "publish_attempt_cancelled",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "not_run",
+            "unknown",
+            "skipped",
+            "publish_outcome_unknown",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "not_run",
+            "success",
+            "success",
+            "publish_success_registry_absent",
+        ),
+        (
+            "unpublished",
+            "unknown",
+            "absent",
+            "not_run",
+            "success",
+            "skipped",
+            "registry_state_unknown",
+        ),
+        (
+            "unpublished",
+            "present",
+            "absent",
+            "not_run",
+            "skipped",
+            "skipped",
+            "partial_publication",
+        ),
+    ],
+)
+def test_publication_state_reducer_turns_unknown_or_mismatch_into_incident(
+    previous: str,
+    pypi: str,
+    npm: str,
+    verification: str,
+    pypi_publish: str,
+    npm_publish: str,
+    incident: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state=previous,
+        pypi=pypi,
+        npm=npm,
+        registry_verification=verification,
+        pypi_publish_result=pypi_publish,
+        npm_publish_result=npm_publish,
+    )
+
+    assert decision.incident_code == incident
+    assert decision.release_ready is False
+    assert decision.install_recommendation is False
+    assert decision.recovery == "fix_forward_next_beta"
+
+
+def test_publication_state_cli_withholds_installation_and_writes_machine_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    output = tmp_path / "publication-status.json"
+    markdown = tmp_path / "publication-status.md"
+    github_output = tmp_path / "github-output.txt"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(github_output))
+
+    verifier.state_main(
+        [
+            "--previous-state",
+            "unpublished",
+            "--pypi",
+            "present",
+            "--npm",
+            "unknown",
+            "--registry-verification",
+            "failed",
+            "--pypi-publish-result",
+            "success",
+            "--npm-publish-result",
+            "failure",
+            "--commit",
+            "a" * 40,
+            "--workflow-run",
+            "https://github.example/run/1",
+            "--output",
+            str(output),
+            "--markdown",
+            str(markdown),
+        ]
+    )
+
+    retained = json.loads(output.read_text())
+    assert retained["state"] == "unpublished"
+    assert retained["releaseReady"] is False
+    assert retained["installRecommendation"] is False
+    assert retained["incident"]["code"] == "registry_state_unknown"
+    assert retained["publishJobs"] == {"pypi": "success", "npm": "failure"}
+    assert "WITHHELD" in markdown.read_text()
+    assert "https://github.example/run/1" in markdown.read_text()
+    assert "publication-state=unpublished" in github_output.read_text()
+
+
+def test_registry_verifier_retains_machine_failure_before_exiting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "manifest.json").write_text(
+        json.dumps(
+            {
+                "commit": "a" * 40,
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.1"},
+                "artifacts": [],
+            }
+        )
+    )
+    output = tmp_path / "registry-verification.json"
+    monkeypatch.setattr(
+        verifier,
+        "verify_pypi",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            verifier.VerificationMismatch("fixture mismatch")
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="immutable registry verification mismatch"):
+        verifier.verification_main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--output",
+                str(output),
+                "--repository",
+                "alloy-org/alloy",
+                "--attempts",
+                "1",
+            ]
+        )
+
+    retained = json.loads(output.read_text())
+    assert retained["status"] == "verification_failed"
+    assert retained["manifestCommit"] == "a" * 40
+    assert retained["failureCode"] == "verification_mismatch"
+
+
+def test_registry_verifier_retries_propagation_before_byte_verification(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "manifest.json").write_text(
+        json.dumps(
+            {
+                "commit": "a" * 40,
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.1"},
+                "artifacts": [],
+            }
+        )
+    )
+    output = tmp_path / "registry-verification.json"
+    attempts = 0
+
+    def verify_pypi(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise verifier.VerificationUnavailable("attestations not propagated")
+        return {"files": []}
+
+    monkeypatch.setattr(verifier, "verify_pypi", verify_pypi)
+    monkeypatch.setattr(
+        verifier, "verify_npm", lambda *_args, **_kwargs: {"byteVerified": True}
+    )
+
+    verifier.verification_main(
+        [
+            "--artifacts-dir",
+            str(artifacts),
+            "--output",
+            str(output),
+            "--repository",
+            "alloy-org/alloy",
+            "--attempts",
+            "2",
+            "--initial-delay",
+            "0",
+            "--max-delay",
+            "0",
+        ]
+    )
+
+    retained = json.loads(output.read_text())
+    assert attempts == 2
+    assert retained["status"] == "byte_verified"
+    assert retained["attempt"] == 2
+
+
+def test_malformed_registry_json_is_retained_as_typed_machine_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "manifest.json").write_text(
+        json.dumps(
+            {
+                "commit": "a" * 40,
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.1"},
+                "artifacts": [
+                    {
+                        "file": "kaji-0.2.0b1-py3-none-any.whl",
+                        "package": "python",
+                        "sha256": "0" * 64,
+                        "size": 1,
+                    }
+                ],
+            }
+        )
+    )
+    output = tmp_path / "registry-verification.json"
+    monkeypatch.setattr(verifier, "fetch", lambda *_args, **_kwargs: b"[]")
+
+    with pytest.raises(SystemExit, match="immutable registry verification mismatch"):
+        verifier.verification_main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--output",
+                str(output),
+                "--repository",
+                "alloy-org/alloy",
+                "--attempts",
+                "1",
+            ]
+        )
+
+    retained = json.loads(output.read_text())
+    assert retained["status"] == "verification_failed"
+    assert retained["failureCode"] == "verification_mismatch"
+    assert retained["failureType"] == "VerificationMismatch"
+
+
+def test_registry_shape_validation_rejects_empty_integrity_and_non_object_dist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    with pytest.raises(verifier.VerificationMismatch, match="empty integrity"):
+        verifier.parse_integrity("")
+
+    monkeypatch.setattr(
+        verifier,
+        "run_checked",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=b"[]", stderr=b""
+        ),
+    )
+    with pytest.raises(verifier.VerificationMismatch, match="malformed dist metadata"):
+        verifier.verify_npm(
+            {},
+            downloads_dir=tmp_path,
+            repository="alloy-org/alloy",
+            commit="a" * 40,
+        )
+
+
+@pytest.mark.parametrize(
+    "redirect",
+    ["https://attacker.example/package", "http://pypi.org/package"],
+)
+def test_registry_redirect_handler_rejects_cross_origin_before_following(
+    redirect: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    handler = verifier._SameHostHTTPSRedirectHandler("pypi.org")
+    request = urllib.request.Request("https://pypi.org/source")
+
+    with pytest.raises(verifier.VerificationMismatch, match="redirect attempted"):
+        handler.redirect_request(request, None, 302, "Found", Message(), redirect)
+
+
+def test_registry_redirect_handler_allows_same_https_host() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    handler = verifier._SameHostHTTPSRedirectHandler("pypi.org")
+    request = urllib.request.Request("https://pypi.org/source")
+
+    redirected = handler.redirect_request(
+        request, None, 302, "Found", Message(), "https://pypi.org/target"
+    )
+
+    assert redirected is not None
+    assert redirected.full_url == "https://pypi.org/target"
+
+
+def test_registry_fetch_rejects_initial_cross_origin_before_opening(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    monkeypatch.setattr(
+        verifier.urllib.request,
+        "build_opener",
+        lambda *_args, **_kwargs: pytest.fail("untrusted URL reached the opener"),
+    )
+
+    with pytest.raises(
+        verifier.VerificationMismatch, match="outside the expected host"
+    ):
+        verifier.fetch("https://attacker.example/package", allowed_host="pypi.org")
+
+
+def test_registry_verifier_retains_invalid_input_failure(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    artifacts = tmp_path / "missing-artifacts"
+    artifacts.mkdir()
+    output = tmp_path / "registry-verification.json"
+
+    with pytest.raises(SystemExit, match="release manifest could not be loaded"):
+        verifier.verification_main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--output",
+                str(output),
+                "--repository",
+                "alloy-org/alloy",
+            ]
+        )
+
+    retained = json.loads(output.read_text())
+    assert retained["status"] == "verification_failed"
+    assert retained["failureCode"] == "invalid_release_input"
+    assert retained["manifestCommit"] is None
+
+
+def test_registry_verifier_retains_invalid_encoding_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    output = tmp_path / "registry-verification.json"
+    manifest = {"commit": "a" * 40, "packages": {}}
+    monkeypatch.setattr(verifier, "manifest_data", lambda _path: (manifest, {}))
+    monkeypatch.setattr(
+        verifier,
+        "verify_pypi",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="did not converge"):
+        verifier.verification_main(
+            [
+                "--artifacts-dir",
+                str(tmp_path),
+                "--output",
+                str(output),
+                "--repository",
+                "alloy-org/alloy",
+                "--attempts",
+                "1",
+            ]
+        )
+
+    retained = json.loads(output.read_text())
+    assert retained["status"] == "verification_failed"
+    assert retained["failureCode"] == "verification_unavailable"
+    assert retained["failureType"] == "UnicodeDecodeError"
+
+
+def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    payloads = {
+        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji-0.2.0b1.tar.gz": b"sdist",
+    }
+    entries = {
+        name: {
+            "file": name,
+            "package": "python",
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "size": len(payload),
+        }
+        for name, payload in payloads.items()
+    }
+    urls = [
+        {
+            "filename": name,
+            "url": f"https://files.pythonhosted.org/packages/{name}",
+            "digests": {"sha256": entry["sha256"]},
+            "size": entry["size"],
+        }
+        for name, entry in entries.items()
+    ]
+    fetched: list[str] = []
+
+    def fetch(url: str, **_kwargs: object) -> bytes:
+        fetched.append(url)
+        if url == verifier.PYPI_URL:
+            return json.dumps({"urls": urls}).encode()
+        if "/integrity/" in url:
+            return json.dumps(
+                {"attestation_bundles": [{"attestations": [{}]}]}
+            ).encode()
+        return payloads[url.rsplit("/", 1)[1]]
+
+    commands: list[tuple[str, ...]] = []
+
+    def run_checked(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(tuple(command))
+        return SimpleNamespace(returncode=0, stdout=b"{}", stderr=b"")
+
+    monkeypatch.setattr(verifier, "fetch", fetch)
+    monkeypatch.setattr(verifier, "run_checked", run_checked)
+
+    evidence = verifier.verify_pypi(
+        entries,
+        downloads_dir=tmp_path,
+        repository="alloy-org/alloy",
+        commit="a" * 40,
+    )
+
+    assert len(evidence["files"]) == 2
+    assert all(item["byteVerified"] for item in evidence["files"])
+    assert sum("/integrity/kaji/0.2.0b1/" in url for url in fetched) == 2
+    assert (
+        sum(
+            command[:3] == ("pypi-attestations", "verify", "pypi")
+            for command in commands
+        )
+        == 2
+    )
+    assert (
+        sum(command[:3] == ("gh", "attestation", "verify") for command in commands) == 2
+    )
+    assert all(
+        command[command.index("--source-digest") + 1] == "a" * 40
+        for command in commands
+        if command[:3] == ("gh", "attestation", "verify")
+    )
+    retained = {path.name for path in tmp_path.iterdir()}
+    assert {
+        "registry-kaji-0.2.0b1-py3-none-any.whl",
+        "registry-kaji-0.2.0b1.tar.gz",
+    }.issubset(retained)
+    assert sum(name.endswith(".provenance.json") for name in retained) == 2
+    assert sum(name.endswith(".github-attestation.json") for name in retained) == 2
+
+
+@pytest.mark.parametrize(
+    ("published_names", "expected_error"),
+    [
+        (
+            ["kaji-0.2.0b1-py3-none-any.whl"],
+            "VerificationUnavailable",
+        ),
+        (
+            [
+                "kaji-0.2.0b1-py3-none-any.whl",
+                "kaji-0.2.0b1.tar.gz",
+                "unexpected.zip",
+            ],
+            "VerificationMismatch",
+        ),
+    ],
+)
+def test_pypi_missing_files_are_retryable_but_unexpected_files_are_terminal(
+    published_names: list[str],
+    expected_error: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    entries = {
+        name: {"file": name, "package": "python", "sha256": "0" * 64, "size": 1}
+        for name in (
+            "kaji-0.2.0b1-py3-none-any.whl",
+            "kaji-0.2.0b1.tar.gz",
+        )
+    }
+    metadata = {"urls": [{"filename": name} for name in published_names]}
+    monkeypatch.setattr(
+        verifier,
+        "fetch",
+        lambda *_args, **_kwargs: json.dumps(metadata).encode(),
+    )
+
+    error_type = getattr(verifier, expected_error)
+    with pytest.raises(error_type):
+        verifier.verify_pypi(
+            entries,
+            downloads_dir=tmp_path,
+            repository="alloy-org/alloy",
+            commit="a" * 40,
+        )
+
+
+def test_npm_missing_target_is_retryable_propagation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    audit_dir = tmp_path / "audit"
+    audit_dir.mkdir()
+
+    def run_checked(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        output = (
+            json.dumps(
+                {
+                    "verified": [
+                        {
+                            "name": "transitive-dependency",
+                            "version": "1.0.0",
+                            "attestations": [{}],
+                        }
+                    ]
+                }
+            ).encode()
+            if command[:3] == ["npm", "audit", "signatures"]
+            else b"{}"
+        )
+        return SimpleNamespace(returncode=0, stdout=output, stderr=b"")
+
+    monkeypatch.setattr(verifier, "run_checked", run_checked)
+
+    with pytest.raises(
+        verifier.VerificationUnavailable,
+        match="has not propagated the beta package",
+    ):
+        verifier._verify_npm_audit(
+            repository_dir=audit_dir,
+            evidence_file=tmp_path / "npm-signature-audit.json",
+        )
+
+
+@pytest.mark.parametrize(
+    ("audit", "expected_error"),
+    [
+        (
+            {"missing": [{"name": "@kaji/sdk", "version": "0.2.0-beta.1"}]},
+            "VerificationUnavailable",
+        ),
+        (
+            {"invalid": [{"name": "@kaji/sdk", "version": "0.2.0-beta.1"}]},
+            "VerificationMismatch",
+        ),
+    ],
+)
+def test_nonzero_npm_audit_distinguishes_propagation_from_invalid_signatures(
+    audit: dict[str, object],
+    expected_error: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    monkeypatch.setattr(
+        verifier,
+        "run_checked",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps(audit).encode(),
+            stderr=b"",
+        ),
+    )
+
+    with pytest.raises(getattr(verifier, expected_error)):
+        verifier._run_npm_registry_command(
+            ["npm", "audit", "signatures", "--json", "--include-attestations"],
+            cwd=tmp_path,
+        )
+
+
+def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_attestation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    payload = b"npm-tarball"
+    integrity = "sha512-" + base64.b64encode(hashlib.sha512(payload).digest()).decode()
+    entry = {
+        "file": "kaji-sdk-0.2.0-beta.1.tgz",
+        "package": "typescript",
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "size": len(payload),
+    }
+    commands: list[tuple[str, ...]] = []
+
+    def run_checked(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        commands.append(tuple(command))
+        if command[:2] == ["npm", "view"]:
+            stdout = json.dumps(
+                {
+                    "tarball": "https://registry.npmjs.org/@kaji/sdk/-/sdk.tgz",
+                    "integrity": integrity,
+                    "shasum": hashlib.sha1(payload).hexdigest(),  # noqa: S324
+                }
+            ).encode()
+        elif command[:3] == ["npm", "audit", "signatures"]:
+            stdout = json.dumps(
+                {
+                    "verified": [
+                        {
+                            "name": "@kaji/sdk",
+                            "version": "0.2.0-beta.1",
+                            "attestations": [{}],
+                        }
+                    ]
+                }
+            ).encode()
+        else:
+            stdout = b"{}"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(verifier, "run_checked", run_checked)
+    monkeypatch.setattr(verifier, "fetch", lambda *_args, **_kwargs: payload)
+
+    evidence = verifier.verify_npm(
+        {entry["file"]: entry},
+        downloads_dir=tmp_path,
+        repository="alloy-org/alloy",
+        commit="a" * 40,
+    )
+
+    assert evidence["byteVerified"] is True
+    assert evidence["signatureAudit"]["packageVerified"] is True
+    assert (tmp_path / "registry-kaji-sdk-0.2.0-beta.1.tgz").read_bytes() == payload
+    assert (tmp_path / "npm-signature-audit.json").is_file()
+    assert (
+        "npm",
+        "audit",
+        "signatures",
+        "--json",
+        "--include-attestations",
+    ) in commands
+    github_command = next(
+        command
+        for command in commands
+        if command[:3] == ("gh", "attestation", "verify")
+    )
+    assert github_command[github_command.index("--source-digest") + 1] == "a" * 40
+
+
+def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    audit_dir = tmp_path / "audit"
+    audit_dir.mkdir()
+
+    def run_checked(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        if command[:3] == ["npm", "audit", "signatures"]:
+            stdout = json.dumps(
+                {
+                    "verified": [
+                        {"name": "@kaji/sdk", "version": "0.2.0-beta.1"},
+                        {
+                            "name": "transitive-dependency",
+                            "version": "1.0.0",
+                            "attestations": [{}],
+                        },
+                    ]
+                }
+            ).encode()
+        else:
+            stdout = b"{}"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(verifier, "run_checked", run_checked)
+
+    with pytest.raises(
+        verifier.VerificationUnavailable,
+        match="has not propagated the beta attestation bundle",
+    ):
+        verifier._verify_npm_audit(
+            repository_dir=audit_dir,
+            evidence_file=tmp_path / "npm-signature-audit.json",
+        )
 
 
 def test_release_composite_actions_are_sha_pinned() -> None:

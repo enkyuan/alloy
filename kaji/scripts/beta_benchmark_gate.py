@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import re
 import statistics
 import sys
 from typing import Any
@@ -37,6 +38,27 @@ CASES = (
 BUDGETS_PATH = ROOT / "kaji" / "benchmarks" / "beta-budgets.json"
 BASELINE_PATH = ROOT / "kaji" / "benchmarks" / "beta-baseline.json"
 BENCHMARK_SEED = 13
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
+SOURCE_TREE_ROOTS = (
+    Path("kaji/sdk/src"),
+    Path("kaji/ts/src"),
+)
+SOURCE_INPUTS = (
+    Path("kaji/sdk/benchmarks/runtime_benchmark.py"),
+    Path("kaji/ts/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/sdk/benchmarks/runtime_soak.py"),
+    Path("kaji/ts/benchmarks/runtime-soak.ts"),
+    Path("kaji/scripts/beta_benchmark_gate.py"),
+    Path("kaji/scripts/run_beta_benchmarks.py"),
+    Path("kaji/scripts/beta_soak_gate.py"),
+    Path("kaji/scripts/run_beta_soak.py"),
+    Path("kaji/scripts/process_runner.py"),
+    Path("kaji/benchmarks/beta-budgets.json"),
+    Path("kaji/sdk/pyproject.toml"),
+    Path("kaji/ts/package.json"),
+    Path("kaji/ts/tsconfig.json"),
+)
 
 
 def _command_version(command: list[str]) -> str:
@@ -81,11 +103,44 @@ def _lock_hash() -> str:
     return digest.hexdigest()
 
 
+def _source_hash(root: Path | None = None) -> str:
+    root = ROOT if root is None else root
+    relative_paths = set(SOURCE_INPUTS)
+    for relative_root in SOURCE_TREE_ROOTS:
+        source_root = root / relative_root
+        if not source_root.is_dir():
+            raise RuntimeError(f"performance source tree is missing: {relative_root}")
+        relative_paths.update(
+            path.relative_to(root)
+            for path in source_root.rglob("*")
+            if path.is_file()
+            and "__pycache__" not in path.parts
+            and path.suffix != ".pyc"
+        )
+
+    digest = hashlib.sha256()
+    for relative in sorted(relative_paths, key=lambda path: path.as_posix()):
+        path = root / relative
+        if not path.is_file():
+            raise RuntimeError(f"performance source input is missing: {relative}")
+        digest.update(relative.as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _checked_out_commit() -> str:
+    commit = _command_version(["git", "rev-parse", "HEAD"])
+    if COMMIT_PATTERN.fullmatch(commit) is None:
+        raise RuntimeError(
+            "checked-out commit is not exactly 40 lowercase hex characters"
+        )
+    return commit
+
+
 def _commit() -> str:
-    configured = os.environ.get("GITHUB_SHA")
-    if configured:
-        return configured
-    return _command_version(["git", "rev-parse", "HEAD"])
+    return _checked_out_commit()
 
 
 def fingerprint() -> dict[str, Any]:
@@ -105,6 +160,29 @@ def fingerprint() -> dict[str, Any]:
             "bun": _command_version(["bun", "--version"]),
         },
         "dependencyLockHash": _lock_hash(),
+        "sourceHash": _source_hash(),
+    }
+
+
+def release_commit(*, protected: bool) -> str:
+    configured = os.environ.get("KAJI_RELEASE_COMMIT")
+    if protected and configured is None:
+        raise RuntimeError("KAJI_RELEASE_COMMIT is required in protected mode")
+    if configured is not None and COMMIT_PATTERN.fullmatch(configured) is None:
+        raise RuntimeError(
+            "KAJI_RELEASE_COMMIT must be exactly 40 lowercase hex characters"
+        )
+    checked_out = _checked_out_commit()
+    if configured is not None and configured != checked_out:
+        raise RuntimeError("KAJI_RELEASE_COMMIT does not match checked-out commit")
+    return configured or checked_out
+
+
+def performance_provenance(*, protected: bool) -> dict[str, Any]:
+    return {
+        "commit": release_commit(protected=protected),
+        "fingerprint": fingerprint(),
+        "protected": protected,
     }
 
 
@@ -418,16 +496,20 @@ def _baseline_fingerprint(baseline: dict[str, Any]) -> dict[str, Any]:
     runner = baseline.get("runner")
     versions = baseline.get("versions")
     dependency_lock_hash = baseline.get("dependencyLockHash")
+    source_hash = baseline.get("sourceHash")
     if not isinstance(runner, dict):
         raise RuntimeError("baseline runner must be an object")
     if not isinstance(versions, dict):
         raise RuntimeError("baseline versions must be an object")
     if not isinstance(dependency_lock_hash, str):
         raise RuntimeError("baseline dependencyLockHash must be a string")
+    if not isinstance(source_hash, str) or HASH_PATTERN.fullmatch(source_hash) is None:
+        raise RuntimeError("baseline sourceHash must be 64 lowercase hex characters")
     return {
         "runner": runner,
         "versions": versions,
         "dependencyLockHash": dependency_lock_hash,
+        "sourceHash": source_hash,
     }
 
 
@@ -436,7 +518,18 @@ def _validate_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> Non
         raise RuntimeError("baseline must be an object")
     if baseline.get("schemaVersion") != 1 or baseline.get("status") != "calibrated":
         raise RuntimeError("beta baseline is uncalibrated")
-    if _baseline_fingerprint(baseline) != current:
+    calibration_commit = baseline.get("calibrationCommit")
+    if (
+        not isinstance(calibration_commit, str)
+        or COMMIT_PATTERN.fullmatch(calibration_commit) is None
+    ):
+        raise RuntimeError(
+            "baseline calibrationCommit must be exactly 40 lowercase hex characters"
+        )
+    baseline_fingerprint = _baseline_fingerprint(baseline)
+    if baseline_fingerprint["sourceHash"] != current.get("sourceHash"):
+        raise RuntimeError("benchmark source hash does not match the baseline")
+    if baseline_fingerprint != current:
         raise RuntimeError("benchmark runner fingerprint does not match the baseline")
     evidence: dict[str, dict[str, Any]] = {}
     for field in ("medians", "rawSamples", "maxPeakMiB", "rawPeakMiB"):
@@ -606,13 +699,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", required=True, choices=("quick", "full", "calibrate"))
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--candidate-baseline", type=Path)
+    parser.add_argument("--protected", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = _parse_args()
     budgets = json.loads(BUDGETS_PATH.read_text())
-    current = fingerprint()
+    provenance = performance_provenance(protected=getattr(args, "protected", False))
+    current = provenance["fingerprint"]
     failures: list[str] = []
     baseline: dict[str, Any] | None = None
 
@@ -678,7 +773,7 @@ def main() -> int:
         "schemaVersion": 1,
         "mode": args.mode,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "fingerprint": current,
+        **provenance,
         "results": results,
         "failures": failures,
         "passed": not failures,

@@ -107,18 +107,121 @@ jobs:
         working-directory: kaji/ts
         run: bun run package:smoke
 
-  keyed-proof:
-    needs: [offline-release, python-compat, node-compat]
-    if: ${{ always() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+  tthw-evidence:
+    needs: offline-release
+    if: ${{ always() && needs.offline-release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: kaji-beta
     env:
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-status.txt
+      KAJI_RELEASE_COMMIT: ${{ github.sha }}
+      KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
     steps:
+      - name: Initialize exact-commit TTHW status before setup
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_TTHW_EVIDENCE_DIR"
+          echo "TTHW validation did not start." >"$KAJI_TTHW_EVIDENCE_DIR/validation.log"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              exitCode: null, releaseManifestSha256: null, workflowRun: $workflowRun}' \
+            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
+      - name: Retain initial not-run TTHW status before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-tthw-evidence-initial
+          path: ${{ runner.temp }}/kaji-tthw-evidence
+          if-no-files-found: error
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji/sdk
+          python-version: "3.14"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+      - name: Revalidate exact current-run artifacts before TTHW validation
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-release
+      - name: Validate protected exact-commit five-user TTHW evidence
+        shell: bash
+        env:
+          KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}
+        run: |
+          raw_evidence="$RUNNER_TEMP/kaji-tthw-evidence.raw.json"
+          trap 'rm -f "$raw_evidence"' EXIT
+          printf '%s' "$KAJI_TTHW_EVIDENCE_JSON" >"$raw_evidence"
+          set +e
+          uv run --project kaji/sdk --no-sync python kaji/scripts/validate_tthw_evidence.py \
+            "$raw_evidence" \
+            --release-manifest .artifacts/kaji-release/manifest.json \
+            --artifacts-dir .artifacts/kaji-release \
+            > >(tee "$KAJI_TTHW_EVIDENCE_DIR/validation.log") 2>&1
+          status=$?
+          set -e
+          manifest_sha="$(sha256sum .artifacts/kaji-release/manifest.json | cut -d ' ' -f 1)"
+          if [ "$status" -eq 0 ]; then
+            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"
+          fi
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
+            --argjson exitCode "$status" \
+            --arg releaseManifestSha256 "$manifest_sha" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              exitCode: $exitCode, releaseManifestSha256: $releaseManifestSha256,
+              workflowRun: $workflowRun}' \
+            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
+          exit "$status"
+      - name: Retain exact-commit TTHW evidence and status
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-tthw-evidence
+          path: ${{ runner.temp }}/kaji-tthw-evidence
+          if-no-files-found: error
+
+  keyed-proof:
+    needs: [offline-release, tthw-evidence, python-compat, node-compat]
+    if: ${{ always() && needs.offline-release.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+    runs-on: ubuntu-latest
+    # Four proofs are capped at three minutes each. Thirty minutes leaves setup
+    # and final evidence upload outside the child-process budget.
+    timeout-minutes: 30
+    environment: kaji-beta
+    env:
+      KAJI_RELEASE_COMMIT: ${{ github.sha }}
+      KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-evidence.json
+      KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
+    steps:
+      - name: Initialize exact-commit provider evidence before setup
+        shell: bash
+        run: |
+          jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              proofs: [
+                {sdk: "python", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "typescript", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "python", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"},
+                {sdk: "typescript", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"}
+              ]}' >"$KAJI_INITIAL_PROVIDER_STATUS_FILE"
+      - name: Retain initial not-run provider evidence before setup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-provider-evidence-initial
+          path: ${{ runner.temp }}/provider-evidence.initial.json
+          if-no-files-found: error
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Restore not-run provider evidence after checkout
+        if: ${{ always() }}
+        run: cp "$KAJI_INITIAL_PROVIDER_STATUS_FILE" "$KAJI_PROVIDER_STATUS_FILE"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
@@ -133,10 +236,14 @@ jobs:
           python-version: "3.14"
           sync-args: --frozen --extra openai --extra anthropic
       - name: Run protected provider proof
-        run: uv run --project kaji/sdk python kaji/scripts/live_provider_proof.py
-      - name: Retain explicit provider status
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/live_provider_proof.py
+      - name: Retain exact-commit provider evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-provider-status
-          path: provider-status.txt
+          name: kaji-provider-evidence
+          path: provider-evidence.json
           if-no-files-found: error

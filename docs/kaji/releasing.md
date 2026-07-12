@@ -11,8 +11,10 @@ advance to provider proof; registry authorization remains separate.
 The two protected environments have intentionally different authority:
 
 - `kaji-beta` permits mandatory keyed OpenAI and Anthropic proof in Python and
-  TypeScript. Missing either credential blocks release. It has provider
-  secrets but no registry publisher authority.
+  TypeScript, plus validation of the exact-commit five-user TTHW document.
+  Configure `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and the raw redacted JSON
+  document as `KAJI_TTHW_EVIDENCE_JSON`; missing or invalid evidence blocks
+  release. This environment has no registry publisher authority.
 - `kaji-beta-publish` permits PyPI trusted publishing and npm publication. Its
   required reviewers approve registry writes only after all preceding evidence
   is green. It must not contain provider keys.
@@ -63,7 +65,9 @@ later run is not acceptable evidence.
    ```
 
 3. Approve `kaji-beta` only after offline, compatibility, and benchmark/soak
-   jobs pass. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both required; each
+   jobs pass. `KAJI_TTHW_EVIDENCE_JSON` must contain the redacted five-user
+   document for the exact current-run manifest and wheel, sdist, and npm
+   artifacts. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both required; each
    must complete a normalized tool loop in Python and TypeScript. Missing-key
    hygiene is not release evidence.
 4. Review the exact manifest, checksums, offline summary, provider status,
@@ -159,12 +163,15 @@ mismatch.
 
 ## Human TTHW evidence
 
-Validate one retained evidence document with
-`kaji/scripts/validate_tthw_evidence.py`. It must bind one 40-hex commit and
+Store one redacted evidence document in the protected `kaji-beta` environment
+as `KAJI_TTHW_EVIDENCE_JSON`. Both protected release workflows validate it with
+`kaji/scripts/validate_tthw_evidence.py` and retain `kaji-tthw-evidence`; they
+do not retain the document when validation fails. It must bind one 40-hex commit and
 release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
 versions, and SHA-256 values; automated Python/npm/Bun cold/warm timings; and
 exactly five distinct pseudonymous fresh-user runs across macOS/Linux and
-Python/npm/Bun. Until that real cohort exists, TTHW is **unmeasured**.
+Python/npm/Bun. Configuration alone does not claim that the cohort passed;
+until that real evidence exists, TTHW is **unmeasured**.
 
 The validator recomputes median and maximum totals. No-key median must be under
 5 minutes and every run under 10; Echo median must be under 10 minutes and

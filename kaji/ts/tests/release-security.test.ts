@@ -192,9 +192,11 @@ describe("release redaction boundaries", () => {
 
 type PermissionMap = Record<string, string>;
 type WorkflowStep = {
+  name?: string;
   uses?: string;
   run?: string;
   with?: Record<string, unknown>;
+  env?: Record<string, unknown>;
   if?: unknown;
   "continue-on-error"?: unknown;
 };
@@ -208,6 +210,8 @@ type WorkflowJob = {
   strategy?: Record<string, unknown>;
   permissions?: PermissionMap;
   env?: Record<string, unknown>;
+  environment?: string;
+  needs?: string | string[];
   defaults?: { run?: { "working-directory"?: string } };
   steps?: WorkflowStep[];
 };
@@ -287,6 +291,8 @@ const expectedJobPermissionDeclarations: Partial<
     "publisher-preflight": { contents: "read" },
     "publish-python": { contents: "read", "id-token": "write" },
     "publish-npm": { contents: "read", "id-token": "write" },
+    "publication-status": { contents: "read", attestations: "read" },
+    "publication-incident": { contents: "write" },
     "release-evidence": { contents: "write" },
   },
 };
@@ -336,6 +342,21 @@ function effectivePermissions(workflow: Workflow, job: WorkflowJob): PermissionM
 
 function effectiveEnvironment(workflow: Workflow, job: WorkflowJob): Record<string, unknown> {
   return { ...workflow.env, ...job.env };
+}
+
+function dependencyClosure(workflow: Workflow, jobId: string): Set<string> {
+  const closure = new Set<string>();
+  const pending = [jobId];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    const needs = workflow.jobs?.[current]?.needs;
+    for (const dependency of typeof needs === "string" ? [needs] : (needs ?? [])) {
+      if (closure.has(dependency)) continue;
+      closure.add(dependency);
+      pending.push(dependency);
+    }
+  }
+  return closure;
 }
 
 function actionSteps(value: Record<string, unknown>): WorkflowStep[] {
@@ -548,6 +569,67 @@ describe("Kaji workflow contracts", () => {
       }
       assertNarrowPermissions(name, workflow);
     }
+  });
+
+  it("gates rehearsal and publication on exact-commit protected TTHW evidence", () => {
+    const rehearsal = readWorkflow("kaji.beta.yml");
+    const publish = readWorkflow("kaji.beta-publish.yml");
+
+    expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(5);
+    expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(15);
+    for (const { source, workflow } of [rehearsal, publish]) {
+      const job = workflow.jobs?.["tthw-evidence"];
+      expect(job?.environment).toBe("kaji-beta");
+      expect(effectivePermissions(workflow, job!)).toEqual(readOnlyPermissions);
+      expect(JSON.stringify(job?.env ?? {})).not.toContain("secrets.KAJI_TTHW_EVIDENCE_JSON");
+      expect(source.match(/\$\{\{ secrets\.KAJI_TTHW_EVIDENCE_JSON \}\}/g)).toHaveLength(1);
+
+      const secretSteps = (job?.steps ?? []).filter((step) =>
+        JSON.stringify(step).includes("secrets.KAJI_TTHW_EVIDENCE_JSON"),
+      );
+      expect(secretSteps).toHaveLength(1);
+      expect(secretSteps[0]?.name).toBe("Validate protected exact-commit five-user TTHW evidence");
+      expect(secretSteps[0]?.run).toContain("validate_tthw_evidence.py");
+      expect(secretSteps[0]?.run).toContain(
+        "--release-manifest .artifacts/kaji-release/manifest.json",
+      );
+      expect(secretSteps[0]?.run).toContain("--artifacts-dir .artifacts/kaji-release");
+      expect(secretSteps[0]?.run).toContain('if [ "$status" -eq 0 ]; then');
+
+      const uploads = (job?.steps ?? []).filter((step) =>
+        step.uses?.startsWith("actions/upload-artifact@"),
+      );
+      expect(uploads.map((step) => step.with?.name)).toEqual([
+        "kaji-tthw-evidence-initial",
+        "kaji-tthw-evidence",
+      ]);
+      expect(uploads[1]?.if).toBe("${{ always() }}");
+    }
+
+    expect(dependencyClosure(rehearsal.workflow, "keyed-proof")).toContain("tthw-evidence");
+    for (const jobId of [
+      "keyed-proof",
+      "supply-chain",
+      "registry-preflight",
+      "publisher-preflight",
+      "publish-python",
+      "publish-npm",
+      "publication-status",
+      "publication-incident",
+      "release-evidence",
+    ]) {
+      expect(dependencyClosure(publish.workflow, jobId), jobId).toContain("tthw-evidence");
+    }
+    expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain("github.run_attempt == 1");
+
+    const classifier = publish.workflow.jobs?.["publication-status"]?.steps?.find(
+      (step) => step.name === "Reduce monotonic publication state",
+    );
+    expect(classifier?.run).toContain('[ "$PYPI_STATE" = absent ]');
+    expect(classifier?.run).toContain('[ "$NPM_STATE" = absent ]');
+    expect(classifier?.run).toContain('[ "$REGISTRY_VERIFICATION" = not_run ]');
+    expect(classifier?.run).toContain('[ "$PYPI_PUBLISH_RESULT" = skipped ]');
+    expect(classifier?.run).toContain('[ "$NPM_PUBLISH_RESULT" = skipped ]');
   });
 
   it("keeps calibration on the protected pinned runner", () => {

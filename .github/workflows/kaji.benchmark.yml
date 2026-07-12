@@ -38,7 +38,8 @@ jobs:
       inputs.job == 'benchmark' ||
       inputs.job == 'all'
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
-    timeout-minutes: 30
+    # 35-minute benchmark + 10-minute setup/upload allowance.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -71,7 +72,8 @@ jobs:
       inputs.job == 'soak' ||
       inputs.job == 'all'
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
-    timeout-minutes: 45
+    # 42-minute soak + 8-minute setup/upload allowance.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -100,7 +102,8 @@ jobs:
   calibrate:
     if: github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate'
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
-    timeout-minutes: 30
+    # 35-minute calibration + 10-minute setup/upload allowance.
+    timeout-minutes: 45
     env:
       KAJI_BENCHMARK_CALIBRATION: "1"
     steps:
