@@ -33,6 +33,7 @@ from kaji.runtime.agents.planner import (
 )
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.strategy import AgentStrategy
+from kaji.runtime.agents.stream import RuntimeStreamAccumulator, StreamDiagnostics
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.infra.events.protocols import EventBusProtocol, EventJournal
@@ -66,8 +67,13 @@ from kaji.infra.observability.protocols import (
     span_record_error,
     start_span,
 )
-from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import TokenMetrics
+from kaji.runtime.providers.base import (
+    ModelProvider,
+    ProviderDiagnosticsSink,
+    provider_diagnostics_scope,
+)
+from kaji.runtime.providers.errors import ProviderOutputLimitError
+from kaji.runtime.providers.types import ProviderResponseLimits, TokenMetrics
 from kaji.runtime.sessions.context_index import ContextIndexStats
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
@@ -233,6 +239,12 @@ class AgentRuntime:
         self._timer_scheduler = timer_scheduler or SYSTEM_TIMER_SCHEDULER
         self._default_context = default_context
         self.turn_limits = turn_execution_limits or TurnExecutionLimits()
+        self._provider_response_limits = ProviderResponseLimits(
+            text_max_bytes=self.turn_limits.provider_text_max_bytes,
+            tool_arguments_max_bytes=self.turn_limits.provider_tool_arguments_max_bytes,
+            response_max_bytes=self.turn_limits.provider_response_max_bytes,
+            tool_calls_max=self.turn_limits.provider_tool_calls_max,
+        )
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         resolved_context_window = context_window or ContextWindow()
@@ -251,6 +263,7 @@ class AgentRuntime:
         self._active_projection_sessions: dict[str, int] = {}
         self._turn_event_collectors: dict[str, _TurnEventCollector] = {}
         self._context_diagnostics: dict[str, ContextDiagnostics] = {}
+        self._stream_diagnostics: dict[str, StreamDiagnostics] = {}
         self._provider_quarantine: dict[str, _ProviderQuarantine] = {}
         self._closed = False
         # Tools surfaced to the provider each turn. Empty by default, so a
@@ -649,6 +662,7 @@ class AgentRuntime:
             self._projectors.pop(candidate, None)
             self._projection_locks.pop(candidate, None)
             self._context_diagnostics.pop(candidate, None)
+            self._stream_diagnostics.pop(candidate, None)
 
     @property
     def projection_cache_size(self) -> int:
@@ -670,6 +684,10 @@ class AgentRuntime:
     def context_diagnostics(self, session_id: str) -> ContextDiagnostics | None:
         """Return diagnostics from the latest provider context for a session."""
         return self._context_diagnostics.get(session_id)
+
+    def stream_diagnostics(self, session_id: str) -> StreamDiagnostics | None:
+        """Return immutable counters from the latest provider call for a session."""
+        return self._stream_diagnostics.get(session_id)
 
     def context_index_stats(self, session_id: str) -> ContextIndexStats | None:
         """Return index counters without creating a session projector."""
@@ -969,6 +987,14 @@ class AgentRuntime:
                 "retryable": error.retryable,
                 "outcome": error.outcome,
             }
+        elif isinstance(error, ProviderOutputLimitError):
+            public_error = str(error)
+            fields = {
+                "error_code": error.code,
+                "phase": error.phase,
+                "retryable": error.retryable,
+                "outcome": error.outcome,
+            }
         try:
             await self._emit_for_turn(
                 AgentTurnFailed(
@@ -1106,8 +1132,7 @@ class AgentRuntime:
             messages = context.messages
 
             # 2. Surface tools to the provider (cached payload, see __init__).
-            full_response = ""
-            tool_calls = []
+            response = RuntimeStreamAccumulator(self._provider_response_limits)
             stream_metrics: TokenMetrics | None = None
             stream_cost_usd: float | None = None
 
@@ -1118,6 +1143,7 @@ class AgentRuntime:
             # so structured concurrency stays intact.
             family = provider_family(self.provider)
             provider_started = self._clock_source.now_monotonic()
+            provider_diagnostics = ProviderDiagnosticsSink()
             provider_status = "success"
             provider_span = start_span(
                 self._trace,
@@ -1141,27 +1167,33 @@ class AgentRuntime:
                     clock=self._clock_source,
                     scheduler=self._timer_scheduler,
                 ) as provider_scope:
-                    async for chunk in provider_scope.consume(
-                        self.provider.generate_stream(
-                            messages,
-                            self._tool_payload,
-                            cancellation_token=provider_scope.token,
-                        )
-                    ):
-                        if chunk.delta:
-                            full_response += chunk.delta
-                            await emit_turn_event(
-                                AgentMessageDelta(
-                                    session_id=session_id, delta=chunk.delta
+                    try:
+                        with provider_diagnostics_scope(provider_diagnostics):
+                            async for chunk in provider_scope.consume(
+                                self.provider.generate_stream(
+                                    messages,
+                                    self._tool_payload,
+                                    cancellation_token=provider_scope.token,
+                                    response_limits=self._provider_response_limits,
                                 )
+                            ):
+                                deltas = response.accept(chunk)
+                                if chunk.metrics is not None:
+                                    stream_metrics = chunk.metrics.model_copy(deep=True)
+                                if chunk.cost_usd is not None:
+                                    stream_cost_usd = chunk.cost_usd
+                                for delta in deltas:
+                                    await emit_turn_event(
+                                        AgentMessageDelta(
+                                            session_id=session_id, delta=delta
+                                        )
+                                    )
+                    finally:
+                        residual = response.flush()
+                        if residual is not None:
+                            await emit_turn_event(
+                                AgentMessageDelta(session_id=session_id, delta=residual)
                             )
-
-                        if chunk.tool_calls:
-                            tool_calls.extend(chunk.tool_calls)
-                        if chunk.metrics is not None:
-                            stream_metrics = chunk.metrics
-                        if chunk.cost_usd is not None:
-                            stream_cost_usd = chunk.cost_usd
             except asyncio.CancelledError as error:
                 provider_status = "cancelled"
                 span_record_error(provider_span, error)
@@ -1186,6 +1218,8 @@ class AgentRuntime:
                 span_record_error(provider_span, error)
                 raise
             finally:
+                response.set_provider_diagnostics(provider_diagnostics.diagnostics)
+                self._stream_diagnostics[session_id] = response.diagnostics
                 record_metric(
                     self._metrics,
                     "kaji.provider.duration_ms",
@@ -1202,6 +1236,8 @@ class AgentRuntime:
                 span_end(provider_span)
 
             # 4. Finalize text message
+            full_response = response.content()
+            self._stream_diagnostics[session_id] = response.diagnostics
             if full_response:
                 tokens: EventTokenUsage | None = None
                 if stream_metrics is not None:
@@ -1218,6 +1254,7 @@ class AgentRuntime:
                     )
                 )
             # 5. Break if done
+            tool_calls = response.tool_calls
             if not tool_calls or not self.strategy.allow_tool_calls:
                 break
 

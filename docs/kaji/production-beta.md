@@ -89,6 +89,16 @@ whole-turn default covering queue wait, provider open and streaming, approval,
 and tool work. Cooperative provider shutdown may use the additional configured
 cancellation grace.
 
+Every provider call receives immutable `ProviderResponseLimits`: 256 KiB of
+text, 64 KiB per tool-argument object, 512 KiB across text, arguments, tool
+IDs, and names, and at most 64 tool calls. A breach raises
+`ProviderOutputLimitError` with the closed dimension and configured limit,
+records `PROVIDER_OUTPUT_LIMIT`, flushes only the already accepted text, and
+never completes the assistant message or executes tools. Durable text deltas
+are coalesced into nonempty chunks of at most 4 KiB. Their ordered
+concatenation equals the completed message; vendor chunk boundaries are not a
+stable API.
+
 ### TypeScript
 
 <!-- installed-quickstart:typescript:start -->

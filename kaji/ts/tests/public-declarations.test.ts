@@ -32,12 +32,19 @@ describe("public declarations", () => {
       expect(declaration).toContain("ToolArgumentValidationError");
       expect(declaration).toContain("ToolSchemaValidationError");
       expect(declaration).toContain("ToolSchemaValidator");
+      expect(declaration).toContain("ProviderResponseLimits");
+      expect(declaration).toContain("ProviderOutputLimitError");
     }
 
     const declarationGraph = readdirSync(dist)
       .filter((file) => file.endsWith(".d.ts") || file.endsWith(".d.cts"))
       .map((file) => readFileSync(resolve(dist, file), "utf8"))
       .join("\n");
+    const providerOptions = declarationGraph.match(
+      /interface ModelProviderOptions \{[\s\S]*?\n\}/,
+    )?.[0];
+    expect(providerOptions).toBeDefined();
+    expect(providerOptions).not.toContain("responseDiagnostics");
     expect(declarationGraph).toContain("interface TurnContext");
     expect(declarationGraph).toContain("interface ToolExecutionContext");
     expect(declarationGraph).toContain(

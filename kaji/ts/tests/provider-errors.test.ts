@@ -6,6 +6,7 @@ import {
   ProviderConfigError,
   ProviderConnectionError,
   ProviderError,
+  ProviderOutputLimitError,
   ProviderRateLimitedError,
   normalizeProviderError,
   type NormalizedProviderError,
@@ -30,6 +31,19 @@ const providerNormalizationCases = (
 ).cases;
 
 describe("provider error semantics", () => {
+  it("exports a redaction-safe typed output-limit error", () => {
+    const error = new ProviderOutputLimitError("tool_arguments", 65_536);
+    expect(error).toMatchObject({
+      code: "PROVIDER_OUTPUT_LIMIT",
+      phase: "provider_stream",
+      outcome: "unknown",
+      retryable: false,
+      dimension: "tool_arguments",
+      limit: 65_536,
+    });
+    expect(error.message).toBe("Provider output exceeded tool_arguments limit of 65536 bytes");
+  });
+
   it("exports the normalized error boundary from the package root", () => {
     const normalized: NormalizedProviderError = normalizeProviderError(
       new ProviderConfigError("safe public message"),

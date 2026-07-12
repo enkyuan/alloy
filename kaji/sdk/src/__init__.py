@@ -71,6 +71,8 @@ _LAZY: dict[str, str] = {
     "ProviderConfigError": "kaji.runtime.providers.errors",
     "ProviderCancellationContractViolation": "kaji.runtime.agents",
     "ProviderError": "kaji.runtime.providers.errors",
+    "ProviderOutputLimitError": "kaji.runtime.providers.errors",
+    "ProviderResponseLimits": "kaji.runtime.providers",
     "SessionManager": "kaji.runtime.sessions",
     "SessionRecord": "kaji.runtime.sessions",
     "SessionState": "kaji.runtime.sessions",

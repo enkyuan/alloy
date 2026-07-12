@@ -32,7 +32,11 @@ from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from kaji.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    ProviderResponseLimits,
+)
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.registry import ToolSpec
 
@@ -418,6 +422,7 @@ class _TenIterationProvider(ModelProvider):
         max_tokens: int | None = None,
         response_format: Dict[str, Any] | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -429,6 +434,7 @@ class _TenIterationProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         self.calls += 1
         yield ModelResponseChunk(
@@ -455,6 +461,7 @@ class _ExternalAppendProvider(ModelProvider):
         max_tokens: int | None = None,
         response_format: Dict[str, Any] | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -466,6 +473,7 @@ class _ExternalAppendProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         await self.store.append(
             ToolApprovalApproved(
@@ -492,6 +500,7 @@ class _TextProvider(ModelProvider):
         max_tokens: int | None = None,
         response_format: Dict[str, Any] | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> GenerateResponse:
         return GenerateResponse(text=self.text)
 
@@ -503,6 +512,7 @@ class _TextProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         self.seen_messages = messages
         yield ModelResponseChunk(delta=self.text)
@@ -545,6 +555,7 @@ class _OwnershipProvider(_TextProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         self.calls += 1
         if self.calls == 1:
@@ -583,6 +594,7 @@ class _OwnershipCaptureProvider(_TextProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         self.observed.extend(_ownership_values(messages))
         yield ModelResponseChunk(delta=self.text)

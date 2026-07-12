@@ -5,15 +5,35 @@
 import { describe, expect, it, vi } from "vitest";
 import type OpenAI from "openai";
 
-import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "@/providers/errors";
+import {
+  ProviderAPIError,
+  ProviderConfigError,
+  ProviderConnectionError,
+  ProviderOutputLimitError,
+} from "@/providers/errors";
 import { OpenAIProvider } from "@/providers/openai";
 import { toOpenAIChatMessages } from "@/providers/openai-format";
-import type { ProviderMessage } from "@/providers/base";
+import type {
+  ProviderMessage,
+  ProviderResponseDiagnostics,
+  ProviderResponseLimits,
+} from "@/providers/base";
+import { withProviderResponseDiagnostics } from "@/providers/base";
 import { CancellationToken } from "@/runtime/cancellation";
 import { TestOpenAIProvider } from "./helpers/provider-clients";
 
 const makeProvider = (client: unknown) =>
   new TestOpenAIProvider({ apiKey: "test-key" }, client as unknown as OpenAI);
+
+const responseLimits = (
+  overrides: Partial<ProviderResponseLimits> = {},
+): ProviderResponseLimits => ({
+  textMaxBytes: 262_144,
+  toolArgumentsMaxBytes: 65_536,
+  responseMaxBytes: 524_288,
+  toolCallsMax: 64,
+  ...overrides,
+});
 
 // ---------------------------------------------------------------------------
 // OpenAI message formatting
@@ -324,6 +344,96 @@ describe("OpenAIProvider.generate", () => {
     expect(caught).toMatchObject({ service: "openai", action: "request" });
     expect((caught as ProviderConnectionError).cause).toBeUndefined();
   });
+
+  it("enforces exact and one-byte-over raw tool argument limits before parsing", async () => {
+    const overhead = new TextEncoder().encode('{"value":""}').byteLength;
+    const exactArguments = `{"value":"${"é".repeat((65_536 - overhead) / 2)}"}`;
+    const create = (argumentsRaw: string) =>
+      vi.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: "",
+              tool_calls: [
+                {
+                  id: "i",
+                  type: "function",
+                  function: { name: "n", arguments: argumentsRaw },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+    const exact = makeProvider({ chat: { completions: { create: create(exactArguments) } } });
+    await expect(
+      exact.generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits(),
+      }),
+    ).resolves.toMatchObject({ toolCalls: [{ id: "i", name: "n" }] });
+
+    const over = makeProvider({
+      chat: {
+        completions: { create: create(`${exactArguments.slice(0, -2)}a"}`) },
+      },
+    });
+    await expect(
+      over.generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits(),
+      }),
+    ).rejects.toMatchObject({
+      code: "PROVIDER_OUTPUT_LIMIT",
+      dimension: "tool_arguments",
+      limit: 65_536,
+    });
+  });
+
+  it("shares the total budget and enforces the 64-call boundary", async () => {
+    const rawCall = (index: number) => ({
+      id: `i${index}`,
+      type: "function",
+      function: { name: "n", arguments: "{}" },
+    });
+    const providerFor = (count: number) =>
+      makeProvider({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [
+                {
+                  message: {
+                    content: "a",
+                    tool_calls: Array.from({ length: count }, (_, index) => rawCall(index)),
+                  },
+                },
+              ],
+            }),
+          },
+        },
+      });
+
+    await expect(
+      providerFor(1).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 6 }),
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      providerFor(1).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 5 }),
+      }),
+    ).rejects.toMatchObject({ dimension: "total_response", limit: 5 });
+    await expect(
+      providerFor(64).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 1_024 }),
+      }),
+    ).resolves.toMatchObject({ toolCalls: expect.any(Array) });
+    await expect(
+      providerFor(65).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 1_024 }),
+      }),
+    ).rejects.toMatchObject({ dimension: "tool_calls", limit: 64 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -472,5 +582,165 @@ describe("OpenAIProvider.generateStream", () => {
       name: "search",
       args: { q: "weather" },
     });
+  });
+
+  it("assembles 10k argument fragments with one join and per-call diagnostics", async () => {
+    async function* fakeStream() {
+      yield {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call",
+                  function: { name: "lookup", arguments: '{"value":"' },
+                },
+              ],
+            },
+            finish_reason: null,
+          },
+        ],
+      };
+      for (let index = 0; index < 9_998; index += 1) {
+        yield {
+          choices: [
+            {
+              delta: { tool_calls: [{ index: 0, function: { arguments: "x" } }] },
+              finish_reason: null,
+            },
+          ],
+        };
+      }
+      yield {
+        choices: [
+          {
+            delta: { tool_calls: [{ index: 0, function: { arguments: '"}' } }] },
+            finish_reason: null,
+          },
+        ],
+      };
+      yield { choices: [{ delta: {}, finish_reason: "tool_calls" }] };
+    }
+    let diagnostics: Readonly<ProviderResponseDiagnostics> | undefined;
+    const provider = makeProvider({
+      chat: { completions: { create: vi.fn().mockResolvedValue(fakeStream()) } },
+    });
+    const chunks = [];
+    const options = withProviderResponseDiagnostics(
+      {},
+      {
+        record(value) {
+          diagnostics = Object.freeze({ ...value });
+        },
+      },
+    );
+    for await (const chunk of provider.generateStream(
+      [{ role: "user", content: "go" }],
+      [],
+      options,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.find((chunk) => chunk.toolCalls.length > 0)?.toolCalls[0]?.args).toEqual({
+      value: "x".repeat(9_998),
+    });
+    expect(diagnostics).toEqual({
+      rawFragments: 10_002,
+      toolArgumentJoinOperations: 1,
+    });
+    expect(Object.isFrozen(diagnostics)).toBe(true);
+  });
+
+  it("closes before propagating an unparsed typed output-limit error", async () => {
+    const parse = vi.spyOn(JSON, "parse");
+    let returned = false;
+    let parseCallsWhenClosed = -1;
+    let next = 0;
+    const iterator: AsyncIterableIterator<unknown> = {
+      async next() {
+        if (next++ === 0) {
+          return {
+            done: false,
+            value: {
+              choices: [
+                {
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: 0,
+                        id: "call",
+                        function: { name: "lookup", arguments: "xx" },
+                      },
+                    ],
+                  },
+                  finish_reason: null,
+                },
+              ],
+            },
+          };
+        }
+        return { done: true, value: undefined };
+      },
+      async return() {
+        parseCallsWhenClosed = parse.mock.calls.length;
+        returned = true;
+        return { done: true, value: undefined };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const provider = makeProvider({
+      chat: { completions: { create: vi.fn().mockResolvedValue(iterator) } },
+    });
+
+    const consume = async () => {
+      for await (const _chunk of provider.generateStream([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ toolArgumentsMaxBytes: 1 }),
+      })) {
+        // The first raw fragment must be rejected before yielding.
+      }
+    };
+    await expect(consume()).rejects.toBeInstanceOf(ProviderOutputLimitError);
+    expect(returned).toBe(true);
+    expect(parseCallsWhenClosed).toBe(0);
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+  });
+
+  it("accepts exact multibyte text and closes on one byte over", async () => {
+    const providerFor = (text: string) =>
+      makeProvider({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue(
+              (async function* () {
+                yield { choices: [{ delta: { content: text }, finish_reason: "stop" }] };
+              })(),
+            ),
+          },
+        },
+      });
+    const exact = [];
+    for await (const chunk of providerFor("😀").generateStream(
+      [{ role: "user", content: "go" }],
+      [],
+      { responseLimits: responseLimits({ textMaxBytes: 4, responseMaxBytes: 4 }) },
+    )) {
+      exact.push(chunk.delta);
+    }
+    expect(exact.join("")).toBe("😀");
+
+    await expect(async () => {
+      for await (const _chunk of providerFor("😀a").generateStream(
+        [{ role: "user", content: "go" }],
+        [],
+        { responseLimits: responseLimits({ textMaxBytes: 4, responseMaxBytes: 5 }) },
+      )) {
+        // Consume the stream.
+      }
+    }).rejects.toMatchObject({ dimension: "text", limit: 4 });
   });
 });

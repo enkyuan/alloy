@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field
@@ -33,6 +34,32 @@ class ProviderToolSpec(TypedDict):
     name: str
     description: str
     parameters: Dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderResponseLimits:
+    """Immutable bounds applied independently by providers and the runtime."""
+
+    text_max_bytes: int = 262_144
+    tool_arguments_max_bytes: int = 65_536
+    response_max_bytes: int = 524_288
+    tool_calls_max: int = 64
+
+    def __post_init__(self) -> None:
+        for name in (
+            "text_max_bytes",
+            "tool_arguments_max_bytes",
+            "response_max_bytes",
+            "tool_calls_max",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be a positive integer")
+            if value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+
+
+DEFAULT_PROVIDER_RESPONSE_LIMITS = ProviderResponseLimits()
 
 
 class ModelMetadata(BaseModel):

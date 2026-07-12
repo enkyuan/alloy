@@ -132,9 +132,11 @@ export type {
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  ProviderResponseLimits,
   ToolCall,
   TokenUsage,
 } from "@/providers/base";
+export { DEFAULT_PROVIDER_RESPONSE_LIMITS, resolveProviderResponseLimits } from "@/providers/base";
 export { OpenAIProvider } from "@/providers/openai";
 export type { OpenAIProviderOptions, RetryOptions } from "@/providers/openai";
 export { AnthropicProvider } from "@/providers/anthropic";
@@ -145,9 +147,10 @@ export {
   ProviderConfigError,
   ProviderConnectionError,
   ProviderError,
+  ProviderOutputLimitError,
   ProviderRateLimitedError,
 } from "@/providers/errors";
-export type { NormalizedProviderError } from "@/providers/errors";
+export type { NormalizedProviderError, ProviderOutputDimension } from "@/providers/errors";
 export { lookupCost, calculateCostUsd } from "@/providers/costs";
 export type { ModelCostEntry } from "@/providers/costs";
 export { getProvider, registerProvider } from "@/providers/registry";

@@ -57,6 +57,32 @@ export class ProviderRateLimitedError extends ProviderError {
   }
 }
 
+export type ProviderOutputDimension = "text" | "tool_arguments" | "total_response" | "tool_calls";
+
+export class ProviderOutputLimitError extends Error {
+  readonly code = "PROVIDER_OUTPUT_LIMIT" as const;
+  readonly phase = "provider_stream" as const;
+  readonly retryable = false as const;
+  readonly outcome = "unknown" as const;
+
+  constructor(
+    readonly dimension: ProviderOutputDimension,
+    readonly limit: number,
+  ) {
+    if (
+      !(["text", "tool_arguments", "total_response", "tool_calls"] as const).includes(dimension)
+    ) {
+      throw new TypeError("unknown provider output dimension");
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new RangeError("provider output limit must be a positive safe integer");
+    }
+    const unit = dimension === "tool_calls" ? "calls" : "bytes";
+    super(`Provider output exceeded ${dimension} limit of ${limit} ${unit}`);
+    this.name = "ProviderOutputLimitError";
+  }
+}
+
 function errorStatusCode(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const status = "status" in error ? error.status : undefined;

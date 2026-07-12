@@ -19,6 +19,7 @@ from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelResponseChunk,
+    ProviderResponseLimits,
     TokenMetrics,
 )
 from kaji.runtime.tools.registry import ToolSpec
@@ -44,6 +45,7 @@ class MockProvider(ModelProvider):
         max_tokens: int | None = None,
         response_format: Dict[str, Any] | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -55,6 +57,7 @@ class MockProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancellation_token: Any | None = None,
+        response_limits: ProviderResponseLimits | None = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         yield ModelResponseChunk(delta="Hello", tool_calls=[])
         yield ModelResponseChunk(delta=" World!", tool_calls=[])
@@ -111,6 +114,7 @@ async def test_agent_runtime_emits_streamed_usage_on_completed_message():
             max_tokens: int | None = None,
             response_format: Dict[str, Any] | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> GenerateResponse:
             return GenerateResponse(text="")
 
@@ -122,6 +126,7 @@ async def test_agent_runtime_emits_streamed_usage_on_completed_message():
             temperature: float = 0.7,
             max_tokens: int | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             yield ModelResponseChunk(delta="hello")
             yield ModelResponseChunk(
@@ -222,6 +227,7 @@ async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
             max_tokens: int | None = None,
             response_format: Dict[str, Any] | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> GenerateResponse:
             return GenerateResponse(text="")
 
@@ -233,6 +239,7 @@ async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
             temperature: float = 0.7,
             max_tokens: int | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             yield ModelResponseChunk(
                 delta="",
@@ -317,6 +324,7 @@ async def test_agent_runtime_cancellation():
             max_tokens: int | None = None,
             response_format: Dict[str, Any] | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> GenerateResponse:
             return GenerateResponse(text="")
 
@@ -328,6 +336,7 @@ async def test_agent_runtime_cancellation():
             temperature: float = 0.7,
             max_tokens: int | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             yield ModelResponseChunk(delta="Start")
             await asyncio.sleep(0.1)  # Simulate slow generation
@@ -386,6 +395,7 @@ async def test_agent_runtime_emits_cancellation_when_provider_cancels_mid_stream
             max_tokens: int | None = None,
             response_format: Dict[str, Any] | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> GenerateResponse:
             return GenerateResponse(text="")
 
@@ -397,6 +407,7 @@ async def test_agent_runtime_emits_cancellation_when_provider_cancels_mid_stream
             temperature: float = 0.7,
             max_tokens: int | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             # The runtime must thread the token through; assert it did.
             assert cancellation_token is not None
@@ -450,6 +461,7 @@ async def test_agent_runtime_reraises_when_cancel_is_external():
             max_tokens: int | None = None,
             response_format: Dict[str, Any] | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> GenerateResponse:
             return GenerateResponse(text="")
 
@@ -461,6 +473,7 @@ async def test_agent_runtime_reraises_when_cancel_is_external():
             temperature: float = 0.7,
             max_tokens: int | None = None,
             cancellation_token: Any | None = None,
+            response_limits: ProviderResponseLimits | None = None,
         ) -> AsyncGenerator[ModelResponseChunk, None]:
             yield ModelResponseChunk(delta="x")
             # Simulate an external (parent-task) cancellation: CancelledError

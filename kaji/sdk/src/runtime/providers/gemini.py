@@ -9,7 +9,11 @@ from importlib import import_module
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from kaji.core.config import get_settings
-from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.base import (
+    ModelProvider,
+    ProviderResponseBudget,
+    capture_provider_diagnostics,
+)
 from kaji.runtime.providers.errors import (
     ProviderConfigError,
     ServiceError,
@@ -20,6 +24,7 @@ from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelMetadata,
     ModelResponseChunk,
+    ProviderResponseLimits,
     TokenMetrics,
 )
 from kaji.runtime.providers._cancellation import (
@@ -352,6 +357,7 @@ class GeminiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         # Translate the neutral tool payload to Gemini's function-declaration form.
         from kaji.runtime.tools.payload import to_gemini
@@ -402,8 +408,14 @@ class GeminiProvider(ModelProvider):
             metrics.completion_tokens = getattr(usage, "candidates_token_count", 0)
             metrics.total_tokens = getattr(usage, "total_token_count", 0)
 
+        accepted = ProviderResponseBudget(response_limits).accept_normalized(
+            text, tool_calls
+        )
         return GenerateResponse(
-            text=text, tool_calls=tool_calls, metadata=metadata, metrics=metrics
+            text=accepted.delta,
+            tool_calls=list(accepted.tool_calls),
+            metadata=metadata,
+            metrics=metrics,
         )
 
     async def generate_stream(
@@ -414,6 +426,7 @@ class GeminiProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         from kaji.runtime.tools.function_calls import (
             extract_response_function_calls,
@@ -430,6 +443,7 @@ class GeminiProvider(ModelProvider):
 
         _raise_if_cancelled(cancellation_token)
 
+        budget = ProviderResponseBudget(response_limits)
         async for chunk in self.service.generate_chat_stream(
             messages=chat_messages,
             system_instruction=effective_system,
@@ -457,7 +471,12 @@ class GeminiProvider(ModelProvider):
                 )
 
             if delta or tool_calls:
-                yield ModelResponseChunk(delta=delta, tool_calls=tool_calls)
+                accepted = budget.accept_normalized(delta, tool_calls)
+                yield ModelResponseChunk(
+                    delta=accepted.delta,
+                    tool_calls=list(accepted.tool_calls),
+                )
+        capture_provider_diagnostics(budget.diagnostics)
 
 
 register_provider("gemini", GeminiProvider)

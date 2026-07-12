@@ -5,7 +5,11 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from kaji.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    ProviderResponseLimits,
+)
 
 
 def _tool_already_called(messages: List[Dict[str, Any]]) -> bool:
@@ -28,6 +32,7 @@ class MockProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         _ = (
             system_instruction,
@@ -35,6 +40,7 @@ class MockProvider(ModelProvider):
             max_tokens,
             response_format,
             cancellation_token,
+            response_limits,
         )
         if tools and not _tool_already_called(messages):
             return GenerateResponse(
@@ -50,8 +56,15 @@ class MockProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
-        _ = (system_instruction, temperature, max_tokens, cancellation_token)
+        _ = (
+            system_instruction,
+            temperature,
+            max_tokens,
+            cancellation_token,
+            response_limits,
+        )
         if tools and not _tool_already_called(messages):
             yield ModelResponseChunk(
                 delta="", tool_calls=cast(Any, [_first_tool_call(tools)])

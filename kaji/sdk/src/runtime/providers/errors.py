@@ -30,6 +30,7 @@ __all__ = [
     "ProviderConfigError",
     "ProviderAPIError",
     "ProviderConnectionError",
+    "ProviderOutputLimitError",
     "ServiceAPIError",
     "ServiceAuthError",
     "ServiceError",
@@ -41,6 +42,40 @@ __all__ = [
     "normalize_provider_error",
     "NormalizedProviderError",
 ]
+
+
+ProviderOutputDimension = Literal[
+    "text",
+    "tool_arguments",
+    "total_response",
+    "tool_calls",
+]
+
+
+class ProviderOutputLimitError(RuntimeError):
+    """A provider response exceeded one closed, payload-free dimension."""
+
+    code = "PROVIDER_OUTPUT_LIMIT"
+    phase = "provider_stream"
+    retryable = False
+    outcome = "unknown"
+
+    def __init__(self, dimension: ProviderOutputDimension, limit: int) -> None:
+        if dimension not in {
+            "text",
+            "tool_arguments",
+            "total_response",
+            "tool_calls",
+        }:
+            raise ValueError("unknown provider output dimension")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("provider output limit must be a positive integer")
+        self.dimension = dimension
+        self.limit = limit
+        unit = "calls" if dimension == "tool_calls" else "bytes"
+        super().__init__(
+            f"Provider output exceeded {dimension} limit of {limit} {unit}"
+        )
 
 
 class NormalizedProviderError(TypedDict):

@@ -25,7 +25,11 @@ from kaji.runtime.context import TurnContext
 from kaji.runtime.determinism import Clock, IdScope, ScheduledCallback, TimerScheduler
 from kaji.runtime.agents.coordinator import TurnCoordinator, TurnLease
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from kaji.runtime.providers.types import (
+    GenerateResponse,
+    ModelResponseChunk,
+    ProviderResponseLimits,
+)
 
 
 class BarrierProvider:
@@ -52,6 +56,7 @@ class BarrierProvider:
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[CancellationToken] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -63,6 +68,7 @@ class BarrierProvider:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[CancellationToken] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         prompt = next(
             message["content"]

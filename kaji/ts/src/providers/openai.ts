@@ -9,6 +9,7 @@
  * tree-shakes it out when unused.
  */
 import type OpenAI from "openai";
+import { canonicalJsonValue } from "@/events/json";
 import type {
   ModelProvider,
   ModelProviderOptions,
@@ -17,15 +18,22 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "@/providers/base";
-import { openStreamWithRetry, withRetry } from "@/providers/base";
+import { getProviderResponseDiagnostics, openStreamWithRetry, withRetry } from "@/providers/base";
 import {
   ProviderConfigError,
   ProviderError,
+  ProviderOutputLimitError,
   providerAPIErrorFromUnknown,
 } from "@/providers/errors";
 import { parseToolArgsJSON } from "@/providers/args";
 import { calculateCostUsd } from "@/providers/costs";
 import { toOpenAIChatMessages } from "@/providers/openai-format";
+import {
+  closeProviderStream,
+  LinearStringParts,
+  ProviderResponseBudget,
+  type RawToolCallFragment,
+} from "@/providers/response-budget";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -83,6 +91,26 @@ function parseToolCalls(raw: ChatToolCall[] | undefined | null): ToolCall[] {
           : ((argsRaw ?? {}) as Record<string, unknown>),
     };
   });
+}
+
+function rawToolCallFragments(raw: ChatToolCall[] | undefined | null): RawToolCallFragment[] {
+  return (raw ?? []).map((toolCall, key) => {
+    const args = toolCall.type === "function" ? toolCall.function?.arguments : undefined;
+    return {
+      key,
+      startsCall: true,
+      idFragment: toolCall.id ?? "",
+      nameFragment: toolCall.type === "function" ? (toolCall.function?.name ?? "") : "",
+      argumentsFragment:
+        typeof args === "string" ? args : canonicalJsonValue(args ?? {}, "tool arguments"),
+    };
+  });
+}
+
+interface PendingOpenAIToolCall {
+  readonly id: LinearStringParts;
+  readonly name: LinearStringParts;
+  readonly arguments: LinearStringParts;
 }
 
 interface ResolvedOpenAIOptions {
@@ -175,6 +203,7 @@ export class OpenAIProvider implements ModelProvider {
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
+    const budget = new ProviderResponseBudget(options?.responseLimits);
     try {
       const response = await withRetry(
         () =>
@@ -194,6 +223,12 @@ export class OpenAIProvider implements ModelProvider {
         return { content: "", toolCalls: [], usage: undefined };
       }
       const message = choice.message;
+      const content = message.content ?? "";
+      budget.acceptRaw({
+        text: content,
+        toolFragments: rawToolCallFragments(message.tool_calls),
+      });
+      budget.finish();
       const usage = response.usage
         ? { input: response.usage.prompt_tokens, output: response.usage.completion_tokens }
         : undefined;
@@ -201,14 +236,17 @@ export class OpenAIProvider implements ModelProvider {
         ? calculateCostUsd(this.opts.model, usage.input, usage.output)
         : undefined;
       return {
-        content: message.content ?? "",
+        content,
         toolCalls: parseToolCalls(message.tool_calls),
         usage,
         costUsd,
       };
     } catch (error) {
+      if (error instanceof ProviderOutputLimitError) throw error;
       throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("openai", error, "request");
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
     }
   }
 
@@ -229,8 +267,10 @@ export class OpenAIProvider implements ModelProvider {
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
+    const budget = new ProviderResponseBudget(options?.responseLimits);
+    let stream: AsyncIterableIterator<OpenAI.Chat.Completions.ChatCompletionChunk> | undefined;
     try {
-      const stream = await openStreamWithRetry(
+      stream = await openStreamWithRetry(
         () =>
           client.chat.completions.create(params, {
             signal: options?.cancellationToken?.signal,
@@ -245,7 +285,7 @@ export class OpenAIProvider implements ModelProvider {
       );
 
       // Accumulate partial tool call args across chunks.
-      const pendingCalls: Map<number, { id: string; name: string; argsRaw: string }> = new Map();
+      const pendingCalls = new Map<number, PendingOpenAIToolCall>();
 
       for await (const chunk of stream) {
         const usage = chunk.usage
@@ -266,25 +306,47 @@ export class OpenAIProvider implements ModelProvider {
 
         const text = delta.content ?? "";
         const incomingCalls: ToolCall[] = [];
+        const fragments: RawToolCallFragment[] = [];
+        const knownIndices = new Set(pendingCalls.keys());
 
         for (const tc of delta.tool_calls ?? []) {
           const idx: number = tc.index ?? 0;
-          if (!pendingCalls.has(idx)) {
-            pendingCalls.set(idx, { id: tc.id ?? "", name: tc.function?.name ?? "", argsRaw: "" });
+          const startsCall = !knownIndices.has(idx);
+          knownIndices.add(idx);
+          fragments.push({
+            key: idx,
+            startsCall,
+            idFragment: tc.id ?? "",
+            nameFragment: tc.function?.name ?? "",
+            argumentsFragment: tc.function?.arguments ?? "",
+          });
+        }
+
+        budget.acceptRaw({ text, toolFragments: fragments });
+        for (const fragment of fragments) {
+          let entry = pendingCalls.get(fragment.key as number);
+          if (entry === undefined) {
+            entry = {
+              id: new LinearStringParts(),
+              name: new LinearStringParts(),
+              arguments: new LinearStringParts(),
+            };
+            pendingCalls.set(fragment.key as number, entry);
           }
-          const entry = pendingCalls.get(idx)!;
-          entry.argsRaw += tc.function?.arguments ?? "";
-          if (tc.id) entry.id = tc.id;
-          if (tc.function?.name) entry.name = tc.function.name;
+          entry.id.append(fragment.idFragment ?? "");
+          entry.name.append(fragment.nameFragment ?? "");
+          entry.arguments.append(fragment.argumentsFragment ?? "");
         }
 
         // Flush completed tool calls when a finish_reason is present.
         if (chunk.choices[0]?.finish_reason === "tool_calls") {
-          for (const entry of pendingCalls.values()) {
+          for (const [key, entry] of pendingCalls) {
+            budget.finishRawTool(key);
+            budget.recordToolArgumentJoin();
             incomingCalls.push({
-              id: entry.id,
-              name: entry.name,
-              args: parseToolArgsJSON(entry.argsRaw, "OpenAI"),
+              id: entry.id.join(),
+              name: entry.name.join(),
+              args: parseToolArgsJSON(entry.arguments.join(), "OpenAI"),
             });
           }
           pendingCalls.clear();
@@ -294,9 +356,16 @@ export class OpenAIProvider implements ModelProvider {
           yield { delta: text, toolCalls: incomingCalls };
         }
       }
+      budget.finish();
     } catch (error) {
+      if (error instanceof ProviderOutputLimitError) {
+        await closeProviderStream(stream);
+        throw error;
+      }
       throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("openai", error, "stream");
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
     }
   }
 }

@@ -7,9 +7,11 @@ import { OpenAIProvider } from "@/providers/openai";
 import { AnthropicProvider } from "@/providers/anthropic";
 import type {
   ModelProvider,
+  ModelProviderOptions,
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  ProviderResponseLimits,
 } from "@/providers/base";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -65,6 +67,31 @@ describe("generateText", () => {
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0]!.name).toBe("get_weather");
   });
+
+  it("forwards explicit response limits unchanged", async () => {
+    const limits: ProviderResponseLimits = {
+      textMaxBytes: 4,
+      toolArgumentsMaxBytes: 8,
+      responseMaxBytes: 16,
+      toolCallsMax: 1,
+    };
+    let captured: ModelProviderOptions | undefined;
+    const provider: ModelProvider = {
+      async generate(_messages, _tools, options) {
+        captured = options;
+        return { content: "ok", toolCalls: [] };
+      },
+      async *generateStream() {
+        yield { delta: "ok", toolCalls: [] };
+      },
+    };
+    await generateText({
+      provider,
+      messages: [{ role: "user", content: "go" }],
+      responseLimits: limits,
+    });
+    expect(captured?.responseLimits).toBe(limits);
+  });
 });
 
 describe("streamText", () => {
@@ -79,6 +106,32 @@ describe("streamText", () => {
     expect(chunks).toEqual(["a", "b", "c"]);
     expect(await text).toBe("abc");
     expect(await toolCalls).toEqual([]);
+  });
+
+  it("forwards explicit response limits unchanged", async () => {
+    const limits: ProviderResponseLimits = {
+      textMaxBytes: 4,
+      toolArgumentsMaxBytes: 8,
+      responseMaxBytes: 16,
+      toolCallsMax: 1,
+    };
+    let captured: ModelProviderOptions | undefined;
+    const provider: ModelProvider = {
+      async generate() {
+        return { content: "ok", toolCalls: [] };
+      },
+      async *generateStream(_messages, _tools, options) {
+        captured = options;
+        yield { delta: "ok", toolCalls: [] };
+      },
+    };
+    const result = streamText({
+      provider,
+      messages: [{ role: "user", content: "go" }],
+      responseLimits: limits,
+    });
+    await expect(result.text).resolves.toBe("ok");
+    expect(captured?.responseLimits).toBe(limits);
   });
 });
 

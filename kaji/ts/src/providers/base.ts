@@ -61,6 +61,70 @@ export interface ModelResponse {
   costUsd?: number;
 }
 
+/** Immutable per-call provider response bounds. */
+export interface ProviderResponseLimits {
+  readonly textMaxBytes: number;
+  readonly toolArgumentsMaxBytes: number;
+  readonly responseMaxBytes: number;
+  readonly toolCallsMax: number;
+}
+
+/** Linear-assembly evidence captured for one provider response. */
+export interface ProviderResponseDiagnostics {
+  readonly rawFragments: number;
+  readonly toolArgumentJoinOperations: number;
+}
+
+/** Internal per-call sink used by the runtime without changing stream chunks. */
+export interface ProviderResponseDiagnosticsSink {
+  record(diagnostics: Readonly<ProviderResponseDiagnostics>): void;
+}
+
+const PROVIDER_RESPONSE_DIAGNOSTICS: unique symbol = Symbol("kaji.provider.responseDiagnostics");
+
+type InternalModelProviderOptions = ModelProviderOptions & {
+  readonly [PROVIDER_RESPONSE_DIAGNOSTICS]?: ProviderResponseDiagnosticsSink;
+};
+
+/** @internal Attach runtime-owned diagnostics without exposing a public option. */
+export function withProviderResponseDiagnostics(
+  options: ModelProviderOptions,
+  sink: ProviderResponseDiagnosticsSink,
+): ModelProviderOptions {
+  const internal: InternalModelProviderOptions = { ...options };
+  Object.defineProperty(internal, PROVIDER_RESPONSE_DIAGNOSTICS, {
+    value: sink,
+    enumerable: false,
+  });
+  return internal;
+}
+
+/** @internal Read the runtime-owned per-call diagnostics sink. */
+export function getProviderResponseDiagnostics(
+  options: ModelProviderOptions | undefined,
+): ProviderResponseDiagnosticsSink | undefined {
+  return (options as InternalModelProviderOptions | undefined)?.[PROVIDER_RESPONSE_DIAGNOSTICS];
+}
+
+export const DEFAULT_PROVIDER_RESPONSE_LIMITS: Readonly<ProviderResponseLimits> = Object.freeze({
+  textMaxBytes: 262_144,
+  toolArgumentsMaxBytes: 65_536,
+  responseMaxBytes: 524_288,
+  toolCallsMax: 64,
+});
+
+export function resolveProviderResponseLimits(
+  limits: Readonly<ProviderResponseLimits> | undefined,
+): Readonly<ProviderResponseLimits> {
+  const resolved = { ...DEFAULT_PROVIDER_RESPONSE_LIMITS, ...limits };
+  for (const [name, value] of Object.entries(resolved)) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      throw new RangeError(`${name} must be a positive safe integer`);
+    }
+  }
+  return Object.freeze(resolved);
+}
+
 /**
  * Per-call options that callers may override from the constructor defaults.
  *
@@ -76,6 +140,8 @@ export interface ModelProviderOptions {
   cancellationToken?: CancellationTokenLike;
   /** Runtime-injected metrics sink. Provider implementations must keep labels low-cardinality. */
   metricsSink?: MetricsSink;
+  /** Runtime-injected immutable response limits. */
+  responseLimits?: Readonly<ProviderResponseLimits>;
 }
 
 /** Common interface every LLM provider implements. */

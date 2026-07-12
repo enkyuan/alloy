@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
+from kaji.runtime.providers.base import (
+    ProviderResponseBudget,
+    capture_provider_diagnostics,
+)
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelResponseChunk,
+    ProviderResponseLimits,
 )
 
 FINAL_TEXT = "mock response"
@@ -65,6 +70,7 @@ class MockProvider:
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         _ = (
             system_instruction,
@@ -75,17 +81,28 @@ class MockProvider:
         )
         if self._tool_call is not None:
             if not _tool_already_called(messages):
-                return GenerateResponse(
+                response = GenerateResponse(
                     text="", tool_calls=cast(Any, [self._scripted_tool_call()])
                 )
-            return GenerateResponse(text=FINAL_TEXT, tool_calls=[])
-        if self._reply is not None:
-            return GenerateResponse(text=self._reply, tool_calls=[])
-        if tools and not _tool_already_called(messages):
-            return GenerateResponse(
+            else:
+                response = GenerateResponse(text=FINAL_TEXT, tool_calls=[])
+        elif self._reply is not None:
+            response = GenerateResponse(text=self._reply, tool_calls=[])
+        elif tools and not _tool_already_called(messages):
+            response = GenerateResponse(
                 text="", tool_calls=cast(Any, [_first_tool_call(tools)])
             )
-        return GenerateResponse(text=FINAL_TEXT, tool_calls=[])
+        else:
+            response = GenerateResponse(text=FINAL_TEXT, tool_calls=[])
+        accepted = ProviderResponseBudget(response_limits).accept_normalized(
+            response.text, response.tool_calls
+        )
+        return response.model_copy(
+            update={
+                "text": accepted.delta,
+                "tool_calls": list(accepted.tool_calls),
+            }
+        )
 
     async def generate_stream(
         self,
@@ -95,25 +112,37 @@ class MockProvider:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         _ = (system_instruction, temperature, max_tokens, cancellation_token)
+        budget = ProviderResponseBudget(response_limits)
         if self._tool_call is not None:
             if not _tool_already_called(messages):
-                yield ModelResponseChunk(
-                    delta="", tool_calls=cast(Any, [self._scripted_tool_call()])
+                accepted = budget.accept_normalized(
+                    "", cast(Any, [self._scripted_tool_call()])
                 )
+                yield ModelResponseChunk(tool_calls=list(accepted.tool_calls))
+                capture_provider_diagnostics(budget.diagnostics)
                 return
-            yield ModelResponseChunk(delta=FINAL_TEXT)
+            accepted = budget.accept_normalized(FINAL_TEXT, [])
+            yield ModelResponseChunk(delta=accepted.delta)
+            capture_provider_diagnostics(budget.diagnostics)
             return
         if self._reply is not None:
-            yield ModelResponseChunk(delta=self._reply)
+            accepted = budget.accept_normalized(self._reply, [])
+            yield ModelResponseChunk(delta=accepted.delta)
+            capture_provider_diagnostics(budget.diagnostics)
             return
         if tools and not _tool_already_called(messages):
-            yield ModelResponseChunk(
-                delta="", tool_calls=cast(Any, [_first_tool_call(tools)])
+            accepted = budget.accept_normalized(
+                "", cast(Any, [_first_tool_call(tools)])
             )
+            yield ModelResponseChunk(tool_calls=list(accepted.tool_calls))
+            capture_provider_diagnostics(budget.diagnostics)
             return
-        yield ModelResponseChunk(delta="mock")
+        accepted = budget.accept_normalized("mock", [])
+        yield ModelResponseChunk(delta=accepted.delta)
+        capture_provider_diagnostics(budget.diagnostics)
 
 
 def _first_tool_call(tools: List[Dict[str, Any]]) -> Dict[str, Any]:

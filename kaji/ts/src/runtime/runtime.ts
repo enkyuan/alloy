@@ -18,7 +18,14 @@ import {
 import { EventType } from "@/events/types";
 import type { EventStore } from "@/events/store";
 import { SplitEventCommitter } from "@/events/committer";
-import type { ModelProvider, TokenUsage, ToolCall } from "@/providers/base";
+import {
+  resolveProviderResponseLimits,
+  withProviderResponseDiagnostics,
+  type ModelProvider,
+  type ProviderResponseLimits,
+  type TokenUsage,
+} from "@/providers/base";
+import { ProviderOutputLimitError } from "@/providers/errors";
 import { SessionProjector } from "@/sessions/projector";
 import type { ContextIndexStats } from "@/sessions/context-index";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
@@ -81,6 +88,7 @@ import {
   type TraceSink,
   type TurnOutcome,
 } from "@/observability";
+import { RuntimeStreamAccumulator, type StreamDiagnostics } from "@/runtime/delta-accumulator";
 
 const PUBLIC_TURN_FAILURE = "Agent turn failed";
 const DEFAULT_TURN_COORDINATORS = new WeakMap<EventStore, SessionTurnCoordinator>();
@@ -269,12 +277,14 @@ export class AgentRuntime {
   private readonly activeProjectionSessions = new Map<string, number>();
   private readonly turnEventCollectors = new Map<string, StoredKajiEvent[]>();
   private readonly contextDiagnosticsBySession = new Map<string, Readonly<ContextDiagnostics>>();
+  private readonly streamDiagnosticsBySession = new Map<string, Readonly<StreamDiagnostics>>();
   private readonly toolExecutionController: ToolExecutionController;
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
   private readonly idFactory: IdFactory;
   private readonly clock: Clock;
   private readonly turnLimits: Readonly<TurnExecutionLimits>;
+  private readonly providerResponseLimits: Readonly<ProviderResponseLimits>;
   private readonly timerScheduler: TimerScheduler;
   private readonly providerQuarantine = new Map<string, ProviderQuarantineRecord>();
   private closed = false;
@@ -301,6 +311,12 @@ export class AgentRuntime {
     this.clock = options.clock ?? systemClock;
     this.timerScheduler = options.timerScheduler ?? systemTimerScheduler;
     this.turnLimits = resolveTurnExecutionLimits(options.turnExecutionLimits);
+    this.providerResponseLimits = resolveProviderResponseLimits({
+      textMaxBytes: this.turnLimits.providerTextMaxBytes,
+      toolArgumentsMaxBytes: this.turnLimits.providerToolArgumentsMaxBytes,
+      responseMaxBytes: this.turnLimits.providerResponseMaxBytes,
+      toolCallsMax: this.turnLimits.providerToolCallsMax,
+    });
     this.store = options.store;
     if (options.committer !== undefined) {
       if (options.committer.store !== options.store) {
@@ -568,6 +584,7 @@ export class AgentRuntime {
       if (candidate === undefined) return;
       this.projectors.delete(candidate);
       this.contextDiagnosticsBySession.delete(candidate);
+      this.streamDiagnosticsBySession.delete(candidate);
     }
   }
 
@@ -605,6 +622,12 @@ export class AgentRuntime {
   /** Diagnostics from the latest provider context built for a session. */
   contextDiagnostics(sessionId: string): ContextDiagnostics | undefined {
     const diagnostics = this.contextDiagnosticsBySession.get(sessionId);
+    return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
+  }
+
+  /** Immutable counters from the latest provider call for a session. */
+  streamDiagnostics(sessionId: string): StreamDiagnostics | undefined {
+    const diagnostics = this.streamDiagnosticsBySession.get(sessionId);
     return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
   }
 
@@ -850,8 +873,7 @@ export class AgentRuntime {
         );
         const messages = providerContext.messages;
 
-        let content = "";
-        const toolCalls: ToolCall[] = [];
+        const response = new RuntimeStreamAccumulator(this.providerResponseLimits);
         let usage: TokenUsage | undefined;
         let costUsd: number | undefined;
 
@@ -873,20 +895,37 @@ export class AgentRuntime {
             this.clock,
             this.timerScheduler,
           );
+          let providerCompleted = false;
           try {
-            for await (const chunk of scope.consume(
-              this.provider.generateStream(messages, tools, {
-                cancellationToken: scope.token,
-                metricsSink: this.metrics,
-              }),
-            )) {
-              if (chunk.delta) {
-                content += chunk.delta;
-                await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+            try {
+              for await (const chunk of scope.consume(
+                this.provider.generateStream(
+                  messages,
+                  tools,
+                  withProviderResponseDiagnostics(
+                    {
+                      cancellationToken: scope.token,
+                      metricsSink: this.metrics,
+                      responseLimits: this.providerResponseLimits,
+                    },
+                    response.responseDiagnostics,
+                  ),
+                ),
+              )) {
+                const deltas = response.accept(chunk);
+                if (chunk.usage) usage = Object.freeze({ ...chunk.usage });
+                if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
+                for (const delta of deltas) {
+                  await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta });
+                }
               }
-              toolCalls.push(...chunk.toolCalls);
-              if (chunk.usage) usage = chunk.usage;
-              if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
+              response.finish();
+              providerCompleted = true;
+            } finally {
+              const residual = response.flush(!providerCompleted);
+              if (residual !== undefined) {
+                await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: residual });
+              }
             }
           } finally {
             scope.dispose();
@@ -896,6 +935,7 @@ export class AgentRuntime {
           providerSpan.recordError(error);
           throw error;
         } finally {
+          this.streamDiagnosticsBySession.set(sessionId, response.diagnostics);
           recordMetric(
             this.metrics,
             "kaji.provider.duration_ms",
@@ -910,6 +950,8 @@ export class AgentRuntime {
         // text and tool calls must still emit AgentMessageCompleted, or the text
         // is lost from replayed state. Guarded on truthy content so an empty
         // tool-only turn (and max-iteration exhaustion) emits no phantom turn (C1).
+        const content = response.content();
+        this.streamDiagnosticsBySession.set(sessionId, response.diagnostics);
         if (content) {
           await emit({
             type: EventType.AGENT_MESSAGE_COMPLETED,
@@ -919,6 +961,7 @@ export class AgentRuntime {
           });
         }
 
+        const toolCalls = response.toolCalls;
         if (toolCalls.length === 0 || !this.allowToolCalls) {
           break;
         }
@@ -987,22 +1030,35 @@ export class AgentRuntime {
     const timeout = error instanceof TurnTimeoutError ? error : undefined;
     const providerViolation =
       error instanceof ProviderCancellationContractViolation ? error : undefined;
+    const outputLimit = error instanceof ProviderOutputLimitError ? error : undefined;
     try {
       await this.appendEvent(
         this.event({
           type: EventType.AGENT_TURN_FAILED,
           session_id: sessionId,
           turn_id: turnId,
-          error: timeout === undefined ? PUBLIC_TURN_FAILURE : "Agent turn timed out",
+          error:
+            timeout !== undefined
+              ? "Agent turn timed out"
+              : outputLimit !== undefined
+                ? outputLimit.message
+                : PUBLIC_TURN_FAILURE,
           ...(timeout === undefined
-            ? providerViolation === undefined
-              ? {}
-              : {
-                  error_code: providerViolation.code,
-                  phase: providerViolation.phase,
-                  retryable: providerViolation.retryable,
-                  outcome: providerViolation.outcome,
+            ? outputLimit !== undefined
+              ? {
+                  error_code: outputLimit.code,
+                  phase: outputLimit.phase,
+                  retryable: outputLimit.retryable,
+                  outcome: outputLimit.outcome,
                 }
+              : providerViolation === undefined
+                ? {}
+                : {
+                    error_code: providerViolation.code,
+                    phase: providerViolation.phase,
+                    retryable: providerViolation.retryable,
+                    outcome: providerViolation.outcome,
+                  }
             : {
                 error_code: timeout.code,
                 phase: timeout.phase,

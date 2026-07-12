@@ -17,15 +17,21 @@ import type {
   TokenUsage,
   ToolCall,
 } from "@/providers/base";
-import { openStreamWithRetry, withRetry } from "@/providers/base";
+import { getProviderResponseDiagnostics, openStreamWithRetry, withRetry } from "@/providers/base";
 import type { RetryOptions } from "@/providers/openai";
 import {
   ProviderConfigError,
   ProviderError,
+  ProviderOutputLimitError,
   providerAPIErrorFromUnknown,
 } from "@/providers/errors";
 import { parseToolArgsJSON } from "@/providers/args";
 import { calculateCostUsd } from "@/providers/costs";
+import {
+  closeProviderStream,
+  LinearStringParts,
+  ProviderResponseBudget,
+} from "@/providers/response-budget";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -100,24 +106,35 @@ function splitMessages(messages: ProviderMessage[]): {
   };
 }
 
-function parseContentBlocks(blocks: AnthropicContentBlock[] | undefined | null): {
-  content: string;
-  toolCalls: ToolCall[];
-} {
-  let content = "";
+function parseBoundedContentBlocks(
+  blocks: AnthropicContentBlock[] | undefined | null,
+  budget: ProviderResponseBudget,
+): { content: string; toolCalls: ToolCall[] } {
+  const content = new LinearStringParts();
   const toolCalls: ToolCall[] = [];
   for (const block of blocks ?? []) {
     if (block.type === "text") {
-      content += block.text;
+      const accepted = budget.acceptNormalized(block.text, []);
+      content.append(accepted.delta);
     } else if (block.type === "tool_use") {
-      toolCalls.push({
-        id: block.id,
-        name: block.name,
-        args: (block.input ?? {}) as Record<string, unknown>,
-      });
+      const accepted = budget.acceptNormalized("", [
+        {
+          id: block.id,
+          name: block.name,
+          args: (block.input ?? {}) as Record<string, unknown>,
+        },
+      ]);
+      toolCalls.push(...accepted.toolCalls);
     }
   }
-  return { content, toolCalls };
+  budget.finish();
+  return { content: content.join(), toolCalls };
+}
+
+interface PendingAnthropicToolCall {
+  readonly id: LinearStringParts;
+  readonly name: LinearStringParts;
+  readonly arguments: LinearStringParts;
 }
 
 function usageFromEvent(
@@ -216,6 +233,7 @@ export class AnthropicProvider implements ModelProvider {
     if (system) params.system = system;
     if (tools.length > 0) params.tools = toAnthropicTools(tools);
 
+    const budget = new ProviderResponseBudget(options?.responseLimits);
     try {
       const response = await withRetry(
         () =>
@@ -230,7 +248,7 @@ export class AnthropicProvider implements ModelProvider {
         options?.metricsSink,
         "anthropic",
       );
-      const { content, toolCalls } = parseContentBlocks(response.content);
+      const { content, toolCalls } = parseBoundedContentBlocks(response.content, budget);
       const usage = response.usage
         ? { input: response.usage.input_tokens, output: response.usage.output_tokens }
         : undefined;
@@ -239,8 +257,11 @@ export class AnthropicProvider implements ModelProvider {
         : undefined;
       return { content, toolCalls, usage, costUsd };
     } catch (error) {
+      if (error instanceof ProviderOutputLimitError) throw error;
       throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("anthropic", error, "request");
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
     }
   }
 
@@ -264,11 +285,13 @@ export class AnthropicProvider implements ModelProvider {
 
     // Anthropic streams tool_use blocks as fragmented input_json_delta events
     // that must be accumulated before the args are parseable.
-    let pendingTool: { id: string; name: string; argsRaw: string } | null = null;
+    const pendingTools = new Map<number, PendingAnthropicToolCall>();
     let latestUsage: TokenUsage | undefined;
+    const budget = new ProviderResponseBudget(options?.responseLimits);
+    let stream: AsyncIterableIterator<AnthropicStreamEvent> | undefined;
 
     try {
-      const stream = await openStreamWithRetry(
+      stream = await openStreamWithRetry(
         () =>
           client.messages.stream(params, {
             signal: options?.cancellationToken?.signal,
@@ -287,29 +310,60 @@ export class AnthropicProvider implements ModelProvider {
         if (event.type === "content_block_start") {
           const block = event.content_block;
           if (block.type === "tool_use") {
-            pendingTool = { id: block.id, name: block.name, argsRaw: "" };
+            budget.acceptRaw({
+              toolFragments: [
+                {
+                  key: event.index,
+                  startsCall: true,
+                  idFragment: block.id,
+                  nameFragment: block.name,
+                },
+              ],
+            });
+            const pending: PendingAnthropicToolCall = {
+              id: new LinearStringParts(),
+              name: new LinearStringParts(),
+              arguments: new LinearStringParts(),
+            };
+            pending.id.append(block.id);
+            pending.name.append(block.name);
+            pendingTools.set(event.index, pending);
           }
         } else if (event.type === "content_block_delta") {
           const delta = event.delta;
           if (delta.type === "text_delta") {
+            budget.acceptRaw({ text: delta.text });
             yield { delta: delta.text, toolCalls: [] };
-          } else if (delta.type === "input_json_delta" && pendingTool !== null) {
-            pendingTool.argsRaw += delta.partial_json ?? "";
+          } else if (delta.type === "input_json_delta") {
+            const pending = pendingTools.get(event.index);
+            if (pending !== undefined) {
+              const fragment = delta.partial_json ?? "";
+              budget.acceptRaw({
+                toolFragments: [{ key: event.index, argumentsFragment: fragment }],
+              });
+              pending.arguments.append(fragment);
+            }
           }
-        } else if (event.type === "content_block_stop" && pendingTool !== null) {
-          yield {
-            delta: "",
-            toolCalls: [
-              {
-                id: pendingTool.id,
-                name: pendingTool.name,
-                args: parseToolArgsJSON(pendingTool.argsRaw, "Anthropic"),
-              },
-            ],
-          };
-          pendingTool = null;
+        } else if (event.type === "content_block_stop") {
+          const pending = pendingTools.get(event.index);
+          if (pending !== undefined) {
+            budget.finishRawTool(event.index);
+            budget.recordToolArgumentJoin();
+            yield {
+              delta: "",
+              toolCalls: [
+                {
+                  id: pending.id.join(),
+                  name: pending.name.join(),
+                  args: parseToolArgsJSON(pending.arguments.join(), "Anthropic"),
+                },
+              ],
+            };
+            pendingTools.delete(event.index);
+          }
         }
       }
+      budget.finish();
       if (latestUsage) {
         yield {
           delta: "",
@@ -319,8 +373,14 @@ export class AnthropicProvider implements ModelProvider {
         };
       }
     } catch (error) {
+      if (error instanceof ProviderOutputLimitError) {
+        await closeProviderStream(stream);
+        throw error;
+      }
       throwIfCancellationRequested(options?.cancellationToken);
       throw providerAPIErrorFromUnknown("anthropic", error, "stream");
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
     }
   }
 }

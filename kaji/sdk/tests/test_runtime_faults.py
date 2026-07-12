@@ -1880,6 +1880,15 @@ async def test_provider_deadline_cancels_joins_and_closes_once(
         if event.type == EventType.AGENT_TURN_FAILED
     ]
     assert len(failures) == 1
+    if mid_stream:
+        events = await store.get_events("cooperative")
+        types = [event.type for event in events]
+        assert types.index(EventType.AGENT_MESSAGE_DELTA) < types.index(
+            EventType.AGENT_TURN_FAILED
+        )
+        assert not any(
+            event.type == EventType.AGENT_MESSAGE_COMPLETED for event in events
+        )
     assert failures[0].phase == caught.value.phase
     assert failures[0].outcome == "unknown"
     assert iterator.cancel_seen.is_set()

@@ -15,9 +15,17 @@ import math
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
-from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.base import (
+    LinearStringParts,
+    ModelProvider,
+    ProviderResponseBudget,
+    RawToolCallFragment,
+    capture_provider_diagnostics,
+    close_provider_stream,
+)
 from kaji.runtime.providers.errors import (
     ProviderConfigError,
+    ProviderOutputLimitError,
     provider_error_from_exception,
 )
 from kaji.runtime.providers.costs import calculate_cost_usd
@@ -26,6 +34,7 @@ from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelMetadata,
     ModelResponseChunk,
+    ProviderResponseLimits,
     TokenMetrics,
 )
 from kaji.runtime.providers._cancellation import (
@@ -157,31 +166,60 @@ class OpenAIProvider(ModelProvider):
         return getattr(obj, key, None)
 
     @classmethod
-    def _accumulate_stream_tool_calls(
-        cls, pending: Dict[int, Dict[str, str]], raw: Any
-    ) -> None:
+    def _stage_stream_tool_calls(
+        cls, pending: Dict[int, Dict[str, Any]], raw: Any
+    ) -> tuple[
+        tuple[tuple[int, str, str, str, bool], ...],
+        tuple[RawToolCallFragment, ...],
+    ]:
+        staged: list[tuple[int, str, str, str, bool]] = []
+        budget_fragments: list[RawToolCallFragment] = []
+        new_indices: set[int] = set()
         for fallback_index, tc in enumerate(raw or []):
             index = cls._field(tc, "index")
             if not isinstance(index, int):
                 index = fallback_index
-            current = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
-
-            tool_call_id = cls._field(tc, "id")
-            if tool_call_id:
-                current["id"] = str(tool_call_id)
-
+            starts_call = index not in pending and index not in new_indices
+            if starts_call:
+                new_indices.add(index)
+            tool_call_id = str(cls._field(tc, "id") or "")
             func = cls._field(tc, "function")
-            name = cls._field(func, "name")
-            if name:
-                current["name"] += str(name)
+            name = str(cls._field(func, "name") or "")
+            arguments = str(cls._field(func, "arguments") or "")
+            staged.append((index, tool_call_id, name, arguments, starts_call))
+            budget_fragments.append(
+                RawToolCallFragment(
+                    key=index,
+                    starts_call=starts_call,
+                    id_fragment=tool_call_id,
+                    name_fragment=name,
+                    arguments_fragment=arguments,
+                )
+            )
+        return tuple(staged), tuple(budget_fragments)
 
-            arguments = cls._field(func, "arguments")
-            if arguments:
-                current["arguments"] += str(arguments)
+    @staticmethod
+    def _append_stream_tool_calls(
+        pending: Dict[int, Dict[str, Any]],
+        staged: tuple[tuple[int, str, str, str, bool], ...],
+    ) -> None:
+        for index, tool_call_id, name, arguments, _ in staged:
+            current = pending.setdefault(
+                index,
+                {
+                    "id": LinearStringParts(),
+                    "name": LinearStringParts(),
+                    "arguments": LinearStringParts(),
+                },
+            )
+            current["id"].append(tool_call_id)
+            current["name"].append(name)
+            current["arguments"].append(arguments)
 
     @staticmethod
     def _finalize_stream_tool_calls(
-        pending: Dict[int, Dict[str, str]],
+        pending: Dict[int, Dict[str, Any]],
+        budget: ProviderResponseBudget | None = None,
     ) -> List[Dict[str, Any]]:
         """Build the neutral tool-call payload from the streamed accumulator.
 
@@ -198,25 +236,41 @@ class OpenAIProvider(ModelProvider):
         """
         calls: List[Dict[str, Any]] = []
         for _, item in sorted(pending.items()):
-            if not item["name"]:
+            name = (
+                item["name"].join()
+                if isinstance(item["name"], LinearStringParts)
+                else item["name"]
+            )
+            if not name:
                 continue
-            raw = item["arguments"] or "{}"
+            call_id = (
+                item["id"].join()
+                if isinstance(item["id"], LinearStringParts)
+                else item["id"]
+            )
+            raw = (
+                item["arguments"].join()
+                if isinstance(item["arguments"], LinearStringParts)
+                else item["arguments"]
+            ) or "{}"
+            if budget is not None:
+                budget.record_tool_argument_join()
             try:
                 args: Dict[str, Any] = json.loads(raw)
             except (json.JSONDecodeError, TypeError) as exc:
                 logger.warning(
                     "OpenAI streaming tool_call arguments failed to parse "
                     "for tool=%s id=%s (arguments redacted; %d characters; %s)",
-                    item["name"],
-                    item["id"] or "<unknown>",
+                    name,
+                    call_id or "<unknown>",
                     len(raw),
                     type(exc).__name__,
                 )
                 args = {"__parse_error": str(exc)}
             calls.append(
                 {
-                    "id": item["id"] or None,
-                    "name": item["name"],
+                    "id": call_id or None,
+                    "name": name,
                     "arguments": args,
                 }
             )
@@ -231,6 +285,7 @@ class OpenAIProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         kwargs: Dict[str, Any] = {
             "model": self.model_name,
@@ -264,6 +319,11 @@ class OpenAIProvider(ModelProvider):
         message = choice.message
         text = message.content or ""
         tool_calls = self._parse_tool_calls(getattr(message, "tool_calls", None))
+        accepted = ProviderResponseBudget(response_limits).accept_normalized(
+            text, tool_calls
+        )
+        text = accepted.delta
+        tool_calls = list(accepted.tool_calls)
 
         usage = getattr(response, "usage", None)
         metrics = TokenMetrics(
@@ -297,6 +357,7 @@ class OpenAIProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         """Stream chat completions, yielding text deltas and tool calls.
 
@@ -335,7 +396,8 @@ class OpenAIProvider(ModelProvider):
         if open_error is not None:
             raise open_error from None
 
-        pending_tool_calls: Dict[int, Dict[str, str]] = {}
+        pending_tool_calls: Dict[int, Dict[str, Any]] = {}
+        budget = ProviderResponseBudget(response_limits)
 
         iteration_error = None
         try:
@@ -363,11 +425,17 @@ class OpenAIProvider(ModelProvider):
                     continue
                 delta = chunk.choices[0].delta
                 text = getattr(delta, "content", None) or ""
-                self._accumulate_stream_tool_calls(
+                staged, raw_fragments = self._stage_stream_tool_calls(
                     pending_tool_calls, getattr(delta, "tool_calls", None)
                 )
+                budget.accept_raw(text=text, tool_fragments=raw_fragments)
+                self._append_stream_tool_calls(pending_tool_calls, staged)
                 if text:
                     yield ModelResponseChunk(delta=text, tool_calls=[])
+        except ProviderOutputLimitError:
+            await close_provider_stream(stream)
+            capture_provider_diagnostics(budget.diagnostics)
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error(
                 "OpenAI streaming API iteration failed (%s; details redacted)",
@@ -378,11 +446,13 @@ class OpenAIProvider(ModelProvider):
             )
 
         if iteration_error is not None:
+            capture_provider_diagnostics(budget.diagnostics)
             raise iteration_error from None
 
-        tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+        tool_calls = self._finalize_stream_tool_calls(pending_tool_calls, budget)
         if tool_calls:
             yield ModelResponseChunk(delta="", tool_calls=cast(Any, tool_calls))
+        capture_provider_diagnostics(budget.diagnostics)
 
 
 register_provider("openai", OpenAIProvider)

@@ -9,7 +9,13 @@ from kaji.runtime.providers._cancellation import (
     raise_if_cancelled as _raise_if_cancelled,
 )
 from kaji.runtime.providers._translate import format_messages_openai
-from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.base import (
+    LinearStringParts,
+    ModelProvider,
+    ProviderResponseBudget,
+    RawToolCallFragment,
+    capture_provider_diagnostics,
+)
 from kaji.runtime.providers.errors import (
     ProviderAPIError,
     ProviderConfigError,
@@ -21,6 +27,7 @@ from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelMetadata,
     ModelResponseChunk,
+    ProviderResponseLimits,
     TokenMetrics,
 )
 
@@ -120,41 +127,73 @@ class KimiProvider(ModelProvider):
 
     @staticmethod
     def _accumulate_stream_tool_calls(
-        pending: Dict[int, Dict[str, str]], raw: Any
+        pending: Dict[int, Dict[str, Any]],
+        raw: Any,
+        budget: ProviderResponseBudget,
+        *,
+        text: str = "",
     ) -> None:
+        staged: list[tuple[int, str, str, str, bool]] = []
+        fragments: list[RawToolCallFragment] = []
+        new_indices: set[int] = set()
         for fallback_index, tc in enumerate(raw or []):
             index = tc.get("index")
             if not isinstance(index, int):
                 index = fallback_index
-            current = pending.setdefault(index, {"id": "", "name": "", "arguments": ""})
-
-            if tc.get("id"):
-                current["id"] = str(tc["id"])
-
+            starts_call = index not in pending and index not in new_indices
+            if starts_call:
+                new_indices.add(index)
             func = tc.get("function") or {}
-            if func.get("name"):
-                current["name"] += str(func["name"])
-            if func.get("arguments"):
-                current["arguments"] += str(func["arguments"])
+            call_id = str(tc.get("id") or "")
+            name = str(func.get("name") or "")
+            arguments = str(func.get("arguments") or "")
+            staged.append((index, call_id, name, arguments, starts_call))
+            fragments.append(
+                RawToolCallFragment(
+                    key=index,
+                    starts_call=starts_call,
+                    id_fragment=call_id,
+                    name_fragment=name,
+                    arguments_fragment=arguments,
+                )
+            )
+        budget.accept_raw(text=text, tool_fragments=tuple(fragments))
+        for index, call_id, name, arguments, _ in staged:
+            current = pending.setdefault(
+                index,
+                {
+                    "id": LinearStringParts(),
+                    "name": LinearStringParts(),
+                    "arguments": LinearStringParts(),
+                },
+            )
+            current["id"].append(call_id)
+            current["name"].append(name)
+            current["arguments"].append(arguments)
 
     @staticmethod
     def _finalize_stream_tool_calls(
-        pending: Dict[int, Dict[str, str]],
+        pending: Dict[int, Dict[str, Any]],
+        budget: ProviderResponseBudget,
     ) -> List[Dict[str, Any]]:
         tool_calls: List[Dict[str, Any]] = []
         for _, item in sorted(pending.items()):
-            if not item["name"]:
+            name = item["name"].join()
+            if not name:
                 continue
+            call_id = item["id"].join()
+            raw_arguments = item["arguments"].join()
+            budget.record_tool_argument_join()
             try:
-                parsed_args = json.loads(item["arguments"] or "{}")
+                parsed_args = json.loads(raw_arguments or "{}")
             except json.JSONDecodeError as exc:
                 parsed_args = {
                     "__parse_error": f"Kimi tool args were not valid JSON: {exc}"
                 }
             tool_calls.append(
                 {
-                    "id": item["id"] or None,
-                    "name": item["name"],
+                    "id": call_id,
+                    "name": name,
                     "arguments": parsed_args,
                 }
             )
@@ -169,6 +208,7 @@ class KimiProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         payload = self._prepare_payload(
             messages,
@@ -254,6 +294,12 @@ class KimiProvider(ModelProvider):
                     }
                 )
 
+        accepted = ProviderResponseBudget(response_limits).accept_normalized(
+            text, tool_calls
+        )
+        text = accepted.delta
+        tool_calls = list(accepted.tool_calls)
+
         usage = data.get("usage", {})
         metrics = TokenMetrics(
             prompt_tokens=usage.get("prompt_tokens", 0),
@@ -281,6 +327,7 @@ class KimiProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         payload = self._prepare_payload(
             messages, tools, system_instruction, temperature, max_tokens, stream=True
@@ -289,6 +336,7 @@ class KimiProvider(ModelProvider):
         _raise_if_cancelled(cancellation_token)
 
         stream_error = None
+        budget = ProviderResponseBudget(response_limits)
         try:
             async with httpx.AsyncClient() as client:
                 async with client.stream(
@@ -311,8 +359,7 @@ class KimiProvider(ModelProvider):
                             response_text=None,
                         )
 
-                    pending_tool_calls: Dict[int, Dict[str, str]] = {}
-
+                    pending_tool_calls: Dict[int, Dict[str, Any]] = {}
                     async for line in response.aiter_lines():
                         _raise_if_cancelled(cancellation_token)
 
@@ -343,14 +390,20 @@ class KimiProvider(ModelProvider):
                         delta = choices[0].get("delta", {})
                         chunk_text = delta.get("content", "") or ""
 
+                        raw_tool_calls = delta.get("tool_calls", [])
                         self._accumulate_stream_tool_calls(
-                            pending_tool_calls, delta.get("tool_calls", [])
+                            pending_tool_calls,
+                            raw_tool_calls,
+                            budget,
+                            text=chunk_text,
                         )
 
                         if chunk_text:
                             yield ModelResponseChunk(delta=chunk_text, tool_calls=[])
 
-                    tool_calls = self._finalize_stream_tool_calls(pending_tool_calls)
+                    tool_calls = self._finalize_stream_tool_calls(
+                        pending_tool_calls, budget
+                    )
                     if tool_calls:
                         yield ModelResponseChunk(
                             delta="", tool_calls=cast(Any, tool_calls)
@@ -361,6 +414,8 @@ class KimiProvider(ModelProvider):
                 action="stream",
                 error=error,
             )
+        finally:
+            capture_provider_diagnostics(budget.diagnostics)
 
         if stream_error is not None:
             raise stream_error from None

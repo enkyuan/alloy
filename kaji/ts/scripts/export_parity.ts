@@ -1221,20 +1221,38 @@ async function runAnthropicAdapter(mode: string): Promise<JsonObject> {
   };
   const streamEvents = [
     { type: "message_start", usage: { input_tokens: 5, output_tokens: 0 } },
-    { type: "content_block_delta", delta: { type: "text_delta", text: "provider text" } },
+    {
+      type: "content_block_delta",
+      index: 0,
+      delta: { type: "text_delta", text: "provider text" },
+    },
     {
       type: "content_block_start",
+      index: 1,
       content_block: { type: "tool_use", id: "call-ok", name: "lookup" },
     },
-    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: '{"q":' } },
-    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: '"new"}' } },
-    { type: "content_block_stop" },
+    {
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "input_json_delta", partial_json: '{"q":' },
+    },
+    {
+      type: "content_block_delta",
+      index: 1,
+      delta: { type: "input_json_delta", partial_json: '"new"}' },
+    },
+    { type: "content_block_stop", index: 1 },
     {
       type: "content_block_start",
+      index: 2,
       content_block: { type: "tool_use", id: "call-bad", name: "lookup" },
     },
-    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: '{"q":' } },
-    { type: "content_block_stop" },
+    {
+      type: "content_block_delta",
+      index: 2,
+      delta: { type: "input_json_delta", partial_json: '{"q":' },
+    },
+    { type: "content_block_stop", index: 2 },
     { type: "message_delta", usage: { output_tokens: 3 } },
   ];
   const fakeClient = {

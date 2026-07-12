@@ -19,6 +19,8 @@ import type {
   ProviderMessage,
   ToolCall,
 } from "@/providers/base";
+import { getProviderResponseDiagnostics } from "@/providers/base";
+import { LinearStringParts, ProviderResponseBudget } from "@/providers/response-budget";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -91,24 +93,23 @@ export class MockProvider implements ModelProvider {
     options?: ModelProviderOptions,
   ): Promise<ModelResponse> {
     throwIfCancellationRequested(options?.cancellationToken);
-    if (this.toolCall !== undefined) {
-      if (!hasToolResult(messages)) {
-        return { content: "", toolCalls: [this.scriptedToolCall()] };
+    const budget = new ProviderResponseBudget(options?.responseLimits);
+    try {
+      const content = new LinearStringParts();
+      const toolCalls: ToolCall[] = [];
+      for (const chunk of this.streamUnbounded(messages, tools)) {
+        const accepted = budget.acceptNormalized(chunk.delta, chunk.toolCalls);
+        content.append(accepted.delta);
+        toolCalls.push(...accepted.toolCalls);
       }
-      return { content: FINAL_TEXT, toolCalls: [] };
-    }
-    if (this.reply !== undefined) {
-      return { content: this.reply, toolCalls: [] };
-    }
-    const first = tools[0];
-    if (first !== undefined && !hasToolResult(messages)) {
+      budget.finish();
       return {
-        content: "",
-        toolCalls: [{ id: "mock-call-1", name: first.name, args: placeholderArgs(first) }],
+        content: content.join(),
+        toolCalls,
       };
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
     }
-    const content = this.streamChunks ? this.streamChunks.join("") : FINAL_TEXT;
-    return { content, toolCalls: [] };
   }
 
   async *generateStream(
@@ -117,6 +118,23 @@ export class MockProvider implements ModelProvider {
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk> {
     throwIfCancellationRequested(options?.cancellationToken);
+    const budget = new ProviderResponseBudget(options?.responseLimits);
+    try {
+      for (const chunk of this.streamUnbounded(messages, tools)) {
+        throwIfCancellationRequested(options?.cancellationToken);
+        const accepted = budget.acceptNormalized(chunk.delta, chunk.toolCalls);
+        yield { ...chunk, delta: accepted.delta, toolCalls: [...accepted.toolCalls] };
+      }
+      budget.finish();
+    } finally {
+      getProviderResponseDiagnostics(options)?.record(budget.providerDiagnostics);
+    }
+  }
+
+  private *streamUnbounded(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+  ): Generator<ModelResponseChunk> {
     if (this.toolCall !== undefined) {
       if (!hasToolResult(messages)) {
         yield { delta: "", toolCalls: [this.scriptedToolCall()] };
@@ -139,7 +157,6 @@ export class MockProvider implements ModelProvider {
     }
     if (this.streamChunks && this.streamChunks.length > 0) {
       for (const delta of this.streamChunks) {
-        throwIfCancellationRequested(options?.cancellationToken);
         yield { delta, toolCalls: [] };
       }
       return;

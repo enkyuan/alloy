@@ -59,6 +59,8 @@ EXPECTED_PUBLIC = {
     "ProviderCancellationContractViolation",
     "ProviderConfigError",
     "ProviderError",
+    "ProviderOutputLimitError",
+    "ProviderResponseLimits",
     "replay_legacy_session",
     "replay_session",
     "SessionManager",

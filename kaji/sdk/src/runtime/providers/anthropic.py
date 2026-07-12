@@ -14,9 +14,16 @@ import math
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
-from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.base import (
+    LinearStringParts,
+    ModelProvider,
+    ProviderResponseBudget,
+    RawToolCallFragment,
+    capture_provider_diagnostics,
+)
 from kaji.runtime.providers.errors import (
     ProviderConfigError,
+    ProviderOutputLimitError,
     provider_error_from_exception,
 )
 from kaji.runtime.providers.costs import calculate_cost_usd
@@ -25,6 +32,7 @@ from kaji.runtime.providers.types import (
     GenerateResponse,
     ModelMetadata,
     ModelResponseChunk,
+    ProviderResponseLimits,
     TokenMetrics,
 )
 from kaji.runtime.providers._cancellation import (
@@ -184,6 +192,7 @@ class AnthropicProvider(ModelProvider):
         max_tokens: Optional[int] = None,
         response_format: Optional[Dict[str, Any]] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> GenerateResponse:
         system, anthropic_messages = self._split_messages(messages, system_instruction)
 
@@ -216,6 +225,11 @@ class AnthropicProvider(ModelProvider):
             raise request_error from None
 
         text, tool_calls = self._parse_tool_use(response.content)
+        accepted = ProviderResponseBudget(response_limits).accept_normalized(
+            text, tool_calls
+        )
+        text = accepted.delta
+        tool_calls = list(accepted.tool_calls)
 
         usage = getattr(response, "usage", None)
         metrics = TokenMetrics(
@@ -253,6 +267,7 @@ class AnthropicProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         cancellation_token: Optional[Any] = None,
+        response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         system, anthropic_messages = self._split_messages(messages, system_instruction)
 
@@ -287,6 +302,8 @@ class AnthropicProvider(ModelProvider):
         # Accumulate tool_use blocks — Anthropic streams them in deltas that
         # must be reassembled before the arguments are valid JSON.
         pending_tool: Dict[str, Any] = {}
+        next_tool_key = 0
+        budget = ProviderResponseBudget(response_limits)
         latest_metrics: TokenMetrics | None = None
 
         iteration_error = None
@@ -317,10 +334,25 @@ class AnthropicProvider(ModelProvider):
                     if event_type == "content_block_start":
                         block = getattr(event, "content_block", None)
                         if block and getattr(block, "type", None) == "tool_use":
+                            tool_id = str(getattr(block, "id", None) or "")
+                            name = str(getattr(block, "name", None) or "")
+                            tool_key = next_tool_key
+                            next_tool_key += 1
+                            budget.accept_raw(
+                                tool_fragments=(
+                                    RawToolCallFragment(
+                                        key=tool_key,
+                                        starts_call=True,
+                                        id_fragment=tool_id,
+                                        name_fragment=name,
+                                    ),
+                                )
+                            )
                             pending_tool = {
-                                "id": getattr(block, "id", None),
-                                "name": getattr(block, "name", None),
-                                "arguments_raw": "",
+                                "key": tool_key,
+                                "id": tool_id,
+                                "name": name,
+                                "arguments": LinearStringParts(),
                             }
 
                     elif event_type == "content_block_delta":
@@ -329,15 +361,26 @@ class AnthropicProvider(ModelProvider):
                         if delta_type == "text_delta":
                             text = getattr(delta, "text", "")
                             if text:
+                                budget.accept_raw(text=text)
                                 yield ModelResponseChunk(delta=text)
                         elif delta_type == "input_json_delta":
-                            pending_tool["arguments_raw"] = pending_tool.get(
-                                "arguments_raw", ""
-                            ) + getattr(delta, "partial_json", "")
+                            fragment = getattr(delta, "partial_json", "")
+                            if pending_tool and fragment:
+                                budget.accept_raw(
+                                    tool_fragments=(
+                                        RawToolCallFragment(
+                                            key=pending_tool["key"],
+                                            arguments_fragment=fragment,
+                                        ),
+                                    )
+                                )
+                                pending_tool["arguments"].append(fragment)
 
                     elif event_type == "content_block_stop" and pending_tool:
+                        raw_arguments = pending_tool["arguments"].join()
+                        budget.record_tool_argument_join()
                         args = self._parse_tool_args(
-                            raw=pending_tool.get("arguments_raw", ""),
+                            raw=raw_arguments,
                             name=pending_tool.get("name") or "",
                             tool_id=pending_tool.get("id"),
                         )
@@ -355,7 +398,14 @@ class AnthropicProvider(ModelProvider):
                             ),
                         )
                         pending_tool = {}
+        except ProviderOutputLimitError:
+            raise
         except Exception as e:  # noqa: BLE001
+            context: BaseException | None = e.__context__
+            while context is not None:
+                if isinstance(context, ProviderOutputLimitError):
+                    raise context from None
+                context = context.__context__
             logger.error(
                 "Anthropic streaming API iteration failed (%s; details redacted)",
                 type(e).__name__,
@@ -363,6 +413,8 @@ class AnthropicProvider(ModelProvider):
             iteration_error = provider_error_from_exception(
                 service="anthropic", action="stream", error=e
             )
+        finally:
+            capture_provider_diagnostics(budget.diagnostics)
 
         if iteration_error is not None:
             raise iteration_error from None

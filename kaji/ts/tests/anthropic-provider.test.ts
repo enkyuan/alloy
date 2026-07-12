@@ -5,8 +5,18 @@
 import { describe, expect, it, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "@/providers/errors";
+import {
+  ProviderAPIError,
+  ProviderConfigError,
+  ProviderConnectionError,
+  ProviderOutputLimitError,
+} from "@/providers/errors";
 import { AnthropicProvider } from "@/providers/anthropic";
+import {
+  withProviderResponseDiagnostics,
+  type ProviderResponseDiagnostics,
+  type ProviderResponseLimits,
+} from "@/providers/base";
 import { CancellationToken } from "@/runtime/cancellation";
 import { TestAnthropicProvider } from "./helpers/provider-clients";
 
@@ -15,6 +25,16 @@ function makeProvider(client?: unknown) {
     ? new AnthropicProvider({ apiKey: "test-key" })
     : new TestAnthropicProvider({ apiKey: "test-key" }, client as unknown as Anthropic);
 }
+
+const responseLimits = (
+  overrides: Partial<ProviderResponseLimits> = {},
+): ProviderResponseLimits => ({
+  textMaxBytes: 262_144,
+  toolArgumentsMaxBytes: 65_536,
+  responseMaxBytes: 524_288,
+  toolCallsMax: 64,
+  ...overrides,
+});
 
 // ---------------------------------------------------------------------------
 // splitMessages (module-local helper) — tested via generate() with mocked client
@@ -317,6 +337,76 @@ describe("AnthropicProvider.generate", () => {
     expect(caught).toMatchObject({ service: "anthropic", action: "request" });
     expect((caught as ProviderConnectionError).cause).toBeUndefined();
   });
+
+  it("enforces exact and one-byte-over canonical tool argument limits", async () => {
+    const overhead = new TextEncoder().encode('{"value":""}').byteLength;
+    const exactInput = { value: "é".repeat((65_536 - overhead) / 2) };
+    const providerFor = (input: Record<string, unknown>) =>
+      makeProvider({
+        messages: {
+          create: vi.fn().mockResolvedValue({
+            content: [{ type: "tool_use", id: "i", name: "n", input }],
+          }),
+        },
+      });
+
+    await expect(
+      providerFor(exactInput).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits(),
+      }),
+    ).resolves.toMatchObject({ toolCalls: [{ id: "i", name: "n" }] });
+    await expect(
+      providerFor({ value: `${exactInput.value}a` }).generate(
+        [{ role: "user", content: "go" }],
+        [],
+        { responseLimits: responseLimits() },
+      ),
+    ).rejects.toMatchObject({
+      code: "PROVIDER_OUTPUT_LIMIT",
+      dimension: "tool_arguments",
+      limit: 65_536,
+    });
+  });
+
+  it("shares the total budget and enforces the 64-call boundary", async () => {
+    const providerFor = (count: number) =>
+      makeProvider({
+        messages: {
+          create: vi.fn().mockResolvedValue({
+            content: [
+              { type: "text", text: "a" },
+              ...Array.from({ length: count }, (_, index) => ({
+                type: "tool_use",
+                id: `i${index}`,
+                name: "n",
+                input: {},
+              })),
+            ],
+          }),
+        },
+      });
+
+    await expect(
+      providerFor(1).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 6 }),
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      providerFor(1).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 5 }),
+      }),
+    ).rejects.toMatchObject({ dimension: "total_response", limit: 5 });
+    await expect(
+      providerFor(64).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 1_024 }),
+      }),
+    ).resolves.toMatchObject({ toolCalls: expect.any(Array) });
+    await expect(
+      providerFor(65).generate([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ responseMaxBytes: 1_024 }),
+      }),
+    ).rejects.toMatchObject({ dimension: "tool_calls", limit: 64 });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -493,5 +583,145 @@ describe("AnthropicProvider.generateStream", () => {
     expect(toolChunk?.toolCalls[0]?.args).toMatchObject({
       __parse_error: expect.stringContaining("Anthropic tool args were not valid JSON"),
     });
+  });
+
+  it("assembles 10k argument fragments with one join and per-call diagnostics", async () => {
+    const fakeStream = {
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "tool_use", id: "call", name: "lookup" },
+        };
+        yield {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: '{"value":"' },
+        };
+        for (let index = 0; index < 9_998; index += 1) {
+          yield {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: "x" },
+          };
+        }
+        yield {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: '"}' },
+        };
+        yield { type: "content_block_stop", index: 0 };
+      },
+    };
+    let diagnostics: Readonly<ProviderResponseDiagnostics> | undefined;
+    const provider = makeProvider({ messages: { stream: vi.fn().mockReturnValue(fakeStream) } });
+    const chunks = [];
+    const options = withProviderResponseDiagnostics(
+      {},
+      {
+        record(value) {
+          diagnostics = Object.freeze({ ...value });
+        },
+      },
+    );
+    for await (const chunk of provider.generateStream(
+      [{ role: "user", content: "go" }],
+      [],
+      options,
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.find((chunk) => chunk.toolCalls.length > 0)?.toolCalls[0]?.args).toEqual({
+      value: "x".repeat(9_998),
+    });
+    expect(diagnostics).toEqual({
+      rawFragments: 10_002,
+      toolArgumentJoinOperations: 1,
+    });
+    expect(Object.isFrozen(diagnostics)).toBe(true);
+  });
+
+  it("closes before propagating an unparsed typed output-limit error", async () => {
+    const parse = vi.spyOn(JSON, "parse");
+    let returned = false;
+    let parseCallsWhenClosed = -1;
+    let next = 0;
+    const events = [
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "call", name: "lookup" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: "xx" },
+      },
+    ];
+    const iterator: AsyncIterableIterator<unknown> = {
+      async next() {
+        const value = events[next++];
+        return value === undefined ? { done: true, value: undefined } : { done: false, value };
+      },
+      async return() {
+        parseCallsWhenClosed = parse.mock.calls.length;
+        returned = true;
+        return { done: true, value: undefined };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const provider = makeProvider({ messages: { stream: vi.fn().mockReturnValue(iterator) } });
+
+    const consume = async () => {
+      for await (const _chunk of provider.generateStream([{ role: "user", content: "go" }], [], {
+        responseLimits: responseLimits({ toolArgumentsMaxBytes: 1 }),
+      })) {
+        // The oversized fragment must be rejected before yielding a tool call.
+      }
+    };
+    await expect(consume()).rejects.toBeInstanceOf(ProviderOutputLimitError);
+    expect(returned).toBe(true);
+    expect(parseCallsWhenClosed).toBe(0);
+    expect(parse).not.toHaveBeenCalled();
+    parse.mockRestore();
+  });
+
+  it("accepts exact multibyte text and closes on one byte over", async () => {
+    const providerFor = (text: string) =>
+      makeProvider({
+        messages: {
+          stream: vi.fn().mockReturnValue({
+            [Symbol.asyncIterator]: async function* () {
+              yield {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "text_delta", text },
+              };
+            },
+          }),
+        },
+      });
+    const exact = [];
+    for await (const chunk of providerFor("😀").generateStream(
+      [{ role: "user", content: "go" }],
+      [],
+      { responseLimits: responseLimits({ textMaxBytes: 4, responseMaxBytes: 4 }) },
+    )) {
+      exact.push(chunk.delta);
+    }
+    expect(exact.join("")).toBe("😀");
+
+    await expect(async () => {
+      for await (const _chunk of providerFor("😀a").generateStream(
+        [{ role: "user", content: "go" }],
+        [],
+        { responseLimits: responseLimits({ textMaxBytes: 4, responseMaxBytes: 5 }) },
+      )) {
+        // Consume the stream.
+      }
+    }).rejects.toMatchObject({ dimension: "text", limit: 4 });
   });
 });

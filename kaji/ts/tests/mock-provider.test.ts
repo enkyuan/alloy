@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 
 import type { ModelProvider, ModelResponseChunk, ProviderMessage } from "@/providers/base";
-import { ProviderConfigError } from "@/providers/errors";
+import type { ProviderResponseLimits } from "@/providers/base";
+import { ProviderConfigError, ProviderOutputLimitError } from "@/providers/errors";
 import { MockProvider } from "@/providers/mock";
 import { clearProviders, getProvider, registerProvider } from "@/providers/registry";
 import { CancellationError } from "@/runtime/cancellation";
@@ -107,5 +108,35 @@ describe("MockProvider", () => {
     expect(first.value?.delta).toBe("one");
     token.isCancelled = true;
     await expect(iter.next()).rejects.toThrow(CancellationError);
+  });
+
+  it("enforces response limits in non-streaming and streaming calls", async () => {
+    const limits: ProviderResponseLimits = {
+      textMaxBytes: 4,
+      toolArgumentsMaxBytes: 8,
+      responseMaxBytes: 5,
+      toolCallsMax: 1,
+    };
+    await expect(
+      new MockProvider({ reply: "😀" }).generate([{ role: "user", content: "hi" }], [], {
+        responseLimits: limits,
+      }),
+    ).resolves.toMatchObject({ content: "😀" });
+    await expect(
+      new MockProvider({ reply: "😀a" }).generate([{ role: "user", content: "hi" }], [], {
+        responseLimits: limits,
+      }),
+    ).rejects.toBeInstanceOf(ProviderOutputLimitError);
+
+    const consume = async () => {
+      for await (const _chunk of new MockProvider({ streamChunks: ["😀", "a"] }).generateStream(
+        [{ role: "user", content: "hi" }],
+        [],
+        { responseLimits: limits },
+      )) {
+        // Consume until the second fragment crosses the text boundary.
+      }
+    };
+    await expect(consume()).rejects.toMatchObject({ dimension: "text", limit: 4 });
   });
 });
