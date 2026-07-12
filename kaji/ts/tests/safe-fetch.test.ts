@@ -207,7 +207,10 @@ describe("safeRequest policy", () => {
 describe("safeRequest transport and redirects", () => {
   it("passes all validated addresses and forces manual redirects", async () => {
     const bound = transport(
-      new Response("hello", { status: 201, headers: { "X-Trace": "value" } }),
+      new Response("hello", {
+        status: 201,
+        headers: { "Content-Type": "text/plain;charset=UTF-8", "X-Trace": "value" },
+      }),
     );
     const result = await safeRequest(
       new URL("https://EXAMPLE.com./path"),
@@ -364,19 +367,19 @@ describe("safeRequest transport and redirects", () => {
 });
 
 describe("safeRequest bounds and cancellation", () => {
-  it("fails an expired context deadline before invoking transport", async () => {
-    const bound = transport(new Response("unused"));
+  it("trusts the linked outer signal instead of reinterpreting its clock origin", async () => {
+    const bound = transport(new Response("ok"));
     await expect(
       safeRequest(
         new URL("https://example.com"),
         {},
-        context({ deadlineMs: Date.now() - 1 }),
+        context({ deadlineMonotonicMs: 0 }),
         policy(),
         bound,
         resolver(),
       ),
-    ).rejects.toMatchObject({ name: "TimeoutError" });
-    expect(bound.request).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ status: 200 });
+    expect(bound.request).toHaveBeenCalledOnce();
   });
 
   it("fails a pre-cancelled context before invoking transport", async () => {

@@ -5,14 +5,19 @@
 import type { ProviderMessage } from "@/providers/base";
 import type { Message } from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
+import { systemClock, type Clock } from "@/internal/uuid";
 
 /** Caller-owned context applied to one agent turn. */
 export interface TurnContext {
   readonly principalId?: string;
   readonly requestId?: string;
   readonly traceId?: string;
-  /** Absolute Unix epoch deadline in milliseconds. */
-  readonly deadlineMs?: number;
+  /**
+   * Absolute Unix epoch deadline in milliseconds. An earlier value tightens,
+   * but never extends, the runtime's configured whole-turn maximum.
+   * Use `deadlineAfter()` when starting from a duration.
+   */
+  readonly deadlineAtMs?: number;
   readonly db?: unknown;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
@@ -26,7 +31,7 @@ export interface ToolExecutionContext {
   readonly traceId: string;
   readonly toolCallId: string;
   readonly idempotencyKey: string;
-  readonly deadlineMs?: number;
+  readonly deadlineMonotonicMs?: number;
   readonly signal: AbortSignal;
   readonly db?: unknown;
   readonly metadata: Readonly<Record<string, unknown>>;
@@ -126,12 +131,34 @@ export function assertNonEmptyContextId(value: unknown, field: string): asserts 
   }
 }
 
-export function assertValidDeadline(deadlineMs: unknown): asserts deadlineMs is number | undefined {
+export function assertValidDeadline(
+  deadlineMonotonicMs: unknown,
+  field = "deadlineMonotonicMs",
+): asserts deadlineMonotonicMs is number | undefined {
   if (
-    deadlineMs !== undefined &&
-    (typeof deadlineMs !== "number" || !Number.isFinite(deadlineMs) || deadlineMs < 0)
+    deadlineMonotonicMs !== undefined &&
+    (typeof deadlineMonotonicMs !== "number" ||
+      !Number.isFinite(deadlineMonotonicMs) ||
+      deadlineMonotonicMs < 0)
   ) {
-    throw new TypeError("deadlineMs must be a finite non-negative number");
+    throw new TypeError(`${field} must be a finite non-negative number`);
+  }
+}
+
+/** Convert a caller duration to an absolute Unix epoch deadline for `TurnContext`. */
+export function deadlineAfter(timeoutMs: number, clock: Clock = systemClock): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    throw new TypeError("timeoutMs must be a finite non-negative number");
+  }
+  return clock.nowWallSeconds() * 1_000 + timeoutMs;
+}
+
+/** Reject the removed pre-beta field even when its value is undefined. */
+export function assertNoLegacyDeadline(context: object): void {
+  if (Object.prototype.hasOwnProperty.call(context, "deadlineMs")) {
+    throw new TypeError(
+      "TurnContext.deadlineMs was removed; use deadlineAtMs or deadlineAfter(timeoutMs)",
+    );
   }
 }
 
@@ -162,7 +189,7 @@ export function snapshotToolExecutionContext(context: ToolExecutionContext): Too
   if (context.idempotencyKey !== `${context.sessionId}:${context.toolCallId}`) {
     throw new TypeError("idempotencyKey must equal sessionId:toolCallId");
   }
-  assertValidDeadline(context.deadlineMs);
+  assertValidDeadline(context.deadlineMonotonicMs);
   assertAbortSignal(context.signal);
   if (context.metadata === undefined) throw new TypeError("metadata must be an object");
   return {
@@ -173,7 +200,9 @@ export function snapshotToolExecutionContext(context: ToolExecutionContext): Too
     traceId: context.traceId,
     toolCallId: context.toolCallId,
     idempotencyKey: context.idempotencyKey,
-    ...(context.deadlineMs === undefined ? {} : { deadlineMs: context.deadlineMs }),
+    ...(context.deadlineMonotonicMs === undefined
+      ? {}
+      : { deadlineMonotonicMs: context.deadlineMonotonicMs }),
     signal: context.signal,
     ...(context.db === undefined ? {} : { db: context.db }),
     metadata: snapshotContextMetadata(context.metadata),

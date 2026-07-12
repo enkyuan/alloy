@@ -35,6 +35,10 @@
       "turn_id": "turn-1",
       "sequence": 3,
       "error": "Agent turn failed",
+      "error_code": "TURN_TIMEOUT",
+      "phase": "provider_stream",
+      "retryable": true,
+      "outcome": "unknown",
       "metadata": {}
     },
     {

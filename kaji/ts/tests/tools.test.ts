@@ -236,8 +236,8 @@ describe("ToolRegistry", () => {
       executionContext({ traceId: " " }),
       executionContext({ toolCallId: " " }),
       executionContext({ idempotencyKey: "wrong" }),
-      executionContext({ deadlineMs: Number.NaN }),
-      executionContext({ deadlineMs: -1 }),
+      executionContext({ deadlineMonotonicMs: Number.NaN }),
+      executionContext({ deadlineMonotonicMs: -1 }),
       executionContext({ signal: { aborted: false } as AbortSignal }),
     ];
 

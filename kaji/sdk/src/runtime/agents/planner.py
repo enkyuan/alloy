@@ -47,6 +47,7 @@ from kaji.runtime.agents.context import (
     ToolInvocation,
     TurnContext,
 )
+from kaji.runtime.agents.limits import TurnTimeoutError
 from kaji.runtime.context import _copy_metadata_snapshot
 from kaji.runtime.tools.errors import (
     ToolArgumentValidationError,
@@ -204,6 +205,7 @@ class _TerminalDraft:
     result: Any = _NO_RESULT
     error: str | None = None
     fields: dict[str, Any] = field(default_factory=dict)
+    turn_timeout: TurnTimeoutError | None = None
 
     @classmethod
     def from_execution(cls, outcome: _ToolExecutionOutcome) -> _TerminalDraft:
@@ -221,6 +223,15 @@ class _TerminalDraft:
                     "outcome": "unknown",
                 },
             )
+        timeout = (
+            TurnTimeoutError(
+                phase="tool",
+                retryable=outcome.failure.retryable,
+                outcome=outcome.failure.outcome,
+            )
+            if outcome.failure.turn_timeout
+            else None
+        )
         return cls(
             error=outcome.failure.error,
             fields={
@@ -228,6 +239,7 @@ class _TerminalDraft:
                 "retryable": outcome.failure.retryable,
                 "outcome": outcome.failure.outcome,
             },
+            turn_timeout=timeout,
         )
 
 
@@ -347,6 +359,7 @@ class _ApprovalRequestGate:
         code_by_error: dict[ApprovalErrorCode, ApprovalCode] = {
             "APPROVAL_REJECTED": "rejected",
             "APPROVAL_TIMEOUT": "timeout",
+            "TURN_TIMEOUT": "timeout",
             "TOOL_CANCELLED": "cancelled",
             "APPROVAL_UNAVAILABLE": "unavailable",
         }
@@ -395,9 +408,19 @@ class _ApprovalRequestGate:
             return None
         return self._decision_from_event(self._observed)
 
+    def observed_error_code(self) -> ApprovalErrorCode | None:
+        if (
+            self._observed is None
+            or self._observed.type != EventType.TOOL_APPROVAL_REJECTED
+        ):
+            return None
+        return self._observed.error_code
+
     async def resolve_framework_loss(
         self,
         decision: ApprovalDecision,
+        *,
+        error_code: ApprovalErrorCode | None = None,
     ) -> ApprovalDecision:
         """Fence a framework loss, then choose the first durable decision."""
         requested = self._stored
@@ -417,7 +440,7 @@ class _ApprovalRequestGate:
                 turn_id=requested.turn_id,
                 tool_name=requested.tool_name,
                 tool_call_id=requested.tool_call_id,
-                error_code=error_by_code[decision.code],
+                error_code=error_code or error_by_code[decision.code],
                 reason=decision.reason,
                 metadata=deepcopy(requested.metadata),
             )
@@ -628,6 +651,16 @@ class ToolPlanner:
                 f"{len(plumbing_errors)} of {len(prepared)} tool call(s) failed to record their events",
                 plumbing_errors,
             )
+        turn_timeouts = [
+            item.terminal.turn_timeout
+            for item in prepared
+            if item.terminal is not None and item.terminal.turn_timeout is not None
+        ]
+        if turn_timeouts:
+            raise next(
+                (timeout for timeout in turn_timeouts if timeout.outcome == "unknown"),
+                turn_timeouts[0],
+            )
         if any(result is None for result in results):
             raise RuntimeError("tool execution did not produce a terminal result")
         return cast(List[Dict[str, Any]], results)
@@ -775,15 +808,13 @@ class ToolPlanner:
         if not event_backed:
             await request_gate.request()
 
-        deadline = self.controller.approval_deadline(item.context.deadline_monotonic)
+        effective_deadline = self.controller.approval_deadline(
+            item.context.deadline_monotonic
+        )
+        deadline = effective_deadline.value
         framework_loss = False
-        if handler is None:
-            decision = ApprovalDecision(
-                granted=False,
-                code="unavailable",
-                reason="No approval handler registered",
-            )
-        elif item.context.cancellation_token.is_cancelled:
+        outer_timeout = False
+        if item.context.cancellation_token.is_cancelled:
             framework_loss = event_backed
             decision = ApprovalDecision(
                 granted=False,
@@ -792,10 +823,17 @@ class ToolPlanner:
             )
         elif self.controller.deadline_expired(deadline):
             framework_loss = event_backed
+            outer_timeout = effective_deadline.outer
             decision = ApprovalDecision(
                 granted=False,
                 code="timeout",
                 reason="Tool approval timed out",
+            )
+        elif handler is None:
+            decision = ApprovalDecision(
+                granted=False,
+                code="unavailable",
+                reason="No approval handler registered",
             )
         else:
             invocation = ToolInvocation(
@@ -827,10 +865,8 @@ class ToolPlanner:
                     item.context.cancellation_token.wait()
                 )
                 try:
-                    done, _ = await asyncio.wait(
-                        {request_task, cancellation_task},
-                        timeout=self.controller.deadline_remaining(deadline),
-                        return_when=asyncio.FIRST_COMPLETED,
+                    done = await self.controller.wait_until_deadline(
+                        {request_task, cancellation_task}, deadline
                     )
                     # A fully observed durable decision wins a simultaneous
                     # caller cancellation. Cancellation wins only while the
@@ -850,6 +886,9 @@ class ToolPlanner:
                             observed = request_gate.observed_decision()
                             if observed is not None:
                                 decision = observed
+                                outer_timeout = (
+                                    request_gate.observed_error_code() == "TURN_TIMEOUT"
+                                )
                             elif decision.recorded:
                                 raise RuntimeError(
                                     "recorded approval decision does not match the journal"
@@ -879,6 +918,7 @@ class ToolPlanner:
                         )
                     else:
                         framework_loss = event_backed
+                        outer_timeout = effective_deadline.outer
                         decision = ApprovalDecision(
                             False,
                             "timeout",
@@ -896,10 +936,14 @@ class ToolPlanner:
         request_gate.seal()
         await request_gate.ensure_requested()
         if framework_loss:
-            decision = await request_gate.resolve_framework_loss(decision)
+            decision = await request_gate.resolve_framework_loss(
+                decision,
+                error_code="TURN_TIMEOUT" if outer_timeout else None,
+            )
         observed = request_gate.observed_decision()
         if observed is not None:
             decision = observed
+            outer_timeout = request_gate.observed_error_code() == "TURN_TIMEOUT"
         elif decision.recorded:
             decision = ApprovalDecision(
                 granted=False,
@@ -928,9 +972,13 @@ class ToolPlanner:
             )
         elif decision.code == "timeout":
             failure_fields = (
-                "APPROVAL_TIMEOUT",
+                "TURN_TIMEOUT" if outer_timeout else "APPROVAL_TIMEOUT",
                 True,
-                "Tool approval timed out",
+                (
+                    "Turn deadline exceeded during approval"
+                    if outer_timeout
+                    else "Tool approval timed out"
+                ),
             )
         elif decision.code == "cancelled":
             failure_fields = (
@@ -965,6 +1013,15 @@ class ToolPlanner:
                 "retryable": retryable,
                 "outcome": "not_started",
             },
+            turn_timeout=(
+                TurnTimeoutError(
+                    phase="approval",
+                    retryable=True,
+                    outcome="not_started",
+                )
+                if outer_timeout and decision.code == "timeout"
+                else None
+            ),
         )
 
     async def _run_group(

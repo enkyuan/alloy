@@ -15,6 +15,7 @@ from kaji.infra.observability.protocols import (
     TraceSink,
 )
 from kaji.runtime.agents.coordinator import TurnCoordinator
+from kaji.runtime.agents.limits import TurnExecutionLimits
 from kaji.runtime.agents.context import ContextWindow, ToolInvocation, TurnContext
 from kaji.runtime.agents.approval import ApprovalHandler, LegacyApprovalCallback
 from kaji.runtime.agents.planner import ToolPlanner
@@ -25,7 +26,7 @@ from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
-from kaji.runtime.determinism import Clock, IdFactory
+from kaji.runtime.determinism import Clock, IdFactory, TimerScheduler
 
 
 @runtime_checkable
@@ -70,11 +71,13 @@ class AgentBuilder:
         self._context_window: ContextWindow | None = None
         self._default_context: TurnContext | None = None
         self._tool_execution_limits: ToolExecutionLimits | None = None
+        self._turn_execution_limits: TurnExecutionLimits | None = None
         self._tool_idempotency_ledger: ToolIdempotencyLedger | None = None
         self._metrics_sink: MetricsSink = NOOP_METRICS
         self._trace_sink: TraceSink = NOOP_TRACE
         self._id_factory: IdFactory | None = None
         self._clock: Clock | None = None
+        self._timer_scheduler: TimerScheduler | None = None
 
     def provider(self, p: ModelProvider) -> "AgentBuilder":
         self._provider = p
@@ -133,6 +136,11 @@ class AgentBuilder:
         self._tool_execution_limits = limits
         return self
 
+    def turn_execution_limits(self, limits: TurnExecutionLimits) -> "AgentBuilder":
+        """Configure the whole-turn deadline and provider response bounds."""
+        self._turn_execution_limits = limits
+        return self
+
     def tool_idempotency_ledger(self, ledger: ToolIdempotencyLedger) -> "AgentBuilder":
         """Inject durable or application-scoped exact-call idempotency."""
         self._tool_idempotency_ledger = ledger
@@ -156,6 +164,11 @@ class AgentBuilder:
     def clock(self, clock: Clock) -> "AgentBuilder":
         """Inject wall and monotonic time for deterministic execution."""
         self._clock = clock
+        return self
+
+    def timer_scheduler(self, scheduler: TimerScheduler) -> "AgentBuilder":
+        """Inject deterministic one-shot timers for deadline races."""
+        self._timer_scheduler = scheduler
         return self
 
     def build(
@@ -200,6 +213,11 @@ class AgentBuilder:
             metrics_sink=self._metrics_sink,
             trace_sink=self._trace_sink,
             **({"clock": self._clock.now_monotonic} if self._clock else {}),
+            **(
+                {"timer_scheduler": self._timer_scheduler}
+                if self._timer_scheduler
+                else {}
+            ),
         )
         planner = ToolPlanner(
             executor=_executor,
@@ -224,8 +242,10 @@ class AgentBuilder:
             context_window=self._context_window,
             default_context=self._default_context,
             tool_execution_controller=controller,
+            turn_execution_limits=self._turn_execution_limits,
             metrics_sink=self._metrics_sink,
             trace_sink=self._trace_sink,
             id_factory=self._id_factory,
             clock=self._clock,
+            timer_scheduler=self._timer_scheduler,
         )

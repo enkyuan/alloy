@@ -288,20 +288,30 @@ function requestSignal(
   context: ToolExecutionContext,
   init: RequestInit,
   timeoutMs: number,
-): AbortSignal {
+): { readonly signal: AbortSignal; readonly dispose: () => void } {
   const signals = [context.signal];
   if (init.signal !== undefined && init.signal !== null) signals.push(init.signal);
   for (const signal of signals) {
     if (signal.aborted) abortReason(signal, "Request cancelled");
   }
-
-  if (context.deadlineMs !== undefined) {
-    const remaining = Math.max(0, context.deadlineMs - Date.now());
-    if (remaining === 0) throw new DOMException("Tool execution deadline expired", "TimeoutError");
-    signals.push(AbortSignal.timeout(Math.min(remaining, 2_147_483_647)));
+  const controller = new AbortController();
+  const removers: Array<() => void> = [];
+  for (const signal of signals) {
+    const abort = () => controller.abort(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    removers.push(() => signal.removeEventListener("abort", abort));
   }
-  signals.push(AbortSignal.timeout(timeoutMs));
-  return AbortSignal.any(signals);
+  const timer = setTimeout(
+    () => controller.abort(new DOMException("Request timed out", "TimeoutError")),
+    timeoutMs,
+  );
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timer);
+      for (const remove of removers) remove();
+    },
+  };
 }
 
 function responseHeaders(headers: Headers): Readonly<Record<string, string>> {
@@ -458,7 +468,8 @@ export async function safeRequest(
     true,
   );
   const secrets = sensitiveHeaders(policy);
-  const signal = requestSignal(context, init, timeoutMs);
+  const signalScope = requestSignal(context, init, timeoutMs);
+  const { signal } = signalScope;
   let currentUrl = new URL(input.href);
   let currentInit: RequestInit = {
     ...init,
@@ -467,55 +478,59 @@ export async function safeRequest(
     signal,
   };
 
-  for (let redirects = 0; ; redirects++) {
-    if (signal.aborted) abortReason(signal, "Request cancelled");
-    const { url, hostname } = validatedUrl(currentUrl, policy);
-    const addresses = await validatedAddresses(hostname, resolver, signal);
-    if (signal.aborted) abortReason(signal, "Request cancelled");
-    const response = await withAbort(
-      transport.request(
-        { url: new URL(url.href), validatedAddresses: Object.freeze([...addresses]) },
-        {
-          ...currentInit,
-          headers: validatedHeaders(currentInit.headers),
-          redirect: "manual",
-          signal,
-        },
-      ),
-      signal,
-    );
-    if (signal.aborted) abortReason(signal, "Request cancelled");
+  try {
+    for (let redirects = 0; ; redirects++) {
+      if (signal.aborted) abortReason(signal, "Request cancelled");
+      const { url, hostname } = validatedUrl(currentUrl, policy);
+      const addresses = await validatedAddresses(hostname, resolver, signal);
+      if (signal.aborted) abortReason(signal, "Request cancelled");
+      const response = await withAbort(
+        transport.request(
+          { url: new URL(url.href), validatedAddresses: Object.freeze([...addresses]) },
+          {
+            ...currentInit,
+            headers: validatedHeaders(currentInit.headers),
+            redirect: "manual",
+            signal,
+          },
+        ),
+        signal,
+      );
+      if (signal.aborted) abortReason(signal, "Request cancelled");
 
-    if (!redirectStatus(response.status)) {
-      return {
-        status: response.status,
-        headers: responseHeaders(response.headers),
-        bytes: await boundedBody(response, maxResponseBytes, signal),
-      };
+      if (!redirectStatus(response.status)) {
+        return {
+          status: response.status,
+          headers: responseHeaders(response.headers),
+          bytes: await boundedBody(response, maxResponseBytes, signal),
+        };
+      }
+      if (redirects >= maxRedirects) {
+        cancelResponseBestEffort(response, "redirect limit exceeded");
+        throw new Error(`Redirect limit exceeded (${maxRedirects})`);
+      }
+      const location = response.headers.get("location");
+      if (location === null || location.trim().length === 0) {
+        cancelResponseBestEffort(response, "redirect location missing");
+        throw new Error("Redirect response is missing a valid Location header");
+      }
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(location, url);
+      } catch (error) {
+        cancelResponseBestEffort(response, "redirect location malformed");
+        throw new Error("Redirect response has a malformed Location header", { cause: error });
+      }
+      cancelResponseBestEffort(response, "redirect response not consumed");
+      currentInit = redirectedInit(
+        currentInit,
+        response.status,
+        nextUrl.origin !== url.origin,
+        secrets,
+      );
+      currentUrl = nextUrl;
     }
-    if (redirects >= maxRedirects) {
-      cancelResponseBestEffort(response, "redirect limit exceeded");
-      throw new Error(`Redirect limit exceeded (${maxRedirects})`);
-    }
-    const location = response.headers.get("location");
-    if (location === null || location.trim().length === 0) {
-      cancelResponseBestEffort(response, "redirect location missing");
-      throw new Error("Redirect response is missing a valid Location header");
-    }
-    let nextUrl: URL;
-    try {
-      nextUrl = new URL(location, url);
-    } catch (error) {
-      cancelResponseBestEffort(response, "redirect location malformed");
-      throw new Error("Redirect response has a malformed Location header", { cause: error });
-    }
-    cancelResponseBestEffort(response, "redirect response not consumed");
-    currentInit = redirectedInit(
-      currentInit,
-      response.status,
-      nextUrl.origin !== url.origin,
-      secrets,
-    );
-    currentUrl = nextUrl;
+  } finally {
+    signalScope.dispose();
   }
 }

@@ -10,9 +10,16 @@ import type {
   EventBackedApprovalHandler,
 } from "@/runtime/approval/types";
 import { snapshotToolExecutionContext } from "@/runtime/context";
-import { systemClock, systemIdFactory, type Clock, type IdFactory } from "@/internal/uuid";
+import {
+  systemClock,
+  systemIdFactory,
+  type Clock,
+  type IdFactory,
+  type TimerHandle,
+} from "@/internal/uuid";
 
 function decisionCode(errorCode: string): ApprovalRejectionCode {
+  if (errorCode === "TURN_TIMEOUT") return "turn_timeout";
   if (errorCode === "APPROVAL_TIMEOUT") return "timeout";
   if (errorCode === "TOOL_CANCELLED") return "cancelled";
   if (errorCode === "APPROVAL_UNAVAILABLE") return "unavailable";
@@ -20,7 +27,7 @@ function decisionCode(errorCode: string): ApprovalRejectionCode {
 }
 
 export interface EventApprovalHandlerOptions {
-  /** Wall-clock source for absolute ToolExecutionContext deadlines. */
+  /** Monotonic clock source for approval deadlines. */
   now?: () => number;
   idFactory?: IdFactory;
   clock?: Clock;
@@ -35,7 +42,7 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
   constructor(options: EventApprovalHandlerOptions = {}) {
     this.idFactory = options.idFactory ?? systemIdFactory;
     this.clock = options.clock ?? systemClock;
-    this.now = options.now ?? (() => this.clock.nowWallSeconds() * 1000);
+    this.now = options.now ?? (() => this.clock.nowMonotonic());
   }
 
   async request(call: ToolCall, context: ApprovalRequestContext): Promise<ApprovalDecision> {
@@ -49,7 +56,7 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
     ) {
       throw new TypeError("Approval context does not match the requested tool call");
     }
-    if (!Number.isFinite(context.deadlineMs)) {
+    if (!Number.isFinite(context.deadlineMonotonicMs)) {
       throw new TypeError("Approval deadline must be finite");
     }
     const cursor = await context.committer.store.lastSequence(execution.sessionId);
@@ -102,30 +109,43 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
     // A timeout/cancellation may win while the iterator is still blocked.
     void externalDecision.catch(() => undefined);
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: TimerHandle | undefined;
     let removeAbortListener = () => {};
-    const cancelled = new Promise<ApprovalDecision>((resolve) => {
-      const finish = () =>
-        resolve({
-          granted: false,
-          code: "cancelled",
-          reason: "Tool approval cancelled",
+    const interrupted = new Promise<ApprovalDecision>((resolve) => {
+      let deadlineReached = false;
+      let wakeQueued = false;
+      const wake = () => {
+        if (wakeQueued) return;
+        wakeQueued = true;
+        queueMicrotask(() => {
+          wakeQueued = false;
+          if (execution.signal.aborted) {
+            resolve({
+              granted: false,
+              code: "cancelled",
+              reason: "Tool approval cancelled",
+            });
+          } else if (deadlineReached) {
+            resolve({
+              granted: false,
+              code: context.deadlineSource === "turn" ? "turn_timeout" : "timeout",
+              reason: "Tool approval timed out",
+            });
+          }
         });
-      if (execution.signal.aborted) finish();
+      };
+      const onAbort = () => wake();
+      if (execution.signal.aborted) onAbort();
       else {
-        execution.signal.addEventListener("abort", finish, { once: true });
-        removeAbortListener = () => execution.signal.removeEventListener("abort", finish);
+        execution.signal.addEventListener("abort", onAbort, { once: true });
+        removeAbortListener = () => execution.signal.removeEventListener("abort", onAbort);
       }
-    });
-    const timedOut = new Promise<ApprovalDecision>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            granted: false,
-            code: "timeout",
-            reason: "Tool approval timed out",
-          }),
-        Math.max(0, context.deadlineMs - this.now()),
+      timer = context.timerScheduler.schedule(
+        Math.max(0, context.deadlineMonotonicMs - (context.nowMonotonic?.() ?? this.now())),
+        () => {
+          deadlineReached = true;
+          wake();
+        },
       );
     });
 
@@ -167,12 +187,12 @@ export class EventApprovalHandler implements EventBackedApprovalHandler {
         throw new TypeError("Approval request was not stored by the approval committer");
       }
       releaseRequestSequence(stored.sequence);
-      return await Promise.race([externalDecision, cancelled, timedOut]);
+      return await Promise.race([externalDecision, interrupted]);
     } catch (error) {
       releaseRequestSequence(Number.POSITIVE_INFINITY);
       throw error;
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      timer?.cancel();
       removeAbortListener();
       // A third-party iterator may implement a non-cooperative return(). Call
       // it exactly once, but never let cleanup hold a completed decision open.

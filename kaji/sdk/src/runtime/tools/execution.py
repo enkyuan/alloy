@@ -25,6 +25,10 @@ from kaji.infra.observability.protocols import (
     start_span,
 )
 from kaji.runtime.context import ToolInvocation, _copy_metadata_snapshot
+from kaji.runtime.determinism import (
+    SYSTEM_TIMER_SCHEDULER,
+    TimerScheduler,
+)
 from kaji.runtime.tools.idempotency import (
     IdempotencyCapacityExceeded,
     IdempotencyConflictError,
@@ -99,6 +103,7 @@ class _ToolExecutionFailure:
     retryable: bool
     outcome: Literal["not_started", "failed", "unknown"]
     cause: BaseException | None = field(default=None, repr=False, compare=False)
+    turn_timeout: bool = field(default=False, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +144,12 @@ class _PendingApproval:
 class _Settlement:
     result: Any | None = None
     cause: BaseException | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _EffectiveDeadline:
+    value: float
+    outer: bool
 
 
 def _ledger_failure(failure: _ToolExecutionFailure) -> ToolIdempotencyFailure:
@@ -204,12 +215,13 @@ def _cancelled(*, started: bool) -> _ToolExecutionFailure:
     )
 
 
-def _timed_out(*, started: bool) -> _ToolExecutionFailure:
+def _timed_out(*, started: bool, outer: bool = False) -> _ToolExecutionFailure:
     return _ToolExecutionFailure(
-        error=_PUBLIC_TIMEOUT,
-        error_code="TOOL_TIMEOUT",
+        error="Turn deadline exceeded during tool" if outer else _PUBLIC_TIMEOUT,
+        error_code="TURN_TIMEOUT" if outer else "TOOL_TIMEOUT",
         retryable=not started,
         outcome="unknown" if started else "not_started",
+        turn_timeout=outer,
     )
 
 
@@ -256,12 +268,14 @@ class ToolExecutionController:
         ledger: ToolIdempotencyLedger | None = None,
         *,
         clock: Callable[[], float] = time.monotonic,
+        timer_scheduler: TimerScheduler = SYSTEM_TIMER_SCHEDULER,
         metrics_sink: MetricsSink = NOOP_METRICS,
         trace_sink: TraceSink = NOOP_TRACE,
     ) -> None:
         self.limits = limits if limits is not None else ToolExecutionLimits()
         self.ledger = ledger if ledger is not None else InMemoryToolIdempotencyLedger()
         self._clock = clock
+        self._timer_scheduler = timer_scheduler
         self._metrics = metrics_sink
         self._trace = trace_sink
         self._semaphore = asyncio.Semaphore(self.limits.max_parallel)
@@ -345,9 +359,10 @@ class ToolExecutionController:
     async def _claim_with_deadline(
         self,
         invocation: ToolInvocation,
-        deadline: float,
+        effective_deadline: _EffectiveDeadline,
     ) -> tuple[ToolIdempotencyClaim | None, _ToolExecutionFailure | None]:
         context = invocation.context
+        deadline = effective_deadline.value
         pending = self._start_setup(
             session_id=context.session_id,
             call_id=context.tool_call_id,
@@ -362,10 +377,8 @@ class ToolExecutionController:
         cancel_task = asyncio.create_task(context.cancellation_token.wait())
         try:
             try:
-                done, _ = await asyncio.wait(
-                    {claim_task, cancel_task},
-                    timeout=max(0.0, deadline - self._clock()),
-                    return_when=asyncio.FIRST_COMPLETED,
+                done = await self.wait_until_deadline(
+                    {claim_task, cancel_task}, deadline
                 )
             except asyncio.CancelledError:
                 failure = _cancelled(started=False)
@@ -381,7 +394,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if cancel_task in done or context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 self._detach_setup(
                     pending,
@@ -434,7 +447,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 cleanup = self._start_setup(
                     session_id=context.session_id,
@@ -484,9 +497,10 @@ class ToolExecutionController:
             operation=lambda: self.ledger.is_started(claim),
         )
         try:
-            done, _ = await asyncio.wait(
+            done = await self.wait_until_deadline(
                 {pending.task},
-                timeout=min(
+                self._clock()
+                + min(
                     _STARTED_LOOKUP_TIMEOUT_SECONDS,
                     self.limits.timeout_seconds,
                 ),
@@ -600,7 +614,7 @@ class ToolExecutionController:
                 error_code = metric_error_code(failure.error_code)
                 if failure.error_code == "TOOL_CANCELLED":
                     metric_outcome = "cancelled"
-                elif failure.error_code == "TOOL_TIMEOUT":
+                elif failure.error_code in {"TOOL_TIMEOUT", "TURN_TIMEOUT"}:
                     metric_outcome = "timeout"
                 else:
                     metric_outcome = failure.outcome
@@ -625,8 +639,13 @@ class ToolExecutionController:
         """Execute or replay one preflighted invocation under runtime bounds."""
         context = invocation.context
         queue_started = self._clock()
-        deadline = self._effective_deadline(context.deadline_monotonic, spec.timeout_ms)
-        claim, claim_failure = await self._claim_with_deadline(invocation, deadline)
+        effective_deadline = self._effective_deadline(
+            context.deadline_monotonic, spec.timeout_ms
+        )
+        deadline = effective_deadline.value
+        claim, claim_failure = await self._claim_with_deadline(
+            invocation, effective_deadline
+        )
         if claim_failure is not None:
             return _ToolExecutionOutcome(failure=claim_failure)
         if claim is None:
@@ -641,6 +660,7 @@ class ToolExecutionController:
                 claim,
                 context.cancellation_token,
                 deadline,
+                outer_timeout=effective_deadline.outer,
             )
 
         gate_acquired = False
@@ -648,10 +668,8 @@ class ToolExecutionController:
         gate_task = asyncio.create_task(self._acquire_gate(spec.parallel_safe))
         gate_cancel_task = asyncio.create_task(context.cancellation_token.wait())
         try:
-            done, _ = await asyncio.wait(
-                {gate_task, gate_cancel_task},
-                timeout=max(0.0, deadline - self._clock()),
-                return_when=asyncio.FIRST_COMPLETED,
+            done = await self.wait_until_deadline(
+                {gate_task, gate_cancel_task}, deadline
             )
             if gate_task in done:
                 gate_task.result()
@@ -662,7 +680,7 @@ class ToolExecutionController:
                     _cancelled(started=False)
                     if gate_cancel_task in done
                     or context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 if gate_acquired:
                     await self._release_gate(spec.parallel_safe)
@@ -674,7 +692,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 await self._release_gate(spec.parallel_safe)
                 gate_acquired = False
@@ -702,12 +720,7 @@ class ToolExecutionController:
         acquire_task = asyncio.create_task(self._semaphore.acquire())
         cancel_task = asyncio.create_task(context.cancellation_token.wait())
         try:
-            remaining = max(0.0, deadline - self._clock())
-            done, _ = await asyncio.wait(
-                {acquire_task, cancel_task},
-                timeout=remaining,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            done = await self.wait_until_deadline({acquire_task, cancel_task}, deadline)
             if acquire_task in done:
                 acquire_task.result()
                 acquired = True
@@ -716,7 +729,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if cancel_task in done or context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 if acquired:
                     self._semaphore.release()
@@ -758,7 +771,7 @@ class ToolExecutionController:
                 claim_resolved = True
                 return _ToolExecutionOutcome(failure=failure)
             if self._clock() >= deadline:
-                failure = _timed_out(started=False)
+                failure = _timed_out(started=False, outer=effective_deadline.outer)
                 self._semaphore.release()
                 acquired = False
                 permit_accounted = True
@@ -793,11 +806,7 @@ class ToolExecutionController:
             # setup work. Journal implementations must be cancellation-
             # cooperative so a terminal event cannot overtake a late Started.
             emit_task = asyncio.create_task(record_started())
-            done, _ = await asyncio.wait(
-                {emit_task, cancel_task},
-                timeout=max(0.0, deadline - self._clock()),
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            done = await self.wait_until_deadline({emit_task, cancel_task}, deadline)
             emit_error: BaseException | None = None
             if emit_task in done:
                 try:
@@ -828,7 +837,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 self._semaphore.release()
                 acquired = False
@@ -847,10 +856,8 @@ class ToolExecutionController:
             )
             mark_task = mark_pending.task
             try:
-                done, _ = await asyncio.wait(
-                    {mark_task, cancel_task},
-                    timeout=max(0.0, deadline - self._clock()),
-                    return_when=asyncio.FIRST_COMPLETED,
+                done = await self.wait_until_deadline(
+                    {mark_task, cancel_task}, deadline
                 )
             except asyncio.CancelledError:
                 failure = _cancelled(started=True)
@@ -869,7 +876,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=True)
                     if cancel_task in done or context.cancellation_token.is_cancelled
-                    else _timed_out(started=True)
+                    else _timed_out(started=True, outer=effective_deadline.outer)
                 )
                 self._detach_setup(
                     mark_pending,
@@ -923,7 +930,7 @@ class ToolExecutionController:
                 failure = (
                     _cancelled(started=False)
                     if context.cancellation_token.is_cancelled
-                    else _timed_out(started=False)
+                    else _timed_out(started=False, outer=effective_deadline.outer)
                 )
                 self._semaphore.release()
                 acquired = False
@@ -962,12 +969,7 @@ class ToolExecutionController:
             gate_acquired = False  # The settlement callback now owns the gate.
             gate_accounted = True
 
-            remaining = max(0.0, deadline - self._clock())
-            done, _ = await asyncio.wait(
-                {settlement, cancel_task},
-                timeout=remaining,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            done = await self.wait_until_deadline({settlement, cancel_task}, deadline)
             if settlement in done:
                 completed = settlement.result()
                 if completed.cause is None:
@@ -1025,7 +1027,7 @@ class ToolExecutionController:
             if cancel_task in done or context.cancellation_token.is_cancelled:
                 failure = _cancelled(started=True)
             else:
-                failure = _timed_out(started=True)
+                failure = _timed_out(started=True, outer=effective_deadline.outer)
             child_token.cancel()
             task.cancel()
             await self.ledger.unknown_outcome(claim, _ledger_failure(failure))
@@ -1072,15 +1074,13 @@ class ToolExecutionController:
         claim: ToolIdempotencyClaim,
         cancellation_token: CancellationToken,
         deadline: float,
+        *,
+        outer_timeout: bool,
     ) -> _ToolExecutionOutcome:
         wait_task = asyncio.create_task(self.ledger.wait(claim))
         cancel_task = asyncio.create_task(cancellation_token.wait())
         try:
-            done, _ = await asyncio.wait(
-                {wait_task, cancel_task},
-                timeout=max(0.0, deadline - self._clock()),
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            done = await self.wait_until_deadline({wait_task, cancel_task}, deadline)
             if wait_task in done:
                 return _from_resolution(wait_task.result())
             started = await self._is_started(
@@ -1092,7 +1092,7 @@ class ToolExecutionController:
                 failure=(
                     _cancelled(started=started)
                     if cancel_task in done or cancellation_token.is_cancelled
-                    else _timed_out(started=started)
+                    else _timed_out(started=started, outer=outer_timeout)
                 )
             )
         finally:
@@ -1103,19 +1103,48 @@ class ToolExecutionController:
         self,
         turn_deadline: float | None,
         timeout_ms: int | None,
-    ) -> float:
+    ) -> _EffectiveDeadline:
         now = self._clock()
-        deadlines = [now + self.limits.timeout_seconds]
-        if turn_deadline is not None:
-            deadlines.append(turn_deadline)
+        local_deadlines = [now + self.limits.timeout_seconds]
         if timeout_ms is not None:
-            deadlines.append(now + timeout_ms / 1000)
-        return min(deadlines)
+            local_deadlines.append(now + timeout_ms / 1000)
+        local_deadline = min(local_deadlines)
+        if turn_deadline is not None and turn_deadline <= local_deadline:
+            return _EffectiveDeadline(turn_deadline, outer=True)
+        return _EffectiveDeadline(local_deadline, outer=False)
 
-    def approval_deadline(self, turn_deadline: float | None) -> float:
+    def approval_deadline(self, turn_deadline: float | None) -> _EffectiveDeadline:
         """Return the effective absolute approval deadline using this clock."""
-        deadline = self._clock() + self.limits.approval_timeout_seconds
-        return deadline if turn_deadline is None else min(deadline, turn_deadline)
+        local_deadline = self._clock() + self.limits.approval_timeout_seconds
+        if turn_deadline is not None and turn_deadline <= local_deadline:
+            return _EffectiveDeadline(turn_deadline, outer=True)
+        return _EffectiveDeadline(local_deadline, outer=False)
+
+    async def wait_until_deadline(
+        self,
+        tasks: set[asyncio.Future[Any] | asyncio.Task[Any]],
+        deadline: float,
+    ) -> set[asyncio.Future[Any] | asyncio.Task[Any]]:
+        """Wait for task settlement or an injected monotonic deadline."""
+        loop = asyncio.get_running_loop()
+        deadline_wait: asyncio.Future[None] = loop.create_future()
+        timer = self._timer_scheduler.call_later(
+            max(0.0, deadline - self._clock()),
+            lambda: (
+                deadline_wait.set_result(None) if not deadline_wait.done() else None
+            ),
+        )
+        try:
+            done, _ = await asyncio.wait(
+                {*tasks, deadline_wait},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            done.discard(deadline_wait)
+            return done
+        finally:
+            timer.cancel()
+            if not deadline_wait.done():
+                deadline_wait.cancel()
 
     def start_approval(
         self,
@@ -1236,7 +1265,7 @@ class ToolExecutionController:
                 for pending in self._pending_setup.values()
             )
             tasks.extend(pending.task for pending in self._pending_approvals.values())
-            await asyncio.wait(tasks, timeout=remaining)
+            await self.wait_until_deadline(set(tasks), deadline)
             await asyncio.sleep(0)
         return sorted(
             [active.call_id for active in self._active.values()]

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from collections import deque
 from copy import deepcopy
 import json
@@ -25,10 +26,13 @@ from kaji.infra.events.schemas import (
 )
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator
+from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.context import ToolInvocation, TurnContext
-from kaji.runtime.determinism import Clock, IdFactory, IdScope
+from kaji.runtime.determinism import Clock, IdFactory, IdScope, ScheduledCallback
 from kaji.runtime.providers.anthropic import AnthropicProvider
 from kaji.runtime.providers.errors import ServiceError, normalize_provider_error
 from kaji.runtime.providers.openai import OpenAIProvider
@@ -82,6 +86,63 @@ class FixedClock(Clock):
 
     def now_monotonic(self) -> float:
         return self.monotonic
+
+    def advance(self, seconds: float) -> None:
+        self.monotonic += seconds
+
+
+class DeterministicTimer(ScheduledCallback):
+    def __init__(
+        self,
+        *,
+        due: float,
+        order: int,
+        callback: Callable[[], None],
+    ) -> None:
+        self.due = due
+        self.order = order
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class DeterministicTimerScheduler:
+    def __init__(self, clock: FixedClock) -> None:
+        self.clock = clock
+        self.timers: list[DeterministicTimer] = []
+        self._order = 0
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> DeterministicTimer:
+        timer = DeterministicTimer(
+            due=self.clock.now_monotonic() + max(0.0, delay_seconds),
+            order=self._order,
+            callback=callback,
+        )
+        self._order += 1
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds: float) -> None:
+        self.clock.advance(seconds)
+        while True:
+            due = sorted(
+                (
+                    timer
+                    for timer in self.timers
+                    if not timer.cancelled
+                    and timer.due <= self.clock.now_monotonic()
+                ),
+                key=lambda timer: (timer.due, timer.order),
+            )
+            if not due:
+                return
+            timer = due[0]
+            timer.cancelled = True
+            timer.callback()
 
 
 def empty_snapshot() -> dict[str, Any]:
@@ -179,6 +240,45 @@ class ScriptedProvider:
         if response["tool_calls"]:
             yield ModelResponseChunk(tool_calls=response["tool_calls"])
         self.operation_trace.append(f"provider:end:{index}")
+
+
+class DeadlineFixtureProvider:
+    provider_family = "fixture"
+
+    def __init__(self, *, stream_first: bool) -> None:
+        self.stream_first = stream_first
+        self.entered = asyncio.Event()
+        self.operation_trace: list[str] = []
+        self.requests: list[dict[str, Any]] = []
+        self.responses: list[dict[str, Any]] = []
+
+    async def generate_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        **options: Any,
+    ) -> AsyncIterator[ModelResponseChunk]:
+        index = len(self.requests)
+        self.operation_trace.append(f"provider:start:{index}")
+        self.requests.append(
+            {
+                "messages": neutral_messages(messages),
+                "tools": deepcopy(tools),
+            }
+        )
+        content = "partial" if self.stream_first else ""
+        self.responses.append({"content": content, "tool_calls": []})
+        try:
+            if content:
+                yield ModelResponseChunk(delta=content)
+            self.entered.set()
+            token = options.get("cancellation_token")
+            if token is None:
+                raise AssertionError("deadline fixture requires a cancellation token")
+            await token.wait()
+            token.raise_if_cancelled()
+        finally:
+            self.operation_trace.append(f"provider:end:{index}")
 
 
 class FixtureExecutionController(ToolExecutionController):
@@ -374,11 +474,112 @@ def controls_for(
     )
 
 
+TURN_DEADLINE_FIXTURES = {
+    "turn-queue-timeout",
+    "turn-provider-open-timeout",
+    "turn-provider-stream-timeout",
+    "turn-cancellation-deadline-tie",
+}
+
+
+async def _wait_until(predicate: Callable[[], bool]) -> None:
+    for _ in range(100):
+        if predicate():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("deterministic parity barrier was not reached")
+
+
+async def run_turn_deadline(
+    document: dict[str, Any], scenario: dict[str, Any]
+) -> dict[str, Any]:
+    snapshot = empty_snapshot()
+    fixture = scenario["fixture"]
+    session_id = scenario["input"]["session_id"]
+    id_factory, clock = controls_for(document, scenario)
+    scheduler = DeterministicTimerScheduler(clock)
+    coordinator = InMemoryTurnCoordinator()
+    provider = DeadlineFixtureProvider(
+        stream_first=fixture == "turn-provider-stream-timeout"
+    )
+    store = InMemoryEventStore()
+    runtime = AgentRuntime(
+        bus=None,
+        store=store,
+        provider=cast(Any, provider),
+        journal=InMemoryEventJournal(store),
+        coordinator=coordinator,
+        default_context=TurnContext(
+            principal_id="parity-principal",
+            request_id="request-fixed",
+            trace_id="trace-fixed",
+        ),
+        turn_execution_limits=TurnExecutionLimits(timeout_seconds=1.0),
+        id_factory=id_factory,
+        clock=clock,
+        timer_scheduler=scheduler,
+    )
+    token = CancellationToken()
+    holder: Any = None
+    if fixture == "turn-queue-timeout":
+        holder = await coordinator.acquire(session_id).__aenter__()
+
+    turn_task = asyncio.create_task(
+        runtime.turn(
+            scenario["input"]["prompts"][0],
+            session_id=session_id,
+            cancellation_token=token,
+        )
+    )
+    if fixture == "turn-queue-timeout":
+        await _wait_until(lambda: coordinator.waiter_count == 1)
+    else:
+        await provider.entered.wait()
+    if fixture == "turn-cancellation-deadline-tie":
+        token.cancel()
+    scheduler.advance(1.0)
+
+    try:
+        turn = await turn_task
+    except TurnTimeoutError as error:
+        snapshot["result"] = {
+            "error": {
+                "code": error.code,
+                "phase": error.phase,
+                "retryable": error.retryable,
+                "outcome": error.outcome,
+            }
+        }
+    else:
+        snapshot["result"] = {
+            "turns": [
+                {
+                    "session_id": turn.session_id,
+                    "turn_id": turn.turn_id,
+                    "text": turn.text,
+                }
+            ]
+        }
+    finally:
+        if holder is not None:
+            await holder.release()
+
+    snapshot["events"] = [
+        event_wire(event) for event in await runtime.history(session_id)
+    ]
+    snapshot["operation_trace"] = provider.operation_trace
+    snapshot["provider_requests"] = provider.requests
+    snapshot["provider_responses"] = provider.responses
+    return snapshot
+
+
 async def run_runtime(
     document: dict[str, Any], scenario: dict[str, Any]
 ) -> dict[str, Any]:
     snapshot = empty_snapshot()
     fixture = scenario["fixture"]
+    if fixture in TURN_DEADLINE_FIXTURES:
+        return await run_turn_deadline(document, scenario)
     if fixture == "missing-risk":
         try:
             ToolSpec(

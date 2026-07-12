@@ -16,7 +16,14 @@ import type { ContextWindow, TurnContext } from "@/runtime/context";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { MetricsSink, TraceSink } from "@/observability";
-import { systemClock, type Clock, type IdFactory } from "@/internal/uuid";
+import {
+  systemClock,
+  systemTimerScheduler,
+  type Clock,
+  type IdFactory,
+  type TimerScheduler,
+} from "@/internal/uuid";
+import type { TurnExecutionLimits } from "@/runtime/limits";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -44,11 +51,13 @@ export class AgentBuilder {
   private _contextWindow: ContextWindow | undefined;
   private _defaultContext: TurnContext | undefined;
   private _toolExecutionLimits: Partial<ToolExecutionLimits> | undefined;
+  private _turnExecutionLimits: Partial<TurnExecutionLimits> | undefined;
   private _toolIdempotencyLedger: ToolIdempotencyLedger | undefined;
   private _metricsSink: MetricsSink | undefined;
   private _traceSink: TraceSink | undefined;
   private _idFactory: IdFactory | undefined;
   private _clock: Clock | undefined;
+  private _timerScheduler: TimerScheduler | undefined;
 
   provider(p: ModelProvider): this {
     this._provider = p;
@@ -102,6 +111,11 @@ export class AgentBuilder {
     return this;
   }
 
+  turnExecutionLimits(limits: Partial<TurnExecutionLimits>): this {
+    this._turnExecutionLimits = { ...limits };
+    return this;
+  }
+
   toolIdempotencyLedger(ledger: ToolIdempotencyLedger): this {
     this._toolIdempotencyLedger = ledger;
     return this;
@@ -124,6 +138,11 @@ export class AgentBuilder {
 
   clock(clock: Clock): this {
     this._clock = clock;
+    return this;
+  }
+
+  timerScheduler(scheduler: TimerScheduler): this {
+    this._timerScheduler = scheduler;
     return this;
   }
 
@@ -156,12 +175,14 @@ export class AgentBuilder {
       registry.listSpecs({ enabledOnly: false }).map((spec) => [spec.name, spec]),
     );
     const clock = this._clock ?? systemClock;
+    const timerScheduler = this._timerScheduler ?? systemTimerScheduler;
     const executionController = new ToolExecutionController({
       limits: this._toolExecutionLimits,
       ledger: this._toolIdempotencyLedger,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
       monotonicNow: () => clock.nowMonotonic(),
+      timerScheduler,
     });
     const planner = new ToolPlanner({
       executor: (name, args, context) => registry.execute(name, args, context),
@@ -172,6 +193,7 @@ export class AgentBuilder {
       traceSink: this._traceSink,
       idFactory: this._idFactory,
       clock,
+      timerScheduler,
       specs,
       executionController,
     });
@@ -186,10 +208,12 @@ export class AgentBuilder {
       policy: this._policy,
       planner,
       defaultContext: this._defaultContext,
+      turnExecutionLimits: this._turnExecutionLimits,
       metricsSink: this._metricsSink,
       traceSink: this._traceSink,
       idFactory: this._idFactory,
       clock,
+      timerScheduler,
       ...(this._contextWindow === undefined ? {} : { contextWindow: this._contextWindow }),
       ...(opts.turnCoordinator === undefined ? {} : { turnCoordinator: opts.turnCoordinator }),
     });

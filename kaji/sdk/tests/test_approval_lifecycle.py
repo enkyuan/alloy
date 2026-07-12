@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, dataclass
 import logging
 import time
 from typing import Any, cast
@@ -37,6 +37,7 @@ from kaji.runtime.agents.approval import (
 )
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
     ToolInvocation,
@@ -48,9 +49,58 @@ from kaji.runtime.agents.planner import (
     _ApprovalRequestGate,
 )
 from kaji.runtime.providers.mock import MockProvider
+from kaji.runtime.determinism import Clock, ScheduledCallback, TimerScheduler
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
+
+
+class _ApprovalClock(Clock):
+    def __init__(self) -> None:
+        self.monotonic = 0.0
+
+    def __call__(self) -> float:
+        return self.monotonic
+
+    def now_monotonic(self) -> float:
+        return self.monotonic
+
+    def now_wall_seconds(self) -> float:
+        return 1_700_000_000.0
+
+
+@dataclass
+class _ApprovalTimer(ScheduledCallback):
+    due: float
+    callback: Callable[[], None]
+    cancelled: bool = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _ApprovalScheduler(TimerScheduler):
+    def __init__(self, clock: _ApprovalClock) -> None:
+        self.clock = clock
+        self.timers: list[_ApprovalTimer] = []
+
+    @property
+    def active_count(self) -> int:
+        return sum(not timer.cancelled for timer in self.timers)
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback:
+        timer = _ApprovalTimer(self.clock.monotonic + delay_seconds, callback)
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds: float) -> None:
+        self.clock.monotonic += seconds
+        for timer in self.timers:
+            if not timer.cancelled and timer.due <= self.clock.monotonic:
+                timer.cancelled = True
+                timer.callback()
 
 
 def _context(
@@ -343,7 +393,7 @@ async def test_missing_and_throwing_handlers_are_stably_unavailable() -> None:
 
 
 @pytest.mark.asyncio
-async def test_event_backed_pre_cancel_and_deadline_still_emit_request() -> None:
+async def test_event_backed_pre_cancel_still_emits_request() -> None:
     token = CancellationToken()
     token.cancel()
     cancelled, _, _ = await _execute(
@@ -358,14 +408,6 @@ async def test_event_backed_pre_cancel_and_deadline_still_emit_request() -> None
     ]
     assert isinstance(cancelled[2], ToolApprovalRejected)
     assert cancelled[2].error_code == "TOOL_CANCELLED"
-
-    expired, _, _ = await _execute(
-        EventApprovalHandler(),
-        deadline=9.0,
-    )
-    assert expired[1].type == EventType.TOOL_APPROVAL_REQUESTED
-    assert isinstance(expired[2], ToolApprovalRejected)
-    assert expired[2].error_code == "APPROVAL_TIMEOUT"
 
 
 @pytest.mark.asyncio
@@ -395,11 +437,10 @@ async def test_planner_enforces_handler_timeout_and_caller_cancellation() -> Non
             await asyncio.Event().wait()
             raise AssertionError("unreachable")
 
-    times = iter((9.0, 9.0, 10.0))
+    times = iter((9.0, 9.0, 14.0))
     timed_out, _, executor = await _execute(
         HangingHandler(),
-        deadline=10.0,
-        clock=lambda: next(times, 10.0),
+        clock=lambda: next(times, 14.0),
     )
     assert isinstance(timed_out[2], ToolApprovalRejected)
     assert timed_out[2].error_code == "APPROVAL_TIMEOUT"
@@ -413,6 +454,193 @@ async def test_planner_enforces_handler_timeout_and_caller_cancellation() -> Non
     assert isinstance(cancelled[2], ToolApprovalRejected)
     assert cancelled[2].error_code == "TOOL_CANCELLED"
     executor.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_outer_approval_deadline_closes_lifecycle_before_agent_terminal() -> None:
+    class ChargeIntegration:
+        def register(self, registry: ToolRegistry) -> None:
+            spec = ToolSpec(
+                name="charge",
+                description="charge",
+                parameters={},
+                risk="destructive",
+            )
+
+            @registry.register(spec)
+            async def charge(
+                context: Any, arguments: dict[str, Any]
+            ) -> dict[str, bool]:
+                raise AssertionError("expired approval must not execute")
+
+    clock = _ApprovalClock()
+    scheduler = _ApprovalScheduler(clock)
+    store = InMemoryEventStore()
+    inner_journal = InMemoryEventJournal(store)
+    closes = 0
+
+    class CountingSubscription:
+        def __init__(self, subscription: Any) -> None:
+            self._subscription = subscription
+
+        def __aiter__(self) -> Any:
+            return self
+
+        async def __anext__(self) -> Any:
+            return await anext(self._subscription)
+
+        async def aclose(self) -> None:
+            nonlocal closes
+            closes += 1
+            await self._subscription.aclose()
+
+    class CountingJournal:
+        store = inner_journal.store
+
+        async def commit(self, event: Any) -> Any:
+            return await inner_journal.commit(event)
+
+        async def open_subscription(self, *args: Any, **kwargs: Any) -> Any:
+            subscription = await inner_journal.open_subscription(*args, **kwargs)
+            return CountingSubscription(subscription)
+
+        def subscribe(self, *args: Any, **kwargs: Any) -> Any:
+            return inner_journal.subscribe(*args, **kwargs)
+
+    journal = CountingJournal()
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider(tool_call={"name": "charge", "args": {}}))
+        .integration(ChargeIntegration())
+        .policy(ToolPolicy(require_approval_for={"destructive"}))
+        .approval_handler(EventApprovalHandler())
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .turn_execution_limits(
+            TurnExecutionLimits(
+                timeout_seconds=100,
+                provider_cancellation_grace_seconds=2,
+            )
+        )
+        .build(store=store, journal=journal)  # type: ignore[arg-type]
+    )
+    pending = asyncio.create_task(
+        runtime.turn(
+            "charge",
+            session_id="outer-approval",
+            context=TurnContext(
+                principal_id="principal",
+                deadline_monotonic=5,
+            ),
+        )
+    )
+    requested: ToolApprovalRequested | None = None
+    while requested is None:
+        requested = next(
+            (
+                event
+                for event in await store.get_events("outer-approval")
+                if isinstance(event, ToolApprovalRequested)
+            ),
+            None,
+        )
+        if requested is None:
+            await asyncio.sleep(0)
+    scheduler.advance(5)
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await pending
+    assert caught.value.phase == "approval"
+    assert caught.value.retryable is True
+    assert caught.value.outcome == "not_started"
+    events = await store.get_events("outer-approval")
+    rejection_index = next(
+        index
+        for index, event in enumerate(events)
+        if isinstance(event, ToolApprovalRejected)
+    )
+    tool_failure_index = next(
+        index for index, event in enumerate(events) if isinstance(event, ToolCallFailed)
+    )
+    turn_failures = [
+        (index, event)
+        for index, event in enumerate(events)
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(turn_failures) == 1
+    turn_failure_index, turn_failure = turn_failures[0]
+    assert rejection_index < tool_failure_index < turn_failure_index
+    assert events[rejection_index].error_code == "TURN_TIMEOUT"
+    assert events[tool_failure_index].error_code == "TURN_TIMEOUT"
+    assert turn_failure.error_code == "TURN_TIMEOUT"
+    assert turn_failure.phase == "approval"
+    assert turn_failure.retryable is True
+    assert turn_failure.outcome == "not_started"
+    assert await runtime.drain_tools(1) == []
+    assert closes == 1
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_approval_cancellation_wins_same_tick_as_outer_deadline() -> None:
+    clock = _ApprovalClock()
+    scheduler = _ApprovalScheduler(clock)
+    controller = ToolExecutionController(
+        ToolExecutionLimits(approval_timeout_seconds=10),
+        clock=clock,
+        timer_scheduler=scheduler,
+    )
+    token = CancellationToken()
+    store = InMemoryEventStore()
+    journal = InMemoryEventJournal(store)
+
+    async def execute(_invocation: ToolInvocation) -> dict[str, bool]:
+        return {"ok": True}
+
+    planner = ToolPlanner(
+        execute,
+        policy=ToolPolicy(require_approval_for={"destructive"}),
+        approval_handler=EventApprovalHandler(),
+        specs={
+            "charge": ToolSpec(
+                name="charge",
+                description="charge",
+                parameters={},
+                risk="destructive",
+            )
+        },
+        controller=controller,
+    )
+    pending = asyncio.create_task(
+        planner.execute_batch(
+            "session",
+            [{"id": "call", "name": "charge", "arguments": {}}],
+            JournalEventEmitter(journal),
+            turn_id="turn",
+            turn_context=TurnContext(
+                principal_id="principal",
+                deadline_monotonic=5,
+            ),
+            cancellation_token=token,
+            approval_journal=journal,
+        )
+    )
+    while await store.last_sequence("session") < 2:
+        await asyncio.sleep(0)
+    scheduler.call_later(5, token.cancel)
+    scheduler.advance(5)
+
+    results = await pending
+    assert results[0]["error_code"] == "TOOL_CANCELLED"
+    events = await store.get_events("session")
+    rejection = next(
+        event for event in events if isinstance(event, ToolApprovalRejected)
+    )
+    failure = next(event for event in events if isinstance(event, ToolCallFailed))
+    assert rejection.error_code == "TOOL_CANCELLED"
+    assert failure.error_code == "TOOL_CANCELLED"
+    assert all(event.type != EventType.AGENT_TURN_FAILED for event in events)
+    assert scheduler.active_count == 0
 
 
 @pytest.mark.asyncio
@@ -473,6 +701,36 @@ async def test_external_rejection_is_not_duplicated_by_planner() -> None:
         EventType.TOOL_CALL_FAILED,
     ]
     assert results[0]["error_code"] == "APPROVAL_REJECTED"
+    executor.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_recorded_turn_timeout_preserves_source_through_tool_terminal() -> None:
+    pending, store, journal, _, executor = await _start_external_approval()
+    await journal.commit(
+        ToolApprovalRejected(
+            session_id="session",
+            turn_id="turn",
+            tool_name="charge",
+            tool_call_id="call",
+            error_code="TURN_TIMEOUT",
+            reason="Turn deadline exceeded during approval",
+        )
+    )
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await pending
+    assert caught.value.phase == "approval"
+    assert caught.value.retryable is True
+    assert caught.value.outcome == "not_started"
+    events = await store.get_events("session")
+    rejections = [event for event in events if isinstance(event, ToolApprovalRejected)]
+    failures = [event for event in events if isinstance(event, ToolCallFailed)]
+    assert len(rejections) == len(failures) == 1
+    assert rejections[0].error_code == "TURN_TIMEOUT"
+    assert failures[0].error_code == "TURN_TIMEOUT"
+    assert failures[0].retryable is True
+    assert failures[0].outcome == "not_started"
     executor.assert_not_awaited()
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from importlib import import_module
+import math
 from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
@@ -43,11 +44,25 @@ class AnthropicProvider(ModelProvider):
         *,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        request_timeout_seconds: float | None = None,
         **_: Any,
     ) -> None:
         settings = get_settings()
         self.api_key = api_key if api_key is not None else settings.ANTHROPIC_API_KEY
         self.model_name = model if model is not None else settings.ANTHROPIC_MODEL
+        if isinstance(request_timeout_seconds, bool) or (
+            request_timeout_seconds is not None
+            and not isinstance(request_timeout_seconds, (int, float))
+        ):
+            raise TypeError("request_timeout_seconds must be a positive finite number")
+        if request_timeout_seconds is not None and (
+            not math.isfinite(float(request_timeout_seconds))
+            or request_timeout_seconds <= 0
+        ):
+            raise ValueError("request_timeout_seconds must be a positive finite number")
+        self.request_timeout_seconds = (
+            None if request_timeout_seconds is None else float(request_timeout_seconds)
+        )
         self._client: Any = None
 
         if not self.api_key:
@@ -68,7 +83,13 @@ class AnthropicProvider(ModelProvider):
 
             # Kaji does not own a cancellable pre-stream retry loop. Disable
             # opaque SDK backoff so caller cancellation cannot be trapped in it.
-            self._client = AsyncAnthropic(api_key=self.api_key, max_retries=0)
+            client_options: Dict[str, Any] = {
+                "api_key": self.api_key,
+                "max_retries": 0,
+            }
+            if self.request_timeout_seconds is not None:
+                client_options["timeout"] = self.request_timeout_seconds
+            self._client = AsyncAnthropic(**client_options)
         return self._client
 
     def _split_messages(

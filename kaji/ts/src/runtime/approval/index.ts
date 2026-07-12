@@ -1,5 +1,6 @@
 export type {
   ApprovalDecision,
+  ApprovalDeadlineSource,
   ApprovalRequest,
   ApprovalRejectionCode,
   ApprovalRequestContext,

@@ -13,8 +13,11 @@ import type { EventCommitter } from "@/events/protocols";
 import {
   systemClock,
   systemIdFactory,
+  systemTimerScheduler,
   type Clock,
   type IdFactory,
+  type TimerHandle,
+  type TimerScheduler,
   type UuidFactory,
 } from "@/internal/uuid";
 import type {
@@ -26,6 +29,7 @@ import type {
   TypedApprovalHandler,
 } from "@/runtime/approval/types";
 import { requestLegacyApproval } from "@/runtime/approval/types";
+import { TurnTimeoutError, type TurnPhase } from "@/runtime/limits";
 import {
   MissingToolIdentityError,
   assertAbortSignal,
@@ -35,7 +39,6 @@ import {
   snapshotContextMetadata,
   snapshotToolExecutionContext,
   type ToolExecutionContext,
-  type TurnContext,
 } from "@/runtime/context";
 import {
   ToolExecutionController,
@@ -93,7 +96,8 @@ export type ToolExecutor = (
 ) => Promise<unknown>;
 /** @deprecated Return ApprovalDecision from a TypedApprovalHandler instead. */
 export type ApprovalHandler = LegacyApprovalHandler;
-export type EmitFn = (event: KajiEvent) => Promise<StoredKajiEvent | void>;
+/** Start acknowledgements receive `signal`; custom emitters must settle when it aborts. */
+export type EmitFn = (event: KajiEvent, signal?: AbortSignal) => Promise<StoredKajiEvent | void>;
 
 const EMITTER_COMMITTER = Symbol("kaji.tool-planner.emitter-committer");
 type CommitterBoundEmitFn = EmitFn & {
@@ -102,7 +106,12 @@ type CommitterBoundEmitFn = EmitFn & {
 
 /** Bind a runtime-owned write path to the committer whose journal it updates. */
 export function bindEmitterToCommitter(emit: EmitFn, committer: EventCommitter): EmitFn {
-  const bound: EmitFn = (event) => emit(event);
+  const bound: EmitFn = (event, signal) => {
+    if (signal?.aborted) {
+      return Promise.reject(new DOMException("Event commit cancelled", "AbortError"));
+    }
+    return emit(event, signal);
+  };
   Object.defineProperty(bound, EMITTER_COMMITTER, { value: committer });
   return bound;
 }
@@ -130,17 +139,18 @@ export interface ToolPlannerOptions {
   idempotencyLedger?: ToolIdempotencyLedger;
   /** Canonical runtime committer used by event-backed approval waiters. */
   approvalCommitter?: EventCommitter;
-  /** Wall-clock source used to derive the absolute approval deadline. */
+  /** Monotonic clock source used to derive the absolute approval deadline. */
   now?: () => number;
   metricsSink?: MetricsSink;
   traceSink?: TraceSink;
+  timerScheduler?: TimerScheduler;
 }
 
 interface ResolvedTurnContext {
   readonly principalId: string;
   readonly requestId: string;
   readonly traceId: string;
-  readonly deadlineMs?: number;
+  readonly deadlineMonotonicMs?: number;
   readonly db?: unknown;
   readonly metadata: Readonly<Record<string, unknown>>;
 }
@@ -168,6 +178,7 @@ interface FailureDraft {
   readonly error_path?: string;
   readonly retryable?: boolean;
   readonly outcome?: "not_started" | "failed" | "unknown";
+  readonly turnTimeoutPhase?: Extract<TurnPhase, "approval" | "tool">;
 }
 
 interface SuccessDraft {
@@ -281,7 +292,11 @@ function normalizeApprovalDecision(value: unknown): ApprovalDecision {
   const code = candidate.code;
   if (
     candidate.granted !== false ||
-    (code !== "rejected" && code !== "timeout" && code !== "cancelled" && code !== "unavailable")
+    (code !== "rejected" &&
+      code !== "timeout" &&
+      code !== "turn_timeout" &&
+      code !== "cancelled" &&
+      code !== "unavailable")
   ) {
     throw new TypeError("Rejected approval decisions require a stable rejection code");
   }
@@ -317,6 +332,11 @@ function approvalFailure(
       error_code: "APPROVAL_TIMEOUT",
       retryable: true,
     },
+    turn_timeout: {
+      error: "Agent turn timed out",
+      error_code: "TURN_TIMEOUT",
+      retryable: true,
+    },
     cancelled: {
       error: "Tool approval cancelled",
       error_code: "TOOL_CANCELLED",
@@ -337,13 +357,15 @@ function approvalDecisionFromEvent(event: StoredKajiEvent): ApprovalDecision | u
   }
   if (event.type !== EventType.TOOL_APPROVAL_REJECTED) return undefined;
   const code: ApprovalRejectionCode =
-    event.error_code === "APPROVAL_TIMEOUT"
-      ? "timeout"
-      : event.error_code === "TOOL_CANCELLED"
-        ? "cancelled"
-        : event.error_code === "APPROVAL_UNAVAILABLE"
-          ? "unavailable"
-          : "rejected";
+    event.error_code === "TURN_TIMEOUT"
+      ? "turn_timeout"
+      : event.error_code === "APPROVAL_TIMEOUT"
+        ? "timeout"
+        : event.error_code === "TOOL_CANCELLED"
+          ? "cancelled"
+          : event.error_code === "APPROVAL_UNAVAILABLE"
+            ? "unavailable"
+            : "rejected";
   return { granted: false, code, reason: event.reason, recorded: true };
 }
 
@@ -359,6 +381,7 @@ export class ToolPlanner {
   private readonly nextToolCallId: UuidFactory;
   private readonly clock: Clock;
   private readonly now: () => number;
+  private readonly timerScheduler: TimerScheduler;
   readonly executionController: ToolExecutionController;
 
   /** Canonical emitter for standalone planner usage. */
@@ -389,13 +412,15 @@ export class ToolPlanner {
     this.idFactory = opts.idFactory ?? systemIdFactory;
     this.nextToolCallId = opts.uuid ?? (() => this.idFactory.next("tool_call"));
     this.clock = opts.clock ?? systemClock;
-    this.now = opts.now ?? (() => this.clock.nowWallSeconds() * 1000);
+    this.now = opts.now ?? (() => this.clock.nowMonotonic());
+    this.timerScheduler = opts.timerScheduler ?? systemTimerScheduler;
     this.executionController =
       opts.executionController ??
       new ToolExecutionController({
         limits: opts.executionLimits,
         ledger: opts.idempotencyLedger,
         monotonicNow: () => this.clock.nowMonotonic(),
+        timerScheduler: this.timerScheduler,
         metricsSink: opts.metricsSink,
         traceSink: opts.traceSink,
       });
@@ -411,7 +436,14 @@ export class ToolPlanner {
     toolCalls: ToolCallInstruction[],
     emit: EmitFn,
     turnId?: string,
-    turnContext?: TurnContext,
+    turnContext?: {
+      readonly principalId?: string;
+      readonly requestId?: string;
+      readonly traceId?: string;
+      readonly deadlineMonotonicMs?: number;
+      readonly db?: unknown;
+      readonly metadata?: Readonly<Record<string, unknown>>;
+    },
     signal: AbortSignal = new AbortController().signal,
   ): Promise<ToolCallResult[]> {
     if (turnContext?.principalId === undefined) throw new MissingToolIdentityError();
@@ -423,7 +455,7 @@ export class ToolPlanner {
     const traceId = turnContext.traceId ?? this.idFactory.next("trace");
     assertNonEmptyContextId(requestId, "requestId");
     assertNonEmptyContextId(traceId, "traceId");
-    assertValidDeadline(turnContext.deadlineMs);
+    assertValidDeadline(turnContext.deadlineMonotonicMs);
     assertAbortSignal(signal);
     if (this.approvalCommitter !== undefined && emitterCommitter(emit) !== this.approvalCommitter) {
       throw new TypeError(
@@ -434,7 +466,9 @@ export class ToolPlanner {
       principalId,
       requestId,
       traceId,
-      ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
+      ...(turnContext.deadlineMonotonicMs === undefined
+        ? {}
+        : { deadlineMonotonicMs: turnContext.deadlineMonotonicMs }),
       ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
       metadata: snapshotContextMetadata(turnContext.metadata),
     });
@@ -540,6 +574,21 @@ export class ToolPlanner {
         `${recordingErrors.length} of ${toolCalls.length} tool call(s) failed to record their events`,
       );
     }
+    const turnTimeouts = slots.filter(
+      (slot): slot is FailureDraft =>
+        !("recordingError" in slot) &&
+        slot.status === "failed" &&
+        slot.turnTimeoutPhase !== undefined,
+    );
+    if (turnTimeouts.length > 0) {
+      const selected =
+        turnTimeouts.find((timeout) => timeout.outcome === "unknown") ?? turnTimeouts[0]!;
+      throw new TurnTimeoutError(
+        selected.turnTimeoutPhase!,
+        selected.retryable ?? selected.outcome === "not_started",
+        selected.outcome ?? "not_started",
+      );
+    }
     return results;
   }
 
@@ -594,7 +643,9 @@ export class ToolPlanner {
         toolCallId: id,
         idempotencyKey: `${sessionId}:${id}`,
         signal,
-        ...(turnContext.deadlineMs === undefined ? {} : { deadlineMs: turnContext.deadlineMs }),
+        ...(turnContext.deadlineMonotonicMs === undefined
+          ? {}
+          : { deadlineMonotonicMs: turnContext.deadlineMonotonicMs }),
         ...(turnContext.db === undefined ? {} : { db: turnContext.db }),
         metadata: turnContext.metadata,
       });
@@ -729,9 +780,14 @@ export class ToolPlanner {
       let decision: ApprovalDecision;
       const handler = this.approvalHandler;
       const legacyHandler = this.legacyApprovalHandler;
-      const deadlineMs = Math.min(
-        call.context.deadlineMs ?? Number.POSITIVE_INFINITY,
-        this.now() + this.executionController.limits.approvalTimeoutMs,
+      const localApprovalDeadlineMonotonicMs =
+        this.now() + this.executionController.limits.approvalTimeoutMs;
+      const turnDeadlineMonotonicMs = call.context.deadlineMonotonicMs ?? Number.POSITIVE_INFINITY;
+      const deadlineSource =
+        turnDeadlineMonotonicMs <= localApprovalDeadlineMonotonicMs ? "turn" : "approval";
+      const deadlineMonotonicMs = Math.min(
+        turnDeadlineMonotonicMs,
+        localApprovalDeadlineMonotonicMs,
       );
       try {
         handlerOwnsRequest =
@@ -739,23 +795,23 @@ export class ToolPlanner {
           "approvalRequestOwner" in handler &&
           handler.approvalRequestOwner === "handler";
         if (!handlerOwnsRequest) await emitRequest();
-        if (handler === undefined && legacyHandler === undefined) {
-          decision = {
-            granted: false,
-            code: "unavailable",
-            reason: "No approval handler registered",
-          };
-        } else if (call.context.signal.aborted) {
+        if (call.context.signal.aborted) {
           decision = {
             granted: false,
             code: "cancelled",
             reason: "Tool approval cancelled",
           };
-        } else if (deadlineMs <= this.now()) {
+        } else if (deadlineMonotonicMs <= this.now()) {
           decision = {
             granted: false,
-            code: "timeout",
+            code: deadlineSource === "turn" ? "turn_timeout" : "timeout",
             reason: "Tool approval timed out",
+          };
+        } else if (handler === undefined && legacyHandler === undefined) {
+          decision = {
+            granted: false,
+            code: "unavailable",
+            reason: "No approval handler registered",
           };
         } else if (legacyHandler !== undefined) {
           decision = await this.raceApprovalDecision(
@@ -770,7 +826,8 @@ export class ToolPlanner {
               call.spec.risk,
             ),
             call.context.signal,
-            deadlineMs,
+            deadlineMonotonicMs,
+            deadlineSource,
           );
         } else if (handlerOwnsRequest && this.approvalCommitter === undefined) {
           decision = {
@@ -809,7 +866,10 @@ export class ToolPlanner {
                 throw new ApprovalEventRecordingError({ cause });
               }
             },
-            deadlineMs,
+            deadlineMonotonicMs,
+            deadlineSource,
+            nowMonotonic: this.now,
+            timerScheduler: this.timerScheduler,
           });
           const requested = handler.request(
             {
@@ -822,7 +882,12 @@ export class ToolPlanner {
           decision = normalizeApprovalDecision(
             handlerOwnsRequest
               ? await requested
-              : await this.raceApprovalDecision(requested, call.context.signal, deadlineMs),
+              : await this.raceApprovalDecision(
+                  requested,
+                  call.context.signal,
+                  deadlineMonotonicMs,
+                  deadlineSource,
+                ),
           );
           if (handlerOwnsRequest && storedRequest === undefined) {
             throw new TypeError(
@@ -889,7 +954,13 @@ export class ToolPlanner {
         return {
           status: "terminal",
           call,
-          draft: { status: "failed", ...failure },
+          draft: {
+            status: "failed",
+            ...failure,
+            ...(failure.error_code === "TURN_TIMEOUT"
+              ? { turnTimeoutPhase: "approval" as const }
+              : {}),
+          },
         };
       }
     }
@@ -931,38 +1002,49 @@ export class ToolPlanner {
   private async raceApprovalDecision(
     requested: Promise<ApprovalDecision>,
     signal: AbortSignal,
-    deadlineMs: number,
+    deadlineMonotonicMs: number,
+    deadlineSource: "approval" | "turn",
   ): Promise<ApprovalDecision> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: TimerHandle | undefined;
     let removeAbortListener = () => {};
-    const cancelled = new Promise<ApprovalDecision>((resolve) => {
-      const finish = () =>
-        resolve({
-          granted: false,
-          code: "cancelled",
-          reason: "Tool approval cancelled",
+    const interrupted = new Promise<ApprovalDecision>((resolve) => {
+      let deadlineReached = false;
+      let wakeQueued = false;
+      const wake = () => {
+        if (wakeQueued) return;
+        wakeQueued = true;
+        queueMicrotask(() => {
+          wakeQueued = false;
+          if (signal.aborted) {
+            resolve({
+              granted: false,
+              code: "cancelled",
+              reason: "Tool approval cancelled",
+            });
+          } else if (deadlineReached) {
+            resolve({
+              granted: false,
+              code: deadlineSource === "turn" ? "turn_timeout" : "timeout",
+              reason: "Tool approval timed out",
+            });
+          }
         });
-      if (signal.aborted) finish();
+      };
+      const onAbort = () => wake();
+      if (signal.aborted) onAbort();
       else {
-        signal.addEventListener("abort", finish, { once: true });
-        removeAbortListener = () => signal.removeEventListener("abort", finish);
+        signal.addEventListener("abort", onAbort, { once: true });
+        removeAbortListener = () => signal.removeEventListener("abort", onAbort);
       }
-    });
-    const timeout = new Promise<ApprovalDecision>((resolve) => {
-      timer = setTimeout(
-        () =>
-          resolve({
-            granted: false,
-            code: "timeout",
-            reason: "Tool approval timed out",
-          }),
-        Math.max(0, deadlineMs - this.now()),
-      );
+      timer = this.timerScheduler.schedule(Math.max(0, deadlineMonotonicMs - this.now()), () => {
+        deadlineReached = true;
+        wake();
+      });
     });
     try {
-      return await Promise.race([requested, cancelled, timeout]);
+      return await Promise.race([requested, interrupted]);
     } finally {
-      if (timer !== undefined) clearTimeout(timer);
+      timer?.cancel();
       removeAbortListener();
     }
   }
@@ -982,7 +1064,10 @@ export class ToolPlanner {
         context: call.context,
         timeoutMs: call.spec.timeout_ms,
         exclusive: call.spec.parallel_safe !== true,
-        onStarted: async () => {
+        onStarted: async (signal) => {
+          if (signal.aborted) {
+            throw new DOMException("Tool start recording cancelled", "AbortError");
+          }
           await emit(
             this.event({
               type: EventType.TOOL_CALL_STARTED,
@@ -992,6 +1077,7 @@ export class ToolPlanner {
               tool_call_id: call.id,
               metadata: call.metadata,
             }),
+            signal,
           );
           started = true;
         },
@@ -1006,7 +1092,11 @@ export class ToolPlanner {
     }
     if (!started) revokeValidationReceipt(call.receipt);
     if (outcome.status === "completed") return outcome;
-    return failureFromExecution(outcome.error);
+    const failure = failureFromExecution(outcome.error);
+    return {
+      ...failure,
+      ...(outcome.turnTimeout === true ? { turnTimeoutPhase: "tool" as const } : {}),
+    };
   }
 
   private terminalEvent(

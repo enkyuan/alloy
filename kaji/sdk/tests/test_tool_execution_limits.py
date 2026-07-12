@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import pytest
 
 from kaji.infra.events.types import EventType
+from kaji.infra.events.store import InMemoryEventStore
+from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
@@ -14,8 +17,11 @@ from kaji.runtime.agents.context import (
     TurnContext,
 )
 from kaji.runtime.agents.planner import ToolPlanner
+from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
+from kaji.runtime.determinism import ScheduledCallback, TimerScheduler
 from kaji.runtime.integrations.base import Integration, tool
 from kaji.runtime.integrations.functional import function_tool
+from kaji.runtime.providers.mock import MockProvider
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 
@@ -26,6 +32,7 @@ def _invocation(
     session_id: str = "session",
     token: CancellationToken | None = None,
     arguments: dict[str, Any] | None = None,
+    deadline: float | None = None,
 ) -> ToolInvocation:
     resolved_token = token or CancellationToken()
     return ToolInvocation(
@@ -40,7 +47,7 @@ def _invocation(
             tool_call_id=call_id,
             idempotency_key=f"{session_id}:{call_id}",
             cancellation_token=resolved_token,
-            deadline_monotonic=None,
+            deadline_monotonic=deadline,
             db=None,
             metadata={},
         ),
@@ -49,6 +56,59 @@ def _invocation(
 
 async def _noop_started() -> None:
     return None
+
+
+class _ManualDeadlineClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def now_monotonic(self) -> float:
+        return self.now
+
+    def now_wall_seconds(self) -> float:
+        return 1_700_000_000.0
+
+
+@dataclass
+class _ManualDeadlineTimer(ScheduledCallback):
+    due: float
+    callback: Callable[[], None]
+    cancelled: bool = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _ManualDeadlineScheduler(TimerScheduler):
+    def __init__(self, clock: _ManualDeadlineClock) -> None:
+        self.clock = clock
+        self.timers: list[_ManualDeadlineTimer] = []
+
+    @property
+    def active_count(self) -> int:
+        return sum(not timer.cancelled for timer in self.timers)
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback:
+        timer = _ManualDeadlineTimer(self.clock.now + delay_seconds, callback)
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds: float) -> None:
+        self.clock.now += seconds
+        for timer in self.timers:
+            if not timer.cancelled and timer.due <= self.clock.now:
+                timer.cancelled = True
+                timer.callback()
+
+
+async def _settle_loop() -> None:
+    for _ in range(20):
+        await asyncio.sleep(0)
 
 
 @pytest.mark.asyncio
@@ -260,6 +320,343 @@ async def test_queue_cancellation_and_timeout_never_emit_started() -> None:
     release.set()
     await first
     assert await controller.drain_tools(0.1) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("cancel_on_deadline", "expected_code"),
+    [(False, "TURN_TIMEOUT"), (True, "TOOL_CANCELLED")],
+)
+async def test_queued_outer_deadline_and_cancellation_tie_preserve_certainty(
+    cancel_on_deadline: bool,
+    expected_code: str,
+) -> None:
+    clock = _ManualDeadlineClock()
+    scheduler = _ManualDeadlineScheduler(clock)
+    controller = ToolExecutionController(
+        ToolExecutionLimits(max_parallel=1, timeout_seconds=100),
+        clock=clock,
+        timer_scheduler=scheduler,
+    )
+    spec = ToolSpec(
+        name="tool",
+        description="tool",
+        parameters={},
+        risk="read",
+        parallel_safe=True,
+    )
+    holder_entered = asyncio.Event()
+    release_holder = asyncio.Event()
+    starts: list[str] = []
+
+    async def execute(invocation: ToolInvocation) -> dict[str, bool]:
+        if invocation.context.tool_call_id == "holder":
+            holder_entered.set()
+            await release_holder.wait()
+        return {"ok": True}
+
+    async def run(call_id: str, token: CancellationToken, deadline: float):
+        async def started() -> None:
+            starts.append(call_id)
+
+        return await controller.execute(
+            _invocation(call_id, token=token, deadline=deadline),
+            spec,
+            execute,
+            started,
+        )
+
+    holder = asyncio.create_task(run("holder", CancellationToken(), 100))
+    await holder_entered.wait()
+    token = CancellationToken()
+    queued = asyncio.create_task(run("queued", token, 5))
+    await _settle_loop()
+    if cancel_on_deadline:
+        scheduler.call_later(5, token.cancel)
+    scheduler.advance(5)
+
+    outcome = await queued
+    assert outcome.failure is not None
+    assert outcome.failure.error_code == expected_code
+    assert outcome.failure.retryable is True
+    assert outcome.failure.outcome == "not_started"
+    assert starts == ["holder"]
+
+    replay = await controller.ledger.claim(
+        session_id="session",
+        tool_call_id="queued",
+        tool_name="tool",
+        tool_args={},
+    )
+    assert replay.kind == "owner"
+    release_holder.set()
+    assert (await holder).succeeded
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_outer_tool_deadline_closes_terminal_before_planner_timeout_and_drains() -> (
+    None
+):
+    clock = _ManualDeadlineClock()
+    scheduler = _ManualDeadlineScheduler(clock)
+    controller = ToolExecutionController(
+        ToolExecutionLimits(max_parallel=1, timeout_seconds=10),
+        clock=clock,
+        timer_scheduler=scheduler,
+    )
+    spec = ToolSpec(
+        name="tool",
+        description="tool",
+        parameters={},
+        risk="write",
+    )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def noncooperative(_invocation: ToolInvocation) -> dict[str, bool]:
+        entered.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            await release.wait()
+        return {"ok": True}
+
+    planner = ToolPlanner(
+        noncooperative,
+        specs={"tool": spec},
+        controller=controller,
+    )
+    events: list[Any] = []
+
+    async def emit(event: Any) -> None:
+        events.append(event)
+
+    pending = asyncio.create_task(
+        planner.execute_batch(
+            "session",
+            [{"id": "call", "name": "tool", "arguments": {}}],
+            emit,
+            turn_id="turn",
+            turn_context=TurnContext(
+                principal_id="principal",
+                deadline_monotonic=5,
+            ),
+            cancellation_token=CancellationToken(),
+        )
+    )
+    await entered.wait()
+    scheduler.advance(5)
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await pending
+    assert caught.value.phase == "tool"
+    assert caught.value.retryable is False
+    assert caught.value.outcome == "unknown"
+    assert [event.type for event in events] == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_STARTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+    failure = events[-1]
+    assert failure.error_code == "TURN_TIMEOUT"
+    assert failure.retryable is False
+    assert failure.outcome == "unknown"
+    assert await controller.drain_tools(0) == ["call"]
+
+    replay = await controller.ledger.claim(
+        session_id="session",
+        tool_call_id="call",
+        tool_name="tool",
+        tool_args={},
+    )
+    assert replay.kind == "unknown"
+    assert replay.resolution is not None
+    assert replay.resolution.failure is not None
+    assert replay.resolution.failure.error_code == "TURN_TIMEOUT"
+
+    release.set()
+    assert await controller.drain_tools(1) == []
+    assert scheduler.active_count == 0
+
+    replay_events: list[Any] = []
+
+    async def emit_replay(event: Any) -> None:
+        replay_events.append(event)
+
+    replay_results = await planner.execute_batch(
+        "session",
+        [{"id": "call", "name": "tool", "arguments": {}}],
+        emit_replay,
+        turn_id="replay-turn",
+        turn_context=TurnContext(
+            principal_id="principal",
+            deadline_monotonic=100,
+        ),
+        cancellation_token=CancellationToken(),
+    )
+    assert replay_results[0]["error_code"] == "TURN_TIMEOUT"
+    assert [event.type for event in replay_events] == [
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_FAILED,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_outer_tool_deadline_records_tool_terminal_before_agent_terminal() -> (
+    None
+):
+    clock = _ManualDeadlineClock()
+    scheduler = _ManualDeadlineScheduler(clock)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    class ToolIntegration:
+        def register(self, registry: ToolRegistry) -> None:
+            spec = ToolSpec(
+                name="effect",
+                description="effect",
+                parameters={},
+                risk="write",
+            )
+
+            @registry.register(spec)
+            async def effect(
+                context: ToolExecutionContext,
+                arguments: dict[str, Any],
+            ) -> dict[str, bool]:
+                entered.set()
+                try:
+                    await release.wait()
+                except asyncio.CancelledError:
+                    await release.wait()
+                return {"ok": True}
+
+    store = InMemoryEventStore()
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider(tool_call={"name": "effect", "args": {}}))
+        .integration(ToolIntegration())
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .turn_execution_limits(
+            TurnExecutionLimits(
+                timeout_seconds=100,
+                provider_cancellation_grace_seconds=2,
+            )
+        )
+        .build(store=store)
+    )
+    pending = asyncio.create_task(
+        runtime.turn(
+            "run effect",
+            session_id="outer-tool",
+            context=TurnContext(
+                principal_id="principal",
+                deadline_monotonic=5,
+            ),
+        )
+    )
+    await entered.wait()
+    scheduler.advance(5)
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await pending
+    assert caught.value.phase == "tool"
+    assert caught.value.retryable is False
+    assert caught.value.outcome == "unknown"
+    events = await store.get_events("outer-tool")
+    started_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.type == EventType.TOOL_CALL_STARTED
+    )
+    failed_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.type == EventType.TOOL_CALL_FAILED
+    )
+    turn_failures = [
+        (index, event)
+        for index, event in enumerate(events)
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(turn_failures) == 1
+    turn_failure_index, turn_failure = turn_failures[0]
+    assert started_index < failed_index < turn_failure_index
+    tool_failure = events[failed_index]
+    assert tool_failure.error_code == "TURN_TIMEOUT"
+    assert tool_failure.retryable is False
+    assert tool_failure.outcome == "unknown"
+    assert turn_failure.error_code == "TURN_TIMEOUT"
+    assert turn_failure.phase == "tool"
+    assert turn_failure.retryable is False
+    assert turn_failure.outcome == "unknown"
+    assert await runtime.drain_tools(0) == ["mock-call-1"]
+
+    release.set()
+    assert await runtime.drain_tools(1) == []
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_local_tool_timeout_wins_only_when_strictly_earlier_than_outer() -> None:
+    clock = _ManualDeadlineClock()
+    scheduler = _ManualDeadlineScheduler(clock)
+    controller = ToolExecutionController(
+        ToolExecutionLimits(max_parallel=1, timeout_seconds=5),
+        clock=clock,
+        timer_scheduler=scheduler,
+    )
+    spec = ToolSpec(name="tool", description="tool", parameters={}, risk="write")
+    entered = asyncio.Event()
+
+    async def cooperative(invocation: ToolInvocation) -> dict[str, bool]:
+        entered.set()
+        await invocation.context.cancellation_token.wait()
+        return {"ok": True}
+
+    later_outer = asyncio.create_task(
+        controller.execute(
+            _invocation("local", deadline=6),
+            spec,
+            cooperative,
+            _noop_started,
+        )
+    )
+    await entered.wait()
+    scheduler.advance(5)
+    local = await later_outer
+    assert local.failure is not None
+    assert local.failure.error_code == "TOOL_TIMEOUT"
+
+    equal_clock = _ManualDeadlineClock()
+    equal_scheduler = _ManualDeadlineScheduler(equal_clock)
+    equal_controller = ToolExecutionController(
+        ToolExecutionLimits(max_parallel=1, timeout_seconds=5),
+        clock=equal_clock,
+        timer_scheduler=equal_scheduler,
+    )
+    equal_entered = asyncio.Event()
+
+    async def equal_handler(invocation: ToolInvocation) -> dict[str, bool]:
+        equal_entered.set()
+        await invocation.context.cancellation_token.wait()
+        return {"ok": True}
+
+    equal_pending = asyncio.create_task(
+        equal_controller.execute(
+            _invocation("equal", deadline=5),
+            spec,
+            equal_handler,
+            _noop_started,
+        )
+    )
+    await equal_entered.wait()
+    equal_scheduler.advance(5)
+    equal = await equal_pending
+    assert equal.failure is not None
+    assert equal.failure.error_code == "TURN_TIMEOUT"
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ import { InMemoryEventCommitter } from "@/events/committer";
 import { KajiEvent } from "@/events/schemas";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
+import type { Clock, TimerHandle, TimerScheduler } from "@/internal/uuid";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { AgentRuntime } from "@/runtime/runtime";
 import { MockProvider } from "@/providers/mock";
@@ -18,10 +19,51 @@ const SPEC = {
   risk: "write" as const,
 };
 
+class ManualTime implements Clock, TimerScheduler {
+  private monotonic = 0;
+  private readonly timers: Array<{
+    due: number;
+    callback: () => void;
+    cancelled: boolean;
+  }> = [];
+
+  nowWallSeconds(): number {
+    return 1_700_000_000;
+  }
+
+  nowMonotonic(): number {
+    return this.monotonic;
+  }
+
+  get pendingCount(): number {
+    return this.timers.filter((timer) => !timer.cancelled).length;
+  }
+
+  schedule(delayMs: number, callback: () => void): TimerHandle {
+    const timer = { due: this.monotonic + delayMs, callback, cancelled: false };
+    this.timers.push(timer);
+    return { cancel: () => (timer.cancelled = true) };
+  }
+
+  advance(milliseconds: number): void {
+    this.monotonic += milliseconds;
+    for (const timer of this.timers) {
+      if (!timer.cancelled && timer.due <= this.monotonic) {
+        timer.cancelled = true;
+        timer.callback();
+      }
+    }
+  }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index++) await Promise.resolve();
+}
+
 async function executeApproval(
   handler: AnyApprovalHandler | undefined,
   options: {
-    deadlineMs?: number;
+    deadlineMonotonicMs?: number;
     onEvent?: (type: string) => void;
     controller?: AbortController;
   } = {},
@@ -51,7 +93,9 @@ async function executeApproval(
       principalId: "principal",
       requestId: "request",
       traceId: "trace",
-      ...(options.deadlineMs === undefined ? {} : { deadlineMs: options.deadlineMs }),
+      ...(options.deadlineMonotonicMs === undefined
+        ? {}
+        : { deadlineMonotonicMs: options.deadlineMonotonicMs }),
     },
     controller.signal,
   );
@@ -177,11 +221,272 @@ describe("approval lifecycle closure", () => {
     );
   });
 
-  it("maps an already-expired turn deadline to approval timeout", async () => {
-    const { results } = await executeApproval(new EventApprovalHandler(), {
-      deadlineMs: Date.now() - 1,
+  it("preserves an already-recorded approval TURN_TIMEOUT source", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const observer = committer.subscribe("recorded-turn-timeout");
+    const bridge = (async () => {
+      try {
+        for await (const event of observer) {
+          if (event.type !== EventType.TOOL_APPROVAL_REQUESTED) continue;
+          await committer.commit(
+            KajiEvent.parse({
+              type: EventType.TOOL_APPROVAL_REJECTED,
+              session_id: "recorded-turn-timeout",
+              turn_id: "turn",
+              tool_name: "ship",
+              tool_call_id: "call",
+              error_code: "TURN_TIMEOUT",
+              reason: "Agent turn timed out",
+            }),
+          );
+          return;
+        }
+      } finally {
+        await observer.return?.();
+      }
+    })();
+    const planner = new ToolPlanner({
+      executor: vi.fn(),
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["write"]) }),
+      approvalHandler: new EventApprovalHandler(),
+      approvalCommitter: committer,
+      specs: new Map([[SPEC.name, SPEC]]),
     });
-    expect(results[0]).toMatchObject({ error_code: "APPROVAL_TIMEOUT", outcome: "not_started" });
+
+    await expect(
+      planner.executeBatch(
+        "recorded-turn-timeout",
+        [{ id: "call", name: "ship", arguments: {} }],
+        ToolPlanner.committerEmitter(committer),
+        "turn",
+        { principalId: "principal", requestId: "request", traceId: "trace" },
+      ),
+    ).rejects.toMatchObject({ code: "TURN_TIMEOUT", phase: "approval" });
+    await bridge;
+    const events = await store.getEvents("recorded-turn-timeout");
+    expect(events.filter(({ type }) => type === EventType.TOOL_APPROVAL_REJECTED)).toEqual([
+      expect.objectContaining({ error_code: "TURN_TIMEOUT" }),
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: EventType.TOOL_CALL_FAILED,
+      error_code: "TURN_TIMEOUT",
+    });
+  });
+
+  it("maps an already-expired turn deadline to one approval-phase turn timeout", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const executor = vi.fn();
+    const planner = new ToolPlanner({
+      executor,
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["write"]) }),
+      approvalCommitter: committer,
+      specs: new Map([[SPEC.name, SPEC]]),
+    });
+    await expect(
+      planner.executeBatch(
+        "expired-turn",
+        [{ id: "call", name: SPEC.name, arguments: {} }],
+        ToolPlanner.committerEmitter(committer),
+        "turn",
+        {
+          principalId: "principal",
+          requestId: "request",
+          traceId: "trace",
+          deadlineMonotonicMs: globalThis.performance.now() - 1,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "approval",
+      retryable: true,
+      outcome: "not_started",
+    });
+    const events = await store.getEvents("expired-turn");
+    expect(events.map(({ type }) => type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_APPROVAL_REQUESTED,
+      EventType.TOOL_APPROVAL_REJECTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(events.slice(-2)).toEqual([
+      expect.objectContaining({ error_code: "TURN_TIMEOUT" }),
+      expect.objectContaining({
+        error_code: "TURN_TIMEOUT",
+        retryable: true,
+        outcome: "not_started",
+      }),
+    ]);
+    expect(executor).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "an earlier local limit",
+      approvalTimeoutMs: 5,
+      turnDeadlineMs: 10,
+      expectedCode: "APPROVAL_TIMEOUT",
+      raisesTurnTimeout: false,
+    },
+    {
+      name: "an equal outer deadline",
+      approvalTimeoutMs: 10,
+      turnDeadlineMs: 10,
+      expectedCode: "TURN_TIMEOUT",
+      raisesTurnTimeout: true,
+    },
+  ])(
+    "classifies $name and closes the event-backed subscription",
+    async ({ approvalTimeoutMs, turnDeadlineMs, expectedCode, raisesTurnTimeout }) => {
+      const time = new ManualTime();
+      const inner = new InMemoryEventCommitter(new InMemoryEventStore());
+      const returned = vi.fn();
+      const committer = {
+        store: inner.store,
+        commit: (event: Parameters<typeof inner.commit>[0]) => inner.commit(event),
+        subscribe(sessionId: string, options?: { afterSequence?: number }) {
+          const iterator = inner.subscribe(sessionId, options);
+          const originalReturn = iterator.return?.bind(iterator);
+          iterator.return = async () => {
+            returned();
+            return originalReturn?.() ?? { value: undefined, done: true };
+          };
+          return iterator;
+        },
+      };
+      const planner = new ToolPlanner({
+        executor: vi.fn(),
+        policy: new ToolPolicy({ requireApprovalFor: new Set(["write"]) }),
+        approvalHandler: new EventApprovalHandler({ clock: time }),
+        approvalCommitter: committer,
+        executionLimits: { approvalTimeoutMs },
+        specs: new Map([[SPEC.name, SPEC]]),
+        clock: time,
+        now: () => time.nowMonotonic(),
+        timerScheduler: time,
+      });
+      let requestRecorded!: () => void;
+      const sawRequest = new Promise<void>((resolve) => {
+        requestRecorded = resolve;
+      });
+      const pending = planner.executeBatch(
+        `approval-source-${expectedCode}`,
+        [{ id: "call", name: SPEC.name, arguments: {} }],
+        bindEmitterToCommitter(async (event) => {
+          const stored = await committer.commit(event);
+          if (event.type === EventType.TOOL_APPROVAL_REQUESTED) requestRecorded();
+          return stored;
+        }, committer),
+        "turn",
+        {
+          principalId: "principal",
+          requestId: "request",
+          traceId: "trace",
+          deadlineMonotonicMs: turnDeadlineMs,
+        },
+      );
+      await sawRequest;
+      time.advance(approvalTimeoutMs);
+      await flushMicrotasks();
+
+      if (raisesTurnTimeout) {
+        await expect(pending).rejects.toMatchObject({
+          code: "TURN_TIMEOUT",
+          phase: "approval",
+          retryable: true,
+          outcome: "not_started",
+        });
+      } else {
+        await expect(pending).resolves.toEqual([
+          expect.objectContaining({
+            error_code: "APPROVAL_TIMEOUT",
+            retryable: true,
+            outcome: "not_started",
+          }),
+        ]);
+      }
+      const events = await committer.store.getEvents(`approval-source-${expectedCode}`);
+      expect(events.slice(-2)).toEqual([
+        expect.objectContaining({
+          type: EventType.TOOL_APPROVAL_REJECTED,
+          error_code: expectedCode,
+        }),
+        expect.objectContaining({
+          type: EventType.TOOL_CALL_FAILED,
+          error_code: expectedCode,
+          outcome: "not_started",
+        }),
+      ]);
+      expect(returned).toHaveBeenCalledOnce();
+      expect(time.pendingCount).toBe(0);
+    },
+  );
+
+  it("records approval terminals before exactly one runtime AgentTurnFailed", async () => {
+    const time = new ManualTime();
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const runtime = new AgentRuntime({
+      provider: new MockProvider({ toolCall: { name: "ship", args: {} } }),
+      store,
+      committer,
+      tools: [SPEC],
+      policy: new ToolPolicy({ requireApprovalFor: new Set(["write"]) }),
+      approvalHandler: new EventApprovalHandler(),
+      toolExecutor: async () => ({ ok: true }),
+      defaultContext: { principalId: "principal" },
+      turnExecutionLimits: { turnTimeoutMs: 10 },
+      clock: time,
+      timerScheduler: time,
+    });
+    const sessionId = "runtime-approval-deadline";
+    const observer = committer.subscribe(sessionId);
+    const sawRequest = (async () => {
+      try {
+        for await (const event of observer) {
+          if (event.type === EventType.TOOL_APPROVAL_REQUESTED) return;
+        }
+      } finally {
+        await observer.return?.();
+      }
+    })();
+    const pending = runtime.turn("ship it", { sessionId });
+    await sawRequest;
+    time.advance(10);
+    await flushMicrotasks();
+
+    await expect(pending).rejects.toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "approval",
+      retryable: true,
+      outcome: "not_started",
+    });
+    const events = await store.getEvents(sessionId);
+    const approvalRejected = events.findIndex(
+      ({ type }) => type === EventType.TOOL_APPROVAL_REJECTED,
+    );
+    const toolFailed = events.findIndex(({ type }) => type === EventType.TOOL_CALL_FAILED);
+    const turnFailed = events
+      .map(({ type }, index) => (type === EventType.AGENT_TURN_FAILED ? index : -1))
+      .filter((index) => index >= 0);
+    expect(approvalRejected).toBeGreaterThan(-1);
+    expect(toolFailed).toBeGreaterThan(approvalRejected);
+    expect(turnFailed).toHaveLength(1);
+    expect(turnFailed[0]).toBeGreaterThan(toolFailed);
+    expect(events[approvalRejected]).toMatchObject({ error_code: "TURN_TIMEOUT" });
+    expect(events[toolFailed]).toMatchObject({
+      error_code: "TURN_TIMEOUT",
+      retryable: true,
+      outcome: "not_started",
+    });
+    expect(events[turnFailed[0]!]).toMatchObject({
+      error_code: "TURN_TIMEOUT",
+      phase: "approval",
+      retryable: true,
+      outcome: "not_started",
+    });
+    expect(time.pendingCount).toBe(0);
   });
 
   it("rejects a standalone emitter bound to a different approval committer", async () => {
@@ -232,6 +537,30 @@ describe("approval lifecycle closure", () => {
       EventType.TOOL_APPROVAL_REJECTED,
       EventType.TOOL_CALL_FAILED,
     ]);
+  });
+
+  it("gives pre-cancelled caller intent precedence over a missing approval handler", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { store, executor, results } = await executeApproval(undefined, { controller });
+    expect(results).toEqual([
+      expect.objectContaining({
+        error_code: "TOOL_CANCELLED",
+        retryable: true,
+        outcome: "not_started",
+      }),
+    ]);
+    expect((await store.getEvents("session")).slice(-2)).toEqual([
+      expect.objectContaining({
+        type: EventType.TOOL_APPROVAL_REJECTED,
+        error_code: "TOOL_CANCELLED",
+      }),
+      expect.objectContaining({
+        type: EventType.TOOL_CALL_FAILED,
+        error_code: "TOOL_CANCELLED",
+      }),
+    ]);
+    expect(executor).not.toHaveBeenCalled();
   });
 
   it("uses an earlier durable approval over local cancellation without clearing abort", async () => {

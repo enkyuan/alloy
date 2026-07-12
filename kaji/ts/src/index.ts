@@ -211,9 +211,18 @@ export {
   type TurnResult,
 } from "@/runtime/runtime";
 export {
+  DEFAULT_TURN_EXECUTION_LIMITS,
+  ProviderCancellationContractViolation,
+  TurnTimeoutError,
+  type TurnExecutionLimits,
+  type TurnOutcome as TurnDeadlineOutcome,
+  type TurnPhase,
+} from "@/runtime/limits";
+export {
   ContextIntegrityError,
   ContextWindowOverflowError,
   DEFAULT_CONTEXT_WINDOW,
+  deadlineAfter,
   MissingToolIdentityError,
   type ContextDiagnostics,
   type ContextWindow,
@@ -227,11 +236,20 @@ export {
   type CancellationTokenLike,
 } from "@/runtime/cancellation";
 export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "@/runtime/builder";
-export type { Clock, IdFactory, IdScope, UuidFactory } from "@/internal/uuid";
+export type {
+  Clock,
+  IdFactory,
+  IdScope,
+  TimerHandle,
+  TimerScheduler,
+  UuidFactory,
+} from "@/internal/uuid";
 export {
   InMemorySessionTurnCoordinator,
   type ObservableCancellationToken,
   type SessionTurnCoordinator,
+  type SessionTurnLease,
+  type TurnLeaseOptions,
 } from "@/runtime/session-turn-coordinator";
 export {
   generateText,
@@ -244,6 +262,7 @@ export {
 export type {
   TypedApprovalHandler,
   EventBackedApprovalHandler,
+  ApprovalDeadlineSource,
   ApprovalRequest,
   ApprovalRequestContext,
   ApprovalRejectionCode,

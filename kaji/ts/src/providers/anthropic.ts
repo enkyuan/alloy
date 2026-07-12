@@ -39,6 +39,8 @@ export interface AnthropicProviderOptions {
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Per-request timeout in milliseconds. Must be a positive finite integer. */
+  requestTimeoutMs?: number;
   /** Rate-limit retry configuration. */
   retry?: RetryOptions;
 }
@@ -138,6 +140,7 @@ interface ResolvedAnthropicOptions {
   model: string;
   temperature: number;
   maxTokens: number;
+  requestTimeoutMs: number | undefined;
   retry: Required<RetryOptions>;
 }
 
@@ -152,10 +155,19 @@ export class AnthropicProvider implements ModelProvider {
         service: "anthropic",
       });
     }
+    if (
+      opts.requestTimeoutMs !== undefined &&
+      (!Number.isFinite(opts.requestTimeoutMs) ||
+        !Number.isInteger(opts.requestTimeoutMs) ||
+        opts.requestTimeoutMs <= 0)
+    ) {
+      throw new RangeError("requestTimeoutMs must be a positive finite integer");
+    }
     this.opts = {
       model: opts.model ?? "claude-sonnet-4-6",
       temperature: opts.temperature ?? 0.7,
       maxTokens: opts.maxTokens ?? 4096,
+      requestTimeoutMs: opts.requestTimeoutMs,
       apiKey: opts.apiKey,
       retry: {
         maxAttempts: opts.retry?.maxAttempts ?? 3,
@@ -206,7 +218,13 @@ export class AnthropicProvider implements ModelProvider {
 
     try {
       const response = await withRetry(
-        () => client.messages.create(params, { signal: options?.cancellationToken?.signal }),
+        () =>
+          client.messages.create(params, {
+            signal: options?.cancellationToken?.signal,
+            ...(this.opts.requestTimeoutMs === undefined
+              ? {}
+              : { timeout: this.opts.requestTimeoutMs }),
+          }),
         this.opts.retry,
         options?.cancellationToken,
         options?.metricsSink,
@@ -254,6 +272,9 @@ export class AnthropicProvider implements ModelProvider {
         () =>
           client.messages.stream(params, {
             signal: options?.cancellationToken?.signal,
+            ...(this.opts.requestTimeoutMs === undefined
+              ? {}
+              : { timeout: this.opts.requestTimeoutMs }),
           }) as AsyncIterable<AnthropicStreamEvent>,
         this.opts.retry,
         options?.cancellationToken,

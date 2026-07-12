@@ -23,6 +23,21 @@ factory in code. Adding a provider means implementing the `ModelProvider`
 protocol and registering it with `register_provider` (`registerProvider` in
 TS).
 
+## Custom-provider cancellation contract
+
+Custom providers are cooperative in-process boundaries. While opening a
+request and while streaming, they must observe the runtime-provided
+`cancellation_token` / `cancellationToken`, stop the underlying request, and
+let the stream iterator settle when cancellation is requested. They must also
+support the runtime closing that iterator after partial output.
+
+If a provider remains active beyond the configured cancellation grace, Kaji
+raises `PROVIDER_CANCELLATION_CONTRACT_VIOLATION` and quarantines that session
+until `drain_providers()` / `drainProviders()` confirms settlement. Closing the
+runtime rejects new turns; it cannot force-kill hostile in-process code. Run
+the same cancellation-contract suite used by the built-in adapters before
+describing a custom provider as production-safe.
+
 ## TTS and STT
 
 TTS providers (`gemini`, `openai`, `none`) implement `TTSProvider`. STT uses

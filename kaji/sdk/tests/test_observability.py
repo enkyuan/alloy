@@ -24,7 +24,11 @@ from kaji.infra.observability import (
     NOOP_TRACE,
     TraceSpan,
 )
-from kaji.infra.observability.protocols import record_metric, start_span
+from kaji.infra.observability.protocols import (
+    metric_error_code,
+    record_metric,
+    start_span,
+)
 from kaji.infra.observability.tracing import Span
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
@@ -73,6 +77,15 @@ def test_measurements_have_canonical_units_and_closed_labels() -> None:
             2,
             {"provider_family": "secret-provider", "status": "success"},
         )
+    assert (
+        Measurement(
+            "kaji.tool.duration_ms",
+            2,
+            {"outcome": "timeout", "error_code": "TURN_TIMEOUT"},
+        ).labels["error_code"]
+        == "TURN_TIMEOUT"
+    )
+    assert metric_error_code("TURN_TIMEOUT") == "TURN_TIMEOUT"
 
 
 def test_throwing_observability_handles_are_best_effort_and_idempotent() -> None:

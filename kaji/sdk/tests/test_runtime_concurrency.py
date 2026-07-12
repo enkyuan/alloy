@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from contextlib import AbstractAsyncContextManager
-from typing import Any, AsyncGenerator, Dict, List, Optional, cast
+from dataclasses import dataclass
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, cast
 
 import pytest
 
@@ -19,7 +20,10 @@ from kaji.runtime.agents import (
     CancellationToken,
     InMemoryTurnCoordinator,
 )
-from kaji.runtime.agents.coordinator import TurnCoordinator
+from kaji.runtime.agents.limits import TurnTimeoutError
+from kaji.runtime.context import TurnContext
+from kaji.runtime.determinism import Clock, IdScope, ScheduledCallback, TimerScheduler
+from kaji.runtime.agents.coordinator import TurnCoordinator, TurnLease
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
 
@@ -43,7 +47,11 @@ class BarrierProvider:
         self,
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs: Any,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[Dict[str, Any]] = None,
+        cancellation_token: Optional[CancellationToken] = None,
     ) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -51,8 +59,10 @@ class BarrierProvider:
         self,
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
         cancellation_token: Optional[CancellationToken] = None,
-        **kwargs: Any,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
         prompt = next(
             message["content"]
@@ -97,6 +107,9 @@ class BarrierProvider:
 
 
 class ImmediateProvider:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def generate(self, *_args: Any, **_kwargs: Any) -> GenerateResponse:
         return GenerateResponse(text="")
 
@@ -106,12 +119,68 @@ class ImmediateProvider:
         *_args: Any,
         **_kwargs: Any,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
+        self.calls += 1
         prompt = next(
             message["content"]
             for message in reversed(messages)
             if message["role"] == "user"
         )
         yield ModelResponseChunk(delta=f"reply:{prompt}")
+
+
+class ManualClock(Clock):
+    def __init__(self, monotonic: float = 10.0, wall: float = 1_700_000_000.0):
+        self.monotonic = monotonic
+        self.wall = wall
+
+    def now_wall_seconds(self) -> float:
+        return self.wall
+
+    def now_monotonic(self) -> float:
+        return self.monotonic
+
+
+@dataclass
+class _ManualTimer(ScheduledCallback):
+    due: float
+    callback: Callable[[], None]
+    cancelled: bool = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class ManualScheduler(TimerScheduler):
+    def __init__(self, clock: ManualClock) -> None:
+        self.clock = clock
+        self.timers: list[_ManualTimer] = []
+
+    @property
+    def active_count(self) -> int:
+        return sum(not timer.cancelled for timer in self.timers)
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback:
+        timer = _ManualTimer(self.clock.monotonic + delay_seconds, callback)
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds: float) -> None:
+        self.clock.monotonic += seconds
+        for timer in list(self.timers):
+            if not timer.cancelled and timer.due <= self.clock.monotonic:
+                timer.cancelled = True
+                timer.callback()
+
+
+class ScopedIds:
+    def __init__(self) -> None:
+        self._counts: Dict[IdScope, int] = defaultdict(int)
+
+    def next(self, scope: IdScope) -> str:
+        self._counts[scope] += 1
+        return f"{scope}-{self._counts[scope]}"
 
 
 def _build(provider: Any, coordinator: TurnCoordinator):
@@ -134,10 +203,183 @@ class ObservedCoordinator:
         self,
         session_id: str,
         cancellation_token: CancellationToken | None = None,
-    ) -> AbstractAsyncContextManager[None]:
+        **options: Any,
+    ) -> AbstractAsyncContextManager[TurnLease]:
         self.acquisitions += 1
         self.attempted[self.acquisitions].set()
-        return self.delegate.acquire(session_id, cancellation_token)
+        return self.delegate.acquire(session_id, cancellation_token, **options)
+
+    async def quarantine(self, session_id: str) -> None:
+        await self.delegate.quarantine(session_id)
+
+    async def clear_quarantine(self, session_id: str) -> None:
+        await self.delegate.clear_quarantine(session_id)
+
+
+@pytest.mark.parametrize(
+    ("deadline", "error_type"),
+    [
+        (True, TypeError),
+        (float("nan"), ValueError),
+        (float("inf"), ValueError),
+        (float("-inf"), ValueError),
+    ],
+)
+def test_coordinator_rejects_invalid_deadlines(
+    deadline: float, error_type: type[Exception]
+) -> None:
+    with pytest.raises(error_type, match="deadline_monotonic"):
+        InMemoryTurnCoordinator().acquire(
+            "session",
+            deadline_monotonic=deadline,
+        )
+
+
+@pytest.mark.asyncio
+async def test_immediate_zero_deadline_records_one_queue_terminal_without_dispatch() -> (
+    None
+):
+    clock = ManualClock()
+    scheduler = ManualScheduler(clock)
+    coordinator = InMemoryTurnCoordinator()
+    provider = ImmediateProvider()
+    store = InMemoryEventStore()
+    runtime = (
+        AgentBuilder()
+        .provider(provider)
+        .coordinator(coordinator)
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .build(store=store)
+    )
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await runtime.turn(
+            "never dispatched",
+            session_id="zero-deadline",
+            context=TurnContext(deadline_monotonic=0),
+        )
+
+    assert caught.value.phase == "queue"
+    events = await store.get_events("zero-deadline")
+    failures = [event for event in events if isinstance(event, AgentTurnFailed)]
+    assert len(failures) == 1
+    assert failures[0].error_code == "TURN_TIMEOUT"
+    assert failures[0].phase == "queue"
+    assert failures[0].retryable is True
+    assert failures[0].outcome == "not_started"
+    assert provider.calls == 0
+    assert coordinator.entry_count == 0
+    assert coordinator.waiter_count == 0
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_queue_deadline_unlinks_waiter_and_cancellation_wins_same_tick() -> None:
+    clock = ManualClock()
+    scheduler = ManualScheduler(clock)
+    coordinator = InMemoryTurnCoordinator()
+    provider = BarrierProvider({"holder": "same"})
+    store = InMemoryEventStore()
+    runtime = (
+        AgentBuilder()
+        .provider(provider)
+        .coordinator(coordinator)
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .build(store=store)
+    )
+    holder = asyncio.create_task(runtime.turn("holder", session_id="same"))
+    await provider.entered["holder"].wait()
+    token = CancellationToken()
+    waiting = asyncio.create_task(
+        runtime.turn(
+            "cancelled",
+            session_id="same",
+            cancellation_token=token,
+            context=TurnContext(deadline_monotonic=clock.monotonic + 1),
+        )
+    )
+    while coordinator.waiter_count != 1:
+        await asyncio.sleep(0)
+    scheduler.call_later(1, token.cancel)
+    scheduler.advance(1)
+
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    failures = [
+        event
+        for event in await store.get_events("same")
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert failures == []
+    assert coordinator.waiter_count == 0
+    provider.release["holder"].set()
+    await holder
+    assert coordinator.entry_count == 0
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_queued_deadline_records_once_and_preserves_fifo_third_waiter() -> None:
+    clock = ManualClock()
+    scheduler = ManualScheduler(clock)
+    coordinator = InMemoryTurnCoordinator()
+    provider = BarrierProvider({"first": "fifo", "expired": "fifo", "third": "fifo"})
+    store = InMemoryEventStore()
+    ids = ScopedIds()
+    runtime = (
+        AgentBuilder()
+        .provider(provider)
+        .coordinator(coordinator)
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .id_factory(ids)
+        .build(store=store)
+    )
+
+    first = asyncio.create_task(runtime.turn("first", session_id="fifo"))
+    await provider.entered["first"].wait()
+    expired = asyncio.create_task(
+        runtime.turn(
+            "expired",
+            session_id="fifo",
+            context=TurnContext(deadline_monotonic=clock.monotonic + 1),
+        )
+    )
+    third = asyncio.create_task(runtime.turn("third", session_id="fifo"))
+    while coordinator.waiter_count != 2:
+        await asyncio.sleep(0)
+
+    scheduler.advance(1)
+    with pytest.raises(TurnTimeoutError) as caught:
+        await expired
+    assert caught.value.phase == "queue"
+    assert not provider.entered["expired"].is_set()
+    assert not provider.entered["third"].is_set()
+    assert coordinator.waiter_count == 1
+
+    failures = [
+        event
+        for event in await store.get_events("fifo")
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(failures) == 1
+    assert failures[0].phase == "queue"
+    assert failures[0].turn_id == "turn-2"
+
+    provider.release["first"].set()
+    first_result = await first
+    await provider.entered["third"].wait()
+    provider.release["third"].set()
+    third_result = await third
+    assert first_result.turn_id == "turn-1"
+    assert third_result.turn_id == "turn-3"
+    assert len({first_result.turn_id, failures[0].turn_id, third_result.turn_id}) == 3
+    assert third_result.text == "reply:third"
+    assert provider.max_active_by_session["fifo"] == 1
+    assert coordinator.entry_count == coordinator.waiter_count == 0
+    assert scheduler.active_count == 0
 
 
 @pytest.mark.asyncio

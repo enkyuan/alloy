@@ -196,6 +196,18 @@ class TurnContext:
             id_factory=id_factory or self._id_factory,
         )
 
+    def with_deadline_monotonic(self, deadline_monotonic: float) -> TurnContext:
+        """Return this resolved context with one absolute monotonic deadline."""
+        return TurnContext(
+            principal_id=self.principal_id,
+            request_id=self.request_id,
+            trace_id=self.trace_id,
+            deadline_monotonic=deadline_monotonic,
+            db=self.db,
+            metadata=_copy_metadata_snapshot(self.metadata),
+            id_factory=self._id_factory,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ToolExecutionContext:

@@ -42,6 +42,7 @@ export type ApprovalKey = string & { readonly [APPROVAL_KEY]: true };
 export type ApprovalFailureCode =
   | "APPROVAL_REJECTED"
   | "APPROVAL_TIMEOUT"
+  | "TURN_TIMEOUT"
   | "TOOL_CANCELLED"
   | "APPROVAL_UNAVAILABLE";
 

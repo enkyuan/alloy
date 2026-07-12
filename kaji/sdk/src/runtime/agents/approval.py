@@ -27,6 +27,7 @@ ApprovalCode: TypeAlias = Literal[
 ApprovalErrorCode: TypeAlias = Literal[
     "APPROVAL_REJECTED",
     "APPROVAL_TIMEOUT",
+    "TURN_TIMEOUT",
     "TOOL_CANCELLED",
     "APPROVAL_UNAVAILABLE",
 ]
@@ -262,6 +263,7 @@ class EventApprovalHandler:
             code_by_error: dict[ApprovalErrorCode, ApprovalCode] = {
                 "APPROVAL_REJECTED": "rejected",
                 "APPROVAL_TIMEOUT": "timeout",
+                "TURN_TIMEOUT": "timeout",
                 "TOOL_CANCELLED": "cancelled",
                 "APPROVAL_UNAVAILABLE": "unavailable",
             }

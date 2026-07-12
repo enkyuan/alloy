@@ -120,7 +120,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { AgentBuilder, CancellationToken, OpenAIProvider } from "@kaji/sdk";
+        import { AgentBuilder, deadlineAfter, OpenAIProvider } from "@kaji/sdk";
 
         const runtime = new AgentBuilder()
           .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
@@ -149,20 +149,14 @@ tool wired in.
         import asyncio
 
         async def main():
-            token = kaji.CancellationToken()
             loop = asyncio.get_running_loop()
-            cancel_at = loop.call_later(30, token.cancel)
-            try:
-                result = await runtime.turn(
-                    "What's the weather in NYC?",
-                    cancellation_token=token,
-                    context=kaji.TurnContext(
-                        principal_id="weather-app",
-                        deadline_monotonic=loop.time() + 30,
-                    ),
-                )
-            finally:
-                cancel_at.cancel()
+            result = await runtime.turn(
+                "What's the weather in NYC?",
+                context=kaji.TurnContext(
+                    principal_id="weather-app",
+                    deadline_monotonic=loop.time() + 30,
+                ),
+            )
             print(result.text, result.session_id, result.turn_id)
 
         asyncio.run(main())
@@ -170,23 +164,21 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        const token = new CancellationToken();
-        const cancelAt = setTimeout(() => token.cancel(), 30_000);
-        try {
-          const result = await runtime.turn("What's the weather in NYC?", {
-            cancellationToken: token,
-            context: {
-              principalId: "weather-app",
-              deadlineMs: Date.now() + 30_000,
-            },
-          });
-          console.log(result.text, result.sessionId, result.turnId);
-        } finally {
-          clearTimeout(cancelAt);
-        }
+        const result = await runtime.turn("What's the weather in NYC?", {
+          context: {
+            principalId: "weather-app",
+            deadlineAtMs: deadlineAfter(30_000),
+          },
+        });
+        console.log(result.text, result.sessionId, result.turnId);
         ```
       </Tab>
     </Tabs>
+
+    Python's `deadline_monotonic` is absolute monotonic time. TypeScript's
+    `deadlineAtMs` is absolute Unix epoch milliseconds; `deadlineAfter()`
+    converts a duration for you. Either caller deadline can only tighten the
+    runtime's configured whole-turn maximum.
 
     Tool-capable turns require a per-turn principal unless the host has
     deliberately configured a single-tenant builder default. Handlers receive

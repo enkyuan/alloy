@@ -6,7 +6,7 @@ import { InMemoryEventCommitter } from "@/events/committer";
 import { EventSchemaIncompatibleError } from "@/events/errors";
 import { KajiEvent, StoredKajiEvent, type StoredKajiEvent as StoredEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
-import type { Clock, IdFactory, IdScope } from "@/internal/uuid";
+import type { Clock, IdFactory, IdScope, TimerHandle, TimerScheduler } from "@/internal/uuid";
 import type {
   ModelProvider,
   ModelProviderOptions,
@@ -19,7 +19,10 @@ import { normalizeProviderError, ProviderError } from "@/providers/errors";
 import { OpenAIProvider } from "@/providers/openai";
 import type { TypedApprovalHandler } from "@/runtime/approval/types";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
+import { CancellationError, CancellationToken } from "@/runtime/cancellation";
+import { TurnTimeoutError } from "@/runtime/limits";
 import { AgentRuntime, type TurnResult } from "@/runtime/runtime";
+import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
 import {
   replaySession,
   type ApprovalKey,
@@ -75,7 +78,7 @@ class QueueIdFactory implements IdFactory {
 class FixedClock implements Clock {
   constructor(
     private readonly wallSeconds: number,
-    private readonly monotonic: number,
+    private monotonic: number,
   ) {}
 
   nowWallSeconds(): number {
@@ -84,6 +87,53 @@ class FixedClock implements Clock {
 
   nowMonotonic(): number {
     return this.monotonic;
+  }
+
+  advance(milliseconds: number): void {
+    this.monotonic += milliseconds;
+  }
+}
+
+class DeterministicTimer implements TimerHandle {
+  cancelled = false;
+
+  constructor(
+    readonly due: number,
+    readonly order: number,
+    readonly callback: () => void,
+  ) {}
+
+  cancel(): void {
+    this.cancelled = true;
+  }
+}
+
+class DeterministicTimerScheduler implements TimerScheduler {
+  private readonly timers: DeterministicTimer[] = [];
+  private order = 0;
+
+  constructor(private readonly clock: FixedClock) {}
+
+  schedule(delayMs: number, callback: () => void): TimerHandle {
+    const timer = new DeterministicTimer(
+      this.clock.nowMonotonic() + Math.max(0, delayMs),
+      this.order++,
+      callback,
+    );
+    this.timers.push(timer);
+    return timer;
+  }
+
+  advance(milliseconds: number): void {
+    this.clock.advance(milliseconds);
+    while (true) {
+      const due = this.timers
+        .filter((timer) => !timer.cancelled && timer.due <= this.clock.nowMonotonic())
+        .sort((left, right) => left.due - right.due || left.order - right.order)[0];
+      if (due === undefined) return;
+      due.cancelled = true;
+      due.callback();
+    }
   }
 }
 
@@ -180,6 +230,62 @@ class ScriptedProvider implements ModelProvider {
   }
 }
 
+class DeadlineFixtureProvider implements ModelProvider {
+  readonly providerFamily = "fixture";
+  readonly entered = Promise.withResolvers<void>();
+  readonly operationTrace: string[] = [];
+  readonly requests: JsonObject[] = [];
+  readonly responses: JsonObject[] = [];
+
+  constructor(private readonly streamFirst: boolean) {}
+
+  async generate(messages: ProviderMessage[], tools: ToolSpec[], options?: ModelProviderOptions) {
+    const chunks: ModelResponseChunk[] = [];
+    for await (const chunk of this.generateStream(messages, tools, options)) chunks.push(chunk);
+    return {
+      content: chunks.map((chunk) => chunk.delta).join(""),
+      toolCalls: chunks.flatMap((chunk) => chunk.toolCalls),
+    };
+  }
+
+  async *generateStream(
+    messages: ProviderMessage[],
+    tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): AsyncGenerator<ModelResponseChunk> {
+    const index = this.requests.length;
+    this.operationTrace.push(`provider:start:${index}`);
+    this.requests.push({
+      messages: neutralMessages(messages),
+      tools: structuredClone(tools).map(({ name, description, parameters }) => ({
+        name,
+        description,
+        parameters,
+      })),
+    });
+    const content = this.streamFirst ? "partial" : "";
+    this.responses.push({ content, tool_calls: [] });
+    let removeAbort = () => {};
+    try {
+      if (content) yield { delta: content, toolCalls: [] };
+      this.entered.resolve();
+      const signal = options?.cancellationToken?.signal;
+      if (signal === undefined) {
+        throw new Error("deadline fixture requires a cancellation signal");
+      }
+      await new Promise<never>((_resolve, reject) => {
+        const onAbort = () => reject(new CancellationError());
+        removeAbort = () => signal.removeEventListener("abort", onAbort);
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      });
+    } finally {
+      removeAbort();
+      this.operationTrace.push(`provider:end:${index}`);
+    }
+  }
+}
+
 class FixtureExecutionController extends ToolExecutionController {
   constructor(
     private readonly fixture: string,
@@ -218,7 +324,7 @@ class FixtureExecutionController extends ToolExecutionController {
         ),
       };
     }
-    await request.onStarted();
+    await request.onStarted(new AbortController().signal);
     const label = request.name.replace(/_tool$/, "");
     this.operationTrace.push(`tool:start:${label}`);
     this.entered.get(label)?.resolve();
@@ -338,9 +444,98 @@ function controlsFor(
   };
 }
 
+const TURN_DEADLINE_FIXTURES = new Set([
+  "turn-queue-timeout",
+  "turn-provider-open-timeout",
+  "turn-provider-stream-timeout",
+  "turn-cancellation-deadline-tie",
+]);
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  throw new Error("deterministic parity barrier was not reached");
+}
+
+async function runTurnDeadline(document: JsonObject, scenario: JsonObject): Promise<JsonObject> {
+  const snapshot = emptySnapshot();
+  const fixture = scenario.fixture as string;
+  const sessionId = scenario.input.session_id as string;
+  const { idFactory, clock } = controlsFor(document, scenario);
+  const scheduler = new DeterministicTimerScheduler(clock);
+  const coordinator = new InMemorySessionTurnCoordinator();
+  const provider = new DeadlineFixtureProvider(fixture === "turn-provider-stream-timeout");
+  const store = new InMemoryEventStore();
+  const runtime = new AgentRuntime({
+    provider,
+    store,
+    committer: new InMemoryEventCommitter(store),
+    turnCoordinator: coordinator,
+    defaultContext: {
+      principalId: "parity-principal",
+      requestId: "request-fixed",
+      traceId: "trace-fixed",
+    },
+    systemPrompt: "You are a helpful assistant.",
+    turnExecutionLimits: { turnTimeoutMs: 1_000 },
+    idFactory,
+    clock,
+    timerScheduler: scheduler,
+  });
+  const token = new CancellationToken();
+  const holder =
+    fixture === "turn-queue-timeout" ? await coordinator.acquire(sessionId) : undefined;
+  const turnOutcome = runtime
+    .turn(scenario.input.prompts[0], { sessionId, cancellationToken: token })
+    .then(
+      (turn) => ({ turn }),
+      (error: unknown) => ({ error }),
+    );
+
+  if (fixture === "turn-queue-timeout") {
+    await waitUntil(() => coordinator.waitingCount === 1);
+  } else {
+    await provider.entered.promise;
+  }
+  if (fixture === "turn-cancellation-deadline-tie") token.cancel();
+  scheduler.advance(1_000);
+
+  const outcome = await turnOutcome;
+  holder?.release();
+  if ("error" in outcome) {
+    if (!(outcome.error instanceof TurnTimeoutError)) throw outcome.error;
+    snapshot.result = {
+      error: {
+        code: outcome.error.code,
+        phase: outcome.error.phase,
+        retryable: outcome.error.retryable,
+        outcome: outcome.error.outcome,
+      },
+    };
+  } else {
+    snapshot.result = {
+      turns: [
+        {
+          session_id: outcome.turn.sessionId,
+          turn_id: outcome.turn.turnId,
+          text: outcome.turn.text,
+        },
+      ],
+    };
+  }
+  snapshot.events = (await runtime.history(sessionId)).map(eventWire);
+  snapshot.operation_trace = provider.operationTrace;
+  snapshot.provider_requests = provider.requests;
+  snapshot.provider_responses = provider.responses;
+  return snapshot;
+}
+
 async function runRuntime(document: JsonObject, scenario: JsonObject): Promise<JsonObject> {
   const snapshot = emptySnapshot();
   const fixture = scenario.fixture as string;
+  if (TURN_DEADLINE_FIXTURES.has(fixture)) return runTurnDeadline(document, scenario);
   if (fixture === "missing-risk") {
     try {
       const bad = {

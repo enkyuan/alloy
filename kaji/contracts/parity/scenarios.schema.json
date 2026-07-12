@@ -91,7 +91,9 @@
                 "policy-deny", "missing-risk", "approval-reject", "approval-timeout",
                 "approval-unavailable", "approval-external-recorded", "executor-error",
                 "queue-timeout", "started-timeout", "cancellation-before-start",
-                "cancellation-after-start"
+                "cancellation-after-start", "turn-queue-timeout",
+                "turn-provider-open-timeout", "turn-provider-stream-timeout",
+                "turn-cancellation-deadline-tie"
               ]
             },
             "controls": { "type": "string", "minLength": 1 },

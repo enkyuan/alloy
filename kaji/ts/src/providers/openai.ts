@@ -45,6 +45,8 @@ export interface OpenAIProviderOptions {
   baseURL?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Per-request timeout in milliseconds. Must be a positive finite integer. */
+  requestTimeoutMs?: number;
   /** Extra HTTP headers to send with every request. Used by OpenAI-compatible
    * gateways (OpenRouter, Together, Groq) to attach attribution or routing
    * metadata. Ignored when the value is empty. */
@@ -89,6 +91,7 @@ interface ResolvedOpenAIOptions {
   baseURL: string;
   temperature: number;
   maxTokens: number;
+  requestTimeoutMs: number | undefined;
   defaultHeaders: Record<string, string> | undefined;
   retry: Required<RetryOptions>;
 }
@@ -102,12 +105,21 @@ export class OpenAIProvider implements ModelProvider {
     if (!opts.apiKey?.trim()) {
       throw new ProviderConfigError("OpenAI API key is not configured.", { service: "openai" });
     }
+    if (
+      opts.requestTimeoutMs !== undefined &&
+      (!Number.isFinite(opts.requestTimeoutMs) ||
+        !Number.isInteger(opts.requestTimeoutMs) ||
+        opts.requestTimeoutMs <= 0)
+    ) {
+      throw new RangeError("requestTimeoutMs must be a positive finite integer");
+    }
     this.opts = {
       apiKey: opts.apiKey,
       model: opts.model ?? "gpt-5.4-mini",
       baseURL: opts.baseURL ?? "",
       temperature: opts.temperature ?? 0.7,
       maxTokens: opts.maxTokens ?? 4096,
+      requestTimeoutMs: opts.requestTimeoutMs,
       defaultHeaders:
         opts.defaultHeaders && Object.keys(opts.defaultHeaders).length > 0
           ? opts.defaultHeaders
@@ -166,7 +178,12 @@ export class OpenAIProvider implements ModelProvider {
     try {
       const response = await withRetry(
         () =>
-          client.chat.completions.create(params, { signal: options?.cancellationToken?.signal }),
+          client.chat.completions.create(params, {
+            signal: options?.cancellationToken?.signal,
+            ...(this.opts.requestTimeoutMs === undefined
+              ? {}
+              : { timeout: this.opts.requestTimeoutMs }),
+          }),
         this.opts.retry,
         options?.cancellationToken,
         options?.metricsSink,
@@ -217,6 +234,9 @@ export class OpenAIProvider implements ModelProvider {
         () =>
           client.chat.completions.create(params, {
             signal: options?.cancellationToken?.signal,
+            ...(this.opts.requestTimeoutMs === undefined
+              ? {}
+              : { timeout: this.opts.requestTimeoutMs }),
           }),
         this.opts.retry,
         options?.cancellationToken,

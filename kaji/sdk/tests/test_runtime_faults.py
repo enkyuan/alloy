@@ -2,20 +2,30 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Iterator
-from dataclasses import fields
+from dataclasses import dataclass, fields
 import math
 from types import SimpleNamespace
-from typing import Any, Literal, Never
+from typing import Any, Callable, Literal, Never
 
 import pytest
 
 from kaji.infra.events.store.inmem import InMemoryEventStore
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.types import EventType
+from kaji.infra.observability import InMemoryMetrics
 from kaji.runtime.sessions.projector import SessionProjector
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancellation import (
+    CancelledError,
+    CancellationToken,
+    ProviderDeadlineScope,
+)
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator
+from kaji.runtime.agents.limits import (
+    ProviderCancellationContractViolation,
+    TurnExecutionLimits,
+    TurnTimeoutError,
+)
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
     ToolInvocation,
@@ -38,6 +48,7 @@ from kaji.runtime.tools.idempotency import (
 )
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
+from kaji.runtime.determinism import Clock, ScheduledCallback, TimerScheduler
 from tests.helpers.mock_provider import MockProvider
 
 
@@ -1584,3 +1595,772 @@ async def test_provider_fault_is_single_terminal_replayable_and_releases_runtime
     assert recovered.text == "recovered"
     replay_session(await store.get_events("provider-fault"))
     assert coordinator.entry_count == coordinator.waiter_count == 0
+
+
+class _DeadlineClock(Clock):
+    def __init__(self) -> None:
+        self.monotonic = 100.0
+        self.wall = 1_700_000_000.0
+
+    def now_wall_seconds(self) -> float:
+        return self.wall
+
+    def now_monotonic(self) -> float:
+        return self.monotonic
+
+
+@dataclass
+class _DeadlineTimer(ScheduledCallback):
+    due: float
+    callback: Callable[[], None]
+    cancelled: bool = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _DeadlineScheduler(TimerScheduler):
+    def __init__(self, clock: _DeadlineClock) -> None:
+        self.clock = clock
+        self.timers: list[_DeadlineTimer] = []
+
+    @property
+    def active_count(self) -> int:
+        return sum(not timer.cancelled for timer in self.timers)
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback:
+        timer = _DeadlineTimer(self.clock.monotonic + delay_seconds, callback)
+        self.timers.append(timer)
+        return timer
+
+    def advance(self, seconds: float) -> None:
+        self.clock.monotonic += seconds
+        for timer in self.timers:
+            if not timer.cancelled and timer.due <= self.clock.monotonic:
+                timer.cancelled = True
+                timer.callback()
+
+
+class _ControlledIterator:
+    def __init__(
+        self,
+        *,
+        first_chunk: bool = False,
+        hostile: bool = False,
+        hostile_close: bool = False,
+        next_error: BaseException | None = None,
+    ) -> None:
+        self.first_chunk = first_chunk
+        self.hostile = hostile
+        self.hostile_close = hostile_close
+        self.next_error = next_error
+        self.entered = asyncio.Event()
+        self.cancel_seen = asyncio.Event()
+        self.release = asyncio.Event()
+        self.close_count = 0
+        self.close_entered = asyncio.Event()
+        self.close_release = asyncio.Event()
+        self.close_during_next = False
+        self.next_active = False
+        self._yielded_first = False
+        self._done = False
+
+    def __aiter__(self) -> "_ControlledIterator":
+        return self
+
+    async def __anext__(self) -> ModelResponseChunk:
+        if self._done:
+            raise StopAsyncIteration
+        if self.first_chunk and not self._yielded_first:
+            self._yielded_first = True
+            return ModelResponseChunk(delta="partial")
+        self.next_active = True
+        self.entered.set()
+        try:
+            try:
+                await self.release.wait()
+            except asyncio.CancelledError:
+                self.cancel_seen.set()
+                if not self.hostile:
+                    raise
+                await self.release.wait()
+            if self.next_error is not None:
+                raise self.next_error
+            self._done = True
+            raise StopAsyncIteration
+        finally:
+            self.next_active = False
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+        self.close_entered.set()
+        if self.next_active:
+            self.close_during_next = True
+        if self.hostile_close:
+            await self.close_release.wait()
+        self._done = True
+
+
+class _IteratorProvider:
+    def __init__(self, *iterators: _ControlledIterator) -> None:
+        self.iterators = list(iterators)
+        self.calls = 0
+
+    async def generate(self, *_args: Any, **_kwargs: Any) -> GenerateResponse:
+        return GenerateResponse(text="")
+
+    def generate_stream(self, *_args: Any, **_kwargs: Any) -> _ControlledIterator:
+        self.calls += 1
+        if not self.iterators:
+            iterator = _ControlledIterator()
+            iterator.release.set()
+            return iterator
+        return self.iterators.pop(0)
+
+
+class _TokenRejectingIterator:
+    def __init__(
+        self,
+        token: CancellationToken,
+        error: BaseException,
+        *,
+        immediate: bool = False,
+    ) -> None:
+        self.token = token
+        self.error = error
+        self.immediate = immediate
+        self.entered = asyncio.Event()
+        self.close_count = 0
+
+    def __aiter__(self) -> "_TokenRejectingIterator":
+        return self
+
+    async def __anext__(self) -> ModelResponseChunk:
+        self.entered.set()
+        if not self.immediate:
+            await self.token.wait()
+        raise self.error
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+
+
+class _TokenRejectingProvider:
+    def __init__(self, error: BaseException, *, immediate: bool = False) -> None:
+        self.error = error
+        self.immediate = immediate
+        self.iterator: _TokenRejectingIterator | None = None
+        self.entered = asyncio.Event()
+
+    async def generate(self, *_args: Any, **_kwargs: Any) -> GenerateResponse:
+        return GenerateResponse(text="")
+
+    def generate_stream(
+        self, *_args: Any, cancellation_token: CancellationToken, **_kwargs: Any
+    ) -> _TokenRejectingIterator:
+        iterator = _TokenRejectingIterator(
+            cancellation_token,
+            self.error,
+            immediate=self.immediate,
+        )
+        iterator.entered = self.entered
+        self.iterator = iterator
+        return iterator
+
+
+class _FaultingTurnCoordinator(InMemoryTurnCoordinator):
+    def __init__(self) -> None:
+        super().__init__()
+        self.quarantine_failures = 0
+        self.release_failures = 0
+        self.clear_failures = 0
+
+    async def quarantine(self, session_id: str) -> None:
+        if self.quarantine_failures:
+            self.quarantine_failures -= 1
+            raise RuntimeError("injected quarantine failure")
+        await super().quarantine(session_id)
+
+    async def clear_quarantine(self, session_id: str) -> None:
+        if self.clear_failures:
+            self.clear_failures -= 1
+            raise RuntimeError("injected clear failure")
+        await super().clear_quarantine(session_id)
+
+    async def _release(self, session_id: str, entry: Any) -> None:
+        if self.release_failures:
+            self.release_failures -= 1
+            raise RuntimeError("injected release failure")
+        await super()._release(session_id, entry)
+
+
+def _deadline_runtime(
+    provider: Any,
+    clock: _DeadlineClock,
+    scheduler: _DeadlineScheduler,
+    coordinator: InMemoryTurnCoordinator,
+    store: InMemoryEventStore,
+    *,
+    timeout_seconds: float = 1,
+    metrics: InMemoryMetrics | None = None,
+) -> AgentRuntime:
+    builder = (
+        AgentBuilder()
+        .provider(provider)
+        .coordinator(coordinator)
+        .clock(clock)
+        .timer_scheduler(scheduler)
+        .turn_execution_limits(
+            TurnExecutionLimits(
+                timeout_seconds=timeout_seconds,
+                provider_cancellation_grace_seconds=2,
+            )
+        )
+    )
+    if metrics is not None:
+        builder.metrics_sink(metrics)
+    return builder.build(store=store)
+
+
+@pytest.mark.parametrize(
+    ("deadline", "grace", "error_type"),
+    [
+        (True, 1, TypeError),
+        (float("nan"), 1, ValueError),
+        (float("inf"), 1, ValueError),
+        (-1, 1, ValueError),
+        (1, True, TypeError),
+        (1, float("nan"), ValueError),
+        (1, float("inf"), ValueError),
+        (1, 0, ValueError),
+    ],
+)
+def test_provider_deadline_scope_rejects_invalid_bounds(
+    deadline: float,
+    grace: float,
+    error_type: type[Exception],
+) -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    with pytest.raises(error_type):
+        ProviderDeadlineScope[Any](
+            parent=CancellationToken(),
+            deadline_monotonic=deadline,
+            cancellation_grace_seconds=grace,
+            clock=clock,
+            scheduler=scheduler,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mid_stream", [False, True])
+async def test_provider_deadline_cancels_joins_and_closes_once(
+    mid_stream: bool,
+) -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator(first_chunk=mid_stream)
+    provider = _IteratorProvider(iterator)
+    coordinator = InMemoryTurnCoordinator()
+    store = InMemoryEventStore()
+    runtime = _deadline_runtime(provider, clock, scheduler, coordinator, store)
+
+    turn = asyncio.create_task(runtime.turn("timeout", session_id="cooperative"))
+    await iterator.entered.wait()
+    scheduler.advance(1)
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await turn
+    assert caught.value.phase == ("provider_stream" if mid_stream else "provider_open")
+    failures = [
+        event
+        for event in await store.get_events("cooperative")
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(failures) == 1
+    assert failures[0].phase == caught.value.phase
+    assert failures[0].outcome == "unknown"
+    assert iterator.cancel_seen.is_set()
+    assert iterator.close_count == 1
+    assert iterator.close_during_next is False
+    assert coordinator.entry_count == coordinator.waiter_count == 0
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_owned_deadline_rejection_is_a_typed_turn_timeout() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    raw = RuntimeError("provider rejected its owned cancellation")
+    provider = _TokenRejectingProvider(raw)
+    coordinator = InMemoryTurnCoordinator()
+    store = InMemoryEventStore()
+    metrics = InMemoryMetrics()
+    runtime = _deadline_runtime(
+        provider,
+        clock,
+        scheduler,
+        coordinator,
+        store,
+        metrics=metrics,
+    )
+
+    turn = asyncio.create_task(runtime.turn("timeout", session_id="deadline-reject"))
+    await provider.entered.wait()
+    scheduler.advance(1)
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await turn
+    assert caught.value.phase == "provider_open"
+    assert caught.value.retryable is True
+    assert caught.value.outcome == "unknown"
+    failures = [
+        event
+        for event in await store.get_events("deadline-reject")
+        if event.type == EventType.AGENT_TURN_FAILED
+    ]
+    assert len(failures) == 1
+    assert failures[0].error_code == "TURN_TIMEOUT"
+    assert failures[0].phase == "provider_open"
+    assert failures[0].retryable is True
+    assert failures[0].outcome == "unknown"
+    assert provider.iterator is not None
+    assert provider.iterator.close_count == 1
+    assert coordinator.entry_count == coordinator.waiter_count == 0
+    assert scheduler.active_count == 0
+    provider_metric = next(
+        measurement
+        for measurement in metrics.measurements
+        if measurement.name == "kaji.provider.duration_ms"
+    )
+    assert provider_metric.labels["status"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_provider_error_settled_before_deadline_keeps_identity() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    raw = RuntimeError("provider failed first")
+    provider = _TokenRejectingProvider(raw, immediate=True)
+    coordinator = InMemoryTurnCoordinator()
+    runtime = _deadline_runtime(
+        provider,
+        clock,
+        scheduler,
+        coordinator,
+        InMemoryEventStore(),
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        await runtime.turn("fail", session_id="provider-first")
+    assert caught.value is raw
+    assert provider.iterator is not None
+    assert provider.iterator.close_count == 1
+    assert coordinator.entry_count == coordinator.waiter_count == 0
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["parent", "provider"])
+async def test_provider_rejection_preserves_cancellation_sources(source: str) -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    parent = CancellationToken()
+    scope = ProviderDeadlineScope[ModelResponseChunk](
+        parent=parent,
+        deadline_monotonic=clock.monotonic + 10,
+        cancellation_grace_seconds=2,
+        clock=clock,
+        scheduler=scheduler,
+    )
+    iterator = _TokenRejectingIterator(
+        scope.token,
+        (
+            CancelledError("provider rejected cancellation")
+            if source == "parent"
+            else RuntimeError("provider rejected cancellation")
+        ),
+    )
+
+    async def consume() -> None:
+        async with scope:
+            async for _chunk in scope.consume(iterator):
+                pass
+
+    pending = asyncio.create_task(consume())
+    await iterator.entered.wait()
+    (parent if source == "parent" else scope.token).cancel()
+
+    with pytest.raises(CancelledError):
+        await pending
+    assert iterator.close_count == 1
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_independent_provider_error_wins_a_parent_cancellation_race() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    parent = CancellationToken()
+    raw = RuntimeError("real provider failure")
+
+    class RacingIterator:
+        def __aiter__(self) -> "RacingIterator":
+            return self
+
+        async def __anext__(self) -> ModelResponseChunk:
+            parent.cancel()
+            raise raw
+
+        async def aclose(self) -> None:
+            return None
+
+    scope = ProviderDeadlineScope[ModelResponseChunk](
+        parent=parent,
+        deadline_monotonic=clock.monotonic + 10,
+        cancellation_grace_seconds=2,
+        clock=clock,
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(RuntimeError) as caught:
+        async with scope:
+            async for _chunk in scope.consume(RacingIterator()):
+                pass
+    assert caught.value is raw
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_deadline_after_dispatch_during_consumer_work_is_unknown() -> (
+    None
+):
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator(first_chunk=True)
+    scope = ProviderDeadlineScope[ModelResponseChunk](
+        parent=CancellationToken(),
+        deadline_monotonic=clock.monotonic + 1,
+        cancellation_grace_seconds=2,
+        clock=clock,
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        async with scope:
+            async for _chunk in scope.consume(iterator):
+                scheduler.advance(1)
+
+    assert caught.value.phase == "provider_stream"
+    assert caught.value.outcome == "unknown"
+    assert iterator.close_count == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_deadline_during_close_preserves_dispatched_outcome() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator(hostile_close=True)
+    iterator.release.set()
+    scope = ProviderDeadlineScope[ModelResponseChunk](
+        parent=CancellationToken(),
+        deadline_monotonic=clock.monotonic + 1,
+        cancellation_grace_seconds=2,
+        clock=clock,
+        scheduler=scheduler,
+    )
+
+    async def consume() -> None:
+        async with scope:
+            async for _chunk in scope.consume(iterator):
+                pass
+
+    consuming = asyncio.create_task(consume())
+    await iterator.close_entered.wait()
+    scheduler.advance(1)
+    await _wait_until(lambda: scheduler.active_count == 1)
+    iterator.close_release.set()
+
+    with pytest.raises(TurnTimeoutError) as caught:
+        await consuming
+    assert caught.value.phase == "provider_open"
+    assert caught.value.outcome == "unknown"
+    assert iterator.close_count == 1
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_external_task_cancellation_uses_provider_grace_and_closes_once() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator()
+    provider = _IteratorProvider(iterator)
+    coordinator = InMemoryTurnCoordinator()
+    metrics = InMemoryMetrics()
+    runtime = _deadline_runtime(
+        provider,
+        clock,
+        scheduler,
+        coordinator,
+        InMemoryEventStore(),
+        metrics=metrics,
+    )
+
+    turn = asyncio.create_task(runtime.turn("cancel", session_id="parent-cancel"))
+    await iterator.entered.wait()
+    turn.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+    assert iterator.close_count == 1
+    assert iterator.close_during_next is False
+    assert coordinator.entry_count == 0
+    assert scheduler.active_count == 0
+    provider_metric = next(
+        measurement
+        for measurement in metrics.measurements
+        if measurement.name == "kaji.provider.duration_ms"
+    )
+    assert provider_metric.labels["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_external_task_cancellation_during_hostile_close_quarantines() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator(hostile_close=True)
+    iterator.release.set()
+    coordinator = InMemoryTurnCoordinator()
+    runtime = _deadline_runtime(
+        _IteratorProvider(iterator),
+        clock,
+        scheduler,
+        coordinator,
+        InMemoryEventStore(),
+        timeout_seconds=10,
+    )
+
+    turn = asyncio.create_task(runtime.turn("cancel", session_id="cancel-close"))
+    await iterator.close_entered.wait()
+    turn.cancel()
+    await _wait_until(lambda: scheduler.active_count == 2)
+    scheduler.advance(2)
+
+    with pytest.raises(ProviderCancellationContractViolation):
+        await turn
+    assert iterator.close_count == 1
+    assert coordinator.entry_count == 1
+
+    iterator.close_release.set()
+    assert await runtime.drain_providers(1) == []
+    assert coordinator.entry_count == 0
+    assert scheduler.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_hostile_provider_close_is_bounded_and_quarantined_until_drain() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    iterator = _ControlledIterator(hostile_close=True)
+    iterator.release.set()
+    provider = _IteratorProvider(iterator)
+    coordinator = InMemoryTurnCoordinator()
+    runtime = _deadline_runtime(
+        provider, clock, scheduler, coordinator, InMemoryEventStore()
+    )
+
+    turn = asyncio.create_task(runtime.turn("close", session_id="hostile-close"))
+    await iterator.close_entered.wait()
+    scheduler.advance(1)
+    await _wait_until(lambda: scheduler.active_count == 1)
+    scheduler.advance(2)
+    with pytest.raises(ProviderCancellationContractViolation):
+        await turn
+    assert iterator.close_count == 1
+    assert coordinator.entry_count == 1
+
+    iterator.close_release.set()
+    await _wait_until(lambda: scheduler.active_count == 0)
+    assert await runtime.drain_providers(1) == []
+    assert iterator.close_count == 1
+    assert coordinator.entry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_provider_error_with_hostile_close_quarantines_until_drain() -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    provider_error = RuntimeError("provider failed before close")
+    iterator = _ControlledIterator(
+        hostile_close=True,
+        next_error=provider_error,
+    )
+    provider = _IteratorProvider(iterator)
+    coordinator = InMemoryTurnCoordinator()
+    runtime = _deadline_runtime(
+        provider, clock, scheduler, coordinator, InMemoryEventStore()
+    )
+
+    turn = asyncio.create_task(runtime.turn("fail", session_id="error-close"))
+    await iterator.entered.wait()
+    iterator.release.set()
+    await iterator.close_entered.wait()
+    scheduler.advance(1)
+    await _wait_until(lambda: scheduler.active_count == 1)
+    scheduler.advance(2)
+
+    with pytest.raises(ProviderCancellationContractViolation) as caught:
+        await turn
+    assert caught.value.__cause__ is provider_error
+    assert iterator.close_count == 1
+    assert coordinator.entry_count == 1
+
+    iterator.close_release.set()
+    assert await runtime.drain_providers(1) == []
+    assert iterator.close_count == 1
+    assert coordinator.entry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_hostile_provider_retains_shared_lease_until_successful_drain_and_close_only_rejects() -> (
+    None
+):
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    hostile = _ControlledIterator(hostile=True)
+    recovered = _ControlledIterator()
+    recovered.release.set()
+    other = _ControlledIterator()
+    other.release.set()
+    provider = _IteratorProvider(hostile, other, recovered)
+    coordinator = InMemoryTurnCoordinator()
+    store = InMemoryEventStore()
+    runtime = _deadline_runtime(provider, clock, scheduler, coordinator, store)
+    sibling_runtime = _deadline_runtime(
+        provider,
+        clock,
+        scheduler,
+        coordinator,
+        store,
+        timeout_seconds=10,
+    )
+
+    owner = asyncio.create_task(runtime.turn("hostile", session_id="quarantine"))
+    await hostile.entered.wait()
+    waiting = asyncio.create_task(
+        sibling_runtime.turn("waiting", session_id="quarantine")
+    )
+    await _wait_until(lambda: coordinator.waiter_count == 1)
+    scheduler.advance(1)
+    await hostile.cancel_seen.wait()
+    scheduler.advance(2)
+
+    with pytest.raises(ProviderCancellationContractViolation) as owner_error:
+        await owner
+    assert owner_error.value.phase == "provider_open"
+    with pytest.raises(ProviderCancellationContractViolation):
+        await waiting
+    assert coordinator.entry_count == 1
+    assert coordinator.waiter_count == 0
+    assert hostile.close_count == 0
+
+    rejected = asyncio.create_task(
+        sibling_runtime.turn("rejected", session_id="quarantine")
+    )
+    with pytest.raises(ProviderCancellationContractViolation):
+        await rejected
+    assert provider.calls == 1
+
+    different = await runtime.turn("other", session_id="other-session")
+    assert different.session_id == "other-session"
+
+    failed_drain = asyncio.create_task(runtime.drain_providers(0))
+    await _wait_until(lambda: scheduler.active_count == 1)
+    scheduler.advance(0)
+    assert await failed_drain == ["quarantine"]
+    assert coordinator.entry_count == 1
+    assert scheduler.active_count == 0
+
+    runtime.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        await runtime.turn("closed", session_id="closed-session")
+    assert hostile.close_count == 0
+
+    hostile.release.set()
+    await _wait_until(lambda: hostile.close_count == 1)
+    assert await runtime.drain_providers(1) == []
+    assert hostile.close_count == 1
+    assert hostile.close_during_next is False
+    assert coordinator.entry_count == 0
+
+    reused = await sibling_runtime.turn("reused", session_id="quarantine")
+    assert reused.session_id == "quarantine"
+    assert coordinator.entry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_quarantine_setup_failure_retains_transferred_ownership_for_drain() -> (
+    None
+):
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    hostile = _ControlledIterator(hostile=True)
+    provider = _IteratorProvider(hostile)
+    coordinator = _FaultingTurnCoordinator()
+    coordinator.quarantine_failures = 1
+    runtime = _deadline_runtime(
+        provider, clock, scheduler, coordinator, InMemoryEventStore()
+    )
+
+    turn = asyncio.create_task(runtime.turn("hostile", session_id="setup-failure"))
+    await hostile.entered.wait()
+    scheduler.advance(1)
+    await hostile.cancel_seen.wait()
+    scheduler.advance(2)
+
+    with pytest.raises(RuntimeError, match="injected quarantine failure"):
+        await turn
+    assert coordinator.entry_count == 1
+
+    hostile.release.set()
+    await _wait_until(lambda: hostile.close_count == 1)
+    assert await runtime.drain_providers(1) == []
+    assert coordinator.entry_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["release", "clear"])
+async def test_drain_failure_keeps_session_quarantined_until_retry(
+    failure: str,
+) -> None:
+    clock = _DeadlineClock()
+    scheduler = _DeadlineScheduler(clock)
+    hostile = _ControlledIterator(hostile=True)
+    provider = _IteratorProvider(hostile)
+    coordinator = _FaultingTurnCoordinator()
+    runtime = _deadline_runtime(
+        provider, clock, scheduler, coordinator, InMemoryEventStore()
+    )
+
+    turn = asyncio.create_task(runtime.turn("hostile", session_id=f"{failure}-failure"))
+    await hostile.entered.wait()
+    scheduler.advance(1)
+    await hostile.cancel_seen.wait()
+    scheduler.advance(2)
+    with pytest.raises(ProviderCancellationContractViolation):
+        await turn
+
+    hostile.release.set()
+    await _wait_until(lambda: hostile.close_count == 1)
+    setattr(coordinator, f"{failure}_failures", 1)
+    with pytest.raises(RuntimeError, match=f"injected {failure} failure"):
+        await runtime.drain_providers(1)
+
+    assert coordinator.entry_count == 1
+    with pytest.raises(ProviderCancellationContractViolation):
+        async with coordinator.acquire(f"{failure}-failure"):
+            pass
+
+    assert await runtime.drain_providers(1) == []
+    assert coordinator.entry_count == 0

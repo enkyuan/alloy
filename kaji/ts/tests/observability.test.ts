@@ -98,9 +98,17 @@ describe("observability contracts", () => {
       outcome: "failed",
       error_code: "USER_SPECIFIC_ERROR_123",
     });
+    recordMetric(sink, "kaji.tool.duration_ms", 3, {
+      outcome: "timeout",
+      error_code: "TURN_TIMEOUT",
+    });
 
     expect(measurements[0]?.labels).toEqual({ provider_family: "custom", status: "error" });
     expect(measurements[1]?.labels).toEqual({ outcome: "failed", error_code: "OTHER" });
+    expect(measurements[2]?.labels).toEqual({
+      outcome: "timeout",
+      error_code: "TURN_TIMEOUT",
+    });
     expect(providerFamily({})).toBe("custom");
     expect(providerFamily({ providerFamily: "anthropic" })).toBe("anthropic");
     expect(

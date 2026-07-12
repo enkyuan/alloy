@@ -3,6 +3,7 @@ import { DurableJsonLimitError, InvalidDurableValueError } from "@/events/errors
 import { durableJsonSnapshot } from "@/events/json";
 import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 import { logRedactedFailure } from "@/internal/safe-logging";
+import { systemTimerScheduler, type TimerHandle, type TimerScheduler } from "@/internal/uuid";
 import {
   NOOP_METRICS,
   NOOP_TRACE,
@@ -45,7 +46,12 @@ export const DEFAULT_TOOL_EXECUTION_LIMITS: Readonly<ToolExecutionLimits> = Obje
 
 export type ToolExecutionControllerOutcome =
   | { readonly status: "completed"; readonly result: unknown }
-  | { readonly status: "failed"; readonly error: ToolExecutionError };
+  | {
+      readonly status: "failed";
+      readonly error: ToolExecutionError;
+      /** True only for a deadline observed by this invocation, never a ledger replay. */
+      readonly turnTimeout?: true;
+    };
 
 export interface ToolExecutionRequest {
   readonly name: string;
@@ -53,7 +59,12 @@ export interface ToolExecutionRequest {
   readonly context: ToolExecutionContext;
   readonly timeoutMs?: number;
   readonly exclusive: boolean;
-  readonly onStarted: () => Promise<void>;
+  /**
+   * Persist the start acknowledgement and settle when the append is no longer active.
+   * Implementations must observe `signal`; otherwise the claim and permit remain owned,
+   * `drain()` reports the call, and the process must be restarted if it never settles.
+   */
+  readonly onStarted: (signal: AbortSignal) => Promise<void>;
   readonly execute: (context: ToolExecutionContext) => Promise<unknown>;
 }
 
@@ -62,6 +73,7 @@ export interface ToolExecutionControllerOptions {
   ledger?: ToolIdempotencyLedger;
   now?: () => number;
   monotonicNow?: () => number;
+  timerScheduler?: TimerScheduler;
   metricsSink?: MetricsSink;
   traceSink?: TraceSink;
 }
@@ -133,11 +145,11 @@ class PermitPool {
   }
 }
 
-type AbortKind = "cancelled" | "timeout";
+type AbortKind = "cancelled" | "tool_timeout" | "turn_timeout";
 
 interface LinkedSignal {
   readonly signal: AbortSignal;
-  readonly deadlineMs: number | undefined;
+  readonly deadlineMonotonicMs: number | undefined;
   readonly kind: () => AbortKind | undefined;
   readonly cleanup: () => void;
 }
@@ -210,7 +222,7 @@ function toolMetricFields(outcome: ToolExecutionControllerOutcome): {
 } {
   if (outcome.status === "completed") return { outcome: "completed", error_code: "NONE" };
   const metricOutcome: ToolMetricOutcome =
-    outcome.error.error_code === "TOOL_TIMEOUT"
+    outcome.error.error_code === "TOOL_TIMEOUT" || outcome.error.error_code === "TURN_TIMEOUT"
       ? "timeout"
       : outcome.error.error_code === "TOOL_CANCELLED"
         ? "cancelled"
@@ -223,11 +235,15 @@ export class ToolExecutionController {
   readonly limits: Readonly<ToolExecutionLimits>;
   readonly ledger: ToolIdempotencyLedger;
   private readonly permits: PermitPool;
-  private readonly now: () => number;
   private readonly monotonicNow: () => number;
+  private readonly timerScheduler: TimerScheduler;
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
   private readonly active = new Map<string, { callId: string; settled: Promise<void> }>();
+  private readonly pendingStarts = new Map<
+    string,
+    { callId: string; settled: Promise<void>; resolve: () => void }
+  >();
   private readonly claimCleanups = new Set<Promise<void>>();
 
   constructor(options: ToolExecutionControllerOptions = {}) {
@@ -235,8 +251,8 @@ export class ToolExecutionController {
     validateLimits(this.limits);
     this.ledger = options.ledger ?? new InMemoryToolIdempotencyLedger();
     this.permits = new PermitPool(this.limits.maxParallel);
-    this.now = options.now ?? Date.now;
     this.monotonicNow = options.monotonicNow ?? (() => globalThis.performance.now());
+    this.timerScheduler = options.timerScheduler ?? systemTimerScheduler;
     this.metrics = options.metricsSink ?? NOOP_METRICS;
     this.trace = options.traceSink ?? NOOP_TRACE;
   }
@@ -318,10 +334,11 @@ export class ToolExecutionController {
     ]);
     removeClaimAbortListener();
     if (claimed.status === "aborted") {
-      const error = this.abortError(linked.kind(), "not_started");
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      const error = outcome.error;
       this.scheduleLateClaimCleanup(claimPromise, error);
       linked.cleanup();
-      return { status: "failed", error };
+      return outcome;
     }
     if (claimed.status === "failed") {
       linked.cleanup();
@@ -332,12 +349,13 @@ export class ToolExecutionController {
     }
     const claimResult = claimed.claim;
     if (linked.signal.aborted) {
-      const error = this.abortError(linked.kind(), "not_started");
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      const error = outcome.error;
       if (claimResult.status === "owner") {
         await this.ledger.retryableFailure(claimResult.claim, error);
       }
       linked.cleanup();
-      return { status: "failed", error };
+      return outcome;
     }
     if (claimResult.status === "running") {
       return this.waitForRunningOutcome(claimResult.outcome, linked);
@@ -359,16 +377,22 @@ export class ToolExecutionController {
         request.exclusive ? this.limits.maxParallel : 1,
       );
     } catch {
-      const error = this.abortError(linked.kind(), "not_started");
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      const error = outcome.error;
       recordMetric(
         this.metrics,
         "kaji.tool.queue_wait_ms",
         Math.max(0, this.monotonicNow() - queueStarted),
-        { outcome: error.error_code === "TOOL_TIMEOUT" ? "timeout" : "cancelled" },
+        {
+          outcome:
+            error.error_code === "TOOL_TIMEOUT" || error.error_code === "TURN_TIMEOUT"
+              ? "timeout"
+              : "cancelled",
+        },
       );
       await this.ledger.retryableFailure(claim, error);
       linked.cleanup();
-      return { status: "failed", error };
+      return outcome;
     }
 
     recordMetric(
@@ -380,34 +404,83 @@ export class ToolExecutionController {
 
     if (linked.signal.aborted) {
       release();
-      const error = this.abortError(linked.kind(), "not_started");
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      const error = outcome.error;
       await this.ledger.retryableFailure(claim, error);
       linked.cleanup();
-      return { status: "failed", error };
+      return outcome;
     }
 
+    let removeStartAbortListener = () => {};
+    const startAborted = new Promise<{ readonly status: "aborted" }>((resolve) => {
+      const finish = () => resolve({ status: "aborted" });
+      if (linked.signal.aborted) finish();
+      else {
+        linked.signal.addEventListener("abort", finish, { once: true });
+        removeStartAbortListener = () => linked.signal.removeEventListener("abort", finish);
+      }
+    });
+    let startOperation: Promise<void>;
     try {
-      await request.onStarted();
+      startOperation = Promise.resolve(request.onStarted(linked.signal));
     } catch (cause) {
-      release();
-      const error = toolStartRecordFailed(cause);
-      await this.ledger.retryableFailure(claim, error);
-      linked.cleanup();
-      throw new ToolStartRecordingError(error, cause);
+      startOperation = Promise.reject(cause);
+    }
+    const start = this.trackPendingStart(key, canonicalContext.toolCallId, startOperation);
+    const startResult = start.then(
+      () => ({ status: "started" as const }),
+      (cause: unknown) => ({ status: "failed" as const, cause }),
+    );
+    const firstStartResult = await Promise.race([startResult, startAborted]);
+    removeStartAbortListener();
+
+    if (firstStartResult.status === "aborted") {
+      // A start append is an acknowledgement boundary. Keep the claim and
+      // permit owned until it physically settles so Failed cannot overtake a
+      // late Started append from a non-cooperative committer.
+      await startResult;
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      try {
+        await this.ledger.retryableFailure(claim, outcome.error);
+        return outcome;
+      } finally {
+        this.finishPendingStart(key);
+        release();
+        linked.cleanup();
+      }
+    }
+
+    if (firstStartResult.status === "failed") {
+      const error = toolStartRecordFailed(firstStartResult.cause);
+      try {
+        await this.ledger.retryableFailure(claim, error);
+      } finally {
+        this.finishPendingStart(key);
+        release();
+        linked.cleanup();
+      }
+      throw new ToolStartRecordingError(error, firstStartResult.cause);
     }
 
     if (linked.signal.aborted) {
-      release();
-      const error = this.abortError(linked.kind(), "not_started");
-      await this.ledger.retryableFailure(claim, error);
-      linked.cleanup();
-      return { status: "failed", error };
+      const outcome = this.abortOutcome(linked.kind(), "not_started");
+      const error = outcome.error;
+      try {
+        await this.ledger.retryableFailure(claim, error);
+        return outcome;
+      } finally {
+        this.finishPendingStart(key);
+        release();
+        linked.cleanup();
+      }
     }
 
     const executionContext = snapshotToolExecutionContext({
       ...canonicalContext,
       signal: linked.signal,
-      ...(linked.deadlineMs === undefined ? {} : { deadlineMs: linked.deadlineMs }),
+      ...(linked.deadlineMonotonicMs === undefined
+        ? {}
+        : { deadlineMonotonicMs: linked.deadlineMonotonicMs }),
     });
     const settled = Promise.resolve()
       .then(() => request.execute(executionContext))
@@ -429,12 +502,12 @@ export class ToolExecutionController {
         recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
       });
     this.active.set(key, { callId: canonicalContext.toolCallId, settled: tracked });
+    this.finishPendingStart(key);
     recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
 
     const abort = new Promise<ToolExecutionControllerOutcome>((resolve) => {
       const finish = () => {
-        const error = this.abortError(linked.kind(), "unknown");
-        resolve({ status: "failed", error });
+        resolve(this.abortOutcome(linked.kind(), "unknown"));
       };
       if (linked.signal.aborted) finish();
       else {
@@ -477,33 +550,79 @@ export class ToolExecutionController {
     return outcome;
   }
 
-  /** Wait for real handler settlement; report calls still running at the deadline. */
+  /** Wait for real start/handler settlement; report calls still owned at the deadline. */
   async drain(timeoutMs: number): Promise<readonly string[]> {
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
       throw new RangeError("timeoutMs must be a finite non-negative number");
     }
-    const active = [...this.active.values()].map(({ settled }) => settled);
-    if (active.length > 0) {
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          Promise.allSettled(active),
-          new Promise<void>((resolve) => {
-            timer = setTimeout(resolve, timeoutMs);
-          }),
+    const deadline = this.monotonicNow() + timeoutMs;
+    let timer: TimerHandle | undefined;
+    let expired = false;
+    const timeout = new Promise<"expired">((resolve) => {
+      timer = this.timerScheduler.schedule(Math.max(0, deadline - this.monotonicNow()), () => {
+        expired = true;
+        resolve("expired");
+      });
+    });
+    try {
+      while (this.active.size > 0 || this.pendingStarts.size > 0) {
+        const snapshot = [
+          ...[...this.active.values()].map(({ settled }) => settled),
+          ...[...this.pendingStarts.values()].map(({ settled }) => settled),
+        ];
+        const wake = await Promise.race([
+          Promise.allSettled(snapshot).then(() => "settled" as const),
+          timeout,
         ]);
-      } finally {
-        if (timer !== undefined) clearTimeout(timer);
+        if (wake === "expired" || expired) break;
+        // Let a settled start synchronously hand ownership to the active map.
+        await Promise.resolve();
       }
+    } finally {
+      timer?.cancel();
     }
-    return [...this.active.values()].map(({ callId }) => callId).sort();
+    return [
+      ...[...this.active.values()].map(({ callId }) => callId),
+      ...[...this.pendingStarts.values()].map(({ callId }) => callId),
+    ].sort();
   }
 
-  private abortError(
+  private trackPendingStart(key: string, callId: string, operation: Promise<void>): Promise<void> {
+    let resolve!: () => void;
+    const settled = new Promise<void>((done) => {
+      resolve = done;
+    });
+    this.pendingStarts.set(key, { callId, settled, resolve });
+    return operation;
+  }
+
+  private finishPendingStart(key: string): void {
+    const pending = this.pendingStarts.get(key);
+    if (pending === undefined) return;
+    this.pendingStarts.delete(key);
+    pending.resolve();
+  }
+
+  private abortOutcome(
     kind: AbortKind | undefined,
     outcome: "not_started" | "unknown",
-  ): ToolExecutionError {
-    return kind === "timeout" ? toolTimedOut(outcome) : toolCancelled(outcome);
+  ): Extract<ToolExecutionControllerOutcome, { status: "failed" }> {
+    if (kind === "turn_timeout") {
+      return {
+        status: "failed",
+        error: new ToolExecutionError(
+          "Agent turn timed out",
+          "TURN_TIMEOUT",
+          outcome === "not_started",
+          outcome,
+        ),
+        turnTimeout: true,
+      };
+    }
+    return {
+      status: "failed",
+      error: kind === "tool_timeout" ? toolTimedOut(outcome) : toolCancelled(outcome),
+    };
   }
 
   private async waitForRunningOutcome(
@@ -514,7 +633,7 @@ export class ToolExecutionController {
     try {
       const aborted = new Promise<ToolExecutionControllerOutcome>((resolve) => {
         const finish = () => {
-          resolve({ status: "failed", error: this.abortError(linked.kind(), "unknown") });
+          resolve(this.abortOutcome(linked.kind(), "unknown"));
         };
         if (linked.signal.aborted) finish();
         else {
@@ -556,12 +675,17 @@ export class ToolExecutionController {
     context: ToolExecutionContext,
     toolTimeoutMs: number | undefined,
   ): LinkedSignal {
-    const now = this.now();
-    const deadlines = [context.deadlineMs];
-    if (toolTimeoutMs !== undefined) deadlines.push(now + toolTimeoutMs);
-    if (this.limits.timeoutMs !== null) deadlines.push(now + this.limits.timeoutMs);
-    const finite = deadlines.filter((value): value is number => value !== undefined);
-    const deadlineMs = finite.length === 0 ? undefined : Math.min(...finite);
+    const now = this.monotonicNow();
+    const localDeadlineMonotonicMs = Math.min(
+      toolTimeoutMs === undefined ? Number.POSITIVE_INFINITY : now + toolTimeoutMs,
+      this.limits.timeoutMs === null ? Number.POSITIVE_INFINITY : now + this.limits.timeoutMs,
+    );
+    const turnDeadlineMonotonicMs = context.deadlineMonotonicMs ?? Number.POSITIVE_INFINITY;
+    const turnDeadlineWins = turnDeadlineMonotonicMs <= localDeadlineMonotonicMs;
+    const effectiveDeadlineMonotonicMs = Math.min(
+      turnDeadlineMonotonicMs,
+      localDeadlineMonotonicMs,
+    );
     const controller = new AbortController();
     let kind: AbortKind | undefined;
     const abort = (next: AbortKind) => {
@@ -572,21 +696,27 @@ export class ToolExecutionController {
     const onParentAbort = () => abort("cancelled");
     context.signal.addEventListener("abort", onParentAbort, { once: true });
     if (context.signal.aborted) abort("cancelled");
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (deadlineMs !== undefined && !controller.signal.aborted) {
-      const schedule = () => {
-        const remaining = deadlineMs - this.now();
-        if (remaining <= 0) abort("timeout");
-        else timer = setTimeout(schedule, Math.min(remaining, 2_147_483_647));
-      };
-      schedule();
+    let timer: TimerHandle | undefined;
+    if (Number.isFinite(effectiveDeadlineMonotonicMs) && !controller.signal.aborted) {
+      timer = this.timerScheduler.schedule(
+        Math.max(0, effectiveDeadlineMonotonicMs - this.monotonicNow()),
+        () => {
+          // Give cancellation delivered on the same scheduler tick priority.
+          queueMicrotask(() => {
+            if (context.signal.aborted) abort("cancelled");
+            else abort(turnDeadlineWins ? "turn_timeout" : "tool_timeout");
+          });
+        },
+      );
     }
     return {
       signal: controller.signal,
-      deadlineMs,
+      deadlineMonotonicMs: Number.isFinite(effectiveDeadlineMonotonicMs)
+        ? effectiveDeadlineMonotonicMs
+        : undefined,
       kind: () => kind,
       cleanup: () => {
-        if (timer !== undefined) clearTimeout(timer);
+        timer?.cancel();
         context.signal.removeEventListener("abort", onParentAbort);
       },
     };

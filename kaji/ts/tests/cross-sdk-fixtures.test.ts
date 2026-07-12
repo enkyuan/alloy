@@ -58,7 +58,7 @@ describe("cross-SDK fixture exporter", () => {
     expect(exported.scenarios.map((row: any) => row.id)).toEqual(
       contract.scenarios.map((row: any) => row.id),
     );
-    expect(exported.scenarios).toHaveLength(59);
+    expect(exported.scenarios).toHaveLength(63);
     for (const row of exported.scenarios) {
       expect(Object.keys(row.snapshot).sort()).toEqual(SNAPSHOT_KEYS);
     }

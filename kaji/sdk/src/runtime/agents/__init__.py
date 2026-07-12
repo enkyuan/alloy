@@ -10,6 +10,11 @@ from kaji.runtime.agents.approval import (
 )
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator, TurnCoordinator
+from kaji.runtime.agents.limits import (
+    ProviderCancellationContractViolation,
+    TurnExecutionLimits,
+    TurnTimeoutError,
+)
 from kaji.runtime.agents.context import (
     ContextDiagnostics,
     ContextIntegrityError,
@@ -49,6 +54,9 @@ __all__ = [
     "ToolInvocation",
     "ToolPlanner",
     "TurnCoordinator",
+    "TurnExecutionLimits",
+    "TurnTimeoutError",
+    "ProviderCancellationContractViolation",
     "TurnResult",
     "TurnContext",
 ]

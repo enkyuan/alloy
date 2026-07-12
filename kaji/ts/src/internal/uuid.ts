@@ -12,6 +12,15 @@ export interface Clock {
   nowMonotonic(): number;
 }
 
+export interface TimerHandle {
+  cancel(): void;
+}
+
+/** Minimal one-shot timer seam used by deadline races. */
+export interface TimerScheduler {
+  schedule(delayMs: number, callback: () => void): TimerHandle;
+}
+
 /**
  * Generate a uuid-shaped id.
  *
@@ -38,4 +47,31 @@ export const systemIdFactory: IdFactory = Object.freeze({
 export const systemClock: Clock = Object.freeze({
   nowWallSeconds: () => Date.now() / 1000,
   nowMonotonic: () => globalThis.performance.now(),
+});
+
+export const systemTimerScheduler: TimerScheduler = Object.freeze({
+  schedule: (delayMs: number, callback: () => void): TimerHandle => {
+    if (!Number.isFinite(delayMs) || delayMs < 0) {
+      throw new RangeError("delayMs must be a finite non-negative number");
+    }
+    let remaining = Math.max(0, delayMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const arm = () => {
+      const step = Math.min(remaining, 2_147_483_647);
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        remaining -= step;
+        if (remaining <= 0) callback();
+        else arm();
+      }, step);
+    };
+    arm();
+    return {
+      cancel: () => {
+        cancelled = true;
+        if (timer !== undefined) clearTimeout(timer);
+      },
+    };
+  },
 });

@@ -2790,6 +2790,252 @@
       }
     },
     {
+      "id": "turn-queue-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "error": "Agent turn timed out",
+            "error_code": "TURN_TIMEOUT",
+            "id": "event-01",
+            "metadata": {},
+            "outcome": "not_started",
+            "phase": "queue",
+            "retryable": true,
+            "sequence": 1,
+            "session_id": "session-turn-queue-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.turn.failed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "error": {
+            "code": "TURN_TIMEOUT",
+            "outcome": "not_started",
+            "phase": "queue",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "turn-provider-open-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-turn-provider-open-timeout",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "timeout",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-turn-provider-open-timeout",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-turn-provider-open-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "error": "Agent turn timed out",
+            "error_code": "TURN_TIMEOUT",
+            "id": "event-04",
+            "metadata": {},
+            "outcome": "unknown",
+            "phase": "provider_open",
+            "retryable": true,
+            "sequence": 4,
+            "session_id": "session-turn-provider-open-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.turn.failed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": ["provider:start:0", "provider:end:0"],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" }
+            ],
+            "tools": []
+          }
+        ],
+        "provider_responses": [{ "content": "", "tool_calls": [] }],
+        "replay": {},
+        "result": {
+          "error": {
+            "code": "TURN_TIMEOUT",
+            "outcome": "unknown",
+            "phase": "provider_open",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "turn-provider-stream-timeout",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-turn-provider-stream-timeout",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "timeout",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-turn-provider-stream-timeout",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-turn-provider-stream-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "delta": "partial",
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-turn-provider-stream-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.message.delta",
+            "version": "1.0"
+          },
+          {
+            "error": "Agent turn timed out",
+            "error_code": "TURN_TIMEOUT",
+            "id": "event-05",
+            "metadata": {},
+            "outcome": "unknown",
+            "phase": "provider_stream",
+            "retryable": true,
+            "sequence": 5,
+            "session_id": "session-turn-provider-stream-timeout",
+            "turn_id": "turn-1",
+            "type": "agent.turn.failed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": ["provider:start:0", "provider:end:0"],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "timeout", "role": "user" }
+            ],
+            "tools": []
+          }
+        ],
+        "provider_responses": [{ "content": "partial", "tool_calls": [] }],
+        "replay": {},
+        "result": {
+          "error": {
+            "code": "TURN_TIMEOUT",
+            "outcome": "unknown",
+            "phase": "provider_stream",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "id": "turn-cancellation-deadline-tie",
+      "snapshot": {
+        "events": [
+          {
+            "id": "event-01",
+            "metadata": {},
+            "sequence": 1,
+            "session_id": "session-turn-cancellation-deadline-tie",
+            "turn_id": "turn-1",
+            "type": "session.created",
+            "version": "1.0"
+          },
+          {
+            "content": "cancel",
+            "id": "event-02",
+            "metadata": {},
+            "sequence": 2,
+            "session_id": "session-turn-cancellation-deadline-tie",
+            "turn_id": "turn-1",
+            "type": "user.message",
+            "version": "1.0"
+          },
+          {
+            "id": "event-03",
+            "metadata": {},
+            "sequence": 3,
+            "session_id": "session-turn-cancellation-deadline-tie",
+            "turn_id": "turn-1",
+            "type": "agent.reasoning.started",
+            "version": "1.0"
+          },
+          {
+            "id": "event-04",
+            "metadata": {},
+            "sequence": 4,
+            "session_id": "session-turn-cancellation-deadline-tie",
+            "turn_id": "turn-1",
+            "type": "cancellation.completed",
+            "version": "1.0"
+          }
+        ],
+        "operation_trace": ["provider:start:0", "provider:end:0"],
+        "provider_requests": [
+          {
+            "messages": [
+              { "content": "You are a helpful assistant.", "role": "system" },
+              { "content": "cancel", "role": "user" }
+            ],
+            "tools": []
+          }
+        ],
+        "provider_responses": [{ "content": "", "tool_calls": [] }],
+        "replay": {},
+        "result": {
+          "turns": [
+            {
+              "session_id": "session-turn-cancellation-deadline-tie",
+              "text": "",
+              "turn_id": "turn-1"
+            }
+          ]
+        }
+      }
+    },
+    {
       "id": "schema-valid-nested",
       "snapshot": {
         "events": [],

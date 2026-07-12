@@ -9,6 +9,7 @@ import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "
 import { OpenAIProvider } from "@/providers/openai";
 import { toOpenAIChatMessages } from "@/providers/openai-format";
 import type { ProviderMessage } from "@/providers/base";
+import { CancellationToken } from "@/runtime/cancellation";
 import { TestOpenAIProvider } from "./helpers/provider-clients";
 
 const makeProvider = (client: unknown) =>
@@ -107,6 +108,34 @@ describe("OpenAIProvider.generate", () => {
   it("throws a config error when apiKey is empty", () => {
     expect(() => new OpenAIProvider({ apiKey: "" })).toThrow(ProviderConfigError);
     expect(() => new OpenAIProvider({ apiKey: "   " })).toThrow(/API key is not configured/);
+  });
+
+  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN])(
+    "rejects invalid requestTimeoutMs %s",
+    (requestTimeoutMs) => {
+      expect(() => new OpenAIProvider({ apiKey: "test-key", requestTimeoutMs })).toThrowError(
+        new RangeError("requestTimeoutMs must be a positive finite integer"),
+      );
+    },
+  );
+
+  it("forwards requestTimeoutMs and the cancellation signal", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "ok", tool_calls: null } }],
+    });
+    const provider = new TestOpenAIProvider({ apiKey: "test-key", requestTimeoutMs: 2_500 }, {
+      chat: { completions: { create } },
+    } as unknown as OpenAI);
+    const token = new CancellationToken();
+
+    await provider.generate([{ role: "user", content: "hi" }], [], {
+      cancellationToken: token,
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.any(Object), {
+      signal: token.signal,
+      timeout: 2_500,
+    });
   });
 
   it("returns text content from a plain response", async () => {
@@ -302,6 +331,28 @@ describe("OpenAIProvider.generate", () => {
 // ---------------------------------------------------------------------------
 
 describe("OpenAIProvider.generateStream", () => {
+  it("forwards requestTimeoutMs and the cancellation signal", async () => {
+    async function* fakeStream() {
+      yield { choices: [] };
+    }
+    const create = vi.fn().mockResolvedValue(fakeStream());
+    const provider = new TestOpenAIProvider({ apiKey: "test-key", requestTimeoutMs: 2_500 }, {
+      chat: { completions: { create } },
+    } as unknown as OpenAI);
+    const token = new CancellationToken();
+
+    for await (const _chunk of provider.generateStream([{ role: "user", content: "hi" }], [], {
+      cancellationToken: token,
+    })) {
+      // Exhaust the stream so the vendor call completes.
+    }
+
+    expect(create).toHaveBeenCalledWith(expect.any(Object), {
+      signal: token.signal,
+      timeout: 2_500,
+    });
+  });
+
   it("recreates a stream after a 429 before the first chunk", async () => {
     async function* successfulStream() {
       yield { choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] };

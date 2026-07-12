@@ -3,9 +3,17 @@ import type { EventCommitter } from "@/events/protocols";
 import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import type { ToolCall } from "@/providers/base";
 import type { ToolExecutionContext } from "@/runtime/context";
+import type { TimerScheduler } from "@/internal/uuid";
 import type { ToolRisk } from "@/tools/policy";
 
-export type ApprovalRejectionCode = "rejected" | "timeout" | "cancelled" | "unavailable";
+export type ApprovalRejectionCode =
+  | "rejected"
+  | "timeout"
+  | "turn_timeout"
+  | "cancelled"
+  | "unavailable";
+
+export type ApprovalDeadlineSource = "approval" | "turn";
 
 export type ApprovalDecision =
   | Readonly<{ granted: true; code: "approved"; recorded?: boolean }>
@@ -28,7 +36,11 @@ export interface ApprovalRequestContext {
   readonly arguments: Readonly<Record<string, unknown>>;
   readonly committer: EventCommitter;
   readonly emit: (event: KajiEvent) => Promise<StoredKajiEvent>;
-  readonly deadlineMs: number;
+  readonly deadlineMonotonicMs: number;
+  readonly deadlineSource: ApprovalDeadlineSource;
+  /** Runtime clock paired with `deadlineMonotonicMs`; custom contexts may omit it. */
+  readonly nowMonotonic?: () => number;
+  readonly timerScheduler: TimerScheduler;
 }
 
 /** @deprecated Use ApprovalRequestContext. */

@@ -35,6 +35,14 @@ class ModelProvider(Protocol):
     ``cancellation_token`` is structurally typed: any object with an
     ``is_cancelled`` boolean attribute is accepted, but the canonical type
     is ``kaji.runtime.agents.cancellation.CancellationToken``.
+
+    Custom providers are cooperative cancellation boundaries. Both methods
+    must observe ``cancellation_token`` while opening and streaming, stop the
+    underlying request, and let the returned iterator settle when cancellation
+    is requested. Missing the configured grace raises a typed contract
+    violation and quarantines the session until ``drain_providers()`` succeeds.
+    A custom adapter must pass the SDK cancellation-contract suite before it is
+    described as production-safe.
     """
 
     async def generate(

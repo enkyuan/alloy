@@ -431,7 +431,7 @@ const CONTEXT_ONLY_KEYS = new Set([
   "traceId",
   "toolCallId",
   "idempotencyKey",
-  "deadlineMs",
+  "deadlineMonotonicMs",
   "signal",
   "metadata",
   "db",

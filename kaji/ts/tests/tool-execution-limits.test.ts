@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EventType } from "@/events/types";
 import { StoredKajiEvent } from "@/events/schemas";
+import type { TimerHandle, TimerScheduler } from "@/internal/uuid";
+import type { MetricMeasurement } from "@/observability";
 import { ToolExecutionController } from "@/tools/execution";
 import { ToolExecutionError, toolTimedOut } from "@/tools/execution-errors";
-import { InMemoryToolIdempotencyLedger } from "@/tools/idempotency";
+import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import type { ToolExecutionContext } from "@/runtime/context";
@@ -18,6 +20,41 @@ function deferred<T = void>() {
     resolve = done;
   });
   return { promise, resolve };
+}
+
+class ManualScheduler implements TimerScheduler {
+  now = 0;
+  readonly scheduledDelays: number[] = [];
+  private readonly timers: Array<{
+    due: number;
+    callback: () => void;
+    cancelled: boolean;
+  }> = [];
+
+  get pendingCount(): number {
+    return this.timers.filter((timer) => !timer.cancelled).length;
+  }
+
+  schedule(delayMs: number, callback: () => void): TimerHandle {
+    this.scheduledDelays.push(delayMs);
+    const timer = { due: this.now + delayMs, callback, cancelled: false };
+    this.timers.push(timer);
+    return { cancel: () => (timer.cancelled = true) };
+  }
+
+  advance(milliseconds: number): void {
+    this.now += milliseconds;
+    for (const timer of this.timers) {
+      if (!timer.cancelled && timer.due <= this.now) {
+        timer.cancelled = true;
+        timer.callback();
+      }
+    }
+  }
+}
+
+async function flushMicrotasks(): Promise<void> {
+  for (let index = 0; index < 8; index++) await Promise.resolve();
 }
 
 function spec(name: string, options: Partial<ToolSpec> = {}): ToolSpec {
@@ -261,6 +298,239 @@ describe("bounded tool execution", () => {
       expect(execute).toHaveBeenCalledOnce();
     },
   );
+
+  it.each([
+    { source: "turn", expectedCode: "TURN_TIMEOUT" },
+    { source: "tool", expectedCode: "TOOL_TIMEOUT" },
+  ] as const)(
+    "signals and joins a cooperative start append at the $source deadline",
+    async ({ source, expectedCode }) => {
+      const scheduler = new ManualScheduler();
+      const ledger = new InMemoryToolIdempotencyLedger();
+      const controller = new ToolExecutionController({
+        limits: { maxParallel: 1, timeoutMs: source === "tool" ? 10 : null },
+        ledger,
+        monotonicNow: () => scheduler.now,
+        timerScheduler: scheduler,
+      });
+      const startEntered = deferred();
+      const execute = vi.fn().mockResolvedValue({ ok: true });
+      const request = {
+        name: "slow-start",
+        args: {},
+        context: {
+          ...context(`detached-${source}`, "call"),
+          ...(source === "turn" ? { deadlineMonotonicMs: 10 } : {}),
+        },
+        exclusive: false,
+        onStarted: async (signal: AbortSignal) => {
+          startEntered.resolve();
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+        },
+        execute,
+      };
+
+      const pending = controller.execute(request);
+      await startEntered.promise;
+      scheduler.advance(10);
+      await flushMicrotasks();
+
+      await expect(pending).resolves.toMatchObject({
+        status: "failed",
+        error: {
+          error_code: expectedCode,
+          retryable: true,
+          outcome: "not_started",
+        },
+      });
+      expect(execute).not.toHaveBeenCalled();
+      expect(await controller.drain(0)).toEqual([]);
+
+      await expect(
+        controller.execute({
+          ...request,
+          context: {
+            ...request.context,
+            ...(source === "turn" ? { deadlineMonotonicMs: 100 } : {}),
+          },
+          onStarted: async () => {},
+        }),
+      ).resolves.toMatchObject({ status: "completed", result: { ok: true } });
+      expect(execute).toHaveBeenCalledOnce();
+      expect(scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it("keeps a non-cooperative start append owned and visible until it settles", async () => {
+    const scheduler = new ManualScheduler();
+    const controller = new ToolExecutionController({
+      limits: { maxParallel: 1, timeoutMs: null },
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const startEntered = deferred();
+    const start = Promise.withResolvers<void>();
+    const execute = vi.fn().mockResolvedValue({ ok: true });
+    const pending = controller.execute({
+      name: "slow-start",
+      args: {},
+      context: { ...context("non-cooperative-start", "call"), deadlineMonotonicMs: 10 },
+      exclusive: false,
+      onStarted: async () => {
+        startEntered.resolve();
+        await start.promise;
+      },
+      execute,
+    });
+    let settled = false;
+    void pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await startEntered.promise;
+    scheduler.advance(10);
+    await flushMicrotasks();
+
+    expect(settled).toBe(false);
+    expect(execute).not.toHaveBeenCalled();
+    const retry = controller.execute({
+      name: "slow-start",
+      args: {},
+      context: { ...context("non-cooperative-start", "call"), deadlineMonotonicMs: 100 },
+      exclusive: false,
+      onStarted: async () => {},
+      execute,
+    });
+    let retrySettled = false;
+    void retry.then(
+      () => {
+        retrySettled = true;
+      },
+      () => {
+        retrySettled = true;
+      },
+    );
+    await flushMicrotasks();
+    expect(retrySettled).toBe(false);
+    const blockedDrain = controller.drain(0);
+    scheduler.advance(0);
+    expect(await blockedDrain).toEqual(["call"]);
+
+    start.resolve();
+    await expect(pending).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TURN_TIMEOUT", retryable: true, outcome: "not_started" },
+    });
+    await expect(retry).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TURN_TIMEOUT", retryable: true, outcome: "not_started" },
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(await controller.drain(0)).toEqual([]);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("drains shared start promises through the pending-to-active handoff", async () => {
+    const scheduler = new ManualScheduler();
+    const controller = new ToolExecutionController({
+      limits: { maxParallel: 2, timeoutMs: null },
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const sharedStart = Promise.withResolvers<void>();
+    const handlerGates = [deferred(), deferred()];
+    const bothStarted = deferred();
+    let startCount = 0;
+    const executions = handlerGates.map((gate, index) =>
+      controller.execute({
+        name: "shared-start",
+        args: {},
+        context: {
+          ...context(`shared-start-${index}`, "same-call"),
+          deadlineMonotonicMs: 100,
+        },
+        exclusive: false,
+        onStarted: () => {
+          startCount += 1;
+          if (startCount === 2) bothStarted.resolve();
+          return sharedStart.promise;
+        },
+        execute: async () => gate.promise,
+      }),
+    );
+    await bothStarted.promise;
+
+    const draining = controller.drain(10);
+    sharedStart.resolve();
+    await flushMicrotasks();
+    scheduler.advance(10);
+
+    expect(await draining).toEqual(["same-call", "same-call"]);
+    handlerGates.forEach((gate) => gate.resolve());
+    await Promise.all(executions);
+    await flushMicrotasks();
+    expect(await controller.drain(0)).toEqual([]);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("lets the drain deadline fire while start-timeout ledger cleanup is pending", async () => {
+    const scheduler = new ManualScheduler();
+    const backing = new InMemoryToolIdempotencyLedger();
+    const cleanupEntered = deferred();
+    const cleanupGate = deferred();
+    const ledger: ToolIdempotencyLedger = {
+      claim: (...args) => backing.claim(...args),
+      complete: (...args) => backing.complete(...args),
+      unknownOutcome: (...args) => backing.unknownOutcome(...args),
+      releaseCompleted: (...args) => backing.releaseCompleted(...args),
+      async retryableFailure(...args) {
+        cleanupEntered.resolve();
+        await cleanupGate.promise;
+        await backing.retryableFailure(...args);
+      },
+    };
+    const controller = new ToolExecutionController({
+      limits: { timeoutMs: null },
+      ledger,
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const execute = vi.fn().mockResolvedValue({ ok: true });
+    const pending = controller.execute({
+      name: "slow-cleanup",
+      args: {},
+      context: { ...context("slow-cleanup", "call"), deadlineMonotonicMs: 10 },
+      exclusive: false,
+      onStarted: async (signal) => {
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      },
+      execute,
+    });
+    await flushMicrotasks();
+    scheduler.advance(10);
+    await cleanupEntered.promise;
+
+    const draining = controller.drain(5);
+    scheduler.advance(5);
+    expect(await draining).toEqual(["call"]);
+    expect(execute).not.toHaveBeenCalled();
+
+    cleanupGate.resolve();
+    await expect(pending).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TURN_TIMEOUT", retryable: true, outcome: "not_started" },
+    });
+    expect(await controller.drain(0)).toEqual([]);
+    expect(scheduler.pendingCount).toBe(0);
+  });
 
   it("rejects malformed context before claim, permit, start, or handler", async () => {
     const ledger = new InMemoryToolIdempotencyLedger();
@@ -509,7 +779,10 @@ describe("bounded tool execution", () => {
     const expiredWaiter = controller.execute({
       name: "shared",
       args: {},
-      context: { ...context("waiters", "shared"), deadlineMs: Date.now() + 50 },
+      context: {
+        ...context("waiters", "shared"),
+        deadlineMonotonicMs: globalThis.performance.now() + 50,
+      },
       exclusive: false,
       onStarted: async () => {},
       execute,
@@ -522,7 +795,7 @@ describe("bounded tool execution", () => {
     });
     await expect(expiredWaiter).resolves.toMatchObject({
       status: "failed",
-      error: { error_code: "TOOL_TIMEOUT", outcome: "unknown" },
+      error: { error_code: "TURN_TIMEOUT", outcome: "unknown" },
     });
     expect(execute).toHaveBeenCalledOnce();
     gate.resolve();
@@ -538,6 +811,252 @@ describe("bounded tool execution", () => {
       }),
     ).resolves.toMatchObject({ status: "completed", result: { ok: true } });
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("classifies an outer deadline while queued as retryable and records its terminal first", async () => {
+    const scheduler = new ManualScheduler();
+    const controller = new ToolExecutionController({
+      limits: { maxParallel: 1, timeoutMs: null },
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const blockerStarted = deferred();
+    const blockerGate = deferred();
+    const blocker = controller.execute({
+      name: "blocker",
+      args: {},
+      context: context("outer-queue-blocker", "blocker"),
+      exclusive: false,
+      onStarted: async () => blockerStarted.resolve(),
+      execute: async () => blockerGate.promise,
+    });
+    await blockerStarted.promise;
+
+    const planner = new ToolPlanner({
+      specs: new Map([["queued", spec("queued", { timeout_ms: 100 })]]),
+      executor: async () => ({ ok: true }),
+      executionController: controller,
+      now: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const events: Array<{ type: string; error_code?: string; outcome?: string }> = [];
+    let sequence = 0;
+    const pending = planner.executeBatch(
+      "outer-queue",
+      [{ id: "queued", name: "queued", arguments: {} }],
+      async (event) => {
+        events.push(event);
+        return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
+      },
+      "turn",
+      { ...TURN, deadlineMonotonicMs: 10 },
+    );
+    await flushMicrotasks();
+    scheduler.advance(10);
+    await flushMicrotasks();
+
+    await expect(pending).rejects.toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "tool",
+      retryable: true,
+      outcome: "not_started",
+    });
+    expect(events.map(({ type }) => type)).toEqual([
+      EventType.TOOL_CALL_REQUESTED,
+      EventType.TOOL_CALL_FAILED,
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      error_code: "TURN_TIMEOUT",
+      outcome: "not_started",
+    });
+
+    blockerGate.resolve();
+    await blocker;
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("waits for every active outer-timeout terminal before one conservative turn error", async () => {
+    const scheduler = new ManualScheduler();
+    const measurements: MetricMeasurement[] = [];
+    const controller = new ToolExecutionController({
+      limits: { maxParallel: 2, timeoutMs: 100 },
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+      metricsSink: {
+        record: (measurement) => {
+          measurements.push(measurement);
+        },
+      },
+    });
+    const gates = [deferred(), deferred()];
+    const bothStarted = deferred();
+    let startedCount = 0;
+    const planner = new ToolPlanner({
+      specs: new Map([["parallel", spec("parallel", { parallel_safe: true })]]),
+      executor: async (_name, args) => gates[Number(args.index)]!.promise,
+      executionController: controller,
+      now: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    const events: Array<{ type: string; tool_call_id?: string; error_code?: string }> = [];
+    let sequence = 0;
+    const pending = planner.executeBatch(
+      "outer-active",
+      [
+        { id: "first", name: "parallel", arguments: { index: 0 } },
+        { id: "second", name: "parallel", arguments: { index: 1 } },
+      ],
+      async (event) => {
+        events.push(event);
+        if (event.type === EventType.TOOL_CALL_STARTED && ++startedCount === 2) {
+          bothStarted.resolve();
+        }
+        return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
+      },
+      "turn",
+      { ...TURN, deadlineMonotonicMs: 10 },
+    );
+    await bothStarted.promise;
+    await flushMicrotasks();
+    scheduler.advance(10);
+    await flushMicrotasks();
+
+    await expect(pending).rejects.toEqual(
+      expect.objectContaining({
+        code: "TURN_TIMEOUT",
+        phase: "tool",
+        retryable: false,
+        outcome: "unknown",
+      }),
+    );
+    expect(
+      events
+        .filter(({ type }) => type === EventType.TOOL_CALL_FAILED)
+        .map(({ tool_call_id, error_code }) => [tool_call_id, error_code]),
+    ).toEqual([
+      ["first", "TURN_TIMEOUT"],
+      ["second", "TURN_TIMEOUT"],
+    ]);
+    expect(
+      measurements
+        .filter(({ name }) => name === "kaji.tool.duration_ms")
+        .map(({ labels }) => labels),
+    ).toEqual([
+      { outcome: "timeout", error_code: "TURN_TIMEOUT" },
+      { outcome: "timeout", error_code: "TURN_TIMEOUT" },
+    ]);
+
+    const draining = controller.drain(0);
+    scheduler.advance(0);
+    expect(await draining).toEqual(["first", "second"]);
+    gates.forEach((gate) => gate.resolve());
+    await flushMicrotasks();
+    expect(scheduler.pendingCount).toBe(0);
+    await expect(
+      planner.executeBatch(
+        "outer-active",
+        [
+          { id: "first", name: "parallel", arguments: { index: 0 } },
+          { id: "second", name: "parallel", arguments: { index: 1 } },
+        ],
+        async () => {},
+        "replay-turn",
+        { ...TURN, deadlineMonotonicMs: 100 },
+      ),
+    ).resolves.toEqual([
+      expect.objectContaining({ id: "first", error_code: "TURN_TIMEOUT", outcome: "unknown" }),
+      expect.objectContaining({ id: "second", error_code: "TURN_TIMEOUT", outcome: "unknown" }),
+    ]);
+  });
+
+  it("keeps an earlier local tool timeout and lets cancellation win an outer tie", async () => {
+    const localScheduler = new ManualScheduler();
+    const localGate = deferred();
+    const localStarted = deferred();
+    const localController = new ToolExecutionController({
+      limits: { timeoutMs: 5 },
+      monotonicNow: () => localScheduler.now,
+      timerScheduler: localScheduler,
+    });
+    const local = localController.execute({
+      name: "local",
+      args: {},
+      context: { ...context("deadline-source", "local"), deadlineMonotonicMs: 10 },
+      exclusive: false,
+      onStarted: async () => {},
+      execute: async () => {
+        localStarted.resolve();
+        return localGate.promise;
+      },
+    });
+    await localStarted.promise;
+    localScheduler.advance(5);
+    await flushMicrotasks();
+    await expect(local).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TOOL_TIMEOUT", retryable: false, outcome: "unknown" },
+    });
+    localGate.resolve();
+    await flushMicrotasks();
+
+    const tieScheduler = new ManualScheduler();
+    const tieGate = deferred();
+    const tieStarted = deferred();
+    const caller = new AbortController();
+    const tieController = new ToolExecutionController({
+      limits: { timeoutMs: null },
+      monotonicNow: () => tieScheduler.now,
+      timerScheduler: tieScheduler,
+    });
+    const tied = tieController.execute({
+      name: "tie",
+      args: {},
+      context: {
+        ...context("deadline-source", "tie", caller.signal),
+        deadlineMonotonicMs: 5,
+      },
+      exclusive: false,
+      onStarted: async () => {},
+      execute: async () => {
+        tieStarted.resolve();
+        return tieGate.promise;
+      },
+    });
+    await tieStarted.promise;
+    tieScheduler.advance(5);
+    caller.abort();
+    await flushMicrotasks();
+    await expect(tied).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TOOL_CANCELLED", retryable: false, outcome: "unknown" },
+    });
+    tieGate.resolve();
+    await flushMicrotasks();
+    expect(tieScheduler.pendingCount).toBe(0);
+  });
+
+  it("delegates long turn deadlines to the injected scheduler and cancels them on settlement", async () => {
+    const scheduler = new ManualScheduler();
+    const controller = new ToolExecutionController({
+      limits: { timeoutMs: null },
+      monotonicNow: () => scheduler.now,
+      timerScheduler: scheduler,
+    });
+    await expect(
+      controller.execute({
+        name: "long",
+        args: {},
+        context: {
+          ...context("long-deadline", "call"),
+          deadlineMonotonicMs: 3_000_000_000,
+        },
+        exclusive: false,
+        onStarted: async () => {},
+        execute: async () => ({ ok: true }),
+      }),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(scheduler.scheduledDelays).toContain(3_000_000_000);
+    expect(scheduler.pendingCount).toBe(0);
   });
 
   it("tombstones ambiguous failures and re-executes only typed retryable failures", async () => {

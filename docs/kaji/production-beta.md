@@ -64,20 +64,13 @@ async def main() -> None:
         .integration(EchoIntegration())
         .build()
     )
-    token = kaji.CancellationToken()
-    loop = asyncio.get_running_loop()
-    cancel_at = loop.call_later(30, token.cancel)
-    try:
-        tool_result = await tool_runtime.turn(
-            "Call ping.",
-            cancellation_token=token,
-            context=kaji.TurnContext(
-                principal_id="docs-user",
-                deadline_monotonic=time.monotonic() + 30,
-            ),
-        )
-    finally:
-        cancel_at.cancel()
+    tool_result = await tool_runtime.turn(
+        "Call ping.",
+        context=kaji.TurnContext(
+            principal_id="docs-user",
+            deadline_monotonic=time.monotonic() + 30,
+        ),
+    )
     assert tool_result.tool_call_events
 
     normalized = kaji.normalize_provider_error(
@@ -90,10 +83,11 @@ asyncio.run(main())
 ```
 <!-- installed-quickstart:python:end -->
 
-`deadline_monotonic` is an absolute value from `time.monotonic()`. It bounds
-tool and approval work. Cancellation is cooperative: the timer requests it,
-and providers observe it at their supported checkpoints or stream yields. It
-does not forcibly interrupt a non-cooperative in-flight provider request.
+`deadline_monotonic` is an absolute value from `time.monotonic()`. An earlier
+caller deadline tightens, but never extends, the configured 120-second
+whole-turn default covering queue wait, provider open and streaming, approval,
+and tool work. Cooperative provider shutdown may use the additional configured
+cancellation grace.
 
 ### TypeScript
 
@@ -101,9 +95,9 @@ does not forcibly interrupt a non-cooperative in-flight provider request.
 ```ts
 import {
   AgentBuilder,
-  CancellationToken,
   Integration,
   ProviderConfigError,
+  deadlineAfter,
   normalizeProviderError,
   tool,
 } from "@kaji/sdk";
@@ -137,20 +131,12 @@ const toolRuntime = new AgentBuilder()
   .provider(new MockProvider())
   .integration(new EchoIntegration())
   .build();
-const token = new CancellationToken();
-const cancelAt = setTimeout(() => token.cancel(), 30_000);
-let toolResult;
-try {
-  toolResult = await toolRuntime.turn("Call ping.", {
-    cancellationToken: token,
-    context: {
-      principalId: "docs-user",
-      deadlineMs: Date.now() + 30_000,
-    },
-  });
-} finally {
-  clearTimeout(cancelAt);
-}
+const toolResult = await toolRuntime.turn("Call ping.", {
+  context: {
+    principalId: "docs-user",
+    deadlineAtMs: deadlineAfter(30_000),
+  },
+});
 if (toolResult.toolCallEvents.length === 0) throw new Error("tool was not called");
 
 const normalized = normalizeProviderError(
@@ -160,10 +146,10 @@ console.log(normalized.code, normalized.retryable);
 ```
 <!-- installed-quickstart:typescript:end -->
 
-`deadlineMs` is an absolute Unix epoch value. It bounds tool and approval work.
-Cancellation is cooperative: the timer requests it, and providers observe it
-at their supported checkpoints or stream yields. It is not a universal hard
-timeout for a non-cooperative in-flight provider request.
+`deadlineAtMs` is an absolute Unix epoch value; use `deadlineAfter()` when the
+caller has a duration. It tightens the same configured whole-turn maximum as
+Python. The runtime requests provider cancellation at expiry and allows the
+configured grace for cooperative shutdown.
 
 `normalize_provider_error()` and `normalizeProviderError()` accept Kaji
 provider errors, not arbitrary vendor exceptions. Provider adapters convert
@@ -194,7 +180,7 @@ applied.
 Python override types are available from the agents package:
 
 ```python
-from kaji.runtime.agents import AgentStrategy, ContextWindow
+from kaji.runtime.agents import AgentStrategy, ContextWindow, TurnExecutionLimits
 ```
 
 | Boundary | Default | Python override | TypeScript override |
@@ -202,8 +188,8 @@ from kaji.runtime.agents import AgentStrategy, ContextWindow
 | Tool iterations per turn | 5 | `AgentStrategy(max_iterations=...)` | `.strategy({ maxToolIterations: ... })` |
 | Complete context turns | 32 | `.context_window(ContextWindow(max_turns=...))` | `.contextWindow({ maxTurns: ..., maxCharacters: ... })` |
 | Context characters | 100,000 | `ContextWindow(max_characters=...)` | `contextWindow.maxCharacters` |
-| Turn work timeout | 120 seconds | Runtime turn limits | Runtime turn limits |
-| Provider cancellation grace | 5 seconds | Runtime turn limits | Runtime turn limits |
+| Turn work timeout | 120 seconds | `.turn_execution_limits(TurnExecutionLimits(timeout_seconds=...))` | `.turnExecutionLimits({ turnTimeoutMs: ... })` |
+| Provider cancellation grace | 5 seconds | `TurnExecutionLimits(provider_cancellation_grace_seconds=...)` | `.turnExecutionLimits({ providerCancellationGraceMs: ... })` |
 | Provider text | 262,144 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
 | Provider tool arguments | 65,536 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
 | Provider response | 524,288 UTF-8 bytes | Runtime provider limits | Runtime provider limits |
@@ -220,6 +206,21 @@ from kaji.runtime.agents import AgentStrategy, ContextWindow
 | History page | 1,024 events | `history(..., limit=...)` | `history(..., { limit: ... })` |
 | Idempotency entries | 10,000 | `InMemoryToolIdempotencyLedger(max_entries=...)` | `new InMemoryToolIdempotencyLedger({ capacity: ... })` |
 | Completed idempotency TTL | 86,400 seconds | `completed_ttl_seconds=...` | `completedTtlMs: ...` |
+
+Whole-turn expiry raises `TurnTimeoutError`, whose phase, outcome, and
+retryability distinguish queue, provider, approval, and tool work. A provider
+that does not settle within cancellation grace raises
+`ProviderCancellationContractViolation`; the session remains quarantined until
+`drain_providers()` / `drainProviders()` succeeds.
+
+Standalone/custom TypeScript `ToolPlanner` emitters receive the controller's
+linked `AbortSignal` for start events and must settle when it aborts. The stable
+`AgentRuntime` path uses the runtime-owned bounded in-memory committer; a custom
+`EventCommitter.commit()` has no signal-capable ABI and must be independently
+bounded. Kaji keeps the tool claim and permit owned until the append physically
+settles, preventing a late Started event from overtaking Failed. A boundary that
+never settles remains visible through `drainTools()` and requires process
+restart.
 
 The in-memory coordinator, event store, journal, and idempotency ledger are
 process-local. Inject durable/distributed implementations when work spans

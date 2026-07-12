@@ -473,6 +473,22 @@ def test_shared_turn_failure_conformance_fixture_is_bounded_and_turn_scoped() ->
     assert isinstance(parsed, AgentTurnFailed)
     assert parsed.turn_id == "turn-1"
     assert parsed.error == "Agent turn failed"
+    assert parsed.error_code == "TURN_TIMEOUT"
+    assert parsed.phase == "provider_stream"
+
+    timeout = AgentTurnFailed(
+        session_id="session-1",
+        turn_id="turn-1",
+        error="Agent turn timed out",
+        error_code="TURN_TIMEOUT",
+        phase="provider_stream",
+        retryable=True,
+        outcome="unknown",
+    )
+    assert timeout.error_code == "TURN_TIMEOUT"
+    assert timeout.phase == "provider_stream"
+    assert timeout.retryable is True
+    assert timeout.outcome == "unknown"
 
     with pytest.raises(ValidationError):
         TypeAdapter(AgentTurnFailed).validate_python(

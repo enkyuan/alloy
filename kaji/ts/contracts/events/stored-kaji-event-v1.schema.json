@@ -459,6 +459,28 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            },
+            "error_code": {
+              "type": "string"
+            },
+            "phase": {
+              "enum": [
+                "queue",
+                "provider_open",
+                "provider_stream",
+                "approval",
+                "tool"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "outcome": {
+              "enum": [
+                "not_started",
+                "failed",
+                "unknown"
+              ]
             }
           },
           "required": [
@@ -739,6 +761,7 @@
               "enum": [
                 "APPROVAL_REJECTED",
                 "APPROVAL_TIMEOUT",
+                "TURN_TIMEOUT",
                 "TOOL_CANCELLED",
                 "APPROVAL_UNAVAILABLE"
               ]

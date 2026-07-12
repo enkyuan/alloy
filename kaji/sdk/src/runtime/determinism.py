@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+from collections.abc import Callable
 from typing import Literal, Protocol, runtime_checkable
 import uuid
 
@@ -34,6 +35,22 @@ class Clock(Protocol):
     def now_monotonic(self) -> float: ...
 
 
+@runtime_checkable
+class ScheduledCallback(Protocol):
+    """Cancellation handle for one scheduled callback."""
+
+    def cancel(self) -> None: ...
+
+
+@runtime_checkable
+class TimerScheduler(Protocol):
+    """Minimal one-shot timer seam used by deadline races."""
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback: ...
+
+
 @dataclass(frozen=True, slots=True)
 class SystemIdFactory:
     """Production UUID factory preserving the existing event/non-event forms."""
@@ -54,16 +71,33 @@ class SystemClock:
         return time.monotonic()
 
 
+@dataclass(frozen=True, slots=True)
+class AsyncioTimerScheduler:
+    """Production timer scheduler backed by the active asyncio loop."""
+
+    def call_later(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> ScheduledCallback:
+        import asyncio  # noqa: PLC0415
+
+        return asyncio.get_running_loop().call_later(max(0.0, delay_seconds), callback)
+
+
 SYSTEM_ID_FACTORY = SystemIdFactory()
 SYSTEM_CLOCK = SystemClock()
+SYSTEM_TIMER_SCHEDULER = AsyncioTimerScheduler()
 
 
 __all__ = [
     "Clock",
+    "AsyncioTimerScheduler",
     "IdFactory",
     "IdScope",
     "SYSTEM_CLOCK",
     "SYSTEM_ID_FACTORY",
+    "SYSTEM_TIMER_SCHEDULER",
+    "ScheduledCallback",
     "SystemClock",
     "SystemIdFactory",
+    "TimerScheduler",
 ]

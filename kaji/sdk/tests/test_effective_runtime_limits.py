@@ -14,6 +14,7 @@ from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ContextWindow
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
+from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from tests.helpers.mock_provider import MockProvider
@@ -69,6 +70,12 @@ def test_effective_limits_report_beta_defaults_as_an_immutable_public_type() -> 
         tool_max_parallel=4,
         tool_timeout_seconds=30.0,
         approval_timeout_seconds=300.0,
+        turn_timeout_seconds=120.0,
+        provider_cancellation_grace_seconds=5.0,
+        provider_text_max_bytes=262_144,
+        provider_tool_arguments_max_bytes=65_536,
+        provider_response_max_bytes=524_288,
+        provider_tool_calls_max=64,
     )
     with pytest.raises(FrozenInstanceError):
         setattr(limits, "max_tool_iterations", 1)
@@ -87,6 +94,16 @@ def test_effective_limits_report_builder_overrides() -> None:
                 approval_timeout_seconds=2.5,
             )
         )
+        .turn_execution_limits(
+            TurnExecutionLimits(
+                timeout_seconds=12.5,
+                provider_cancellation_grace_seconds=0.25,
+                provider_text_max_bytes=1_024,
+                provider_tool_arguments_max_bytes=512,
+                provider_response_max_bytes=2_048,
+                provider_tool_calls_max=3,
+            )
+        )
         .build()
     )
 
@@ -97,6 +114,12 @@ def test_effective_limits_report_builder_overrides() -> None:
         tool_max_parallel=3,
         tool_timeout_seconds=1.5,
         approval_timeout_seconds=2.5,
+        turn_timeout_seconds=12.5,
+        provider_cancellation_grace_seconds=0.25,
+        provider_text_max_bytes=1_024,
+        provider_tool_arguments_max_bytes=512,
+        provider_response_max_bytes=2_048,
+        provider_tool_calls_max=3,
     )
 
 
@@ -128,4 +151,53 @@ def test_effective_limits_use_an_explicit_planners_controller() -> None:
         tool_max_parallel=2,
         tool_timeout_seconds=4.0,
         approval_timeout_seconds=6.0,
+        turn_timeout_seconds=120.0,
+        provider_cancellation_grace_seconds=5.0,
+        provider_text_max_bytes=262_144,
+        provider_tool_arguments_max_bytes=65_536,
+        provider_response_max_bytes=524_288,
+        provider_tool_calls_max=64,
     )
+
+
+def test_turn_timeout_error_carries_phase_specific_semantics() -> None:
+    error = TurnTimeoutError(phase="tool", retryable=False, outcome="unknown")
+
+    assert error.code == "TURN_TIMEOUT"
+    assert error.phase == "tool"
+    assert error.retryable is False
+    assert error.outcome == "unknown"
+    assert str(error) == "Turn deadline exceeded during tool"
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error_type"),
+    [
+        ({"timeout_seconds": True}, TypeError),
+        ({"timeout_seconds": 0}, ValueError),
+        ({"timeout_seconds": float("nan")}, ValueError),
+        ({"provider_cancellation_grace_seconds": float("inf")}, ValueError),
+        ({"provider_text_max_bytes": True}, TypeError),
+        ({"provider_tool_calls_max": 0}, ValueError),
+    ],
+)
+def test_turn_execution_limits_reject_invalid_values(
+    kwargs: dict[str, Any], error_type: type[Exception]
+) -> None:
+    with pytest.raises(error_type):
+        TurnExecutionLimits(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error_type"),
+    [
+        ({"phase": "invalid", "retryable": True, "outcome": "not_started"}, ValueError),
+        ({"phase": "queue", "retryable": 1, "outcome": "not_started"}, TypeError),
+        ({"phase": "queue", "retryable": True, "outcome": "invalid"}, ValueError),
+    ],
+)
+def test_turn_timeout_error_rejects_invalid_semantics(
+    kwargs: dict[str, Any], error_type: type[Exception]
+) -> None:
+    with pytest.raises(error_type):
+        TurnTimeoutError(**kwargs)

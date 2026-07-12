@@ -255,6 +255,23 @@ describe("KajiEvent", () => {
         error: "Agent turn failed",
       }).error,
     ).toBe("Agent turn failed");
+    expect(
+      AgentTurnFailed.parse({
+        type: EventType.AGENT_TURN_FAILED,
+        session_id: "s1",
+        turn_id: "turn-1",
+        error: "Agent turn timed out",
+        error_code: "TURN_TIMEOUT",
+        phase: "provider_stream",
+        retryable: true,
+        outcome: "unknown",
+      }),
+    ).toMatchObject({
+      error_code: "TURN_TIMEOUT",
+      phase: "provider_stream",
+      retryable: true,
+      outcome: "unknown",
+    });
     expect(() =>
       AgentTurnFailed.parse({
         type: EventType.AGENT_TURN_FAILED,

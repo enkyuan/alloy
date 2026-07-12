@@ -3,19 +3,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   withRetry,
   type ModelProvider,
+  type ModelProviderOptions,
   type ModelResponse,
   type ModelResponseChunk,
+  type ProviderMessage,
 } from "@/providers/base";
 import { AnthropicProvider } from "@/providers/anthropic";
 import { OpenAIProvider } from "@/providers/openai";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
+import type { Clock, TimerHandle, TimerScheduler } from "@/internal/uuid";
+import { ProviderCancellationContractViolation, TurnTimeoutError } from "@/runtime/limits";
 import { AgentBuilder } from "@/runtime/builder";
 import { AgentRuntime } from "@/runtime/runtime";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 import { MockProvider } from "@/providers/mock";
-import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import {
+  InMemorySessionTurnCoordinator,
+  type ObservableCancellationToken,
+  type SessionTurnCoordinator,
+  type SessionTurnLease,
+  type TurnLeaseOptions,
+} from "@/runtime/session-turn-coordinator";
 import { replaySession } from "@/sessions/replay";
 import { SessionProjector } from "@/sessions/projector";
 import { ToolExecutionController } from "@/tools/execution";
@@ -26,11 +36,291 @@ import {
 } from "@/tools/execution-errors";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
+import type { MetricMeasurement, MetricsSink } from "@/observability";
 import type { ToolSpec } from "@/tools/registry";
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+class ProviderTestClock implements Clock {
+  constructor(private monotonic = 0) {}
+
+  nowWallSeconds(): number {
+    return 1_700_000_000;
+  }
+
+  nowMonotonic(): number {
+    return this.monotonic;
+  }
+
+  advance(milliseconds: number): void {
+    this.monotonic += milliseconds;
+  }
+}
+
+class ProviderTestScheduler implements TimerScheduler {
+  private readonly timers: Array<{
+    due: number;
+    callback: () => void;
+    cancelled: boolean;
+  }> = [];
+
+  constructor(private readonly clock: ProviderTestClock) {}
+
+  get pendingCount(): number {
+    return this.timers.filter((timer) => !timer.cancelled).length;
+  }
+
+  schedule(delayMs: number, callback: () => void): TimerHandle {
+    const timer = { due: this.clock.nowMonotonic() + delayMs, callback, cancelled: false };
+    this.timers.push(timer);
+    return { cancel: () => (timer.cancelled = true) };
+  }
+
+  advance(milliseconds: number): void {
+    this.clock.advance(milliseconds);
+    for (const timer of this.timers) {
+      if (!timer.cancelled && timer.due <= this.clock.nowMonotonic()) {
+        timer.cancelled = true;
+        timer.callback();
+      }
+    }
+  }
+}
+
+class RuntimeControlledStream implements AsyncIterableIterator<ModelResponseChunk> {
+  readonly entered = Promise.withResolvers<void>();
+  readonly cancellationSeen = Promise.withResolvers<void>();
+  readonly returnEntered = Promise.withResolvers<void>();
+  private readonly nextRelease = Promise.withResolvers<void>();
+  private readonly returnRelease = Promise.withResolvers<void>();
+  private token: CancellationToken | undefined;
+  private finished = false;
+  private nextActive = false;
+  returnCount = 0;
+  returnDuringNext = false;
+
+  constructor(
+    private readonly options: {
+      hostileNext?: boolean;
+      hostileReturn?: boolean;
+      nextError?: Error;
+    } = {},
+  ) {}
+
+  bind(token: CancellationToken): void {
+    this.token = token;
+  }
+
+  releaseNext(): void {
+    this.nextRelease.resolve();
+  }
+
+  releaseReturn(): void {
+    this.returnRelease.resolve();
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<ModelResponseChunk> {
+    return this;
+  }
+
+  async next(): Promise<IteratorResult<ModelResponseChunk>> {
+    if (this.finished) return { done: true, value: undefined };
+    const token = this.token;
+    if (token === undefined) throw new Error("stream was not bound to a cancellation token");
+    this.nextActive = true;
+    this.entered.resolve();
+    const abortWake = Promise.withResolvers<void>();
+    const onAbort = () => {
+      this.cancellationSeen.resolve();
+      if (!this.options.hostileNext) abortWake.resolve();
+    };
+    token.signal.addEventListener("abort", onAbort, { once: true });
+    if (token.isCancelled) onAbort();
+    try {
+      await Promise.race([this.nextRelease.promise, abortWake.promise]);
+      if (this.options.nextError !== undefined) throw this.options.nextError;
+      this.finished = true;
+      return { done: true, value: undefined };
+    } finally {
+      token.signal.removeEventListener("abort", onAbort);
+      this.nextActive = false;
+    }
+  }
+
+  async return(): Promise<IteratorResult<ModelResponseChunk>> {
+    this.returnCount += 1;
+    this.returnDuringNext ||= this.nextActive;
+    this.returnEntered.resolve();
+    if (this.options.hostileReturn) await this.returnRelease.promise;
+    this.finished = true;
+    return { done: true, value: undefined };
+  }
+}
+
+class RuntimeRejectingStream implements AsyncIterableIterator<ModelResponseChunk> {
+  readonly entered = Promise.withResolvers<void>();
+  private token: CancellationToken | undefined;
+  returnCount = 0;
+
+  constructor(
+    private readonly error: Error,
+    private readonly immediate = false,
+  ) {}
+
+  bind(token: CancellationToken): void {
+    this.token = token;
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<ModelResponseChunk> {
+    return this;
+  }
+
+  next(): Promise<IteratorResult<ModelResponseChunk>> {
+    this.entered.resolve();
+    if (this.immediate) return Promise.reject(this.error);
+    const token = this.token;
+    if (token === undefined) return Promise.reject(new Error("stream was not bound"));
+    return new Promise((_resolve, reject) => {
+      token.signal.addEventListener("abort", () => reject(this.error), { once: true });
+    });
+  }
+
+  async return(): Promise<IteratorResult<ModelResponseChunk>> {
+    this.returnCount += 1;
+    return { done: true, value: undefined };
+  }
+}
+
+type RuntimeProviderStream = AsyncIterableIterator<ModelResponseChunk> & {
+  bind(token: CancellationToken): void;
+};
+
+class RuntimeControlledProvider implements ModelProvider {
+  calls = 0;
+
+  constructor(private readonly streams: RuntimeProviderStream[]) {}
+
+  async generate(): Promise<ModelResponse> {
+    return { content: "", toolCalls: [] };
+  }
+
+  generateStream(
+    _messages: ProviderMessage[],
+    _tools: ToolSpec[],
+    options?: ModelProviderOptions,
+  ): AsyncGenerator<ModelResponseChunk> {
+    this.calls += 1;
+    const stream = this.streams.shift();
+    if (stream === undefined) throw new Error("No controlled provider stream remains");
+    if (!(options?.cancellationToken instanceof CancellationToken)) {
+      throw new Error("Runtime did not supply an owned provider token");
+    }
+    stream.bind(options.cancellationToken);
+    return stream as unknown as AsyncGenerator<ModelResponseChunk>;
+  }
+}
+
+class FaultingAsyncCoordinator implements SessionTurnCoordinator {
+  quarantineFailures = 0;
+  releaseFailures = 0;
+  clearFailures = 0;
+  quarantineGate?: Promise<void>;
+  releaseGate?: Promise<void>;
+  clearGate?: Promise<void>;
+  readonly quarantineStarted = Promise.withResolvers<void>();
+  readonly releaseStarted = Promise.withResolvers<void>();
+  readonly clearStarted = Promise.withResolvers<void>();
+
+  constructor(readonly inner: InMemorySessionTurnCoordinator) {}
+
+  async acquire(
+    sessionId: string,
+    token?: ObservableCancellationToken,
+    options?: TurnLeaseOptions,
+  ): Promise<SessionTurnLease> {
+    return this.wrapLease(await this.inner.acquire(sessionId, token, options));
+  }
+
+  async quarantine(sessionId: string): Promise<void> {
+    this.quarantineStarted.resolve();
+    if (this.quarantineGate !== undefined) await this.quarantineGate;
+    if (this.quarantineFailures > 0) {
+      this.quarantineFailures -= 1;
+      throw new Error("injected quarantine failure");
+    }
+    this.inner.quarantine(sessionId);
+  }
+
+  async clearQuarantine(sessionId: string): Promise<void> {
+    this.clearStarted.resolve();
+    if (this.clearGate !== undefined) await this.clearGate;
+    if (this.clearFailures > 0) {
+      this.clearFailures -= 1;
+      throw new Error("injected clear failure");
+    }
+    this.inner.clearQuarantine(sessionId);
+  }
+
+  async runExclusive<T>(
+    sessionId: string,
+    token: ObservableCancellationToken | undefined,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const lease = await this.acquire(sessionId, token);
+    try {
+      return await operation();
+    } finally {
+      await lease.release();
+    }
+  }
+
+  private wrapLease(inner: SessionTurnLease): SessionTurnLease {
+    return {
+      transfer: () => this.wrapLease(inner.transfer()),
+      release: async () => {
+        this.releaseStarted.resolve();
+        if (this.releaseGate !== undefined) await this.releaseGate;
+        if (this.releaseFailures > 0) {
+          this.releaseFailures -= 1;
+          throw new Error("injected release failure");
+        }
+        await inner.release();
+      },
+    };
+  }
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 1_000; attempt++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  throw new Error("condition did not settle");
+}
+
+function providerDeadlineRuntime(
+  provider: ModelProvider,
+  clock: ProviderTestClock,
+  scheduler: ProviderTestScheduler,
+  coordinator: SessionTurnCoordinator,
+  store: InMemoryEventStore,
+  turnTimeoutMs = 1_000,
+  metricsSink?: MetricsSink,
+): AgentRuntime {
+  return new AgentRuntime({
+    provider,
+    store,
+    committer: new InMemoryEventCommitter(store),
+    turnCoordinator: coordinator,
+    tools: [],
+    clock,
+    timerScheduler: scheduler,
+    turnExecutionLimits: { turnTimeoutMs, providerCancellationGraceMs: 2_000 },
+    ...(metricsSink === undefined ? {} : { metricsSink }),
+  });
+}
 
 describe("tool idempotency ledger", () => {
   it("expires completed entries by completion time while LRU access only affects eviction", async () => {
@@ -361,6 +651,389 @@ describe("provider fault matrix", () => {
     expect(() => replaySession(recoveredHistory)).not.toThrow();
     expect(coordinator.entryCount).toBe(0);
     expect(coordinator.waitingCount).toBe(0);
+  });
+
+  it("classifies a provider rejection caused by the owned deadline as a turn timeout", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const raw = new Error("provider rejected its owned cancellation");
+    const stream = new RuntimeRejectingStream(raw);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const store = new InMemoryEventStore();
+    const measurements: MetricMeasurement[] = [];
+    const runtime = providerDeadlineRuntime(
+      new RuntimeControlledProvider([stream]),
+      clock,
+      scheduler,
+      coordinator,
+      store,
+      1_000,
+      {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+    );
+
+    const turn = runtime.turn("timeout", { sessionId: "deadline-reject" });
+    await stream.entered.promise;
+    scheduler.advance(1_000);
+
+    await expect(turn).rejects.toMatchObject({
+      constructor: TurnTimeoutError,
+      phase: "provider_open",
+      retryable: true,
+      outcome: "unknown",
+    });
+    expect(
+      (await store.getEvents("deadline-reject")).filter(
+        (event) => event.type === EventType.AGENT_TURN_FAILED,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        error_code: "TURN_TIMEOUT",
+        phase: "provider_open",
+        retryable: true,
+        outcome: "unknown",
+      }),
+    ]);
+    expect(stream.returnCount).toBe(1);
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+    expect(measurements.find(({ name }) => name === "kaji.provider.duration_ms")?.labels).toEqual({
+      provider_family: "custom",
+      status: "error",
+    });
+  });
+
+  it("preserves a provider error that settles before the injected deadline", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const raw = new Error("provider failed first");
+    const stream = new RuntimeRejectingStream(raw, true);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const runtime = providerDeadlineRuntime(
+      new RuntimeControlledProvider([stream]),
+      clock,
+      scheduler,
+      coordinator,
+      new InMemoryEventStore(),
+    );
+
+    const turn = runtime.turn("fail", { sessionId: "provider-first" });
+    await stream.entered.promise;
+    await expect(turn).rejects.toBe(raw);
+    expect(stream.returnCount).toBe(1);
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("labels caller cancellation as a cancelled provider operation", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const stream = new RuntimeControlledStream();
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const measurements: MetricMeasurement[] = [];
+    const runtime = providerDeadlineRuntime(
+      new RuntimeControlledProvider([stream]),
+      clock,
+      scheduler,
+      coordinator,
+      new InMemoryEventStore(),
+      10_000,
+      {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+    );
+    const token = new CancellationToken();
+
+    const turn = runtime.turn("cancel", {
+      sessionId: "caller-cancel",
+      cancellationToken: token,
+    });
+    await stream.entered.promise;
+    token.cancel();
+
+    await expect(turn).resolves.toMatchObject({ sessionId: "caller-cancel" });
+    expect(measurements.find(({ name }) => name === "kaji.provider.duration_ms")?.labels).toEqual({
+      provider_family: "custom",
+      status: "cancelled",
+    });
+    expect(stream.returnCount).toBe(1);
+    expect(coordinator.entryCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it.each([
+    { label: "normal completion", nextError: undefined },
+    { label: "an earlier provider error", nextError: new Error("provider failed first") },
+  ])(
+    "quarantines a hostile return after $label and drains it exactly once",
+    async ({ nextError }) => {
+      const clock = new ProviderTestClock();
+      const scheduler = new ProviderTestScheduler(clock);
+      const stream = new RuntimeControlledStream({ hostileReturn: true, nextError });
+      const provider = new RuntimeControlledProvider([stream]);
+      const coordinator = new InMemorySessionTurnCoordinator();
+      const store = new InMemoryEventStore();
+      const runtime = providerDeadlineRuntime(provider, clock, scheduler, coordinator, store);
+
+      const turn = runtime.turn("hostile return", { sessionId: "hostile-return" });
+      await stream.entered.promise;
+      stream.releaseNext();
+      await stream.returnEntered.promise;
+      scheduler.advance(1_000);
+      await waitUntil(() => scheduler.pendingCount === 1);
+      scheduler.advance(2_000);
+
+      let violation: unknown;
+      try {
+        await turn;
+      } catch (error) {
+        violation = error;
+      }
+      expect(violation).toBeInstanceOf(ProviderCancellationContractViolation);
+      if (nextError !== undefined) {
+        expect((violation as Error).cause).toBe(nextError);
+      }
+      expect(stream.returnCount).toBe(1);
+      expect(stream.returnDuringNext).toBe(false);
+      expect(coordinator.entryCount).toBe(1);
+      const failures = (await store.getEvents("hostile-return")).filter(
+        (event) => event.type === EventType.AGENT_TURN_FAILED,
+      );
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({
+        error_code: "PROVIDER_CANCELLATION_CONTRACT_VIOLATION",
+        phase: "provider_open",
+        retryable: false,
+        outcome: "unknown",
+      });
+
+      stream.releaseReturn();
+      await expect(runtime.drainProviders(1)).resolves.toEqual([]);
+      expect(stream.returnCount).toBe(1);
+      expect(coordinator.entryCount).toBe(0);
+      expect(scheduler.pendingCount).toBe(0);
+    },
+  );
+
+  it("retains a hostile provider lease across runtimes until drain and close only blocks", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const hostile = new RuntimeControlledStream({ hostileNext: true });
+    const other = new RuntimeControlledStream();
+    const recovered = new RuntimeControlledStream();
+    other.releaseNext();
+    recovered.releaseNext();
+    const provider = new RuntimeControlledProvider([hostile, other, recovered]);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const store = new InMemoryEventStore();
+    const runtime = providerDeadlineRuntime(provider, clock, scheduler, coordinator, store);
+    const sibling = providerDeadlineRuntime(provider, clock, scheduler, coordinator, store, 10_000);
+
+    const owner = runtime.turn("owner", { sessionId: "quarantine" });
+    await hostile.entered.promise;
+    const waiting = sibling.turn("waiting", { sessionId: "quarantine" });
+    await waitUntil(() => coordinator.waitingCount === 1);
+    scheduler.advance(1_000);
+    await hostile.cancellationSeen.promise;
+    await waitUntil(() => scheduler.pendingCount === 2);
+    scheduler.advance(2_000);
+
+    await expect(owner).rejects.toMatchObject({
+      constructor: ProviderCancellationContractViolation,
+      phase: "provider_open",
+    });
+    await expect(waiting).rejects.toBeInstanceOf(ProviderCancellationContractViolation);
+    expect(coordinator.entryCount).toBe(1);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(hostile.returnCount).toBe(0);
+
+    await expect(sibling.turn("rejected", { sessionId: "quarantine" })).rejects.toBeInstanceOf(
+      ProviderCancellationContractViolation,
+    );
+    expect(provider.calls).toBe(1);
+
+    await expect(runtime.turn("other", { sessionId: "other-session" })).resolves.toMatchObject({
+      sessionId: "other-session",
+    });
+    expect(provider.calls).toBe(2);
+
+    const failedDrain = runtime.drainProviders(0);
+    await waitUntil(() => scheduler.pendingCount === 1);
+    scheduler.advance(0);
+    await expect(failedDrain).resolves.toEqual(["quarantine"]);
+    expect(coordinator.entryCount).toBe(1);
+
+    runtime.close();
+    await expect(runtime.turn("closed", { sessionId: "closed" })).rejects.toThrow(/closed/);
+    expect(hostile.returnCount).toBe(0);
+
+    hostile.releaseNext();
+    await hostile.returnEntered.promise;
+    await expect(runtime.drainProviders(1)).resolves.toEqual([]);
+    expect(hostile.returnCount).toBe(1);
+    expect(hostile.returnDuringNext).toBe(false);
+    expect(coordinator.entryCount).toBe(0);
+
+    await expect(sibling.turn("reused", { sessionId: "quarantine" })).resolves.toMatchObject({
+      sessionId: "quarantine",
+    });
+    expect(provider.calls).toBe(3);
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("retains transferred ownership when an async quarantine hook fails", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const hostile = new RuntimeControlledStream({ hostileNext: true });
+    const provider = new RuntimeControlledProvider([hostile]);
+    const inner = new InMemorySessionTurnCoordinator();
+    const coordinator = new FaultingAsyncCoordinator(inner);
+    coordinator.quarantineFailures = 1;
+    const runtime = providerDeadlineRuntime(
+      provider,
+      clock,
+      scheduler,
+      coordinator,
+      new InMemoryEventStore(),
+    );
+
+    const turn = runtime.turn("hostile", { sessionId: "setup-failure" });
+    await hostile.entered.promise;
+    scheduler.advance(1_000);
+    await hostile.cancellationSeen.promise;
+    await waitUntil(() => scheduler.pendingCount === 1);
+    scheduler.advance(2_000);
+
+    await expect(turn).rejects.toThrow("injected quarantine failure");
+    expect(inner.entryCount).toBe(1);
+
+    hostile.releaseNext();
+    await hostile.returnEntered.promise;
+    await expect(runtime.drainProviders(1)).resolves.toEqual([]);
+    expect(inner.entryCount).toBe(0);
+  });
+
+  it.each(["release", "clear"] as const)(
+    "keeps a session quarantined when async %s cleanup fails",
+    async (failure) => {
+      const clock = new ProviderTestClock();
+      const scheduler = new ProviderTestScheduler(clock);
+      const hostile = new RuntimeControlledStream({ hostileNext: true });
+      const provider = new RuntimeControlledProvider([hostile]);
+      const inner = new InMemorySessionTurnCoordinator();
+      const coordinator = new FaultingAsyncCoordinator(inner);
+      const runtime = providerDeadlineRuntime(
+        provider,
+        clock,
+        scheduler,
+        coordinator,
+        new InMemoryEventStore(),
+      );
+
+      const turn = runtime.turn("hostile", { sessionId: `${failure}-failure` });
+      await hostile.entered.promise;
+      scheduler.advance(1_000);
+      await hostile.cancellationSeen.promise;
+      await waitUntil(() => scheduler.pendingCount === 1);
+      scheduler.advance(2_000);
+      await expect(turn).rejects.toBeInstanceOf(ProviderCancellationContractViolation);
+
+      hostile.releaseNext();
+      await hostile.returnEntered.promise;
+      if (failure === "release") coordinator.releaseFailures = 1;
+      else coordinator.clearFailures = 1;
+      await expect(runtime.drainProviders(1)).rejects.toThrow(`injected ${failure} failure`);
+
+      expect(inner.entryCount).toBe(1);
+      await expect(inner.acquire(`${failure}-failure`)).rejects.toBeInstanceOf(
+        ProviderCancellationContractViolation,
+      );
+      await expect(runtime.drainProviders(1)).resolves.toEqual([]);
+      expect(inner.entryCount).toBe(0);
+    },
+  );
+
+  it("awaits async quarantine, release, and clear hooks in lifecycle order", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const hostile = new RuntimeControlledStream({ hostileNext: true });
+    const provider = new RuntimeControlledProvider([hostile]);
+    const inner = new InMemorySessionTurnCoordinator();
+    const coordinator = new FaultingAsyncCoordinator(inner);
+    const quarantineGate = Promise.withResolvers<void>();
+    const releaseGate = Promise.withResolvers<void>();
+    const clearGate = Promise.withResolvers<void>();
+    coordinator.quarantineGate = quarantineGate.promise;
+    coordinator.releaseGate = releaseGate.promise;
+    coordinator.clearGate = clearGate.promise;
+    const runtime = providerDeadlineRuntime(
+      provider,
+      clock,
+      scheduler,
+      coordinator,
+      new InMemoryEventStore(),
+    );
+
+    const turn = runtime.turn("hostile", { sessionId: "async-lifecycle" });
+    let turnSettled = false;
+    void turn.then(
+      () => {
+        turnSettled = true;
+      },
+      () => {
+        turnSettled = true;
+      },
+    );
+    await hostile.entered.promise;
+    scheduler.advance(1_000);
+    await hostile.cancellationSeen.promise;
+    await waitUntil(() => scheduler.pendingCount === 1);
+    scheduler.advance(2_000);
+    await coordinator.quarantineStarted.promise;
+    await Promise.resolve();
+    expect(turnSettled).toBe(false);
+
+    quarantineGate.resolve();
+    await expect(turn).rejects.toBeInstanceOf(ProviderCancellationContractViolation);
+    hostile.releaseNext();
+    await hostile.returnEntered.promise;
+
+    const drain = runtime.drainProviders(1);
+    let drainSettled = false;
+    void drain.then(
+      () => {
+        drainSettled = true;
+      },
+      () => {
+        drainSettled = true;
+      },
+    );
+    await coordinator.releaseStarted.promise;
+    await Promise.resolve();
+    expect(drainSettled).toBe(false);
+    expect(inner.entryCount).toBe(1);
+
+    releaseGate.resolve();
+    await coordinator.clearStarted.promise;
+    await Promise.resolve();
+    expect(drainSettled).toBe(false);
+    expect(inner.entryCount).toBe(1);
+    await expect(inner.acquire("async-lifecycle")).rejects.toBeInstanceOf(
+      ProviderCancellationContractViolation,
+    );
+
+    clearGate.resolve();
+    await expect(drain).resolves.toEqual([]);
+    expect(inner.entryCount).toBe(0);
   });
 });
 

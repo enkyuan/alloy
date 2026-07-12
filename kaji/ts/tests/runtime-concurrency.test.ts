@@ -4,6 +4,7 @@ import { InMemoryEventCommitter } from "@/events/committer";
 import type { NewKajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
+import type { Clock, IdFactory, IdScope, TimerHandle, TimerScheduler } from "@/internal/uuid";
 import type {
   ModelProvider,
   ModelProviderOptions,
@@ -12,12 +13,15 @@ import type {
   ProviderMessage,
 } from "@/providers/base";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
+import { TurnTimeoutError } from "@/runtime/limits";
 import { AgentBuilder } from "@/runtime/builder";
 import { AgentRuntime } from "@/runtime/runtime";
 import {
   InMemorySessionTurnCoordinator,
   type ObservableCancellationToken,
   type SessionTurnCoordinator,
+  type SessionTurnLease,
+  type TurnLeaseOptions,
 } from "@/runtime/session-turn-coordinator";
 import type { ToolSpec } from "@/tools/registry";
 
@@ -35,6 +39,69 @@ class Deferred<T = void> {
   resolve(): void;
   resolve(value?: T): void {
     this.settle(value as T);
+  }
+}
+
+class ManualClock implements Clock {
+  constructor(
+    private monotonic = 10,
+    private wallSeconds = 1_700_000_000,
+  ) {}
+
+  nowMonotonic(): number {
+    return this.monotonic;
+  }
+
+  nowWallSeconds(): number {
+    return this.wallSeconds;
+  }
+
+  advanceMonotonic(milliseconds: number): void {
+    this.monotonic += milliseconds;
+  }
+
+  jumpWall(milliseconds: number): void {
+    this.wallSeconds += milliseconds / 1_000;
+  }
+}
+
+class ManualScheduler implements TimerScheduler {
+  private readonly timers: Array<{
+    due: number;
+    callback: () => void;
+    cancelled: boolean;
+  }> = [];
+
+  constructor(private readonly clock: ManualClock) {}
+
+  get pendingCount(): number {
+    return this.timers.filter((timer) => !timer.cancelled).length;
+  }
+
+  schedule(delayMs: number, callback: () => void): TimerHandle {
+    const timer = { due: this.clock.nowMonotonic() + delayMs, callback, cancelled: false };
+    this.timers.push(timer);
+    return { cancel: () => (timer.cancelled = true) };
+  }
+
+  advance(milliseconds: number): void {
+    this.clock.advanceMonotonic(milliseconds);
+    for (const timer of this.timers) {
+      if (!timer.cancelled && timer.due <= this.clock.nowMonotonic()) {
+        timer.cancelled = true;
+        timer.callback();
+      }
+    }
+  }
+}
+
+class ScopedIds implements IdFactory {
+  private readonly counts = new Map<IdScope, number>();
+
+  next(scope: IdScope): string {
+    const count = (this.counts.get(scope) ?? 0) + 1;
+    this.counts.set(scope, count);
+    return `${scope}-${count}`;
   }
 }
 
@@ -116,15 +183,31 @@ class ObservedCoordinator implements SessionTurnCoordinator {
 
   constructor(readonly inner: InMemorySessionTurnCoordinator) {}
 
+  quarantine(sessionId: string): void {
+    this.inner.quarantine(sessionId);
+  }
+
+  clearQuarantine(sessionId: string): void {
+    this.inner.clearQuarantine(sessionId);
+  }
+
+  acquire(
+    sessionId: string,
+    token?: ObservableCancellationToken,
+    options?: TurnLeaseOptions,
+  ): Promise<SessionTurnLease> {
+    this.calls += 1;
+    const result = this.inner.acquire(sessionId, token, options);
+    if (this.calls === 2) this.secondAttempted.resolve();
+    return result;
+  }
+
   runExclusive<T>(
     sessionId: string,
     token: ObservableCancellationToken | undefined,
     operation: () => Promise<T>,
   ): Promise<T> {
-    this.calls += 1;
-    const result = this.inner.runExclusive(sessionId, token, operation);
-    if (this.calls === 2) this.secondAttempted.resolve();
-    return result;
+    return this.inner.runExclusive(sessionId, token, operation);
   }
 }
 
@@ -151,12 +234,206 @@ function expectOneTurn(events: StoredKajiEvent[], turnId: string): void {
 }
 
 describe("session turn coordination", () => {
+  it("records one queue terminal for epoch zero without provider dispatch", async () => {
+    const clock = new ManualClock();
+    const scheduler = new ManualScheduler(clock);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    let calls = 0;
+    const provider: ModelProvider = {
+      async generate(): Promise<ModelResponse> {
+        return { content: "", toolCalls: [] };
+      },
+      async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+        calls += 1;
+        yield { delta: "unreachable", toolCalls: [] };
+      },
+    };
+    const store = new InMemoryEventStore();
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      turnCoordinator: coordinator,
+      tools: [],
+      clock,
+      timerScheduler: scheduler,
+    });
+
+    await expect(
+      runtime.turn("never dispatched", {
+        sessionId: "zero-deadline",
+        context: { deadlineAtMs: 0 },
+      }),
+    ).rejects.toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "queue",
+      retryable: true,
+      outcome: "not_started",
+    });
+    const failures = (await store.getEvents("zero-deadline")).filter(
+      (event) => event.type === EventType.AGENT_TURN_FAILED,
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      error_code: "TURN_TIMEOUT",
+      phase: "queue",
+      retryable: true,
+      outcome: "not_started",
+    });
+    expect(calls).toBe(0);
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("lets caller cancellation win a same-tick queued deadline and cleans timers", async () => {
+    const clock = new ManualClock();
+    const scheduler = new ManualScheduler(clock);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const provider = new BarrierProvider({ holder: "same" });
+    const store = new InMemoryEventStore();
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      turnCoordinator: coordinator,
+      tools: [],
+      clock,
+      timerScheduler: scheduler,
+    });
+    const holder = runtime.turn("holder", { sessionId: "same" });
+    await provider.waitUntilEntered("holder");
+    const token = new CancellationToken();
+    const waiting = runtime.turn("cancelled", {
+      sessionId: "same",
+      cancellationToken: token,
+      context: { deadlineAtMs: clock.nowWallSeconds() * 1_000 + 1_000 },
+    });
+    while (coordinator.waitingCount !== 1) await Promise.resolve();
+    scheduler.schedule(1_000, () => token.cancel());
+    scheduler.advance(1_000);
+
+    await expect(waiting).rejects.toBeInstanceOf(CancellationError);
+    const queuedTurn = (await store.getEvents("same")).filter(
+      (event) => event.type === EventType.CANCELLATION_COMPLETED,
+    );
+    expect(queuedTurn).toHaveLength(1);
+    expect(
+      (await store.getEvents("same")).filter((event) => event.type === EventType.AGENT_TURN_FAILED),
+    ).toHaveLength(0);
+    expect(coordinator.waitingCount).toBe(0);
+    provider.release("holder");
+    await holder;
+    expect(coordinator.entryCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
+  it("keeps a resolved deadline monotonic across wall-clock jumps", async () => {
+    const clock = new ManualClock();
+    const scheduler = new ManualScheduler(clock);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const provider = new BarrierProvider({ holder: "wall" });
+    const store = new InMemoryEventStore();
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      turnCoordinator: coordinator,
+      tools: [],
+      clock,
+      timerScheduler: scheduler,
+    });
+    const holder = runtime.turn("holder", { sessionId: "wall" });
+    await provider.waitUntilEntered("holder");
+    const waiting = runtime.turn("queued", {
+      sessionId: "wall",
+      context: { deadlineAtMs: clock.nowWallSeconds() * 1_000 + 1_000 },
+    });
+    while (coordinator.waitingCount !== 1) await Promise.resolve();
+    clock.jumpWall(86_400_000);
+    await Promise.resolve();
+    expect(coordinator.waitingCount).toBe(1);
+    scheduler.advance(1_000);
+    await expect(waiting).rejects.toBeInstanceOf(TurnTimeoutError);
+    provider.release("holder");
+    await holder;
+  });
+
+  it("records one queued timeout and preserves FIFO handoff to a third waiter", async () => {
+    const clock = new ManualClock();
+    const scheduler = new ManualScheduler(clock);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const provider = new BarrierProvider({ first: "fifo", expired: "fifo", third: "fifo" });
+    const store = new InMemoryEventStore();
+    const ids = new ScopedIds();
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      turnCoordinator: coordinator,
+      tools: [],
+      clock,
+      timerScheduler: scheduler,
+      idFactory: ids,
+    });
+
+    const first = runtime.turn("first", { sessionId: "fifo" });
+    await provider.waitUntilEntered("first");
+    const expired = runtime.turn("expired", {
+      sessionId: "fifo",
+      context: { deadlineAtMs: clock.nowWallSeconds() * 1_000 + 1_000 },
+    });
+    const third = runtime.turn("third", { sessionId: "fifo" });
+    while (coordinator.waitingCount !== 2) await Promise.resolve();
+
+    scheduler.advance(1_000);
+    await expect(expired).rejects.toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "queue",
+      retryable: true,
+      outcome: "not_started",
+    });
+    expect(provider.hasEntered("expired")).toBe(false);
+    expect(provider.hasEntered("third")).toBe(false);
+    expect(coordinator.waitingCount).toBe(1);
+    const failures = (await store.getEvents("fifo")).filter(
+      (event) => event.type === EventType.AGENT_TURN_FAILED,
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ phase: "queue", error_code: "TURN_TIMEOUT" });
+    expect(failures[0]!.turn_id).toBe("turn-2");
+
+    provider.release("first");
+    const firstResult = await first;
+    await provider.waitUntilEntered("third");
+    provider.release("third");
+    const thirdResult = await third;
+    expect(firstResult.turnId).toBe("turn-1");
+    expect(thirdResult).toMatchObject({ text: "reply:third", turnId: "turn-3" });
+    expect(new Set([firstResult.turnId, failures[0]!.turn_id, thirdResult.turnId]).size).toBe(3);
+    expect(provider.maximumFor("fifo")).toBe(1);
+    expect(coordinator.entryCount).toBe(0);
+    expect(coordinator.waitingCount).toBe(0);
+    expect(scheduler.pendingCount).toBe(0);
+  });
+
   it("requires observable cancellation in the public coordinator contract", () => {
     expectTypeOf<ObservableCancellationToken["signal"]>().toEqualTypeOf<AbortSignal>();
     expectTypeOf<Parameters<SessionTurnCoordinator["runExclusive"]>[1]>().toEqualTypeOf<
       ObservableCancellationToken | undefined
     >();
   });
+
+  it.each([true, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "rejects an invalid coordinator deadline (%s)",
+    async (deadline) => {
+      await expect(
+        new InMemorySessionTurnCoordinator().acquire("invalid", undefined, {
+          deadlineMonotonicMs: deadline as number,
+        }),
+      ).rejects.toThrow(/deadlineMonotonicMs/);
+    },
+  );
 
   it("serializes same-session turns and scopes results by turn id", async () => {
     const provider = new BarrierProvider({ A: "same", B: "same" });

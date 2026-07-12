@@ -840,7 +840,7 @@ describe("ToolPlanner", () => {
       (emit) =>
         planner.executeBatch("session", call, emit, "turn", {
           ...TURN_CONTEXT,
-          deadlineMs: Number.POSITIVE_INFINITY,
+          deadlineMonotonicMs: Number.POSITIVE_INFINITY,
         }),
       (emit) =>
         planner.executeBatch("session", call, emit, "turn", TURN_CONTEXT, {

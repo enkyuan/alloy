@@ -225,6 +225,107 @@ _PROVIDERS: dict[str, Callable[[list[str] | None], tuple[Any, Callable[[], None]
 }
 
 
+@pytest.mark.parametrize(
+    ("module_name", "provider_name", "client_name"),
+    [
+        ("kaji.runtime.providers.openai", "OpenAIProvider", "AsyncOpenAI"),
+        ("kaji.runtime.providers.anthropic", "AnthropicProvider", "AsyncAnthropic"),
+    ],
+)
+def test_provider_request_timeout_is_forwarded_to_vendor_client(
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+    provider_name: str,
+    client_name: str,
+) -> None:
+    module = __import__(module_name, fromlist=[provider_name])
+    captured: dict[str, Any] = {}
+
+    def client(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        module,
+        "import_module",
+        lambda _name: SimpleNamespace(**{client_name: client}),
+    )
+    provider = getattr(module, provider_name)(
+        api_key="configured",
+        request_timeout_seconds=12.5,
+    )
+
+    assert provider.client is not None
+    assert captured["max_retries"] == 0
+    assert captured["timeout"] == 12.5
+
+
+@pytest.mark.parametrize(
+    ("module_name", "provider_name", "client_name"),
+    [
+        ("kaji.runtime.providers.openai", "OpenAIProvider", "AsyncOpenAI"),
+        ("kaji.runtime.providers.anthropic", "AnthropicProvider", "AsyncAnthropic"),
+    ],
+)
+def test_provider_request_timeout_is_omitted_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+    provider_name: str,
+    client_name: str,
+) -> None:
+    module = __import__(module_name, fromlist=[provider_name])
+    captured: dict[str, Any] = {}
+
+    def client(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(
+        module,
+        "import_module",
+        lambda _name: SimpleNamespace(**{client_name: client}),
+    )
+    provider = getattr(module, provider_name)(api_key="configured")
+
+    assert provider.client is not None
+    assert captured["max_retries"] == 0
+    assert "timeout" not in captured
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "value", "error_type"),
+    [
+        ("OpenAIProvider", True, TypeError),
+        ("OpenAIProvider", "1", TypeError),
+        ("OpenAIProvider", 0, ValueError),
+        ("OpenAIProvider", -1, ValueError),
+        ("OpenAIProvider", float("nan"), ValueError),
+        ("OpenAIProvider", float("inf"), ValueError),
+        ("AnthropicProvider", True, TypeError),
+        ("AnthropicProvider", "1", TypeError),
+        ("AnthropicProvider", 0, ValueError),
+        ("AnthropicProvider", -1, ValueError),
+        ("AnthropicProvider", float("nan"), ValueError),
+        ("AnthropicProvider", float("inf"), ValueError),
+    ],
+)
+def test_provider_request_timeout_rejects_invalid_values(
+    provider_name: str,
+    value: object,
+    error_type: type[Exception],
+) -> None:
+    module_name = provider_name.removesuffix("Provider").lower()
+    module = __import__(
+        f"kaji.runtime.providers.{module_name}", fromlist=[provider_name]
+    )
+
+    with pytest.raises(error_type, match="request_timeout_seconds"):
+        getattr(module, provider_name)(
+            api_key="configured",
+            request_timeout_seconds=value,
+        )
+
+
 @pytest.fixture(params=list(_PROVIDERS.keys()))
 def provider_factory(request):
     """Yields a factory ``(chunks) -> (provider, cleanup)`` for one provider.

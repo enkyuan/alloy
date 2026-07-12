@@ -106,6 +106,7 @@ _LABEL_VALUES: dict[str, frozenset[str]] = {
             "APPROVAL_TIMEOUT",
             "TOOL_CANCELLED",
             "TOOL_TIMEOUT",
+            "TURN_TIMEOUT",
             "TOOL_EXECUTION_FAILED",
             "TOOL_START_RECORD_FAILED",
             "IDEMPOTENCY_CAPACITY_EXCEEDED",

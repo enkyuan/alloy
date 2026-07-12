@@ -6,6 +6,7 @@ import { AgentBuilder } from "@/runtime/builder";
 import { CancellationToken } from "@/runtime/cancellation";
 import {
   MissingToolIdentityError,
+  deadlineAfter,
   type ToolExecutionContext,
   type TurnContext,
 } from "@/runtime/context";
@@ -39,6 +40,33 @@ class CaptureIntegration implements Integrable {
 }
 
 describe("tool execution context", () => {
+  it("converts durations once and rejects legacy or invalid public deadlines", async () => {
+    const clock = { nowWallSeconds: () => 1_700_000_000, nowMonotonic: () => 10 };
+    expect(deadlineAfter(2_500, clock)).toBe(1_700_000_002_500);
+    for (const invalid of [true, "1", Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(() => deadlineAfter(invalid as never, clock)).toThrow(/finite non-negative/);
+    }
+
+    const runtime = new AgentBuilder().provider(new MockProvider({ reply: "unused" })).build();
+    for (const context of [
+      { deadlineMs: undefined },
+      { deadlineMs: 1, deadlineAtMs: 2 },
+      { deadlineAtMs: true },
+      { deadlineAtMs: "1" },
+      { deadlineAtMs: Number.NaN },
+      { deadlineAtMs: Number.POSITIVE_INFINITY },
+      { deadlineAtMs: -1 },
+    ]) {
+      await expect(
+        runtime.turn("invalid", {
+          sessionId: "invalid-deadline",
+          context: context as unknown as TurnContext,
+        }),
+      ).rejects.toThrow();
+    }
+    expect(await runtime.history("invalid-deadline")).toEqual([]);
+  });
+
   it("propagates and isolates concurrent principals", async () => {
     const seen: ToolExecutionContext[] = [];
     const metadataA = { tenant: { id: "a" } };
@@ -52,7 +80,7 @@ describe("tool execution context", () => {
       principalId: "principal-a",
       requestId: "request-a",
       traceId: "trace-a",
-      deadlineMs: 2_000_000_000_000,
+      deadlineAtMs: deadlineAfter(30_000),
       db: dbA,
       metadata: metadataA,
     };
@@ -84,8 +112,7 @@ describe("tool execution context", () => {
     expect(capturedA.idempotencyKey).toBe("session-a:mock-call-1");
     expect(capturedA.signal).toBeInstanceOf(AbortSignal);
     expect(capturedA.signal.aborted).toBe(false);
-    expect(capturedA.deadlineMs).toBeLessThan(2_000_000_000_000);
-    expect(capturedA.deadlineMs).toBeGreaterThan(Date.now());
+    expect(capturedA.deadlineMonotonicMs).toBeGreaterThan(globalThis.performance.now());
     expect(capturedA.db).toBe(dbA);
     expect(capturedA.metadata).toEqual({ tenant: { id: "a" } });
     expect(Object.isFrozen(capturedA.metadata)).toBe(true);

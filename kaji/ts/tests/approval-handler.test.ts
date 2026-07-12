@@ -10,6 +10,7 @@ import { AutoApprovalHandler } from "@/runtime/approval/auto";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { requestLegacyApproval, type ApprovalRequestContext } from "@/runtime/approval/types";
 import { replaySession } from "@/sessions/replay";
+import { systemTimerScheduler } from "@/internal/uuid";
 
 class MalformedReadStore extends InMemoryEventStore {
   constructor(private readonly missingField: string) {
@@ -40,7 +41,7 @@ function makeContext(
     controller?: AbortController;
     sessionId?: string;
     turnId?: string;
-    deadlineMs?: number;
+    deadlineMonotonicMs?: number;
     emit?: ApprovalRequestContext["emit"];
   } = {},
 ): ApprovalRequestContext {
@@ -68,7 +69,9 @@ function makeContext(
       (async (event) => {
         return committer.commit(event);
       }),
-    deadlineMs: options.deadlineMs ?? Date.now() + 1_000,
+    deadlineMonotonicMs: options.deadlineMonotonicMs ?? globalThis.performance.now() + 1_000,
+    deadlineSource: "approval",
+    timerScheduler: systemTimerScheduler,
   };
 }
 
@@ -178,7 +181,9 @@ describe("EventApprovalHandler", () => {
     await expect(
       new EventApprovalHandler().request(
         timeoutCall,
-        makeContext(committer, timeoutCall, { deadlineMs: Date.now() + 10 }),
+        makeContext(committer, timeoutCall, {
+          deadlineMonotonicMs: globalThis.performance.now() + 10,
+        }),
       ),
     ).resolves.toMatchObject({ granted: false, code: "timeout" });
 
@@ -189,7 +194,7 @@ describe("EventApprovalHandler", () => {
       makeContext(committer, cancelledCall, {
         controller,
         sessionId: "session-cancelled",
-        deadlineMs: Date.now() + 1_000,
+        deadlineMonotonicMs: globalThis.performance.now() + 1_000,
       }),
     );
     controller.abort();
@@ -320,7 +325,9 @@ describe("EventApprovalHandler", () => {
     const call = makeCall({ id: "cleanup" });
     await new EventApprovalHandler().request(
       call,
-      makeContext(committer, call, { deadlineMs: Date.now() + 5 }),
+      makeContext(committer, call, {
+        deadlineMonotonicMs: globalThis.performance.now() + 5,
+      }),
     );
     expect(returned).toHaveBeenCalledOnce();
   });
@@ -348,7 +355,9 @@ describe("EventApprovalHandler", () => {
     const decision = await Promise.race([
       new EventApprovalHandler().request(
         call,
-        makeContext(committer, call, { deadlineMs: Date.now() + 5 }),
+        makeContext(committer, call, {
+          deadlineMonotonicMs: globalThis.performance.now() + 5,
+        }),
       ),
       new Promise<never>((_resolve, reject) =>
         setTimeout(() => reject(new Error("approval cleanup hung")), 100),

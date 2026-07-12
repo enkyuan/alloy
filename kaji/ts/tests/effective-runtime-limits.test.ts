@@ -7,6 +7,7 @@ import {
   InMemoryEventStore,
   ToolExecutionController,
   ToolPlanner,
+  TurnTimeoutError,
   type EffectiveRuntimeLimits,
 } from "@kaji/sdk";
 import { MockProvider } from "@/providers/mock";
@@ -48,6 +49,12 @@ describe("AgentRuntime effective limits", () => {
       toolMaxParallel: 4,
       toolTimeoutMs: 30_000,
       approvalTimeoutMs: 300_000,
+      turnTimeoutMs: 120_000,
+      providerCancellationGraceMs: 5_000,
+      providerTextMaxBytes: 262_144,
+      providerToolArgumentsMaxBytes: 65_536,
+      providerResponseMaxBytes: 524_288,
+      providerToolCallsMax: 64,
     });
     expect(Object.isFrozen(limits)).toBe(true);
   });
@@ -58,6 +65,14 @@ describe("AgentRuntime effective limits", () => {
       .strategy({ maxToolIterations: 2 })
       .contextWindow({ maxTurns: 7, maxCharacters: 1_234 })
       .toolExecutionLimits({ maxParallel: 3, timeoutMs: 1_500, approvalTimeoutMs: 2_500 })
+      .turnExecutionLimits({
+        turnTimeoutMs: 12_500,
+        providerCancellationGraceMs: 250,
+        providerTextMaxBytes: 1_024,
+        providerToolArgumentsMaxBytes: 512,
+        providerResponseMaxBytes: 2_048,
+        providerToolCallsMax: 3,
+      })
       .build();
 
     expect(runtime.effectiveLimits()).toEqual({
@@ -67,6 +82,12 @@ describe("AgentRuntime effective limits", () => {
       toolMaxParallel: 3,
       toolTimeoutMs: 1_500,
       approvalTimeoutMs: 2_500,
+      turnTimeoutMs: 12_500,
+      providerCancellationGraceMs: 250,
+      providerTextMaxBytes: 1_024,
+      providerToolArgumentsMaxBytes: 512,
+      providerResponseMaxBytes: 2_048,
+      providerToolCallsMax: 3,
     });
   });
 
@@ -94,6 +115,48 @@ describe("AgentRuntime effective limits", () => {
       toolMaxParallel: 2,
       toolTimeoutMs: null,
       approvalTimeoutMs: 6_000,
+      turnTimeoutMs: 120_000,
+      providerCancellationGraceMs: 5_000,
+      providerTextMaxBytes: 262_144,
+      providerToolArgumentsMaxBytes: 65_536,
+      providerResponseMaxBytes: 524_288,
+      providerToolCallsMax: 64,
     });
+  });
+
+  it("carries phase-specific timeout semantics", () => {
+    const error = new TurnTimeoutError("tool", false, "unknown");
+    expect(error).toMatchObject({
+      code: "TURN_TIMEOUT",
+      phase: "tool",
+      retryable: false,
+      outcome: "unknown",
+      message: "Turn deadline exceeded during tool",
+    });
+  });
+
+  it.each([
+    ["invalid phase", ["invalid", true, "not_started"]],
+    ["non-boolean retryable", ["queue", 1, "not_started"]],
+    ["invalid outcome", ["queue", true, "invalid"]],
+  ] as const)("rejects %s timeout semantics", (_label, args) => {
+    expect(
+      () => new TurnTimeoutError(args[0] as never, args[1] as never, args[2] as never),
+    ).toThrow();
+  });
+
+  it.each([
+    ["zero timeout", { turnTimeoutMs: 0 }],
+    ["boolean timeout", { turnTimeoutMs: true }],
+    ["NaN grace", { providerCancellationGraceMs: Number.NaN }],
+    ["infinite byte cap", { providerTextMaxBytes: Number.POSITIVE_INFINITY }],
+    ["fractional call cap", { providerToolCallsMax: 1.5 }],
+  ])("rejects %s", (_label, turnExecutionLimits) => {
+    expect(() =>
+      new AgentBuilder()
+        .provider(new MockProvider())
+        .turnExecutionLimits(turnExecutionLimits as never)
+        .build(),
+    ).toThrow(/positive integer/);
   });
 });

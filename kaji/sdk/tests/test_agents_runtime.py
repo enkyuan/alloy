@@ -365,12 +365,11 @@ async def test_agent_runtime_cancellation():
 
 
 @pytest.mark.asyncio
-async def test_agent_runtime_emits_cancellation_when_provider_raises_mid_stream():
-    """When the provider raises asyncio.CancelledError mid-stream because the
-    token was set, the runtime must catch it and emit CancellationCompleted so
-    observers see the canonical terminal event. Without the try/except in
-    run_turn the exception would escape and observers would never get notified.
-    """
+@pytest.mark.parametrize("after_cancel", ["raise", "yield"])
+async def test_agent_runtime_emits_cancellation_when_provider_cancels_mid_stream(
+    after_cancel: str,
+):
+    """Provider-scope cancellation is terminal whether it raises or yields."""
     store = InMemoryEventStore()
     bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
@@ -403,10 +402,12 @@ async def test_agent_runtime_emits_cancellation_when_provider_raises_mid_stream(
             assert cancellation_token is not None
             captured_token["t"] = cancellation_token
             yield ModelResponseChunk(delta="partial")
-            # Mimic the real provider path: token flips during streaming,
-            # the provider observes it on its next check, and raises.
+            # A broken provider may try to keep yielding after cancelling its
+            # owned scope. The runtime must reject this chunk.
             cancellation_token.cancel()
-            raise asyncio.CancelledError()
+            if after_cancel == "raise":
+                raise asyncio.CancelledError()
+            yield ModelResponseChunk(delta="after-cancel")
 
     provider = RaisingProvider()
     runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
@@ -419,11 +420,13 @@ async def test_agent_runtime_emits_cancellation_when_provider_raises_mid_stream(
 
     events = await store.get_events("cancel-mid")
     types = [e.type for e in events]
+    deltas = [e.delta for e in events if e.type == EventType.AGENT_MESSAGE_DELTA]
 
     assert EventType.AGENT_REASONING_STARTED in types
-    assert EventType.AGENT_MESSAGE_DELTA in types  # partial chunk made it through
-    assert EventType.CANCELLATION_COMPLETED in types
+    assert deltas == ["partial"]
+    assert types.count(EventType.CANCELLATION_COMPLETED) == 1
     assert EventType.AGENT_MESSAGE_COMPLETED not in types
+    assert EventType.AGENT_TURN_FAILED not in types
 
 
 @pytest.mark.asyncio

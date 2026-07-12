@@ -1,16 +1,23 @@
 import asyncio
 import logging
+import math
 from collections import OrderedDict
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from kaji.core.safe_logging import log_redacted_failure
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancellation import CancellationToken, ProviderDeadlineScope
 from kaji.runtime.agents.coordinator import (
     TurnCoordinator,
+    TurnLease,
     default_coordinator_for_store,
+)
+from kaji.runtime.agents.limits import (
+    ProviderCancellationContractViolation,
+    TurnExecutionLimits,
+    TurnTimeoutError,
 )
 from kaji.runtime.agents.context import (
     ContextDiagnostics,
@@ -70,6 +77,8 @@ from kaji.runtime.determinism import (
     IdFactory,
     SYSTEM_CLOCK,
     SYSTEM_ID_FACTORY,
+    SYSTEM_TIMER_SCHEDULER,
+    TimerScheduler,
 )
 
 
@@ -107,11 +116,18 @@ class EffectiveRuntimeLimits:
     tool_max_parallel: int
     tool_timeout_seconds: float
     approval_timeout_seconds: float
+    turn_timeout_seconds: float
+    provider_cancellation_grace_seconds: float
+    provider_text_max_bytes: int
+    provider_tool_arguments_max_bytes: int
+    provider_response_max_bytes: int
+    provider_tool_calls_max: int
 
 
 logger = logging.getLogger(__name__)
 
 _PUBLIC_TURN_FAILURE = "Agent turn failed"
+_PUBLIC_TURN_TIMEOUT = "Agent turn timed out"
 
 
 def _copy_stored_event(event: StoredKajiEvent) -> StoredKajiEvent:
@@ -124,6 +140,13 @@ class _TurnEventCollector:
     turn_id: str
     cursor: int
     events: list[StoredKajiEvent] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class _ProviderQuarantine:
+    session_id: str
+    lease: TurnLease
+    settlement: asyncio.Task[None]
 
 
 class _TurnEventEmitter:
@@ -179,11 +202,13 @@ class AgentRuntime:
         default_context: TurnContext | None = None,
         tool_execution_controller: ToolExecutionController | None = None,
         tool_execution_limits: ToolExecutionLimits | None = None,
+        turn_execution_limits: TurnExecutionLimits | None = None,
         tool_idempotency_ledger: ToolIdempotencyLedger | None = None,
         metrics_sink: MetricsSink = NOOP_METRICS,
         trace_sink: TraceSink = NOOP_TRACE,
         clock: Clock | None = None,
         id_factory: IdFactory | None = None,
+        timer_scheduler: TimerScheduler | None = None,
     ):
         resolved_journal: EventJournal = journal or (
             SplitEventJournal(store, bus, metrics_sink=metrics_sink)
@@ -205,7 +230,9 @@ class AgentRuntime:
         self._trace = trace_sink
         self._id_factory = id_factory or SYSTEM_ID_FACTORY
         self._clock_source = SYSTEM_CLOCK if clock is None else clock
+        self._timer_scheduler = timer_scheduler or SYSTEM_TIMER_SCHEDULER
         self._default_context = default_context
+        self.turn_limits = turn_execution_limits or TurnExecutionLimits()
         self.prompt = SystemPrompt(system_prompt)
         self.strategy = strategy or AgentStrategy()
         self.context_window = context_window or ContextWindow()
@@ -220,6 +247,8 @@ class AgentRuntime:
         self._active_projection_sessions: dict[str, int] = {}
         self._turn_event_collectors: dict[str, _TurnEventCollector] = {}
         self._context_diagnostics: dict[str, ContextDiagnostics] = {}
+        self._provider_quarantine: dict[str, _ProviderQuarantine] = {}
+        self._closed = False
         # Tools surfaced to the provider each turn. Empty by default, so a
         # no-tool agent still runs. Pass ``list_tool_specs()`` for the whole
         # registry, or a curated subset (e.g. from a ToolRetriever).
@@ -269,6 +298,7 @@ class AgentRuntime:
                     limits=tool_execution_limits,
                     ledger=tool_idempotency_ledger,
                     clock=self._clock_source.now_monotonic,
+                    timer_scheduler=self._timer_scheduler,
                     metrics_sink=metrics_sink,
                     trace_sink=trace_sink,
                 )
@@ -315,6 +345,59 @@ class AgentRuntime:
         """Report tool calls still running after a bounded shutdown drain."""
         return await self.tool_execution_controller.drain_tools(timeout)
 
+    async def drain_providers(self, timeout: float) -> list[str]:
+        """Release quarantined session leases after real provider settlement."""
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise TypeError("timeout must be a finite non-negative number")
+        if not math.isfinite(float(timeout)) or timeout < 0:
+            raise ValueError("timeout must be a finite non-negative number")
+        records = list(self._provider_quarantine.values())
+        if records:
+
+            async def wait_for_records() -> None:
+                await asyncio.gather(
+                    *(asyncio.shield(record.settlement) for record in records),
+                    return_exceptions=True,
+                )
+
+            settled = asyncio.create_task(wait_for_records())
+            expired = asyncio.get_running_loop().create_future()
+            timer = self._timer_scheduler.call_later(
+                float(timeout),
+                lambda: expired.set_result(None) if not expired.done() else None,
+            )
+            try:
+                await asyncio.wait(
+                    {settled, expired}, return_when=asyncio.FIRST_COMPLETED
+                )
+            finally:
+                timer.cancel()
+                if not expired.done():
+                    expired.cancel()
+            if not settled.done():
+                settled.cancel()
+                with suppress(asyncio.CancelledError):
+                    await settled
+        for record in records:
+            if not record.settlement.done() or record.settlement.cancelled():
+                continue
+            if record.settlement.exception() is not None:
+                continue
+            if self._provider_quarantine.get(record.session_id) is not record:
+                continue
+            await record.lease.release()
+            await self.coordinator.clear_quarantine(record.session_id)
+            self._provider_quarantine.pop(record.session_id, None)
+        return sorted(self._provider_quarantine)
+
+    def close(self) -> None:
+        """Reject future turns without claiming active providers were killed."""
+        self._closed = True
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("Agent runtime is closed")
+
     def effective_limits(self) -> EffectiveRuntimeLimits:
         """Return an immutable snapshot of the limits this runtime will use."""
         tool_limits = self.tool_execution_controller.limits
@@ -325,6 +408,16 @@ class AgentRuntime:
             tool_max_parallel=tool_limits.max_parallel,
             tool_timeout_seconds=tool_limits.timeout_seconds,
             approval_timeout_seconds=tool_limits.approval_timeout_seconds,
+            turn_timeout_seconds=self.turn_limits.timeout_seconds,
+            provider_cancellation_grace_seconds=(
+                self.turn_limits.provider_cancellation_grace_seconds
+            ),
+            provider_text_max_bytes=self.turn_limits.provider_text_max_bytes,
+            provider_tool_arguments_max_bytes=(
+                self.turn_limits.provider_tool_arguments_max_bytes
+            ),
+            provider_response_max_bytes=self.turn_limits.provider_response_max_bytes,
+            provider_tool_calls_max=self.turn_limits.provider_tool_calls_max,
         )
 
     def _resolve_turn_context(self, context: TurnContext | None) -> TurnContext:
@@ -340,19 +433,30 @@ class AgentRuntime:
             return resolved_context
         metadata = dict(default.metadata)
         metadata.update(resolved_context.metadata)
+        deadlines = [
+            value
+            for value in (
+                resolved_context.deadline_monotonic,
+                default.deadline_monotonic,
+            )
+            if value is not None
+        ]
         return TurnContext(
             principal_id=resolved_context.principal_id or default.principal_id,
             request_id=resolved_context.request_id,
             trace_id=resolved_context.trace_id,
-            deadline_monotonic=(
-                resolved_context.deadline_monotonic
-                if resolved_context.deadline_monotonic is not None
-                else default.deadline_monotonic
-            ),
+            deadline_monotonic=min(deadlines) if deadlines else None,
             db=resolved_context.db if resolved_context.db is not None else default.db,
             metadata=metadata,
             id_factory=self._id_factory,
         )
+
+    def _resolve_effective_deadline(self, context: TurnContext) -> TurnContext:
+        now = self._clock_source.now_monotonic()
+        deadline = now + self.turn_limits.timeout_seconds
+        if context.deadline_monotonic is not None:
+            deadline = min(deadline, context.deadline_monotonic)
+        return context.with_deadline_monotonic(deadline)
 
     async def append_event(self, event: NewKajiEvent) -> StoredKajiEvent:
         """Commit an event and immediately advance its cached projection."""
@@ -476,19 +580,44 @@ class AgentRuntime:
         self,
         session_id: str,
         token: CancellationToken,
+        deadline_monotonic: float,
     ) -> AsyncIterator[None]:
         """Measure coordinator wait without coupling sinks to shared coordinators."""
         started = self._clock_source.now_monotonic()
         recorded = False
         try:
-            async with self.coordinator.acquire(session_id, token):
+            async with self.coordinator.acquire(
+                session_id,
+                token,
+                deadline_monotonic=deadline_monotonic,
+                clock=self._clock_source,
+                scheduler=self._timer_scheduler,
+            ) as lease:
                 record_metric(
                     self._metrics,
                     "kaji.turn.queue_wait_ms",
                     (self._clock_source.now_monotonic() - started) * 1_000,
                 )
                 recorded = True
-                yield
+                try:
+                    yield
+                except ProviderCancellationContractViolation as error:
+                    settlement = error._settlement
+                    if not isinstance(settlement, asyncio.Task):
+                        raise RuntimeError(
+                            "provider violation is missing tracked settlement"
+                        ) from error
+                    transferred = lease.transfer()
+                    settlement.add_done_callback(
+                        lambda task: task.exception() if not task.cancelled() else None
+                    )
+                    self._provider_quarantine[session_id] = _ProviderQuarantine(
+                        session_id=session_id,
+                        lease=transferred,
+                        settlement=settlement,
+                    )
+                    await self.coordinator.quarantine(session_id)
+                    raise
         finally:
             if not recorded:
                 record_metric(
@@ -570,31 +699,55 @@ class AgentRuntime:
             and the full ``events`` slice emitted by this call.
         """
         with event_defaults(self._id_factory, self._clock_source):
+            self._ensure_open()
             sid = session_id or self._id_factory.next("session")
             token = cancellation_token or CancellationToken()
-            resolved_context = self._resolve_turn_context(context)
-            async with self._turn_scope(sid, token):
-                async with self._projection_scope(sid):
-                    projector = await self._sync_projection(sid)
-                    turn_id = self._id_factory.next("turn")
-                    collector = _TurnEventCollector(
-                        session_id=sid,
-                        turn_id=turn_id,
-                        cursor=projector.cursor,
-                    )
-                    self._turn_event_collectors[turn_id] = collector
-                    try:
-                        return await self._turn_unlocked(
-                            sid,
-                            prompt,
-                            token,
-                            turn_id,
-                            projector,
-                            collector.events,
-                            resolved_context,
+            resolved_context = self._resolve_effective_deadline(
+                self._resolve_turn_context(context)
+            )
+            assert resolved_context.deadline_monotonic is not None
+            turn_id = self._id_factory.next("turn")
+            acquired = False
+            try:
+                async with self._turn_scope(
+                    sid, token, resolved_context.deadline_monotonic
+                ):
+                    acquired = True
+                    async with self._projection_scope(sid):
+                        projector = await self._sync_projection(sid)
+                        collector = _TurnEventCollector(
+                            session_id=sid,
+                            turn_id=turn_id,
+                            cursor=projector.cursor,
                         )
-                    finally:
-                        self._turn_event_collectors.pop(turn_id, None)
+                        self._turn_event_collectors[turn_id] = collector
+                        try:
+                            return await self._turn_unlocked(
+                                sid,
+                                prompt,
+                                token,
+                                turn_id,
+                                projector,
+                                collector.events,
+                                resolved_context,
+                            )
+                        finally:
+                            self._turn_event_collectors.pop(turn_id, None)
+            except TurnTimeoutError as error:
+                if error.phase == "queue":
+                    await self._record_turn_failure(sid, turn_id, error)
+                raise
+            except asyncio.CancelledError:
+                if token.is_cancelled and not acquired:
+                    await self._emit_for_turn(
+                        CancellationCompleted(session_id=sid, turn_id=turn_id),
+                        turn_id,
+                    )
+                raise
+            except ProviderCancellationContractViolation as error:
+                if not acquired:
+                    await self._record_turn_failure(sid, turn_id, error)
+                raise
 
     async def _turn_unlocked(
         self,
@@ -657,18 +810,43 @@ class AgentRuntime:
         ``append_event(UserMessage(...))`` and ``run_turn()`` separately.
         """
         with event_defaults(self._id_factory, self._clock_source):
+            self._ensure_open()
             token = cancellation_token or CancellationToken()
-            resolved_context = self._resolve_turn_context(context)
-            async with self._turn_scope(session_id, token):
-                async with self._projection_scope(session_id):
-                    await self._sync_projection(session_id)
-                    await self._send_unlocked(
-                        session_id,
-                        content,
-                        token,
-                        self._id_factory.next("turn"),
-                        resolved_context,
+            resolved_context = self._resolve_effective_deadline(
+                self._resolve_turn_context(context)
+            )
+            assert resolved_context.deadline_monotonic is not None
+            turn_id = self._id_factory.next("turn")
+            acquired = False
+            try:
+                async with self._turn_scope(
+                    session_id, token, resolved_context.deadline_monotonic
+                ):
+                    acquired = True
+                    async with self._projection_scope(session_id):
+                        await self._sync_projection(session_id)
+                        await self._send_unlocked(
+                            session_id,
+                            content,
+                            token,
+                            turn_id,
+                            resolved_context,
+                        )
+            except TurnTimeoutError as error:
+                if error.phase == "queue":
+                    await self._record_turn_failure(session_id, turn_id, error)
+                raise
+            except asyncio.CancelledError:
+                if token.is_cancelled and not acquired:
+                    await self._emit_for_turn(
+                        CancellationCompleted(session_id=session_id, turn_id=turn_id),
+                        turn_id,
                     )
+                raise
+            except ProviderCancellationContractViolation as error:
+                if not acquired:
+                    await self._record_turn_failure(session_id, turn_id, error)
+                raise
 
     async def _send_unlocked(
         self,
@@ -721,17 +899,80 @@ class AgentRuntime:
         ``session_id``. To send a message and run in one call, use ``send()``.
         """
         with event_defaults(self._id_factory, self._clock_source):
+            self._ensure_open()
             token = cancellation_token or CancellationToken()
-            resolved_context = self._resolve_turn_context(context)
-            async with self._turn_scope(session_id, token):
-                async with self._projection_scope(session_id):
-                    await self._sync_projection(session_id)
-                    await self._run_turn_unlocked(
-                        session_id,
-                        token,
-                        self._id_factory.next("turn"),
-                        resolved_context,
+            resolved_context = self._resolve_effective_deadline(
+                self._resolve_turn_context(context)
+            )
+            assert resolved_context.deadline_monotonic is not None
+            turn_id = self._id_factory.next("turn")
+            acquired = False
+            try:
+                async with self._turn_scope(
+                    session_id, token, resolved_context.deadline_monotonic
+                ):
+                    acquired = True
+                    async with self._projection_scope(session_id):
+                        await self._sync_projection(session_id)
+                        await self._run_turn_unlocked(
+                            session_id,
+                            token,
+                            turn_id,
+                            resolved_context,
+                        )
+            except TurnTimeoutError as error:
+                if error.phase == "queue":
+                    await self._record_turn_failure(session_id, turn_id, error)
+                raise
+            except asyncio.CancelledError:
+                if token.is_cancelled and not acquired:
+                    await self._emit_for_turn(
+                        CancellationCompleted(session_id=session_id, turn_id=turn_id),
+                        turn_id,
                     )
+                raise
+            except ProviderCancellationContractViolation as error:
+                if not acquired:
+                    await self._record_turn_failure(session_id, turn_id, error)
+                raise
+
+    async def _record_turn_failure(
+        self, session_id: str, turn_id: str, error: Exception
+    ) -> None:
+        fields: dict[str, Any] = {}
+        public_error = _PUBLIC_TURN_FAILURE
+        if isinstance(error, TurnTimeoutError):
+            public_error = _PUBLIC_TURN_TIMEOUT
+            fields = {
+                "error_code": error.code,
+                "phase": error.phase,
+                "retryable": error.retryable,
+                "outcome": error.outcome,
+            }
+        elif isinstance(error, ProviderCancellationContractViolation):
+            fields = {
+                "error_code": error.code,
+                "phase": error.phase,
+                "retryable": error.retryable,
+                "outcome": error.outcome,
+            }
+        try:
+            await self._emit_for_turn(
+                AgentTurnFailed(
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    error=public_error,
+                    **fields,
+                ),
+                turn_id,
+            )
+        except Exception as log_error:
+            log_redacted_failure(
+                logger,
+                logging.WARNING,
+                "Failed to record terminal agent turn failure",
+                log_error,
+            )
 
     async def _run_turn_unlocked(
         self,
@@ -769,24 +1010,7 @@ class AgentRuntime:
         except Exception as error:
             outcome = "failed"
             span_record_error(span, error)
-            try:
-                await self._emit_for_turn(
-                    AgentTurnFailed(
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        error=_PUBLIC_TURN_FAILURE,
-                    ),
-                    turn_id,
-                )
-            except Exception as log_error:
-                # The original operation failure is the public API result. A
-                # secondary journal failure must not replace it.
-                log_redacted_failure(
-                    logger,
-                    logging.WARNING,
-                    "Failed to record terminal agent turn failure",
-                    log_error,
-                )
+            await self._record_turn_failure(session_id, turn_id, error)
             raise
         finally:
             record_metric(
@@ -903,27 +1127,46 @@ class AgentRuntime:
                 },
             )
             try:
-                async for chunk in self.provider.generate_stream(
-                    messages, self._tool_payload, cancellation_token=token
-                ):
-                    if chunk.delta:
-                        full_response += chunk.delta
-                        await emit_turn_event(
-                            AgentMessageDelta(session_id=session_id, delta=chunk.delta)
+                assert turn_context.deadline_monotonic is not None
+                async with ProviderDeadlineScope(
+                    parent=token,
+                    deadline_monotonic=turn_context.deadline_monotonic,
+                    cancellation_grace_seconds=(
+                        self.turn_limits.provider_cancellation_grace_seconds
+                    ),
+                    clock=self._clock_source,
+                    scheduler=self._timer_scheduler,
+                ) as provider_scope:
+                    async for chunk in provider_scope.consume(
+                        self.provider.generate_stream(
+                            messages,
+                            self._tool_payload,
+                            cancellation_token=provider_scope.token,
                         )
+                    ):
+                        if chunk.delta:
+                            full_response += chunk.delta
+                            await emit_turn_event(
+                                AgentMessageDelta(
+                                    session_id=session_id, delta=chunk.delta
+                                )
+                            )
 
-                    if chunk.tool_calls:
-                        tool_calls.extend(chunk.tool_calls)
-                    if chunk.metrics is not None:
-                        stream_metrics = chunk.metrics
-                    if chunk.cost_usd is not None:
-                        stream_cost_usd = chunk.cost_usd
+                        if chunk.tool_calls:
+                            tool_calls.extend(chunk.tool_calls)
+                        if chunk.metrics is not None:
+                            stream_metrics = chunk.metrics
+                        if chunk.cost_usd is not None:
+                            stream_cost_usd = chunk.cost_usd
             except asyncio.CancelledError as error:
                 provider_status = "cancelled"
                 span_record_error(provider_span, error)
                 current = asyncio.current_task()
                 parent_cancelling = current is not None and current.cancelling() > 0
-                if parent_cancelling or not token.is_cancelled:
+                provider_cancelled = provider_scope.token.is_cancelled
+                if parent_cancelling or (
+                    not token.is_cancelled and not provider_cancelled
+                ):
                     # Cancellation came from outside our token (parent task).
                     # Re-raise so the caller observes structured cancellation.
                     raise

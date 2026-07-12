@@ -80,6 +80,15 @@ export interface ModelProviderOptions {
 
 /** Common interface every LLM provider implements. */
 export interface ModelProvider {
+  /**
+   * Custom providers are cooperative cancellation boundaries. Both methods
+   * must observe `options.cancellationToken` while opening and streaming,
+   * stop their underlying request, and let the returned iterator settle when
+   * cancellation is requested. A provider that misses the configured grace
+   * causes a typed contract violation and quarantines that session until a
+   * successful `drainProviders()`. Custom adapters must pass the SDK's
+   * cancellation-contract suite before being described as production-safe.
+   */
   /** Stable low-cardinality family identifier for observability. */
   readonly providerFamily?: ProviderFamily;
   generate(

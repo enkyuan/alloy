@@ -101,6 +101,7 @@ export function resolveOpenRouterOptions(
     model: opts.model,
     temperature: opts.temperature,
     maxTokens: opts.maxTokens,
+    requestTimeoutMs: opts.requestTimeoutMs,
     defaultHeaders: mergeOpenRouterHeaders(opts.defaultHeaders, opts.httpReferer, opts.appTitle),
   };
 }
@@ -157,6 +158,7 @@ export function resolveGeminiOptions(arg?: string | GeminiFactoryOptions): OpenA
     model: opts.model ?? DEFAULT_GEMINI_MODEL,
     temperature: opts.temperature,
     maxTokens: opts.maxTokens,
+    requestTimeoutMs: opts.requestTimeoutMs,
     defaultHeaders: opts.defaultHeaders,
   };
 }

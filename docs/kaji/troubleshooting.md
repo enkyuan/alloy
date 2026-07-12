@@ -20,6 +20,18 @@ The handler had already started, so an external side effect may have happened.
 Do not retry automatically. Reconcile the external system with
 `<session_id>:<tool_call_id>`, then decide whether a manual retry is safe.
 
+## `drainTools()` keeps reporting a tool whose handler never started
+
+The TypeScript runtime waits for the `tool.call.started` append to physically
+settle before it records a timeout failure, so a late Started event cannot
+overtake Failed. A standalone/custom `ToolPlanner` emitter receives the start
+callback's optional `AbortSignal` and must settle when it aborts. The
+`AgentRuntime` custom `EventCommitter.commit()` ABI does not receive that
+signal, so custom committers there must be independently bounded. If either
+boundary never settles, the claim and permit remain owned, retries stay
+blocked, and `drainTools()` continues to report the call. Restart the process;
+do not fabricate a terminal event or retry the call.
+
 ## Subscriber overflow
 
 Catch `EventBufferOverflowError`, record `last_sequence`/`lastSequence`, and

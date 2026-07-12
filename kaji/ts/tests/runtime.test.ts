@@ -7,6 +7,7 @@ import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import type { ModelProviderOptions } from "@/providers/base";
 import { MockProvider } from "@/providers/mock";
+import type { MetricMeasurement, MetricsSink } from "@/observability";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { ContextIntegrityError, buildMessages } from "@/runtime/context";
 import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
@@ -361,13 +362,19 @@ describe("AgentRuntime.runTurn", () => {
     const events = await store.getEvents(s);
     const types = events.map((e) => e.type);
     expect(types).not.toContain(EventType.AGENT_REASONING_STARTED);
-    expect(types).not.toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types.filter((type) => type === EventType.CANCELLATION_COMPLETED)).toHaveLength(1);
     expect(types).not.toContain(EventType.AGENT_MESSAGE_COMPLETED);
   });
 
   it("emits cancellation.completed without completing partial text after mid-stream cancel", async () => {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
+    const measurements: MetricMeasurement[] = [];
+    const metricsSink: MetricsSink = {
+      record(measurement) {
+        measurements.push(measurement);
+      },
+    };
     const provider = {
       generate: async () => ({ content: "", toolCalls: [] }),
       generateStream: async function* (
@@ -380,7 +387,7 @@ describe("AgentRuntime.runTurn", () => {
         yield { delta: "after-cancel", toolCalls: [] };
       },
     };
-    const runtime = new AgentRuntime({ provider, store, bus });
+    const runtime = new AgentRuntime({ provider, store, bus, metricsSink });
     const s = "s-mid-stream-cancel";
     await seed(store, s);
 
@@ -392,8 +399,17 @@ describe("AgentRuntime.runTurn", () => {
       .filter((e) => e.type === EventType.AGENT_MESSAGE_DELTA)
       .map((e) => ("delta" in e ? e.delta : ""));
     expect(deltas).toEqual(["partial"]);
-    expect(types).toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types.filter((type) => type === EventType.CANCELLATION_COMPLETED)).toHaveLength(1);
     expect(types).not.toContain(EventType.AGENT_MESSAGE_COMPLETED);
+    expect(types).not.toContain(EventType.AGENT_TURN_FAILED);
+    expect(
+      measurements.some(
+        (measurement) =>
+          measurement.name === "kaji.provider.duration_ms" &&
+          "status" in measurement.labels &&
+          measurement.labels.status === "cancelled",
+      ),
+    ).toBe(true);
   });
 
   it("still rejects provider errors when the cancellation token is not cancelled", async () => {
@@ -519,7 +535,7 @@ describe("AgentRuntime.send", () => {
 
     const types = (await store.getEvents(s)).map((e) => e.type);
     expect(types).not.toContain(EventType.USER_MESSAGE);
-    expect(types).not.toContain(EventType.CANCELLATION_COMPLETED);
+    expect(types.filter((type) => type === EventType.CANCELLATION_COMPLETED)).toHaveLength(1);
   });
 });
 

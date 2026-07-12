@@ -30,11 +30,31 @@ import {
 } from "@/tools/planner";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
-import { systemClock, systemIdFactory, type Clock, type IdFactory } from "@/internal/uuid";
-import { CancellationError, CancellationToken } from "@/runtime/cancellation";
+import {
+  systemClock,
+  systemIdFactory,
+  systemTimerScheduler,
+  type Clock,
+  type IdFactory,
+  type TimerHandle,
+  type TimerScheduler,
+} from "@/internal/uuid";
+import {
+  CancellationError,
+  CancellationToken,
+  createDeadlineCancellationScope,
+} from "@/runtime/cancellation";
+import {
+  resolveTurnExecutionLimits,
+  providerViolationSettlement,
+  ProviderCancellationContractViolation,
+  TurnTimeoutError,
+  type TurnExecutionLimits,
+} from "@/runtime/limits";
 import {
   DEFAULT_CONTEXT_WINDOW,
   MissingToolIdentityError,
+  assertNoLegacyDeadline,
   assertNonEmptyContextId,
   assertValidDeadline,
   buildContext,
@@ -47,6 +67,7 @@ import {
 } from "@/runtime/context";
 import {
   InMemorySessionTurnCoordinator,
+  type SessionTurnLease,
   type SessionTurnCoordinator,
 } from "@/runtime/session-turn-coordinator";
 import {
@@ -132,6 +153,8 @@ export interface AgentRuntimeOptions {
   toolExecutionLimits?: Partial<ToolExecutionLimits>;
   /** Replace the process-local tool idempotency ledger. */
   toolIdempotencyLedger?: ToolIdempotencyLedger;
+  /** Whole-turn deadline and provider response bounds. */
+  turnExecutionLimits?: Partial<TurnExecutionLimits>;
   /** Explicit defaults for a single-tenant application. */
   defaultContext?: TurnContext;
   /**
@@ -149,6 +172,8 @@ export interface AgentRuntimeOptions {
   idFactory?: IdFactory;
   /** Wall and monotonic clock used by runtime events and timing. */
   clock?: Clock;
+  /** Disposable one-shot timers used for deterministic deadline races. */
+  timerScheduler?: TimerScheduler;
 }
 
 /** Immutable snapshot of the resolved limits used by one runtime instance. */
@@ -159,6 +184,12 @@ export interface EffectiveRuntimeLimits {
   readonly toolMaxParallel: number;
   readonly toolTimeoutMs: number | null;
   readonly approvalTimeoutMs: number;
+  readonly turnTimeoutMs: number;
+  readonly providerCancellationGraceMs: number;
+  readonly providerTextMaxBytes: number;
+  readonly providerToolArgumentsMaxBytes: number;
+  readonly providerResponseMaxBytes: number;
+  readonly providerToolCallsMax: number;
 }
 
 export interface RunTurnOptions {
@@ -173,10 +204,21 @@ export interface TurnOptions {
   context?: TurnContext;
 }
 
-interface ResolvedTurnContext extends TurnContext {
+interface ResolvedTurnContext {
+  readonly principalId?: string;
   readonly requestId: string;
   readonly traceId: string;
+  readonly deadlineMonotonicMs: number;
+  readonly db?: unknown;
   readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+interface ProviderQuarantineRecord {
+  readonly sessionId: string;
+  readonly lease: SessionTurnLease;
+  readonly settlement: Promise<void>;
+  settled: boolean;
+  failed: boolean;
 }
 
 /**
@@ -232,6 +274,10 @@ export class AgentRuntime {
   private readonly trace: TraceSink;
   private readonly idFactory: IdFactory;
   private readonly clock: Clock;
+  private readonly turnLimits: Readonly<TurnExecutionLimits>;
+  private readonly timerScheduler: TimerScheduler;
+  private readonly providerQuarantine = new Map<string, ProviderQuarantineRecord>();
+  private closed = false;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
    * set is fixed at construction, `null` when the runtime must rebuild a
@@ -253,6 +299,8 @@ export class AgentRuntime {
     this.trace = options.traceSink ?? NOOP_TRACE;
     this.idFactory = options.idFactory ?? systemIdFactory;
     this.clock = options.clock ?? systemClock;
+    this.timerScheduler = options.timerScheduler ?? systemTimerScheduler;
+    this.turnLimits = resolveTurnExecutionLimits(options.turnExecutionLimits);
     this.store = options.store;
     if (options.committer !== undefined) {
       if (options.committer.store !== options.store) {
@@ -284,9 +332,10 @@ export class AgentRuntime {
       this.defaultContext = undefined;
     } else {
       const context = options.defaultContext;
+      assertNoLegacyDeadline(context);
       if (context.requestId !== undefined) assertNonEmptyContextId(context.requestId, "requestId");
       if (context.traceId !== undefined) assertNonEmptyContextId(context.traceId, "traceId");
-      assertValidDeadline(context.deadlineMs);
+      assertValidDeadline(context.deadlineAtMs, "deadlineAtMs");
       this.defaultContext = Object.freeze({
         ...context,
         ...(context.principalId === undefined
@@ -312,6 +361,7 @@ export class AgentRuntime {
         metricsSink: this.metrics,
         traceSink: this.trace,
         monotonicNow: () => this.clock.nowMonotonic(),
+        timerScheduler: this.timerScheduler,
       });
     // Planner resolution:
     //  1. Explicit planner wins.
@@ -333,6 +383,7 @@ export class AgentRuntime {
       traceSink: this.trace,
       idFactory: this.idFactory,
       clock: this.clock,
+      timerScheduler: this.timerScheduler,
       specs: new Map(tools.map((spec) => [spec.name, spec])),
       executionController: this.toolExecutionController,
     });
@@ -347,6 +398,43 @@ export class AgentRuntime {
     return this.toolExecutionController.drain(timeoutMs);
   }
 
+  async drainProviders(timeoutMs: number): Promise<readonly string[]> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+      throw new RangeError("timeoutMs must be a finite non-negative number");
+    }
+    const records = [...this.providerQuarantine.values()];
+    if (records.length > 0) {
+      let timer: TimerHandle | undefined;
+      const timeout = new Promise<void>((resolve) => {
+        timer = this.timerScheduler.schedule(timeoutMs, resolve);
+      });
+      try {
+        await Promise.race([
+          Promise.allSettled(records.map((record) => record.settlement)),
+          timeout,
+        ]);
+      } finally {
+        timer?.cancel();
+      }
+    }
+    for (const record of records) {
+      if (!record.settled || record.failed) continue;
+      if (this.providerQuarantine.get(record.sessionId) !== record) continue;
+      await record.lease.release();
+      await this.turnCoordinator.clearQuarantine(record.sessionId);
+      this.providerQuarantine.delete(record.sessionId);
+    }
+    return [...this.providerQuarantine.keys()].sort();
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+
+  private ensureOpen(): void {
+    if (this.closed) throw new Error("Agent runtime is closed");
+  }
+
   /** Return an immutable snapshot of the limits this runtime will use. */
   effectiveLimits(): Readonly<EffectiveRuntimeLimits> {
     const toolLimits = this.toolExecutionController.limits;
@@ -357,11 +445,18 @@ export class AgentRuntime {
       toolMaxParallel: toolLimits.maxParallel,
       toolTimeoutMs: toolLimits.timeoutMs,
       approvalTimeoutMs: toolLimits.approvalTimeoutMs,
+      turnTimeoutMs: this.turnLimits.turnTimeoutMs,
+      providerCancellationGraceMs: this.turnLimits.providerCancellationGraceMs,
+      providerTextMaxBytes: this.turnLimits.providerTextMaxBytes,
+      providerToolArgumentsMaxBytes: this.turnLimits.providerToolArgumentsMaxBytes,
+      providerResponseMaxBytes: this.turnLimits.providerResponseMaxBytes,
+      providerToolCallsMax: this.turnLimits.providerToolCallsMax,
     });
   }
 
   private resolveTurnContext(context?: TurnContext): ResolvedTurnContext {
     const fallback = this.defaultContext;
+    if (context !== undefined) assertNoLegacyDeadline(context);
     const metadata = {
       ...(fallback?.metadata ?? {}),
       ...(context?.metadata ?? {}),
@@ -369,16 +464,30 @@ export class AgentRuntime {
     const principalId = context?.principalId ?? fallback?.principalId;
     const requestId = context?.requestId ?? fallback?.requestId ?? this.idFactory.next("request");
     const traceId = context?.traceId ?? fallback?.traceId ?? this.idFactory.next("trace");
-    const deadlineMs = context?.deadlineMs ?? fallback?.deadlineMs;
+    assertValidDeadline(context?.deadlineAtMs, "deadlineAtMs");
+    assertValidDeadline(fallback?.deadlineAtMs, "deadlineAtMs");
+    const deadlineAtValues = [context?.deadlineAtMs, fallback?.deadlineAtMs].filter(
+      (value): value is number => value !== undefined,
+    );
+    const deadlineAtMs = deadlineAtValues.length === 0 ? undefined : Math.min(...deadlineAtValues);
     const db = context?.db ?? fallback?.db;
     assertNonEmptyContextId(requestId, "requestId");
     assertNonEmptyContextId(traceId, "traceId");
-    assertValidDeadline(deadlineMs);
+    assertValidDeadline(deadlineAtMs, "deadlineAtMs");
+    const nowMonotonic = this.clock.nowMonotonic();
+    let deadlineMonotonicMs = nowMonotonic + this.turnLimits.turnTimeoutMs;
+    if (deadlineAtMs !== undefined) {
+      const converted = nowMonotonic + (deadlineAtMs - this.clock.nowWallSeconds() * 1_000);
+      deadlineMonotonicMs = Math.min(deadlineMonotonicMs, converted);
+    }
+    if (!Number.isFinite(deadlineMonotonicMs)) {
+      throw new TypeError("resolved deadlineMonotonicMs must be finite");
+    }
     return Object.freeze({
       ...(principalId === undefined ? {} : { principalId: normalizePrincipalId(principalId) }),
       requestId,
       traceId,
-      ...(deadlineMs === undefined ? {} : { deadlineMs }),
+      deadlineMonotonicMs,
       ...(db === undefined ? {} : { db }),
       metadata: snapshotContextMetadata(metadata),
     });
@@ -499,9 +608,11 @@ export class AgentRuntime {
     return diagnostics === undefined ? undefined : Object.freeze({ ...diagnostics });
   }
 
-  private runCoordinated<T>(
+  private async runCoordinated<T>(
     sessionId: string,
+    turnId: string,
     token: CancellationToken,
+    deadlineMonotonicMs: number,
     operation: () => Promise<T>,
   ): Promise<T> {
     const queuedAt = this.clock.nowMonotonic();
@@ -516,15 +627,63 @@ export class AgentRuntime {
         {},
       );
     };
-    return this.turnCoordinator
-      .runExclusive(sessionId, token, () => {
-        recordWait();
-        return operation();
-      })
-      .catch((error: unknown) => {
-        recordWait();
-        throw error;
+    let lease: SessionTurnLease;
+    try {
+      lease = await this.turnCoordinator.acquire(sessionId, token, {
+        deadlineMonotonicMs,
+        clock: this.clock,
+        scheduler: this.timerScheduler,
       });
+    } catch (error) {
+      recordWait();
+      if (error instanceof TurnTimeoutError && error.phase === "queue") {
+        await this.recordTurnFailure(sessionId, turnId, error);
+      } else if (error instanceof ProviderCancellationContractViolation) {
+        await this.recordTurnFailure(sessionId, turnId, error);
+      } else if (error instanceof CancellationError && token.isCancelled) {
+        await this.appendEvent(
+          this.event({
+            type: EventType.CANCELLATION_COMPLETED,
+            session_id: sessionId,
+            turn_id: turnId,
+          }),
+        );
+      }
+      throw error;
+    }
+    let transferred = false;
+    try {
+      recordWait();
+      return await operation();
+    } catch (error) {
+      if (error instanceof ProviderCancellationContractViolation) {
+        const settlement = providerViolationSettlement(error);
+        if (settlement === undefined) throw error;
+        const transferredLease = lease.transfer();
+        const record: ProviderQuarantineRecord = {
+          sessionId,
+          lease: transferredLease,
+          settlement,
+          settled: false,
+          failed: false,
+        };
+        this.providerQuarantine.set(sessionId, record);
+        void settlement.then(
+          () => {
+            record.settled = true;
+          },
+          () => {
+            record.settled = true;
+            record.failed = true;
+          },
+        );
+        transferred = true;
+        await this.turnCoordinator.quarantine(sessionId);
+      }
+      throw error;
+    } finally {
+      if (!transferred) await lease.release();
+    }
   }
 
   /**
@@ -535,11 +694,12 @@ export class AgentRuntime {
    * Errors from the underlying loop propagate unchanged.
    */
   async turn(prompt: string, options: TurnOptions = {}): Promise<TurnResult> {
+    this.ensureOpen();
     const sessionId = options.sessionId ?? this.idFactory.next("session");
     const turnId = this.idFactory.next("turn");
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
-    return this.runCoordinated(sessionId, token, () =>
+    return this.runCoordinated(sessionId, turnId, token, context.deadlineMonotonicMs, () =>
       this.withProjectionSession(sessionId, async () => {
         const projector = await this.syncProjection(sessionId);
         const turnEvents: StoredKajiEvent[] = [];
@@ -580,10 +740,11 @@ export class AgentRuntime {
    * and then `runTurn()` separately.
    */
   async send(sessionId: string, content: string, options: RunTurnOptions = {}): Promise<void> {
+    this.ensureOpen();
     const turnId = this.idFactory.next("turn");
     const token = options.cancellationToken ?? new CancellationToken();
     const context = this.resolveTurnContext(options.context);
-    await this.runCoordinated(sessionId, token, () =>
+    await this.runCoordinated(sessionId, turnId, token, context.deadlineMonotonicMs, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
         await this.sendUnlocked(sessionId, content, turnId, token, context);
@@ -622,10 +783,11 @@ export class AgentRuntime {
   }
 
   async runTurn(sessionId: string, options: RunTurnOptions = {}): Promise<void> {
+    this.ensureOpen();
     const token = options.cancellationToken ?? new CancellationToken();
     const turnId = this.idFactory.next("turn");
     const context = this.resolveTurnContext(options.context);
-    await this.runCoordinated(sessionId, token, () =>
+    await this.runCoordinated(sessionId, turnId, token, context.deadlineMonotonicMs, () =>
       this.withProjectionSession(sessionId, async () => {
         await this.syncProjection(sessionId);
         await this.runTurnUnlocked(sessionId, turnId, token, context);
@@ -701,21 +863,33 @@ export class AgentRuntime {
           "provider.family": family,
         });
         try {
-          for await (const chunk of this.provider.generateStream(messages, tools, {
-            cancellationToken: token,
-            metricsSink: this.metrics,
-          })) {
-            token.throwIfCancelled();
-            if (chunk.delta) {
-              content += chunk.delta;
-              await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+          const scope = createDeadlineCancellationScope(
+            token,
+            turnContext.deadlineMonotonicMs,
+            this.turnLimits.providerCancellationGraceMs,
+            this.clock,
+            this.timerScheduler,
+          );
+          try {
+            for await (const chunk of scope.consume(
+              this.provider.generateStream(messages, tools, {
+                cancellationToken: scope.token,
+                metricsSink: this.metrics,
+              }),
+            )) {
+              if (chunk.delta) {
+                content += chunk.delta;
+                await emit({ type: EventType.AGENT_MESSAGE_DELTA, delta: chunk.delta });
+              }
+              toolCalls.push(...chunk.toolCalls);
+              if (chunk.usage) usage = chunk.usage;
+              if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
             }
-            toolCalls.push(...chunk.toolCalls);
-            if (chunk.usage) usage = chunk.usage;
-            if (chunk.costUsd !== undefined) costUsd = chunk.costUsd;
+          } finally {
+            scope.dispose();
           }
         } catch (error) {
-          providerStatus = token.isCancelled ? "cancelled" : "error";
+          providerStatus = error instanceof CancellationError ? "cancelled" : "error";
           providerSpan.recordError(error);
           throw error;
         } finally {
@@ -788,12 +962,7 @@ export class AgentRuntime {
       }
       turnOutcome = "failed";
       turnSpan.recordError(error);
-      try {
-        await emit({ type: EventType.AGENT_TURN_FAILED, error: PUBLIC_TURN_FAILURE });
-      } catch {
-        // Keep the operation failure as the public API result if recording its
-        // terminal event independently fails.
-      }
+      await this.recordTurnFailure(sessionId, turnId, error);
       throw error;
     } finally {
       recordMetric(
@@ -804,6 +973,43 @@ export class AgentRuntime {
       );
       recordMetric(this.metrics, "kaji.turn.iterations", iterations, { outcome: turnOutcome });
       turnSpan.end();
+    }
+  }
+
+  private async recordTurnFailure(
+    sessionId: string,
+    turnId: string,
+    error: unknown,
+  ): Promise<void> {
+    const timeout = error instanceof TurnTimeoutError ? error : undefined;
+    const providerViolation =
+      error instanceof ProviderCancellationContractViolation ? error : undefined;
+    try {
+      await this.appendEvent(
+        this.event({
+          type: EventType.AGENT_TURN_FAILED,
+          session_id: sessionId,
+          turn_id: turnId,
+          error: timeout === undefined ? PUBLIC_TURN_FAILURE : "Agent turn timed out",
+          ...(timeout === undefined
+            ? providerViolation === undefined
+              ? {}
+              : {
+                  error_code: providerViolation.code,
+                  phase: providerViolation.phase,
+                  retryable: providerViolation.retryable,
+                  outcome: providerViolation.outcome,
+                }
+            : {
+                error_code: timeout.code,
+                phase: timeout.phase,
+                retryable: timeout.retryable,
+                outcome: timeout.outcome,
+              }),
+        }),
+      );
+    } catch {
+      // The original operation failure remains the public API result.
     }
   }
 }

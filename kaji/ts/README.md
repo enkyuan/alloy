@@ -58,7 +58,7 @@ import {
   AgentBuilder,
   OpenAIProvider,
   Integration,
-  CancellationToken,
+  deadlineAfter,
   tool,
 } from "@kaji/sdk";
 import { z } from "zod";
@@ -82,20 +82,12 @@ const runtime = new AgentBuilder()
   .systemPrompt("You are a weather assistant.")
   .build();
 
-const token = new CancellationToken();
-const cancelAt = setTimeout(() => token.cancel(), 30_000);
-let result;
-try {
-  result = await runtime.turn("Weather in Seattle?", {
-    cancellationToken: token,
-    context: {
-      principalId: "weather-app",
-      deadlineMs: Date.now() + 30_000,
-    },
-  });
-} finally {
-  clearTimeout(cancelAt);
-}
+const result = await runtime.turn("Weather in Seattle?", {
+  context: {
+    principalId: "weather-app",
+    deadlineAtMs: deadlineAfter(30_000),
+  },
+});
 console.log(result.text, result.sessionId, result.turnId);
 
 for (const e of result.events) {
@@ -108,6 +100,12 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
+
+`deadlineAtMs` is an absolute Unix epoch value; use `deadlineAfter()` when the
+caller has a duration. An earlier caller deadline can tighten, but never extend,
+the configured 120-second whole-turn default covering queue wait, provider open
+and streaming, approval, and tool work. Cooperative provider shutdown may use
+the additional configured cancellation grace.
 
 Catch a Kaji `ProviderError`, then call `normalizeProviderError(error)` for the
 redaction-safe `type`, `code`, `service`, `action`, `status`, and `retryable`

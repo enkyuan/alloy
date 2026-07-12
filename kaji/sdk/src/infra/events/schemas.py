@@ -238,6 +238,18 @@ class AgentTurnFailed(BaseEvent):
     type: Literal[EventType.AGENT_TURN_FAILED] = EventType.AGENT_TURN_FAILED
     turn_id: str = Field(min_length=1)
     error: str = Field(min_length=1)
+    error_code: Optional[str] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    phase: Optional[
+        Literal["queue", "provider_open", "provider_stream", "approval", "tool"]
+    ] = Field(default=None, exclude_if=lambda value: value is None)
+    retryable: Optional[bool] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    outcome: Optional[Literal["not_started", "failed", "unknown"]] = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
     @field_validator("error")
     @classmethod
@@ -342,6 +354,7 @@ class ToolApprovalRejected(BaseEvent):
     error_code: Literal[
         "APPROVAL_REJECTED",
         "APPROVAL_TIMEOUT",
+        "TURN_TIMEOUT",
         "TOOL_CANCELLED",
         "APPROVAL_UNAVAILABLE",
     ]

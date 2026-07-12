@@ -43,6 +43,10 @@
     { "id": "started-timeout", "kind": "runtime", "fixture": "started-timeout", "controls": "default", "input": { "session_id": "session-started-timeout", "prompts": ["timeout"] }, "schedule": [] },
     { "id": "cancellation-before-start", "kind": "runtime", "fixture": "cancellation-before-start", "controls": "default", "input": { "session_id": "session-cancel-before", "prompts": ["cancel"] }, "schedule": [] },
     { "id": "cancellation-after-start", "kind": "runtime", "fixture": "cancellation-after-start", "controls": "default", "input": { "session_id": "session-cancel-after", "prompts": ["cancel"] }, "schedule": [] },
+    { "id": "turn-queue-timeout", "kind": "runtime", "fixture": "turn-queue-timeout", "controls": "default", "input": { "session_id": "session-turn-queue-timeout", "prompts": ["timeout"] }, "schedule": [] },
+    { "id": "turn-provider-open-timeout", "kind": "runtime", "fixture": "turn-provider-open-timeout", "controls": "default", "input": { "session_id": "session-turn-provider-open-timeout", "prompts": ["timeout"] }, "schedule": [] },
+    { "id": "turn-provider-stream-timeout", "kind": "runtime", "fixture": "turn-provider-stream-timeout", "controls": "default", "input": { "session_id": "session-turn-provider-stream-timeout", "prompts": ["timeout"] }, "schedule": [] },
+    { "id": "turn-cancellation-deadline-tie", "kind": "runtime", "fixture": "turn-cancellation-deadline-tie", "controls": "default", "input": { "session_id": "session-turn-cancellation-deadline-tie", "prompts": ["cancel"] }, "schedule": [] },
 
     { "id": "schema-valid-nested", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "nested object, format, and bounded array" },
     { "id": "schema-valid-const-bounds", "kind": "tool-schema", "fixtureFile": "conformance-valid.json", "fixture": "const and number bounds" },

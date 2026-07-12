@@ -123,6 +123,11 @@ describe("openrouter()", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
     expect(resolveOpenRouterOptions("x/y").defaultHeaders).toBeUndefined();
   });
+
+  it("forwards requestTimeoutMs", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveOpenRouterOptions({ requestTimeoutMs: 1_500 }).requestTimeoutMs).toBe(1_500);
+  });
 });
 
 describe("kimi()", () => {
@@ -138,6 +143,11 @@ describe("kimi()", () => {
   it("forwards a string argument as the model override", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
     expect(resolveKimiOptions("moonshotai/kimi-k2.6").model).toBe("moonshotai/kimi-k2.6");
+  });
+
+  it("forwards requestTimeoutMs", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    expect(resolveKimiOptions({ requestTimeoutMs: 1_500 }).requestTimeoutMs).toBe(1_500);
   });
 });
 
@@ -157,5 +167,10 @@ describe("gemini()", () => {
     const resolved = resolveGeminiOptions("gemini-2.5-pro");
     expect(resolved.apiKey).toBe("g-fallback");
     expect(resolved.model).toBe("gemini-2.5-pro");
+  });
+
+  it("forwards requestTimeoutMs", () => {
+    process.env.GEMINI_API_KEY = "g-key";
+    expect(resolveGeminiOptions({ requestTimeoutMs: 1_500 }).requestTimeoutMs).toBe(1_500);
   });
 });

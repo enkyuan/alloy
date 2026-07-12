@@ -182,6 +182,10 @@ export const AgentTurnFailed = event({
   type: z.literal(EventType.AGENT_TURN_FAILED),
   turn_id: z.string().min(1),
   error: z.string().min(1).superRefine(maxUnicodeCodePoints("error")),
+  error_code: z.string().optional(),
+  phase: z.enum(["queue", "provider_open", "provider_stream", "approval", "tool"]).optional(),
+  retryable: z.boolean().optional(),
+  outcome: z.enum(["not_started", "failed", "unknown"]).optional(),
 });
 
 export const ToolCallRequested = event({
@@ -248,6 +252,7 @@ export const ToolApprovalRejected = event({
   error_code: z.enum([
     "APPROVAL_REJECTED",
     "APPROVAL_TIMEOUT",
+    "TURN_TIMEOUT",
     "TOOL_CANCELLED",
     "APPROVAL_UNAVAILABLE",
   ]),

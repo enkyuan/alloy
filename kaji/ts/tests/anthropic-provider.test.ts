@@ -7,6 +7,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 
 import { ProviderAPIError, ProviderConfigError, ProviderConnectionError } from "@/providers/errors";
 import { AnthropicProvider } from "@/providers/anthropic";
+import { CancellationToken } from "@/runtime/cancellation";
 import { TestAnthropicProvider } from "./helpers/provider-clients";
 
 function makeProvider(client?: unknown) {
@@ -208,6 +209,32 @@ describe("AnthropicProvider.generate", () => {
     expect(() => new AnthropicProvider({ apiKey: "   " })).toThrow(/API key is not configured/);
   });
 
+  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN])(
+    "rejects invalid requestTimeoutMs %s",
+    (requestTimeoutMs) => {
+      expect(() => new AnthropicProvider({ apiKey: "test-key", requestTimeoutMs })).toThrowError(
+        new RangeError("requestTimeoutMs must be a positive finite integer"),
+      );
+    },
+  );
+
+  it("forwards requestTimeoutMs and the cancellation signal", async () => {
+    const create = vi.fn().mockResolvedValue({ content: [] });
+    const provider = new TestAnthropicProvider({ apiKey: "test-key", requestTimeoutMs: 2_500 }, {
+      messages: { create },
+    } as unknown as Anthropic);
+    const token = new CancellationToken();
+
+    await provider.generate([{ role: "user", content: "hi" }], [], {
+      cancellationToken: token,
+    });
+
+    expect(create).toHaveBeenCalledWith(expect.any(Object), {
+      signal: token.signal,
+      timeout: 2_500,
+    });
+  });
+
   it("returns text from a text content block", async () => {
     const provider = makeProvider({
       messages: {
@@ -297,6 +324,29 @@ describe("AnthropicProvider.generate", () => {
 // ---------------------------------------------------------------------------
 
 describe("AnthropicProvider.generateStream", () => {
+  it("forwards requestTimeoutMs and the cancellation signal", async () => {
+    const stream = vi.fn().mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "message_stop" };
+      },
+    });
+    const provider = new TestAnthropicProvider({ apiKey: "test-key", requestTimeoutMs: 2_500 }, {
+      messages: { stream },
+    } as unknown as Anthropic);
+    const token = new CancellationToken();
+
+    for await (const _chunk of provider.generateStream([{ role: "user", content: "hi" }], [], {
+      cancellationToken: token,
+    })) {
+      // Exhaust the stream so the vendor call completes.
+    }
+
+    expect(stream).toHaveBeenCalledWith(expect.any(Object), {
+      signal: token.signal,
+      timeout: 2_500,
+    });
+  });
+
   it("recreates a stream after a 429 before the first event", async () => {
     const stream = vi
       .fn()
