@@ -41,7 +41,7 @@ export function parseAuthArgs(
     } else if (argument === "--force-local" && allowForceLocal) {
       if (forceLocal) return undefined;
       forceLocal = true;
-    } else if (argument.startsWith("--") || name !== undefined) {
+    } else if (argument.startsWith("-") || name !== undefined) {
       return undefined;
     } else {
       name = argument;
@@ -67,16 +67,24 @@ export async function oauthManifest(name: string, opts: RunOptions): Promise<OAu
   if (manifest.auth.provider !== "google") {
     throw new Error(`Integration '${name}' does not use Google OAuth.`);
   }
+  if (manifest.name !== "gmail") {
+    throw new Error("Only integration 'gmail' is supported by the beta OAuth CLI.");
+  }
   return manifest as OAuthLoadedManifest;
 }
 
-export function renderClosedRecovery(error: unknown, output: (message: string) => void): boolean {
+export function renderClosedRecovery(
+  error: unknown,
+  command: string,
+  output: (message: string) => void,
+): boolean {
   const fields = closedRecoveryFields(error);
   if (fields === undefined) return false;
   const recovery = recoveryForReason(fields.reason_code);
   output(`Problem: ${recovery.problem}`);
   output(`Cause: ${recovery.cause}`);
   output(`Fix: ${recovery.fix}`);
+  output(`Command: ${command}`);
   return true;
 }
 
@@ -160,7 +168,7 @@ export async function connectIntegration(rest: string[], opts: RunOptions): Prom
       err("Problem: Gmail authorization was cancelled.");
       err("Cause: The connect operation was cancelled before completion.");
       err(`Fix: Rerun \`${command}\`.`);
-    } else if (!renderClosedRecovery(error, err)) {
+    } else if (!renderClosedRecovery(error, command, err)) {
       err("Problem: Google OAuth consent did not complete.");
       err("Cause: The provider denied or failed installed-app consent.");
       err(`Fix: Rerun \`${command}\`.`);

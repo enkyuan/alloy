@@ -5,7 +5,7 @@ interface PackageIdentity {
   readonly version: string;
 }
 
-export const TYPESCRIPT_SDK_CLI = "bun node_modules/@kaji/sdk/dist/cli/bin.js";
+export const TYPESCRIPT_SDK_CLI = `bun --no-install -e 'import("@kaji/sdk/cli")' --`;
 
 export function packageIdentity(): PackageIdentity {
   const value = JSON.parse(

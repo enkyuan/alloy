@@ -88,7 +88,7 @@ def test_list_integrations_json_emits_valid_object() -> None:
         "experimental_opt_in_required": False,
         "next_commands": {
             "python": "python -m kaji.cli add echo",
-            "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+            "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
         },
     }
 
@@ -101,8 +101,50 @@ def test_list_integrations_human_uses_the_closed_cross_runtime_projection() -> N
     assert lines[0] == "echo  [beta]  v0.1.0  auth=none  runtimes=python,typescript"
     assert lines[1] == "  python: python -m kaji.cli add echo"
     assert (
-        lines[2] == "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add echo"
+        lines[2]
+        == "  typescript: bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo"
     )
+
+
+def test_list_integrations_sorts_rows_by_code_point_like_typescript(
+    tmp_path: Path,
+) -> None:
+    def manifest(name: str) -> Manifest:
+        return Manifest(
+            name=name,
+            version="0.1.0",
+            namespace=name.replace("-", "_"),
+            description=f"{name} fixture.",
+            auth=ManifestAuth(kind="none"),
+            files=("fixture.py",),
+            tools=(),
+            extras=(),
+            peer_deps=MappingProxyType({}),
+            stability="beta",
+            runtimes=("python",),
+            path=tmp_path / name / "manifest.json",
+        )
+
+    output = StringIO()
+    with (
+        patch(
+            "kaji.cli.list_integrations._list",
+            return_value=["aa", "a_", "a0", "a-b"],
+        ),
+        patch(
+            "kaji.cli.list_integrations.load_manifest",
+            side_effect=lambda name: manifest(name),
+        ),
+        patch("sys.stdout", output),
+    ):
+        assert main(["list-integrations", "--json"]) == 0
+
+    assert [row["name"] for row in json.loads(output.getvalue())] == [
+        "a-b",
+        "a0",
+        "a_",
+        "aa",
+    ]
 
 
 def test_list_integrations_returns_nonzero_for_corrupt_registry() -> None:
@@ -228,7 +270,7 @@ def test_oauth_guidance_is_exact_and_only_after_successful_copy(
         "scopes: scope.a, scope.b",
         "docs: https://example.test/oauth",
         "python -m kaji.cli connect gmail --principal <stable-host-principal-id>",
-        "bun node_modules/@kaji/sdk/dist/cli/bin.js connect gmail --principal <stable-host-principal-id>",
+        "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>",
     ):
         assert expected in rendered
     assert "oauth-keyring" not in rendered

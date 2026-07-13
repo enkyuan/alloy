@@ -158,7 +158,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
                     "experimental_opt_in_required": False,
                     "next_commands": {
                         "python": "python -m kaji.cli add echo",
-                        "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+                        "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
                     },
                 },
                 {
@@ -167,7 +167,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
                     "auth": {"kind": "env", "provider": None},
                     "next_commands": {
                         "python": "python -m kaji.cli add github --allow-experimental",
-                        "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
+                        "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
                     },
                 },
             ]

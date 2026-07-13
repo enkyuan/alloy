@@ -38,7 +38,9 @@ def oauth_manifest() -> Manifest:
 
 def namespace(**values: object) -> argparse.Namespace:
     return argparse.Namespace(
-        name="gmail", principal=values.pop("principal", "host:user"), **values
+        name=values.pop("name", "gmail"),
+        principal=values.pop("principal", "host:user"),
+        **values,
     )
 
 
@@ -65,6 +67,14 @@ def test_parser_registers_exact_connect_and_disconnect_grammar() -> None:
         ["connect", "gmail"],
         ["connect", "gmail", "--principal", "a", "--principal", "b"],
         ["disconnect", "gmail", "--principal", "a", "--unknown"],
+        [
+            "disconnect",
+            "gmail",
+            "--principal",
+            "a",
+            "--force-local",
+            "--force-local",
+        ],
     ):
         with pytest.raises(SystemExit) as error:
             parser.parse_args(argv)
@@ -151,6 +161,34 @@ def test_connect_rejects_non_oauth_or_unsupported_provider_without_env(
     monkeypatch.setattr(connect, "_environment", Environment())
     assert connect.run(namespace()) == 1
     assert expected in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", ["connect", "disconnect"])
+def test_oauth_commands_reject_non_gmail_manifest_before_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    from kaji.cli import connect, disconnect
+
+    module = connect if command == "connect" else disconnect
+    collision = replace(oauth_manifest(), name="calendar", namespace="calendar")
+    monkeypatch.setattr(module, "load_manifest", lambda _name: collision)
+    monkeypatch.setattr(module, "_environment", UnreadableEnvironment())
+    monkeypatch.setattr(
+        module,
+        "_production_client",
+        lambda **_kwargs: pytest.fail("storage or client constructed too early"),
+    )
+
+    args = namespace(name="calendar")
+    if command == "disconnect":
+        args.force_local = False
+    assert module.run(args) == 1
+    assert (
+        "Only integration 'gmail' is supported by the beta OAuth CLI."
+        in capsys.readouterr().out
+    )
 
 
 def test_connect_delegates_once_and_prints_only_bounded_success(

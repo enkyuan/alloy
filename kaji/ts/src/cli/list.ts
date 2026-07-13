@@ -73,7 +73,7 @@ export async function listIntegrations(rest: string[], opts: RunOptions): Promis
     err(formatIntegrationError(error));
     return 1;
   }
-  const entries = Object.keys(index.integrations).sort((a, b) => a.localeCompare(b));
+  const entries = Object.keys(index.integrations).sort();
   if (entries.length === 0 && !json) {
     log("No integrations found.");
     return 0;

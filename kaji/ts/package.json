@@ -86,7 +86,8 @@
         "types": "./dist/auth.d.cts",
         "default": "./dist/auth.cjs"
       }
-    }
+    },
+    "./cli": "./dist/cli/package-entry.js"
   },
   "scripts": {
     "prebuild": "bun run scripts/prepare_registry.ts",

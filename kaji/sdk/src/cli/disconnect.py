@@ -22,11 +22,32 @@ from .connect import UniqueValue, _production_client, qualified_command, render_
 _environment: Mapping[str, str] = os.environ
 
 
+class UniqueFlag(argparse.Action):
+    def __init__(
+        self,
+        option_strings: list[str],
+        dest: str,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        _values: object,
+        option_string: str | None = None,
+    ) -> None:
+        if getattr(namespace, self.dest, False):
+            parser.error(f"{option_string} may be specified only once")
+        setattr(namespace, self.dest, True)
+
+
 def add_parser(sub: argparse._SubParsersAction) -> None:
     parser = sub.add_parser("disconnect", help="disconnect an integration OAuth grant")
     parser.add_argument("name")
     parser.add_argument("--principal", required=True, action=UniqueValue, default=None)
-    parser.add_argument("--force-local", action="store_true")
+    parser.add_argument("--force-local", action=UniqueFlag, default=False)
     parser.set_defaults(func=run)
 
 
@@ -34,6 +55,8 @@ def oauth_manifest(name: str) -> Manifest:
     manifest = load_manifest(name)
     if manifest.auth.kind != "oauth":
         raise ValueError(f"Integration {name!r} does not use OAuth.")
+    if manifest.name != "gmail":
+        raise ValueError("Only integration 'gmail' is supported by the beta OAuth CLI.")
     if manifest.auth.provider != "google":
         raise ValueError(f"Integration {name!r} has an unsupported OAuth provider.")
     return manifest

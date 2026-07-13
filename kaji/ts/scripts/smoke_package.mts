@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -199,7 +200,7 @@ function assertCliAddOutput(
   if (!existsSync(copied) || !readFileSync(copied).equals(readFileSync(packaged))) {
     throw new Error("installed add did not copy the packaged Echo asset");
   }
-  if (!output.includes(`Wrote 1 file(s) to ${resolve(destination)}`)) {
+  if (!output.includes(`Wrote 1 file(s) to ${realpathSync(destination)}`)) {
     throw new Error("installed add did not report the copied Echo asset");
   }
 }
@@ -246,7 +247,7 @@ function assertGithubCliAddOutput(
   ) {
     throw new Error("installed GitHub provenance is incomplete");
   }
-  if (!output.includes(`Wrote ${manifest.files.length} file(s) to ${resolve(destination)}`)) {
+  if (!output.includes(`Wrote ${manifest.files.length} file(s) to ${realpathSync(destination)}`)) {
     throw new Error("installed add did not report the copied GitHub assets");
   }
 }
@@ -343,34 +344,40 @@ async function runScaffold(
   symlinkSync(installedConflict, join(ownerCheckBin, "kaji"));
   const ownerEnvironment = {
     ...environment,
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
     PATH: `${ownerCheckBin}${delimiter}${environment.PATH ?? ""}`,
   };
+  const nestedWorkdir = join(bootstrap, "nested", "deeper");
+  mkdirSync(nestedWorkdir, { recursive: true });
   const conflictOutput = await runCommand(
     `${manager}:cli-owner-conflict`,
     "kaji",
     ["--help"],
-    bootstrap,
+    nestedWorkdir,
     ownerEnvironment,
   );
   if (conflictOutput.trim() !== "kaji (conflicting fixture) 9.9.9") {
     throw new Error("bare TypeScript CLI did not select the conflicting fixture");
   }
 
-  const cli = join(bootstrap, "node_modules/@kaji/sdk/dist/cli/bin.js");
-  const cliCommand = manager === "npm" ? nodeBinary : "bun";
+  const cliCommand = "bun";
+  const cli = ["--no-install", "-e", 'import("@kaji/sdk/cli")', "--"];
   const ownerOutput = await runCommand(
     `${manager}:cli-owner-qualified`,
     cliCommand,
-    [cli, "--help"],
-    bootstrap,
+    [...cli, "--help"],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertCliOwnerOutput(ownerOutput);
+  console.log(
+    JSON.stringify({ manager, nestedConflictProof: true, owner: `@kaji/sdk ${PACKAGE_VERSION}` }),
+  );
   const initOutput = await runCommand(
     `${manager}:cli-init`,
     cliCommand,
-    [cli, "--no-color", "init", generated, "--provider", "mock", "--yes"],
-    bootstrap,
+    [...cli, "--no-color", "init", generated, "--provider", "mock", "--yes"],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertCliInitOutput(initOutput, generated);
@@ -380,8 +387,8 @@ async function runScaffold(
   const addOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
-    [cli, "--no-color", "add", "echo", "--out", echo],
-    bootstrap,
+    [...cli, "--no-color", "add", "echo", "--out", echo],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertCliAddOutput(addOutput, echo, installedPackageRoot);
@@ -390,8 +397,8 @@ async function runScaffold(
   const denialOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
-    [cli, "--no-color", "add", "github", "--out", deniedGithub],
-    bootstrap,
+    [...cli, "--no-color", "add", "github", "--out", deniedGithub],
+    nestedWorkdir,
     ownerEnvironment,
     LOCAL_TIMEOUT_MS,
     1,
@@ -402,8 +409,8 @@ async function runScaffold(
   const githubOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
-    [cli, "--no-color", "add", "github", "--allow-experimental", "--out", github],
-    bootstrap,
+    [...cli, "--no-color", "add", "github", "--allow-experimental", "--out", github],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
@@ -422,8 +429,8 @@ async function runScaffold(
   const listOutput = await runCommand(
     `${manager}:cli-list`,
     cliCommand,
-    [cli, "--no-color", "list-integrations", "--json"],
-    bootstrap,
+    [...cli, "--no-color", "list-integrations", "--json"],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertCliListOutput(listOutput);
@@ -433,8 +440,8 @@ async function runScaffold(
   const replayOutput = await runCommand(
     `${manager}:cli-replay`,
     cliCommand,
-    [cli, "--no-color", "replay", replayFixture, "--format", "summary"],
-    bootstrap,
+    [...cli, "--no-color", "replay", replayFixture, "--format", "summary"],
+    nestedWorkdir,
     ownerEnvironment,
   );
   assertCliReplayOutput(replayOutput);
@@ -546,7 +553,6 @@ try {
     [tarball, "zod@4.3.6", "openai@6.42.0", "@anthropic-ai/sdk@0.104.1", nodeTypesPackage],
     npmEnvironment,
   );
-  assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/@kaji/sdk"));
   if (!existsSync(join(installRoot, "node_modules/@kaji/sdk/dist/cli/init-worker.js"))) {
     throw new Error("installed package is missing the pinned init worker");
   }
@@ -581,10 +587,13 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
   writeFileSync(join(installRoot, "smoke.cjs"), cjs);
   await runCommand("exports:esm", nodeBinary, ["smoke.mjs"]);
   await runCommand("exports:cjs", nodeBinary, ["smoke.cjs"]);
-  const ownerOutput = await runCommand("cli:help", nodeBinary, [
-    join(installRoot, "node_modules/@kaji/sdk/dist/cli/bin.js"),
-    "--help",
-  ]);
+  const ownerOutput = await runCommand(
+    "cli:help",
+    "bun",
+    ["--no-install", "-e", 'import("@kaji/sdk/cli")', "--", "--help"],
+    installRoot,
+    { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
+  );
   assertCliOwnerOutput(ownerOutput);
 
   const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
@@ -620,6 +629,7 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
 
   const npmTiming = await runScaffold("npm", tarball, nodeTypesPackage);
   const bunTiming = await runScaffold("bun", tarball, nodeTypesPackage);
+  assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/@kaji/sdk"));
   console.log(JSON.stringify({ npm: npmTiming, bun: bunTiming }));
   console.log(
     "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",

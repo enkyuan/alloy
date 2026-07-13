@@ -18,9 +18,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const shippedSchemaRoot = join(__dirname, "..", "registry");
 const principal = "tenant:user-123";
 const connectCommand =
-  "bun node_modules/@kaji/sdk/dist/cli/bin.js connect gmail --principal <stable-host-principal-id>";
+  "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>";
 const disconnectCommand =
-  "bun node_modules/@kaji/sdk/dist/cli/bin.js disconnect gmail --principal <stable-host-principal-id>";
+  "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- disconnect gmail --principal <stable-host-principal-id>";
 
 type CliOAuthClient = Pick<GoogleOAuthClient, "connect" | "disconnect">;
 
@@ -90,7 +90,7 @@ function manifest(
   return {
     name,
     version: "0.1.0",
-    namespace: name,
+    namespace: name.replaceAll("-", "_"),
     description: `${name} fixture`,
     auth,
     files: [`${name}.ts`],
@@ -113,6 +113,13 @@ function manifest(
 function writeRegistry(root: string): void {
   const manifests = {
     gmail: manifest("gmail", {
+      kind: "oauth",
+      provider: "google",
+      clientIdEnv: "GOOGLE_CLIENT_ID",
+      clientSecretEnv: "GOOGLE_CLIENT_SECRET",
+      scopes: ["scope/read", "scope/write"],
+    }),
+    "gmail-shadow": manifest("gmail-shadow", {
       kind: "oauth",
       provider: "google",
       clientIdEnv: "GOOGLE_CLIENT_ID",
@@ -260,6 +267,10 @@ describe("kaji connect and disconnect", () => {
       "usage: kaji connect <name> --principal <stable-host-principal-id>",
     ],
     [
+      ["connect", "-x", "--principal", principal],
+      "usage: kaji connect <name> --principal <stable-host-principal-id>",
+    ],
+    [
       ["disconnect"],
       "usage: kaji disconnect <name> --principal <stable-host-principal-id> [--force-local]",
     ],
@@ -300,6 +311,7 @@ describe("kaji connect and disconnect", () => {
     ["none", "OAuth authentication"],
     ["token", "OAuth authentication"],
     ["unsupported", "Google OAuth"],
+    ["gmail-shadow", "Only integration 'gmail' is supported by the beta OAuth CLI"],
   ])("rejects %s before environment or auth construction", async (name, expected) => {
     const code = await runCli(["connect", name, "--principal", principal], options());
 
@@ -441,7 +453,7 @@ describe("kaji connect and disconnect", () => {
         `Cause: The ${command} operation was cancelled before completion.`,
       );
       expect(output()).toContain(
-        `Fix: Rerun \`bun node_modules/@kaji/sdk/dist/cli/bin.js ${command} gmail --principal <stable-host-principal-id>\`.`,
+        `Fix: Rerun \`bun --no-install -e 'import("@kaji/sdk/cli")' -- ${command} gmail --principal <stable-host-principal-id>\`.`,
       );
       expect(output()).not.toContain(privateReason);
       expect(output()).not.toContain(principal);
@@ -462,6 +474,7 @@ describe("kaji connect and disconnect", () => {
       "Cause: The stored integration grant cannot be read while Keychain is locked.",
     );
     expect(output()).toContain("Fix: Unlock the login Keychain and retry.");
+    expect(output()).toContain(`Command: ${connectCommand}`);
     expect(output()).not.toContain(principal);
     expect(output()).not.toContain("private-client-id");
     expect(output()).not.toContain("private-client-secret");

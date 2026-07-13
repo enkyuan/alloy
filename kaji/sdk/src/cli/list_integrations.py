@@ -63,7 +63,7 @@ def _row(manifest) -> dict[str, object]:
 
 def run(args: argparse.Namespace) -> int:
     try:
-        manifests = [load_manifest(name) for name in _list()]
+        manifests = [load_manifest(name) for name in sorted(_list())]
     except ManifestError as error:
         print(f"Registry error: {error}")
         return 1

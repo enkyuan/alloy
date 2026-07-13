@@ -66,7 +66,7 @@ export async function disconnectIntegration(rest: string[], opts: RunOptions): P
       err("Problem: Gmail authorization was cancelled.");
       err("Cause: The disconnect operation was cancelled before completion.");
       err(`Fix: Rerun \`${command}\`.`);
-    } else if (!renderClosedRecovery(error, err)) {
+    } else if (!renderClosedRecovery(error, command, err)) {
       err("Problem: OAuth disconnect did not complete.");
       err("Cause: The provider revocation result is unavailable.");
       err(`Fix: Rerun \`${command}\`.`);

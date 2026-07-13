@@ -34,6 +34,7 @@ export default defineConfig([
     entry: [
       "src/cli/bin.ts",
       "src/cli/index.ts",
+      "src/cli/package-entry.ts",
       "src/cli/init-worker.ts",
       "src/cli/integration-copy-worker.mjs",
     ],

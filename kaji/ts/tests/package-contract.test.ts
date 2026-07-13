@@ -23,7 +23,7 @@ const CANONICAL_ECHO_ROW = {
   experimental_opt_in_required: false,
   next_commands: {
     python: "python -m kaji.cli add echo",
-    typescript: "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+    typescript: "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
   },
 };
 
@@ -36,7 +36,8 @@ const CANONICAL_GITHUB_ROW = {
   experimental_opt_in_required: true,
   next_commands: {
     python: "python -m kaji.cli add github --allow-experimental",
-    typescript: "bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
+    typescript:
+      "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
   },
 };
 
@@ -140,11 +141,24 @@ describe("npm contract artifact", () => {
     expect(manifest.bugs).toEqual({ url: "https://github.com/enkyuan/alloy/issues" });
   });
 
+  it("exports the cwd-independent package-qualified CLI entry", () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+    const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
+    const entry = readFileSync(join(packageRoot, "src/cli/package-entry.ts"), "utf8");
+
+    expect(manifest.exports["./cli"]).toBe("./dist/cli/package-entry.js");
+    expect(buildConfig).toContain('"src/cli/package-entry.ts"');
+    expect(entry).toContain("process.argv.slice(1)");
+  });
+
   it("smokes generated npm and Bun projects with both supported compiler lines", () => {
     const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
     const tiers = JSON.parse(
       readFileSync(join(canonicalRoot, "feature-tiers-v1.json"), "utf8"),
-    ) as { cliCommands: { typescript: { stable: string[] } } };
+    ) as {
+      cliCommands: { typescript: { stable: string[] } };
+      packageSubpaths: { typescript: Record<string, unknown> };
+    };
 
     expect(tiers.cliCommands.typescript.stable).toEqual([
       "add",
@@ -154,6 +168,10 @@ describe("npm contract artifact", () => {
       "list-integrations",
       "replay",
     ]);
+    expect(tiers.packageSubpaths.typescript["./cli"]).toEqual({
+      tier: "stable",
+      exports: [],
+    });
 
     for (const required of [
       "assertGeneratedVersions",
@@ -188,13 +206,16 @@ describe("npm contract artifact", () => {
       "assertCliReplayOutput(replayOutput)",
       "createConflictingKajiFixture(root)",
       "conflicting kaji fixture was not installed",
-      'join(bootstrap, "node_modules/@kaji/sdk/dist/cli/bin.js")',
+      'const nestedWorkdir = join(bootstrap, "nested", "deeper")',
+      'BUN_CONFIG_REGISTRY: "http://127.0.0.1:9"',
+      "nestedConflictProof: true",
+      'const cli = ["--no-install", "-e", \'import("@kaji/sdk/cli")\', "--"]',
       "assertCliOwnerOutput(ownerOutput)",
-      '[cli, "--no-color", "add", "echo", "--out", echo]',
-      '[cli, "--no-color", "add", "github", "--out", deniedGithub]',
-      '[cli, "--no-color", "add", "github", "--allow-experimental", "--out", github]',
-      '[cli, "--no-color", "list-integrations", "--json"]',
-      '[cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
+      '[...cli, "--no-color", "add", "echo", "--out", echo]',
+      '[...cli, "--no-color", "add", "github", "--out", deniedGithub]',
+      '[...cli, "--no-color", "add", "github", "--allow-experimental", "--out", github]',
+      '[...cli, "--no-color", "list-integrations", "--json"]',
+      '[...cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
       'join(installedPackageRoot, "registry/echo/index.ts")',
       'join(installedPackageRoot, "registry/github/index.ts")',
       "readFileSync(copied).equals(readFileSync(packaged))",
@@ -219,6 +240,7 @@ describe("npm contract artifact", () => {
     expect(source).not.toContain("completed.stderr");
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
+    expect(source).not.toContain("node_modules/@kaji/sdk/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
@@ -255,12 +277,14 @@ describe("npm contract artifact", () => {
       expect(manifest.version).toBe("0.2.0-beta.1");
       expect(manifest.license).toBe("SEE LICENSE IN LICENSE");
       expect(manifest.files).toContain("LICENSE");
+      expect(manifest.exports["./cli"]).toBe("./dist/cli/package-entry.js");
       expect(paths).toContain("LICENSE");
       expect(runBytes("tar", ["-xOf", tarball, "package/LICENSE"])).toEqual(
         readFileSync(join(repositoryRoot, "LICENSE")),
       );
       for (const required of [
         "dist/cli/bin.js",
+        "dist/cli/package-entry.js",
         "dist/cli/init-worker.js",
         "dist/integrations.js",
         "dist/integrations.cjs",

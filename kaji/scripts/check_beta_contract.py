@@ -1755,6 +1755,10 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
     path = CONTRACTS / "feature-tiers-v1.json"
     expected = {
         "typescript": {
+            "./cli": {
+                "tier": "stable",
+                "exports": [],
+            },
             "./integrations": {
                 "tier": "experimental",
                 "exports": [
@@ -1791,6 +1795,8 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
 
     package_path = ROOT / "kaji" / "ts" / "package.json"
     package = load_json(package_path)
+    if package.get("exports", {}).get("./cli") != "./dist/cli/package-entry.js":
+        raise fail(package_path, "/exports/~1cli", "missing stable CLI export")
     subpath = package.get("exports", {}).get("./integrations")
     if not isinstance(subpath, dict):
         raise fail(
