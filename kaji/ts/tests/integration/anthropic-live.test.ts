@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { AgentBuilder, EventBus, EventType, InMemoryEventStore, ToolRegistry } from "@/index";
+import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "@/index";
 import { AnthropicProvider } from "@/providers/anthropic";
 import { hasKey } from "./helpers";
 
@@ -64,6 +64,7 @@ describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => 
 
   it("executes a real model-requested tool and then emits final text", async () => {
     const marker = "kaji-anthropic-live-marker";
+    const store = new InMemoryEventStore();
     const runtime = new AgentBuilder()
       .provider(
         new AnthropicProvider({
@@ -78,7 +79,7 @@ describe.skipIf(!hasKey("ANTHROPIC_API_KEY"))("AnthropicProvider (live)", () => 
         "You are testing SDK tool execution. You must call the `probe_echo_probe` " +
           "tool exactly once with the marker from the user message before giving a final answer.",
       )
-      .build({ bus: new EventBus(), store: new InMemoryEventStore() });
+      .build({ store });
 
     const result = await runtime.turn(
       `Call \`probe_echo_probe\` with marker \`${marker}\`. ` +

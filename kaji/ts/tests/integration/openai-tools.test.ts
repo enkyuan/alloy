@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { AgentBuilder, EventBus, EventType, InMemoryEventStore, ToolRegistry } from "@/index";
+import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "@/index";
 import { OpenAIProvider } from "@/providers/openai";
 import { hasKey } from "./helpers";
 
@@ -56,7 +56,7 @@ describe.skipIf(!hasKey("OPENAI_API_KEY"))("OpenAI agent tool loop (live)", () =
         "You are testing SDK tool execution. You must call the `probe_echo_probe` " +
           "tool exactly once with the marker from the user message before giving a final answer.",
       )
-      .build({ bus: new EventBus(), store });
+      .build({ store });
 
     const result = await runtime.turn(
       `Call \`probe_echo_probe\` with marker \`${marker}\`. ` +

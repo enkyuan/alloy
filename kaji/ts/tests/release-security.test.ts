@@ -12,6 +12,17 @@ import { ToolExecutionController } from "@/tools/execution";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 
 describe("release redaction boundaries", () => {
+  it.each([
+    "tests/integration/openai-tools.test.ts",
+    "tests/integration/anthropic-live.test.ts",
+  ])("keeps %s on the stable event committer path", (relativePath) => {
+    const source = readFileSync(resolve(relativePath), "utf8");
+
+    expect(source).not.toContain("import { EventBus }");
+    expect(source).not.toMatch(/\.build\(\{[^}]*\bbus:/s);
+    expect(source).toMatch(/\.build\(\{\s*store(?:\s*:|\s*\})/s);
+  });
+
   it("keeps OAuth and Keychain production boundaries fixed and shell-free", async () => {
     const oauthSource = readFileSync(resolve("src/auth/oauth.ts"), "utf8");
     const keychainSource = readFileSync(resolve("src/auth/keychain.ts"), "utf8");
