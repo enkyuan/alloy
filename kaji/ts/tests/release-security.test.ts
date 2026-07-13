@@ -852,6 +852,23 @@ describe("Kaji workflow contracts", () => {
         failureCode: "compatibility_receipt_not_terminal",
       });
 
+      const githubProof = {
+        schemaVersion: 1,
+        evidenceClass: "offline_exact_artifact_smoke",
+        integration: "github",
+        runtime: "python",
+        network: "scripted",
+        liveProvider: false,
+        contractVersion: "1.0.0",
+        caseCount: 23,
+        toolCount: 6,
+        approvalDeniedBeforeCredentialAccess: true,
+        mutationRetries: 0,
+        unknownMutationPreserved: true,
+        sourceRuntimeDetected: false,
+        conclusion: "passed",
+        failureCode: null,
+      };
       const terminal = `${JSON.stringify({
         schemaVersion: 1,
         commit,
@@ -870,6 +887,10 @@ describe("Kaji workflow contracts", () => {
         artifacts: {
           wheel: "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
           sdist: "/artifacts/kaji-0.2.0b1.tar.gz",
+        },
+        githubPackageProofs: {
+          wheel: githubProof,
+          sdist: githubProof,
         },
       })}\n`;
       writeFileSync(receipt, terminal);

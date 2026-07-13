@@ -12,6 +12,24 @@ import pytest
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
 
+GITHUB_PACKAGE_PROOF = {
+    "schemaVersion": 1,
+    "evidenceClass": "offline_exact_artifact_smoke",
+    "integration": "github",
+    "runtime": "python",
+    "network": "scripted",
+    "liveProvider": False,
+    "contractVersion": "1.0.0",
+    "caseCount": 23,
+    "toolCount": 6,
+    "approvalDeniedBeforeCredentialAccess": True,
+    "mutationRetries": 0,
+    "unknownMutationPreserved": True,
+    "sourceRuntimeDetected": False,
+    "conclusion": "passed",
+    "failureCode": None,
+}
+
 
 def _load_script(name: str) -> ModuleType:
     path = SDK_ROOT / "scripts" / name
@@ -34,6 +52,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     scripts = sdk_root / "scripts"
     dist = sdk_root / "dist"
     scripts.mkdir(parents=True)
+    (scripts / "installed_github_smoke.py").write_text("# fixture\n")
     dist.mkdir()
     wheel = dist / "kaji.whl"
     sdist = dist / "kaji.tar.gz"
@@ -51,6 +70,8 @@ def test_release_smoke_preserves_build_verify_install_order(
 
     def fake_run_capture(command: list[str], **_kwargs: object) -> str:
         commands.append(command)
+        if any("installed_github_smoke.py" in part for part in command):
+            return json.dumps(GITHUB_PACKAGE_PROOF)
         if command == ["kaji", "--help"]:
             return "kaji (conflicting fixture) 9.9.9\n"
         if command[1:4] == ["-m", "kaji.cli", "--help"]:
@@ -66,7 +87,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     monkeypatch.setattr(module, "assert_list_integrations_output", lambda *_args: None)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
-    module.release_smoke(Path("dist"))
+    receipt = module.release_smoke(Path("dist"))
 
     assert commands[0] == [sys.executable, str(scripts / "clean_caches.py")]
     assert commands[1][:4] == ["uv", "build", "--sdist", "--wheel"]
@@ -96,6 +117,20 @@ def test_release_smoke_preserves_build_verify_install_order(
         )
         == 2
     )
+    installed_github_smokes = [
+        command
+        for command in commands
+        if any("installed_github_smoke.py" in part for part in command)
+    ]
+    assert len(installed_github_smokes) == 2
+    assert all(command[1] == "-I" for command in installed_github_smokes)
+    assert all("--sandbox-root" in command for command in installed_github_smokes)
+    assert all("--bundle-root" in command for command in installed_github_smokes)
+    assert all("--package-root" in command for command in installed_github_smokes)
+    assert receipt["githubPackageProofs"] == {
+        "sdist": GITHUB_PACKAGE_PROOF,
+        "wheel": GITHUB_PACKAGE_PROOF,
+    }
     assert all(isinstance(command, list) for command in commands)
     assert sum(command[1:3] == ["--no-color", "init"] for command in commands) == 2
     assert (
@@ -116,6 +151,48 @@ def test_release_smoke_preserves_build_verify_install_order(
             for command in commands
         )
         == 2
+    )
+
+
+def test_github_package_proof_receipt_is_closed_and_fail_closed() -> None:
+    module = _load_script("release_smoke.py")
+
+    assert (
+        module.validate_github_package_proof(
+            json.dumps(GITHUB_PACKAGE_PROOF), runtime="python"
+        )
+        == GITHUB_PACKAGE_PROOF
+    )
+
+    mutants = []
+    for key, value in (
+        ("liveProvider", True),
+        ("caseCount", 22),
+        ("toolCount", 5),
+        ("mutationRetries", 1),
+        ("sourceRuntimeDetected", True),
+        ("conclusion", "failed"),
+    ):
+        mutant = dict(GITHUB_PACKAGE_PROOF)
+        mutant[key] = value
+        mutants.append(mutant)
+    extra = dict(GITHUB_PACKAGE_PROOF)
+    extra["repository"] = "private/repository"
+    mutants.append(extra)
+
+    for mutant in mutants:
+        with pytest.raises(SystemExit, match="GitHub package proof"):
+            module.validate_github_package_proof(json.dumps(mutant), runtime="python")
+
+
+@pytest.mark.asyncio
+async def test_installed_github_proof_uses_current_approval_handler_contract() -> None:
+    module = _load_script("installed_github_smoke.py")
+    bundle = SDK_ROOT / "src/integrations/registry/github"
+    client, integration = module._load_copied_modules(bundle)
+
+    assert await module._approval_precedes_credentials(
+        client, integration, "octo/widgets"
     )
 
 

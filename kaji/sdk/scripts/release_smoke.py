@@ -36,6 +36,20 @@ EXPECTED_ECHO_DESCRIPTION = (
     "Proves the cross-language registry contract."
 )
 EXPECTED_GITHUB_DESCRIPTION = "Repository-scoped GitHub code, issue, and comment tools."
+GITHUB_PROOF_ENVIRONMENT = frozenset(
+    {
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "PATH",
+        "SSL_CERT_DIR",
+        "SSL_CERT_FILE",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+    }
+)
 
 
 def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
@@ -99,6 +113,49 @@ def artifact_environment() -> dict[str, str]:
     environment.pop("PYTHONPATH", None)
     environment["PYTHONNOUSERSITE"] = "1"
     return environment
+
+
+def github_proof_environment(environment: dict[str, str]) -> dict[str, str]:
+    proof = {
+        name: environment[name]
+        for name in GITHUB_PROOF_ENVIRONMENT
+        if name in environment
+    }
+    proof.update(
+        {
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONSAFEPATH": "1",
+        }
+    )
+    return proof
+
+
+def validate_github_package_proof(output: str, *, runtime: str) -> dict[str, object]:
+    try:
+        document = json.loads(output)
+    except json.JSONDecodeError:
+        raise SystemExit("FAIL: GitHub package proof emitted invalid JSON") from None
+    expected = {
+        "schemaVersion": 1,
+        "evidenceClass": "offline_exact_artifact_smoke",
+        "integration": "github",
+        "runtime": runtime,
+        "network": "scripted",
+        "liveProvider": False,
+        "contractVersion": "1.0.0",
+        "caseCount": 23,
+        "toolCount": 6,
+        "approvalDeniedBeforeCredentialAccess": True,
+        "mutationRetries": 0,
+        "unknownMutationPreserved": True,
+        "sourceRuntimeDetected": False,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+    if document != expected:
+        raise SystemExit("FAIL: GitHub package proof receipt is invalid")
+    return document
 
 
 def install_conflicting_kaji_binary(workdir: Path) -> Path:
@@ -360,6 +417,7 @@ def smoke_archives(
         )
 
         conflicting_bin = install_conflicting_kaji_binary(workdir)
+        github_package_proofs: dict[str, dict[str, object]] = {}
 
         for package in (wheel, sdist):
             cold_started = time.perf_counter()
@@ -477,6 +535,27 @@ def smoke_archives(
                 environment=environment,
             )
             assert_github_cli_output(github_output, github, registry)
+            proof_runner = artifact_workdir / "installed_github_smoke.py"
+            shutil.copy2(SCRIPTS / "installed_github_smoke.py", proof_runner)
+            proof_output = run_capture(
+                [
+                    str(python),
+                    "-I",
+                    str(proof_runner),
+                    "--sandbox-root",
+                    str(workdir),
+                    "--bundle-root",
+                    str(github),
+                    "--package-root",
+                    str(registry.parents[1]),
+                ],
+                cwd=artifact_workdir,
+                environment=github_proof_environment(environment),
+            )
+            artifact_kind = "wheel" if package == wheel else "sdist"
+            github_package_proofs[artifact_kind] = validate_github_package_proof(
+                proof_output, runtime="python"
+            )
             run_capture(
                 [
                     str(python),
@@ -579,6 +658,7 @@ def smoke_archives(
             "executable": str(Path(sys.executable).resolve()),
         },
         "artifacts": {"wheel": str(wheel), "sdist": str(sdist)},
+        "githubPackageProofs": github_package_proofs,
         "conclusion": "passed",
         "failureCode": None,
     }
@@ -645,6 +725,7 @@ def failure_receipt(
             "wheel": (str(root / "kaji-0.2.0b1-py3-none-any.whl") if root else None),
             "sdist": str(root / "kaji-0.2.0b1.tar.gz") if root else None,
         },
+        "githubPackageProofs": {},
         "conclusion": "failed",
         "failureCode": failure_code,
     }

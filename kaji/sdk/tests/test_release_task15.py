@@ -1762,6 +1762,16 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert "-initial" in job
         assert "compatibility-receipt.json" in job
         assert '.conclusion == "passed" and .failureCode == null' in job
+        assert ".githubPackageProofs" in job
+        assert 'evidenceClass == "offline_exact_artifact_smoke"' in job
+        assert 'network == "scripted"' in job
+        assert ".liveProvider == false" in job
+        assert ".caseCount == 23" in job
+        assert ".toolCount == 6" in job
+        assert ".approvalDeniedBeforeCredentialAccess == true" in job
+        assert ".mutationRetries == 0" in job
+        assert ".unknownMutationPreserved == true" in job
+        assert ".sourceRuntimeDetected == false" in job
         assert ".releaseManifestSha256 | sha256" in job
         assert "all(.[]; sha256)" in job
         assert "compatibility_receipt_not_terminal" in job
@@ -1893,6 +1903,26 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         "conclusion": "passed",
         "failureCode": None,
     }
+
+    def github_proof(runtime: str) -> dict[str, object]:
+        return {
+            "schemaVersion": 1,
+            "evidenceClass": "offline_exact_artifact_smoke",
+            "integration": "github",
+            "runtime": runtime,
+            "network": "scripted",
+            "liveProvider": False,
+            "contractVersion": "1.0.0",
+            "caseCount": 23,
+            "toolCount": 6,
+            "approvalDeniedBeforeCredentialAccess": True,
+            "mutationRetries": 0,
+            "unknownMutationPreserved": True,
+            "sourceRuntimeDetected": False,
+            "conclusion": "passed",
+            "failureCode": None,
+        }
+
     identity_free, identity_free_receipt, _ = run_case(
         "identity-free-passed",
         receipt=identity_free_passed,
@@ -1919,6 +1949,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
                 "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
             },
+            "githubPackageProofs": {
+                "wheel": github_proof("python"),
+                "sdist": github_proof("python"),
+            },
         }
     else:
         passed = {
@@ -1929,6 +1963,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             "artifacts": {
                 "tarball": "/artifacts/kaji-sdk-0.2.0-beta.1.tgz",
                 "package": "/tmp/node_modules/@kaji/sdk",
+            },
+            "githubPackageProofs": {
+                "npm": github_proof("typescript"),
+                "bun": github_proof("typescript"),
             },
         }
     valid_hashes = passed["artifactSha256"]
@@ -1946,6 +1984,21 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         assert invalid_identity.returncode != 0
         assert invalid_receipt["conclusion"] == "failed"
         assert invalid_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    invalid_proofs = dict(cast(dict[str, object], passed["githubPackageProofs"]))
+    first_proof = next(iter(invalid_proofs))
+    invalid_proofs[first_proof] = {
+        **cast(dict[str, object], invalid_proofs[first_proof]),
+        "liveProvider": True,
+    }
+    invalid_proof, invalid_proof_receipt, _ = run_case(
+        "invalid-github-package-proof",
+        receipt={**passed, "githubPackageProofs": invalid_proofs},
+        outcomes=all_success,
+    )
+    assert invalid_proof.returncode != 0
+    assert invalid_proof_receipt["conclusion"] == "failed"
+    assert invalid_proof_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     interrupted_passed, interrupted_receipt, _ = run_case(
         "interrupted-passed",
@@ -2061,6 +2114,26 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "workflowRun": workflow_run,
         "workflowRunAttempt": workflow_run_attempt,
     }
+
+    def github_proof(runtime: str) -> dict[str, object]:
+        return {
+            "schemaVersion": 1,
+            "evidenceClass": "offline_exact_artifact_smoke",
+            "integration": "github",
+            "runtime": runtime,
+            "network": "scripted",
+            "liveProvider": False,
+            "contractVersion": "1.0.0",
+            "caseCount": 23,
+            "toolCount": 6,
+            "approvalDeniedBeforeCredentialAccess": True,
+            "mutationRetries": 0,
+            "unknownMutationPreserved": True,
+            "sourceRuntimeDetected": False,
+            "conclusion": "passed",
+            "failureCode": None,
+        }
+
     evidence_dir = tmp_path / "evidence"
     paths = {
         "compat-python-3.11": evidence_dir / "compat-python-3.11.json",
@@ -2098,6 +2171,10 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
                     "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
                 },
+                "githubPackageProofs": {
+                    "wheel": github_proof("python"),
+                    "sdist": github_proof("python"),
+                },
                 "conclusion": "passed",
                 "failureCode": None,
                 **run_identity,
@@ -2119,6 +2196,10 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "artifacts": {
                     "tarball": "/artifacts/kaji-sdk-0.2.0-beta.1.tgz",
                     "package": f"/opt/kaji-node-{version}/node_modules/@kaji/sdk",
+                },
+                "githubPackageProofs": {
+                    "npm": github_proof("typescript"),
+                    "bun": github_proof("typescript"),
                 },
                 "conclusion": "passed",
                 "failureCode": None,
@@ -2423,6 +2504,7 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
         ("mixed_manifest", "manifest_hash_mismatch"),
         ("stale_workflow_run", "workflow_run_mismatch"),
         ("prior_artifact_id", "release_artifact_id_mismatch"),
+        ("invalid_github_proof", "github_package_proof_invalid"),
         ("source_path", "source_path_detected"),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
@@ -2444,6 +2526,7 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "mixed_manifest": "soak-results",
             "stale_workflow_run": "performance-status",
             "prior_artifact_id": "provider-evidence",
+            "invalid_github_proof": "compat-python-3.11",
             "source_path": "benchmark-results",
             "missing_provider_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
@@ -2465,6 +2548,8 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             )
         elif hostile_case == "prior_artifact_id":
             document["releaseArtifactId"] = "455"
+        elif hostile_case == "invalid_github_proof":
+            document["githubPackageProofs"]["wheel"]["liveProvider"] = True
         elif hostile_case == "source_path":
             document["resolvedPackages"]["typescript"] = str(
                 fixture.workspace / "kaji/ts/dist/node_modules/@kaji/sdk"

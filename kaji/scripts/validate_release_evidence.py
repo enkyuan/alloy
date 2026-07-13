@@ -100,6 +100,33 @@ def validate_manifest(
     )
 
 
+def validate_github_package_proofs(value: Any, runtime: str) -> None:
+    expected_keys = {"sdist", "wheel"} if runtime == "python" else {"bun", "npm"}
+    expected_proof = {
+        "schemaVersion": 1,
+        "evidenceClass": "offline_exact_artifact_smoke",
+        "integration": "github",
+        "runtime": runtime,
+        "network": "scripted",
+        "liveProvider": False,
+        "contractVersion": "1.0.0",
+        "caseCount": 23,
+        "toolCount": 6,
+        "approvalDeniedBeforeCredentialAccess": True,
+        "mutationRetries": 0,
+        "unknownMutationPreserved": True,
+        "sourceRuntimeDetected": False,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+    require(
+        isinstance(value, dict)
+        and set(value) == expected_keys
+        and all(proof == expected_proof for proof in value.values()),
+        "github_package_proof_invalid",
+    )
+
+
 def validate_compatibility(
     document: dict[str, Any],
     *,
@@ -143,6 +170,7 @@ def validate_compatibility(
             and Path(str(artifacts.get("sdist"))).name == PYTHON_SDIST,
             "compatibility_artifacts_invalid",
         )
+        validate_github_package_proofs(document.get("githubPackageProofs"), runtime)
         return
 
     expected_hashes = {TYPESCRIPT_TARBALL: release.artifact_sha256[TYPESCRIPT_TARBALL]}
@@ -162,6 +190,7 @@ def validate_compatibility(
         "compatibility_artifacts_invalid",
     )
     validate_package_path(artifacts.get("package"), "typescript", args.workspace)
+    validate_github_package_proofs(document.get("githubPackageProofs"), "typescript")
 
 
 def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:

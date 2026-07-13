@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { assertCliListOutput } from "../scripts/cli_assertions";
@@ -50,6 +50,24 @@ const CANONICAL_GITHUB_ROW = {
     typescript:
       "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
   },
+};
+
+const GITHUB_PACKAGE_PROOF = {
+  schemaVersion: 1,
+  evidenceClass: "offline_exact_artifact_smoke",
+  integration: "github",
+  runtime: "typescript",
+  network: "scripted",
+  liveProvider: false,
+  contractVersion: "1.0.0",
+  caseCount: 23,
+  toolCount: 6,
+  approvalDeniedBeforeCredentialAccess: true,
+  mutationRetries: 0,
+  unknownMutationPreserved: true,
+  sourceRuntimeDetected: false,
+  conclusion: "passed",
+  failureCode: null,
 };
 
 interface SyncChildOptions {
@@ -309,6 +327,14 @@ describe("npm contract artifact", () => {
       "assertCliAddOutput(addOutput, echo, installedPackageRoot)",
       "assertExperimentalDenial(denialOutput, deniedGithub)",
       "assertGithubCliAddOutput(githubOutput, github, installedPackageRoot)",
+      "assertGithubPackageProof",
+      'const githubProofRunner = join(bootstrap, "installed-github-smoke.mts");',
+      "copyFileSync(INSTALLED_GITHUB_SMOKE, githubProofRunner)",
+      "`${manager}:github-package-proof`",
+      '"--sandbox-root"',
+      '"--bundle-root"',
+      '"--package-root"',
+      "githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof }",
       "assertCliListOutput(listOutput)",
       "assertCliReplayOutput(replayOutput)",
       "createConflictingKajiFixture(root)",
@@ -356,6 +382,100 @@ describe("npm contract artifact", () => {
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
     );
+  });
+
+  it("keeps the installed GitHub behavior receipt deterministic and non-live", () => {
+    const runner = readFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), "utf8");
+    for (const required of [
+      'evidenceClass: "offline_exact_artifact_smoke"',
+      'integration: "github"',
+      'runtime: "typescript"',
+      'network: "scripted"',
+      "liveProvider: false",
+      "caseCount: fixture.cases.length",
+      "toolCount: executedTools.size",
+      "approvalDeniedBeforeCredentialAccess: true",
+      "mutationRetries: 0",
+      "unknownMutationPreserved: true",
+      "sourceRuntimeDetected: false",
+      'const sdk = await import("@kaji/sdk");',
+      'Reflect.set(Socket.prototype, "connect"',
+    ]) {
+      expect(runner).toContain(required);
+    }
+    expect(runner).not.toMatch(/import\s+\{[^}]*\}\s+from "@kaji\/sdk";/);
+    expect(runner.indexOf('Reflect.set(Socket.prototype, "connect"')).toBeLessThan(
+      runner.indexOf('const sdk = await import("@kaji/sdk");'),
+    );
+    expect(runner).not.toContain("process.env.GITHUB_TOKEN");
+    expect(runner).not.toContain("createGitHubRequester");
+    expect(runner).not.toContain("fetch(");
+  });
+
+  it("executes every GitHub package-proof case without network access", () => {
+    const runner = resolve(packageRoot, "scripts/installed-github-smoke.mts");
+    const environment = Object.fromEntries(
+      ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((name) =>
+        process.env[name] === undefined ? [] : [[name, process.env[name]]],
+      ),
+    );
+    const output = runText(
+      "bun",
+      [
+        "--no-install",
+        runner,
+        "--sandbox-root",
+        repositoryRoot,
+        "--bundle-root",
+        resolve(packageRoot, "registry/github"),
+        "--package-root",
+        packageRoot,
+      ],
+      { cwd: packageRoot, env: environment },
+    );
+
+    expect(JSON.parse(output)).toEqual(GITHUB_PACKAGE_PROOF);
+  });
+
+  it("preserves tool error identity across installed ESM and CommonJS entrypoints", () => {
+    const esmRoot = pathToFileURL(resolve(packageRoot, "dist/index.js")).href;
+    const esmIntegrations = pathToFileURL(resolve(packageRoot, "dist/integrations.js")).href;
+    const esm = runText(
+      "node",
+      [
+        "--input-type=module",
+        "--eval",
+        `const root=await import(${JSON.stringify(esmRoot)});` +
+          `const integrations=await import(${JSON.stringify(esmIntegrations)});` +
+          'const error=new integrations.IntegrationAuthRequiredError("github_token_missing");' +
+          "console.log(error instanceof root.ToolExecutionError," +
+          'new root.ToolExecutionError("x","X",false,"failed") instanceof ' +
+          "integrations.IntegrationAuthRequiredError," +
+          '({error_code:"X",retryable:false,outcome:"failed"}) instanceof ' +
+          "root.ToolExecutionError);",
+      ],
+      { cwd: packageRoot },
+    );
+    const cjs = runText(
+      "node",
+      [
+        "--eval",
+        `const root=require(${JSON.stringify(resolve(packageRoot, "dist/index.cjs"))});` +
+          `const integrations=require(${JSON.stringify(
+            resolve(packageRoot, "dist/integrations.cjs"),
+          )});` +
+          'const error=new integrations.IntegrationAuthRequiredError("github_token_missing");' +
+          "console.log(error instanceof root.ToolExecutionError," +
+          'new root.ToolExecutionError("x","X",false,"failed") instanceof ' +
+          "integrations.IntegrationAuthRequiredError," +
+          '({error_code:"X",retryable:false,outcome:"failed"}) instanceof ' +
+          "root.ToolExecutionError);",
+      ],
+      { cwd: packageRoot },
+    );
+
+    expect(esm.trim()).toBe("true false false");
+    expect(cjs.trim()).toBe("true false false");
   });
 
   it("installs packed benchmark seams through public ESM and CommonJS specifiers", () => {

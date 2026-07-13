@@ -455,6 +455,20 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def github_proof($runtime):
+              type == "object" and
+              keys == ["approvalDeniedBeforeCredentialAccess", "caseCount", "conclusion",
+                "contractVersion", "evidenceClass", "failureCode", "integration",
+                "liveProvider", "mutationRetries", "network", "runtime", "schemaVersion",
+                "sourceRuntimeDetected", "toolCount", "unknownMutationPreserved"] and
+              .schemaVersion == 1 and
+              .evidenceClass == "offline_exact_artifact_smoke" and
+              .integration == "github" and .runtime == $runtime and
+              .network == "scripted" and .liveProvider == false and
+              .contractVersion == "1.0.0" and .caseCount == 23 and .toolCount == 6 and
+              .approvalDeniedBeforeCredentialAccess == true and .mutationRetries == 0 and
+              .unknownMutationPreserved == true and .sourceRuntimeDetected == false and
+              .conclusion == "passed" and .failureCode == null;
             (.schemaVersion == 1) and (.commit == $commit) and (
               (.conclusion == "failed" and
                (.failureCode | type == "string" and length > 0)) or
@@ -473,7 +487,11 @@ jobs:
                   (.artifacts |
                     type == "object" and
                     (.wheel | nonempty) and
-                    (.sdist | nonempty))
+                    (.sdist | nonempty)) and
+                  (.githubPackageProofs |
+                    type == "object" and keys == ["sdist", "wheel"] and
+                    (.sdist | github_proof("python")) and
+                    (.wheel | github_proof("python")))
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -485,7 +503,11 @@ jobs:
                   (.artifacts |
                     type == "object" and
                     (.tarball | nonempty) and
-                    (.package | nonempty))
+                    (.package | nonempty)) and
+                  (.githubPackageProofs |
+                    type == "object" and keys == ["bun", "npm"] and
+                    (.bun | github_proof("typescript")) and
+                    (.npm | github_proof("typescript")))
                 end
               ))
             )
@@ -649,6 +671,20 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def github_proof($runtime):
+              type == "object" and
+              keys == ["approvalDeniedBeforeCredentialAccess", "caseCount", "conclusion",
+                "contractVersion", "evidenceClass", "failureCode", "integration",
+                "liveProvider", "mutationRetries", "network", "runtime", "schemaVersion",
+                "sourceRuntimeDetected", "toolCount", "unknownMutationPreserved"] and
+              .schemaVersion == 1 and
+              .evidenceClass == "offline_exact_artifact_smoke" and
+              .integration == "github" and .runtime == $runtime and
+              .network == "scripted" and .liveProvider == false and
+              .contractVersion == "1.0.0" and .caseCount == 23 and .toolCount == 6 and
+              .approvalDeniedBeforeCredentialAccess == true and .mutationRetries == 0 and
+              .unknownMutationPreserved == true and .sourceRuntimeDetected == false and
+              .conclusion == "passed" and .failureCode == null;
             (.schemaVersion == 1) and (.commit == $commit) and (
               (.conclusion == "failed" and
                (.failureCode | type == "string" and length > 0)) or
@@ -667,7 +703,11 @@ jobs:
                   (.artifacts |
                     type == "object" and
                     (.wheel | nonempty) and
-                    (.sdist | nonempty))
+                    (.sdist | nonempty)) and
+                  (.githubPackageProofs |
+                    type == "object" and keys == ["sdist", "wheel"] and
+                    (.sdist | github_proof("python")) and
+                    (.wheel | github_proof("python")))
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -679,7 +719,11 @@ jobs:
                   (.artifacts |
                     type == "object" and
                     (.tarball | nonempty) and
-                    (.package | nonempty))
+                    (.package | nonempty)) and
+                  (.githubPackageProofs |
+                    type == "object" and keys == ["bun", "npm"] and
+                    (.bun | github_proof("typescript")) and
+                    (.npm | github_proof("typescript")))
                 end
               ))
             )

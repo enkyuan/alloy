@@ -1,4 +1,5 @@
 import {
+  copyFileSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -34,6 +35,7 @@ type SmokePhase =
   | `${PackageManager}:cli-owner-qualified`
   | `${PackageManager}:cli-add`
   | `${PackageManager}:cli-inspect`
+  | `${PackageManager}:github-package-proof`
   | `${PackageManager}:cli-list`
   | `${PackageManager}:cli-replay`
   | `${PackageManager}:compile-typescript-5.7`
@@ -57,8 +59,27 @@ interface SmokeArguments {
   output?: string;
 }
 
+interface GitHubPackageProof {
+  readonly schemaVersion: 1;
+  readonly evidenceClass: "offline_exact_artifact_smoke";
+  readonly integration: "github";
+  readonly runtime: "typescript";
+  readonly network: "scripted";
+  readonly liveProvider: false;
+  readonly contractVersion: "1.0.0";
+  readonly caseCount: 23;
+  readonly toolCount: 6;
+  readonly approvalDeniedBeforeCredentialAccess: true;
+  readonly mutationRetries: 0;
+  readonly unknownMutationPreserved: true;
+  readonly sourceRuntimeDetected: false;
+  readonly conclusion: "passed";
+  readonly failureCode: null;
+}
+
 const packageRoot = resolve(import.meta.dir, "..");
 const repositoryRoot = resolve(packageRoot, "../..");
+const INSTALLED_GITHUB_SMOKE = resolve(import.meta.dir, "installed-github-smoke.mts");
 let workdir = "";
 let installRoot = "";
 const nodeBinary = process.env.NODE_BINARY ?? "node";
@@ -167,6 +188,66 @@ function emitReceipt(receipt: Record<string, unknown>, output: string | undefine
     writeFileSync(path, encoded);
   }
   process.stdout.write(encoded);
+}
+
+function githubProofEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const allowed = [
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+  ];
+  const proof = Object.fromEntries(
+    allowed.flatMap((name) =>
+      environment[name] === undefined ? [] : [[name, environment[name]]],
+    ),
+  );
+  return {
+    ...proof,
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
+    NO_COLOR: "1",
+  };
+}
+
+function assertGithubPackageProof(output: string): GitHubPackageProof {
+  let document: unknown;
+  try {
+    document = JSON.parse(output);
+  } catch {
+    throw new Error("GitHub package proof emitted invalid JSON");
+  }
+  const expected: GitHubPackageProof = {
+    schemaVersion: 1,
+    evidenceClass: "offline_exact_artifact_smoke",
+    integration: "github",
+    runtime: "typescript",
+    network: "scripted",
+    liveProvider: false,
+    contractVersion: "1.0.0",
+    caseCount: 23,
+    toolCount: 6,
+    approvalDeniedBeforeCredentialAccess: true,
+    mutationRetries: 0,
+    unknownMutationPreserved: true,
+    sourceRuntimeDetected: false,
+    conclusion: "passed",
+    failureCode: null,
+  };
+  if (
+    typeof document !== "object" ||
+    document === null ||
+    Array.isArray(document) ||
+    JSON.stringify(document) !== JSON.stringify(expected)
+  ) {
+    throw new Error("GitHub package proof receipt is invalid");
+  }
+  return document as GitHubPackageProof;
 }
 
 async function runCommand(
@@ -410,7 +491,11 @@ async function runScaffold(
   manager: PackageManager,
   tarball: string,
   nodeTypesPackage: string,
-): Promise<{ coldSetupToOutputMs: number; warmRunMs: number }> {
+): Promise<{
+  coldSetupToOutputMs: number;
+  warmRunMs: number;
+  githubProof: GitHubPackageProof;
+}> {
   const started = performance.now();
   const root = join(workdir, `${manager}-scaffold`);
   const bootstrap = join(root, "bootstrap");
@@ -513,6 +598,26 @@ async function runScaffold(
     ownerEnvironment,
   );
   assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
+  const githubProofRunner = join(bootstrap, "installed-github-smoke.mts");
+  copyFileSync(INSTALLED_GITHUB_SMOKE, githubProofRunner);
+  const githubProof = assertGithubPackageProof(
+    await runCommand(
+      `${manager}:github-package-proof`,
+      "bun",
+      [
+        "--no-install",
+        githubProofRunner,
+        "--sandbox-root",
+        root,
+        "--bundle-root",
+        github,
+        "--package-root",
+        realpathSync(installedPackageRoot),
+      ],
+      bootstrap,
+      githubProofEnvironment(ownerEnvironment),
+    ),
+  );
   const githubModule = JSON.stringify(join(github, "index.ts"));
   await runCommand(
     `${manager}:cli-inspect`,
@@ -594,7 +699,7 @@ async function runScaffold(
     throw new Error("cold and warm generated scaffold outputs differed");
   }
   const warmRunMs = Math.round((performance.now() - warmStarted) * 1000) / 1000;
-  return { coldSetupToOutputMs, warmRunMs };
+  return { coldSetupToOutputMs, warmRunMs, githubProof };
 }
 
 const rawArguments = process.argv.slice(2);
@@ -769,6 +874,7 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
       artifactSha256: receiptIdentity.artifactSha256,
       runtime: { version: receiptNodeVersion },
       artifacts: { tarball: receiptTarball, package: installedPackagePath },
+      githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
       conclusion: "passed",
       failureCode: null,
     },
@@ -783,6 +889,7 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
       artifactSha256: receiptIdentity?.artifactSha256 ?? {},
       runtime: { version: receiptNodeVersion },
       artifacts: { tarball: receiptTarball, package: installedPackagePath },
+      githubPackageProofs: {},
       conclusion: "failed",
       failureCode: receiptIdentity === null ? "artifact_identity_failed" : "node_smoke_failed",
     },

@@ -16,8 +16,22 @@ export interface ToolFailureFields {
   readonly doc_url?: string;
 }
 
+const TOOL_EXECUTION_ERROR_BRAND = Symbol.for("@kaji/sdk.ToolExecutionError.v1");
+
+function nativeInstanceOf(constructor: Function, value: unknown): boolean {
+  return Function.prototype[Symbol.hasInstance].call(constructor, value) as boolean;
+}
+
 /** Stable public tool failure without retaining the originating exception. */
 export class ToolExecutionError extends Error implements ToolFailureFields {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    if (this !== ToolExecutionError) return nativeInstanceOf(this, value);
+    return (
+      nativeInstanceOf(this, value) ||
+      (value instanceof Error && Reflect.get(value, TOOL_EXECUTION_ERROR_BRAND) === true)
+    );
+  }
+
   constructor(
     message: string,
     readonly error_code: string,
@@ -27,6 +41,7 @@ export class ToolExecutionError extends Error implements ToolFailureFields {
   ) {
     super(message);
     this.name = "ToolExecutionError";
+    Object.defineProperty(this, TOOL_EXECUTION_ERROR_BRAND, { value: true });
     if (recovery !== undefined) {
       this.reason_code = recovery.reason_code;
       this.recovery_code = recovery.recovery_code;
