@@ -9,13 +9,13 @@ against a neutral message and tool-spec format.
 
 ## LLM providers
 
-| Provider    | Python SDK  | TypeScript SDK | Env var             |
-| ----------- | ----------- | -------------- | ------------------- |
-| `openai`    | ✓           | ✓              | `OPENAI_API_KEY`    |
-| `anthropic` | ✓           | ✓              | `ANTHROPIC_API_KEY` |
-| `kimi`      | ✓           | OpenAI-compatible factory | `KIMI_API_KEY`      |
-| `gemini`    | ✓           | OpenAI-compatible factory | `GEMINI_API_KEY`    |
-| `mock`      | ✓           | -              | -                   |
+| Provider    | Python SDK | TypeScript SDK            | Env var             |
+| ----------- | ---------- | ------------------------- | ------------------- |
+| `openai`    | ✓          | ✓                         | `OPENAI_API_KEY`    |
+| `anthropic` | ✓          | ✓                         | `ANTHROPIC_API_KEY` |
+| `kimi`      | ✓          | OpenAI-compatible factory | `KIMI_API_KEY`      |
+| `gemini`    | ✓          | OpenAI-compatible factory | `GEMINI_API_KEY`    |
+| `mock`      | ✓          | -                         | -                   |
 
 The base Python SDK defaults to `mock` for tests. Select a real Python
 provider via `KAJI_MODEL_PROVIDER`; TypeScript callers choose a provider

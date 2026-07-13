@@ -71,10 +71,7 @@ def db_engine():
             conn.execute(text(f"DROP DATABASE IF EXISTS {TEST_DB_NAME}"))
             conn.execute(text(f"CREATE DATABASE {TEST_DB_NAME}"))
     except Exception as e:
-        pytest.skip(
-            "Postgres test database unavailable at "
-            f"{ADMIN_DATABASE_URL}: {e}"
-        )
+        pytest.skip(f"Postgres test database unavailable at {ADMIN_DATABASE_URL}: {e}")
     finally:
         admin_engine.dispose()
 

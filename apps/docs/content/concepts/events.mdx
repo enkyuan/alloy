@@ -15,31 +15,31 @@ the log when you want to inspect, persist, or replay a session.
 The same strings are used over the wire by both SDKs. A log written by
 the Python SDK can be replayed by the TypeScript SDK and vice versa.
 
-| Type                         | Emitted by                        |
-| ---------------------------- | --------------------------------- |
-| `session.created`            | First event in a new session      |
-| `session.closed`             | Session was closed                |
+| Type                         | Emitted by                                    |
+| ---------------------------- | --------------------------------------------- |
+| `session.created`            | First event in a new session                  |
+| `session.closed`             | Session was closed                            |
 | `user.message`               | Caller (via `runtime.turn` or `runtime.send`) |
-| `user.audio.chunk`           | Audio input from user             |
-| `transcript.partial`         | Partial STT transcript available  |
-| `transcript.final`           | Final STT transcript completed    |
-| `memory.retrieval.started`   | RAG query execution began         |
-| `memory.retrieval.completed` | RAG query returned documents      |
-| `agent.reasoning.started`    | Model began reasoning             |
-| `agent.message.delta`        | Provider streaming a text chunk   |
-| `agent.message.completed`    | Provider finished a turn          |
-| `tool.call.requested`        | Model decided to call a tool      |
-| `tool.call.started`          | Tool handler execution began      |
-| `tool.call.completed`        | Tool handler returned a result    |
-| `tool.call.failed`           | Tool handler raised an error      |
-| `tool.approval.requested`    | Awaiting approval to execute tool |
-| `tool.approval.approved`     | User approved tool execution      |
-| `tool.approval.rejected`     | User rejected tool execution      |
-| `workflow.started`           | Multi-step workflow begun         |
-| `workflow.completed`         | Workflow finished successfully    |
-| `workflow.failed`            | Workflow encountered an error     |
-| `cancellation.requested`     | Session cancellation signaled     |
-| `cancellation.completed`     | Session cancellation finalized    |
+| `user.audio.chunk`           | Audio input from user                         |
+| `transcript.partial`         | Partial STT transcript available              |
+| `transcript.final`           | Final STT transcript completed                |
+| `memory.retrieval.started`   | RAG query execution began                     |
+| `memory.retrieval.completed` | RAG query returned documents                  |
+| `agent.reasoning.started`    | Model began reasoning                         |
+| `agent.message.delta`        | Provider streaming a text chunk               |
+| `agent.message.completed`    | Provider finished a turn                      |
+| `tool.call.requested`        | Model decided to call a tool                  |
+| `tool.call.started`          | Tool handler execution began                  |
+| `tool.call.completed`        | Tool handler returned a result                |
+| `tool.call.failed`           | Tool handler raised an error                  |
+| `tool.approval.requested`    | Awaiting approval to execute tool             |
+| `tool.approval.approved`     | User approved tool execution                  |
+| `tool.approval.rejected`     | User rejected tool execution                  |
+| `workflow.started`           | Multi-step workflow begun                     |
+| `workflow.completed`         | Workflow finished successfully                |
+| `workflow.failed`            | Workflow encountered an error                 |
+| `cancellation.requested`     | Session cancellation signaled                 |
+| `cancellation.completed`     | Session cancellation finalized                |
 
 The canonical list is in the SDK source -- check there before relying on
 any event type:
