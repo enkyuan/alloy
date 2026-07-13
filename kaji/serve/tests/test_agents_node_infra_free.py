@@ -41,6 +41,7 @@ def registered_tool():
         name="ping",
         description="Ping a host.",
         parameters={"type": "object", "properties": {}, "required": []},
+        risk="read",
     )
     _TOOL_SPECS[spec.name] = spec
     try:

@@ -29,6 +29,11 @@ runs:
         enable-cache: true
         cache-dependency-glob: ${{ format('{0}/uv.lock', inputs.working-directory) }}
 
+    - name: Check lockfile freshness
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv lock --check
+
     - name: Sync dependencies
       shell: bash
       working-directory: ${{ inputs.working-directory }}
