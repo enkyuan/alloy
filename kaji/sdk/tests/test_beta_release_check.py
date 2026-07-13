@@ -336,7 +336,7 @@ def test_canonical_typescript_test_script_selects_node() -> None:
     assert any(command[-3:] == ("bun", "run", "test:coverage") for command in commands)
 
 
-def test_release_wrapper_builds_before_consumers_from_checkout_without_dist(
+def test_release_wrapper_runs_superset_once_and_builds_before_consumers(
     tmp_path: Path,
 ) -> None:
     checkout = tmp_path / "checkout"
@@ -453,7 +453,7 @@ if name == "npm" and args and args[0] == "pack":
         for index, command in enumerate(commands)
         if command.endswith("|run test:coverage")
     ]
-    assert len(build_indices) == len(test_indices) == 2
+    assert len(build_indices) == len(test_indices) == 1
     assert all(build < test for build, test in zip(build_indices, test_indices))
 
 

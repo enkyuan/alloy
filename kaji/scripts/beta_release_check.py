@@ -256,7 +256,7 @@ def run_required_key_failure(environment: dict[str, str]) -> None:
     print(output, end="" if output.endswith("\n") else "\n")
 
 
-def run_common_checks(environment: dict[str, str]) -> None:
+def run_shared_checks(environment: dict[str, str]) -> None:
     run_no_key_live_skip(environment)
     run_required_key_failure(environment)
     run_in_dir(
@@ -361,6 +361,10 @@ def run_common_checks(environment: dict[str, str]) -> None:
         environment,
         RELEASE_COMMAND_BUDGET,
     )
+
+
+def run_common_checks(environment: dict[str, str]) -> None:
+    run_shared_checks(environment)
     run_gates(common_gates(), environment)
 
     run_in_dir(
@@ -689,11 +693,11 @@ def main() -> int:
         require_command("node", "installed npm package proof", environment)
         require_command("npm", "npm artifact construction", environment)
         require_command("uv", "Python SDK release gates", environment)
-        run_common_checks(environment)
         if args.release:
+            run_shared_checks(environment)
             run_release_checks(environment)
-
-        if not args.release:
+        else:
+            run_common_checks(environment)
             section("Protected keyed provider proof")
             if environment.get("KAJI_RUN_KEYED_LIVE") == "1":
                 run_keyed_provider_proof(environment)
