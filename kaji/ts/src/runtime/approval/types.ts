@@ -48,12 +48,6 @@ export type EventApprovalContext = ApprovalRequestContext;
 /** @deprecated Use ApprovalRequestContext. */
 export type ToolContext = ApprovalRequestContext;
 
-/** @deprecated Implement TypedApprovalHandler directly. */
-export interface ApprovalRequest {
-  call: ToolCall;
-  ctx: ToolContext;
-}
-
 export interface TypedApprovalHandler {
   request(call: ToolCall, context: ApprovalRequestContext): Promise<ApprovalDecision>;
 }

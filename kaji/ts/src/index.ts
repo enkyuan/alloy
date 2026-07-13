@@ -267,7 +267,6 @@ export type {
   TypedApprovalHandler,
   EventBackedApprovalHandler,
   ApprovalDeadlineSource,
-  ApprovalRequest,
   ApprovalRequestContext,
   ApprovalRejectionCode,
   EventApprovalContext,
