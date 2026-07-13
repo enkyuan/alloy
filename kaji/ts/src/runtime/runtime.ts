@@ -852,6 +852,7 @@ export class AgentRuntime {
       if (this.allowToolCalls && tools.length > 0 && turnContext.principalId === undefined) {
         throw new MissingToolIdentityError();
       }
+      const providerTools = this.allowToolCalls ? tools : [];
 
       for (let i = 0; i < this.maxToolIterations; i++) {
         iterations = i + 1;
@@ -900,7 +901,7 @@ export class AgentRuntime {
               for await (const chunk of scope.consume(
                 this.provider.generateStream(
                   messages,
-                  tools,
+                  providerTools,
                   withProviderResponseDiagnostics(
                     {
                       cancellationToken: scope.token,

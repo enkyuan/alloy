@@ -210,6 +210,55 @@ async def test_agent_runtime_tool_loop_end_to_end():
 
 
 @pytest.mark.asyncio
+async def test_agent_runtime_skips_tool_execution_when_allow_tool_calls_false():
+    """Mirrors ts's `allowToolCalls: false` test (tests/runtime-turn.test.ts).
+
+    Disabled tools must not be advertised to the provider, and the turn must
+    complete with a normal assistant response instead of an empty tool-only turn.
+    """
+    store = InMemoryEventStore()
+    bus = MockEventBus()
+
+    executed: List[str] = []
+
+    async def executor(name: str, args: Dict[str, Any]) -> Any:
+        executed.append(name)
+        return {"ok": True}
+
+    planner = ToolPlanner(executor=executor)
+    provider = _RegistryMockProvider()
+
+    tools = [
+        ToolSpec(
+            name="lookup",
+            description="Look something up.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            risk="read",
+        )
+    ]
+
+    runtime = AgentRuntime(
+        bus=bus,
+        store=store,
+        provider=provider,
+        planner=planner,
+        tools=tools,
+        strategy=AgentStrategy(allow_tool_calls=False),
+    )
+
+    await store.append(UserMessage(session_id="no-tools-1", content="Use a tool"))
+    await runtime.run_turn("no-tools-1")
+
+    events = await store.get_events("no-tools-1")
+    types = [e.type for e in events]
+
+    assert executed == []
+    assert EventType.TOOL_CALL_REQUESTED not in types
+    completed = [e for e in events if e.type == EventType.AGENT_MESSAGE_COMPLETED]
+    assert [event.content for event in completed] == ["mock"]
+
+
+@pytest.mark.asyncio
 async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
     store = InMemoryEventStore()
     bus = MockEventBus()

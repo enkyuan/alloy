@@ -54,6 +54,27 @@ describe("AgentRuntime.turn", () => {
     expect(r.toolCallEvents.some((e) => e.type === EventType.TOOL_CALL_REQUESTED)).toBe(true);
   });
 
+  it("skips tool execution when allowToolCalls is false", async () => {
+    const store = new InMemoryEventStore();
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider())
+      .integration({
+        register(registry) {
+          registry.register(
+            { name: "ping", description: "ping", parameters: {}, risk: "read" },
+            async () => ({ pong: true }),
+          );
+        },
+      })
+      .strategy({ allowToolCalls: false })
+      .build({ bus: new EventBus(), store });
+    const r = await runtime.turn("call ping");
+    expect(r.text).toBeTruthy();
+    expect(r.toolCallEvents).toEqual([]);
+    const events = await store.getEvents(r.sessionId);
+    expect(events.some((e) => e.type === EventType.TOOL_CALL_REQUESTED)).toBe(false);
+  });
+
   it("scopes events to this turn only", async () => {
     const { runtime } = build(new MockProvider({ reply: "ok" }));
     const r1 = await runtime.turn("first", { sessionId: "s-1" });

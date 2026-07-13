@@ -1081,6 +1081,7 @@ class AgentRuntime:
             raise MissingToolIdentityError()
 
         emit_turn_event = _TurnEventEmitter(self, turn_id)
+        provider_tools = self._tool_payload if self.strategy.allow_tool_calls else []
 
         iterations = 0
         for iteration in range(self.strategy.max_iterations):
@@ -1170,7 +1171,7 @@ class AgentRuntime:
                             async for chunk in provider_scope.consume(
                                 self.provider.generate_stream(
                                     messages,
-                                    self._tool_payload,
+                                    provider_tools,
                                     cancellation_token=provider_scope.token,
                                     response_limits=self._provider_response_limits,
                                 )
