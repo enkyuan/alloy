@@ -669,6 +669,45 @@ describe("ToolPlanner", () => {
     expect(types).toContain(EventType.TOOL_CALL_COMPLETED);
   });
 
+  it("a broken emit for one call does not drop a sibling call's result", async () => {
+    // A request-event failure for one prepared call must be aggregated only
+    // after the remaining calls are processed, preserving completed outcomes.
+    const emitted: any[] = [];
+    const executor = vi.fn().mockResolvedValue({ done: true });
+
+    const planner = new ToolPlanner({ executor, specs: specsFor("search") });
+    const emit = vi.fn(async (e: any) => {
+      if (e.tool_call_id === "broken" && e.type === EventType.TOOL_CALL_REQUESTED) {
+        throw new Error("store.append failed");
+      }
+      emitted.push(e);
+    });
+
+    await expect(
+      executePlanner(
+        planner,
+        "sess-partial-failure",
+        [
+          { id: "ok", name: "search", arguments: {} },
+          { id: "broken", name: "search", arguments: {} },
+        ],
+        emit,
+      ),
+    ).rejects.toThrow(/1 of 2 tool call\(s\) failed/);
+
+    // "ok" ran to completion and was recorded even though "broken" failed
+    // to even announce itself.
+    expect(executor).toHaveBeenCalledTimes(1);
+    expect(executor).toHaveBeenCalledWith(
+      "search",
+      {},
+      expect.objectContaining({ principalId: "test" }),
+    );
+    expect(
+      emitted.some((e) => e.tool_call_id === "ok" && e.type === EventType.TOOL_CALL_COMPLETED),
+    ).toBe(true);
+  });
+
   it("rejects empty and duplicate call ids for the whole batch before emission", async () => {
     for (const calls of [
       [
