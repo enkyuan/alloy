@@ -20,22 +20,53 @@ from kaji.runtime.tools.registry import ToolHandler, ToolSpec
 
 class _GitHubClientLike(Protocol):
     async def add_comment(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        issue_number: int,
+        body: str,
     ) -> Mapping[str, object]: ...
     async def create_issue(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        title: str,
+        body: str,
     ) -> Mapping[str, object]: ...
     async def get_file(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        path: str,
+        ref: str | None = None,
     ) -> Mapping[str, object]: ...
     async def get_issue(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        issue_number: int,
     ) -> Mapping[str, object]: ...
     async def list_issues(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        state: str = "open",
+        page: int = 1,
+        per_page: int = 10,
     ) -> Mapping[str, object]: ...
     async def search_code(
-        self, context: ToolExecutionContext, **values: Any
+        self,
+        context: ToolExecutionContext,
+        *,
+        repository: str,
+        query: str,
+        page: int = 1,
+        per_page: int = 10,
     ) -> Mapping[str, object]: ...
 
 

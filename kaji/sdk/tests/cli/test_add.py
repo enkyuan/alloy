@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from io import StringIO
 from pathlib import Path
@@ -248,18 +249,14 @@ def test_oauth_guidance_is_exact_and_only_after_successful_copy(
     monkeypatch.setattr(
         add, "install_integration_bundle", lambda *_args, **_kwargs: written
     )
-    args = type(
-        "Args",
-        (),
-        {
-            "name": "gmail",
-            "out": str(tmp_path),
-            "check": False,
-            "force": False,
-            "allow_experimental": True,
-            "json": False,
-        },
-    )()
+    args = argparse.Namespace(
+        name="gmail",
+        out=str(tmp_path),
+        check=False,
+        force=False,
+        allow_experimental=True,
+        json=False,
+    )
     output = StringIO()
     with patch("sys.stdout", output):
         assert add.run(args) == 0

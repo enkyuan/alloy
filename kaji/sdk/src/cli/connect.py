@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import os
+from typing import Any
 
 from kaji.integrations import (
     IntegrationNotFound,
@@ -28,12 +29,12 @@ class UniqueValue(argparse.Action):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        value: str,
+        values: str | Sequence[Any] | None,
         option_string: str | None = None,
     ) -> None:
         if getattr(namespace, self.dest, None) is not None:
             parser.error(f"{option_string} may be specified only once")
-        setattr(namespace, self.dest, value)
+        setattr(namespace, self.dest, values)
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:

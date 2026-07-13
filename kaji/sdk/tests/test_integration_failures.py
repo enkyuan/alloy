@@ -18,6 +18,22 @@ from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.registry import ToolSpec
 
 
+class HostileTransportError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        error_code: str,
+        reason_code: str,
+        recovery_code: str,
+        doc_url: str,
+    ) -> None:
+        super().__init__("hostile transport")
+        self.error_code = error_code
+        self.reason_code = reason_code
+        self.recovery_code = recovery_code
+        self.doc_url = doc_url
+
+
 def _spec() -> ToolSpec:
     return ToolSpec(
         name="integration",
@@ -148,11 +164,12 @@ async def test_canonical_transport_code_survives_as_unknown_outcome(
 @pytest.mark.asyncio
 async def test_mismatched_transport_code_is_not_trusted() -> None:
     recovery = recovery_for_reason("redirect_rejected")
-    error = RuntimeError("hostile transport")
-    error.error_code = "INTEGRATION_RESPONSE_LIMIT"  # type: ignore[attr-defined]
-    error.reason_code = "redirect_rejected"  # type: ignore[attr-defined]
-    error.recovery_code = recovery.recovery_code  # type: ignore[attr-defined]
-    error.doc_url = recovery.doc_url  # type: ignore[attr-defined]
+    error = HostileTransportError(
+        error_code="INTEGRATION_RESPONSE_LIMIT",
+        reason_code="redirect_rejected",
+        recovery_code=recovery.recovery_code,
+        doc_url=recovery.doc_url,
+    )
 
     result, event = await _run(error)
 
@@ -164,7 +181,7 @@ async def test_mismatched_transport_code_is_not_trusted() -> None:
 
 
 def test_tool_failure_rejects_partial_or_mismatched_recovery() -> None:
-    base = {
+    base: dict[str, Any] = {
         "session_id": "session",
         "turn_id": "turn",
         "tool_name": "integration",

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kaji.runtime.context import ToolExecutionContext
+from kaji.runtime.integrations.base import Integration
 from kaji.runtime.tools.registry import list_tool_specs
 
 
@@ -19,10 +20,10 @@ ABI = json.loads(
 )
 
 
-def _document(integration: object) -> dict[str, object]:
-    tools = integration.tools()  # type: ignore[attr-defined]
+def _document(integration: Integration) -> dict[str, object]:
+    tools = integration.tools()
     return {
-        "namespace": integration.namespace,  # type: ignore[attr-defined]
+        "namespace": integration.namespace,
         "tools": [
             {
                 "name": spec.name,

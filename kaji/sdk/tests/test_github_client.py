@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Mapping
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -24,14 +24,21 @@ from kaji.runtime.tools.execution import ToolExecutionError
 
 
 ROOT = Path(__file__).resolve().parents[3]
-FIXTURE = json.loads(
-    (
-        ROOT / "kaji" / "contracts" / "integrations" / "github-api-conformance-v1.json"
-    ).read_text()
+FIXTURE = cast(
+    dict[str, Any],
+    json.loads(
+        (
+            ROOT
+            / "kaji"
+            / "contracts"
+            / "integrations"
+            / "github-api-conformance-v1.json"
+        ).read_text()
+    ),
 )
-CASES = FIXTURE["cases"]
-REPOSITORY = FIXTURE["repository"]
-TOKEN = FIXTURE["token"]
+CASES = cast(list[dict[str, Any]], FIXTURE["cases"])
+REPOSITORY = cast(str, FIXTURE["repository"])
+TOKEN = cast(str, FIXTURE["token"])
 
 
 def context(*, token: CancellationToken | None = None) -> ToolExecutionContext:
@@ -145,7 +152,7 @@ async def test_shared_github_conformance(case: dict[str, Any]) -> None:
     client = GitHubClient(
         token_for=token_for,
         repositories=[REPOSITORY],
-        http=http,  # type: ignore[arg-type]
+        http=http,
         _sleep=sleep,
         _monotonic=lambda: 0.0,
     )
@@ -185,12 +192,12 @@ async def test_rejects_invalid_tokens_before_http(value: object) -> None:
     http = ScriptedHttp([])
 
     async def token_for(_context: ToolExecutionContext) -> str:
-        return value  # type: ignore[return-value]
+        return cast(str, value)
 
     client = GitHubClient(
         token_for=token_for,
         repositories=[REPOSITORY],
-        http=http,  # type: ignore[arg-type]
+        http=http,
     )
     with pytest.raises(IntegrationAuthRequiredError):
         await client.get_issue(context(), repository=REPOSITORY, issue_number=1)
@@ -211,7 +218,7 @@ async def test_rejects_content_path_before_token_or_http(path: str) -> None:
     client = GitHubClient(
         token_for=token_for,
         repositories=[REPOSITORY],
-        http=http,  # type: ignore[arg-type]
+        http=http,
     )
     with pytest.raises(IntegrationPolicyError):
         await client.get_file(context(), repository=REPOSITORY, path=path)
@@ -233,7 +240,7 @@ async def test_request_core_cannot_bypass_content_path_policy(path: str) -> None
     client = GitHubClient(
         token_for=token_for,
         repositories=[REPOSITORY],
-        http=http,  # type: ignore[arg-type]
+        http=http,
     )
     with pytest.raises(IntegrationPolicyError):
         await client.request_json(
@@ -257,7 +264,7 @@ async def test_repository_allowlist_is_validated_and_snapshotted() -> None:
     client = GitHubClient(
         token_for=token_for,
         repositories=repositories,
-        http=http,  # type: ignore[arg-type]
+        http=http,
     )
     repositories.append("other/private")
     with pytest.raises(IntegrationPolicyError):
@@ -268,7 +275,7 @@ async def test_repository_allowlist_is_validated_and_snapshotted() -> None:
         GitHubClient(
             token_for=token_for,
             repositories=["invalid"],
-            http=http,  # type: ignore[arg-type]
+            http=http,
         )
 
 
@@ -297,7 +304,7 @@ async def test_search_validates_every_repository_before_row_cap() -> None:
     client = GitHubClient(
         token_for=lambda _context: asyncio.sleep(0, result=TOKEN),
         repositories=[REPOSITORY],
-        http=http,  # type: ignore[arg-type]
+        http=http,
     )
     with pytest.raises(ToolExecutionError):
         await client.search_code(context(), repository=REPOSITORY, query="needle")
@@ -308,7 +315,7 @@ async def test_search_validates_every_repository_before_row_cap() -> None:
 async def test_provider_identifiers_use_unicode_character_limits(
     field: str, maximum: int
 ) -> None:
-    async def call(value: str) -> object:
+    async def call(value: str) -> Mapping[str, object]:
         if field == "path":
             response: object = {
                 "total_count": 1,
@@ -332,7 +339,7 @@ async def test_provider_identifiers_use_unicode_character_limits(
         client = GitHubClient(
             token_for=lambda _context: asyncio.sleep(0, result=TOKEN),
             repositories=[REPOSITORY],
-            http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),  # type: ignore[arg-type]
+            http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),
         )
         if field == "path":
             return await client.search_code(
@@ -343,9 +350,14 @@ async def test_provider_identifiers_use_unicode_character_limits(
     valid = "é" * maximum
     result = await call(valid)
     if field == "path":
-        assert result["items"][0]["path"] == valid  # type: ignore[index]
+        items = result["items"]
+        assert isinstance(items, list)
+        first = items[0]
+        assert isinstance(first, Mapping)
+        first_row = cast(Mapping[str, object], first)
+        assert first_row["path"] == valid
     else:
-        assert result["title"] == valid  # type: ignore[index]
+        assert result["title"] == valid
     with pytest.raises(ToolExecutionError):
         await call("é" * (maximum + 1))
 
@@ -367,17 +379,23 @@ async def test_fragment_preview_uses_utf8_byte_limit() -> None:
     client = GitHubClient(
         token_for=lambda _context: asyncio.sleep(0, result=TOKEN),
         repositories=[REPOSITORY],
-        http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),  # type: ignore[arg-type]
+        http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),
     )
     result = await client.search_code(context(), repository=REPOSITORY, query="needle")
-    preview = result["items"][0]["fragment"]  # type: ignore[index]
+    items = result["items"]
+    assert isinstance(items, list)
+    first = items[0]
+    assert isinstance(first, Mapping)
+    first_row = cast(Mapping[str, object], first)
+    preview = first_row["fragment"]
+    assert isinstance(preview, str)
     assert preview == "é" * 512
     assert len(preview.encode()) == 1_024
 
 
 @pytest.mark.asyncio
 async def test_issue_body_uses_utf8_byte_limit() -> None:
-    async def call(body: str) -> object:
+    async def call(body: str) -> Mapping[str, object]:
         response = {
             "number": 1,
             "state": "open",
@@ -388,11 +406,11 @@ async def test_issue_body_uses_utf8_byte_limit() -> None:
         client = GitHubClient(
             token_for=lambda _context: asyncio.sleep(0, result=TOKEN),
             repositories=[REPOSITORY],
-            http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),  # type: ignore[arg-type]
+            http=ScriptedHttp([{"status": 200, "headers": {}, "json": response}]),
         )
         return await client.get_issue(context(), repository=REPOSITORY, issue_number=1)
 
-    assert (await call("é" * 8_192))["body"] == "é" * 8_192  # type: ignore[index]
+    assert (await call("é" * 8_192))["body"] == "é" * 8_192
     with pytest.raises(ToolExecutionError):
         await call("é" * 8_193)
 

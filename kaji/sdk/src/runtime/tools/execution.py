@@ -1032,19 +1032,22 @@ class ToolExecutionController:
                         error_code=completed.cause.error_code,
                         retryable=completed.cause.retryable,
                         outcome=completed.cause.outcome,
-                        **recovery,
+                        reason_code=recovery.get("reason_code"),
+                        recovery_code=recovery.get("recovery_code"),
+                        doc_url=recovery.get("doc_url"),
                         cause=completed.cause,
                     )
                     await self.ledger.retryable_failure(claim, _ledger_failure(failure))
                 else:
                     recovery = _integration_transport_failure_fields(completed.cause)
-                    error_code = recovery.pop("error_code", "TOOL_EXECUTION_FAILED")
                     failure = _ToolExecutionFailure(
                         error=_PUBLIC_EXECUTION_FAILURE,
-                        error_code=error_code,
+                        error_code=recovery.get("error_code", "TOOL_EXECUTION_FAILED"),
                         retryable=False,
                         outcome="unknown",
-                        **recovery,
+                        reason_code=recovery.get("reason_code"),
+                        recovery_code=recovery.get("recovery_code"),
+                        doc_url=recovery.get("doc_url"),
                         cause=completed.cause,
                     )
                     await self.ledger.unknown_outcome(claim, _ledger_failure(failure))

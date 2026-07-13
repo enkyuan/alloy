@@ -246,7 +246,7 @@ def install_integration(
         raise ManifestError(
             f"Integration {name!r} is experimental; pass allow_experimental=True"
         )
-    from kaji.integrations.copy import install_integration_bundle
+    from .copy import install_integration_bundle
 
     return list(
         install_integration_bundle(

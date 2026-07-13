@@ -18,11 +18,12 @@ from uuid import uuid4
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError
+from jsonschema.protocols import Validator
 
 from kaji.integrations.validation import ManifestError
 
 if TYPE_CHECKING:
-    from kaji.integrations import Manifest
+    from . import Manifest
 
 
 BundleState = Literal["current", "absent", "outdated", "modified", "demoted"]
@@ -76,7 +77,7 @@ def _contracts_root() -> Path:
 
 
 @lru_cache(maxsize=1)
-def _provenance_validator() -> Draft202012Validator:
+def _provenance_validator() -> Validator:
     schema = json.loads(
         (_contracts_root() / "copy-provenance-v1.schema.json").read_text()
     )
@@ -100,7 +101,16 @@ def _package_license() -> Path:
         raise ManifestError("Installed package license is unavailable") from None
     for relative in installed.files or ():
         if relative.name == "LICENSE":
-            candidate = Path(installed.locate_file(relative))
+            located = installed.locate_file(relative)
+            if isinstance(located, str):
+                path = located
+            elif isinstance(located, os.PathLike):
+                path = located.__fspath__()
+            else:
+                continue
+            if not isinstance(path, str):
+                continue
+            candidate = Path(path)
             if candidate.is_file():
                 return candidate
     raise ManifestError("Installed package license is unavailable")
@@ -312,6 +322,7 @@ def classify_integration_bundle(
             "modified", "local_changes", destination, _observed=observed
         )
     for relative, expected in tracked.items():
+        assert isinstance(relative, str)
         if _digest((destination / relative).read_bytes()) != expected:
             return BundleStatus(
                 "modified", "local_changes", destination, _observed=observed

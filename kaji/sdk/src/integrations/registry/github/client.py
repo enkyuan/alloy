@@ -10,7 +10,7 @@ import json
 import math
 import re
 import time
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 from urllib.parse import quote, unquote
 
 from kaji.infra.events.errors import DurableJsonLimitError, InvalidDurableValueError
@@ -23,7 +23,7 @@ from kaji.integrations.errors import (
     IntegrationRateLimitedError,
     IntegrationTransientReadError,
 )
-from kaji.integrations.fixed_origin import FixedOriginClient, IntegrationResponse
+from kaji.integrations.fixed_origin import IntegrationResponse
 from kaji.runtime.agents.cancellation import CancelledError
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.tools.execution import ToolExecutionError
@@ -49,6 +49,18 @@ _Route = Literal[
     "create_issue",
     "add_comment",
 ]
+
+
+class _GitHubHttp(Protocol):
+    async def request(
+        self,
+        path_and_query: str,
+        *,
+        method: str,
+        headers: Mapping[str, str],
+        body: bytes | None,
+        context: ToolExecutionContext,
+    ) -> IntegrationResponse: ...
 
 
 class _ProviderShapeError(ValueError):
@@ -375,7 +387,7 @@ class GitHubClient:
         *,
         token_for: Callable[[ToolExecutionContext], Awaitable[str]],
         repositories: Collection[str],
-        http: FixedOriginClient,
+        http: _GitHubHttp,
         _sleep: _Sleep = asyncio.sleep,
         _monotonic: _Monotonic = time.monotonic,
     ) -> None:
@@ -663,7 +675,11 @@ class GitHubClient:
         self, context: ToolExecutionContext, delay: float
     ) -> None:
         context.cancellation_token.raise_if_cancelled()
-        sleeping = asyncio.create_task(self._sleep(delay))
+
+        async def sleep() -> None:
+            await self._sleep(delay)
+
+        sleeping = asyncio.create_task(sleep())
         cancelled = asyncio.create_task(context.cancellation_token.wait())
         try:
             done, _ = await asyncio.wait(

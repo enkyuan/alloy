@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -70,11 +70,11 @@ def record(
     refresh: str = "refresh",
     expires: int = 1_700_003_600_000,
     scopes: tuple[str, ...] = SCOPES,
-    state: str = "active",
+    state: Literal["active", "revocation_pending"] = "active",
 ) -> OAuthCredentialRecord:
     return OAuthCredentialRecord(
         schema_version=1,
-        state=state,  # type: ignore[arg-type]
+        state=state,
         tokens=OAuthTokenSet(
             access_token=access,
             refresh_token=refresh,
@@ -102,13 +102,13 @@ class MemoryStore:
     async def save(
         self,
         principal_id: str,
-        value: OAuthCredentialRecord,
+        record: OAuthCredentialRecord,
         cancellation: CancellationToken,
         deadline_monotonic: float | None,
     ) -> None:
         cancellation.raise_if_cancelled()
         self.calls.append(("save", principal_id))
-        self.records[principal_id] = value
+        self.records[principal_id] = record
 
     async def delete(
         self,
@@ -148,11 +148,11 @@ class PausingSaveStore(MemoryStore):
     async def save(
         self,
         principal_id: str,
-        value: OAuthCredentialRecord,
+        record: OAuthCredentialRecord,
         cancellation: CancellationToken,
         deadline_monotonic: float | None,
     ) -> None:
-        del principal_id, value, cancellation
+        del principal_id, record, cancellation
         self.deadlines.append(deadline_monotonic)
         self.save_entered.set()
         try:
@@ -255,7 +255,7 @@ def client(
     client_secret: str | None = None,
     clock: Clock | None = None,
     operation_seconds: float = 30,
-):
+) -> GoogleOAuthClient:
     callback = callback or Callback()
     browser = browser or Browser()
     return _create_google_oauth_client_for_test(
@@ -516,20 +516,20 @@ async def test_scope_drift_delete_finishes_before_new_connect_save() -> None:
 
 @pytest.mark.asyncio
 async def test_confirmed_revoke_uses_internal_cleanup_after_caller_cancel() -> None:
-    cancellation = CancellationToken()
+    caller_cancellation = CancellationToken()
 
     class CancellingHttp(Http):
         async def post_form(
             self,
             endpoint: str,
             form: dict[str, str],
-            request_cancellation: CancellationToken,
+            cancellation: CancellationToken,
             deadline_monotonic: float,
         ) -> _OAuthHttpResponse:
             response = await super().post_form(
-                endpoint, form, request_cancellation, deadline_monotonic
+                endpoint, form, cancellation, deadline_monotonic
             )
-            cancellation.cancel()
+            caller_cancellation.cancel()
             return response
 
     store = MemoryStore({"user-123": record()})
@@ -537,7 +537,7 @@ async def test_confirmed_revoke_uses_internal_cleanup_after_caller_cancel() -> N
         store=store,
         http=CancellingHttp([_OAuthHttpResponse(200, b"")]),
         client_id=None,
-    ).disconnect("user-123", cancellation)
+    ).disconnect("user-123", caller_cancellation)
     assert result == DisconnectResult("deleted", True)
     assert "user-123" not in store.records
 
@@ -819,7 +819,9 @@ def test_file_store_rejects_a_symlink_swapped_at_open(
 def test_credential_wire_is_lower_camel_and_closed() -> None:
     wire = record().to_wire()
     assert set(wire) == {"schemaVersion", "state", "tokens"}
-    assert set(wire["tokens"]) == {
+    tokens = wire["tokens"]
+    assert isinstance(tokens, dict)
+    assert set(tokens) == {
         "accessToken",
         "refreshToken",
         "expiresAtEpochMs",

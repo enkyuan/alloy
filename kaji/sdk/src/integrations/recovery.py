@@ -177,7 +177,11 @@ def closed_recovery_fields(value: object) -> dict[str, str]:
     reason_code = getattr(value, "reason_code", None)
     recovery_code = getattr(value, "recovery_code", None)
     doc_url = getattr(value, "doc_url", None)
-    if not all(isinstance(item, str) for item in (reason_code, recovery_code, doc_url)):
+    if (
+        not isinstance(reason_code, str)
+        or not isinstance(recovery_code, str)
+        or not isinstance(doc_url, str)
+    ):
         return {}
     recovery = INTEGRATION_RECOVERY.get(reason_code)
     if recovery is None or (recovery.recovery_code, recovery.doc_url) != (
@@ -186,7 +190,9 @@ def closed_recovery_fields(value: object) -> dict[str, str]:
     ):
         return {}
     error_code = getattr(value, "error_code", None)
-    if error_code is not None and error_code != recovery.error_code:
+    if error_code is not None and (
+        not isinstance(error_code, str) or error_code != recovery.error_code
+    ):
         return {}
     return {
         "reason_code": reason_code,
@@ -216,7 +222,11 @@ def is_closed_recovery_tuple(
     """Validate all-or-none durable recovery metadata."""
     if reason_code is recovery_code is doc_url is None:
         return True
-    if not all(isinstance(item, str) for item in (reason_code, recovery_code, doc_url)):
+    if (
+        not isinstance(reason_code, str)
+        or not isinstance(recovery_code, str)
+        or not isinstance(doc_url, str)
+    ):
         return False
     recovery = INTEGRATION_RECOVERY.get(reason_code)
     return recovery is not None and (

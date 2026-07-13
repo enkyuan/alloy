@@ -4,8 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json as _json
+from typing import TypedDict
 
-from kaji.integrations import ManifestError, list_integrations as _list, load_manifest
+from kaji.integrations import (
+    Manifest,
+    ManifestError,
+    list_integrations as _list,
+    load_manifest,
+)
 
 from ._pkg import TYPESCRIPT_SDK_CLI
 
@@ -19,7 +25,22 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     p.set_defaults(func=run)
 
 
-def _next_commands(manifest) -> dict[str, str]:
+class _AuthRow(TypedDict):
+    kind: str
+    provider: str | None
+
+
+class _IntegrationRow(TypedDict):
+    name: str
+    version: str
+    stability: str
+    runtimes: list[str]
+    auth: _AuthRow
+    experimental_opt_in_required: bool
+    next_commands: dict[str, str]
+
+
+def _next_commands(manifest: Manifest) -> dict[str, str]:
     experimental = manifest.stability == "experimental"
     commands: dict[str, str] = {}
     for runtime in sorted(manifest.runtimes):
@@ -46,7 +67,7 @@ def _next_commands(manifest) -> dict[str, str]:
     return commands
 
 
-def _row(manifest) -> dict[str, object]:
+def _row(manifest: Manifest) -> _IntegrationRow:
     return {
         "name": manifest.name,
         "version": manifest.version,
@@ -79,7 +100,6 @@ def run(args: argparse.Namespace) -> int:
 
     for row in rows:
         auth = row["auth"]
-        assert isinstance(auth, dict)
         provider = auth["provider"]
         auth_label = auth["kind"] if provider is None else f"{auth['kind']}:{provider}"
         runtimes = ",".join(row["runtimes"])
@@ -88,7 +108,6 @@ def run(args: argparse.Namespace) -> int:
             f"auth={auth_label}  runtimes={runtimes}"
         )
         commands = row["next_commands"]
-        assert isinstance(commands, dict)
         for runtime, command in commands.items():
             print(f"  {runtime}: {command}")
     return 0

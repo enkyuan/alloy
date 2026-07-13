@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import os
+from typing import Any
 
 from kaji.integrations import (
     IntegrationNotFound,
@@ -23,21 +24,14 @@ _environment: Mapping[str, str] = os.environ
 
 
 class UniqueFlag(argparse.Action):
-    def __init__(
-        self,
-        option_strings: list[str],
-        dest: str,
-        **kwargs: object,
-    ) -> None:
-        super().__init__(option_strings, dest, nargs=0, **kwargs)
-
     def __call__(
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        _values: object,
+        values: str | Sequence[Any] | None,
         option_string: str | None = None,
     ) -> None:
+        del values
         if getattr(namespace, self.dest, False):
             parser.error(f"{option_string} may be specified only once")
         setattr(namespace, self.dest, True)
@@ -47,7 +41,7 @@ def add_parser(sub: argparse._SubParsersAction) -> None:
     parser = sub.add_parser("disconnect", help="disconnect an integration OAuth grant")
     parser.add_argument("name")
     parser.add_argument("--principal", required=True, action=UniqueValue, default=None)
-    parser.add_argument("--force-local", action=UniqueFlag, default=False)
+    parser.add_argument("--force-local", action=UniqueFlag, nargs=0, default=False)
     parser.set_defaults(func=run)
 
 
