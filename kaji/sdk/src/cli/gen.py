@@ -8,6 +8,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from kaji.runtime.tools.registry import ToolRisk
+
 HTTP_METHODS = ("get", "post", "put", "patch", "delete", "head", "options", "trace")
 
 
@@ -47,7 +49,7 @@ class ParsedOperation:
     tag: str | None
     path_params: list[str]
     params: list[ParamInfo]
-    risk: str
+    risk: ToolRisk
 
 
 def _extract_param_type(param: dict) -> str:
