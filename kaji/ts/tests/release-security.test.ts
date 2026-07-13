@@ -633,7 +633,7 @@ describe("Kaji workflow contracts", () => {
     const rehearsal = readWorkflow("kaji.beta.yml");
     const publish = readWorkflow("kaji.beta-publish.yml");
 
-    expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(5);
+    expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(7);
     expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(15);
     for (const { source, workflow } of [rehearsal, publish]) {
       const job = workflow.jobs?.["tthw-evidence"];
@@ -984,7 +984,14 @@ describe("Kaji workflow contracts", () => {
       {
         name: "kaji.beta.yml" as const,
         producer: "offline-release",
-        consumers: ["python-compat", "node-compat", "tthw-evidence", "keyed-proof"],
+        consumers: [
+          "performance",
+          "python-compat",
+          "node-compat",
+          "tthw-evidence",
+          "keyed-proof",
+          "candidate-evidence",
+        ],
       },
       {
         name: "kaji.beta-publish.yml" as const,
@@ -1070,6 +1077,15 @@ describe("Kaji workflow contracts", () => {
     }
 
     for (const workflowName of ["kaji.beta.yml", "kaji.beta-publish.yml"] as const) {
+      const performance = readWorkflow(workflowName).workflow.jobs?.performance;
+      for (const fragment of ["run_beta_benchmarks.py --full", "run_beta_soak.py --minutes 30"]) {
+        const command = performance?.steps?.find((step) => step.run?.includes(fragment))?.run;
+        expect(command, `${workflowName}:${fragment}`).toContain("--protected");
+        expect(command, `${workflowName}:${fragment}`).toContain(
+          "--artifacts-dir .artifacts/kaji-release",
+        );
+      }
+
       const provider = readWorkflow(workflowName).workflow.jobs?.["keyed-proof"];
       const command = provider?.steps?.find((step) =>
         step.run?.includes("live_provider_proof.py"),
@@ -1078,6 +1094,73 @@ describe("Kaji workflow contracts", () => {
       expect(command, workflowName).toContain("--artifacts-dir .artifacts/kaji-release");
       expect(command, workflowName).toContain("--expected-commit");
     }
+  });
+
+  it("centrally validates every current-run rehearsal receipt", () => {
+    const { workflow } = readWorkflow("kaji.beta.yml");
+    const evidence = workflow.jobs?.["candidate-evidence"];
+    expect(evidence?.needs).toEqual([
+      "offline-release",
+      "performance",
+      "tthw-evidence",
+      "keyed-proof",
+      "python-compat",
+      "node-compat",
+    ]);
+    expect(evidence?.if).toBe("${{ always() && needs.offline-release.result == 'success' }}");
+    const steps = evidence?.steps ?? [];
+    const downloads = steps.filter((step) => step.uses?.startsWith("actions/download-artifact@"));
+    const requiredDownloads = downloads.filter((step) => !step["continue-on-error"]);
+    expect(requiredDownloads.map((step) => step.with?.name)).toEqual([
+      "kaji-beta-artifacts",
+      "kaji-offline-evidence",
+    ]);
+    expect(
+      downloads.filter((step) => step["continue-on-error"]).map((step) => step.with?.name),
+    ).toEqual([
+      "kaji-provider-evidence",
+      "kaji-tthw-evidence",
+      "kaji-performance-evidence",
+      "kaji-python-compat-3.11",
+      "kaji-python-compat-3.14",
+      "kaji-node-compat-22",
+      "kaji-node-compat-24",
+    ]);
+    const verifyIndex = steps.findIndex((step) =>
+      step.run?.includes("kaji/scripts/verify_release_artifacts.py"),
+    );
+    const validation = steps.find((step) =>
+      step.run?.includes("kaji/scripts/validate_release_evidence.py"),
+    );
+    const validationIndex = steps.indexOf(validation!);
+    expect(verifyIndex).toBeGreaterThan(steps.indexOf(requiredDownloads[0]!));
+    expect(validationIndex).toBeGreaterThan(verifyIndex);
+    expect(validation?.["continue-on-error"]).toBeUndefined();
+    for (const flag of [
+      "--release-artifact-id",
+      "--release-artifact-digest",
+      "--python-compat-311",
+      "--python-compat-314",
+      "--node-compat-22",
+      "--node-compat-24",
+      "--performance-status",
+      "--benchmark-results",
+      "--soak-results",
+      "--provider-evidence",
+      "--tthw-status",
+      "--tthw-evidence",
+      "--output",
+    ]) {
+      expect(validation?.run, flag).toContain(flag);
+    }
+    const upload = steps.find(
+      (step) =>
+        step.uses?.startsWith("actions/upload-artifact@") &&
+        step.with?.name === "kaji-release-candidate-evidence",
+    );
+    expect(steps.indexOf(upload!)).toBeGreaterThan(validationIndex);
+    expect(upload?.if).toBe("${{ always() }}");
+    expect(upload?.with?.["if-no-files-found"]).toBe("error");
   });
 
   it("terminal-normalizes protected TTHW and provider receipts after every failure boundary", () => {

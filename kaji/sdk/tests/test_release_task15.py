@@ -73,25 +73,30 @@ def test_release_workflows_bound_every_job() -> None:
     rehearsal = _read(".github/workflows/kaji.beta.yml")
     publish = _read(".github/workflows/kaji.beta-publish.yml")
 
-    assert rehearsal.count("timeout-minutes:") == 5
+    assert rehearsal.count("timeout-minutes:") == 7
     assert publish.count("timeout-minutes:") == 15
     assert "timeout-minutes: 100" in publish
     assert "timeout-minutes: 45" in publish
 
 
 def test_performance_workflow_timeouts_cover_child_and_cleanup_budgets() -> None:
+    rehearsal = _read(".github/workflows/kaji.beta.yml")
     publish = _read(".github/workflows/kaji.beta-publish.yml")
     benchmark = _read(".github/workflows/kaji.benchmark.yml")
-    performance_job = publish.split("  performance:", 1)[1].split(
-        "  python-compat:", 1
-    )[0]
+    performance_jobs = [
+        rehearsal.split("  performance:", 1)[1].split("  python-compat:", 1)[0],
+        publish.split("  performance:", 1)[1].split("  python-compat:", 1)[0],
+    ]
     benchmark_job = benchmark.split("  benchmark:", 1)[1].split("  soak:", 1)[0]
     soak_job = benchmark.split("  soak:", 1)[1].split("  calibrate:", 1)[0]
     calibrate_job = benchmark.split("  calibrate:", 1)[1]
 
-    assert "35-minute benchmark + 42-minute soak + 18-minute setup" in performance_job
-    assert "five-minute job-level shutdown margin" in performance_job
-    assert "timeout-minutes: 100" in performance_job
+    for performance_job in performance_jobs:
+        assert (
+            "35-minute benchmark + 42-minute soak + 18-minute setup" in performance_job
+        )
+        assert "five-minute job-level shutdown margin" in performance_job
+        assert "timeout-minutes: 100" in performance_job
     assert "35-minute benchmark + 10-minute setup/upload" in benchmark_job
     assert "timeout-minutes: 45" in benchmark_job
     assert "42-minute soak + 8-minute setup/upload" in soak_job
@@ -158,12 +163,13 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "ANTHROPIC_API_KEY" in rehearsal
     assert "live_provider_proof.py" in rehearsal
     assert (
-        "needs: [offline-release, tthw-evidence, python-compat, node-compat]"
+        "needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]"
         in rehearsal
     )
     assert "needs.offline-release.result == 'success'" in rehearsal
     assert "needs.python-compat.result == 'success'" in rehearsal
     assert "needs.node-compat.result == 'success'" in rehearsal
+    assert "needs.performance.result == 'success'" in rehearsal
     assert "group: kaji-beta-rehearsal-0.2.0-beta.1" in rehearsal
     assert "offline-gate-summary.json" in rehearsal
     assert "if: ${{ always() }}" in rehearsal
@@ -363,11 +369,23 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         assert evidence_field in registry
 
 
-def test_publish_performance_evidence_is_bound_before_retention() -> None:
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
-    performance = publish.split("  performance:", 1)[1].split("  python-compat:", 1)[0]
+@pytest.mark.parametrize(
+    ("workflow_name", "expected_commit"),
+    [
+        (".github/workflows/kaji.beta.yml", "${{ github.sha }}"),
+        (
+            ".github/workflows/kaji.beta-publish.yml",
+            "${{ needs.verify-tag.outputs.commit }}",
+        ),
+    ],
+)
+def test_performance_evidence_is_bound_before_retention(
+    workflow_name: str, expected_commit: str
+) -> None:
+    workflow = _read(workflow_name)
+    performance = workflow.split("  performance:", 1)[1].split("  python-compat:", 1)[0]
 
-    assert "KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}" in performance
+    assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in performance
     assert (
         "KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
         in performance
@@ -433,14 +451,18 @@ def test_publish_performance_evidence_is_bound_before_retention() -> None:
         "path: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
         in upload
     )
-    for retained in (
-        ".artifacts/kaji-evidence/performance-status.json",
-        ".artifacts/kaji-evidence/raw/benchmarks/results.json",
-        ".artifacts/kaji-evidence/raw/soak/python.json",
-        ".artifacts/kaji-evidence/raw/soak/typescript.json",
-        ".artifacts/kaji-evidence/raw/soak/results.json",
-    ):
-        assert retained in publish
+    assert ".artifacts/kaji-evidence/performance-status.json" in workflow
+    if workflow_name.endswith("kaji.beta-publish.yml"):
+        for retained in (
+            ".artifacts/kaji-evidence/raw/benchmarks/results.json",
+            ".artifacts/kaji-evidence/raw/soak/python.json",
+            ".artifacts/kaji-evidence/raw/soak/typescript.json",
+            ".artifacts/kaji-evidence/raw/soak/results.json",
+        ):
+            assert retained in workflow
+    else:
+        assert "name: kaji-release-candidate-evidence" in workflow
+        assert "path: .artifacts/kaji-evidence" in workflow
 
 
 @pytest.mark.parametrize(
