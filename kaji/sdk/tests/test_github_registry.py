@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 from pathlib import Path
@@ -96,6 +97,37 @@ async def test_each_wrapper_delegates_once_with_the_execution_context() -> None:
     for spec, handler in integration.tools():
         assert await handler(context, calls[spec.name]) == {"operation": spec.name}
         getattr(client, spec.name).assert_awaited_once_with(context, **calls[spec.name])
+
+
+@pytest.mark.asyncio
+async def test_production_integration_closes_its_owned_http_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kaji.integrations import fixed_origin
+    from kaji.integrations.registry.github.github import create_github_integration
+
+    http = type(
+        "Http",
+        (),
+        {
+            "request": AsyncMock(side_effect=AssertionError("HTTP must not run")),
+            "aclose": AsyncMock(),
+        },
+    )()
+    monkeypatch.setattr(
+        fixed_origin.FixedOriginClient,
+        "for_github",
+        lambda **_kwargs: http,
+    )
+    integration = create_github_integration(
+        token_for=AsyncMock(side_effect=AssertionError("token must not be read")),
+        repositories={"owner/repo"},
+    )
+
+    await asyncio.gather(integration.aclose(), integration.aclose())
+    await integration.aclose()
+
+    http.aclose.assert_awaited_once_with()
 
 
 def test_github_manifest_is_experimental_and_declares_the_owner_bundle() -> None:

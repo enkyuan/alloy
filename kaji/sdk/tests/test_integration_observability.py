@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import json
 import time
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -239,16 +240,18 @@ async def test_turn_and_tool_spans_never_emit_the_principal() -> None:
     assert "poison-principal-secret" not in repr(trace.values)
 
 
-def test_github_production_factory_forwards_observability_sinks(
+@pytest.mark.asyncio
+async def test_github_production_factory_forwards_observability_sinks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metrics = Metrics()
     trace = Trace()
     captured: dict[str, object] = {}
+    close = AsyncMock()
 
     def requester(**options: object) -> object:
         captured.update(options)
-        return object()
+        return type("Http", (), {"aclose": close})()
 
     monkeypatch.setattr(FixedOriginClient, "for_github", staticmethod(requester))
 
@@ -264,3 +267,5 @@ def test_github_production_factory_forwards_observability_sinks(
 
     assert integration.namespace == "github"
     assert captured == {"metrics_sink": metrics, "trace_sink": trace}
+    await integration.aclose()
+    close.assert_awaited_once_with()

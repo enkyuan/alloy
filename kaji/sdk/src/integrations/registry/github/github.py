@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any, Protocol, cast
 
@@ -208,8 +209,15 @@ def _specs() -> tuple[ToolSpec, ...]:
 
 
 class GitHubIntegration(Integration):
-    def __init__(self, client: _GitHubClientLike) -> None:
+    def __init__(
+        self,
+        client: _GitHubClientLike,
+        *,
+        close: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self._client = client
+        self._close = close
+        self._close_lock = asyncio.Lock()
 
     @property
     def namespace(self) -> str:
@@ -234,6 +242,14 @@ class GitHubIntegration(Integration):
             pairs.append((spec, handler))
         return pairs
 
+    async def aclose(self) -> None:
+        async with self._close_lock:
+            close = self._close
+            if close is None:
+                return
+            await close()
+            self._close = None
+
 
 def create_github_integration(
     *,
@@ -242,13 +258,13 @@ def create_github_integration(
     metrics_sink: MetricsSink = NOOP_METRICS,
     trace_sink: TraceSink = NOOP_TRACE,
 ) -> GitHubIntegration:
-    return _create_github_integration_for_test(
-        token_for=token_for,
-        repositories=repositories,
-        http=FixedOriginClient.for_github(
-            metrics_sink=metrics_sink,
-            trace_sink=trace_sink,
-        ),
+    http = FixedOriginClient.for_github(
+        metrics_sink=metrics_sink,
+        trace_sink=trace_sink,
+    )
+    return GitHubIntegration(
+        GitHubClient(token_for=token_for, repositories=repositories, http=http),
+        close=http.aclose,
     )
 
 
