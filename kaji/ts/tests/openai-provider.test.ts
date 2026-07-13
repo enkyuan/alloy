@@ -168,6 +168,7 @@ describe("OpenAIProvider.generate", () => {
                 message: { content: "Hello there", tool_calls: null },
               },
             ],
+            usage: { prompt_tokens: 5, completion_tokens: 3 },
           }),
         },
       },
@@ -177,6 +178,7 @@ describe("OpenAIProvider.generate", () => {
     const result = await provider.generate([{ role: "user", content: "hi" }], []);
     expect(result.content).toBe("Hello there");
     expect(result.toolCalls).toHaveLength(0);
+    expect(result.costUsd).toBe(0.00001725);
   });
 
   it("parses tool calls from the response", async () => {
@@ -211,6 +213,7 @@ describe("OpenAIProvider.generate", () => {
       name: "get_weather",
       args: { city: "Seattle" },
     });
+    expect(result.costUsd).toBeUndefined();
   });
 
   it("handles bad JSON in tool call arguments gracefully", async () => {

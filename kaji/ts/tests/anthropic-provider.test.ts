@@ -260,6 +260,7 @@ describe("AnthropicProvider.generate", () => {
       messages: {
         create: vi.fn().mockResolvedValue({
           content: [{ type: "text", text: "Hello!" }],
+          usage: { input_tokens: 5, output_tokens: 3 },
         }),
       },
     });
@@ -267,6 +268,7 @@ describe("AnthropicProvider.generate", () => {
     const result = await provider.generate([{ role: "user", content: "hi" }], []);
     expect(result.content).toBe("Hello!");
     expect(result.toolCalls).toHaveLength(0);
+    expect(result.costUsd).toBe(0.00006);
   });
 
   it("parses tool_use blocks into ToolCall shape", async () => {
@@ -281,6 +283,7 @@ describe("AnthropicProvider.generate", () => {
     const result = await provider.generate([{ role: "user", content: "weather?" }], []);
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0]).toEqual({ id: "tu-1", name: "get_weather", args: { city: "NYC" } });
+    expect(result.costUsd).toBeUndefined();
   });
 
   it("handles mixed text + tool_use content blocks", async () => {
