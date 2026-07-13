@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { runCli, type RunOptions } from "@/cli/index";
+import { listIntegrations } from "@/cli/list";
 import type {
   GoogleOAuthClient,
   GoogleOAuthClientOptions,
@@ -28,7 +29,7 @@ interface AuthRunOptions extends RunOptions {
   /** Closed environment seam: commands read only manifest-declared names. */
   env: Readonly<Record<string, string | undefined>>;
   signal: AbortSignal;
-  keychainStorageFactory: () => OAuthTokenStorage;
+  keychainStorageFactory: (integrationName: string) => OAuthTokenStorage;
   googleOAuthClientFactory: (options: GoogleOAuthClientOptions) => CliOAuthClient;
 }
 
@@ -126,6 +127,15 @@ function writeRegistry(root: string): void {
       clientSecretEnv: "GOOGLE_CLIENT_SECRET",
       scopes: ["scope/read", "scope/write"],
     }),
+    oversize: {
+      ...manifest("oversize", {
+        kind: "oauth",
+        provider: "google",
+        clientIdEnv: "GOOGLE_CLIENT_ID",
+        scopes: ["scope/read"],
+      }),
+      name: "a".repeat(129),
+    },
     none: manifest("none", { kind: "none" }),
     token: manifest("token", { kind: "env", env: "PRIVATE_TOKEN" }),
     unsupported: manifest("unsupported", {
@@ -193,6 +203,7 @@ describe("kaji connect and disconnect", () => {
   let storage: FakeStorage;
   let client: FakeClient;
   let storageFactoryCalls: number;
+  let storageFactoryIntegrations: string[];
   let clientOptions: GoogleOAuthClientOptions[];
   let controller: AbortController;
 
@@ -207,6 +218,7 @@ describe("kaji connect and disconnect", () => {
     storage = new FakeStorage();
     client = new FakeClient();
     storageFactoryCalls = 0;
+    storageFactoryIntegrations = [];
     clientOptions = [];
     controller = new AbortController();
   });
@@ -229,8 +241,9 @@ describe("kaji connect and disconnect", () => {
       err: (message) => stderr.push(message),
       env,
       signal: controller.signal,
-      keychainStorageFactory: () => {
+      keychainStorageFactory: (integrationName) => {
         storageFactoryCalls += 1;
+        storageFactoryIntegrations.push(integrationName);
         return storage;
       },
       googleOAuthClientFactory: (constructed) => {
@@ -311,7 +324,7 @@ describe("kaji connect and disconnect", () => {
     ["none", "OAuth authentication"],
     ["token", "OAuth authentication"],
     ["unsupported", "Google OAuth"],
-    ["gmail-shadow", "Only integration 'gmail' is supported by the beta OAuth CLI"],
+    ["oversize", "maxLength validation at /name"],
   ])("rejects %s before environment or auth construction", async (name, expected) => {
     const code = await runCli(["connect", name, "--principal", principal], options());
 
@@ -321,6 +334,47 @@ describe("kaji connect and disconnect", () => {
     expect(envReads).toEqual([]);
     expect(storageFactoryCalls).toBe(0);
     expect(clientOptions).toEqual([]);
+  });
+
+  it("accepts a generic validated Google OAuth manifest with its advertised command", async () => {
+    const indexPath = join(registryRoot, "index.json");
+    const index = JSON.parse(readFileSync(indexPath, "utf8")) as {
+      integrations: Record<string, unknown>;
+    };
+    delete index.integrations.oversize;
+    writeFileSync(indexPath, JSON.stringify(index));
+    const discovery: string[] = [];
+    expect(
+      await listIntegrations(["--json"], {
+        registryRoot,
+        schemaRoot: registryRoot,
+        log: (message) => discovery.push(message),
+      }),
+    ).toBe(0);
+    const row = (
+      JSON.parse(discovery.join("\n")) as Array<{
+        name: string;
+        next_commands: { typescript: string };
+      }>
+    ).find(({ name }) => name === "gmail-shadow")!;
+    const advertised = row.next_commands.typescript.replace(
+      "<stable-host-principal-id>",
+      principal,
+    );
+    const argv = advertised.split(" -- ")[1]!.split(" ");
+
+    const code = await runCli(argv, options());
+
+    expect(code).toBe(0);
+    expect(storageFactoryIntegrations).toEqual(["gmail-shadow"]);
+    expect(client.connectCalls).toEqual([[principal, controller.signal]]);
+    expect(stdout).toEqual([
+      "Connected gmail-shadow for the requested principal.",
+      "Stored refresh credentials in macOS Keychain service dev.kaji.oauth.gmail-shadow.",
+    ]);
+    expect(output()).not.toContain(principal);
+    expect(output()).not.toContain("private-client-id");
+    expect(output()).not.toContain("private-client-secret");
   });
 
   it("reads only declared credential names and rejects a missing client ID before auth construction", async () => {
@@ -378,6 +432,7 @@ describe("kaji connect and disconnect", () => {
     expect(code).toBe(0);
     expect(envReads).toEqual(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]);
     expect(storageFactoryCalls).toBe(1);
+    expect(storageFactoryIntegrations).toEqual(["gmail"]);
     expect(clientOptions).toEqual([
       {
         clientId: "private-client-id",

@@ -55,8 +55,6 @@ def oauth_manifest(name: str) -> Manifest:
     manifest = load_manifest(name)
     if manifest.auth.kind != "oauth":
         raise ValueError(f"Integration {name!r} does not use OAuth.")
-    if manifest.name != "gmail":
-        raise ValueError("Only integration 'gmail' is supported by the beta OAuth CLI.")
     if manifest.auth.provider != "google":
         raise ValueError(f"Integration {name!r} has an unsupported OAuth provider.")
     return manifest

@@ -53,9 +53,18 @@ class Process:
         return self.results.pop(0)
 
 
-def storage(process: Process, *, platform: str = "darwin", executable: bool = True):
+def storage(
+    process: Process,
+    *,
+    integration_name: str = "gmail",
+    platform: str = "darwin",
+    executable: bool = True,
+):
     return _create_macos_keychain_storage_for_test(
-        process=process, platform=platform, executable=executable
+        integration_name=integration_name,
+        process=process,
+        platform=platform,
+        executable=executable,
     )
 
 
@@ -103,6 +112,96 @@ async def test_keychain_load_and_delete_use_fixed_commands() -> None:
         "-s",
         SERVICE,
     )
+
+
+@pytest.mark.asyncio
+async def test_keychain_namespaces_service_account_without_changing_wire() -> None:
+    gmail_process = Process()
+    calendar_process = Process([(0, ""), (44, ""), (0, "")])
+    await storage(gmail_process).save(PRINCIPAL, record(), CancellationToken(), None)
+    calendar_storage = storage(calendar_process, integration_name="calendar")
+    await calendar_storage.save(PRINCIPAL, record(), CancellationToken(), None)
+    assert await calendar_storage.load(PRINCIPAL, CancellationToken(), None) is None
+    await calendar_storage.delete(PRINCIPAL, CancellationToken(), None)
+
+    gmail_args, gmail_stdin = gmail_process.calls[0]
+    calendar_args, calendar_stdin = calendar_process.calls[0]
+    calendar_service = "dev.kaji.oauth.calendar"
+    calendar_account = hashlib.sha256(
+        f"{calendar_service}\0{PRINCIPAL}".encode()
+    ).hexdigest()
+    assert gmail_args == (
+        "add-generic-password",
+        "-a",
+        ACCOUNT,
+        "-s",
+        SERVICE,
+        "-U",
+        "-w",
+    )
+    assert calendar_args == (
+        "add-generic-password",
+        "-a",
+        calendar_account,
+        "-s",
+        calendar_service,
+        "-U",
+        "-w",
+    )
+    assert calendar_process.calls[1][0] == (
+        "find-generic-password",
+        "-a",
+        calendar_account,
+        "-s",
+        calendar_service,
+        "-w",
+    )
+    assert calendar_process.calls[2][0] == (
+        "delete-generic-password",
+        "-a",
+        calendar_account,
+        "-s",
+        calendar_service,
+    )
+    assert calendar_account != ACCOUNT
+    assert (
+        calendar_stdin
+        == gmail_stdin
+        == json.dumps(
+            record().to_wire(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+    assert PRINCIPAL not in repr(gmail_process.calls + calendar_process.calls)
+
+
+def test_keychain_rejects_invalid_integration_before_host_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kaji.integrations import keychain
+
+    monkeypatch.setattr(
+        "kaji.integrations.keychain.os.access",
+        lambda *_args: pytest.fail("host executable checked too early"),
+    )
+    monkeypatch.setattr(
+        keychain,
+        "_AsyncioKeychainProcess",
+        lambda: pytest.fail("process adapter constructed too early"),
+    )
+    for integration_name in (
+        "",
+        "Calendar",
+        "calendar.oauth",
+        "calendar\n",
+        "a" * 129,
+    ):
+        with pytest.raises(ValueError) as captured:
+            keychain.MacOSKeychainTokenStorage(integration_name)
+        if integration_name:
+            assert integration_name not in str(captured.value)
 
 
 @pytest.mark.asyncio

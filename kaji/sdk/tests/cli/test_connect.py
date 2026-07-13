@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import MappingProxyType
 
@@ -163,32 +164,163 @@ def test_connect_rejects_non_oauth_or_unsupported_provider_without_env(
     assert expected in capsys.readouterr().out
 
 
+def test_connect_rejects_overlong_manifest_name_before_env_or_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import kaji.integrations as integrations
+    from kaji.cli import connect
+
+    packaged_registry = integrations._registry_root()
+    registry = tmp_path / "registry"
+    integration = registry / "oversize"
+    integration.mkdir(parents=True)
+    for schema in ("schema.json", "index.schema.json"):
+        (registry / schema).write_bytes((packaged_registry / schema).read_bytes())
+    (registry / "index.json").write_text(
+        json.dumps(
+            {
+                "$schema": "./index.schema.json",
+                "version": "0.1.0",
+                "integrations": {
+                    "oversize": {
+                        "manifest": "oversize/manifest.json",
+                        "stability": "experimental",
+                        "runtimes": ["python"],
+                    }
+                },
+            }
+        )
+    )
+    (integration / "manifest.json").write_text(
+        json.dumps(
+            {
+                "name": "a" * 129,
+                "version": "0.1.0",
+                "namespace": "oversize",
+                "description": "Overlong fixture.",
+                "auth": {
+                    "kind": "oauth",
+                    "provider": "google",
+                    "clientIdEnv": "GOOGLE_CLIENT_ID",
+                    "scopes": ["scope.read"],
+                },
+                "files": ["oversize.py"],
+                "tools": [
+                    {
+                        "name": "ping",
+                        "description": "Fixture tool.",
+                        "parameters": {"type": "object"},
+                        "risk": "read",
+                        "parallel_safe": True,
+                    }
+                ],
+            }
+        )
+    )
+    (integration / "oversize.py").write_text("")
+    monkeypatch.setattr(integrations, "_registry_root", lambda: registry)
+    monkeypatch.setattr(connect, "_environment", UnreadableEnvironment())
+    monkeypatch.setattr(
+        connect,
+        "_production_client",
+        lambda **_kwargs: pytest.fail("storage constructed too early"),
+    )
+
+    assert connect.run(namespace(name="oversize")) == 1
+    output = capsys.readouterr().out
+    assert "maxLength" in output
+    assert "/name" in output
+
+
 @pytest.mark.parametrize("command", ["connect", "disconnect"])
-def test_oauth_commands_reject_non_gmail_manifest_before_side_effects(
+def test_oauth_commands_accept_generic_google_manifest_with_matching_guidance(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     command: str,
 ) -> None:
-    from kaji.cli import connect, disconnect
+    from kaji.cli import connect, disconnect, list_integrations
+    from kaji.cli._main import _build_parser
 
     module = connect if command == "connect" else disconnect
-    collision = replace(oauth_manifest(), name="calendar", namespace="calendar")
-    monkeypatch.setattr(module, "load_manifest", lambda _name: collision)
-    monkeypatch.setattr(module, "_environment", UnreadableEnvironment())
+    calendar = replace(oauth_manifest(), name="calendar", namespace="calendar")
+    constructed: list[str] = []
+
+    class Client:
+        async def connect(self, _principal: str, _cancellation) -> None:
+            return None
+
+        async def disconnect(
+            self, _principal: str, _cancellation, *, force_local: bool = False
+        ) -> DisconnectResult:
+            assert force_local is False
+            return DisconnectResult("missing", False)
+
+    def production_client(**kwargs: object) -> Client:
+        manifest = kwargs["manifest"]
+        assert isinstance(manifest, Manifest)
+        constructed.append(manifest.name)
+        return Client()
+
+    monkeypatch.setattr(module, "load_manifest", lambda _name: calendar)
     monkeypatch.setattr(
         module,
         "_production_client",
-        lambda **_kwargs: pytest.fail("storage or client constructed too early"),
+        production_client,
     )
 
-    args = namespace(name="calendar")
     if command == "disconnect":
+        args = namespace(name="calendar")
+        monkeypatch.setattr(module, "_environment", UnreadableEnvironment())
         args.force_local = False
-    assert module.run(args) == 1
-    assert (
-        "Only integration 'gmail' is supported by the beta OAuth CLI."
-        in capsys.readouterr().out
+    else:
+        advertised = list_integrations._next_commands(calendar)["python"]
+        argv = advertised.replace("<stable-host-principal-id>", "host:user").split()[3:]
+        args = _build_parser().parse_args(argv)
+        monkeypatch.setattr(
+            module,
+            "_environment",
+            {"GOOGLE_CLIENT_ID": "client-secret-value"},
+        )
+    assert module.run(args) == 0
+    assert constructed == ["calendar"]
+    output = capsys.readouterr().out
+    assert "gmail" not in output
+    assert "calendar" in output
+    assert "client-secret-value" not in output
+    if command == "connect":
+        assert "dev.kaji.oauth.calendar" in output
+
+
+def test_production_client_passes_manifest_name_to_keychain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kaji.cli import connect
+
+    calendar = replace(oauth_manifest(), name="calendar", namespace="calendar")
+    calls: list[tuple[str, str]] = []
+
+    class Storage:
+        def __init__(self, integration_name: str) -> None:
+            calls.append(("storage", integration_name))
+
+        def _preflight(self, principal: str) -> None:
+            calls.append(("preflight", principal))
+
+    class Client:
+        def __init__(self, **kwargs: object) -> None:
+            assert isinstance(kwargs["credential_store"], Storage)
+
+    monkeypatch.setattr(connect, "MacOSKeychainTokenStorage", Storage)
+    monkeypatch.setattr(connect, "GoogleOAuthClient", Client)
+    connect._production_client(
+        manifest=calendar,
+        principal="host:user",
+        client_id=None,
+        client_secret=None,
     )
+    assert calls == [("storage", "calendar"), ("preflight", "host:user")]
 
 
 def test_connect_delegates_once_and_prints_only_bounded_success(

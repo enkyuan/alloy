@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Sequence
 import hashlib
 import os
+import re
 import sys
 from typing import Protocol, cast
 
@@ -19,7 +20,9 @@ from kaji.runtime.agents.cancellation import CancellationToken
 
 
 _SECURITY = "/usr/bin/security"
-_SERVICE = "dev.kaji.oauth.gmail"
+_INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
+_MAX_INTEGRATION_NAME_CHARACTERS = 128
+_SERVICE_PREFIX = "dev.kaji.oauth."
 _OPERATION_SECONDS = 10.0
 _STDOUT_BYTES = 16 * 1024 + 1
 _STDERR_BYTES = 8 * 1024
@@ -192,30 +195,48 @@ class _AsyncioKeychainProcess:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def _account(principal_id: str) -> str:
+def _service(integration_name: str) -> str:
+    if (
+        not isinstance(integration_name, str)
+        or len(integration_name) > _MAX_INTEGRATION_NAME_CHARACTERS
+        or _INTEGRATION_NAME.fullmatch(integration_name) is None
+    ):
+        raise ValueError("Invalid integration name.")
+    return f"{_SERVICE_PREFIX}{integration_name}"
+
+
+def _account(service: str, principal_id: str) -> str:
     principal_id = _require_principal(principal_id)
-    return hashlib.sha256(f"{_SERVICE}\0{principal_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{service}\0{principal_id}".encode("utf-8")).hexdigest()
 
 
 class MacOSKeychainTokenStorage:
     """Async OAuth credential store backed by fixed ``/usr/bin/security``."""
 
-    def __init__(self) -> None:
+    def __init__(self, integration_name: str = "gmail") -> None:
+        service = _service(integration_name)
         self._initialize(
+            service=service,
             process=_AsyncioKeychainProcess(),
             platform=sys.platform,
             executable=os.access(_SECURITY, os.X_OK),
         )
 
     def _initialize(
-        self, *, process: _KeychainProcess, platform: str, executable: bool
+        self,
+        *,
+        service: str,
+        process: _KeychainProcess,
+        platform: str,
+        executable: bool,
     ) -> None:
+        self._service = service
         self._process = process
         self._platform = platform
         self._executable = executable
 
     def _preflight(self, principal_id: str) -> str:
-        account = _account(principal_id)
+        account = _account(self._service, principal_id)
         if self._platform != "darwin" or not self._executable:
             raise IntegrationAuthError("keychain_unsupported")
         return account
@@ -233,7 +254,7 @@ class MacOSKeychainTokenStorage:
                 "-a",
                 account,
                 "-s",
-                _SERVICE,
+                self._service,
                 "-w",
             ),
             stdin=None,
@@ -273,7 +294,7 @@ class MacOSKeychainTokenStorage:
                 "-a",
                 account,
                 "-s",
-                _SERVICE,
+                self._service,
                 "-U",
                 "-w",
             ),
@@ -297,7 +318,7 @@ class MacOSKeychainTokenStorage:
                 "-a",
                 account,
                 "-s",
-                _SERVICE,
+                self._service,
             ),
             stdin=None,
             cancellation=cancellation,
@@ -332,10 +353,15 @@ class MacOSKeychainTokenStorage:
 
 
 def _create_macos_keychain_storage_for_test(
-    *, process: _KeychainProcess, platform: str, executable: bool
+    *,
+    process: _KeychainProcess,
+    platform: str,
+    executable: bool,
+    integration_name: str = "gmail",
 ) -> MacOSKeychainTokenStorage:
     storage = object.__new__(MacOSKeychainTokenStorage)
     storage._initialize(
+        service=_service(integration_name),
         process=process,
         platform=platform,
         executable=executable,

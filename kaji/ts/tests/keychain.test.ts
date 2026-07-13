@@ -58,8 +58,12 @@ class Process implements KeychainProcess {
   }
 }
 
-const storage = (process: KeychainProcess, platform = "darwin", executable = true) =>
-  _createMacOSKeychainTokenStorageForTest({ process, platform, executable });
+const storage = (
+  process: KeychainProcess,
+  platform = "darwin",
+  executable = true,
+  integrationName = "gmail",
+) => _createMacOSKeychainTokenStorageForTest({ process, platform, executable, integrationName });
 
 describe("MacOSKeychainTokenStorage", () => {
   it("uses exact fixed argv, hashed account, and JSON stdin", async () => {
@@ -79,6 +83,38 @@ describe("MacOSKeychainTokenStorage", () => {
     });
     expect(JSON.stringify(process.calls[0]?.args)).not.toContain(principal);
   });
+
+  it("scopes service and account hashes by validated integration name", async () => {
+    const gmailProcess = new Process();
+    const calendarProcess = new Process();
+    await storage(gmailProcess).save(principal, record, new AbortController().signal);
+    await storage(calendarProcess, "darwin", true, "calendar").save(
+      principal,
+      record,
+      new AbortController().signal,
+    );
+
+    const gmailArgs = gmailProcess.calls[0]!.args;
+    const calendarArgs = calendarProcess.calls[0]!.args;
+    expect(gmailArgs[gmailArgs.indexOf("-s") + 1]).toBe("dev.kaji.oauth.gmail");
+    expect(calendarArgs[calendarArgs.indexOf("-s") + 1]).toBe("dev.kaji.oauth.calendar");
+    expect(gmailArgs[gmailArgs.indexOf("-a") + 1]).toBe(account);
+    expect(calendarArgs[calendarArgs.indexOf("-a") + 1]).toBe(
+      createHash("sha256").update(`dev.kaji.oauth.calendar\0${principal}`).digest("hex"),
+    );
+    expect(calendarArgs[calendarArgs.indexOf("-a") + 1]).not.toBe(account);
+  });
+
+  it.each(["Calendar", "calendar.oauth", "a".repeat(129)])(
+    "rejects invalid integration %s before platform or process side effects",
+    (integrationName) => {
+      const process = new Process();
+      expect(() => storage(process, "linux", false, integrationName)).toThrowError(
+        expect.objectContaining({ error_code: "INTEGRATION_POLICY_REJECTED" }),
+      );
+      expect(process.calls).toEqual([]);
+    },
+  );
 
   it("loads and deletes with fixed commands", async () => {
     const process = new Process([

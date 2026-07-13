@@ -29,7 +29,7 @@ export interface RunOptions {
   /** @internal Auth CLI side-effect seams. */
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal;
-  keychainStorageFactory?: () => OAuthTokenStorage;
+  keychainStorageFactory?: (integrationName: string) => OAuthTokenStorage;
   googleOAuthClientFactory?: (
     options: GoogleOAuthClientOptions,
   ) => Pick<GoogleOAuthClient, "connect" | "disconnect">;

@@ -3,7 +3,7 @@ import { accessSync, constants } from "node:fs";
 import { platform as hostPlatform } from "node:os";
 import { spawn } from "node:child_process";
 
-import { IntegrationAuthError } from "@/integrations/errors";
+import { IntegrationAuthError, IntegrationPolicyError } from "@/integrations/errors";
 import {
   canonicalOAuthCredentialJson,
   snapshotOAuthCredentialRecord,
@@ -13,7 +13,8 @@ import {
 } from "@/auth/oauth";
 
 const SECURITY = "/usr/bin/security";
-const SERVICE = "dev.kaji.oauth.gmail";
+const INTEGRATION_NAME = /^[a-z][a-z0-9_-]*$/;
+const MAX_INTEGRATION_NAME_LENGTH = 128;
 const TIMEOUT_MS = 10_000;
 const MAX_STDOUT_BYTES = 16 * 1024 + 1;
 const MAX_STDERR_BYTES = 8 * 1024;
@@ -125,17 +126,30 @@ function executable(): boolean {
   }
 }
 
-function accountFor(principalId: string): string {
+function serviceFor(integrationName: string): string {
+  if (
+    typeof integrationName !== "string" ||
+    integrationName.length > MAX_INTEGRATION_NAME_LENGTH ||
+    !INTEGRATION_NAME.test(integrationName)
+  ) {
+    throw new IntegrationPolicyError();
+  }
+  return `dev.kaji.oauth.${integrationName}`;
+}
+
+function accountFor(service: string, principalId: string): string {
   principalId = validateOAuthPrincipal(principalId);
-  return createHash("sha256").update(`${SERVICE}\0${principalId}`, "utf8").digest("hex");
+  return createHash("sha256").update(`${service}\0${principalId}`, "utf8").digest("hex");
 }
 
 export class MacOSKeychainTokenStorage implements OAuthTokenStorage {
   private readonly process: KeychainProcess;
   private readonly platform: string;
   private readonly executable: boolean;
+  private readonly service: string;
 
-  constructor() {
+  constructor(integrationName = "gmail") {
+    this.service = serviceFor(integrationName);
     this.process = new SpawnKeychainProcess();
     this.platform = hostPlatform();
     this.executable = executable();
@@ -146,21 +160,25 @@ export class MacOSKeychainTokenStorage implements OAuthTokenStorage {
     process: KeychainProcess;
     platform: string;
     executable: boolean;
+    integrationName?: string;
   }): MacOSKeychainTokenStorage {
+    const service = serviceFor(options.integrationName ?? "gmail");
     const storage = Object.create(MacOSKeychainTokenStorage.prototype) as MacOSKeychainTokenStorage;
     Object.defineProperties(storage, {
       process: { value: options.process },
       platform: { value: options.platform },
       executable: { value: options.executable },
+      service: { value: service },
     });
     return storage;
   }
 
   async load(principalId: string, signal: AbortSignal): Promise<OAuthCredentialRecord | undefined> {
     const account = this.preflight(principalId);
-    const result = await this.run(["find-generic-password", "-a", account, "-s", SERVICE, "-w"], {
-      signal,
-    });
+    const result = await this.run(
+      ["find-generic-password", "-a", account, "-s", this.service, "-w"],
+      { signal },
+    );
     if (result.code === 44) return undefined;
     if (result.code !== 0) throw new IntegrationAuthError("keychain_locked");
     const output = result.stdout.endsWith("\n") ? result.stdout.slice(0, -1) : result.stdout;
@@ -180,7 +198,7 @@ export class MacOSKeychainTokenStorage implements OAuthTokenStorage {
     const account = this.preflight(principalId);
     const stdin = canonicalOAuthCredentialJson(record);
     const result = await this.run(
-      ["add-generic-password", "-a", account, "-s", SERVICE, "-U", "-w"],
+      ["add-generic-password", "-a", account, "-s", this.service, "-U", "-w"],
       { signal, stdin },
     );
     if (result.code !== 0) throw new IntegrationAuthError("keychain_locked");
@@ -188,7 +206,7 @@ export class MacOSKeychainTokenStorage implements OAuthTokenStorage {
 
   async delete(principalId: string, signal: AbortSignal): Promise<void> {
     const account = this.preflight(principalId);
-    const result = await this.run(["delete-generic-password", "-a", account, "-s", SERVICE], {
+    const result = await this.run(["delete-generic-password", "-a", account, "-s", this.service], {
       signal,
     });
     if (result.code !== 0 && result.code !== 44) {
@@ -197,7 +215,7 @@ export class MacOSKeychainTokenStorage implements OAuthTokenStorage {
   }
 
   private preflight(principalId: string): string {
-    const account = accountFor(principalId);
+    const account = accountFor(this.service, principalId);
     if (this.platform !== "darwin" || !this.executable) {
       throw new IntegrationAuthError("keychain_unsupported");
     }
@@ -231,6 +249,7 @@ export function _createMacOSKeychainTokenStorageForTest(options: {
   process: KeychainProcess;
   platform: string;
   executable: boolean;
+  integrationName?: string;
 }): MacOSKeychainTokenStorage {
   return MacOSKeychainTokenStorage._create(options);
 }

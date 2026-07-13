@@ -67,9 +67,6 @@ export async function oauthManifest(name: string, opts: RunOptions): Promise<OAu
   if (manifest.auth.provider !== "google") {
     throw new Error(`Integration '${name}' does not use Google OAuth.`);
   }
-  if (manifest.name !== "gmail") {
-    throw new Error("Only integration 'gmail' is supported by the beta OAuth CLI.");
-  }
   return manifest as OAuthLoadedManifest;
 }
 
@@ -105,9 +102,11 @@ export async function withAuthSignal<T>(
   }
 }
 
-function storage(opts: RunOptions, principal: string) {
-  if (opts.keychainStorageFactory !== undefined) return opts.keychainStorageFactory();
-  const value = new MacOSKeychainTokenStorage();
+function storage(opts: RunOptions, integrationName: string, principal: string) {
+  if (opts.keychainStorageFactory !== undefined) {
+    return opts.keychainStorageFactory(integrationName);
+  }
+  const value = new MacOSKeychainTokenStorage(integrationName);
   (value as unknown as { preflight(principalId: string): string }).preflight(principal);
   return value;
 }
@@ -160,7 +159,7 @@ export async function connectIntegration(rest: string[], opts: RunOptions): Prom
       clientId,
       ...(clientSecret === undefined ? {} : { clientSecret }),
       scopes: [...manifest.auth.scopes],
-      storage: storage(opts, principal),
+      storage: storage(opts, manifest.name, principal),
     });
     await withAuthSignal(opts, (signal) => oauth.connect(principal, signal));
   } catch (error) {

@@ -51,8 +51,6 @@ def oauth_manifest(name: str) -> Manifest:
     manifest = load_manifest(name)
     if manifest.auth.kind != "oauth":
         raise ValueError(f"Integration {name!r} does not use OAuth.")
-    if manifest.name != "gmail":
-        raise ValueError("Only integration 'gmail' is supported by the beta OAuth CLI.")
     if manifest.auth.provider != "google":
         raise ValueError(f"Integration {name!r} has an unsupported OAuth provider.")
     return manifest
@@ -65,7 +63,7 @@ def _production_client(
     client_id: str | None,
     client_secret: str | None,
 ) -> GoogleOAuthClient:
-    storage = MacOSKeychainTokenStorage()
+    storage = MacOSKeychainTokenStorage(manifest.name)
     storage._preflight(principal)
     return GoogleOAuthClient(
         client_id=client_id,

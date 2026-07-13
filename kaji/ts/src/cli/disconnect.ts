@@ -14,9 +14,11 @@ import { formatIntegrationError } from "@/integrations/registry-loader";
 export const DISCONNECT_USAGE =
   "usage: kaji disconnect <name> --principal <stable-host-principal-id> [--force-local]";
 
-function storage(opts: RunOptions, principal: string) {
-  if (opts.keychainStorageFactory !== undefined) return opts.keychainStorageFactory();
-  const value = new MacOSKeychainTokenStorage();
+function storage(opts: RunOptions, integrationName: string, principal: string) {
+  if (opts.keychainStorageFactory !== undefined) {
+    return opts.keychainStorageFactory(integrationName);
+  }
+  const value = new MacOSKeychainTokenStorage(integrationName);
   (value as unknown as { preflight(principalId: string): string }).preflight(principal);
   return value;
 }
@@ -56,7 +58,7 @@ export async function disconnectIntegration(rest: string[], opts: RunOptions): P
   try {
     const oauth = client(opts, {
       scopes: [...manifest.auth.scopes],
-      storage: storage(opts, principal),
+      storage: storage(opts, manifest.name, principal),
     });
     result = await withAuthSignal(opts, (signal) =>
       oauth.disconnect(principal, signal, { forceLocal: args.forceLocal }),
