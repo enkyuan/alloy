@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -34,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SDK = ROOT / "kaji" / "sdk"
 TYPESCRIPT = ROOT / "kaji" / "ts"
 SCRIPTS = ROOT / "kaji" / "scripts"
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
 class GateFailure(RuntimeError):
@@ -405,6 +407,42 @@ def run_common_checks(environment: dict[str, str]) -> None:
     )
 
 
+def run_keyed_provider_proof(environment: dict[str, str]) -> None:
+    artifacts_value = environment.get("KAJI_RELEASE_ARTIFACTS_DIR", "").strip()
+    if not artifacts_value:
+        fail(
+            "KAJI_RELEASE_ARTIFACTS_DIR is required for keyed provider proof", status=2
+        )
+    artifacts = Path(artifacts_value)
+    if not artifacts.is_absolute():
+        artifacts = ROOT / artifacts
+    if not artifacts.is_dir():
+        fail(
+            "KAJI_RELEASE_ARTIFACTS_DIR must name an existing release artifact directory",
+            status=2,
+        )
+    commit = environment.get("KAJI_RELEASE_COMMIT", "").strip()
+    if COMMIT_PATTERN.fullmatch(commit) is None:
+        fail(
+            "KAJI_RELEASE_COMMIT must be exactly 40 lowercase hex characters for keyed provider proof",
+            status=2,
+        )
+    run_checked(
+        [
+            sys.executable,
+            str(SCRIPTS / "live_provider_proof.py"),
+            "--protected",
+            "--artifacts-dir",
+            str(artifacts.resolve()),
+            "--expected-commit",
+            commit,
+        ],
+        cwd=ROOT,
+        environment=environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
+    )
+
+
 def run_release_checks(environment: dict[str, str]) -> None:
     artifacts = ROOT / ".artifacts" / "kaji-release"
     temporary_parent = environment.get("TMPDIR") or None
@@ -634,12 +672,7 @@ def main() -> int:
         if not args.release:
             section("Protected keyed provider proof")
             if environment.get("KAJI_RUN_KEYED_LIVE") == "1":
-                run_checked(
-                    [sys.executable, str(SCRIPTS / "live_provider_proof.py")],
-                    cwd=ROOT,
-                    environment=environment,
-                    budget=RELEASE_COMMAND_BUDGET,
-                )
+                run_keyed_provider_proof(environment)
             else:
                 print("SKIP: not requested; no keyed provider evidence is claimed.")
     except GateFailure as error:

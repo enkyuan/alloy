@@ -71,12 +71,24 @@ def test_beta_release_check_rejects_unknown_flag_before_gates() -> None:
     assert "PASS:" not in result.stdout + result.stderr
 
 
-def test_protected_provider_proof_requires_openai_before_success() -> None:
+def test_protected_provider_proof_requires_both_keys_before_success(
+    tmp_path: Path,
+) -> None:
     env = os.environ.copy()
     env.pop("OPENAI_API_KEY", None)
+    env.pop("ANTHROPIC_API_KEY", None)
+    env["KAJI_RELEASE_COMMIT"] = "a" * 40
     proof = REPO_ROOT / "kaji" / "scripts" / "live_provider_proof.py"
     result = subprocess.run(
-        [sys.executable, str(proof)],
+        [
+            sys.executable,
+            str(proof),
+            "--protected",
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--expected-commit",
+            "a" * 40,
+        ],
         capture_output=True,
         check=False,
         env=env,
@@ -85,9 +97,94 @@ def test_protected_provider_proof_requires_openai_before_success() -> None:
 
     output = result.stdout + result.stderr
     assert result.returncode == 2
-    assert "OPENAI_API_KEY is required for keyed provider proof" in output
-    assert "STATUS: openai=passed" not in output
+    assert "required provider credentials are unavailable" in output
+    assert '"failureCode": "missing_required_key"' in output
     assert "PASS:" not in output
+
+
+def test_protected_provider_proof_uses_one_installed_runtime_for_four_cells() -> None:
+    module = _load_root_script("live_provider_proof.py")
+    source = (BETA_GATE.parent / "live_provider_proof.py").read_text()
+
+    assert module.CELLS == (
+        ("python", "openai"),
+        ("typescript", "openai"),
+        ("python", "anthropic"),
+        ("typescript", "anthropic"),
+    )
+    calls = [
+        node
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "installed_release_runtime"
+    ]
+    assert len(calls) == 1
+    assert "--protected" in source
+    assert "--artifacts-dir" in source
+    assert "--expected-commit" in source
+
+
+def test_beta_wrapper_fails_closed_without_frozen_provider_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_beta_gate()
+
+    with pytest.raises(module.GateFailure) as missing_artifacts:
+        module.run_keyed_provider_proof({})
+    assert missing_artifacts.value.status == 2
+    assert "KAJI_RELEASE_ARTIFACTS_DIR is required" in capsys.readouterr().err
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with pytest.raises(module.GateFailure) as missing_commit:
+        module.run_keyed_provider_proof({"KAJI_RELEASE_ARTIFACTS_DIR": str(artifacts)})
+    assert missing_commit.value.status == 2
+    assert (
+        "KAJI_RELEASE_COMMIT must be exactly 40 lowercase hex"
+        in capsys.readouterr().err
+    )
+
+
+def test_beta_wrapper_passes_protected_artifact_arguments_to_provider_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_beta_gate()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    environment = {
+        "KAJI_RELEASE_ARTIFACTS_DIR": str(artifacts),
+        "KAJI_RELEASE_COMMIT": "a" * 40,
+    }
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def capture(command: list[str], **kwargs: object) -> None:
+        calls.append((command, kwargs))
+
+    monkeypatch.setattr(module, "run_checked", capture)
+
+    module.run_keyed_provider_proof(environment)
+
+    assert calls == [
+        (
+            [
+                sys.executable,
+                str(BETA_GATE.parent / "live_provider_proof.py"),
+                "--protected",
+                "--artifacts-dir",
+                str(artifacts.resolve()),
+                "--expected-commit",
+                "a" * 40,
+            ],
+            {
+                "cwd": REPO_ROOT,
+                "environment": environment,
+                "budget": module.PROVIDER_ORCHESTRATOR_BUDGET,
+            },
+        )
+    ]
 
 
 def test_release_success_line_disclaims_protected_evidence() -> None:

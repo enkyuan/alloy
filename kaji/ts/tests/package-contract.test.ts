@@ -111,6 +111,40 @@ describe("npm contract artifact", () => {
     }
   });
 
+  it("keeps the installed provider proof public-only and receipt-redacted", () => {
+    const source = readFileSync(join(packageRoot, "scripts/installed-provider-proof.mts"), "utf8");
+
+    expect(source).toContain('from "@kaji/sdk"');
+    expect(source).toContain('from "@kaji/sdk/openai"');
+    expect(source).toContain('from "@kaji/sdk/anthropic"');
+    expect(source).toContain('import.meta.resolve("@kaji/sdk")');
+    expect(source).toContain(".build({ store: new InMemoryEventStore() })");
+    for (const field of [
+      "sdk",
+      "provider",
+      "proof",
+      "status",
+      "model",
+      "resolvedPackage",
+      "requestedToolCalls",
+      "completedToolCalls",
+      "requestedToolCallIds",
+      "completedToolCallIds",
+      "echoResultMatched",
+      "finalTextPresent",
+      "forbiddenTerminalEvents",
+    ]) {
+      expect(source).toContain(`${field}:`);
+    }
+    expect(source).not.toContain("../src");
+    expect(source).not.toContain("/dist/");
+    expect(source).not.toContain("JSON.stringify(result)");
+    expect(source).not.toContain("console.error(error");
+    expect(source).not.toContain("...process.env");
+    expect(source).not.toContain("finalText:");
+    expect(source).not.toContain("echoResult:");
+  });
+
   it("runs the source benchmark without consulting clean or stale dist subpaths", () => {
     const workdir = mkdtempSync(join(tmpdir(), "kaji-source-benchmark-"));
     const checkout = join(workdir, "sdk");
