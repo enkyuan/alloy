@@ -20,6 +20,7 @@ from kaji.integrations.oauth import (
     FileTokenStorage,
     GoogleOAuthClient,
     OAuthCredentialRecord,
+    OAuthError,
     OAuthTokenSet,
     _OAuthHttpResponse,
     _create_google_oauth_client_for_test,
@@ -645,6 +646,38 @@ async def test_connect_blocks_access_to_the_old_token_until_new_save_finishes() 
     http.release.set()
     await connecting
     assert await oauth.access_token(context()) == "new"
+
+
+@pytest.mark.asyncio
+async def test_failed_connect_restores_old_token_and_releases_slot() -> None:
+    store = MemoryStore({"user-123": record(access="old")})
+    oauth = client(store=store, http=Http([_OAuthHttpResponse(400, b"")]))
+
+    with pytest.raises(OAuthError):
+        await oauth.connect("user-123", CancellationToken())
+
+    assert oauth._slots == {}
+    assert await oauth.access_token(context()) == "old"
+    assert oauth._slots == {}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_connect_restores_old_token_and_releases_slot() -> None:
+    store = MemoryStore({"user-123": record(access="old")})
+    http = Http()
+    http.pause = True
+    oauth = client(store=store, http=http)
+    cancellation = CancellationToken()
+    connecting = asyncio.create_task(oauth.connect("user-123", cancellation))
+    await http.entered.wait()
+    cancellation.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await connecting
+
+    assert oauth._slots == {}
+    assert await oauth.access_token(context()) == "old"
+    assert oauth._slots == {}
 
 
 @pytest.mark.asyncio

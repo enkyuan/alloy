@@ -210,6 +210,10 @@ function makeClient(options: {
   );
 }
 
+function slotCount(client: GoogleOAuthClient): number {
+  return (client as unknown as { slots: Map<string, unknown> }).slots.size;
+}
+
 const response = (status: number, body: unknown): OAuthResponse => ({
   status,
   bytes: new TextEncoder().encode(typeof body === "string" ? body : JSON.stringify(body)),
@@ -536,6 +540,36 @@ describe("GoogleOAuthClient", () => {
     http.release.resolve();
     await connecting;
     await expect(client.accessToken(context())).resolves.toBe("new");
+  });
+
+  it("restores the old token and releases the slot after connect fails", async () => {
+    const storage = new MemoryStorage({ "user-123": record({ accessToken: "old" }) });
+    const client = makeClient({ storage, http: new Http([response(400, "")]) });
+
+    await expect(client.connect("user-123", new AbortController().signal)).rejects.toThrow(
+      "OAuth operation failed",
+    );
+
+    expect(slotCount(client)).toBe(0);
+    await expect(client.accessToken(context())).resolves.toBe("old");
+    expect(slotCount(client)).toBe(0);
+  });
+
+  it("restores the old token and releases the slot after connect is cancelled", async () => {
+    const storage = new MemoryStorage({ "user-123": record({ accessToken: "old" }) });
+    const http = new Http();
+    http.pause = true;
+    const client = makeClient({ storage, http });
+    const controller = new AbortController();
+    const connecting = client.connect("user-123", controller.signal);
+    await http.entered.promise;
+    controller.abort(new Error("abort-secret"));
+
+    await expect(connecting).rejects.toThrow("OAuth operation cancelled");
+
+    expect(slotCount(client)).toBe(0);
+    await expect(client.accessToken(context())).resolves.toBe("old");
+    expect(slotCount(client)).toBe(0);
   });
 
   it("disconnects without client id and persists ambiguous revocation", async () => {

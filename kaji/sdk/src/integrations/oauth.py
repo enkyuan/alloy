@@ -885,6 +885,12 @@ class GoogleOAuthClient:
                 internal.cancel()
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+                async with slot.gate:
+                    if (
+                        slot.connect is operation
+                        and slot.generation == operation.generation
+                    ):
+                        slot.blocked = False
                 raise
             finally:
                 async with slot.gate:
