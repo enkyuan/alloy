@@ -141,10 +141,11 @@ def _fake_installed_runtime(
 
     @contextmanager
     def installed_release_runtime(
-        artifacts_dir: Path, *, expected_commit: str
+        artifacts_dir: Path, *, expected_commit: str, include_providers: bool = False
     ) -> Iterator[SimpleNamespace]:
         assert artifacts_dir == tmp_path / "artifacts"
         assert expected_commit == "a" * 40
+        assert include_providers is True
         yield runtime
 
     monkeypatch.setattr(

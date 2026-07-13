@@ -329,7 +329,9 @@ def main(
     current_index: int | None = None
     try:
         with installed_release_runtime(
-            args.artifacts_dir, expected_commit=args.expected_commit
+            args.artifacts_dir,
+            expected_commit=args.expected_commit,
+            include_providers=True,
         ) as runtime:
             identity = runtime.identity()
             if identity.get("commit") != args.expected_commit:

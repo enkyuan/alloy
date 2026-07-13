@@ -28,8 +28,10 @@ TS = ROOT / "kaji" / "ts"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
 TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"
 TS_CONSUMER = Path(__file__).with_name("installed-typescript-runtime")
-TS_CONSUMER_MANIFEST = TS_CONSUMER / "package.json"
-TS_CONSUMER_LOCK = TS_CONSUMER / "package-lock.json"
+TS_CONSUMER_MANIFEST = TS_CONSUMER / "package.core.json"
+TS_CONSUMER_LOCK = TS_CONSUMER / "package-lock.core.json"
+TS_PROVIDER_CONSUMER_MANIFEST = TS_CONSUMER / "package.json"
+TS_PROVIDER_CONSUMER_LOCK = TS_CONSUMER / "package-lock.json"
 SAFE_PARENT_ENV = (
     "PATH",
     "LANG",
@@ -149,6 +151,8 @@ def _install_python(
     root: Path,
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
+    *,
+    include_providers: bool,
 ) -> tuple[Path, Path]:
     uv = shutil.which("uv", path=environment["PATH"])
     if uv is None:
@@ -162,6 +166,9 @@ def _install_python(
         env=environment,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    provider_extras = (
+        ["--extra", "openai", "--extra", "anthropic"] if include_providers else []
+    )
     run_checked(
         [
             uv,
@@ -171,10 +178,7 @@ def _install_python(
             "--frozen",
             "--no-dev",
             "--no-emit-project",
-            "--extra",
-            "openai",
-            "--extra",
-            "anthropic",
+            *provider_extras,
             "--format",
             "requirements-txt",
             "--output-file",
@@ -236,6 +240,8 @@ def _install_typescript(
     root: Path,
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
+    *,
+    include_providers: bool,
 ) -> tuple[Path, Path, Path, Path, str, str]:
     npm = shutil.which("npm", path=environment["PATH"])
     node = shutil.which("node", path=environment["PATH"])
@@ -246,7 +252,9 @@ def _install_typescript(
     consumer = root / "typescript"
     consumer.mkdir()
     template_hash, rendered_hash = _render_typescript_consumer(
-        consumer, release.npm_tarball
+        consumer,
+        release.npm_tarball,
+        include_providers=include_providers,
     )
     run_checked(
         [
@@ -293,10 +301,22 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _render_typescript_consumer(consumer: Path, tarball: Path) -> tuple[str, str]:
+def _typescript_consumer_fixture(include_providers: bool) -> tuple[Path, Path]:
+    if include_providers:
+        return TS_PROVIDER_CONSUMER_MANIFEST, TS_PROVIDER_CONSUMER_LOCK
+    return TS_CONSUMER_MANIFEST, TS_CONSUMER_LOCK
+
+
+def _render_typescript_consumer(
+    consumer: Path,
+    tarball: Path,
+    *,
+    include_providers: bool = False,
+) -> tuple[str, str]:
+    manifest_path, lock_path = _typescript_consumer_fixture(include_providers)
     try:
-        manifest_bytes = TS_CONSUMER_MANIFEST.read_bytes()
-        template_bytes = TS_CONSUMER_LOCK.read_bytes()
+        manifest_bytes = manifest_path.read_bytes()
+        template_bytes = lock_path.read_bytes()
         manifest = json.loads(manifest_bytes)
         template = json.loads(template_bytes)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -345,12 +365,18 @@ def installed_release_runtime(
     artifacts_dir: Path,
     *,
     expected_commit: str,
+    include_providers: bool = False,
 ) -> Iterator[InstalledReleaseRuntime]:
     release = verify(artifacts_dir, expected_commit)
     with tempfile.TemporaryDirectory(prefix="kaji-installed-release-") as temporary:
         root = Path(temporary).resolve()
         environment = _safe_environment(root)
-        python, python_package = _install_python(root, release, environment)
+        python, python_package = _install_python(
+            root,
+            release,
+            environment,
+            include_providers=include_providers,
+        )
         (
             consumer,
             benchmark,
@@ -358,7 +384,12 @@ def installed_release_runtime(
             typescript_package,
             lock_template_hash,
             lock_rendered_hash,
-        ) = _install_typescript(root, release, environment)
+        ) = _install_typescript(
+            root,
+            release,
+            environment,
+            include_providers=include_providers,
+        )
         runtime = InstalledReleaseRuntime(
             root=root,
             python_executable=python,

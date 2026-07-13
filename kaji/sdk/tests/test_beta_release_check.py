@@ -798,6 +798,79 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
     assert "install" not in source
 
 
+@pytest.mark.parametrize(
+    ("include_providers", "expected_extras"),
+    [
+        (False, []),
+        (True, ["openai", "anthropic"]),
+    ],
+)
+def test_installed_python_provider_dependencies_are_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    include_providers: bool,
+    expected_extras: list[str],
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    root = tmp_path / "runtime"
+    package = root / "python" / "site-packages" / "kaji" / "__init__.py"
+    package.parent.mkdir(parents=True)
+    package.write_text("")
+    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
+    wheel.write_bytes(b"wheel")
+    release = SimpleNamespace(python_wheel=wheel)
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(
+        module.shutil,
+        "which",
+        lambda command, **_kwargs: "/tools/uv" if command == "uv" else None,
+    )
+    monkeypatch.setattr(
+        module,
+        "run_checked",
+        lambda command, **_kwargs: commands.append(command),
+    )
+    monkeypatch.setattr(module, "_capture_json", lambda *_args, **_kwargs: str(package))
+
+    module._install_python(
+        root,
+        release,
+        {"PATH": "/tools"},
+        include_providers=include_providers,
+    )
+
+    export = next(command for command in commands if command[1] == "export")
+    extras = [
+        export[index + 1]
+        for index, argument in enumerate(export)
+        if argument == "--extra"
+    ]
+    assert extras == expected_extras
+
+
+@pytest.mark.parametrize(
+    ("include_providers", "expected_providers"),
+    [
+        (False, set()),
+        (True, {"openai", "@anthropic-ai/sdk"}),
+    ],
+)
+def test_installed_typescript_provider_dependencies_are_opt_in(
+    include_providers: bool,
+    expected_providers: set[str],
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    manifest, lock = module._typescript_consumer_fixture(include_providers)
+    manifest_dependencies = json.loads(manifest.read_text())["dependencies"]
+    lock_dependencies = json.loads(lock.read_text())["packages"][""]["dependencies"]
+    providers = {"openai", "@anthropic-ai/sdk"}
+
+    assert providers.intersection(manifest_dependencies) == expected_providers
+    assert providers.intersection(lock_dependencies) == expected_providers
+    assert manifest_dependencies == lock_dependencies
+
+
 def test_installed_runtime_rejects_wrong_commit_before_install(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -859,7 +932,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     verified = iter((release("b" * 64), release("d" * 64)))
     monkeypatch.setattr(module, "verify", lambda *_args: next(verified))
 
-    def fake_python(root: Path, *_args):
+    def fake_python(root: Path, *_args, **_kwargs):
         executable = root / "python" / "bin" / "python"
         package = root / "python" / "site-packages" / "kaji" / "__init__.py"
         executable.parent.mkdir(parents=True)
@@ -868,7 +941,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
         package.write_text("")
         return executable, package
 
-    def fake_typescript(root: Path, *_args):
+    def fake_typescript(root: Path, *_args, **_kwargs):
         consumer = root / "typescript"
         package = consumer / "node_modules" / "@kaji" / "sdk"
         consumer.mkdir()
@@ -1718,6 +1791,8 @@ def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> 
         Path("kaji/sdk/pyproject.toml"),
         Path("kaji/ts/package.json"),
         Path("kaji/ts/tsconfig.json"),
+        Path("kaji/scripts/installed-typescript-runtime/package.core.json"),
+        Path("kaji/scripts/installed-typescript-runtime/package-lock.core.json"),
         Path("kaji/scripts/installed-typescript-runtime/package.json"),
         Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     } <= set(module.SOURCE_INPUTS)

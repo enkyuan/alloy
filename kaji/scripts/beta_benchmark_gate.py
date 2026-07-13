@@ -61,6 +61,8 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/run_beta_soak.py"),
     Path("kaji/scripts/process_runner.py"),
     Path("kaji/scripts/installed_release_runtime.py"),
+    Path("kaji/scripts/installed-typescript-runtime/package.core.json"),
+    Path("kaji/scripts/installed-typescript-runtime/package-lock.core.json"),
     Path("kaji/scripts/installed-typescript-runtime/package.json"),
     Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     Path("kaji/scripts/verify_release_artifacts.py"),
