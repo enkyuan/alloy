@@ -292,8 +292,14 @@ const result = await executeTool(
 | `ApprovalHandler`, `cliApprovalHandler` | Approval callback type + default stdin handler for dev / REPL |
 | `TypedApprovalHandler`, `EventApprovalHandler`, `AutoApprovalHandler` | Structured approval handlers: event-driven (publishes `TOOL_APPROVAL_REQUESTED` for a host UI to answer) and auto-decide by policy, as alternatives to `cliApprovalHandler` |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
+| `normalizeProviderError`, `NormalizedProviderError` | Redaction-safe semantic classification for Kaji provider errors |
+| `openai`, `anthropic`, `kimi`, `gemini`, `openrouter` | One-line provider factories; Kimi, Gemini, and OpenRouter presets are experimental |
+| `getProvider`, `registerProvider` | Name-keyed provider registry, for host code that resolves a provider by config string |
+| `generateText`, `streamText` | One-shot provider calls without a full `AgentRuntime`: a single request/response or stream, no event log |
 | `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
+| `EffectiveRuntimeLimits` | Immutable values returned by `AgentRuntime.effectiveLimits()` after overrides |
 | `Integration`, `tool` | Integration helper for scoped tools |
+| `EnvSecretSource` | Reads a named secret from `process.env`; the default `SecretSource` implementation |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format
 shared with the Python SDK.

@@ -23,18 +23,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ### Added
 
+- **`AgentStrategy.allowToolCalls`** — mirrors Python's `AgentStrategy.allow_tool_calls`.
+  When `false`, tools are not advertised to the provider and the turn completes
+  without executing requested tool calls. Previously
+  only `maxToolIterations` was ported; this closes the remaining behavioral gap
+  between `runtime.ts` and `runtime.py`.
+
 - **CLI dispatch table** — `kaji` now exposes a real dispatch surface with
   working `--help`. Available subcommands: `add` (existing), `init` (new,
   scaffolds a starter project), `list-integrations` (new, enumerates the
-  registry catalog). Per-command help works as `kaji <cmd> --help`. The
+  registry catalog), and `replay` (renders a stored JSONL session log).
+  Per-command help works as `kaji <cmd> --help`. The
   binary entry split out of `index.ts` into a dedicated `bin.ts` so tests
   can drive `runCli(argv, opts)` without firing `process.exit`.
 - **`cliApprovalHandler`** — default approval handler for dev / REPL use.
   Factory returning an `ApprovalHandler` that matches the planner's
   `(name, args, risk)` signature; prints tool name, risk, and arguments,
   then reads `y` / `N` on stdin. Optional `label` field disambiguates
-  concurrent agents in the prompt header. Production hosts should still
-  implement their own `ApprovalHandler` (web modal, Slack, etc.).
+  concurrent agents in the prompt header. It is a deprecated Boolean
+  compatibility path; production hosts implement `TypedApprovalHandler` and
+  return an `ApprovalDecision`.
 - **`SessionState` approval projection** — `replaySession` now projects the
   three approval events into observable state:
   - `pendingApprovals` (tool_call_ids requested but not yet resolved)
@@ -52,3 +60,36 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 - **`kaji replay`** - fails closed with exit 1 on the first corrupt JSONL line
   and never prints raw prompts, tool payloads, metadata, keys, or causes.
+- **`calculateCostUsd`** — now rounds to 10 decimal places like Python's
+  `calculate_cost_usd`, so cost output is byte-identical across SDKs instead of
+  drifting on floating-point noise.
+- **`ToolPlanner.executeBatch`** - routes every call through the
+  bounded execution controller. Tools are exclusive by default;
+  `parallel_safe: true` opts effect-independent calls into the four-wide pool.
+  Request-event failures are reported after the remaining prepared calls are
+  processed, preserving already-completed sibling outcomes.
+
+### Removed
+
+- **Dead `ApprovalRequest` type** — exported from three places (`runtime/approval/types.ts`,
+  `runtime/approval/index.ts`, `index.ts`) but never used as a parameter or
+  variable type anywhere; `TypedApprovalHandler.request()` takes `(call, ctx)`
+  as separate arguments, not this wrapper.
+
+### Changed (simplification)
+
+- **`withRetry`/`parseRetryAfterMs`** — deduplicated. `OpenAIProvider` and
+  `AnthropicProvider` each carried a near-identical ~35-line retry-with-backoff
+  implementation; both now call a single `withRetry()` in `providers/base.ts`.
+  `RetryOptions` moved from `providers/openai.ts` to `providers/base.ts` for
+  the same reason (`AnthropicProvider` was already importing it cross-file),
+  while the `@kaji/sdk/openai` subpath continues to re-export the type.
+
+### Documentation
+
+- **README export table** — added rows for exports that shipped with no doc
+  pointer: `generateText`/`streamText` (one-shot calls without a full
+  `AgentRuntime`), `getProvider`/`registerProvider`, the provider factories
+  (`openai`, `anthropic`, `kimi`, `gemini`, `openrouter`), `EnvSecretSource`,
+  and the structured approval handlers (`TypedApprovalHandler`,
+  `EventApprovalHandler`, `AutoApprovalHandler`).

@@ -61,12 +61,35 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   import settings` as `Settings` instead of `Any`.
 - **`kaji/README.md`** — Status updated from "pre-release" to "pre-beta"
   with explicit scope on what is and isn't production-hardened.
+- **`ToolSpec.risk` / `function_tool(risk=...)` / `tool(risk=...)`** — tightened
+  from `Optional[str]` to a new `ToolRisk = Literal["read", "write",
+  "external_effect", "destructive", "admin"]` in
+  `runtime/tools/registry.py`, matching the five-value set `ToolPolicy` already
+  enforces at runtime (`policies.RISK_LEVELS`) and the `ToolRisk` union the TS
+  SDK already had. Callers passing an arbitrary string now get a type error
+  instead of a silent runtime no-op.
+- **`ManifestTool.risk`** and **`ParsedOperation.risk`** (`cli/gen.py`) —
+  tightened to `ToolRisk` for the same reason as `ToolSpec.risk`.
+  `validate_manifest_document` (`integrations/validation.py`) now also validates each
+  manifest tool's shape (`name`/`description` present) and rejects an
+  out-of-range `risk` value; previously an integration manifest with a typo'd
+  risk string, or a missing tool name/description, passed validation silently.
 
 ### Fixed
 
 - `kaji/infra/realtime/redis.py` — redis.asyncio import is already lazy
   (uses `_get_redis_module()`); added `TYPE_CHECKING` guard and updated module
   docstring to document the `kaji[realtime]` install requirement.
+- **`AgentStrategy.allow_tool_calls`** — disabled tools are no longer advertised
+  to providers, and a unit test
+  (`test_agent_runtime_skips_tool_execution_when_allow_tool_calls_false`)
+  verifies the turn completes normally without executing a tool.
+- **`ToolPlanner.execute_batch`** - routes every call through the
+  bounded execution controller. Tools are sequential by default;
+  `parallel_safe=True` opts effect-independent calls into the four-wide pool.
+  Request-event failures are reported after the remaining prepared calls are
+  processed, preserving completed sibling outcomes while cancellation keeps
+  its native propagation semantics.
 
 ---
 
