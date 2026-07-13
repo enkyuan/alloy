@@ -195,24 +195,23 @@ describe("installed-package command runner", () => {
         require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
         process.exit(0);
       `;
-      let pid: number | undefined;
       try {
         await expect(
           runCommand({
             command: process.execPath,
             args: ["-e", program],
             cwd: workdir,
-            timeoutMs: 200,
+            timeoutMs: 1_000,
             maxOutputBytes: 64,
             terminateGraceMs: 50,
             check: false,
           }),
         ).rejects.toBeInstanceOf(CommandCleanupError);
-        pid = Number(readFileSync(pidFile, "utf8"));
       } finally {
-        if (pid !== undefined) {
+        if (existsSync(pidFile)) {
+          const pid = Number(readFileSync(pidFile, "utf8"));
           try {
-            process.kill(pid, "SIGKILL");
+            if (Number.isSafeInteger(pid) && pid > 0) process.kill(pid, "SIGKILL");
           } catch {
             // The escaped fixture may already have exited.
           }
