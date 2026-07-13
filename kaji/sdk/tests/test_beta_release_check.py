@@ -71,6 +71,21 @@ def test_beta_release_check_rejects_unknown_flag_before_gates() -> None:
     assert "PASS:" not in result.stdout + result.stderr
 
 
+def test_beta_release_check_help_distinguishes_local_rehearsal() -> None:
+    result = subprocess.run(
+        [sys.executable, str(BETA_GATE), "--help"],
+        capture_output=True,
+        check=False,
+        env={"PATH": "/usr/bin:/bin"},
+        text=True,
+    )
+
+    assert result.returncode == 0
+    help_text = " ".join(result.stdout.split())
+    assert "non-promotable local rehearsal" in help_text
+    assert "commit and pinned-toolchain enforcement" in help_text
+
+
 def test_protected_provider_proof_requires_both_keys_before_success(
     tmp_path: Path,
 ) -> None:
@@ -195,10 +210,39 @@ def test_release_success_line_disclaims_protected_evidence() -> None:
     }
 
     assert (
-        "PASS: offline release rehearsal; keyed/provider/publish readiness NOT claimed"
+        "PASS: local offline release rehearsal only; commit and pinned-toolchain "
+        "enforcement NOT claimed; keyed/provider/publish readiness NOT claimed"
         in literals
     )
+    assert (
+        "PASS: commit-bound offline release rehearsal; "
+        "keyed/provider/publish readiness NOT claimed" in literals
+    )
     assert "PASS: Kaji beta release checks completed" not in literals
+
+
+def test_release_metadata_command_distinguishes_local_and_commit_bound(
+    tmp_path: Path,
+) -> None:
+    module = _load_beta_gate()
+
+    local_label, local_command = module.package_metadata_command({}, tmp_path)
+    assert local_label == "Local non-promotable package metadata and checksum manifest"
+    assert local_command[-2:] == ["--artifacts-dir", str(tmp_path)]
+    assert "--release" not in local_command
+
+    commit = "a" * 40
+    release_label, release_command = module.package_metadata_command(
+        {"KAJI_RELEASE_COMMIT": commit}, tmp_path
+    )
+    assert release_label == "Commit-bound package metadata and checksum manifest"
+    assert release_command[-5:] == [
+        "--release",
+        "--commit",
+        commit,
+        "--artifacts-dir",
+        str(tmp_path),
+    ]
 
 
 def test_beta_release_check_wraps_required_gates() -> None:
@@ -391,8 +435,11 @@ if name == "npm" and args and args[0] == "pack":
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     output = completed.stdout.strip().splitlines()
+    assert "LOCAL REHEARSAL ONLY:" in completed.stdout
+    assert "commit and pinned-toolchain enforcement are not active" in completed.stdout
     assert output[-1] == (
-        "PASS: offline release rehearsal; keyed/provider/publish readiness NOT claimed"
+        "PASS: local offline release rehearsal only; commit and pinned-toolchain "
+        "enforcement NOT claimed; keyed/provider/publish readiness NOT claimed"
     )
     assert "PASS: Kaji beta checks completed" not in completed.stdout
     commands = log.read_text().splitlines()

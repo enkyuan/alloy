@@ -444,6 +444,37 @@ def run_keyed_provider_proof(environment: dict[str, str]) -> None:
     )
 
 
+def configured_release_commit(environment: dict[str, str]) -> str | None:
+    return environment.get("KAJI_RELEASE_COMMIT") or environment.get("GITHUB_SHA")
+
+
+def package_metadata_command(
+    environment: dict[str, str], artifacts: Path
+) -> tuple[str, list[str]]:
+    command = [
+        "uv",
+        "run",
+        "--project",
+        "kaji/sdk",
+        "python",
+        "kaji/scripts/verify_package_metadata.py",
+    ]
+    commit = configured_release_commit(environment)
+    if commit is None:
+        command.extend(["--artifacts-dir", str(artifacts)])
+        return "Local non-promotable package metadata and checksum manifest", command
+    command.extend(
+        [
+            "--release",
+            "--commit",
+            commit,
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+    return "Commit-bound package metadata and checksum manifest", command
+
+
 def run_release_checks(environment: dict[str, str]) -> None:
     artifacts = ROOT / ".artifacts" / "kaji-release"
     temporary_parent = environment.get("TMPDIR") or None
@@ -620,29 +651,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
             environment,
         )
 
-        commit = environment.get("KAJI_RELEASE_COMMIT") or environment.get("GITHUB_SHA")
-        metadata_command = [
-            "uv",
-            "run",
-            "--project",
-            "kaji/sdk",
-            "python",
-            "kaji/scripts/verify_package_metadata.py",
-        ]
-        if commit:
-            metadata_command.extend(
-                [
-                    "--release",
-                    "--commit",
-                    commit,
-                    "--artifacts-dir",
-                    str(artifacts),
-                ]
-            )
-            label = "Package metadata and checksum manifest"
-        else:
-            metadata_command.extend(["--artifacts-dir", str(artifacts)])
-            label = "Local package metadata and checksum manifest"
+        label, metadata_command = package_metadata_command(environment, artifacts)
         run_in_dir(
             label,
             ROOT,
@@ -654,13 +663,27 @@ def run_release_checks(environment: dict[str, str]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--release", action="store_true")
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help=(
+            "run the offline artifact rehearsal; without KAJI_RELEASE_COMMIT or "
+            "GITHUB_SHA this is a non-promotable local rehearsal and commit and "
+            "pinned-toolchain enforcement are not active"
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
     environment = release_environment()
+    commit = configured_release_commit(environment)
+    if args.release and commit is None:
+        print(
+            "LOCAL REHEARSAL ONLY: commit and pinned-toolchain enforcement are not "
+            "active; generated artifacts are non-promotable."
+        )
     try:
         require_command("bun", "TypeScript SDK release gates", environment)
         require_command("node", "installed npm package proof", environment)
@@ -681,10 +704,17 @@ def main() -> int:
 
     print()
     if args.release:
-        print(
-            "PASS: offline release rehearsal; "
-            "keyed/provider/publish readiness NOT claimed"
-        )
+        if commit is None:
+            print(
+                "PASS: local offline release rehearsal only; commit and "
+                "pinned-toolchain enforcement NOT claimed; keyed/provider/publish "
+                "readiness NOT claimed"
+            )
+        else:
+            print(
+                "PASS: commit-bound offline release rehearsal; "
+                "keyed/provider/publish readiness NOT claimed"
+            )
     else:
         print("PASS: Kaji beta checks completed")
     return 0
