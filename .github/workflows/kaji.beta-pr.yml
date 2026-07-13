@@ -55,5 +55,8 @@ jobs:
       - name: Run Python tests offline
         run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest -m "not integration"
 
+      - name: Build TypeScript package offline
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build
+
       - name: Run TypeScript tests offline
         run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test

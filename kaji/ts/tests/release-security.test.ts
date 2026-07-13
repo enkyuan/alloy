@@ -340,6 +340,7 @@ const requiredGateCommands = [
   "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --quick",
   "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/integration_benchmark.py --mode quick",
   'uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest -m "not integration"',
+  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build",
   "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test",
 ];
 
@@ -497,7 +498,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(effectivePermissions(workflow, job)).toEqual({ contents: "read" });
 
   const steps = job.steps ?? [];
-  expect(steps).toHaveLength(13);
+  expect(steps).toHaveLength(14);
   for (const [index, step] of steps.entries()) {
     expect(step.if, `gate step ${index} must execute normally`).toBeUndefined();
     expect(step["continue-on-error"] ?? false, `gate step ${index} must fail closed`).toBe(false);
