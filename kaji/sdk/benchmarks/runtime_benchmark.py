@@ -18,6 +18,8 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
+import kaji
+
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.replay import replay_session
 from kaji.infra.events.schemas import (
@@ -848,9 +850,13 @@ def _run_parent(case: str, samples: int, warmups: int, seed: int) -> dict[str, A
         _spawn_sample(case, seed + index)
     measured = [_spawn_sample(case, seed + warmups + index) for index in range(samples)]
     durations = [float(sample["durationMs"]) for sample in measured]
+    package_file = kaji.__file__
+    if package_file is None:
+        raise RuntimeError("kaji package has no resolved file")
     result: dict[str, Any] = {
         "schemaVersion": 1,
         "runtime": "python",
+        "resolvedPackage": str(Path(package_file).resolve()),
         "case": case,
         "samples": samples,
         "warmups": warmups,

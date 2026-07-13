@@ -9,7 +9,10 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
+      "@kaji/sdk/anthropic": ["./src/providers/anthropic.ts"],
       "@kaji/sdk/integrations": ["./src/integrations/public.ts"],
+      "@kaji/sdk/openai": ["./src/providers/openai.ts"],
+      "@kaji/sdk/testing": ["./src/testing.ts"],
       "@kaji/sdk": ["./src/index.ts"],
       "@/*": ["./src/*"]
     },

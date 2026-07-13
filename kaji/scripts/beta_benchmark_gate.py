@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -15,6 +16,11 @@ import re
 import statistics
 import sys
 from typing import Any
+
+from installed_release_runtime import (
+    InstalledReleaseRuntime,
+    installed_release_runtime,
+)
 
 from process_runner import (
     BENCHMARK_COMMAND_BUDGET,
@@ -54,6 +60,10 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/beta_soak_gate.py"),
     Path("kaji/scripts/run_beta_soak.py"),
     Path("kaji/scripts/process_runner.py"),
+    Path("kaji/scripts/installed_release_runtime.py"),
+    Path("kaji/scripts/installed-typescript-runtime/package.json"),
+    Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
+    Path("kaji/scripts/verify_release_artifacts.py"),
     Path("kaji/benchmarks/beta-budgets.json"),
     Path("kaji/sdk/pyproject.toml"),
     Path("kaji/ts/package.json"),
@@ -186,7 +196,13 @@ def performance_provenance(*, protected: bool) -> dict[str, Any]:
     }
 
 
-def _runtime_command(runtime: str, case: str, samples: int, warmups: int) -> list[str]:
+def _runtime_command(
+    runtime: str,
+    case: str,
+    samples: int,
+    warmups: int,
+    installed: InstalledReleaseRuntime | None = None,
+) -> list[str]:
     common = [
         "--case",
         case,
@@ -200,23 +216,42 @@ def _runtime_command(runtime: str, case: str, samples: int, warmups: int) -> lis
     ]
     if runtime == "python":
         return [
-            sys.executable,
+            str(installed.python_executable)
+            if installed is not None
+            else sys.executable,
             str(ROOT / "kaji" / "sdk" / "benchmarks" / "runtime_benchmark.py"),
             *common,
         ]
     return [
         "bun",
-        str(ROOT / "kaji" / "ts" / "benchmarks" / "runtime-benchmark.ts"),
+        str(
+            installed.typescript_benchmark
+            if installed is not None
+            else ROOT / "kaji" / "ts" / "benchmarks" / "runtime-benchmark.ts"
+        ),
         *common,
     ]
 
 
-def _run_case(runtime: str, case: str, samples: int, warmups: int) -> dict[str, Any]:
+def _run_case(
+    runtime: str,
+    case: str,
+    samples: int,
+    warmups: int,
+    installed: InstalledReleaseRuntime | None = None,
+) -> dict[str, Any]:
     completed = run_checked(
-        _runtime_command(runtime, case, samples, warmups),
-        cwd=ROOT,
+        _runtime_command(runtime, case, samples, warmups, installed),
+        cwd=(
+            installed.typescript_workdir
+            if installed is not None and runtime == "typescript"
+            else installed.root
+            if installed is not None
+            else ROOT
+        ),
         budget=BENCHMARK_COMMAND_BUDGET,
         capture=True,
+        env=installed.environment if installed is not None else None,
     )
     try:
         result = json.loads(completed.stdout.decode("utf-8"))
@@ -242,6 +277,21 @@ def _run_case(runtime: str, case: str, samples: int, warmups: int) -> dict[str, 
         raise RuntimeError(f"{runtime} {case} has the wrong schema identity")
     if result["seed"] != BENCHMARK_SEED:
         raise RuntimeError(f"{runtime} {case} returned the wrong seed")
+    resolved_package = result.get("resolvedPackage")
+    if resolved_package is not None and (
+        not isinstance(resolved_package, str) or not resolved_package
+    ):
+        raise RuntimeError(f"{runtime} {case} returned an invalid package path")
+    if installed is not None:
+        if resolved_package is None:
+            raise RuntimeError(f"{runtime} {case} is missing fields: resolvedPackage")
+        expected_package = (
+            installed.resolved_python_package
+            if runtime == "python"
+            else installed.resolved_typescript_package
+        )
+        if Path(resolved_package).resolve() != expected_package:
+            raise RuntimeError(f"{runtime} {case} resolved a different package")
     sample_results = result["sampleResults"]
     if not isinstance(sample_results, list):
         raise RuntimeError(f"{runtime} {case} sampleResults is not an array")
@@ -636,7 +686,9 @@ def _require_case_coverage(
 
 
 def _candidate_baseline(
-    results: dict[str, dict[str, dict[str, Any]]], current: dict[str, Any]
+    results: dict[str, dict[str, dict[str, Any]]],
+    current: dict[str, Any],
+    artifact_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _require_case_coverage(results)
     for runtime in ("python", "typescript"):
@@ -650,6 +702,7 @@ def _candidate_baseline(
         "schemaVersion": 1,
         "status": "calibrated",
         **current,
+        **(artifact_identity or {}),
         "calibrationCommit": _commit(),
         "calibratedAt": datetime.now(timezone.utc).isoformat(),
         "medians": {
@@ -700,23 +753,74 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--candidate-baseline", type=Path)
     parser.add_argument("--protected", action="store_true")
+    parser.add_argument("--artifacts-dir", type=Path)
+    parser.add_argument("--expected-commit")
     return parser.parse_args()
+
+
+def _installed_context(args: argparse.Namespace):
+    protected = getattr(args, "protected", False)
+    required = protected or args.mode in {"full", "calibrate"}
+    artifacts_dir = getattr(args, "artifacts_dir", None)
+    expected_commit = getattr(args, "expected_commit", None)
+    if not required:
+        return nullcontext(None)
+    if artifacts_dir is None:
+        raise RuntimeError(
+            "--artifacts-dir is required for protected/full/calibrate mode"
+        )
+    if (
+        not isinstance(expected_commit, str)
+        or COMMIT_PATTERN.fullmatch(expected_commit) is None
+    ):
+        raise RuntimeError(
+            "--expected-commit must be exactly 40 lowercase hex characters"
+        )
+    if os.environ.get("KAJI_RELEASE_COMMIT") != expected_commit:
+        raise RuntimeError("--expected-commit must equal KAJI_RELEASE_COMMIT")
+    return installed_release_runtime(artifacts_dir, expected_commit=expected_commit)
 
 
 def main() -> int:
     args = _parse_args()
     budgets = json.loads(BUDGETS_PATH.read_text())
-    provenance = performance_provenance(protected=getattr(args, "protected", False))
-    current = provenance["fingerprint"]
     failures: list[str] = []
+    protected = getattr(args, "protected", False)
+    try:
+        provenance = performance_provenance(protected=protected)
+    except (CommandError, OSError, RuntimeError) as error:
+        provenance = {
+            "commit": os.environ.get("KAJI_RELEASE_COMMIT"),
+            "fingerprint": {},
+            "protected": protected,
+        }
+        failures.append(str(error))
+    fingerprint_value = provenance["fingerprint"]
+    current: dict[str, Any] = (
+        fingerprint_value if isinstance(fingerprint_value, dict) else {}
+    )
     baseline: dict[str, Any] | None = None
+    installed_required = protected or args.mode in {"full", "calibrate"}
+    artifact_identity: dict[str, Any] = (
+        {
+            "releaseManifestSha256": None,
+            "artifacts": {},
+            "resolvedPackages": {},
+            "typescriptConsumerLock": {
+                "templateSha256": None,
+                "renderedSha256": None,
+            },
+        }
+        if installed_required
+        else {}
+    )
 
     if args.mode == "calibrate":
         if os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1":
             failures.append("calibration requires KAJI_BENCHMARK_CALIBRATION=1")
         if os.environ.get("KAJI_BENCHMARK_PINNED_RUNNER") != "1":
             failures.append("calibration requires KAJI_BENCHMARK_PINNED_RUNNER=1")
-        if current["runner"]["imageDigest"] == "local-unpinned":
+        if current.get("runner", {}).get("imageDigest") == "local-unpinned":
             failures.append("calibration requires a pinned runner image digest")
         if args.candidate_baseline is None:
             failures.append("calibration requires --candidate-baseline")
@@ -744,9 +848,30 @@ def main() -> int:
     }
     if not failures:
         try:
-            for runtime in results:
-                for case in CASES:
-                    results[runtime][case] = _run_case(runtime, case, samples, warmups)
+            context = _installed_context(args)
+            with context as installed:
+                if installed is not None:
+                    identity = installed.identity()
+                    if identity["commit"] != provenance["commit"]:
+                        raise RuntimeError(
+                            "installed artifact commit differs from benchmark provenance"
+                        )
+                    artifact_identity = {
+                        key: identity[key]
+                        for key in (
+                            "releaseManifestSha256",
+                            "artifacts",
+                            "resolvedPackages",
+                            "typescriptConsumerLock",
+                        )
+                    }
+                for runtime in results:
+                    for case in CASES:
+                        results[runtime][case] = _run_case(
+                            runtime, case, samples, warmups, installed
+                        )
+        except SystemExit as error:
+            failures.append(str(error))
         except (OSError, CommandError, RuntimeError) as error:
             failures.append(str(error))
 
@@ -774,6 +899,7 @@ def main() -> int:
         "mode": args.mode,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         **provenance,
+        **artifact_identity,
         "results": results,
         "failures": failures,
         "passed": not failures,
@@ -782,7 +908,14 @@ def main() -> int:
 
     if args.mode == "calibrate" and not failures:
         assert args.candidate_baseline is not None
-        _write(args.candidate_baseline, _candidate_baseline(results, current))
+        _write(
+            args.candidate_baseline,
+            _candidate_baseline(
+                results,
+                current,
+                {"commit": provenance["commit"], **artifact_identity},
+            ),
+        )
     return 0 if not failures else 1
 
 

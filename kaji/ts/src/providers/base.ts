@@ -79,7 +79,9 @@ export interface ProviderResponseDiagnosticsSink {
   record(diagnostics: Readonly<ProviderResponseDiagnostics>): void;
 }
 
-const PROVIDER_RESPONSE_DIAGNOSTICS: unique symbol = Symbol("kaji.provider.responseDiagnostics");
+const PROVIDER_RESPONSE_DIAGNOSTICS: unique symbol = Symbol.for(
+  "kaji.provider.responseDiagnostics",
+);
 
 type InternalModelProviderOptions = ModelProviderOptions & {
   readonly [PROVIDER_RESPONSE_DIAGNOSTICS]?: ProviderResponseDiagnosticsSink;

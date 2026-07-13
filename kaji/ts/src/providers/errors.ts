@@ -6,14 +6,34 @@ export interface ProviderErrorOptions {
   cause?: unknown;
 }
 
+const PROVIDER_ERROR_BRAND = Symbol.for("kaji.ProviderError.v1");
+const PROVIDER_CONFIG_ERROR_BRAND = Symbol.for("kaji.ProviderConfigError.v1");
+const PROVIDER_API_ERROR_BRAND = Symbol.for("kaji.ProviderAPIError.v1");
+const PROVIDER_CONNECTION_ERROR_BRAND = Symbol.for("kaji.ProviderConnectionError.v1");
+const PROVIDER_RATE_LIMITED_ERROR_BRAND = Symbol.for("kaji.ProviderRateLimitedError.v1");
+const PROVIDER_OUTPUT_LIMIT_ERROR_BRAND = Symbol.for("kaji.ProviderOutputLimitError.v1");
+
+function brand(value: object, key: symbol): void {
+  Object.defineProperty(value, key, { value: true });
+}
+
+function hasBrand(value: unknown, key: symbol): boolean {
+  return typeof value === "object" && value !== null && Reflect.get(value, key) === true;
+}
+
 export class ProviderError extends Error {
   readonly service: string;
   readonly action: string;
   readonly statusCode?: number;
   readonly responseText?: string;
 
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_ERROR_BRAND);
+  }
+
   constructor(message: string, options: ProviderErrorOptions = {}) {
     super(message);
+    brand(this, PROVIDER_ERROR_BRAND);
     this.name = new.target.name;
     this.service = options.service ?? "provider";
     this.action = options.action ?? "request";
@@ -26,20 +46,35 @@ export class ProviderError extends Error {
 }
 
 export class ProviderConfigError extends ProviderError {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_CONFIG_ERROR_BRAND);
+  }
+
   constructor(message: string, options: Omit<ProviderErrorOptions, "action"> = {}) {
     super(message, { ...options, action: "configure" });
+    brand(this, PROVIDER_CONFIG_ERROR_BRAND);
   }
 }
 
 export class ProviderAPIError extends ProviderError {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_API_ERROR_BRAND);
+  }
+
   constructor(message: string, options: ProviderErrorOptions = {}) {
     super(message, { ...options, action: options.action ?? "api call" });
+    brand(this, PROVIDER_API_ERROR_BRAND);
   }
 }
 
 export class ProviderConnectionError extends ProviderError {
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_CONNECTION_ERROR_BRAND);
+  }
+
   constructor(message: string, options: ProviderErrorOptions = {}) {
     super(message, { ...options, action: options.action ?? "connect" });
+    brand(this, PROVIDER_CONNECTION_ERROR_BRAND);
   }
 }
 
@@ -47,11 +82,16 @@ export class ProviderRateLimitedError extends ProviderError {
   readonly retryAfterMs: number;
   readonly attempts: number;
 
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_RATE_LIMITED_ERROR_BRAND);
+  }
+
   constructor(
     message: string,
     options: Omit<ProviderErrorOptions, "action"> & { retryAfterMs: number; attempts: number },
   ) {
     super(message, { ...options, action: "api call", statusCode: 429 });
+    brand(this, PROVIDER_RATE_LIMITED_ERROR_BRAND);
     this.retryAfterMs = options.retryAfterMs;
     this.attempts = options.attempts;
   }
@@ -64,6 +104,10 @@ export class ProviderOutputLimitError extends Error {
   readonly phase = "provider_stream" as const;
   readonly retryable = false as const;
   readonly outcome = "unknown" as const;
+
+  static [Symbol.hasInstance](value: unknown): boolean {
+    return hasBrand(value, PROVIDER_OUTPUT_LIMIT_ERROR_BRAND);
+  }
 
   constructor(
     readonly dimension: ProviderOutputDimension,
@@ -79,6 +123,7 @@ export class ProviderOutputLimitError extends Error {
     }
     const unit = dimension === "tool_calls" ? "calls" : "bytes";
     super(`Provider output exceeded ${dimension} limit of ${limit} ${unit}`);
+    brand(this, PROVIDER_OUTPUT_LIMIT_ERROR_BRAND);
     this.name = "ProviderOutputLimitError";
   }
 }

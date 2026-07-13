@@ -1,5 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -83,6 +94,57 @@ function exportTargets(value: unknown): string[] {
 }
 
 describe("npm contract artifact", () => {
+  it("pins the installed-release consumer dependency closure", () => {
+    const fixture = resolve(repositoryRoot, "kaji/scripts/installed-typescript-runtime");
+    const manifest = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8"));
+    const lock = JSON.parse(readFileSync(join(fixture, "package-lock.json"), "utf8"));
+
+    expect(lock.lockfileVersion).toBe(3);
+    expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
+    expect(lock.packages["node_modules/@kaji/sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.1.tgz");
+    for (const [name, value] of Object.entries(lock.packages) as Array<
+      [string, { resolved?: string; integrity?: string }]
+    >) {
+      if (name === "" || name === "node_modules/@kaji/sdk") continue;
+      expect(value.resolved).toMatch(/^https:\/\/registry\.npmjs\.org\//);
+      expect(value.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/);
+    }
+  });
+
+  it("runs the source benchmark without consulting clean or stale dist subpaths", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "kaji-source-benchmark-"));
+    const checkout = join(workdir, "sdk");
+    try {
+      mkdirSync(join(checkout, "benchmarks"), { recursive: true });
+      cpSync(join(packageRoot, "src"), join(checkout, "src"), { recursive: true });
+      cpSync(join(packageRoot, "contracts"), join(checkout, "contracts"), { recursive: true });
+      cpSync(
+        join(packageRoot, "benchmarks/runtime-benchmark.ts"),
+        join(checkout, "benchmarks/runtime-benchmark.ts"),
+      );
+      cpSync(join(packageRoot, "package.json"), join(checkout, "package.json"));
+      cpSync(join(packageRoot, "tsconfig.json"), join(checkout, "tsconfig.json"));
+      symlinkSync(join(packageRoot, "node_modules"), join(checkout, "node_modules"));
+      mkdirSync(join(checkout, "dist"));
+      for (const file of ["index.js", "openai.js", "testing.js"]) {
+        writeFileSync(join(checkout, "dist", file), 'throw new Error("stale dist loaded");\n');
+      }
+
+      const sample = JSON.parse(
+        runText(
+          "bun",
+          ["benchmarks/runtime-benchmark.ts", "--worker-case", "replay10k", "--seed", "13"],
+          { cwd: checkout },
+        ),
+      ) as { case: string; completed: number };
+
+      expect(sample.case).toBe("replay10k");
+      expect(sample.completed).toBe(10_000);
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("accepts only the exact canonical Echo list row", () => {
     expect(() =>
       assertCliListOutput(JSON.stringify([CANONICAL_ECHO_ROW, CANONICAL_GITHUB_ROW])),
@@ -246,6 +308,193 @@ describe("npm contract artifact", () => {
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
     );
   });
+
+  it("installs packed benchmark seams through public ESM and CommonJS specifiers", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "kaji-testing-pack-"));
+    try {
+      const packed = JSON.parse(
+        runText("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", workdir], {
+          cwd: packageRoot,
+          env: { ...process.env, npm_config_cache: join(workdir, "npm-cache") },
+        }),
+      ) as Array<{ filename: string }>;
+      const tarball = join(workdir, packed[0]!.filename);
+      const consumer = join(workdir, "consumer");
+      mkdirSync(consumer);
+      const fixtureLock = JSON.parse(
+        readFileSync(
+          resolve(repositoryRoot, "kaji/scripts/installed-typescript-runtime/package-lock.json"),
+          "utf8",
+        ),
+      ) as { packages: Record<string, { version?: string }> };
+      const localDependency = (name: string): string => {
+        const version = fixtureLock.packages[`node_modules/${name}`]?.version;
+        if (version === undefined) throw new Error(`missing frozen version for ${name}`);
+        const directory = realpathSync(join(packageRoot, "node_modules", name));
+        const installedManifest = JSON.parse(
+          readFileSync(join(directory, "package.json"), "utf8"),
+        ) as { name?: string; version?: string };
+        if (installedManifest.name !== name || installedManifest.version !== version) {
+          throw new Error(`local ${name} does not match the frozen consumer lock`);
+        }
+        return `file:${directory}`;
+      };
+      const localDependencies = {
+        "@anthropic-ai/sdk": localDependency("@anthropic-ai/sdk"),
+        ajv: localDependency("ajv"),
+        "ajv-formats": localDependency("ajv-formats"),
+        openai: localDependency("openai"),
+        zod: localDependency("zod"),
+      };
+      const writeConsumerManifest = (dependencies: Record<string, string>): void => {
+        writeFileSync(
+          join(consumer, "package.json"),
+          JSON.stringify({
+            name: "kaji-packed-subpath-proof",
+            private: true,
+            type: "module",
+            dependencies,
+          }),
+        );
+      };
+      const installHome = join(workdir, "home");
+      const installCache = join(workdir, "bun-cache");
+      const installTemporary = join(workdir, "bun-tmp");
+      for (const directory of [installHome, installCache, installTemporary]) {
+        mkdirSync(directory);
+      }
+      const installOptions = {
+        cwd: consumer,
+        env: {
+          ...process.env,
+          HOME: installHome,
+          npm_config_cache: installCache,
+          npm_config_registry: "http://127.0.0.1:9",
+          TEMP: installTemporary,
+          TMP: installTemporary,
+          TMPDIR: installTemporary,
+        },
+      };
+      writeConsumerManifest(localDependencies);
+      runText(
+        "npm",
+        [
+          "install",
+          "--offline",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--package-lock=false",
+        ],
+        installOptions,
+      );
+      writeConsumerManifest({ ...localDependencies, "@kaji/sdk": `file:${tarball}` });
+      runText(
+        "npm",
+        [
+          "install",
+          "--offline",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--package-lock=false",
+        ],
+        installOptions,
+      );
+      const installed = join(consumer, "node_modules/@kaji/sdk");
+      expect(lstatSync(installed).isSymbolicLink()).toBe(false);
+      expect(realpathSync(installed).startsWith(`${realpathSync(consumer)}/`)).toBe(true);
+      const exercise = `
+class Probe extends openai.OpenAIProvider {
+  constructor(outcome) { super({apiKey:"test",retry:{maxAttempts:1}}); this.outcome=outcome; }
+  async createClient() { return {chat:{completions:{create:async()=>{
+    if (this.outcome?.throws) throw this.outcome.value;
+    return this.outcome;
+  }}}}; }
+}
+const response=(content)=>({choices:[{message:{content,tool_calls:[]}}]});
+const capture=async(promise)=>{try{await promise;}catch(error){return error;} throw new Error("expected failure");};
+let diagnostics;
+await new Probe(response("ok")).generate([{role:"user",content:"probe"}],[],testing.withProviderResponseDiagnostics({}, {record(value){diagnostics=value;}}));
+let config;
+try { new openai.OpenAIProvider({apiKey:""}); } catch (error) { config=error; }
+const api=await capture(new Probe({throws:true,value:{status:500}}).generate([{role:"user",content:"probe"}],[]));
+const connection=await capture(new Probe({throws:true,value:{code:"ECONNRESET"}}).generate([{role:"user",content:"probe"}],[]));
+const rateSource=new root.ProviderRateLimitedError("rate",{retryAfterMs:1,attempts:1});
+const rate=await capture(new Probe({throws:true,value:rateSource}).generate([{role:"user",content:"probe"}],[]));
+const limit=await capture(new Probe(response("too large")).generate([{role:"user",content:"probe"}],[],{responseLimits:{...root.DEFAULT_PROVIDER_RESPONSE_LIMITS,textMaxBytes:1,responseMaxBytes:1}}));
+console.log(JSON.stringify({
+  testing:Object.keys(testing),
+  root:Object.keys(root),
+  diagnostics:diagnostics!==undefined,
+  errors:{
+    config:config instanceof root.ProviderConfigError,
+    api:api instanceof root.ProviderAPIError,
+    connection:connection instanceof root.ProviderConnectionError,
+    rate:rate instanceof root.ProviderRateLimitedError,
+    limit:limit instanceof root.ProviderOutputLimitError,
+  },
+}));`;
+      const esm = JSON.parse(
+        runText(
+          "node",
+          [
+            "--input-type=module",
+            "--eval",
+            `const testing=await import("@kaji/sdk/testing"); const root=await import("@kaji/sdk"); const openai=await import("@kaji/sdk/openai"); ${exercise}`,
+          ],
+          { cwd: consumer },
+        ),
+      ) as {
+        testing: string[];
+        root: string[];
+        diagnostics: boolean;
+        errors: Record<string, boolean>;
+      };
+      const cjs = JSON.parse(
+        runText(
+          "node",
+          [
+            "--eval",
+            `void (async()=>{ const testing=require("@kaji/sdk/testing"); const root=require("@kaji/sdk"); const openai=require("@kaji/sdk/openai"); ${exercise} })();`,
+          ],
+          { cwd: consumer },
+        ),
+      ) as {
+        testing: string[];
+        root: string[];
+        diagnostics: boolean;
+        errors: Record<string, boolean>;
+      };
+
+      for (const exports of [esm, cjs]) {
+        expect(exports.testing).toEqual(
+          expect.arrayContaining([
+            "MockProvider",
+            "createSessionState",
+            "withProviderResponseDiagnostics",
+          ]),
+        );
+        expect(exports.root).not.toContain("createSessionState");
+        expect(exports.root).not.toContain("withProviderResponseDiagnostics");
+        expect(exports.diagnostics).toBe(true);
+        expect(exports.errors).toEqual({
+          config: true,
+          api: true,
+          connection: true,
+          rate: true,
+          limit: true,
+        });
+      }
+      for (const declaration of ["testing.d.ts", "testing.d.cts"]) {
+        expect(readFileSync(join(installed, "dist", declaration), "utf8")).toContain(
+          "ProviderResponseDiagnostics",
+        );
+      }
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("contains exactly the canonical contract files and bytes", () => {
     const workdir = mkdtempSync(join(tmpdir(), "kaji-contract-pack-"));

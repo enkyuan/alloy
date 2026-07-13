@@ -1,33 +1,39 @@
+import { realpathSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { InMemoryEventCommitter } from "@/events/committer";
-import { KajiEvent } from "@/events/schemas";
-import { InMemoryEventStore } from "@/events/store";
-import { EventType } from "@/events/types";
-import type { Clock, IdFactory } from "@/internal/uuid";
-import type { MetricMeasurement, MetricsSink } from "@/observability";
-import type {
-  ModelProvider,
-  ModelProviderOptions,
-  ModelResponse,
-  ModelResponseChunk,
-  ProviderMessage,
-} from "@/providers/base";
-import { CancellationToken } from "@/runtime/cancellation";
-import { AgentRuntime } from "@/runtime/runtime";
-import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
-import { ToolExecutionController } from "@/tools/execution";
-import type { ToolExecutionError } from "@/tools/execution-errors";
 import {
+  AgentRuntime,
+  CancellationToken,
+  EventType,
+  InMemoryEventCommitter,
+  InMemoryEventStore,
   InMemoryToolIdempotencyLedger,
+  InMemorySessionTurnCoordinator,
+  KajiEvent,
+  ToolExecutionController,
+  ToolPlanner,
+  ToolPolicy,
+  type Clock,
+  type IdFactory,
+  type MetricMeasurement,
+  type MetricsSink,
+  type ModelProvider,
+  type ModelProviderOptions,
+  type ModelResponse,
+  type ModelResponseChunk,
+  type ProviderMessage,
   type ToolClaimResult,
+  type ToolExecutionError,
   type ToolIdempotencyClaim,
   type ToolIdempotencyLedger,
-} from "@/tools/idempotency";
-import { ToolPlanner } from "@/tools/planner";
-import { ToolPolicy } from "@/tools/policy";
-import type { ToolSpec } from "@/tools/registry";
+  type ToolSpec,
+} from "@kaji/sdk";
+
+const RESOLVED_PACKAGE = realpathSync(
+  join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
+);
 
 interface Options {
   readonly minutes: number;
@@ -625,6 +631,7 @@ async function main(): Promise<void> {
   const result = {
     schemaVersion: 1,
     runtime: "typescript",
+    resolvedPackage: RESOLVED_PACKAGE,
     engine: typeof Bun === "undefined" ? `node-${process.version}` : `bun-${Bun.version}`,
     seed: options.seed,
     offline: true,

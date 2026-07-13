@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tempfile
@@ -63,16 +65,45 @@ def parse_args() -> argparse.Namespace:
         "--calibrate", action="store_const", const="calibrate", dest="mode"
     )
     parser.add_argument("--protected", action="store_true")
+    parser.add_argument("--artifacts-dir", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    installed = args.protected or args.mode in {"full", "calibrate"}
+    artifacts_dir = getattr(args, "artifacts_dir", None)
+    expected_commit = os.environ.get("KAJI_RELEASE_COMMIT")
+    if installed and artifacts_dir is None:
+        print(
+            "FAIL: --artifacts-dir is required for protected/full/calibrate mode",
+            file=sys.stderr,
+        )
+        return 2
+    if installed and (
+        expected_commit is None
+        or re.fullmatch(r"[0-9a-f]{40}", expected_commit) is None
+    ):
+        print(
+            "FAIL: exact KAJI_RELEASE_COMMIT is required for installed benchmarks",
+            file=sys.stderr,
+        )
+        return 2
     selected = commands()
     if selected is None:
         print("uv or kaji/sdk/.venv is required", file=sys.stderr)
         return 2
     python, pytest = selected
+    installed_args = (
+        [
+            "--artifacts-dir",
+            str(artifacts_dir),
+            "--expected-commit",
+            expected_commit,
+        ]
+        if installed
+        else []
+    )
 
     if args.mode == "quick":
         status = run(
@@ -118,6 +149,7 @@ def main() -> int:
                     "quick",
                     "--output",
                     str(output),
+                    *installed_args,
                     *(["--protected"] if args.protected else []),
                 ],
                 budget=BENCHMARK_ORCHESTRATOR_BUDGET,
@@ -148,6 +180,7 @@ def main() -> int:
                 "full",
                 "--output",
                 str(artifacts / "results.json"),
+                *installed_args,
                 *(["--protected"] if args.protected else []),
             ],
             budget=BENCHMARK_ORCHESTRATOR_BUDGET,
@@ -166,6 +199,7 @@ def main() -> int:
             str(artifacts / "calibration-results.json"),
             "--candidate-baseline",
             str(artifacts / "beta-baseline.candidate.json"),
+            *installed_args,
             *(["--protected"] if args.protected else []),
         ],
         budget=BENCHMARK_ORCHESTRATOR_BUDGET,

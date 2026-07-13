@@ -8,13 +8,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from beta_benchmark_gate import performance_provenance
+from beta_benchmark_gate import COMMIT_PATTERN, HASH_PATTERN, performance_provenance
 
 
 ROOT = Path(__file__).resolve().parents[2]
 BUDGETS = json.loads((ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_text())[
     "soak"
 ]
+EXPECTED_ARTIFACTS = {
+    "python": "kaji-0.2.0b1-py3-none-any.whl",
+    "typescript": "kaji-sdk-0.2.0-beta.1.tgz",
+}
 
 
 def _load(path: Path, runtime: str) -> tuple[dict[str, Any] | None, list[str]]:
@@ -25,6 +29,7 @@ def _load(path: Path, runtime: str) -> tuple[dict[str, Any] | None, list[str]]:
     required = {
         "schemaVersion",
         "runtime",
+        "resolvedPackage",
         "requestedMinutes",
         "elapsedSeconds",
         "minimumTurns",
@@ -129,7 +134,85 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--typescript", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--protected", action="store_true")
+    parser.add_argument("--runtime-identity", type=Path)
     return parser.parse_args()
+
+
+def _load_identity(path: Path | None) -> tuple[dict[str, Any], list[str]]:
+    empty = {
+        "releaseManifestSha256": None,
+        "artifacts": {},
+        "resolvedPackages": {},
+        "typescriptConsumerLock": {
+            "templateSha256": None,
+            "renderedSha256": None,
+        },
+    }
+    if path is None:
+        return empty, ["protected soak is missing installed runtime identity"]
+    try:
+        identity = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as error:
+        return empty, [f"installed runtime identity is unreadable: {error}"]
+    if not isinstance(identity, dict):
+        return empty, ["installed runtime identity is not an object"]
+    failures: list[str] = []
+    commit = identity.get("commit")
+    manifest = identity.get("releaseManifestSha256")
+    artifacts = identity.get("artifacts")
+    resolved = identity.get("resolvedPackages")
+    consumer_lock = identity.get("typescriptConsumerLock")
+    if not isinstance(commit, str) or COMMIT_PATTERN.fullmatch(commit) is None:
+        failures.append("installed runtime identity has an invalid commit")
+    if not isinstance(manifest, str) or HASH_PATTERN.fullmatch(manifest) is None:
+        failures.append("installed runtime identity has an invalid manifest hash")
+    if not isinstance(artifacts, dict) or set(artifacts) != {"python", "typescript"}:
+        failures.append("installed runtime identity has invalid artifacts")
+    else:
+        for runtime in ("python", "typescript"):
+            value = artifacts[runtime]
+            if (
+                not isinstance(value, dict)
+                or set(value) != {"file", "sha256"}
+                or value["file"] != EXPECTED_ARTIFACTS[runtime]
+                or not isinstance(value["sha256"], str)
+                or HASH_PATTERN.fullmatch(value["sha256"]) is None
+            ):
+                failures.append(
+                    f"installed runtime identity has invalid {runtime} artifact"
+                )
+    if (
+        not isinstance(resolved, dict)
+        or set(resolved) != {"python", "typescript"}
+        or any(
+            not isinstance(resolved.get(runtime), str)
+            or not Path(resolved[runtime]).is_absolute()
+            for runtime in resolved
+        )
+    ):
+        failures.append("installed runtime identity has invalid package paths")
+    if (
+        not isinstance(consumer_lock, dict)
+        or set(consumer_lock) != {"templateSha256", "renderedSha256"}
+        or any(
+            not isinstance(consumer_lock.get(name), str)
+            or HASH_PATTERN.fullmatch(consumer_lock[name]) is None
+            for name in ("templateSha256", "renderedSha256")
+        )
+    ):
+        failures.append("installed runtime identity has invalid consumer lock hashes")
+    return (
+        {
+            "releaseManifestSha256": manifest,
+            "artifacts": artifacts if isinstance(artifacts, dict) else {},
+            "resolvedPackages": resolved if isinstance(resolved, dict) else {},
+            "typescriptConsumerLock": (
+                consumer_lock if isinstance(consumer_lock, dict) else {}
+            ),
+            "identityCommit": commit,
+        },
+        failures,
+    )
 
 
 def main() -> int:
@@ -137,6 +220,14 @@ def main() -> int:
     provenance = performance_provenance(protected=getattr(args, "protected", False))
     failures: list[str] = []
     results: dict[str, Any] = {}
+    identity: dict[str, Any] = {}
+    if getattr(args, "protected", False):
+        identity, identity_failures = _load_identity(
+            getattr(args, "runtime_identity", None)
+        )
+        failures.extend(identity_failures)
+        if identity.get("identityCommit") != provenance["commit"]:
+            failures.append("installed runtime commit differs from soak provenance")
     for runtime, path in (("python", args.python), ("typescript", args.typescript)):
         value, load_failures = _load(path, runtime)
         failures.extend(load_failures)
@@ -144,9 +235,19 @@ def main() -> int:
             results[runtime] = value
             if not load_failures:
                 failures.extend(_failures(value, runtime, args.minutes))
+                expected_package = identity.get("resolvedPackages", {}).get(runtime)
+                if (
+                    getattr(args, "protected", False)
+                    and value.get("resolvedPackage") != expected_package
+                ):
+                    failures.append(
+                        f"{runtime} soak resolved a different installed package"
+                    )
+    identity.pop("identityCommit", None)
     report = {
         "schemaVersion": 1,
         **provenance,
+        **identity,
         "requestedMinutes": args.minutes,
         "budgets": BUDGETS,
         "results": results,

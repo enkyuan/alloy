@@ -18,6 +18,8 @@ import time
 import tracemalloc
 from typing import Any
 
+import kaji
+
 from kaji.infra.events.errors import EventBufferOverflowError
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.schemas import SessionClosed, UserMessage
@@ -526,9 +528,13 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
         and subscriber_overflows > 0
         and subscriber_resumes == subscriber_overflows
     )
+    package_file = kaji.__file__
+    if package_file is None:
+        raise RuntimeError("kaji package has no resolved file")
     return {
         "schemaVersion": 1,
         "runtime": "python",
+        "resolvedPackage": str(Path(package_file).resolve()),
         "seed": seed,
         "requestedMinutes": minutes,
         "elapsedSeconds": elapsed_seconds,

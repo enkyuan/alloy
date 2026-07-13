@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+from contextlib import contextmanager
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -9,6 +11,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -302,13 +305,17 @@ def test_soak_budget_is_duration_plus_cleanup_margin() -> None:
 
 
 def test_protected_soak_validates_commit_before_starting_children(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     module = _load_root_script("run_beta_soak.py")
     monkeypatch.setattr(
         module,
         "parse_args",
-        lambda: module.argparse.Namespace(minutes="30", protected=True),
+        lambda: module.argparse.Namespace(
+            minutes="30", protected=True, artifacts_dir=tmp_path / "release"
+        ),
     )
     monkeypatch.setattr(
         module,
@@ -323,6 +330,394 @@ def test_protected_soak_validates_commit_before_starting_children(
 
     assert module.main() == 2
     assert "FAIL: commit mismatch" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", ["invalid_minutes", "invalid_args", "missing_uv"])
+def test_soak_preflight_atomically_replaces_stale_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    output = tmp_path / ".artifacts" / "kaji-soak" / "results.json"
+    output.parent.mkdir(parents=True)
+    output.write_text(json.dumps({"passed": True}))
+    if failure == "invalid_args":
+        monkeypatch.setattr(
+            module,
+            "parse_args",
+            lambda: (_ for _ in ()).throw(SystemExit(2)),
+        )
+        expected = 2
+    else:
+        monkeypatch.setattr(
+            module,
+            "parse_args",
+            lambda: module.argparse.Namespace(
+                minutes="nan" if failure == "invalid_minutes" else "30",
+                protected=False,
+                artifacts_dir=None,
+            ),
+        )
+        if failure == "missing_uv":
+            monkeypatch.setattr(module, "python_command", lambda: None)
+        expected = 2
+
+    assert module.main() == expected
+    receipt = json.loads(output.read_text())
+    assert receipt["passed"] is False
+    assert receipt["failureCode"] != "passed"
+
+
+def test_soak_receipt_write_failure_removes_stale_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    output = tmp_path / ".artifacts" / "kaji-soak" / "results.json"
+    output.parent.mkdir(parents=True)
+    output.write_text(json.dumps({"passed": True}))
+    monkeypatch.setattr(
+        module,
+        "_write_failure_receipt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("write failed")),
+    )
+
+    assert module.main() == 1
+    assert not output.exists()
+
+
+def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    release = tmp_path / "release"
+    release.mkdir()
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            minutes="30", protected=True, artifacts_dir=release
+        ),
+    )
+    monkeypatch.setattr(module, "release_commit", lambda **_kwargs: "a" * 40)
+    monkeypatch.setattr(module, "python_command", lambda: [sys.executable])
+    runtime_root = tmp_path / "runtime"
+    typescript = runtime_root / "typescript"
+    typescript.mkdir(parents=True)
+    typescript_soak = typescript / "runtime-soak.ts"
+    typescript_soak.write_text("")
+    identity = {
+        "commit": "a" * 40,
+        "releaseManifestSha256": "b" * 64,
+        "artifacts": {
+            "python": {
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "sha256": "c" * 64,
+            },
+            "typescript": {
+                "file": "kaji-sdk-0.2.0-beta.1.tgz",
+                "sha256": "d" * 64,
+            },
+        },
+        "resolvedPackages": {
+            "python": str(runtime_root / "python/kaji/__init__.py"),
+            "typescript": str(typescript / "node_modules/@kaji/sdk"),
+        },
+        "typescriptConsumerLock": {
+            "templateSha256": "e" * 64,
+            "renderedSha256": "f" * 64,
+        },
+    }
+    runtime = SimpleNamespace(
+        python_executable=Path(sys.executable),
+        root=runtime_root,
+        environment={},
+        typescript_workdir=typescript,
+        typescript_soak=typescript_soak,
+        identity=lambda: identity,
+    )
+
+    @contextmanager
+    def changed_runtime(*_args: object, **_kwargs: object):
+        yield runtime
+        raise RuntimeError("release artifact identity changed")
+
+    monkeypatch.setattr(module, "installed_release_runtime", changed_runtime)
+    completed = SimpleNamespace(stdout=b"{}")
+    monkeypatch.setattr(
+        module, "run_parallel_checked", lambda *_args, **_kwargs: (completed, completed)
+    )
+
+    def passed_gate(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        output = Path(command[command.index("--output") + 1])
+        output.write_text(json.dumps({"passed": True, **identity}))
+        return completed
+
+    monkeypatch.setattr(module, "run_checked", passed_gate)
+
+    assert module.main() == 1
+    receipt = json.loads(
+        (tmp_path / ".artifacts" / "kaji-soak" / "results.json").read_text()
+    )
+    assert receipt["passed"] is False
+    assert receipt["failureCode"] == "installed_runtime_failed"
+    assert receipt["releaseManifestSha256"] == "b" * 64
+
+
+@pytest.mark.parametrize(
+    ("mode", "protected"),
+    [("quick", True), ("full", False), ("calibrate", False)],
+)
+def test_installed_benchmark_modes_require_artifacts_before_command_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    protected: bool,
+) -> None:
+    module = _load_root_script("run_beta_benchmarks.py")
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            mode=mode,
+            protected=protected,
+            artifacts_dir=None,
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "commands",
+        lambda: (_ for _ in ()).throw(AssertionError("command setup started")),
+    )
+
+    assert module.main() == 2
+    assert "--artifacts-dir is required" in capsys.readouterr().err
+
+
+def test_protected_soak_requires_artifacts_before_child_setup(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            minutes="30", protected=True, artifacts_dir=None
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "python_command",
+        lambda: (_ for _ in ()).throw(AssertionError("child setup started")),
+    )
+
+    assert module.main() == 2
+    assert "--artifacts-dir is required" in capsys.readouterr().err
+
+
+def test_installed_runtime_rejects_source_and_workspace_resolution(
+    tmp_path: Path,
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    isolated = tmp_path / "isolated"
+    isolated.mkdir()
+    installed = isolated / "site-packages" / "kaji" / "__init__.py"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("")
+
+    assert (
+        module._require_contained(installed, isolated, "python") == installed.resolve()
+    )
+    for unsafe in (
+        REPO_ROOT / "kaji" / "sdk" / "src" / "__init__.py",
+        REPO_ROOT / "kaji" / "ts" / "src",
+        REPO_ROOT / "kaji" / "ts" / "dist",
+    ):
+        with pytest.raises(RuntimeError, match="outside the isolated runtime"):
+            module._require_contained(unsafe, isolated, "package")
+
+
+def test_installed_runtime_renders_only_verified_tarball_integrity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    manifest = fixture / "package.json"
+    lock = fixture / "package-lock.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "name": "kaji-installed-release-runtime",
+                "private": True,
+                "type": "module",
+                "dependencies": {
+                    "@kaji/sdk": "file:kaji-sdk-0.2.0-beta.1.tgz",
+                    "zod": "4.4.3",
+                },
+            }
+        )
+    )
+    template = {
+        "name": "kaji-installed-release-runtime",
+        "lockfileVersion": 3,
+        "requires": True,
+        "packages": {
+            "": {
+                "name": "kaji-installed-release-runtime",
+                "dependencies": {
+                    "@kaji/sdk": "file:kaji-sdk-0.2.0-beta.1.tgz",
+                    "zod": "4.4.3",
+                },
+            },
+            "node_modules/@kaji/sdk": {
+                "version": "0.2.0-beta.1",
+                "resolved": "file:kaji-sdk-0.2.0-beta.1.tgz",
+                "integrity": "sha512-template",
+            },
+            "node_modules/zod": {
+                "version": "4.4.3",
+                "resolved": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+                "integrity": "sha512-zod",
+            },
+        },
+    }
+    lock.write_text(json.dumps(template))
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.1.tgz"
+    tarball.write_bytes(b"verified tarball bytes")
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    monkeypatch.setattr(module, "TS_CONSUMER_MANIFEST", manifest)
+    monkeypatch.setattr(module, "TS_CONSUMER_LOCK", lock)
+
+    template_hash, rendered_hash = module._render_typescript_consumer(consumer, tarball)
+
+    rendered = json.loads((consumer / "package-lock.json").read_text())
+    assert template_hash == hashlib.sha256(lock.read_bytes()).hexdigest()
+    assert (
+        rendered_hash
+        == hashlib.sha256((consumer / "package-lock.json").read_bytes()).hexdigest()
+    )
+    assert (
+        rendered["packages"]["node_modules/zod"]
+        == template["packages"]["node_modules/zod"]
+    )
+    assert rendered["packages"]["node_modules/@kaji/sdk"]["integrity"].startswith(
+        "sha512-"
+    )
+    assert lock.read_text() == json.dumps(template)
+
+
+def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    manifest = json.loads(module.TS_CONSUMER_MANIFEST.read_text())
+    lock = json.loads(module.TS_CONSUMER_LOCK.read_text())
+
+    assert lock["lockfileVersion"] == 3
+    assert lock["packages"][""]["dependencies"] == manifest["dependencies"]
+    assert lock["packages"]["node_modules/@kaji/sdk"]["resolved"] == (
+        "file:kaji-sdk-0.2.0-beta.1.tgz"
+    )
+    for name, package in lock["packages"].items():
+        if not name or name == "node_modules/@kaji/sdk":
+            continue
+        assert package["resolved"].startswith("https://registry.npmjs.org/")
+        assert re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", package["integrity"])
+    source = module._install_typescript.__code__.co_consts
+    assert "ci" in source
+    assert "install" not in source
+
+
+def test_installed_runtime_rejects_wrong_commit_before_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    monkeypatch.setattr(
+        module,
+        "verify",
+        lambda *_args: (_ for _ in ()).throw(SystemExit("FAIL: commit mismatch")),
+    )
+    monkeypatch.setattr(
+        module,
+        "_install_python",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("install started")),
+    )
+
+    with pytest.raises(SystemExit, match="commit mismatch"):
+        with module.installed_release_runtime(tmp_path, expected_commit="a" * 40):
+            pass
+
+
+def test_installed_runtime_environment_drops_loader_injection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    for name in ("PYTHONPATH", "PYTHONHOME", "NODE_PATH", "NODE_OPTIONS"):
+        monkeypatch.setenv(name, f"unsafe-{name.lower()}")
+
+    environment = module._safe_environment(tmp_path)
+
+    assert environment["HOME"].startswith(str(tmp_path))
+    assert environment["PYTHONNOUSERSITE"] == "1"
+    assert environment["PYTHONSAFEPATH"] == "1"
+    for name in ("PYTHONPATH", "PYTHONHOME", "NODE_PATH", "NODE_OPTIONS"):
+        assert name not in environment
+
+
+def test_installed_runtime_reverifies_hashes_after_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("installed_release_runtime.py")
+    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
+    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.1.tgz"
+    for path in (wheel, sdist, tarball):
+        path.write_bytes(b"artifact")
+
+    def release(manifest_hash: str):
+        return module.VerifiedReleaseArtifacts(
+            root=tmp_path,
+            commit="a" * 40,
+            manifest_sha256=manifest_hash,
+            python_wheel=wheel,
+            python_sdist=sdist,
+            npm_tarball=tarball,
+            artifact_sha256={path.name: "c" * 64 for path in (wheel, sdist, tarball)},
+        )
+
+    verified = iter((release("b" * 64), release("d" * 64)))
+    monkeypatch.setattr(module, "verify", lambda *_args: next(verified))
+
+    def fake_python(root: Path, *_args):
+        executable = root / "python" / "bin" / "python"
+        package = root / "python" / "site-packages" / "kaji" / "__init__.py"
+        executable.parent.mkdir(parents=True)
+        package.parent.mkdir(parents=True)
+        executable.write_text("")
+        package.write_text("")
+        return executable, package
+
+    def fake_typescript(root: Path, *_args):
+        consumer = root / "typescript"
+        package = consumer / "node_modules" / "@kaji" / "sdk"
+        consumer.mkdir()
+        package.mkdir(parents=True)
+        benchmark = consumer / "runtime-benchmark.ts"
+        soak = consumer / "runtime-soak.ts"
+        benchmark.write_text("")
+        soak.write_text("")
+        return consumer, benchmark, soak, package, "e" * 64, "f" * 64
+
+    monkeypatch.setattr(module, "_install_python", fake_python)
+    monkeypatch.setattr(module, "_install_typescript", fake_typescript)
+
+    with pytest.raises(RuntimeError, match="changed while evidence was running"):
+        with module.installed_release_runtime(tmp_path, expected_commit="a" * 40):
+            pass
 
 
 def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
@@ -787,7 +1182,7 @@ def _complete_benchmark_baseline(module: object) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("mode", ["quick", "calibrate"])
+@pytest.mark.parametrize("mode", ["quick"])
 def test_beta_benchmark_non_full_modes_do_not_read_baseline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
 ) -> None:
@@ -898,6 +1293,125 @@ def test_performance_provenance_binds_commit_and_local_mode_is_explicit(
     }
 
 
+@pytest.mark.parametrize("resolved", [None, "/unexpected/source/kaji/__init__.py"])
+def test_benchmark_child_must_report_matching_installed_package(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    resolved: str | None,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    expected = tmp_path / "python" / "site-packages" / "kaji" / "__init__.py"
+    expected.parent.mkdir(parents=True)
+    expected.write_text("")
+    result: dict[str, object] = {
+        "schemaVersion": 1,
+        "runtime": "python",
+        "case": "replay10k",
+        "samples": 1,
+        "warmups": 1,
+        "seed": 13,
+        "sampleResults": [{"durationMs": 1.0, "peakMiB": 2.0}],
+        "medianMs": 1.0,
+        "maxPeakMiB": 2.0,
+    }
+    if resolved is not None:
+        result["resolvedPackage"] = resolved
+    monkeypatch.setattr(
+        module,
+        "run_checked",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            stdout=json.dumps(result).encode("utf-8")
+        ),
+    )
+    installed = SimpleNamespace(
+        python_executable=Path(sys.executable),
+        root=tmp_path,
+        environment={},
+        resolved_python_package=expected.resolve(),
+    )
+
+    with pytest.raises(RuntimeError, match="missing fields|different package"):
+        module._run_case("python", "replay10k", 1, 1, installed)
+
+
+def test_soak_identity_rejects_missing_fields_and_child_path_drift(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    commit = "a" * 40
+    identity_path = tmp_path / "identity.json"
+    identity = {
+        "commit": commit,
+        "releaseManifestSha256": "b" * 64,
+        "artifacts": {
+            "python": {
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "sha256": "c" * 64,
+            },
+            "typescript": {
+                "file": "kaji-sdk-0.2.0-beta.1.tgz",
+                "sha256": "d" * 64,
+            },
+        },
+        "resolvedPackages": {
+            "python": "/isolated/python/kaji/__init__.py",
+            "typescript": "/isolated/typescript/@kaji/sdk",
+        },
+        "typescriptConsumerLock": {
+            "templateSha256": "e" * 64,
+            "renderedSha256": "f" * 64,
+        },
+    }
+    identity_path.write_text(json.dumps(identity))
+    loaded, failures = module._load_identity(identity_path)
+    assert failures == []
+    assert loaded["releaseManifestSha256"] == "b" * 64
+
+    del identity["artifacts"]["python"]["sha256"]
+    identity_path.write_text(json.dumps(identity))
+    assert "invalid python artifact" in " ".join(
+        module._load_identity(identity_path)[1]
+    )
+    identity["artifacts"]["python"]["sha256"] = "c" * 64
+    identity_path.write_text(json.dumps(identity))
+
+    output = tmp_path / "soak.json"
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            minutes=30.0,
+            python=tmp_path / "python.json",
+            typescript=tmp_path / "typescript.json",
+            output=output,
+            protected=True,
+            runtime_identity=identity_path,
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "performance_provenance",
+        lambda **_kwargs: {"commit": commit, "fingerprint": {}, "protected": True},
+    )
+    monkeypatch.setattr(
+        module,
+        "_load",
+        lambda _path, runtime: (
+            {"runtime": runtime, "resolvedPackage": f"/source/{runtime}"},
+            [],
+        ),
+    )
+    monkeypatch.setattr(module, "_failures", lambda *_args: [])
+
+    assert module.main() == 1
+    report = json.loads(output.read_text())
+    assert report["passed"] is False
+    assert (
+        sum("different installed package" in failure for failure in report["failures"])
+        == 2
+    )
+
+
 def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> None:
     module = _load_root_script("beta_benchmark_gate.py")
 
@@ -915,12 +1429,28 @@ def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> 
         Path("kaji/scripts/beta_soak_gate.py"),
         Path("kaji/scripts/run_beta_soak.py"),
         Path("kaji/scripts/process_runner.py"),
+        Path("kaji/scripts/installed_release_runtime.py"),
+        Path("kaji/scripts/verify_release_artifacts.py"),
         Path("kaji/benchmarks/beta-budgets.json"),
         Path("kaji/sdk/pyproject.toml"),
         Path("kaji/ts/package.json"),
         Path("kaji/ts/tsconfig.json"),
+        Path("kaji/scripts/installed-typescript-runtime/package.json"),
+        Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     } <= set(module.SOURCE_INPUTS)
     assert Path("kaji/benchmarks/beta-baseline.json") not in module.SOURCE_INPUTS
+
+
+def test_typescript_source_benchmark_maps_every_public_subpath() -> None:
+    config = (REPO_ROOT / "kaji" / "ts" / "tsconfig.json").read_text()
+
+    for package, source in {
+        "@kaji/sdk": "./src/index.ts",
+        "@kaji/sdk/openai": "./src/providers/openai.ts",
+        "@kaji/sdk/anthropic": "./src/providers/anthropic.ts",
+        "@kaji/sdk/testing": "./src/testing.ts",
+    }.items():
+        assert f'"{package}": ["{source}"]' in config
 
 
 @pytest.mark.parametrize(
@@ -1013,6 +1543,30 @@ def test_soak_report_reuses_complete_performance_provenance(
         },
         "protected": True,
     }
+    identity = {
+        "commit": provenance["commit"],
+        "releaseManifestSha256": "c" * 64,
+        "artifacts": {
+            "python": {
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "sha256": "d" * 64,
+            },
+            "typescript": {
+                "file": "kaji-sdk-0.2.0-beta.1.tgz",
+                "sha256": "e" * 64,
+            },
+        },
+        "resolvedPackages": {
+            "python": "/installed/python",
+            "typescript": "/installed/typescript",
+        },
+        "typescriptConsumerLock": {
+            "templateSha256": "f" * 64,
+            "renderedSha256": "a" * 64,
+        },
+    }
+    identity_path = tmp_path / "identity.json"
+    identity_path.write_text(json.dumps(identity))
     monkeypatch.setattr(
         module,
         "_parse_args",
@@ -1022,11 +1576,20 @@ def test_soak_report_reuses_complete_performance_provenance(
             typescript=tmp_path / "typescript.json",
             output=output,
             protected=True,
+            runtime_identity=identity_path,
         ),
     )
     monkeypatch.setattr(module, "performance_provenance", lambda **_kwargs: provenance)
     monkeypatch.setattr(
-        module, "_load", lambda _path, runtime: ({"runtime": runtime}, [])
+        module,
+        "_load",
+        lambda _path, runtime: (
+            {
+                "runtime": runtime,
+                "resolvedPackage": identity["resolvedPackages"][runtime],
+            },
+            [],
+        ),
     )
     monkeypatch.setattr(module, "_failures", lambda *_args: [])
 
@@ -1035,6 +1598,9 @@ def test_soak_report_reuses_complete_performance_provenance(
     assert report["commit"] == provenance["commit"]
     assert report["fingerprint"] == provenance["fingerprint"]
     assert report["protected"] is True
+    assert report["releaseManifestSha256"] == "c" * 64
+    assert report["resolvedPackages"] == identity["resolvedPackages"]
+    assert report["typescriptConsumerLock"] == identity["typescriptConsumerLock"]
 
 
 def test_beta_benchmark_full_mode_reports_malformed_nested_baseline(
@@ -1183,12 +1749,26 @@ def test_beta_benchmark_candidate_records_five_rss_samples(
     module = _load_root_script("beta_benchmark_gate.py")
     results = _complete_benchmark_results(module)
     current = {"sourceHash": "b" * 64}
+    identity = {
+        "commit": "a" * 40,
+        "releaseManifestSha256": "c" * 64,
+        "artifacts": {"python": {}, "typescript": {}},
+        "resolvedPackages": {"python": "/tmp/python", "typescript": "/tmp/ts"},
+        "typescriptConsumerLock": {
+            "templateSha256": "d" * 64,
+            "renderedSha256": "e" * 64,
+        },
+    }
     monkeypatch.setattr(module, "_commit", lambda: "a" * 40)
 
-    candidate = module._candidate_baseline(results, current)
+    candidate = module._candidate_baseline(results, current, identity)
 
     assert candidate["calibrationCommit"] == "a" * 40
     assert candidate["sourceHash"] == "b" * 64
+    assert candidate["commit"] == "a" * 40
+    assert candidate["releaseManifestSha256"] == "c" * 64
+    assert candidate["resolvedPackages"] == identity["resolvedPackages"]
+    assert candidate["typescriptConsumerLock"] == identity["typescriptConsumerLock"]
     assert candidate["maxPeakMiB"]["python"]["context10kIterations5"] == 95.0
     assert candidate["rawPeakMiB"]["typescript"]["toolArgDeltas10k"] == [
         91.0,

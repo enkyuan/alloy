@@ -1,32 +1,44 @@
+import { realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type OpenAI from "openai";
 
-import { InMemoryEventCommitter } from "@/events/committer";
-import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
-import { InMemoryEventStore } from "@/events/store";
-import { EventType } from "@/events/types";
-import type { Clock, IdFactory, TimerHandle, TimerScheduler } from "@/internal/uuid";
-import type {
-  ModelProvider,
-  ModelProviderOptions,
-  ModelResponse,
-  ModelResponseChunk,
-  ProviderMessage,
-  ProviderResponseDiagnostics,
-} from "@/providers/base";
 import {
+  AgentRuntime,
   DEFAULT_PROVIDER_RESPONSE_LIMITS,
+  EventType,
+  InMemoryEventCommitter,
+  InMemoryEventStore,
+  InMemorySessionTurnCoordinator,
+  KajiEvent,
+  SessionProjector,
+  StoredKajiEvent,
+  ToolExecutionController,
+  applyEvent,
+  replaySession,
+  type Clock,
+  type IdFactory,
+  type ModelProvider,
+  type ModelProviderOptions,
+  type ModelResponse,
+  type ModelResponseChunk,
+  type ProviderMessage,
+  ProviderOutputLimitError,
+  type TimerHandle,
+  type TimerScheduler,
+  type ToolExecutionContext,
+  type ToolSpec,
+} from "@kaji/sdk";
+import { OpenAIProvider } from "@kaji/sdk/openai";
+import {
+  createSessionState,
+  type ProviderResponseDiagnostics,
   withProviderResponseDiagnostics,
-} from "@/providers/base";
-import { ProviderOutputLimitError } from "@/providers/errors";
-import { OpenAIProvider } from "@/providers/openai";
-import type { ToolExecutionContext } from "@/runtime/context";
-import { AgentRuntime } from "@/runtime/runtime";
-import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
-import { SessionProjector } from "@/sessions/projector";
-import { applyEvent, createSessionState, replaySession } from "@/sessions/replay";
-import { ToolExecutionController } from "@/tools/execution";
-import type { ToolSpec } from "@/tools/registry";
+} from "@kaji/sdk/testing";
+
+const RESOLVED_PACKAGE = realpathSync(
+  join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
+);
 
 const CASES = [
   "replay10k",
@@ -1068,6 +1080,7 @@ async function main(): Promise<void> {
   const result = {
     schemaVersion: 1,
     runtime: "typescript",
+    resolvedPackage: RESOLVED_PACKAGE,
     engine: typeof Bun === "undefined" ? `node-${process.version}` : `bun-${Bun.version}`,
     case: options.caseName,
     seed: options.seed,
