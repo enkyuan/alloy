@@ -149,6 +149,75 @@ describe("kaji add", () => {
     expect(readFileSync(join(out, "demo.ts"), "utf8")).toContain("export const x = 1;");
   });
 
+  it("prints OAuth setup only after a successful copy", async () => {
+    mkdirSync(join(registry, "github"), { recursive: true });
+    writeFileSync(
+      join(registry, "github/manifest.json"),
+      JSON.stringify({
+        name: "github",
+        version: "0.1.0",
+        namespace: "github",
+        description: "oauth fixture",
+        auth: {
+          kind: "oauth",
+          provider: "google",
+          clientIdEnv: "GOOGLE_CLIENT_ID",
+          clientSecretEnv: "GOOGLE_CLIENT_SECRET",
+          scopes: ["scope.a", "scope.b"],
+          docs: "https://example.test/oauth",
+        },
+        files: ["github.ts"],
+        tools: [
+          {
+            name: "ping",
+            description: "fixture tool",
+            parameters: {},
+            risk: "read",
+            parallel_safe: true,
+          },
+        ],
+        extras: ["oauth-keyring"],
+      }),
+    );
+    writeFileSync(join(registry, "github/github.ts"), "export {};\n");
+    writeFileSync(
+      join(registry, "index.json"),
+      JSON.stringify(registryIndex({ github: "github/manifest.json" }, "experimental")),
+    );
+    const out = join(tmp, "oauth-out");
+    const logs: string[] = [];
+    expect(
+      await add(["github", "--allow-experimental", "--out", out], {
+        registryRoot: registry,
+        schemaRoot,
+        log: (message) => logs.push(message),
+      }),
+      logs.join("\n"),
+    ).toBe(0);
+    const rendered = logs.join("\n");
+    for (const expected of [
+      "client ID env: GOOGLE_CLIENT_ID",
+      "client secret env: GOOGLE_CLIENT_SECRET",
+      "scopes: scope.a, scope.b",
+      "docs: https://example.test/oauth",
+      "python -m kaji.cli connect github --principal <stable-host-principal-id>",
+      "bun node_modules/@kaji/sdk/dist/cli/bin.js connect github --principal <stable-host-principal-id>",
+    ]) {
+      expect(rendered).toContain(expected);
+    }
+    expect(rendered).not.toContain("oauth-keyring");
+
+    const current: string[] = [];
+    expect(
+      await add(["github", "--allow-experimental", "--out", out], {
+        registryRoot: registry,
+        schemaRoot,
+        log: (message) => current.push(message),
+      }),
+    ).toBe(0);
+    expect(current.join("\n")).not.toContain("connect github");
+  });
+
   it("rejects unknown flags before loading or copying", async () => {
     const out = join(tmp, "unknown-flag-out");
     const logs: string[] = [];

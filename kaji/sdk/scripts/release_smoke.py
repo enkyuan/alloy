@@ -95,6 +95,23 @@ def artifact_environment() -> dict[str, str]:
     return environment
 
 
+def install_conflicting_kaji_binary(workdir: Path) -> Path:
+    """Install a deterministic conflicting ``kaji`` executable for ownership tests."""
+
+    binary_dir = workdir / "conflicting-kaji-bin"
+    binary_dir.mkdir()
+    if os.name == "nt":
+        binary = binary_dir / "kaji.bat"
+        binary.write_text("@echo off\necho kaji (conflicting fixture) 9.9.9\n")
+    else:
+        binary = binary_dir / "kaji"
+        binary.write_text(
+            "#!/bin/sh\nprintf '%s\\n' 'kaji (conflicting fixture) 9.9.9'\n"
+        )
+        binary.chmod(0o755)
+    return binary_dir
+
+
 def installed_registry_root(venv: Path) -> Path:
     candidates = [
         venv / "Lib" / "site-packages" / "kaji" / "integrations" / "registry",
@@ -178,19 +195,41 @@ def assert_github_cli_output(output: str, destination: Path, registry: Path) -> 
 
 
 def assert_list_integrations_output(output: str) -> None:
-    echo = re.compile(
-        rf"^  echo\s+\[beta\]\s+v0\.1\.0\s+{re.escape(EXPECTED_ECHO_DESCRIPTION)}$",
-        re.MULTILINE,
-    )
-    github = re.compile(
-        rf"^  github\s+\[experimental\]\s+v0\.1\.0\s+{re.escape(EXPECTED_GITHUB_DESCRIPTION)}$",
-        re.MULTILINE,
-    )
-    if echo.search(output) is None:
+    try:
+        rows = json.loads(output)
+    except json.JSONDecodeError:
+        raise SystemExit(
+            "FAIL: installed list-integrations emitted invalid JSON"
+        ) from None
+    if not isinstance(rows, list):
+        raise SystemExit("FAIL: installed list-integrations emitted a non-list payload")
+    by_name = {row.get("name"): row for row in rows if isinstance(row, dict)}
+    if by_name.get("echo") != {
+        "name": "echo",
+        "version": "0.1.0",
+        "stability": "beta",
+        "runtimes": ["python", "typescript"],
+        "auth": {"kind": "none", "provider": None},
+        "experimental_opt_in_required": False,
+        "next_commands": {
+            "python": "python -m kaji.cli add echo",
+            "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+        },
+    }:
         raise SystemExit(
             "FAIL: installed list-integrations omitted the packaged Echo entry"
         )
-    if github.search(output) is None:
+    github = by_name.get("github")
+    if (
+        not isinstance(github, dict)
+        or github.get("stability") != "experimental"
+        or github.get("auth") != {"kind": "env", "provider": None}
+        or github.get("next_commands")
+        != {
+            "python": "python -m kaji.cli add github --allow-experimental",
+            "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
+        }
+    ):
         raise SystemExit(
             "FAIL: installed list-integrations omitted the packaged GitHub entry"
         )
@@ -277,6 +316,8 @@ def release_smoke(dist_dir: Path) -> None:
         if wheel is None or sdist is None:
             raise SystemExit(f"FAIL: expected wheel and sdist under {dist_dir}")
 
+        conflicting_bin = install_conflicting_kaji_binary(workdir)
+
         for package in (wheel, sdist):
             cold_started = time.perf_counter()
             safe_name = re.sub(r"[^a-zA-Z0-9]", "-", package.name)
@@ -321,8 +362,29 @@ def release_smoke(dist_dir: Path) -> None:
             artifact_workdir = workdir / f"artifact-{safe_name}"
             artifact_workdir.mkdir()
             environment = artifact_environment()
+            environment["PATH"] = os.pathsep.join(
+                [str(conflicting_bin), environment.get("PATH", "")]
+            )
             registry = installed_registry_root(venv)
             kaji = str(venv_kaji(venv))
+
+            conflicting_output = run_capture(
+                ["kaji", "--help"],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            if conflicting_output.strip() != "kaji (conflicting fixture) 9.9.9":
+                raise SystemExit(
+                    "FAIL: conflicting Python CLI fixture was not selected"
+                )
+
+            help_output = run_capture(
+                [str(python), "-m", "kaji.cli", "--help"],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            if "kaji (Python package kaji) 0.2.0b1" not in help_output:
+                raise SystemExit("FAIL: qualified Python CLI owner/version mismatch")
 
             scaffold = workdir / f"scaffold-{safe_name}"
             init_output = run_capture(
@@ -384,7 +446,14 @@ def release_smoke(dist_dir: Path) -> None:
             )
 
             list_output = run_capture(
-                [kaji, "--no-color", "list-integrations"],
+                [
+                    str(python),
+                    "-m",
+                    "kaji.cli",
+                    "--no-color",
+                    "list-integrations",
+                    "--json",
+                ],
                 cwd=artifact_workdir,
                 environment=environment,
             )

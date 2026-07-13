@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from io import StringIO
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import patch
 
 import pytest
 
 from kaji.cli import main
-from kaji.integrations import ManifestError
+from kaji.integrations import Manifest, ManifestAuth, ManifestError
+from kaji.integrations.copy import BundleStatus
 
 
 def test_add_echo_copies_files(tmp_path: Path) -> None:
@@ -68,10 +70,39 @@ def test_list_integrations_json_emits_valid_object() -> None:
     assert "github" in names
     assert {"gmail", "gcal"}.isdisjoint(names)
     echo = next(entry for entry in parsed if entry["name"] == "echo")
-    assert echo["auth_kind"] == "none"
-    assert "say" in echo["tools"]
-    assert echo["stability"] == "beta"
-    assert echo["runtimes"] == ["python", "typescript"]
+    assert list(echo) == [
+        "name",
+        "version",
+        "stability",
+        "runtimes",
+        "auth",
+        "experimental_opt_in_required",
+        "next_commands",
+    ]
+    assert echo == {
+        "name": "echo",
+        "version": "0.1.0",
+        "stability": "beta",
+        "runtimes": ["python", "typescript"],
+        "auth": {"kind": "none", "provider": None},
+        "experimental_opt_in_required": False,
+        "next_commands": {
+            "python": "python -m kaji.cli add echo",
+            "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+        },
+    }
+
+
+def test_list_integrations_human_uses_the_closed_cross_runtime_projection() -> None:
+    out = StringIO()
+    with patch("sys.stdout", out):
+        assert main(["list-integrations"]) == 0
+    lines = out.getvalue().splitlines()
+    assert lines[0] == "echo  [beta]  v0.1.0  auth=none  runtimes=python,typescript"
+    assert lines[1] == "  python: python -m kaji.cli add echo"
+    assert (
+        lines[2] == "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add echo"
+    )
 
 
 def test_list_integrations_returns_nonzero_for_corrupt_registry() -> None:
@@ -140,6 +171,79 @@ def test_github_requires_opt_in_then_copies_the_complete_owner_bundle(
     assert provenance["stability"] == "experimental"
     assert len(provenance["abiSha256"]) == 64
     assert "fine-grained token" in output.getvalue()
+
+
+def test_oauth_guidance_is_exact_and_only_after_successful_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kaji.cli import add
+
+    manifest = Manifest(
+        name="gmail",
+        version="0.1.0",
+        namespace="gmail",
+        description="Gmail fixture.",
+        auth=ManifestAuth(
+            kind="oauth",
+            provider="google",
+            client_id_env="GOOGLE_CLIENT_ID",
+            client_secret_env="GOOGLE_CLIENT_SECRET",
+            scopes=("scope.a", "scope.b"),
+            docs="https://example.test/oauth",
+        ),
+        files=("gmail.py",),
+        tools=(),
+        extras=("oauth-keyring",),
+        peer_deps=MappingProxyType({}),
+        stability="experimental",
+        runtimes=("python", "typescript"),
+        path=tmp_path / "manifest.json",
+    )
+    monkeypatch.setattr(add, "load_manifest", lambda _name: manifest)
+    written = BundleStatus(
+        "current", "installed", tmp_path, (tmp_path / "gmail.py",), "observed"
+    )
+    monkeypatch.setattr(
+        add, "install_integration_bundle", lambda *_args, **_kwargs: written
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "name": "gmail",
+            "out": str(tmp_path),
+            "check": False,
+            "force": False,
+            "allow_experimental": True,
+            "json": False,
+        },
+    )()
+    output = StringIO()
+    with patch("sys.stdout", output):
+        assert add.run(args) == 0
+    rendered = output.getvalue()
+    for expected in (
+        "client ID env: GOOGLE_CLIENT_ID",
+        "client secret env: GOOGLE_CLIENT_SECRET",
+        "scopes: scope.a, scope.b",
+        "docs: https://example.test/oauth",
+        "python -m kaji.cli connect gmail --principal <stable-host-principal-id>",
+        "bun node_modules/@kaji/sdk/dist/cli/bin.js connect gmail --principal <stable-host-principal-id>",
+    ):
+        assert expected in rendered
+    assert "oauth-keyring" not in rendered
+
+    monkeypatch.setattr(
+        add,
+        "install_integration_bundle",
+        lambda *_args, **_kwargs: BundleStatus(
+            "current", "up_to_date", tmp_path, (), "observed"
+        ),
+    )
+    output = StringIO()
+    with patch("sys.stdout", output):
+        assert add.run(args) == 0
+    assert "connect gmail" not in output.getvalue()
 
 
 def test_check_json_has_the_closed_shape_and_all_copy_states(tmp_path: Path) -> None:

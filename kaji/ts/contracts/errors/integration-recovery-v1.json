@@ -17,7 +17,7 @@
       "docUrl": "https://kaji.dev/docs/integrations/recovery-v1#gmail-grant",
       "problem": "Gmail authorization is required.",
       "cause": "No Gmail grant exists for this principal.",
-      "fix": "Run `kaji connect gmail --principal <same-principal>` and retry."
+      "fix": "Use the package-qualified connect command for this runtime and principal, then retry."
     },
     "keychain_missing": {
       "errorCode": "INTEGRATION_AUTH_ERROR",
@@ -57,7 +57,7 @@
       "docUrl": "https://kaji.dev/docs/integrations/recovery-v1#gmail-scope-drift",
       "problem": "The Gmail grant no longer has the required scopes.",
       "cause": "Stored and required OAuth scopes differ.",
-      "fix": "Run `kaji connect gmail --principal <same-principal>` and consent again."
+      "fix": "Use the package-qualified connect command for this runtime and principal, then consent again."
     },
     "policy_rejected": {
       "errorCode": "INTEGRATION_POLICY_REJECTED",

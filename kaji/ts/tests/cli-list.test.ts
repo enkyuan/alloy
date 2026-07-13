@@ -85,8 +85,51 @@ describe("kaji list-integrations", () => {
     });
     expect(code).toBe(0);
     const output = lines.join("\n");
-    expect(output).toMatch(/^echo\s+\[beta\]\s+v0\.1\.0\s+Echo a string back\.$/m);
-    expect(output).toMatch(/^weather\s+\[beta\]\s+v0\.1\.0\s+Look up the weather\.$/m);
+    expect(output).toBe(
+      "echo  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
+        "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add echo\n" +
+        "weather  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
+        "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add weather",
+    );
+  });
+
+  it("emits the closed JSON discovery row and rejects unknown flags before registry reads", async () => {
+    writeIntegration(registryRoot, "echo", "Echo a string back.");
+    writeFileSync(
+      join(registryRoot, "index.json"),
+      JSON.stringify(registryIndex({ echo: "echo/manifest.json" })),
+    );
+    const lines: string[] = [];
+    expect(
+      await listIntegrations(["--json"], {
+        registryRoot,
+        schemaRoot,
+        log: (message) => lines.push(message),
+      }),
+    ).toBe(0);
+    expect(JSON.parse(lines.join("\n"))).toEqual([
+      {
+        name: "echo",
+        version: "0.1.0",
+        stability: "beta",
+        runtimes: ["typescript"],
+        auth: { kind: "none", provider: null },
+        experimental_opt_in_required: false,
+        next_commands: {
+          typescript: "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+        },
+      },
+    ]);
+
+    const errors: string[] = [];
+    expect(
+      await listIntegrations(["--unknown"], {
+        registryRoot: join(registryRoot, "must-not-be-read"),
+        schemaRoot,
+        err: (message) => errors.push(message),
+      }),
+    ).toBe(2);
+    expect(errors).toEqual(["usage: kaji list-integrations [--json]"]);
   });
 
   it("prints the exact tier and version for beta and experimental entries", async () => {
@@ -109,9 +152,11 @@ describe("kaji list-integrations", () => {
       log: (message) => lines.push(message),
     });
     expect(code).toBe(0);
-    expect(lines.join("\n")).toMatch(/^echo\s+\[beta\]\s+v0\.1\.0\s+Echo a string back\.$/m);
-    expect(lines.join("\n")).toMatch(
-      /^weather\s+\[experimental\]\s+v0\.1\.0\s+Look up the weather\.$/m,
+    expect(lines.join("\n")).toBe(
+      "echo  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
+        "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add echo\n" +
+        "weather  [experimental]  v0.1.0  auth=none  runtimes=typescript\n" +
+        "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add weather --allow-experimental",
     );
   });
 
@@ -201,8 +246,10 @@ describe("kaji list-integrations", () => {
     });
 
     expect(code).toBe(0);
-    expect(lines.join("\n")).toMatch(
-      /^github\s+\[experimental\]\s+v0\.1\.0\s+Repository-scoped GitHub code, issue, and comment tools\.$/m,
+    expect(lines).toContain("github  [experimental]  v0.1.0  auth=env  runtimes=python,typescript");
+    expect(lines).toContain("  python: python -m kaji.cli add github --allow-experimental");
+    expect(lines).toContain(
+      "  typescript: bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
     );
   });
 });

@@ -1,6 +1,7 @@
 /** `kaji add`: rollback-safe copied integration bundle installation. */
 import { join, resolve } from "node:path";
 
+import { TYPESCRIPT_SDK_CLI } from "@/cli/package-identity";
 import {
   BundleTransitionError,
   classifyIntegrationBundle,
@@ -80,7 +81,7 @@ function shellQuote(value: string): string {
 }
 
 function nextCommand(status: BundleStatus, manifest: LoadedIntegrationManifest): string {
-  const command = ["bunx", "--package", "@kaji/sdk", "kaji", "add", manifest.name];
+  const command = ["bun", "node_modules/@kaji/sdk/dist/cli/bin.js", "add", manifest.name];
   if (manifest.stability === "experimental") command.push("--allow-experimental");
   command.push("--out", status.destination);
   if (status.state === "outdated") command.push("--force");
@@ -114,10 +115,27 @@ function renderStatus(
 
 function setupGuidance(manifest: LoadedIntegrationManifest, log: (message: string) => void): void {
   if (manifest.name === "github" && manifest.auth.kind === "env") {
-    log("next: set GITHUB_TOKEN to a fine-grained token limited to the configured repositories");
+    log(
+      `next: set ${manifest.auth.env} to a fine-grained token limited to the configured repositories`,
+    );
     log(`docs: ${manifest.auth.docs}`);
   } else if (manifest.auth.kind === "env") {
     log(`next: set ${manifest.auth.env} in your environment`);
+  } else if (manifest.auth.kind === "oauth") {
+    log(`client ID env: ${manifest.auth.clientIdEnv}`);
+    if (manifest.auth.clientSecretEnv !== undefined) {
+      log(`client secret env: ${manifest.auth.clientSecretEnv}`);
+    }
+    log(`scopes: ${manifest.auth.scopes.join(", ")}`);
+    if (manifest.auth.docs !== undefined) log(`docs: ${manifest.auth.docs}`);
+    log(
+      `connect (Python): python -m kaji.cli connect ${manifest.name} ` +
+        "--principal <stable-host-principal-id>",
+    );
+    log(
+      `connect (TypeScript): ${TYPESCRIPT_SDK_CLI} connect ${manifest.name} ` +
+        "--principal <stable-host-principal-id>",
+    );
   }
 }
 
@@ -182,9 +200,9 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
     renderStatus(status, manifest, true, log);
     return 0;
   }
-  if (status.written.length > 0)
+  if (status.written.length > 0) {
     log(`Wrote ${status.written.length} file(s) to ${status.destination}`);
-  else log(`Current integration: ${manifest.name} at ${status.destination}`);
-  setupGuidance(manifest, log);
+    setupGuidance(manifest, log);
+  } else log(`Current integration: ${manifest.name} at ${status.destination}`);
   return 0;
 }

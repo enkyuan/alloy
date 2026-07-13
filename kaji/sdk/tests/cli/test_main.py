@@ -72,6 +72,7 @@ def test_global_flags_precede_init_and_help_is_success(
     with pytest.raises(SystemExit) as caught:
         main(["--help"])
     assert caught.value.code == 0
+    assert "kaji (Python package kaji) 0.2.0b1" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

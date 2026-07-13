@@ -65,11 +65,18 @@ def test_every_packaged_cli_command_has_one_stability_tier() -> None:
     matrix = json.loads(FEATURE_TIERS.read_text())["cliCommands"]
     assert matrix == {
         "python": {
-            "stable": ["add", "init", "list-integrations"],
+            "stable": ["add", "connect", "disconnect", "init", "list-integrations"],
             "experimental": ["doctor", "gen", "info", "secret", "upgrade"],
         },
         "typescript": {
-            "stable": ["add", "init", "list-integrations", "replay"],
+            "stable": [
+                "add",
+                "connect",
+                "disconnect",
+                "init",
+                "list-integrations",
+                "replay",
+            ],
             "experimental": [],
         },
     }

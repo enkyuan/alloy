@@ -48,13 +48,16 @@ def test_release_smoke_preserves_build_verify_install_order(
         "run",
         lambda command, **_kwargs: commands.append(command),
     )
-    monkeypatch.setattr(
-        module,
-        "run_capture",
-        lambda command, **_kwargs: (
-            commands.append(command) or "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
-        ),
-    )
+
+    def fake_run_capture(command: list[str], **_kwargs: object) -> str:
+        commands.append(command)
+        if command == ["kaji", "--help"]:
+            return "kaji (conflicting fixture) 9.9.9\n"
+        if command[1:4] == ["-m", "kaji.cli", "--help"]:
+            return "kaji (Python package kaji) 0.2.0b1\n"
+        return "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
+
+    monkeypatch.setattr(module, "run_capture", fake_run_capture)
     monkeypatch.setattr(module, "installed_registry_root", lambda _venv: tmp_path)
     monkeypatch.setattr(module, "assert_init_cli_output", lambda *_args: None)
     monkeypatch.setattr(module, "assert_echo_cli_output", lambda *_args: None)
@@ -103,7 +106,15 @@ def test_release_smoke_preserves_build_verify_install_order(
         == 4
     )
     assert (
-        sum(command[1:3] == ["--no-color", "list-integrations"] for command in commands)
+        sum(command[1:4] == ["-m", "kaji.cli", "--help"] for command in commands) == 2
+    )
+    assert sum(command == ["kaji", "--help"] for command in commands) == 2
+    assert (
+        sum(
+            command[1:5] == ["-m", "kaji.cli", "--no-color", "list-integrations"]
+            and command[-1] == "--json"
+            for command in commands
+        )
         == 2
     )
 
@@ -136,16 +147,37 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
     module.assert_echo_cli_output("\n".join(output), destination, registry)
 
     module.assert_list_integrations_output(
-        "  echo             [beta]  v0.1.0  "
-        + module.EXPECTED_ECHO_DESCRIPTION
-        + "\n  github           [experimental]  v0.1.0  "
-        + module.EXPECTED_GITHUB_DESCRIPTION
+        json.dumps(
+            [
+                {
+                    "name": "echo",
+                    "version": "0.1.0",
+                    "stability": "beta",
+                    "runtimes": ["python", "typescript"],
+                    "auth": {"kind": "none", "provider": None},
+                    "experimental_opt_in_required": False,
+                    "next_commands": {
+                        "python": "python -m kaji.cli add echo",
+                        "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+                    },
+                },
+                {
+                    "name": "github",
+                    "stability": "experimental",
+                    "auth": {"kind": "env", "provider": None},
+                    "next_commands": {
+                        "python": "python -m kaji.cli add github --allow-experimental",
+                        "typescript": "bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
+                    },
+                },
+            ]
+        )
     )
 
     (destination / "echo.py").write_text("checkout source must not be accepted")
     with pytest.raises(SystemExit, match="packaged Echo assets"):
         module.assert_echo_cli_output("\n".join(output), destination, registry)
-    with pytest.raises(SystemExit, match="omitted the packaged Echo entry"):
+    with pytest.raises(SystemExit, match="emitted invalid JSON"):
         module.assert_list_integrations_output("No integrations available.")
 
 
@@ -157,6 +189,8 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
 
     assert tiers["cliCommands"]["python"]["stable"] == [
         "add",
+        "connect",
+        "disconnect",
         "init",
         "list-integrations",
     ]
@@ -189,6 +223,10 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         'environment.pop("PYTHONPATH", None)',
         'environment.pop("PYTHONHOME", None)',
         'environment["PYTHONNOUSERSITE"] = "1"',
+        "install_conflicting_kaji_binary(workdir)",
+        '["kaji", "--help"]',
+        '[str(python), "-m", "kaji.cli", "--help"]',
+        '"kaji (Python package kaji) 0.2.0b1"',
         "copied.read_bytes() != packaged.read_bytes()",
     ):
         assert required in script

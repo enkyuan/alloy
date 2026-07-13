@@ -5,11 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import {
-  assertCliListOutput,
-  EXPECTED_ECHO_DESCRIPTION,
-  EXPECTED_GITHUB_DESCRIPTION,
-} from "../scripts/cli_assertions";
+import { assertCliListOutput } from "../scripts/cli_assertions";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
@@ -17,6 +13,32 @@ const canonicalRoot = resolve(packageRoot, "../contracts");
 const repositoryRoot = resolve(packageRoot, "../..");
 const SYNC_CHILD_TIMEOUT_MS = 20_000;
 const SYNC_CHILD_MAX_BUFFER = 16 * 1024 * 1024;
+
+const CANONICAL_ECHO_ROW = {
+  name: "echo",
+  version: "0.1.0",
+  stability: "beta",
+  runtimes: ["python", "typescript"],
+  auth: { kind: "none", provider: null },
+  experimental_opt_in_required: false,
+  next_commands: {
+    python: "python -m kaji.cli add echo",
+    typescript: "bun node_modules/@kaji/sdk/dist/cli/bin.js add echo",
+  },
+};
+
+const CANONICAL_GITHUB_ROW = {
+  name: "github",
+  version: "0.1.0",
+  stability: "experimental",
+  runtimes: ["python", "typescript"],
+  auth: { kind: "env", provider: null },
+  experimental_opt_in_required: true,
+  next_commands: {
+    python: "python -m kaji.cli add github --allow-experimental",
+    typescript: "bun node_modules/@kaji/sdk/dist/cli/bin.js add github --allow-experimental",
+  },
+};
 
 interface SyncChildOptions {
   cwd?: string;
@@ -62,30 +84,33 @@ function exportTargets(value: unknown): string[] {
 describe("npm contract artifact", () => {
   it("accepts only the exact canonical Echo list row", () => {
     expect(() =>
-      assertCliListOutput(
-        `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\n` +
-          "fs    [experimental]  v0.1.0  Filesystem integration.\n" +
-          `github  [experimental]  v0.1.0  ${EXPECTED_GITHUB_DESCRIPTION}`,
-      ),
+      assertCliListOutput(JSON.stringify([CANONICAL_ECHO_ROW, CANONICAL_GITHUB_ROW])),
     ).not.toThrow();
   });
 
   it.each([
-    ["experimental Echo", `echo  [experimental]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}`],
-    ["wrong Echo version", `echo  [beta]  v9.9.9  ${EXPECTED_ECHO_DESCRIPTION}`],
-    ["wrong Echo description", "echo  [beta]  v0.1.0  Almost Echo."],
-    ["legacy incomplete row", `echo  ${EXPECTED_ECHO_DESCRIPTION}`],
+    [
+      "experimental Echo",
+      JSON.stringify([{ ...CANONICAL_ECHO_ROW, stability: "experimental" }, CANONICAL_GITHUB_ROW]),
+    ],
+    [
+      "wrong Echo version",
+      JSON.stringify([{ ...CANONICAL_ECHO_ROW, version: "9.9.9" }, CANONICAL_GITHUB_ROW]),
+    ],
+    [
+      "wrong Echo auth",
+      JSON.stringify([
+        { ...CANONICAL_ECHO_ROW, auth: { kind: "env", provider: null } },
+        CANONICAL_GITHUB_ROW,
+      ]),
+    ],
+    ["legacy incomplete row", JSON.stringify([{ name: "echo" }, CANONICAL_GITHUB_ROW])],
     [
       "duplicate Echo row",
-      `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\n` +
-        `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}`,
+      JSON.stringify([CANONICAL_ECHO_ROW, CANONICAL_ECHO_ROW, CANONICAL_GITHUB_ROW]),
     ],
-    ["malformed sibling row", `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\nmalformed`],
-    [
-      "missing GitHub row",
-      `echo  [beta]  v0.1.0  ${EXPECTED_ECHO_DESCRIPTION}\n` +
-        "fs  [experimental]  v0.1.0  Filesystem integration.",
-    ],
+    ["malformed sibling row", JSON.stringify([CANONICAL_ECHO_ROW, null, CANONICAL_GITHUB_ROW])],
+    ["missing GitHub row", JSON.stringify([CANONICAL_ECHO_ROW])],
   ])("rejects the %s", (_label, output) => {
     expect(() => assertCliListOutput(output)).toThrow();
   });
@@ -123,6 +148,8 @@ describe("npm contract artifact", () => {
 
     expect(tiers.cliCommands.typescript.stable).toEqual([
       "add",
+      "connect",
+      "disconnect",
       "init",
       "list-integrations",
       "replay",
@@ -147,6 +174,8 @@ describe("npm contract artifact", () => {
       "package smoke failed at phase ${phase}",
       "`${manager}:${stage}-install`",
       "`${manager}:cli-init`",
+      "`${manager}:cli-owner-conflict`",
+      "`${manager}:cli-owner-qualified`",
       "`${manager}:cli-add`",
       "`${manager}:cli-inspect`",
       "`${manager}:cli-list`",
@@ -157,10 +186,14 @@ describe("npm contract artifact", () => {
       "assertGithubCliAddOutput(githubOutput, github, installedPackageRoot)",
       "assertCliListOutput(listOutput)",
       "assertCliReplayOutput(replayOutput)",
+      "createConflictingKajiFixture(root)",
+      "conflicting kaji fixture was not installed",
+      'join(bootstrap, "node_modules/@kaji/sdk/dist/cli/bin.js")',
+      "assertCliOwnerOutput(ownerOutput)",
       '[cli, "--no-color", "add", "echo", "--out", echo]',
       '[cli, "--no-color", "add", "github", "--out", deniedGithub]',
       '[cli, "--no-color", "add", "github", "--allow-experimental", "--out", github]',
-      '[cli, "--no-color", "list-integrations"]',
+      '[cli, "--no-color", "list-integrations", "--json"]',
       '[cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
       'join(installedPackageRoot, "registry/echo/index.ts")',
       'join(installedPackageRoot, "registry/github/index.ts")',
@@ -185,6 +218,7 @@ describe("npm contract artifact", () => {
 
     expect(source).not.toContain("completed.stderr");
     expect(source).not.toContain("JSON.stringify(args)");
+    expect(source).not.toContain("node_modules/.bin/kaji");
     expect(source).not.toContain('if (!fields.get("text")');
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,

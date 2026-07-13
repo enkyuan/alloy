@@ -6,7 +6,9 @@ import argparse
 import sys
 
 from . import add as _add
+from . import connect as _connect
 from . import doctor as _doctor
+from . import disconnect as _disconnect
 from . import gen as _gen
 from . import info as _info
 from . import init as _init
@@ -14,10 +16,13 @@ from . import list_integrations as _list_integrations
 from . import secret as _secret
 from . import upgrade as _upgrade
 from ._style import set_color_enabled
+from ._pkg import get_version
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="kaji", description="kaji CLI")
+    parser = argparse.ArgumentParser(
+        prog="kaji", description=f"kaji (Python package kaji) {get_version()}"
+    )
     parser.add_argument(
         "--no-color", action="store_true", help="disable ANSI color output"
     )
@@ -28,6 +33,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _init.add_parser(sub)
     _gen.add_parser(sub)
     _add.add_parser(sub)
+    _connect.add_parser(sub)
+    _disconnect.add_parser(sub)
     _list_integrations.add_parser(sub)
     _info.add_parser(sub)
     _secret.add_parser(sub)

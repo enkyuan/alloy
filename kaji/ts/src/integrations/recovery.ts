@@ -52,7 +52,7 @@ export const INTEGRATION_RECOVERY = Object.freeze({
     "gmail-grant",
     "Gmail authorization is required.",
     "No Gmail grant exists for this principal.",
-    "Run `kaji connect gmail --principal <same-principal>` and retry.",
+    "Use the package-qualified connect command for this runtime and principal, then retry.",
   ),
   keychain_missing: recovery(
     "INTEGRATION_AUTH_ERROR",
@@ -92,7 +92,7 @@ export const INTEGRATION_RECOVERY = Object.freeze({
     "gmail-scope-drift",
     "The Gmail grant no longer has the required scopes.",
     "Stored and required OAuth scopes differ.",
-    "Run `kaji connect gmail --principal <same-principal>` and consent again.",
+    "Use the package-qualified connect command for this runtime and principal, then consent again.",
   ),
   policy_rejected: recovery(
     "INTEGRATION_POLICY_REJECTED",

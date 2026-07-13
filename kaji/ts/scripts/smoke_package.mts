@@ -1,6 +1,14 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { assertCliListOutput } from "./cli_assertions";
@@ -19,6 +27,8 @@ type SmokePhase =
   | "docs:run"
   | `${PackageManager}:${InstallStage}-install`
   | `${PackageManager}:cli-init`
+  | `${PackageManager}:cli-owner-conflict`
+  | `${PackageManager}:cli-owner-qualified`
   | `${PackageManager}:cli-add`
   | `${PackageManager}:cli-inspect`
   | `${PackageManager}:cli-list`
@@ -152,6 +162,31 @@ function assertCliInitOutput(output: string, generated: string): void {
       throw new Error("installed init did not report and write every scaffold file");
     }
   }
+}
+
+function assertCliOwnerOutput(output: string): void {
+  if (!output.split("\n").includes(`kaji (@kaji/sdk) ${PACKAGE_VERSION}`)) {
+    throw new Error("qualified TypeScript CLI owner/version mismatch");
+  }
+}
+
+function createConflictingKajiFixture(root: string): string {
+  const fixture = join(root, "conflicting-kaji-cli");
+  mkdirSync(fixture, { recursive: true });
+  writeFileSync(
+    join(fixture, "package.json"),
+    JSON.stringify({
+      name: "conflicting-kaji-cli",
+      version: "9.9.9",
+      bin: { kaji: "./kaji.mjs" },
+    }),
+  );
+  writeFileSync(
+    join(fixture, "kaji.mjs"),
+    '#!/usr/bin/env node\nconsole.log("kaji (conflicting fixture) 9.9.9");\n',
+    { mode: 0o755 },
+  );
+  return fixture;
 }
 
 function assertCliAddOutput(
@@ -290,22 +325,53 @@ async function runScaffold(
     npm_config_cache: join(root, "npm-cache"),
     BUN_INSTALL_CACHE_DIR: join(root, "bun-cache"),
   };
+  const conflictingPackage = createConflictingKajiFixture(root);
   await install(
     manager,
     "bootstrap",
     bootstrap,
-    [tarball, "zod@4.3.6", nodeTypesPackage],
+    [tarball, "zod@4.3.6", nodeTypesPackage, conflictingPackage],
     environment,
   );
 
-  const cli = join(bootstrap, "node_modules/.bin/kaji");
+  const installedConflict = join(bootstrap, "node_modules/conflicting-kaji-cli/kaji.mjs");
+  if (!existsSync(installedConflict)) {
+    throw new Error("conflicting kaji fixture was not installed");
+  }
+  const ownerCheckBin = join(root, "owner-check-bin");
+  mkdirSync(ownerCheckBin);
+  symlinkSync(installedConflict, join(ownerCheckBin, "kaji"));
+  const ownerEnvironment = {
+    ...environment,
+    PATH: `${ownerCheckBin}${delimiter}${environment.PATH ?? ""}`,
+  };
+  const conflictOutput = await runCommand(
+    `${manager}:cli-owner-conflict`,
+    "kaji",
+    ["--help"],
+    bootstrap,
+    ownerEnvironment,
+  );
+  if (conflictOutput.trim() !== "kaji (conflicting fixture) 9.9.9") {
+    throw new Error("bare TypeScript CLI did not select the conflicting fixture");
+  }
+
+  const cli = join(bootstrap, "node_modules/@kaji/sdk/dist/cli/bin.js");
   const cliCommand = manager === "npm" ? nodeBinary : "bun";
+  const ownerOutput = await runCommand(
+    `${manager}:cli-owner-qualified`,
+    cliCommand,
+    [cli, "--help"],
+    bootstrap,
+    ownerEnvironment,
+  );
+  assertCliOwnerOutput(ownerOutput);
   const initOutput = await runCommand(
     `${manager}:cli-init`,
     cliCommand,
     [cli, "--no-color", "init", generated, "--provider", "mock", "--yes"],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
   assertCliInitOutput(initOutput, generated);
 
@@ -316,7 +382,7 @@ async function runScaffold(
     cliCommand,
     [cli, "--no-color", "add", "echo", "--out", echo],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
   assertCliAddOutput(addOutput, echo, installedPackageRoot);
 
@@ -326,7 +392,7 @@ async function runScaffold(
     cliCommand,
     [cli, "--no-color", "add", "github", "--out", deniedGithub],
     bootstrap,
-    environment,
+    ownerEnvironment,
     LOCAL_TIMEOUT_MS,
     1,
   );
@@ -338,7 +404,7 @@ async function runScaffold(
     cliCommand,
     [cli, "--no-color", "add", "github", "--allow-experimental", "--out", github],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
   assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
   const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));
@@ -350,15 +416,15 @@ async function runScaffold(
       `const { inspectIntegration } = await import(${githubModule}); if (inspectIntegration().tools().length !== 6) process.exit(1);`,
     ],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
 
   const listOutput = await runCommand(
     `${manager}:cli-list`,
     cliCommand,
-    [cli, "--no-color", "list-integrations"],
+    [cli, "--no-color", "list-integrations", "--json"],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
   assertCliListOutput(listOutput);
 
@@ -369,7 +435,7 @@ async function runScaffold(
     cliCommand,
     [cli, "--no-color", "replay", replayFixture, "--format", "summary"],
     bootstrap,
-    environment,
+    ownerEnvironment,
   );
   assertCliReplayOutput(replayOutput);
 
@@ -515,7 +581,11 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
   writeFileSync(join(installRoot, "smoke.cjs"), cjs);
   await runCommand("exports:esm", nodeBinary, ["smoke.mjs"]);
   await runCommand("exports:cjs", nodeBinary, ["smoke.cjs"]);
-  await runCommand("cli:help", nodeBinary, [join(installRoot, "node_modules/.bin/kaji"), "--help"]);
+  const ownerOutput = await runCommand("cli:help", nodeBinary, [
+    join(installRoot, "node_modules/@kaji/sdk/dist/cli/bin.js"),
+    "--help",
+  ]);
+  assertCliOwnerOutput(ownerOutput);
 
   const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
   const quickstart = docs.match(

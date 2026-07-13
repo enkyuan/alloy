@@ -24,6 +24,7 @@ from kaji.integrations.copy import (
     install_integration_bundle,
 )
 
+from ._pkg import TYPESCRIPT_SDK_CLI
 from ._style import color
 
 
@@ -157,7 +158,7 @@ def run(args: argparse.Namespace) -> int:
         if manifest.name == "github":
             print(
                 color(
-                    "next: set GITHUB_TOKEN to a fine-grained token limited to the configured repositories",
+                    f"next: set {manifest.auth.env} to a fine-grained token limited to the configured repositories",
                     "yellow",
                 )
             )
@@ -169,9 +170,26 @@ def run(args: argparse.Namespace) -> int:
             print(color(msg, "yellow"))
     elif manifest.auth.kind == "oauth":
         scopes = ", ".join(manifest.auth.scopes) or "(none declared)"
-        print(color(f"  next: complete OAuth setup; scopes: {scopes}", "yellow"))
+        print(color(f"  client ID env: {manifest.auth.client_id_env}", "yellow"))
+        if manifest.auth.client_secret_env:
+            print(
+                color(
+                    f"  client secret env: {manifest.auth.client_secret_env}", "yellow"
+                )
+            )
+        print(color(f"  scopes: {scopes}", "yellow"))
         if manifest.auth.docs:
-            print(f"        docs: {manifest.auth.docs}")
-    if manifest.extras:
+            print(f"  docs: {manifest.auth.docs}")
+        print(
+            "  connect (Python): "
+            f"python -m kaji.cli connect {manifest.name} "
+            "--principal <stable-host-principal-id>"
+        )
+        print(
+            "  connect (TypeScript): "
+            f"{TYPESCRIPT_SDK_CLI} connect {manifest.name} "
+            "--principal <stable-host-principal-id>"
+        )
+    if manifest.extras and manifest.auth.kind != "oauth":
         print(color(f"  also: pip install {' '.join(manifest.extras)}", "yellow"))
     return 0

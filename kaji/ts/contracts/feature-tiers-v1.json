@@ -4,11 +4,11 @@
   "contractVersion": "1.0.0",
   "cliCommands": {
     "python": {
-      "stable": ["add", "init", "list-integrations"],
+      "stable": ["add", "connect", "disconnect", "init", "list-integrations"],
       "experimental": ["doctor", "gen", "info", "secret", "upgrade"]
     },
     "typescript": {
-      "stable": ["add", "init", "list-integrations", "replay"],
+      "stable": ["add", "connect", "disconnect", "init", "list-integrations", "replay"],
       "experimental": []
     }
   },

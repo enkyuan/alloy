@@ -54,7 +54,7 @@ INTEGRATION_RECOVERY: Final = MappingProxyType(
             "gmail-grant",
             "Gmail authorization is required.",
             "No Gmail grant exists for this principal.",
-            "Run `kaji connect gmail --principal <same-principal>` and retry.",
+            "Use the package-qualified connect command for this runtime and principal, then retry.",
         ),
         "keychain_missing": _recovery(
             "INTEGRATION_AUTH_ERROR",
@@ -94,7 +94,7 @@ INTEGRATION_RECOVERY: Final = MappingProxyType(
             "gmail-scope-drift",
             "The Gmail grant no longer has the required scopes.",
             "Stored and required OAuth scopes differ.",
-            "Run `kaji connect gmail --principal <same-principal>` and consent again.",
+            "Use the package-qualified connect command for this runtime and principal, then consent again.",
         ),
         "policy_rejected": _recovery(
             "INTEGRATION_POLICY_REJECTED",
