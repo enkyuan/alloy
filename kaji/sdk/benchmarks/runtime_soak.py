@@ -12,7 +12,6 @@ import os
 from pathlib import Path
 import random
 import resource
-import statistics
 import sys
 import time
 import tracemalloc
@@ -36,11 +35,6 @@ from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionL
 from kaji.runtime.tools.idempotency import InMemoryToolIdempotencyLedger
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
-
-
-MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT = 5.0
-MAX_LATE_WINDOW_RSS_GROWTH_PERCENT = 5.0
-MAX_LATE_WINDOW_RSS_GROWTH_MIB = 64.0
 
 
 class _Ids:
@@ -293,27 +287,13 @@ def _sample_memory(minute: float) -> dict[str, float]:
     }
 
 
-def _late_window_growth(
-    samples: list[dict[str, float]], field: str
-) -> tuple[float, float, float, float] | None:
-    prior = [sample[field] for sample in samples if 21 <= sample["minute"] < 26]
-    late = [sample[field] for sample in samples if 26 <= sample["minute"] < 31]
-    if not prior or not late:
-        return None
-    prior_median = statistics.median(prior)
-    late_median = statistics.median(late)
-    if prior_median <= 0:
-        return None
-    growth_mib = late_median - prior_median
-    return (
-        prior_median,
-        late_median,
-        growth_mib,
-        growth_mib / prior_median * 100,
-    )
+def _append_memory_sample(samples: list[dict[str, float]], minute: float) -> None:
+    if samples and int(samples[-1]["minute"]) >= int(minute):
+        return
+    samples.append(_sample_memory(minute))
 
 
-async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
+async def _run(minutes: float, seed: int) -> dict[str, Any]:
     randomizer = random.Random(seed)
     provider = _SoakProvider()
     diagnostics = _Diagnostics()
@@ -476,13 +456,12 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
 
             now = time.monotonic()
             if now >= next_sample:
-                samples.append(_sample_memory((now - started) / 60))
+                _append_memory_sample(samples, (now - started) / 60)
                 while next_sample <= now:
                     next_sample += 60
     finally:
         elapsed_seconds = time.monotonic() - started
-        if not samples or samples[-1]["minute"] < elapsed_seconds / 60:
-            samples.append(_sample_memory(elapsed_seconds / 60))
+        _append_memory_sample(samples, elapsed_seconds / 60)
         tracemalloc.stop()
 
     await subscriber.aclose()
@@ -490,21 +469,6 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
     if await store.last_sequence(subscriber_session):
         await runtime.append_event(SessionClosed(session_id=subscriber_session))
     stuck = await controller.drain_tools(0)
-    heap_growth = _late_window_growth(samples, "heapMiB")
-    rss_growth = _late_window_growth(samples, "rssMiB")
-    late_window_heap_growth_percent = (
-        heap_growth[3] if heap_growth is not None else None
-    )
-    late_window_rss_growth_mib = rss_growth[2] if rss_growth is not None else None
-    late_window_rss_growth_percent = rss_growth[3] if rss_growth is not None else None
-    rss_growth_limit_mib = (
-        max(
-            MAX_LATE_WINDOW_RSS_GROWTH_MIB,
-            rss_growth[0] * MAX_LATE_WINDOW_RSS_GROWTH_PERCENT / 100,
-        )
-        if rss_growth is not None
-        else None
-    )
     internal = {
         "coordinatorEntries": coordinator.entry_count,
         "coordinatorWaiters": coordinator.waiter_count,
@@ -516,59 +480,22 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
         "subscriberCount": subscriber_count,
         "maxSubscriberQueueDepth": diagnostics.max_subscriber_depth,
         "subscriberOverflows": subscriber_overflows,
+        "metricSubscriberOverflows": diagnostics.subscriber_overflows,
         "subscriberResumes": subscriber_resumes,
         "maxToolActive": diagnostics.max_tool_active,
         "maxContextMessages": diagnostics.max_context_messages,
         "maxContextCharacters": diagnostics.max_context_characters,
     }
-    bounds_ok = (
-        internal["coordinatorEntries"] == 0
-        and internal["coordinatorWaiters"] == 0
-        and internal["projectionCacheSize"] <= internal["projectionCacheLimit"]
-        and internal["ledgerSize"] <= internal["ledgerLimit"]
-        and internal["stuckToolCalls"] == 0
-        and internal["subscriberCount"] == 0
-        and internal["maxSubscriberQueueDepth"] == 1_024
-        and diagnostics.subscriber_overflows == subscriber_overflows
-        and internal["maxToolActive"] <= 4
-        and internal["maxContextCharacters"] <= 100_000
-        and provider.max_messages == internal["maxContextMessages"]
-        and provider.max_characters <= internal["maxContextCharacters"]
-        and provider.max_characters <= 100_000
-        and provider.active == 0
-    )
-    required_minutes = 30
-    required_turns = max(10_000, minimum_turns)
-    passed = (
-        minutes >= required_minutes
-        and elapsed_seconds >= max(minutes, required_minutes) * 60
-        and attempted >= required_turns
-        and late_window_heap_growth_percent is not None
-        and late_window_heap_growth_percent <= MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT
-        and late_window_rss_growth_mib is not None
-        and rss_growth_limit_mib is not None
-        and late_window_rss_growth_mib <= rss_growth_limit_mib
-        and bounds_ok
-        and provider.multi_tool_batches > 0
-        and provider.approvals > 0
-        and approval_bridge.requests > 0
-        and terminal_outcomes["cancelled"] > 0
-        and cooperative_timeout_unknown > 0
-        and timeout_unknown > 0
-        and subscriber_overflows > 0
-        and subscriber_resumes == subscriber_overflows
-    )
     package_file = kaji.__file__
     if package_file is None:
         raise RuntimeError("kaji package has no resolved file")
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "runtime": "python",
         "resolvedPackage": str(Path(package_file).resolve()),
         "seed": seed,
         "requestedMinutes": minutes,
         "elapsedSeconds": elapsed_seconds,
-        "minimumTurns": required_turns,
         "attemptedTurns": attempted,
         "completedTurns": completed,
         "failedTurns": failed,
@@ -576,12 +503,10 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
         "terminalOutcomes": terminal_outcomes,
         "noncooperativeTimeouts": timeout_unknown,
         "cooperativeTimeouts": cooperative_timeout_unknown,
-        "lateWindowHeapGrowthPercent": late_window_heap_growth_percent,
-        "lateWindowRssGrowthPercent": late_window_rss_growth_percent,
-        "lateWindowRssGrowthMiB": late_window_rss_growth_mib,
         "memorySamples": samples,
         "provider": {
             "calls": provider.calls,
+            "active": provider.active,
             "maxActive": provider.max_active,
             "maxMessages": provider.max_messages,
             "maxCharacters": provider.max_characters,
@@ -590,26 +515,24 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
             "approvalBridgeRequests": approval_bridge.requests,
         },
         "internal": internal,
-        "passed": passed,
     }
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--minutes", type=float, default=30)
-    parser.add_argument("--minimum-turns", type=int, default=10_000)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--artifacts-dir", type=Path)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-    if args.minutes <= 0 or args.minimum_turns < 1:
-        parser.error("--minutes and --minimum-turns must be positive")
+    if args.minutes <= 0:
+        parser.error("--minutes must be positive")
     return args
 
 
 def main() -> int:
     args = _parse_args()
-    result = asyncio.run(_run(args.minutes, args.minimum_turns, args.seed))
+    result = asyncio.run(_run(args.minutes, args.seed))
     if args.artifacts_dir is not None:
         args.artifacts_dir.mkdir(parents=True, exist_ok=True)
         (args.artifacts_dir / "python-heap-samples.json").write_text(

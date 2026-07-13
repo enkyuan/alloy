@@ -53,6 +53,16 @@ def _load_root_script(name: str):
     return module
 
 
+def _load_sdk_benchmark(name: str):
+    path = REPO_ROOT / "kaji" / "sdk" / "benchmarks" / name
+    spec = importlib.util.spec_from_file_location(f"test_{path.stem}_module", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_beta_release_check_python_syntax() -> None:
     subprocess.run([sys.executable, "-m", "py_compile", str(BETA_GATE)], check=True)
 
@@ -614,9 +624,16 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
 
     monkeypatch.setattr(module, "installed_release_runtime", changed_runtime)
     completed = SimpleNamespace(stdout=b"{}")
-    monkeypatch.setattr(
-        module, "run_parallel_checked", lambda *_args, **_kwargs: (completed, completed)
-    )
+    commands: list[tuple[str, ...]] = []
+
+    def run_parallel(specs: tuple[object, ...]) -> tuple[object, object]:
+        for spec in specs:
+            command = getattr(spec, "command")
+            assert isinstance(command, tuple)
+            commands.append(command)
+        return completed, completed
+
+    monkeypatch.setattr(module, "run_parallel_checked", run_parallel)
 
     def passed_gate(command: list[str], **_kwargs: object) -> SimpleNamespace:
         output = Path(command[command.index("--output") + 1])
@@ -632,6 +649,8 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
     assert receipt["passed"] is False
     assert receipt["failureCode"] == "installed_runtime_failed"
     assert receipt["releaseManifestSha256"] == "b" * 64
+    assert "--artifact-dir" in commands[1]
+    assert "--artifacts-dir" not in commands[1]
 
 
 @pytest.mark.parametrize(
@@ -1575,6 +1594,7 @@ def test_benchmark_child_must_report_matching_installed_package(
 
 
 def _complete_soak_receipt(
+    runtime: str = "python",
     *,
     prior_rss_mib: float = 100.0,
     late_rss_mib: float = 100.0,
@@ -1588,22 +1608,29 @@ def _complete_soak_receipt(
         }
         for minute in range(21, 31)
     ]
-    rss_growth_mib = late_rss_mib - prior_rss_mib
-    rss_growth_percent = rss_growth_mib / prior_rss_mib * 100
     return {
+        "schemaVersion": 2,
+        "runtime": runtime,
+        "resolvedPackage": f"/installed/{runtime}",
         "requestedMinutes": 30.0,
         "elapsedSeconds": 1_800.0,
         "attemptedTurns": 10_000,
-        "lateWindowHeapGrowthPercent": 0.0,
-        "lateWindowRssGrowthPercent": rss_growth_percent,
-        "lateWindowRssGrowthMiB": rss_growth_mib,
+        "completedTurns": 9_998,
+        "failedTurns": 2,
+        "terminalOutcomes": {"completed": 9_998, "failed": 1, "cancelled": 1},
+        "noncooperativeTimeouts": 1,
+        "cooperativeTimeouts": 1,
         "memorySamples": samples,
         "internal": {
             "coordinatorEntries": 0,
             "coordinatorWaiters": 0,
             "stuckToolCalls": 0,
+            "maxToolActive": 4,
             "maxSubscriberQueueDepth": 1_024,
             "subscriberOverflows": 1,
+            "metricSubscriberOverflows": 1,
+            "subscriberResumes": 1,
+            "subscriberCount": 0,
             "projectionCacheSize": 0,
             "projectionCacheLimit": 1,
             "ledgerSize": 0,
@@ -1612,13 +1639,23 @@ def _complete_soak_receipt(
             "ledgerCounts": {"running": 0},
             "maxContextMessages": 1,
             "maxContextCharacters": 100,
+            "scenarios": {
+                "toolCallsRequested": 1,
+                "approvals": 1,
+                "cancellations": 1,
+                "cooperativeTimeouts": 1,
+                "nonCooperativeTimeouts": 1,
+                "sessionClosures": 1,
+            },
         },
         "provider": {
+            "active": 0,
             "approvalBridgeRequests": 1,
+            "multiToolBatches": 1,
+            "chargeRequests": 1,
             "maxMessages": 1,
             "maxCharacters": 100,
         },
-        "passed": True,
     }
 
 
@@ -1626,12 +1663,28 @@ def _complete_soak_receipt(
 def test_soak_gate_accepts_trustworthy_memory_windows(runtime: str) -> None:
     module = _load_root_script("beta_soak_gate.py")
 
-    assert module._failures(_complete_soak_receipt(), runtime, 30.0) == []
+    assert module._failures(_complete_soak_receipt(runtime), runtime, 30.0) == []
+
+
+@pytest.mark.parametrize("runtime", ["python", "typescript"])
+def test_soak_gate_loads_measurement_only_child_receipts(
+    runtime: str, tmp_path: Path
+) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    path = tmp_path / f"{runtime}.json"
+    path.write_text(json.dumps(_complete_soak_receipt(runtime)))
+
+    value, failures = module._load(path, runtime)
+
+    assert value is not None
+    assert failures == []
 
 
 def test_soak_gate_rejects_late_window_rss_leak() -> None:
     module = _load_root_script("beta_soak_gate.py")
-    receipt = _complete_soak_receipt(prior_rss_mib=10.0, late_rss_mib=1_000.0)
+    receipt = _complete_soak_receipt(
+        "typescript", prior_rss_mib=10.0, late_rss_mib=1_000.0
+    )
 
     failures = module._failures(receipt, "typescript", 30.0)
 
@@ -1641,7 +1694,7 @@ def test_soak_gate_rejects_late_window_rss_leak() -> None:
 @pytest.mark.parametrize("case", ["sparse", "duplicate", "nonfinite"])
 def test_soak_gate_rejects_untrustworthy_memory_windows(case: str) -> None:
     module = _load_root_script("beta_soak_gate.py")
-    receipt = _complete_soak_receipt()
+    receipt = _complete_soak_receipt("typescript")
     samples = receipt["memorySamples"]
     assert isinstance(samples, list)
     if case == "sparse":
@@ -1657,24 +1710,108 @@ def test_soak_gate_rejects_untrustworthy_memory_windows(case: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("path", "value", "message"),
     [
-        ("lateWindowHeapGrowthPercent", 1.0),
-        ("lateWindowRssGrowthPercent", 1.0),
-        ("lateWindowRssGrowthMiB", 1.0),
+        (("completedTurns",), 9_997, "turn accounting"),
+        (("terminalOutcomes", "completed"), 9_997, "terminal outcomes"),
+        (("internal", "maxToolActive"), 5, "tool concurrency"),
+        (("provider", "active"), 1, "provider requests"),
     ],
 )
-def test_soak_gate_rejects_memory_summary_drift(field: str, value: float) -> None:
+def test_soak_gate_rejects_common_runtime_invariant_drift(
+    path: tuple[str, ...], value: object, message: str
+) -> None:
     module = _load_root_script("beta_soak_gate.py")
-    receipt = _complete_soak_receipt()
-    receipt[field] = value
+    receipt = _complete_soak_receipt("typescript")
+    target = receipt
+    for key in path[:-1]:
+        nested = target[key]
+        assert isinstance(nested, dict)
+        target = nested
+    target[path[-1]] = value
 
     failures = module._failures(receipt, "typescript", 30.0)
 
-    assert any("memory summary" in failure for failure in failures)
+    assert any(message in failure for failure in failures)
 
 
-def test_soak_drivers_and_budget_publish_rss_growth_contract() -> None:
+def test_soak_gate_requires_cancelled_turns() -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt("typescript")
+    receipt["terminalOutcomes"] = {"completed": 9_998, "failed": 2, "cancelled": 0}
+
+    failures = module._failures(receipt, "typescript", 30.0)
+
+    assert any("cancellation" in failure for failure in failures)
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "message"),
+    [
+        (("internal", "subscriberCount"), 1, "subscriber"),
+        (("internal", "metricSubscriberOverflows"), 0, "overflow diagnostics"),
+        (("internal", "subscriberResumes"), 0, "subscriber resume"),
+        (("provider", "multiToolBatches"), 0, "multi-tool"),
+        (("provider", "chargeRequests"), 0, "approval tool"),
+        (("cooperativeTimeouts",), 0, "cooperative timeout"),
+        (("noncooperativeTimeouts",), 0, "non-cooperative timeout"),
+    ],
+)
+def test_soak_gate_rejects_python_scenario_gaps(
+    path: tuple[str, ...], value: int, message: str
+) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt("python")
+    target = receipt
+    for key in path[:-1]:
+        nested = target[key]
+        assert isinstance(nested, dict)
+        target = nested
+    target[path[-1]] = value
+
+    failures = module._failures(receipt, "python", 30.0)
+
+    assert any(message in failure for failure in failures)
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "toolCallsRequested",
+        "approvals",
+        "cancellations",
+        "cooperativeTimeouts",
+        "nonCooperativeTimeouts",
+        "sessionClosures",
+    ],
+)
+def test_soak_gate_rejects_typescript_scenario_gaps(scenario: str) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt("typescript")
+    scenarios = receipt["internal"]["scenarios"]
+    assert isinstance(scenarios, dict)
+    scenarios[scenario] = 0
+
+    failures = module._failures(receipt, "typescript", 30.0)
+
+    assert any(scenario in failure for failure in failures)
+
+
+def test_python_soak_sampling_records_minute_30_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_sdk_benchmark("runtime_soak.py")
+    monkeypatch.setattr(module, "_sample_memory", lambda minute: {"minute": minute})
+    samples: list[dict[str, float]] = []
+
+    module._append_memory_sample(samples, 21.0)
+    module._append_memory_sample(samples, 30.0)
+    module._append_memory_sample(samples, 30.5)
+
+    assert [sample["minute"] for sample in samples] == [21.0, 30.0]
+
+
+def test_soak_gate_is_the_only_soak_policy_authority() -> None:
     budgets = json.loads(
         (REPO_ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_text()
     )["soak"]
@@ -1686,8 +1823,18 @@ def test_soak_drivers_and_budget_publish_rss_growth_contract() -> None:
         Path("kaji/ts/benchmarks/runtime-soak.ts"),
     ):
         source = (REPO_ROOT / relative).read_text()
-        assert "lateWindowRssGrowthPercent" in source
-        assert "lateWindowRssGrowthMiB" in source
+        assert "MAX_LATE_WINDOW_" not in source
+        assert "minimumTurns" not in source
+        assert '"passed"' not in source
+        assert "const passed" not in source
+        assert "const checks" not in source
+
+    typescript = (
+        REPO_ROOT / "kaji" / "ts" / "benchmarks" / "runtime-soak.ts"
+    ).read_text()
+    assert "Math.min(failed, scenarios.cancellations)" not in typescript
+    assert "noncooperativeTimeouts:" not in typescript
+    assert "boundedConcurrency" not in typescript
 
 
 def test_soak_identity_rejects_missing_fields_and_child_path_drift(

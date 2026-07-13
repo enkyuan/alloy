@@ -34,9 +34,6 @@ import {
 const RESOLVED_PACKAGE = realpathSync(
   join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
 );
-const MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT = 5;
-const MAX_LATE_WINDOW_RSS_GROWTH_PERCENT = 5;
-const MAX_LATE_WINDOW_RSS_GROWTH_MIB = 64;
 
 interface Options {
   readonly minutes: number;
@@ -61,13 +58,6 @@ interface HeapSample {
   readonly maxToolActive: number;
   readonly maxSubscriberQueueDepth: number;
   readonly subscriberOverflows: number;
-}
-
-interface LateWindowGrowth {
-  readonly priorMedianMiB: number;
-  readonly lateMedianMiB: number;
-  readonly growthMiB: number;
-  readonly growthPercent: number;
 }
 
 class Mulberry32 {
@@ -392,33 +382,6 @@ function forceGc(): boolean {
   return false;
 }
 
-function median(values: readonly number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
-}
-
-function lateWindowGrowth(
-  samples: readonly HeapSample[],
-  field: "heapUsedMiB" | "rssMiB",
-): LateWindowGrowth | null {
-  const priorMedianMiB = median(
-    samples.filter(({ minute }) => minute >= 21 && minute < 26).map((sample) => sample[field]),
-  );
-  const lateMedianMiB = median(
-    samples.filter(({ minute }) => minute >= 26 && minute < 31).map((sample) => sample[field]),
-  );
-  if (priorMedianMiB === null || lateMedianMiB === null || priorMedianMiB <= 0) return null;
-  const growthMiB = lateMedianMiB - priorMedianMiB;
-  return {
-    priorMedianMiB,
-    lateMedianMiB,
-    growthMiB,
-    growthPercent: (growthMiB / priorMedianMiB) * 100,
-  };
-}
-
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rng = new Mulberry32(options.seed);
@@ -481,6 +444,7 @@ async function main(): Promise<void> {
   let attempted = 0;
   let completed = 0;
   let failed = 0;
+  let cancelled = 0;
   let releasedLedgerEntries = 0;
   let batch = 0;
   let sharedGeneration = 0;
@@ -563,6 +527,7 @@ async function main(): Promise<void> {
       closedTurn(`approval:${rng.integer(1_000_000)}`, crossApproval),
       runtime.turn("cancelled", { sessionId: cancelledSession, cancellationToken: cancellation }),
     ];
+    const cancellationJobIndex = jobs.length - 1;
     scenarios.sameSessionTurns += 2;
     scenarios.crossSessionTurns += 3;
     scenarios.toolCallsRequested += toolCount;
@@ -588,6 +553,7 @@ async function main(): Promise<void> {
     const outcomes = await Promise.allSettled(jobs);
     completed += outcomes.filter(({ status }) => status === "fulfilled").length;
     failed += outcomes.filter(({ status }) => status === "rejected").length;
+    if (outcomes[cancellationJobIndex]!.status === "rejected") cancelled++;
     batch++;
 
     if (batch % 100 === 0) {
@@ -607,66 +573,9 @@ async function main(): Promise<void> {
   const elapsed = elapsedMs(started);
   if (heapSamples.length === 0) sample(elapsed / 60_000);
 
-  const heapGrowth = lateWindowGrowth(heapSamples, "heapUsedMiB");
-  const rssGrowth = lateWindowGrowth(heapSamples, "rssMiB");
-  const priorHeapMedianMiB = heapGrowth?.priorMedianMiB ?? null;
-  const lateHeapMedianMiB = heapGrowth?.lateMedianMiB ?? null;
-  const lateWindowHeapGrowthPercent = heapGrowth?.growthPercent ?? null;
-  const lateWindowRssGrowthPercent = rssGrowth?.growthPercent ?? null;
-  const lateWindowRssGrowthMiB = rssGrowth?.growthMiB ?? null;
-  const rssGrowthLimitMiB =
-    rssGrowth === null
-      ? null
-      : Math.max(
-          MAX_LATE_WINDOW_RSS_GROWTH_MIB,
-          (rssGrowth.priorMedianMiB * MAX_LATE_WINDOW_RSS_GROWTH_PERCENT) / 100,
-        );
-  const fullSoak = options.minutes >= 30;
-  const boundsMet =
-    coordinator.entryCount === 0 &&
-    coordinator.waitingCount === 0 &&
-    stuckToolCallIds.length === 0 &&
-    diagnostics.maxToolActive <= 4 &&
-    diagnostics.maxSubscriberQueueDepth <= 1_024 &&
-    ledger.size <= ledger.capacity &&
-    ledger.peakSize <= ledger.capacity &&
-    ledger.counts.running === 0 &&
-    runtime.projectionCacheSize <= store.maxSessions;
-  const scenarioMixMet =
-    scenarios.toolCallsRequested > 0 &&
-    scenarios.approvals > 0 &&
-    scenarios.cancellations > 0 &&
-    scenarios.cooperativeTimeouts > 0 &&
-    scenarios.nonCooperativeTimeouts > 0 &&
-    scenarios.sessionClosures > 0 &&
-    diagnostics.subscriberOverflows > 0;
-  const checks = {
-    durationMet: fullSoak && elapsed >= requestedMs && elapsed >= 30 * 60_000,
-    minimumTurnsTarget: 10_000,
-    minimumTurnsMet: attempted >= 10_000,
-    lateWindowGrowthMet:
-      lateWindowHeapGrowthPercent !== null &&
-      lateWindowHeapGrowthPercent <= MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT,
-    lateWindowRssGrowthMet:
-      lateWindowRssGrowthMiB !== null &&
-      rssGrowthLimitMiB !== null &&
-      lateWindowRssGrowthMiB <= rssGrowthLimitMiB,
-    accountingMet: attempted === completed + failed,
-    boundsMet,
-    scenarioMixMet,
-  };
-  const passed =
-    checks.durationMet &&
-    checks.minimumTurnsMet &&
-    checks.lateWindowGrowthMet &&
-    checks.lateWindowRssGrowthMet &&
-    checks.accountingMet &&
-    checks.boundsMet &&
-    checks.scenarioMixMet;
   const elapsedSeconds = elapsed / 1_000;
-  const cancelledTurns = Math.min(failed, scenarios.cancellations);
   const result = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runtime: "typescript",
     resolvedPackage: RESOLVED_PACKAGE,
     engine: typeof Bun === "undefined" ? `node-${process.version}` : `bun-${Bun.version}`,
@@ -674,20 +583,15 @@ async function main(): Promise<void> {
     offline: true,
     requestedMinutes: options.minutes,
     elapsedSeconds,
-    minimumTurns: checks.minimumTurnsTarget,
     attemptedTurns: attempted,
     completedTurns: completed,
     failedTurns: failed,
     throughputTurnsPerSecond: elapsedSeconds === 0 ? 0 : completed / elapsedSeconds,
     terminalOutcomes: {
       completed,
-      failed: failed - cancelledTurns,
-      cancelled: cancelledTurns,
+      failed: failed - cancelled,
+      cancelled,
     },
-    noncooperativeTimeouts: scenarios.nonCooperativeTimeouts,
-    lateWindowHeapGrowthPercent,
-    lateWindowRssGrowthPercent,
-    lateWindowRssGrowthMiB,
     memorySamples: heapSamples,
     provider: {
       kind: "offline-fixture",
@@ -696,7 +600,6 @@ async function main(): Promise<void> {
       maxActive: provider.maxActive,
     },
     internal: {
-      boundedConcurrency: 7,
       maxToolActive: diagnostics.maxToolActive,
       maxSubscriberQueueDepth: diagnostics.maxSubscriberQueueDepth,
       subscriberOverflows: diagnostics.subscriberOverflows,
@@ -714,10 +617,6 @@ async function main(): Promise<void> {
       gcAvailable,
       scenarios,
     },
-    passed,
-    checks,
-    priorHeapMedianMiB,
-    lateHeapMedianMiB,
   };
 
   const json = `${JSON.stringify(result)}\n`;

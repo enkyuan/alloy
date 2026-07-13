@@ -34,21 +34,18 @@ def _load(path: Path, runtime: str) -> tuple[dict[str, Any] | None, list[str]]:
         "resolvedPackage",
         "requestedMinutes",
         "elapsedSeconds",
-        "minimumTurns",
         "attemptedTurns",
         "completedTurns",
         "failedTurns",
-        "lateWindowHeapGrowthPercent",
-        "lateWindowRssGrowthPercent",
-        "lateWindowRssGrowthMiB",
+        "terminalOutcomes",
         "memorySamples",
+        "provider",
         "internal",
-        "passed",
     }
     missing = sorted(required - value.keys())
     if missing:
         return value, [f"{runtime} soak artifact is missing: {', '.join(missing)}"]
-    if value["schemaVersion"] != 1 or value["runtime"] != runtime:
+    if value["schemaVersion"] != 2 or value["runtime"] != runtime:
         return value, [f"{runtime} soak artifact has the wrong schema identity"]
     return value, []
 
@@ -58,6 +55,10 @@ def _finite_number(value: Any) -> float | None:
         return None
     number = float(value)
     return number if math.isfinite(number) else None
+
+
+def _count(value: Any) -> int | None:
+    return value if type(value) is int and value >= 0 else None
 
 
 def _memory_summary(
@@ -121,7 +122,8 @@ def _memory_summary(
 
 def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
     failures: list[str] = []
-    if value["requestedMinutes"] != minutes:
+    requested_minutes = _finite_number(value.get("requestedMinutes"))
+    if requested_minutes != minutes:
         failures.append(f"{runtime} soak requested duration does not match the runner")
     required_minutes = max(float(BUDGETS["durationMinutes"]), minutes)
     if minutes < BUDGETS["durationMinutes"]:
@@ -129,29 +131,50 @@ def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
             f"{runtime} soak requested {minutes} minutes; protected minimum is "
             f"{BUDGETS['durationMinutes']}"
         )
-    if value["elapsedSeconds"] < required_minutes * 60:
+    elapsed_seconds = _finite_number(value.get("elapsedSeconds"))
+    if elapsed_seconds is None or elapsed_seconds < required_minutes * 60:
         failures.append(f"{runtime} soak ended before {required_minutes} minutes")
-    if value["attemptedTurns"] < BUDGETS["minimumTurns"]:
+    attempted = _count(value.get("attemptedTurns"))
+    completed = _count(value.get("completedTurns"))
+    failed = _count(value.get("failedTurns"))
+    if attempted is None or attempted < BUDGETS["minimumTurns"]:
         failures.append(
-            f"{runtime} soak attempted {value['attemptedTurns']} turns; "
+            f"{runtime} soak attempted {value.get('attemptedTurns')!r} turns; "
             f"minimum is {BUDGETS['minimumTurns']}"
         )
+    if (
+        attempted is None
+        or completed is None
+        or failed is None
+        or attempted != completed + failed
+    ):
+        failures.append(f"{runtime} soak turn accounting diverged")
+    terminal = value.get("terminalOutcomes")
+    terminal_counts = (
+        {
+            name: _count(terminal.get(name))
+            for name in ("completed", "failed", "cancelled")
+        }
+        if isinstance(terminal, dict)
+        else {}
+    )
+    if (
+        len(terminal_counts) != 3
+        or any(count is None for count in terminal_counts.values())
+        or terminal_counts.get("completed") != completed
+        or (
+            terminal_counts.get("failed") is not None
+            and terminal_counts.get("cancelled") is not None
+            and terminal_counts["failed"] + terminal_counts["cancelled"] != failed
+        )
+    ):
+        failures.append(f"{runtime} soak terminal outcomes diverged")
+    cancelled = terminal_counts.get("cancelled")
+    if cancelled is None or cancelled < 1:
+        failures.append(f"{runtime} soak did not exercise cancellation")
     summary, memory_failures = _memory_summary(value, runtime)
     failures.extend(memory_failures)
     if summary is not None:
-        reported_fields = {
-            "lateWindowHeapGrowthPercent": summary["heapGrowthPercent"],
-            "lateWindowRssGrowthPercent": summary["rssGrowthPercent"],
-            "lateWindowRssGrowthMiB": summary["rssGrowthMiB"],
-        }
-        for field, expected in reported_fields.items():
-            reported = _finite_number(value.get(field))
-            if reported is None or not math.isclose(
-                reported, expected, rel_tol=1e-9, abs_tol=1e-9
-            ):
-                failures.append(
-                    f"{runtime} soak memory summary {field} does not match samples"
-                )
         if summary["heapGrowthPercent"] > BUDGETS["maxLateWindowHeapGrowthPercent"]:
             failures.append(
                 f"{runtime} soak late-window heap growth "
@@ -170,8 +193,12 @@ def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
                 f"{summary['rssGrowthMiB']!r} MiB exceeds "
                 f"{rss_growth_limit_mib!r} MiB"
             )
-    internal = value["internal"]
-    provider = value.get("provider", {})
+    internal = value.get("internal")
+    provider = value.get("provider")
+    if not isinstance(internal, dict):
+        return [*failures, f"{runtime} soak internal diagnostics are invalid"]
+    if not isinstance(provider, dict):
+        return [*failures, f"{runtime} soak provider diagnostics are invalid"]
     if (
         internal.get("coordinatorEntries") != 0
         or internal.get("coordinatorWaiters") != 0
@@ -179,27 +206,60 @@ def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
         failures.append(f"{runtime} soak leaked coordinator state")
     if internal.get("stuckToolCalls") != 0:
         failures.append(f"{runtime} soak leaked tool handlers")
-    if internal.get("maxSubscriberQueueDepth", 1_025) > 1_024:
+    max_tool_active = _count(internal.get("maxToolActive"))
+    if max_tool_active is None or max_tool_active > 4:
+        failures.append(f"{runtime} soak exceeded tool concurrency")
+    max_subscriber_depth = _count(internal.get("maxSubscriberQueueDepth"))
+    if max_subscriber_depth is None or max_subscriber_depth > 1_024:
         failures.append(f"{runtime} soak exceeded subscriber queue capacity")
-    if internal.get("subscriberOverflows", 0) < 1:
+    subscriber_overflows = _count(internal.get("subscriberOverflows"))
+    if subscriber_overflows is None or subscriber_overflows < 1:
         failures.append(f"{runtime} soak did not exercise subscriber overflow")
-    if internal.get("projectionCacheSize", 1) > internal.get("projectionCacheLimit", 0):
+    projection_size = _count(internal.get("projectionCacheSize"))
+    projection_limit = _count(internal.get("projectionCacheLimit"))
+    if (
+        projection_size is None
+        or projection_limit is None
+        or projection_size > projection_limit
+    ):
         failures.append(f"{runtime} soak exceeded projection cache capacity")
-    ledger_size = internal.get("ledgerSize")
-    if isinstance(ledger_size, (int, float)):
-        if ledger_size > internal.get("ledgerLimit", 0):
+    ledger_size = _count(internal.get("ledgerSize"))
+    ledger_limit = _count(internal.get("ledgerLimit"))
+    if ledger_size is not None and ledger_limit is not None:
+        if ledger_size > ledger_limit:
             failures.append(f"{runtime} soak exceeded ledger capacity")
-        if internal.get("ledgerPeakSize", ledger_size) > internal.get("ledgerLimit", 0):
+        ledger_peak = _count(internal.get("ledgerPeakSize", ledger_size))
+        if ledger_peak is None or ledger_peak > ledger_limit:
             failures.append(f"{runtime} soak ledger peak exceeded capacity")
         counts = internal.get("ledgerCounts")
         if isinstance(counts, dict) and counts.get("running") != 0:
             failures.append(f"{runtime} soak left running ledger entries")
     else:
         failures.append(f"{runtime} soak did not report a measured ledger size")
+    if _count(provider.get("active")) != 0:
+        failures.append(f"{runtime} soak left provider requests active")
     if runtime == "python":
+        if _count(internal.get("subscriberCount")) != 0:
+            failures.append("python soak leaked a subscriber")
+        if max_subscriber_depth != 1_024:
+            failures.append("python soak did not reach subscriber queue capacity")
+        metric_overflows = _count(internal.get("metricSubscriberOverflows"))
+        if metric_overflows != subscriber_overflows:
+            failures.append("python soak overflow diagnostics diverged")
+        subscriber_resumes = _count(internal.get("subscriberResumes"))
+        if subscriber_resumes != subscriber_overflows:
+            failures.append("python soak subscriber resume count diverged")
+        if _count(provider.get("multiToolBatches")) in (None, 0):
+            failures.append("python soak did not exercise a multi-tool batch")
+        if _count(provider.get("chargeRequests")) in (None, 0):
+            failures.append("python soak did not exercise the approval tool")
         bridge_requests = provider.get("approvalBridgeRequests")
         if not isinstance(bridge_requests, int) or bridge_requests < 1:
             failures.append("python soak did not exercise the approval bridge")
+        if _count(value.get("cooperativeTimeouts")) in (None, 0):
+            failures.append("python soak did not exercise a cooperative timeout")
+        if _count(value.get("noncooperativeTimeouts")) in (None, 0):
+            failures.append("python soak did not exercise a non-cooperative timeout")
         provider_messages = provider.get("maxMessages")
         provider_characters = provider.get("maxCharacters")
         metric_messages = internal.get("maxContextMessages")
@@ -220,8 +280,23 @@ def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
             failures.append(
                 "python soak exceeded or misreported the context character bound"
             )
-    if not value["passed"]:
-        failures.append(f"{runtime} soak program reported failure")
+    else:
+        scenarios = internal.get("scenarios")
+        if not isinstance(scenarios, dict):
+            failures.append("typescript soak scenario diagnostics are invalid")
+        else:
+            for name in (
+                "toolCallsRequested",
+                "approvals",
+                "cancellations",
+                "cooperativeTimeouts",
+                "nonCooperativeTimeouts",
+                "sessionClosures",
+            ):
+                if _count(scenarios.get(name)) in (None, 0):
+                    failures.append(f"typescript soak did not exercise {name}")
+        if not isinstance(internal.get("ledgerCounts"), dict):
+            failures.append("typescript soak ledger counts are invalid")
     return failures
 
 
