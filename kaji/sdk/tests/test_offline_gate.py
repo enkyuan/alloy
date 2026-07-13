@@ -104,8 +104,8 @@ def test_offline_gate_forwards_command_and_exit_status(
         return SimpleNamespace(returncode=19)
 
     monkeypatch.setattr(module, "run_checked", run_checked)
-    assert module.main(["--", "python", "-m", "pytest"]) == 19
-    executable = shutil.which("python")
+    assert module.main(["--", sys.executable, "-m", "pytest"]) == 19
+    executable = shutil.which(sys.executable)
     assert executable is not None
     assert captured["command"] == [str(Path(executable).absolute()), "-m", "pytest"]
     assert captured["cwd"] == Path.cwd()
