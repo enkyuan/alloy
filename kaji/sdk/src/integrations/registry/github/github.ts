@@ -138,13 +138,25 @@ function objectResult(value: unknown): Record<string, unknown> {
 
 export class GitHubIntegration extends Integration {
   readonly namespace = "github";
+  private closeOwnedRequester: (() => void) | undefined;
 
-  constructor(private readonly client: Client) {
+  constructor(
+    private readonly client: Client,
+    closeOwnedRequester?: () => void,
+  ) {
     super();
+    this.closeOwnedRequester = closeOwnedRequester;
   }
 
   override tools(): [ToolSpec, ToolHandler][] {
     return specs().map((spec) => [spec, this.handler(spec.name)]);
+  }
+
+  close(): void {
+    const close = this.closeOwnedRequester;
+    if (close === undefined) return;
+    close();
+    this.closeOwnedRequester = undefined;
   }
 
   private handler(name: string): ToolHandler {
@@ -219,11 +231,13 @@ export function createGithubIntegration(
   options: CreateGitHubIntegrationOptions,
 ): GitHubIntegration {
   const { metricsSink, traceSink, ...clientOptions } = options;
-  return createGithubIntegrationForTest(
+  const http = createGitHubRequester({ metricsSink, traceSink });
+  return new GitHubIntegration(
     new GitHubClient({
       ...clientOptions,
-      http: createGitHubRequester({ metricsSink, traceSink }),
+      http,
     }),
+    () => http.close(),
   );
 }
 

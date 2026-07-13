@@ -18,6 +18,32 @@ const abi = JSON.parse(
 ) as { namespace: string; tools: Array<Record<string, unknown>> };
 
 describe("GitHub registry bundle", () => {
+  it("closes its production-owned requester exactly once", () => {
+    const close = vi.fn();
+    const integration = new GitHubIntegration({} as never, close);
+
+    integration.close();
+    integration.close();
+
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("allows teardown to be retried after an owned requester close failure", () => {
+    const close = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("close failed");
+      })
+      .mockImplementationOnce(() => undefined);
+    const integration = new GitHubIntegration({} as never, close);
+
+    expect(() => integration.close()).toThrow("close failed");
+    integration.close();
+    integration.close();
+
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
   it("matches the exact canonical ABI without global registration", () => {
     const before = listToolSpecs();
     const integration = inspectIntegration();

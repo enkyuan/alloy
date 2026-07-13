@@ -184,6 +184,40 @@ describe("fixed-origin response boundaries", () => {
 });
 
 describe("provider-fixed production factories", () => {
+  it("closes its owned transport exactly once and rejects reuse", async () => {
+    const close = vi.fn();
+    const direct = { ...transport(response()), close };
+    const requester = fixedOriginForTest("https://api.github.com", direct);
+
+    requester.close();
+    requester.close();
+
+    expect(close).toHaveBeenCalledOnce();
+    await expect(
+      requester.request("/x", { method: "GET", headers: {} }, context()),
+    ).rejects.toBeInstanceOf(IntegrationPolicyError);
+    expect(direct.request).not.toHaveBeenCalled();
+  });
+
+  it("allows teardown to be retried after a transport close failure", () => {
+    const close = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("close failed");
+      })
+      .mockImplementationOnce(() => undefined);
+    const requester = fixedOriginForTest("https://api.github.com", {
+      ...transport(response()),
+      close,
+    });
+
+    expect(() => requester.close()).toThrow("close failed");
+    requester.close();
+    requester.close();
+
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
   it("takes no configuration and never consults global fetch or proxy settings", async () => {
     const originalFetch = globalThis.fetch;
     const poisoned = vi.fn(async () => {
@@ -193,14 +227,16 @@ describe("provider-fixed production factories", () => {
     process.env.HTTP_PROXY = "http://127.0.0.1:1";
     process.env.HTTPS_PROXY = "http://127.0.0.1:1";
     process.env.NODE_USE_ENV_PROXY = "1";
+    const github = createGitHubRequester();
+    const gmail = createGmailRequester();
     try {
       expect(createGitHubRequester.length).toBe(0);
       expect(createGmailRequester.length).toBe(0);
       await expect(
-        createGitHubRequester().request("", { method: "GET", headers: {} }, context()),
+        github.request("", { method: "GET", headers: {} }, context()),
       ).rejects.toBeInstanceOf(IntegrationPolicyError);
       await expect(
-        createGmailRequester().request("", { method: "GET", headers: {} }, context()),
+        gmail.request("", { method: "GET", headers: {} }, context()),
       ).rejects.toBeInstanceOf(IntegrationPolicyError);
       expect(poisoned).not.toHaveBeenCalled();
 
@@ -213,6 +249,8 @@ describe("provider-fixed production factories", () => {
         ),
       ).resolves.toMatchObject({ status: 200 });
     } finally {
+      github.close();
+      gmail.close();
       globalThis.fetch = originalFetch;
       delete process.env.HTTP_PROXY;
       delete process.env.HTTPS_PROXY;

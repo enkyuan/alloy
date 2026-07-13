@@ -76,6 +76,7 @@ export interface FixedOriginTestResponse {
 /** @internal Relative source tests only; absent from the package subpath. */
 export interface FixedOriginTestTransport {
   request(url: URL, init: FixedOriginTransportInit): Promise<FixedOriginTestResponse>;
+  close?(): void;
 }
 
 function policyError(): IntegrationPolicyError {
@@ -249,6 +250,10 @@ class NodeHttpsTransport implements FixedOriginTestTransport {
       request.end(init.body);
     });
   }
+
+  close(): void {
+    this.agent.destroy();
+  }
 }
 
 class FixedOriginRequesterImpl implements FixedOriginRequester {
@@ -260,6 +265,7 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
   private readonly monotonicNow: () => number;
+  private closed = false;
 
   constructor(
     policy: FixedOriginPolicy,
@@ -303,6 +309,7 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
     let scope: ReturnType<typeof requestSignal> | undefined;
     let response: FixedOriginTestResponse | undefined;
     try {
+      if (this.closed) throw policyError();
       if (!this.allowedMethods.has(init.method)) throw policyError();
       if (init.body !== undefined && !(init.body instanceof Uint8Array)) throw policyError();
       const url = validatedPath(this.origin, pathAndQuery);
@@ -364,13 +371,19 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
       span.end();
     }
   }
+
+  close(): void {
+    if (this.closed) return;
+    this.transport.close?.();
+    this.closed = true;
+  }
 }
 
 const productionTransport = () => new NodeHttpsTransport();
 
 export function createGitHubRequester(
   observability: FixedOriginObservability = {},
-): FixedOriginRequester {
+): FixedOriginRequester & { close(): void } {
   return new FixedOriginRequesterImpl(
     { origin: new URL("https://api.github.com/"), integration: "github" },
     productionTransport(),
@@ -380,7 +393,7 @@ export function createGitHubRequester(
 
 export function createGmailRequester(
   observability: FixedOriginObservability = {},
-): FixedOriginRequester {
+): FixedOriginRequester & { close(): void } {
   return new FixedOriginRequesterImpl(
     { origin: new URL("https://gmail.googleapis.com/"), integration: "gmail" },
     productionTransport(),
@@ -394,7 +407,7 @@ export function fixedOriginForTest(
   transport: FixedOriginTestTransport,
   policy: Omit<Partial<FixedOriginPolicy>, "origin"> = {},
   observability: FixedOriginObservability = {},
-): FixedOriginRequester {
+): FixedOriginRequester & { close(): void } {
   return new FixedOriginRequesterImpl(
     { origin: new URL(origin), integration: "github", ...policy },
     transport,

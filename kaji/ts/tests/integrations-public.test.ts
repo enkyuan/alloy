@@ -75,8 +75,14 @@ describe("experimental integrations subpath", () => {
   });
 
   it("exposes provider-fixed requester factories", () => {
-    expect(createGitHubRequester()).toBeDefined();
-    expect(createGmailRequester()).toBeDefined();
+    const github = createGitHubRequester();
+    const gmail = createGmailRequester();
+
+    expect(github).toBeDefined();
+    expect(gmail).toBeDefined();
+
+    github.close();
+    gmail.close();
   });
 
   it("returns a detached, deeply frozen durable snapshot", () => {

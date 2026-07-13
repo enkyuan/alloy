@@ -72,5 +72,6 @@ describe("GitHub observability wiring", () => {
     expect(JSON.stringify({ measurements, spans })).not.toMatch(
       /private-token|poison-principal|octo\/widgets|needle/,
     );
+    integration.close();
   });
 });
