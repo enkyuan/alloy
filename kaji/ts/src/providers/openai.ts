@@ -16,6 +16,7 @@ import type {
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  RetryOptions,
   ToolCall,
 } from "@/providers/base";
 import { getProviderResponseDiagnostics, openStreamWithRetry, withRetry } from "@/providers/base";
@@ -37,15 +38,12 @@ import {
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
+// Preserve the public `@kaji/sdk/openai` type export while keeping the
+// implementation shared with other providers.
+export type { RetryOptions } from "@/providers/base";
+
 type ChatTool = OpenAI.Chat.Completions.ChatCompletionTool;
 type ChatToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
-
-export interface RetryOptions {
-  /** Maximum retry attempts on 429 rate-limit responses. Defaults to 3. */
-  maxAttempts?: number;
-  /** Base delay in ms before first retry. Doubles each attempt. Defaults to 1000. */
-  baseDelayMs?: number;
-}
 
 export interface OpenAIProviderOptions {
   apiKey: string;

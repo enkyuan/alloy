@@ -133,12 +133,13 @@ export type {
   ModelResponseChunk,
   ProviderMessage,
   ProviderResponseLimits,
+  RetryOptions,
   ToolCall,
   TokenUsage,
 } from "@/providers/base";
 export { DEFAULT_PROVIDER_RESPONSE_LIMITS, resolveProviderResponseLimits } from "@/providers/base";
 export { OpenAIProvider } from "@/providers/openai";
-export type { OpenAIProviderOptions, RetryOptions } from "@/providers/openai";
+export type { OpenAIProviderOptions } from "@/providers/openai";
 export { AnthropicProvider } from "@/providers/anthropic";
 export type { AnthropicProviderOptions } from "@/providers/anthropic";
 export {

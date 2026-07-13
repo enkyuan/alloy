@@ -14,11 +14,11 @@ import type {
   ModelResponse,
   ModelResponseChunk,
   ProviderMessage,
+  RetryOptions,
   TokenUsage,
   ToolCall,
 } from "@/providers/base";
 import { getProviderResponseDiagnostics, openStreamWithRetry, withRetry } from "@/providers/base";
-import type { RetryOptions } from "@/providers/openai";
 import {
   ProviderConfigError,
   ProviderError,

@@ -10,7 +10,6 @@ import {
   throwIfCancellationRequested,
   type CancellationTokenLike,
 } from "@/runtime/cancellation";
-import type { RetryOptions } from "@/providers/openai";
 import type { ToolSpec } from "@/tools/registry";
 import { NOOP_METRICS, recordMetric, type MetricsSink, type ProviderFamily } from "@/observability";
 
@@ -167,6 +166,14 @@ export interface ModelProvider {
     tools: ToolSpec[],
     options?: ModelProviderOptions,
   ): AsyncGenerator<ModelResponseChunk>;
+}
+
+/** Rate-limit retry configuration shared by HTTP-backed providers. */
+export interface RetryOptions {
+  /** Maximum retry attempts on 429 rate-limit responses. Defaults to 3. */
+  maxAttempts?: number;
+  /** Base delay in ms before first retry. Doubles each attempt. Defaults to 1000. */
+  baseDelayMs?: number;
 }
 
 function parseRetryAfterMs(error: unknown): number | undefined {

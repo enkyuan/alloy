@@ -190,6 +190,11 @@ describe("public declarations", () => {
     expect(anthropic).not.toContain("AnthropicProviderTestHooks");
   });
 
+  it("preserves RetryOptions on the OpenAI provider subpath", () => {
+    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai.ts"]);
+    expect(openai).toContain("RetryOptions");
+  });
+
   it("keeps optional provider peers out of root declarations", () => {
     const sources = ["src/index.ts", "src/providers/openai.ts", "src/providers/anthropic.ts"];
     for (const declaration of [
