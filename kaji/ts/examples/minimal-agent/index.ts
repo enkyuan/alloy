@@ -8,15 +8,7 @@
  * Run:
  *   npx tsx index.ts
  */
-import {
-  AgentBuilder,
-  EventBus,
-  InMemoryEventStore,
-  anthropic,
-  functionTool,
-  openai,
-  type ModelProvider,
-} from "@kaji/sdk";
+import { AgentBuilder, anthropic, functionTool, openai, type ModelProvider } from "@kaji/sdk";
 import * as z from "zod";
 
 const getWeather = functionTool(
@@ -40,7 +32,7 @@ export async function runAgent(provider = providerFromEnv()): Promise<void> {
     .tool(getWeather)
     .defaultContext({ principalId: "minimal-agent" })
     .systemPrompt("You are a weather assistant.")
-    .build({ bus: new EventBus(), store: new InMemoryEventStore() });
+    .build();
 
   const { text } = await runtime.turn("What is the weather in Seattle?");
   console.log(text);
