@@ -25,6 +25,7 @@ type SmokePhase =
   | "exports:esm"
   | "exports:cjs"
   | "cli:help"
+  | "cli:help-cjs"
   | "docs:compile-typescript-current"
   | "docs:run"
   | `${PackageManager}:${InstallStage}-install`
@@ -713,6 +714,14 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
     { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
   );
   assertCliOwnerOutput(ownerOutput);
+  const cjsOwnerOutput = await runCommand(
+    "cli:help-cjs",
+    nodeBinary,
+    ["--eval", 'process.argv=[process.execPath,"--help"]; require("@kaji/sdk/cli");'],
+    installRoot,
+    npmEnvironment,
+  );
+  assertCliOwnerOutput(cjsOwnerOutput);
 
   const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
   const quickstart = docs.match(

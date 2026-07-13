@@ -1795,7 +1795,17 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
 
     package_path = ROOT / "kaji" / "ts" / "package.json"
     package = load_json(package_path)
-    if package.get("exports", {}).get("./cli") != "./dist/cli/package-entry.js":
+    expected_cli_subpath = {
+        "import": {
+            "types": "./dist/cli/package-entry.d.ts",
+            "default": "./dist/cli/package-entry.js",
+        },
+        "require": {
+            "types": "./dist/cli/package-entry-cjs.d.cts",
+            "default": "./dist/cli/package-entry-cjs.cjs",
+        },
+    }
+    if package.get("exports", {}).get("./cli") != expected_cli_subpath:
         raise fail(package_path, "/exports/~1cli", "missing stable CLI export")
     subpath = package.get("exports", {}).get("./integrations")
     if not isinstance(subpath, dict):

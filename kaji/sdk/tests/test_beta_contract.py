@@ -82,6 +82,11 @@ def test_every_packaged_cli_command_has_one_stability_tier() -> None:
     }
 
 
+def test_package_subpath_contract_accepts_typed_esm_and_cjs_cli() -> None:
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
+    checker["check_package_subpaths"](json.loads(FEATURE_TIERS.read_text()))
+
+
 def test_beta_error_vocabulary_includes_event_boundary_failures() -> None:
     codes = json.loads(ERROR_CODES.read_text())["codes"]
     assert len(codes) == len(set(codes))

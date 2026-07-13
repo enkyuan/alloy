@@ -1,6 +1,11 @@
+import { rmSync } from "node:fs";
+
 import { defineConfig } from "tsup";
 
 const EXTERNAL_PROVIDERS = ["openai", "@anthropic-ai/sdk", "@google/genai"];
+
+// Clean once before parallel configs build; per-config cleaning can delete faster outputs.
+rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });
 
 export default defineConfig([
   {
@@ -8,7 +13,7 @@ export default defineConfig([
     format: ["esm", "cjs"],
     dts: true,
     sourcemap: true,
-    clean: true,
+    clean: false,
     treeshake: true,
     // Provider SDKs are optional peer dependencies — consumers install only what they use.
     external: EXTERNAL_PROVIDERS,
@@ -36,13 +41,33 @@ export default defineConfig([
       "src/cli/index.ts",
       "src/cli/package-entry.ts",
       "src/cli/init-worker.ts",
-      "src/cli/integration-copy-worker.mjs",
     ],
+    format: ["esm"],
+    outDir: "dist/cli",
+    dts: true,
+    sourcemap: true,
+    clean: false,
+    banner: { js: "#!/usr/bin/env node" },
+    external: EXTERNAL_PROVIDERS,
+  },
+  {
+    // JavaScript worker stays declaration-free; public CLI declarations come from TS entries above.
+    entry: ["src/cli/integration-copy-worker.mjs"],
     format: ["esm"],
     outDir: "dist/cli",
     sourcemap: true,
     clean: false,
     banner: { js: "#!/usr/bin/env node" },
+    external: EXTERNAL_PROVIDERS,
+  },
+  {
+    // CommonJS bridge loads the ESM CLI without bundling its import-meta-dependent internals.
+    entry: ["src/cli/package-entry-cjs.ts"],
+    format: ["cjs"],
+    outDir: "dist/cli",
+    dts: true,
+    sourcemap: true,
+    clean: false,
     external: EXTERNAL_PROVIDERS,
   },
 ]);

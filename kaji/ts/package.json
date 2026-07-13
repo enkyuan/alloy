@@ -87,7 +87,16 @@
         "default": "./dist/auth.cjs"
       }
     },
-    "./cli": "./dist/cli/package-entry.js"
+    "./cli": {
+      "import": {
+        "types": "./dist/cli/package-entry.d.ts",
+        "default": "./dist/cli/package-entry.js"
+      },
+      "require": {
+        "types": "./dist/cli/package-entry-cjs.d.cts",
+        "default": "./dist/cli/package-entry-cjs.cjs"
+      }
+    }
   },
   "scripts": {
     "prebuild": "bun run scripts/prepare_registry.ts",

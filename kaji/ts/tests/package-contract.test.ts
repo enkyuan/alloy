@@ -242,8 +242,19 @@ describe("npm contract artifact", () => {
     const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
     const entry = readFileSync(join(packageRoot, "src/cli/package-entry.ts"), "utf8");
 
-    expect(manifest.exports["./cli"]).toBe("./dist/cli/package-entry.js");
+    expect(manifest.exports["./cli"]).toEqual({
+      import: {
+        types: "./dist/cli/package-entry.d.ts",
+        default: "./dist/cli/package-entry.js",
+      },
+      require: {
+        types: "./dist/cli/package-entry-cjs.d.cts",
+        default: "./dist/cli/package-entry-cjs.cjs",
+      },
+    });
     expect(buildConfig).toContain('"src/cli/package-entry.ts"');
+    expect(buildConfig).toContain('"src/cli/package-entry-cjs.ts"');
+    expect(buildConfig).toContain("dts: true");
     expect(entry).toContain("process.argv.slice(1)");
   });
 
@@ -501,6 +512,23 @@ console.log(JSON.stringify({
         errors: Record<string, boolean>;
       };
 
+      const esmCli = runText(
+        "node",
+        [
+          "--input-type=module",
+          "--eval",
+          'process.argv=["node","--help"]; await import("@kaji/sdk/cli");',
+        ],
+        { cwd: consumer },
+      );
+      const cjsCli = runText(
+        "node",
+        ["--eval", 'process.argv=["node","--help"]; require("@kaji/sdk/cli");'],
+        { cwd: consumer },
+      );
+      expect(esmCli).toContain("usage: kaji");
+      expect(cjsCli).toContain("usage: kaji");
+
       for (const exports of [esm, cjs]) {
         expect(exports.testing).toEqual(
           expect.arrayContaining([
@@ -560,7 +588,16 @@ console.log(JSON.stringify({
       expect(manifest.version).toBe("0.2.0-beta.1");
       expect(manifest.license).toBe("SEE LICENSE IN LICENSE");
       expect(manifest.files).toContain("LICENSE");
-      expect(manifest.exports["./cli"]).toBe("./dist/cli/package-entry.js");
+      expect(manifest.exports["./cli"]).toEqual({
+        import: {
+          types: "./dist/cli/package-entry.d.ts",
+          default: "./dist/cli/package-entry.js",
+        },
+        require: {
+          types: "./dist/cli/package-entry-cjs.d.cts",
+          default: "./dist/cli/package-entry-cjs.cjs",
+        },
+      });
       expect(paths).toContain("LICENSE");
       expect(runBytes("tar", ["-xOf", tarball, "package/LICENSE"])).toEqual(
         readFileSync(join(repositoryRoot, "LICENSE")),
@@ -568,6 +605,9 @@ console.log(JSON.stringify({
       for (const required of [
         "dist/cli/bin.js",
         "dist/cli/package-entry.js",
+        "dist/cli/package-entry.d.ts",
+        "dist/cli/package-entry-cjs.cjs",
+        "dist/cli/package-entry-cjs.d.cts",
         "dist/cli/init-worker.js",
         "dist/integrations.js",
         "dist/integrations.cjs",
