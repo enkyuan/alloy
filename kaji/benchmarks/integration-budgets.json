@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "runtimes": ["python", "typescript"],
+  "percentileMethod": "nearest-rank",
+  "noise": {
+    "relativeP99Spread": 0.25,
+    "absoluteP99SpreadMs": 2
+  },
+  "artifactLimits": {
+    "summaryBytes": 32768,
+    "rawSamplesBytes": 1048576
+  },
+  "modes": {
+    "quick": {
+      "warmups": 1,
+      "batches": 1,
+      "samplesPerBatch": 3,
+      "enforceTiming": false,
+      "requiresProtectedRunner": false
+    },
+    "full": {
+      "warmups": 20,
+      "batches": 3,
+      "samplesPerBatch": 200,
+      "enforceTiming": true,
+      "requiresProtectedRunner": false
+    },
+    "calibrate": {
+      "warmups": 20,
+      "batches": 3,
+      "samplesPerBatch": 200,
+      "enforceTiming": false,
+      "requiresProtectedRunner": true
+    }
+  },
+  "cases": [
+    {
+      "name": "fixedOriginPreflight",
+      "p99Ms": { "python": 5, "typescript": 5 },
+      "input": {
+        "origin": "https://api.github.com",
+        "safePath": "/repos/octo/widgets",
+        "hostilePath": "//attacker.invalid/private",
+        "responseBytes": 2
+      }
+    },
+    {
+      "name": "fixedOriginCapRejection",
+      "p99Ms": { "python": 5, "typescript": 5 },
+      "input": {
+        "origin": "https://api.github.com",
+        "path": "/repos/octo/widgets",
+        "limitBytes": 1048576,
+        "overflowBytes": 1
+      }
+    },
+    {
+      "name": "githubDtoMaxBounds",
+      "p99Ms": { "python": 25, "typescript": 25 },
+      "input": {
+        "repository": "octo/widgets",
+        "rowCount": 20,
+        "titleCharacters": 256,
+        "bodyBytes": 1024
+      }
+    },
+    {
+      "name": "keychainRecordParse",
+      "p99Ms": { "python": 20, "typescript": 20 },
+      "input": {
+        "integration": "gmail",
+        "principal": "benchmark-principal",
+        "accessTokenCharacters": 7000,
+        "refreshTokenCharacters": 7000,
+        "scopeCharacters": 1000
+      }
+    },
+    {
+      "name": "oauthRefreshSingleFlight",
+      "p99Ms": { "python": 20, "typescript": 20 },
+      "input": {
+        "principal": "benchmark-principal",
+        "waiters": 8,
+        "scopes": ["scope/a", "scope/b"]
+      }
+    }
+  ],
+  "deviations": [
+    {
+      "case": "gmailMimeMaxBounds",
+      "status": "hold",
+      "reasonCode": "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT",
+      "ownerTask": 8,
+      "included": false
+    }
+  ]
+}

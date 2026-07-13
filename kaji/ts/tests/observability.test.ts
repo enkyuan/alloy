@@ -37,7 +37,7 @@ describe("observability contracts", () => {
     expect("monotonicClock" in AgentBuilder.prototype).toBe(false);
   });
 
-  it("records the closed metric vocabulary and strips undeclared labels", () => {
+  it("records only the closed metric vocabulary and rejects undeclared labels", () => {
     const measurements: MetricMeasurement[] = [];
     const sink: MetricsSink = {
       record: (measurement) => {
@@ -52,18 +52,11 @@ describe("observability contracts", () => {
       session_id: secret,
     } as never);
 
-    expect(measurements).toEqual([
-      {
-        name: "kaji.provider.duration_ms",
-        value: 12,
-        unit: "ms",
-        labels: { provider_family: "openai", status: "success" },
-      },
-    ]);
+    expect(measurements).toEqual([]);
     expect(JSON.stringify(measurements)).not.toContain(secret);
   });
 
-  it("exports exactly the fourteen stable metric names", () => {
+  it("exports exactly the sixteen stable metric names", () => {
     expect(METRIC_NAMES).toEqual([
       "kaji.turn.queue_wait_ms",
       "kaji.turn.duration_ms",
@@ -79,10 +72,12 @@ describe("observability contracts", () => {
       "kaji.journal.failures",
       "kaji.subscriber.lag_events",
       "kaji.subscriber.overflow",
+      "kaji.integration.auth_ms",
+      "kaji.integration.request_ms",
     ]);
   });
 
-  it("normalizes custom provider names and unknown error codes", () => {
+  it("drops unknown label values and still normalizes provider families", () => {
     const measurements: MetricMeasurement[] = [];
     const sink: MetricsSink = {
       record: (measurement) => {
@@ -103,9 +98,8 @@ describe("observability contracts", () => {
       error_code: "TURN_TIMEOUT",
     });
 
-    expect(measurements[0]?.labels).toEqual({ provider_family: "custom", status: "error" });
-    expect(measurements[1]?.labels).toEqual({ outcome: "failed", error_code: "OTHER" });
-    expect(measurements[2]?.labels).toEqual({
+    expect(measurements).toHaveLength(1);
+    expect(measurements[0]?.labels).toEqual({
       outcome: "timeout",
       error_code: "TURN_TIMEOUT",
     });
@@ -650,7 +644,7 @@ describe("observability contracts", () => {
     await runtime.turn("prompt-secret", {
       sessionId: "session-id",
       context: {
-        principalId: "principal-id",
+        principalId: "poison-principal-secret",
         requestId: "request-id",
         traceId: "trace-id",
       },
@@ -659,5 +653,6 @@ describe("observability contracts", () => {
     expect(JSON.stringify(spans)).toContain("request-id");
     expect(JSON.stringify(spans)).toContain("trace-id");
     expect(JSON.stringify(spans)).not.toContain("prompt-secret");
+    expect(JSON.stringify(spans)).not.toContain("poison-principal-secret");
   });
 });

@@ -1,7 +1,7 @@
-id: ts-registry-no-direct-fetch
+id: kaji-registry-no-direct-fetch
 valid:
   - |
-      const response = await safeRequest(url, init, context, policy, transport);
+      const response = await requester.request(path, init, context);
   - |
       const response = await transport.request(target, init);
 invalid:

@@ -32,6 +32,7 @@ tools/ast-grep/*
 !tools/ast-grep/rules/**
 !tools/ast-grep/rule-tests/
 !tools/ast-grep/rule-tests/**
+!tools/ast-grep/expected-rules.txt
 
 # ── Node / Bun ───────────────────────────────────────────────────────────────
 node_modules/

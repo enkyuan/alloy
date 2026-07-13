@@ -1,0 +1,21 @@
+id: kaji-auth-no-shell-process
+valid:
+  - |
+      const child = spawn("/usr/bin/security", args, { shell: false });
+  - |
+      const result = await runner.run(["/usr/bin/security", ...args]);
+invalid:
+  - |
+      exec(command);
+  - |
+      childProcess.execSync(command);
+  - |
+      spawn(command, args, { shell: false });
+  - |
+      spawn("/usr/bin/security", args, { shell: true });
+  - |
+      spawn(prefix + "/security", args, { shell: false });
+  - |
+      childProcess.spawn(getProgram(), args, { shell: false });
+  - |
+      spawn(`${prefix}/security`, args, { shell: false });

@@ -41,10 +41,19 @@ jobs:
         run: uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain
 
       - name: Check SDK parity
-        run: uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/check_sdk_parity.py
 
       - name: Run structural guards
         run: bun run audit:ast-grep
 
       - name: Run quick beta benchmarks
-        run: uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --quick
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --quick
+
+      - name: Run quick integration benchmarks
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/integration_benchmark.py --mode quick
+
+      - name: Run Python tests offline
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest -m "not integration"
+
+      - name: Run TypeScript tests offline
+        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test

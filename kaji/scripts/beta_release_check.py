@@ -52,10 +52,18 @@ class Gate:
     budget: CommandBudget = LOCAL_COMMAND_BUDGET
 
 
+def offline_command(*command: str) -> tuple[str, ...]:
+    return (sys.executable, str(SCRIPTS / "offline_gate.py"), "--", *command)
+
+
 TS_COMMON_GATES = (
     Gate("TypeScript typecheck", TYPESCRIPT, ("bun", "run", "typecheck")),
     Gate("TypeScript build", TYPESCRIPT, ("bun", "run", "build")),
-    Gate("TypeScript unit tests", TYPESCRIPT, ("bun", "run", "test")),
+    Gate(
+        "TypeScript unit tests (offline)",
+        TYPESCRIPT,
+        offline_command("bun", "run", "test"),
+    ),
     Gate(
         "TypeScript package smoke",
         TYPESCRIPT,
@@ -89,11 +97,15 @@ TS_RELEASE_GATES = (
         ("bun", "run", "check:integrations"),
     ),
     Gate("TypeScript build (release)", TYPESCRIPT, ("bun", "run", "build")),
-    Gate("TypeScript tests (release)", TYPESCRIPT, ("bun", "run", "test")),
+    Gate(
+        "TypeScript tests (release, offline)",
+        TYPESCRIPT,
+        offline_command("bun", "run", "test"),
+    ),
     Gate(
         "TypeScript quickstart (release)",
         TYPESCRIPT,
-        ("bun", "run", "test:quickstart"),
+        offline_command("bun", "run", "test:quickstart"),
     ),
     Gate(
         "TypeScript package smoke (release)",
@@ -254,14 +266,17 @@ def run_common_checks(environment: dict[str, str]) -> None:
     run_in_dir(
         "Cross-SDK behavioral parity",
         ROOT,
-        [
-            "uv",
-            "run",
-            "--project",
-            "kaji/sdk",
-            "python",
-            "kaji/scripts/check_sdk_parity.py",
-        ],
+        list(
+            offline_command(
+                "uv",
+                "run",
+                "--project",
+                "kaji/sdk",
+                "--no-sync",
+                "python",
+                "kaji/scripts/check_sdk_parity.py",
+            )
+        ),
         environment,
         LOCAL_ORCHESTRATOR_BUDGET,
     )
@@ -310,7 +325,37 @@ def run_common_checks(environment: dict[str, str]) -> None:
     run_in_dir(
         "Deterministic complexity and quick benchmark smoke",
         ROOT,
-        [sys.executable, str(SCRIPTS / "run_beta_benchmarks.py"), "--quick"],
+        list(
+            offline_command(
+                "uv",
+                "run",
+                "--project",
+                "kaji/sdk",
+                "--no-sync",
+                "python",
+                "kaji/scripts/run_beta_benchmarks.py",
+                "--quick",
+            )
+        ),
+        environment,
+        RELEASE_COMMAND_BUDGET,
+    )
+    run_in_dir(
+        "Deterministic integration quick benchmark",
+        ROOT,
+        list(
+            offline_command(
+                "uv",
+                "run",
+                "--project",
+                "kaji/sdk",
+                "--no-sync",
+                "python",
+                "kaji/scripts/integration_benchmark.py",
+                "--mode",
+                "quick",
+            )
+        ),
         environment,
         RELEASE_COMMAND_BUDGET,
     )
@@ -319,7 +364,16 @@ def run_common_checks(environment: dict[str, str]) -> None:
     run_in_dir(
         "Python unit tests",
         SDK,
-        ["uv", "run", "pytest", "-m", "not integration"],
+        list(
+            offline_command(
+                "uv",
+                "run",
+                "--no-sync",
+                "pytest",
+                "-m",
+                "not integration",
+            )
+        ),
         environment,
     )
     run_in_dir(

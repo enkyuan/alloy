@@ -11,6 +11,14 @@ import {
 } from "@/integrations/errors";
 import type { ToolExecutionContext } from "@/runtime/context";
 import { systemClock, type Clock } from "@/internal/uuid";
+import {
+  NOOP_METRICS,
+  NOOP_TRACE,
+  recordMetric,
+  startSpan,
+  type MetricsSink,
+  type TraceSink,
+} from "@/observability";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -52,6 +60,8 @@ export interface GoogleOAuthClientOptions {
   readonly clientSecret?: string;
   readonly scopes: readonly string[];
   readonly storage: OAuthTokenStorage;
+  readonly metricsSink?: MetricsSink;
+  readonly traceSink?: TraceSink;
 }
 
 interface OAuthResponse {
@@ -539,11 +549,15 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
     storage: OAuthTokenStorage;
   }>;
   private readonly dependencies: Dependencies;
+  private readonly metrics: MetricsSink;
+  private readonly trace: TraceSink;
   private readonly slots = new Map<string, PrincipalSlot>();
   private readonly slotsGate = new Mutex();
 
   constructor(options: GoogleOAuthClientOptions) {
     this.options = validatedOptions(options);
+    this.metrics = options.metricsSink ?? NOOP_METRICS;
+    this.trace = options.traceSink ?? NOOP_TRACE;
     this.dependencies = {
       http: new NodeOAuthTransport(),
       callbackFactory: new LoopbackCallbackFactory(),
@@ -558,6 +572,8 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
     const client = Object.create(GoogleOAuthClient.prototype) as GoogleOAuthClient;
     Object.defineProperty(client, "options", { value: validatedOptions(options) });
     Object.defineProperty(client, "dependencies", { value: dependencies });
+    Object.defineProperty(client, "metrics", { value: options.metricsSink ?? NOOP_METRICS });
+    Object.defineProperty(client, "trace", { value: options.traceSink ?? NOOP_TRACE });
     Object.defineProperty(client, "slots", { value: new Map() });
     Object.defineProperty(client, "slotsGate", { value: new Mutex() });
     return client;
@@ -636,6 +652,33 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
   }
 
   async accessToken(context: ToolExecutionContext): Promise<string> {
+    const started = this.dependencies.clock.nowMonotonic();
+    const span = startSpan(this.trace, "kaji.integration.auth", {
+      "integration.name": "gmail",
+      "integration.operation": "token",
+      "http.status_family": "none",
+    });
+    let outcome: "success" | "error" | "cancelled" = "error";
+    try {
+      const token = await this.accessTokenInternal(context);
+      outcome = "success";
+      return token;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") outcome = "cancelled";
+      span.recordError(error);
+      throw error;
+    } finally {
+      recordMetric(
+        this.metrics,
+        "kaji.integration.auth_ms",
+        Math.max(0, this.dependencies.clock.nowMonotonic() - started),
+        { integration: "gmail", operation: "token", outcome },
+      );
+      span.end();
+    }
+  }
+
+  private async accessTokenInternal(context: ToolExecutionContext): Promise<string> {
     const principalId = validateOAuthPrincipal(context.principalId);
     throwIfAborted(context.signal);
     this.checkDeadline(context.deadlineMonotonicMs);

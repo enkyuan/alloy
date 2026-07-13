@@ -1,0 +1,17 @@
+id: kaji-python-auth-no-shell-process
+language: Python
+severity: error
+message: Python auth and registry process calls must use fixed argument-array execution.
+files:
+  - "kaji/sdk/src/integrations/oauth.py"
+  - "kaji/sdk/src/integrations/keychain.py"
+  - "kaji/sdk/src/integrations/registry/**/*.py"
+rule:
+  any:
+    - pattern: subprocess.run($$$ARGS)
+    - pattern: subprocess.Popen($$$ARGS)
+    - pattern: subprocess.call($$$ARGS)
+    - pattern: subprocess.check_call($$$ARGS)
+    - pattern: subprocess.check_output($$$ARGS)
+    - pattern: asyncio.create_subprocess_shell($$$ARGS)
+    - pattern: os.system($$$ARGS)

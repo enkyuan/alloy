@@ -1,0 +1,16 @@
+id: kaji-fixed-origin-no-unbounded-read
+language: TypeScript
+severity: error
+message: Fixed-origin and auth responses must use bounded readers.
+files:
+  - "kaji/ts/src/integrations/fixed-origin.ts"
+  - "kaji/ts/src/auth/**/*.ts"
+  - "kaji/ts/registry/github/client.ts"
+  - "kaji/ts/registry/gmail/client.ts"
+  - "kaji/sdk/src/integrations/registry/github/client.ts"
+  - "kaji/sdk/src/integrations/registry/gmail/client.ts"
+rule:
+  any:
+    - pattern: $RESPONSE.text()
+    - pattern: $RESPONSE.json()
+    - pattern: $READER.read()

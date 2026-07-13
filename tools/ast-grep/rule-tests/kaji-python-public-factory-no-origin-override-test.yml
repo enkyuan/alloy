@@ -1,0 +1,18 @@
+id: kaji-python-public-factory-no-origin-override
+valid:
+  - |
+      def create_gmail_integration(options: GmailOptions):
+          return build(options)
+  - |
+      def _create_gmail_integration_for_test(origin: str, transport: Transport):
+          return build(origin, transport)
+invalid:
+  - |
+      def create_gmail_integration(origin: str):
+          return build(origin)
+  - |
+      def create_github_integration(base_url: str):
+          return build(base_url)
+  - |
+      def create_google_oauth_client(client: Client):
+          return build(client)

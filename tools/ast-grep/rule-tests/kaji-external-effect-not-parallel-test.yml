@@ -1,0 +1,88 @@
+id: kaji-external-effect-not-parallel
+valid:
+  - |
+      const spec = {
+        name: "send_draft",
+        risk: "external_effect",
+        parallel_safe: false,
+        parameters: {
+          type: "object",
+          properties: { body: { type: "string" } },
+          required: ["body"],
+          additionalProperties: false,
+        },
+      };
+  - |
+      const spec = {
+        name: "createIssue",
+        risk: "external_effect",
+        parallelSafe: false,
+      };
+invalid:
+  - |
+      const spec = {
+        name: "create_issue",
+        risk: "write",
+        parallel_safe: false,
+      };
+  - |
+      const spec = {
+        name: "addComment",
+        risk: "external_effect",
+        parallelSafe: true,
+      };
+  - |
+      const spec = {
+        name: "send_draft",
+        risk: "external_effect",
+        parallel_safe: false,
+        parameters: {
+          type: "object",
+          properties: { draft_id: { type: "string" } },
+          required: ["draft_id"],
+          additionalProperties: false,
+        },
+      };
+  - |
+      const spec = {
+        name: "sendDraft",
+        risk: "external_effect",
+        parallelSafe: false,
+        parameters: {
+          type: "object",
+          properties: { body: { type: "string" } },
+          required: ["body"],
+          additionalProperties: true,
+        },
+      };
+  - |
+      const spec = {
+        name: "send_draft",
+        risk: "external_effect",
+        parallel_safe: false,
+        parameters: {
+          type: "object",
+          properties: { draft_id: { type: "string" } },
+          required: ["draft_id"],
+          additionalProperties: true,
+        },
+        unrelated: {
+          parameters: {
+            properties: { body: { type: "string" } },
+            required: ["body"],
+            additionalProperties: false,
+          },
+        },
+      };
+  - |
+      const spec = {
+        name: "send_draft",
+        risk: "external_effect",
+        parallel_safe: false,
+        parameters: {
+          type: "object",
+          properties: { draft_id: { type: "string" } },
+          required: ["body"],
+          additionalProperties: false,
+        },
+      };

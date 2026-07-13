@@ -1030,8 +1030,6 @@ class AgentRuntime:
             "request.id": context.request_id,
             "trace.id": context.trace_id,
         }
-        if context.principal_id is not None:
-            trace_attributes["principal.id"] = context.principal_id
         span = start_span(self._trace, "kaji.turn", trace_attributes)
         try:
             iterations = await self._run_turn_body(

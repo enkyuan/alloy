@@ -1,9 +1,10 @@
-id: ts-registry-no-direct-fetch
+id: kaji-registry-no-direct-fetch
 language: TypeScript
 severity: error
-message: Route registry network calls through the bounded, SSRF-aware safeRequest helper.
+message: Copied registry code must use the provider-fixed bounded requester.
 files:
   - "kaji/ts/registry/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/**/*.ts"
 rule:
   any:
     - pattern: fetch($$$ARGS)

@@ -1,0 +1,16 @@
+id: kaji-python-fixed-origin-no-unbounded-read
+valid:
+  - |
+      body = handle.read(MAXIMUM + 1)
+  - |
+      async for chunk in response.aiter_bytes():
+          size += len(chunk)
+          if size > maximum:
+              raise response_limit()
+invalid:
+  - |
+      body = response.read()
+  - |
+      body = await response.aread()
+  - |
+      body = stream.read()

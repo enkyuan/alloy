@@ -27,7 +27,15 @@ from kaji.integrations.errors import (
     IntegrationExecutionError,
     IntegrationPolicyError,
 )
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    NOOP_TRACE,
+    TraceSink,
+    record_metric,
+    start_span,
+)
+from kaji.runtime.agents.cancellation import CancelledError, CancellationToken
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.determinism import Clock, SYSTEM_CLOCK
 
@@ -783,6 +791,8 @@ class GoogleOAuthClient:
         scopes: Collection[str],
         token_storage_for: TokenStorageFor | None = None,
         credential_store: _AsyncCredentialStore | None = None,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+        trace_sink: TraceSink = NOOP_TRACE,
     ) -> None:
         if (token_storage_for is None) == (credential_store is None):
             raise _policy_error()
@@ -800,6 +810,8 @@ class GoogleOAuthClient:
             browser=_SystemBrowser(),
             clock=SYSTEM_CLOCK,
             random_bytes=secrets.token_bytes,
+            metrics_sink=metrics_sink,
+            trace_sink=trace_sink,
         )
 
     def _initialize(
@@ -815,6 +827,8 @@ class GoogleOAuthClient:
         clock: Clock,
         random_bytes: Callable[[int], bytes],
         operation_seconds: float = _OPERATION_SECONDS,
+        metrics_sink: MetricsSink = NOOP_METRICS,
+        trace_sink: TraceSink = NOOP_TRACE,
     ) -> None:
         if client_id is not None and (
             not isinstance(client_id, str) or not client_id or len(client_id) > 4_096
@@ -836,6 +850,8 @@ class GoogleOAuthClient:
         self._clock = clock
         self._random_bytes = random_bytes
         self._operation_seconds = operation_seconds
+        self._metrics_sink = metrics_sink
+        self._trace_sink = trace_sink
         self._slots: dict[str, _PrincipalSlot] = {}
         self._slots_gate = asyncio.Lock()
 
@@ -900,6 +916,38 @@ class GoogleOAuthClient:
             await self._release_slot(principal_id, slot)
 
     async def access_token(self, context: ToolExecutionContext) -> str:
+        started = self._clock.now_monotonic()
+        span = start_span(
+            self._trace_sink,
+            "kaji.integration.auth",
+            {
+                "integration.name": "gmail",
+                "integration.operation": "token",
+                "http.status_family": "none",
+            },
+        )
+        outcome = "error"
+        try:
+            token = await self._access_token(context)
+            outcome = "success"
+            return token
+        except BaseException as error:
+            if isinstance(error, (asyncio.CancelledError, CancelledError)):
+                outcome = "cancelled"
+            span.record_error(error)
+            raise
+        finally:
+            record_metric(
+                self._metrics_sink,
+                "kaji.integration.auth_ms",
+                max(0.0, (self._clock.now_monotonic() - started) * 1_000),
+                integration="gmail",
+                operation="token",
+                outcome=outcome,
+            )
+            span.end()
+
+    async def _access_token(self, context: ToolExecutionContext) -> str:
         principal_id = _require_principal(context.principal_id)
         _check_scope(
             context.cancellation_token, context.deadline_monotonic, self._clock

@@ -5,6 +5,14 @@ type HeaderInput = ConstructorParameters<typeof Headers>[0];
 import type { ToolExecutionContext } from "@/runtime/context";
 import type { BoundedResponse } from "@/integrations/safe-fetch";
 import { IntegrationPolicyError, IntegrationTransportError } from "@/integrations/errors";
+import {
+  NOOP_METRICS,
+  NOOP_TRACE,
+  recordMetric,
+  startSpan,
+  type MetricsSink,
+  type TraceSink,
+} from "@/observability";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 1_048_576;
@@ -26,9 +34,16 @@ const FORBIDDEN_REQUEST_HEADERS = new Set([
 
 interface FixedOriginPolicy {
   readonly origin: URL;
+  readonly integration: "github" | "gmail";
   readonly timeoutMs?: number;
   readonly maxResponseBytes?: number;
   readonly allowedMethods?: readonly ("GET" | "POST")[];
+}
+
+interface FixedOriginObservability {
+  readonly metricsSink?: MetricsSink;
+  readonly traceSink?: TraceSink;
+  readonly monotonicNow?: () => number;
 }
 
 export interface FixedOriginRequester {
@@ -241,12 +256,18 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly allowedMethods: ReadonlySet<"GET" | "POST">;
+  private readonly integration: "github" | "gmail";
+  private readonly metrics: MetricsSink;
+  private readonly trace: TraceSink;
+  private readonly monotonicNow: () => number;
 
   constructor(
     policy: FixedOriginPolicy,
     private readonly transport: FixedOriginTestTransport,
+    observability: FixedOriginObservability = {},
   ) {
     this.origin = validatedOrigin(policy.origin);
+    this.integration = policy.integration;
     this.timeoutMs = positiveInteger(policy.timeoutMs, DEFAULT_TIMEOUT_MS);
     this.maxResponseBytes = positiveInteger(policy.maxResponseBytes, DEFAULT_MAX_RESPONSE_BYTES);
     const allowedMethods = policy.allowedMethods ?? ["GET", "POST"];
@@ -257,6 +278,9 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
       throw policyError();
     }
     this.allowedMethods = new Set(allowedMethods);
+    this.metrics = observability.metricsSink ?? NOOP_METRICS;
+    this.trace = observability.traceSink ?? NOOP_TRACE;
+    this.monotonicNow = observability.monotonicNow ?? (() => performance.now());
   }
 
   async request(
@@ -268,13 +292,22 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
     }>,
     context: ToolExecutionContext,
   ): Promise<BoundedResponse> {
-    if (!this.allowedMethods.has(init.method)) throw policyError();
-    if (init.body !== undefined && !(init.body instanceof Uint8Array)) throw policyError();
-    const url = validatedPath(this.origin, pathAndQuery);
-    const headers = validatedRequestHeaders(init.headers);
-    const scope = requestSignal(context, this.timeoutMs);
+    const started = this.monotonicNow();
+    const operation = init.method === "GET" ? "read" : "mutation";
+    const span = startSpan(this.trace, "kaji.integration.request", {
+      "integration.name": this.integration,
+      "integration.operation": operation,
+      "http.status_family": "none",
+    });
+    let outcome: "success" | "error" | "cancelled" = "error";
+    let scope: ReturnType<typeof requestSignal> | undefined;
     let response: FixedOriginTestResponse | undefined;
     try {
+      if (!this.allowedMethods.has(init.method)) throw policyError();
+      if (init.body !== undefined && !(init.body instanceof Uint8Array)) throw policyError();
+      const url = validatedPath(this.origin, pathAndQuery);
+      const headers = validatedRequestHeaders(init.headers);
+      scope = requestSignal(context, this.timeoutMs);
       response = await withAbort(
         this.transport.request(url, {
           method: init.method,
@@ -311,29 +344,47 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
       }
+      const family = Math.floor(response.status / 100);
+      span.setAttribute("http.status_family", family >= 1 && family <= 5 ? `${family}xx` : "none");
+      outcome = response.status >= 200 && response.status < 300 ? "success" : "error";
       return { status: response.status, headers: boundedHeaders, bytes };
     } catch (error) {
       response?.close();
+      if (error instanceof DOMException && error.name === "AbortError") outcome = "cancelled";
+      span.recordError(error);
       throw error;
     } finally {
-      scope.dispose();
+      scope?.dispose();
+      recordMetric(
+        this.metrics,
+        "kaji.integration.request_ms",
+        Math.max(0, this.monotonicNow() - started),
+        { integration: this.integration, operation, outcome },
+      );
+      span.end();
     }
   }
 }
 
 const productionTransport = () => new NodeHttpsTransport();
 
-export function createGitHubRequester(): FixedOriginRequester {
+export function createGitHubRequester(
+  observability: FixedOriginObservability = {},
+): FixedOriginRequester {
   return new FixedOriginRequesterImpl(
-    { origin: new URL("https://api.github.com/") },
+    { origin: new URL("https://api.github.com/"), integration: "github" },
     productionTransport(),
+    observability,
   );
 }
 
-export function createGmailRequester(): FixedOriginRequester {
+export function createGmailRequester(
+  observability: FixedOriginObservability = {},
+): FixedOriginRequester {
   return new FixedOriginRequesterImpl(
-    { origin: new URL("https://gmail.googleapis.com/") },
+    { origin: new URL("https://gmail.googleapis.com/"), integration: "gmail" },
     productionTransport(),
+    observability,
   );
 }
 
@@ -342,6 +393,11 @@ export function fixedOriginForTest(
   origin: string,
   transport: FixedOriginTestTransport,
   policy: Omit<Partial<FixedOriginPolicy>, "origin"> = {},
+  observability: FixedOriginObservability = {},
 ): FixedOriginRequester {
-  return new FixedOriginRequesterImpl({ origin: new URL(origin), ...policy }, transport);
+  return new FixedOriginRequesterImpl(
+    { origin: new URL(origin), integration: "github", ...policy },
+    transport,
+    observability,
+  );
 }

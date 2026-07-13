@@ -1,0 +1,27 @@
+id: kaji-public-factory-no-origin-override
+valid:
+  - |
+      export function createGmailIntegration(options: GmailOptions) {
+        return build(options);
+      }
+  - |
+      function createGmailIntegrationForTest(origin: string, transport: Transport) {
+        return build(origin, transport);
+      }
+  - |
+      export function _createGoogleOAuthForTest(client: Client) {
+        return build(client);
+      }
+invalid:
+  - |
+      export function createGmailIntegration(origin: string) {
+        return build(origin);
+      }
+  - |
+      export function createGithubIntegration(options: { baseUrl: string }) {
+        return build(options);
+      }
+  - |
+      export function createGoogleOAuthClient(transport: Transport) {
+        return build(transport);
+      }

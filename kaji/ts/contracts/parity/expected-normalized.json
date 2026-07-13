@@ -4817,6 +4817,66 @@
           ]
         }
       }
+    },
+    {
+      "id": "idempotency-permanent-failed",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "claim_kinds": ["owner", "owner"],
+          "failure": { "error_code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": false },
+          "handler_count": 2
+        }
+      }
+    },
+    {
+      "id": "idempotency-transient-failed",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "claim_kinds": ["owner", "owner"],
+          "failure": { "error_code": "INTEGRATION_API_ERROR", "outcome": "failed", "retryable": true },
+          "handler_count": 2
+        }
+      }
+    },
+    {
+      "id": "idempotency-unknown",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "claim_kinds": ["owner", "unknown"],
+          "failure": { "error_code": "TOOL_EXECUTION_FAILED", "outcome": "unknown", "retryable": false },
+          "handler_count": 1
+        }
+      }
+    },
+    {
+      "id": "idempotency-completed",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "claim_kinds": ["owner", "completed"],
+          "handler_count": 1,
+          "result": { "ok": true }
+        }
+      }
     }
   ],
   "version": "1.0.0"

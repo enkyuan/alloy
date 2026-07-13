@@ -7,6 +7,12 @@ from typing import Any, Protocol, cast
 
 from kaji.integrations.fixed_origin import FixedOriginClient
 from kaji.integrations.registry.github.client import GitHubClient
+from kaji.infra.observability.protocols import (
+    MetricsSink,
+    NOOP_METRICS,
+    NOOP_TRACE,
+    TraceSink,
+)
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.integrations.base import Integration
 from kaji.runtime.tools.registry import ToolHandler, ToolSpec
@@ -201,11 +207,16 @@ def create_github_integration(
     *,
     token_for: Callable[[ToolExecutionContext], Awaitable[str]],
     repositories: Collection[str],
+    metrics_sink: MetricsSink = NOOP_METRICS,
+    trace_sink: TraceSink = NOOP_TRACE,
 ) -> GitHubIntegration:
     return _create_github_integration_for_test(
         token_for=token_for,
         repositories=repositories,
-        http=FixedOriginClient.for_github(),
+        http=FixedOriginClient.for_github(
+            metrics_sink=metrics_sink,
+            trace_sink=trace_sink,
+        ),
     )
 
 

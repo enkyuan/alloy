@@ -1,0 +1,15 @@
+id: kaji-python-public-factory-no-origin-override
+language: Python
+severity: error
+message: Public Python provider factories must fix origins and production dependencies internally.
+files:
+  - "kaji/sdk/src/integrations/**/*.py"
+rule:
+  all:
+    - kind: function_definition
+    - regex: '^(?:async\s+)?def\s+(?:create_(?:github|gmail|google_oauth)|for_(?:github|gmail))[A-Za-z0-9_]*\s*\('
+    - not:
+        regex: '^(?:async\s+)?def\s+_[A-Za-z0-9_]*\s*\('
+    - has:
+        field: parameters
+        regex: '(?i).*(?:\borigin\b|\bbase_?url\b|\bendpoint(?:_?url)?\b|\bauth_?url\b|\btoken_?url\b|\bfetch\b|\brequest(?:er)?\b|\bhttp_?client\b|\bclient\b|\btransport\b|\bagent\b|\bproxy\b|\bpolicy\b).*'

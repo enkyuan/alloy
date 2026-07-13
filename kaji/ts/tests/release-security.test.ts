@@ -324,9 +324,12 @@ const requiredGateCommands = [
   "uv run --project kaji/sdk python kaji/scripts/sync_beta_contracts.py --check",
   "uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check",
   "uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain",
-  "uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py",
+  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/check_sdk_parity.py",
   "bun run audit:ast-grep",
-  "uv run --project kaji/sdk python kaji/scripts/run_beta_benchmarks.py --quick",
+  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --quick",
+  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/integration_benchmark.py --mode quick",
+  'uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest -m "not integration"',
+  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test",
 ];
 
 function readYaml(
@@ -483,7 +486,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(effectivePermissions(workflow, job)).toEqual({ contents: "read" });
 
   const steps = job.steps ?? [];
-  expect(steps).toHaveLength(10);
+  expect(steps).toHaveLength(13);
   for (const [index, step] of steps.entries()) {
     expect(step.if, `gate step ${index} must execute normally`).toBeUndefined();
     expect(step["continue-on-error"] ?? false, `gate step ${index} must fail closed`).toBe(false);

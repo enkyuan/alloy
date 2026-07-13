@@ -90,6 +90,11 @@
     { "id": "openai-non-stream", "kind": "provider-adapter", "provider": "openai", "mode": "non-stream", "fixture": "message-tool-result-usage-malformed-error" },
     { "id": "openai-stream", "kind": "provider-adapter", "provider": "openai", "mode": "stream", "fixture": "message-tool-result-usage-malformed-error" },
     { "id": "anthropic-non-stream", "kind": "provider-adapter", "provider": "anthropic", "mode": "non-stream", "fixture": "message-tool-result-usage-malformed-error" },
-    { "id": "anthropic-stream", "kind": "provider-adapter", "provider": "anthropic", "mode": "stream", "fixture": "message-tool-result-usage-malformed-error" }
+    { "id": "anthropic-stream", "kind": "provider-adapter", "provider": "anthropic", "mode": "stream", "fixture": "message-tool-result-usage-malformed-error" },
+
+    { "id": "idempotency-permanent-failed", "kind": "idempotency", "fixture": "permanent-failed" },
+    { "id": "idempotency-transient-failed", "kind": "idempotency", "fixture": "transient-failed" },
+    { "id": "idempotency-unknown", "kind": "idempotency", "fixture": "unknown" },
+    { "id": "idempotency-completed", "kind": "idempotency", "fixture": "completed" }
   ]
 }

@@ -834,7 +834,6 @@ export class AgentRuntime {
     let turnOutcome: TurnOutcome = "completed";
     let iterations = 0;
     const turnSpan = startSpan(this.trace, "kaji.turn", {
-      ...(turnContext.principalId === undefined ? {} : { "principal.id": turnContext.principalId }),
       "session.id": sessionId,
       "turn.id": turnId,
       "request.id": turnContext.requestId,

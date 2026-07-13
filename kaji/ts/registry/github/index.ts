@@ -1,6 +1,13 @@
 // This is YOUR GitHub integration. Edit it.
 
-import { Integration, type ToolExecutionContext, type ToolHandler, type ToolSpec } from "@kaji/sdk";
+import {
+  Integration,
+  type MetricsSink,
+  type ToolExecutionContext,
+  type ToolHandler,
+  type ToolSpec,
+  type TraceSink,
+} from "@kaji/sdk";
 import { createGitHubRequester } from "@kaji/sdk/integrations";
 
 import { GitHubClient } from "./client";
@@ -204,13 +211,19 @@ export class GitHubIntegration extends Integration {
 export interface CreateGitHubIntegrationOptions {
   readonly tokenFor: (context: ToolExecutionContext) => Promise<string>;
   readonly repositories: readonly string[];
+  readonly metricsSink?: MetricsSink;
+  readonly traceSink?: TraceSink;
 }
 
 export function createGithubIntegration(
   options: CreateGitHubIntegrationOptions,
 ): GitHubIntegration {
+  const { metricsSink, traceSink, ...clientOptions } = options;
   return createGithubIntegrationForTest(
-    new GitHubClient({ ...options, http: createGitHubRequester() }),
+    new GitHubClient({
+      ...clientOptions,
+      http: createGitHubRequester({ metricsSink, traceSink }),
+    }),
   );
 }
 

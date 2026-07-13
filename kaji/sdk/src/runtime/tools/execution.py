@@ -592,7 +592,6 @@ class ToolExecutionController:
             self._trace,
             "kaji.tool",
             {
-                "principal.id": context.principal_id,
                 "session.id": context.session_id,
                 "turn.id": context.turn_id,
                 "request.id": context.request_id,

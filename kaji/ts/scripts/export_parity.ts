@@ -36,6 +36,7 @@ import {
   type ToolExecutionRequest,
 } from "@/tools/execution";
 import { ToolExecutionError } from "@/tools/execution-errors";
+import { InMemoryToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { UnclassifiedToolRiskError, type ToolSpec } from "@/tools/registry";
@@ -1356,6 +1357,55 @@ async function runProviderAdapter(scenario: JsonObject): Promise<JsonObject> {
     : runAnthropicAdapter(scenario.mode);
 }
 
+async function runIdempotency(scenario: JsonObject): Promise<JsonObject> {
+  const ledger = new InMemoryToolIdempotencyLedger({ now: () => 1_000 });
+  const claimKinds: string[] = [];
+  let handlerCount = 1;
+  const first = await ledger.claim("idempotency-session", "call", "fingerprint");
+  if (first.status !== "owner") throw new Error("first idempotency claim must own");
+  claimKinds.push(first.status);
+  let failure: ToolExecutionError | undefined;
+  let result: unknown;
+  if (scenario.fixture === "completed") {
+    result = { ok: true };
+    await ledger.complete(first.claim, result);
+  } else {
+    const retryable = scenario.fixture === "transient-failed";
+    const outcome = scenario.fixture === "unknown" ? "unknown" : "failed";
+    failure = new ToolExecutionError(
+      "Tool execution failed",
+      scenario.fixture === "unknown" ? "TOOL_EXECUTION_FAILED" : "INTEGRATION_API_ERROR",
+      retryable,
+      outcome,
+    );
+    if (outcome === "failed") await ledger.retryableFailure(first.claim, failure);
+    else await ledger.unknownOutcome(first.claim, failure);
+  }
+  const second = await ledger.claim("idempotency-session", "call", "fingerprint");
+  claimKinds.push(second.status);
+  if (second.status === "owner") {
+    handlerCount += 1;
+    await ledger.retryableFailure(second.claim, failure!);
+  }
+  if (second.status === "completed") result = second.result;
+  if (second.status === "unknown") failure = second.error;
+  const snapshot = emptySnapshot();
+  snapshot.result = {
+    claim_kinds: claimKinds,
+    handler_count: handlerCount,
+    ...(failure === undefined
+      ? { result }
+      : {
+          failure: {
+            error_code: failure.error_code,
+            retryable: failure.retryable,
+            outcome: failure.outcome,
+          },
+        }),
+  };
+  return snapshot;
+}
+
 function assertJsonValue(value: unknown, path = ""): void {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
   if (typeof value === "number") {
@@ -1388,6 +1438,7 @@ async function exportParity(): Promise<JsonObject> {
     else if (scenario.kind === "replay") snapshot = runReplay(scenario);
     else if (scenario.kind === "concurrency") snapshot = await runConcurrency(document, scenario);
     else if (scenario.kind === "provider-adapter") snapshot = await runProviderAdapter(scenario);
+    else if (scenario.kind === "idempotency") snapshot = await runIdempotency(scenario);
     else throw new Error(`unknown scenario kind: ${scenario.kind}`);
     if (JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)) {
       throw new Error(`incomplete snapshot envelope: ${scenario.id}`);

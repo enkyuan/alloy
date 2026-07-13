@@ -13,5 +13,6 @@ export default defineConfig({
   },
   test: {
     include: ["tests/**/*.test.ts", "examples/**/*.test.ts"],
+    setupFiles: ["./tests/offline-setup.ts"],
   },
 });

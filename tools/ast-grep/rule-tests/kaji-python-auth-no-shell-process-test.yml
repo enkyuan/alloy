@@ -1,0 +1,17 @@
+id: kaji-python-auth-no-shell-process
+valid:
+  - |
+      process = await asyncio.create_subprocess_exec(
+          _SECURITY,
+          *args,
+          stdin=asyncio.subprocess.PIPE,
+      )
+invalid:
+  - |
+      subprocess.run(command)
+  - |
+      subprocess.Popen(command, shell=True)
+  - |
+      await asyncio.create_subprocess_shell(command)
+  - |
+      os.system(command)

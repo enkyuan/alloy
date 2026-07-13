@@ -105,7 +105,8 @@ def test_beta_release_check_wraps_required_gates() -> None:
     script = BETA_GATE.read_text()
 
     for expected in [
-        '"pytest", "-m", "not integration"',
+        '"pytest"',
+        '"not integration"',
         '"scripts/check_types.py"',
         '"scripts/release_smoke.py"',
         '"package:smoke"',
@@ -116,6 +117,9 @@ def test_beta_release_check_wraps_required_gates() -> None:
         '"audit:ast-grep"',
         "check_sdk_parity.py",
         "run_beta_benchmarks.py",
+        "integration_benchmark.py",
+        "offline_gate.py",
+        '"--no-sync"',
         '"--quick"',
     ]:
         assert expected in script
@@ -133,14 +137,24 @@ def test_typescript_build_precedes_every_artifact_consumer() -> None:
     common = [gate.label for gate in module.common_gates()]
     release = [gate.label for gate in module.release_gates()]
 
-    assert common.index("TypeScript build") < common.index("TypeScript unit tests")
+    assert common.index("TypeScript build") < common.index(
+        "TypeScript unit tests (offline)"
+    )
     assert common.index("TypeScript build") < common.index("TypeScript package smoke")
     assert release.index("TypeScript build (release)") < release.index(
-        "TypeScript tests (release)"
+        "TypeScript tests (release, offline)"
     )
     assert release.index("TypeScript build (release)") < release.index(
         "TypeScript package smoke (release)"
     )
+
+
+def test_integration_quick_benchmark_immediately_follows_core_quick_gate() -> None:
+    script = BETA_GATE.read_text()
+    core = script.index('"kaji/scripts/run_beta_benchmarks.py"')
+    integration = script.index('"kaji/scripts/integration_benchmark.py"')
+    common = script.index("run_gates(common_gates(), environment)")
+    assert core < integration < common
 
 
 def test_canonical_typescript_test_script_selects_node() -> None:
@@ -153,9 +167,8 @@ def test_canonical_typescript_test_script_selects_node() -> None:
     assert 'exec "$(command -v node)"' in command
     assert '"$@"' in command
     assert "vitest" in command
-    assert ("bun", "run", "test") in {
-        gate.command for gate in _load_beta_gate().common_gates()
-    }
+    commands = {gate.command for gate in _load_beta_gate().common_gates()}
+    assert any(command[-3:] == ("bun", "run", "test") for command in commands)
 
 
 def test_release_wrapper_builds_before_consumers_from_checkout_without_dist(
@@ -172,6 +185,10 @@ def test_release_wrapper_builds_before_consumers_from_checkout_without_dist(
     shutil.copy2(
         REPO_ROOT / "kaji" / "scripts" / "process_runner.py",
         scripts / "process_runner.py",
+    )
+    shutil.copy2(
+        REPO_ROOT / "kaji" / "scripts" / "offline_gate.py",
+        scripts / "offline_gate.py",
     )
     (scripts / "run_beta_benchmarks.py").write_text("raise SystemExit(0)\n")
     (scripts / "verify_openai_loop.py").write_text(
@@ -194,8 +211,8 @@ import sys
 
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
-checkout = Path(os.environ["FAKE_CHECKOUT"])
-with Path(os.environ["FAKE_LOG"]).open("a", encoding="utf-8") as stream:
+checkout = Path({str(checkout)!r})
+with Path({str(log)!r}).open("a", encoding="utf-8") as stream:
     stream.write(name + "|" + str(Path.cwd()) + "|" + " ".join(args) + "\\n")
 
 if name == "bun":

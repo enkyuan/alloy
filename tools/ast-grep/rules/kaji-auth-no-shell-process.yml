@@ -1,0 +1,46 @@
+id: kaji-auth-no-shell-process
+language: TypeScript
+severity: error
+message: Auth and registry process calls must use a fixed argument-array runner with shell disabled.
+files:
+  - "kaji/ts/src/auth/**/*.ts"
+  - "kaji/ts/registry/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/**/*.ts"
+rule:
+  any:
+    - pattern: exec($$$ARGS)
+    - pattern: execSync($$$ARGS)
+    - pattern: childProcess.exec($$$ARGS)
+    - pattern: childProcess.execSync($$$ARGS)
+    - pattern: child_process.exec($$$ARGS)
+    - pattern: child_process.execSync($$$ARGS)
+    - all:
+        - any:
+            - pattern: spawn($$$ARGS)
+            - pattern: $PROCESS.spawn($$$ARGS)
+        - has:
+            all:
+              - kind: pair
+              - regex: '^shell\s*:\s*true$'
+            stopBy: end
+    - all:
+        - any:
+            - pattern: spawn($COMMAND, $$$ARGS)
+            - pattern: $PROCESS.spawn($COMMAND, $$$ARGS)
+        - has:
+            field: arguments
+            regex: '^\(\s*[A-Za-z_$][A-Za-z0-9_$]*\s*[,)]'
+    - pattern: spawn($LEFT + $RIGHT, $$$ARGS)
+    - pattern: $PROCESS.spawn($LEFT + $RIGHT, $$$ARGS)
+    - pattern: spawn($FACTORY($$$INNER), $$$ARGS)
+    - pattern: $PROCESS.spawn($FACTORY($$$INNER), $$$ARGS)
+    - all:
+        - any:
+            - pattern: spawn($$$ARGS)
+            - pattern: $PROCESS.spawn($$$ARGS)
+        - has:
+            field: arguments
+            regex: '^\(\s*`'
+    - all:
+        - kind: import_statement
+        - regex: '(?s)^import\s+.*\b(exec|execSync)\b.*from\s+["''](?:node:)?child_process["'']'

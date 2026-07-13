@@ -261,7 +261,6 @@ export class ToolExecutionController {
     const canonicalContext = snapshotExecutionRequestContext(request.context);
     const started = this.monotonicNow();
     const span = startSpan(this.trace, "kaji.tool", {
-      "principal.id": canonicalContext.principalId,
       "session.id": canonicalContext.sessionId,
       "turn.id": canonicalContext.turnId,
       "request.id": canonicalContext.requestId,
@@ -542,7 +541,7 @@ export class ToolExecutionController {
         return failure;
       }
     }
-    if (outcome.error.outcome === "failed" && outcome.error.retryable) {
+    if (outcome.error.outcome === "failed") {
       await this.ledger.retryableFailure(claim, outcome.error);
     } else {
       await this.ledger.unknownOutcome(claim, outcome.error);

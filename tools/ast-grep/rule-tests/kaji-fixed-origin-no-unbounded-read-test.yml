@@ -1,0 +1,16 @@
+id: kaji-fixed-origin-no-unbounded-read
+valid:
+  - |
+      const bytes = await readBounded(response.body, maximum + 1);
+  - |
+      for await (const chunk of response.body) {
+        size += chunk.byteLength;
+        if (size > maximum) throw responseLimit();
+      }
+invalid:
+  - |
+      const body = await response.text();
+  - |
+      const value = await response.json();
+  - |
+      const chunk = await reader.read();

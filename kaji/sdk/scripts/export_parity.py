@@ -44,6 +44,10 @@ from kaji.runtime.tools.execution import (
     _ToolExecutionFailure,
     _ToolExecutionOutcome,
 )
+from kaji.runtime.tools.idempotency import (
+    InMemoryToolIdempotencyLedger,
+    ToolIdempotencyFailure,
+)
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
@@ -133,8 +137,7 @@ class DeterministicTimerScheduler:
                 (
                     timer
                     for timer in self.timers
-                    if not timer.cancelled
-                    and timer.due <= self.clock.now_monotonic()
+                    if not timer.cancelled and timer.due <= self.clock.now_monotonic()
                 ),
                 key=lambda timer: (timer.due, timer.order),
             )
@@ -1516,6 +1519,75 @@ def assert_json_value(value: Any, path: str = "") -> None:
     raise TypeError(f"non-JSON value {value_type.__name__} at {path or '/'}")
 
 
+async def run_idempotency(scenario: dict[str, Any]) -> dict[str, Any]:
+    ledger = InMemoryToolIdempotencyLedger(clock=lambda: 1.0)
+    claim_kinds: list[str] = []
+    handler_count = 1
+    first = await ledger.claim(
+        session_id="idempotency-session",
+        tool_call_id="call",
+        tool_name="integration",
+        tool_args={},
+    )
+    if first.kind != "owner":
+        raise AssertionError("first idempotency claim must own")
+    claim_kinds.append(first.kind)
+    failure: ToolIdempotencyFailure | None = None
+    result: Any | None = None
+    if scenario["fixture"] == "completed":
+        result = {"ok": True}
+        await ledger.complete(first, result)
+    else:
+        retryable = scenario["fixture"] == "transient-failed"
+        outcome = "unknown" if scenario["fixture"] == "unknown" else "failed"
+        failure = ToolIdempotencyFailure(
+            error="Tool execution failed",
+            error_code=(
+                "TOOL_EXECUTION_FAILED"
+                if scenario["fixture"] == "unknown"
+                else "INTEGRATION_API_ERROR"
+            ),
+            retryable=retryable,
+            outcome=outcome,
+        )
+        if outcome == "failed":
+            await ledger.retryable_failure(first, failure)
+        else:
+            await ledger.unknown_outcome(first, failure)
+    second = await ledger.claim(
+        session_id="idempotency-session",
+        tool_call_id="call",
+        tool_name="integration",
+        tool_args={},
+    )
+    claim_kinds.append(second.kind)
+    if second.kind == "owner":
+        handler_count += 1
+        assert failure is not None
+        await ledger.retryable_failure(second, failure)
+    elif second.kind in {"completed", "unknown"}:
+        assert second.resolution is not None
+        result = second.resolution.result
+        failure = second.resolution.failure
+    snapshot = empty_snapshot()
+    snapshot["result"] = {
+        "claim_kinds": claim_kinds,
+        "handler_count": handler_count,
+        **(
+            {"result": result}
+            if failure is None
+            else {
+                "failure": {
+                    "error_code": failure.error_code,
+                    "retryable": failure.retryable,
+                    "outcome": failure.outcome,
+                }
+            }
+        ),
+    }
+    return snapshot
+
+
 async def export_parity() -> dict[str, Any]:
     document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
     snapshots: list[dict[str, Any]] = []
@@ -1536,6 +1608,8 @@ async def export_parity() -> dict[str, Any]:
             snapshot = await run_concurrency(document, scenario)
         elif kind == "provider-adapter":
             snapshot = await run_provider_adapter(scenario)
+        elif kind == "idempotency":
+            snapshot = await run_idempotency(scenario)
         else:
             raise ValueError(f"unknown scenario kind: {kind}")
         if tuple(snapshot) != SNAPSHOT_KEYS:

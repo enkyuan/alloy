@@ -28,17 +28,27 @@ MetricName: TypeAlias = Literal[
     "kaji.journal.failures",
     "kaji.subscriber.lag_events",
     "kaji.subscriber.overflow",
+    "kaji.integration.auth_ms",
+    "kaji.integration.request_ms",
 ]
 
-SpanName: TypeAlias = Literal["kaji.turn", "kaji.provider", "kaji.tool"]
+SpanName: TypeAlias = Literal[
+    "kaji.turn",
+    "kaji.provider",
+    "kaji.tool",
+    "kaji.integration.auth",
+    "kaji.integration.request",
+]
 TraceAttributeName: TypeAlias = Literal[
-    "principal.id",
     "session.id",
     "turn.id",
     "request.id",
     "trace.id",
     "tool.call_id",
     "provider.family",
+    "integration.name",
+    "integration.operation",
+    "http.status_family",
 ]
 
 MetricUnit: TypeAlias = Literal["ms", "count", "gauge"]
@@ -58,6 +68,8 @@ _METRIC_LABELS: dict[str, frozenset[str]] = {
     "kaji.journal.failures": frozenset({"stage"}),
     "kaji.subscriber.lag_events": frozenset(),
     "kaji.subscriber.overflow": frozenset({"stage"}),
+    "kaji.integration.auth_ms": frozenset({"integration", "operation", "outcome"}),
+    "kaji.integration.request_ms": frozenset({"integration", "operation", "outcome"}),
 }
 
 _METRIC_UNITS: dict[str, MetricUnit] = {
@@ -75,6 +87,8 @@ _METRIC_UNITS: dict[str, MetricUnit] = {
     "kaji.journal.failures": "count",
     "kaji.subscriber.lag_events": "count",
     "kaji.subscriber.overflow": "count",
+    "kaji.integration.auth_ms": "ms",
+    "kaji.integration.request_ms": "ms",
 }
 
 _LABEL_VALUES: dict[str, frozenset[str]] = {
@@ -87,6 +101,8 @@ _LABEL_VALUES: dict[str, frozenset[str]] = {
             "timeout",
             "not_started",
             "unknown",
+            "success",
+            "error",
         }
     ),
     "provider_family": frozenset({"openai", "anthropic", "custom"}),
@@ -111,22 +127,53 @@ _LABEL_VALUES: dict[str, frozenset[str]] = {
             "TOOL_START_RECORD_FAILED",
             "IDEMPOTENCY_CAPACITY_EXCEEDED",
             "IDEMPOTENCY_CONFLICT",
+            "INTEGRATION_AUTH_ERROR",
+            "INTEGRATION_AUTH_REQUIRED",
+            "INTEGRATION_API_ERROR",
+            "INTEGRATION_POLICY_REJECTED",
+            "INTEGRATION_RATE_LIMITED",
+            "INTEGRATION_REDIRECT_REJECTED",
+            "INTEGRATION_RESPONSE_LIMIT",
         }
     ),
+    "integration": frozenset({"github", "gmail"}),
+    "operation": frozenset({"read", "mutation", "token"}),
 }
 
 _TRACE_ATTRIBUTES = frozenset(
     {
-        "principal.id",
         "session.id",
         "turn.id",
         "request.id",
         "trace.id",
         "tool.call_id",
         "provider.family",
+        "integration.name",
+        "integration.operation",
+        "http.status_family",
     }
 )
-_SPAN_NAMES = frozenset({"kaji.turn", "kaji.provider", "kaji.tool"})
+_SPAN_NAMES = frozenset(
+    {
+        "kaji.turn",
+        "kaji.provider",
+        "kaji.tool",
+        "kaji.integration.auth",
+        "kaji.integration.request",
+    }
+)
+
+
+def _valid_trace_attribute(name: str, value: object) -> bool:
+    if type(value) is not str:
+        return False
+    if name == "integration.name":
+        return value in {"github", "gmail"}
+    if name == "integration.operation":
+        return value in {"read", "mutation", "token"}
+    if name == "http.status_family":
+        return value == "none" or value in {"1xx", "2xx", "3xx", "4xx", "5xx"}
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,7 +281,7 @@ class _SafeSpan:
     def set_attribute(self, name: TraceAttributeName, value: str) -> None:
         if self._ended:
             return
-        if name not in _TRACE_ATTRIBUTES or type(value) is not str:
+        if name not in _TRACE_ATTRIBUTES or not _valid_trace_attribute(name, value):
             return
         try:
             self._inner.set_attribute(name, value)
@@ -309,7 +356,7 @@ def start_span(
     except Exception:
         return _NOOP_SPAN
     if any(
-        key not in _TRACE_ATTRIBUTES or type(value) is not str
+        key not in _TRACE_ATTRIBUTES or not _valid_trace_attribute(key, value)
         for key, value in resolved.items()
     ):
         return _NOOP_SPAN

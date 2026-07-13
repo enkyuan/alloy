@@ -33,7 +33,8 @@
           { "$ref": "#/$defs/toolSchema" },
           { "$ref": "#/$defs/replay" },
           { "$ref": "#/$defs/concurrency" },
-          { "$ref": "#/$defs/providerAdapter" }
+          { "$ref": "#/$defs/providerAdapter" },
+          { "$ref": "#/$defs/idempotency" }
         ]
       }
     }
@@ -189,6 +190,21 @@
             "provider": { "enum": ["openai", "anthropic"] },
             "mode": { "enum": ["non-stream", "stream"] },
             "fixture": { "const": "message-tool-result-usage-malformed-error" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "idempotency": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "idempotency" },
+            "fixture": { "enum": ["permanent-failed", "transient-failed", "unknown", "completed"] }
           },
           "additionalProperties": false
         }

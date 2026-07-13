@@ -1,0 +1,72 @@
+id: kaji-external-effect-not-parallel
+language: TypeScript
+severity: error
+message: Named external-effect tools must be non-parallel and send_draft must bind a closed body schema.
+files:
+  - "kaji/ts/registry/github/**/*.ts"
+  - "kaji/ts/registry/gmail/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/github/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/gmail/**/*.ts"
+rule:
+  all:
+    - kind: object
+    - has:
+        all:
+          - kind: pair
+          - regex: '^["'']?name["'']?\s*:\s*["''](?:send_draft|sendDraft|create_issue|createIssue|add_comment|addComment)["'']$'
+        stopBy: end
+    - any:
+        - not:
+            has:
+              all:
+                - kind: pair
+                - regex: '^["'']?risk["'']?\s*:\s*["'']external_effect["'']$'
+              stopBy: end
+        - not:
+            has:
+              all:
+                - kind: pair
+                - regex: '^["'']?(?:parallel_safe|parallelSafe)["'']?\s*:\s*false$'
+              stopBy: end
+        - all:
+            - has:
+                all:
+                  - kind: pair
+                  - regex: '^["'']?name["'']?\s*:\s*["''](?:send_draft|sendDraft)["'']$'
+                stopBy: end
+            - not:
+                has:
+                  all:
+                    - kind: pair
+                    - has:
+                        field: key
+                        regex: '^["'']?parameters["'']?$'
+                    - has:
+                        field: value
+                        all:
+                          - kind: object
+                          - has:
+                              all:
+                                - kind: pair
+                                - has:
+                                    field: key
+                                    regex: '^["'']?properties["'']?$'
+                                - has:
+                                    all:
+                                      - kind: pair
+                                      - has:
+                                          field: key
+                                          regex: '^["'']?body["'']?$'
+                                    stopBy: end
+                              stopBy: neighbor
+                          - has:
+                              all:
+                                - kind: pair
+                                - regex: '^["'']?required["'']?\s*:\s*\[[^\]]*["'']body["''][^\]]*\]$'
+                              stopBy: neighbor
+                          - has:
+                              all:
+                                - kind: pair
+                                - regex: '^["'']?additionalProperties["'']?\s*:\s*false$'
+                              stopBy: neighbor
+                  stopBy: neighbor

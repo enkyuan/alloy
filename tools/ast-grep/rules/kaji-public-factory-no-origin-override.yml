@@ -1,0 +1,24 @@
+id: kaji-public-factory-no-origin-override
+language: TypeScript
+severity: error
+message: Public provider factories must fix origins and production dependencies internally.
+files:
+  - "kaji/ts/src/auth/**/*.ts"
+  - "kaji/ts/src/integrations/**/*.ts"
+  - "kaji/ts/registry/github/**/*.ts"
+  - "kaji/ts/registry/gmail/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/github/**/*.ts"
+  - "kaji/sdk/src/integrations/registry/gmail/**/*.ts"
+rule:
+  all:
+    - kind: function_declaration
+    - regex: '^(?:async\s+)?function\s+(?:create(?:GitHub|Github|Gmail|GoogleOAuth)|create_(?:github|gmail|google_oauth))[A-Za-z0-9_]*\s*\('
+    - not:
+        regex: '^(?:async\s+)?function\s+\w*(?:ForTest|_for_test)\s*\('
+    - inside:
+        kind: export_statement
+        field: declaration
+        stopBy: end
+    - has:
+        field: parameters
+        regex: '(?i).*(?:\borigin\b|\bbase_?url\b|\bendpoint(?:_?url)?\b|\bauth_?url\b|\btoken_?url\b|\bfetch\b|\brequest(?:er)?\b|\bhttp_?client\b|\bclient\b|\btransport\b|\bagent\b|\bproxy\b|\bpolicy\b).*'
