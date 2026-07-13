@@ -9,6 +9,7 @@ import {
   type BoundedResponse,
   type FixedOriginRequester,
 } from "@kaji/sdk/integrations";
+import { recoveryForReason } from "@/integrations/recovery";
 import { GitHubClient } from "../registry/github/client";
 
 interface FixtureCase {
@@ -193,6 +194,15 @@ describe("shared GitHub client conformance", () => {
         actual = { exception: "cancelled" };
       } else {
         expect(String(error).toLowerCase()).not.toContain("private");
+        if (testCase.expected.exception === "unknown") {
+          const recovery = recoveryForReason("github_mutation_unknown");
+          expect(error).toMatchObject({
+            error_code: recovery.errorCode,
+            reason_code: "github_mutation_unknown",
+            recovery_code: recovery.recoveryCode,
+            doc_url: recovery.docUrl,
+          });
+        }
         actual = { exception: "unknown" };
       }
     }

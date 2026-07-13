@@ -21,6 +21,7 @@ from kaji.integrations.errors import (
     IntegrationExecutionError,
     IntegrationPolicyError,
     IntegrationRateLimitedError,
+    IntegrationTransportError,
     IntegrationTransientReadError,
 )
 from kaji.integrations.fixed_origin import IntegrationResponse
@@ -67,9 +68,9 @@ class _ProviderShapeError(ValueError):
     pass
 
 
-class _UnknownMutationError(RuntimeError):
+class _UnknownMutationError(IntegrationTransportError):
     def __init__(self) -> None:
-        super().__init__("GitHub mutation outcome is unknown")
+        super().__init__("TOOL_EXECUTION_FAILED", "github_mutation_unknown")
 
 
 def _policy_error() -> IntegrationPolicyError:

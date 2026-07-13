@@ -58,8 +58,14 @@ interface RequestJsonOptions {
 class ProviderShapeError extends Error {}
 
 class UnknownMutationError extends Error {
+  readonly error_code = "TOOL_EXECUTION_FAILED";
+  readonly reason_code = "github_mutation_unknown";
+  readonly recovery_code = "RECONCILE_GITHUB_MUTATION";
+  readonly doc_url = "https://kaji.dev/docs/integrations/recovery-v1#github-mutation-unknown";
+
   constructor() {
     super("GitHub mutation outcome is unknown");
+    this.name = "UnknownMutationError";
   }
 }
 

@@ -17,6 +17,7 @@ from kaji.integrations.errors import (
     IntegrationTransportError,
 )
 from kaji.integrations.fixed_origin import IntegrationResponse
+from kaji.integrations.recovery import recovery_for_reason
 from kaji.integrations.registry.github.client import GitHubClient
 from kaji.runtime.agents.cancellation import CancellationToken, CancelledError
 from kaji.runtime.context import ToolExecutionContext
@@ -175,6 +176,13 @@ async def test_shared_github_conformance(case: dict[str, Any]) -> None:
         actual = {"exception": "cancelled"}
     except Exception as error:
         assert "private" not in str(error).lower()
+        if case["expected"] == {"exception": "unknown"}:
+            recovery = recovery_for_reason("github_mutation_unknown")
+            assert isinstance(error, IntegrationTransportError)
+            assert error.error_code == recovery.error_code
+            assert error.reason_code == "github_mutation_unknown"
+            assert error.recovery_code == recovery.recovery_code
+            assert error.doc_url == recovery.doc_url
         actual = {"exception": "unknown"}
 
     assert actual == case["expected"]
