@@ -1,467 +1,1455 @@
-"""OAuth 2.0 installed-app helper for Google integrations.
-
-Implements the standard "installed application" flow described at
-https://developers.google.com/identity/protocols/oauth2/native-app:
-
-    1. Open the consent URL in the user's browser.
-    2. Run a short-lived HTTP server on ``http://localhost:<port>``.
-    3. Capture the ``code`` query param when Google redirects back.
-    4. Exchange the code for access + refresh tokens.
-    5. Persist them to disk at a user-controlled path.
-    6. Refresh on expiry.
-
-This module ships with the SDK for out-of-tree Google OAuth tools.
-
-What the SDK does NOT do: register a Google Cloud project for you. You
-must create one (free), enable the API you want, and obtain a client
-ID + client secret.
-"""
+"""Principal-bound Google installed-app OAuth with deterministic test seams."""
 
 from __future__ import annotations
 
-import http.server
+import asyncio
+import base64
+from collections.abc import Callable, Collection
+from dataclasses import dataclass
+import hashlib
+import hmac
 from importlib import import_module
 import json
-import logging
-import secrets
-import socketserver
-import threading
-import time
-import urllib.parse
-import webbrowser
-from dataclasses import asdict, dataclass
+import math
+import os
 from pathlib import Path
-from typing import Any, Optional, Protocol, runtime_checkable
+import re
+import secrets
+import stat
+from typing import Any, Literal, Protocol, cast, runtime_checkable
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.integrations.errors import (
+    IntegrationAuthError,
+    IntegrationAuthRequiredError,
+    IntegrationExecutionError,
+    IntegrationPolicyError,
+)
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.context import ToolExecutionContext
+from kaji.runtime.determinism import Clock, SYSTEM_CLOCK
 
-logger = logging.getLogger(__name__)
-
-
-# Optional dependency: import only fails if the user requested the
-# ``oauth-keyring`` extra. ``KeyringTokenStorage`` surfaces a clear error if
-# called without it installed.
-try:
-    keyring: Any = import_module("keyring")
-except ImportError:  # pragma: no cover - exercised via monkeypatch
-    keyring = None
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
-# Tokens are considered "expiring soon" this many seconds before their
-# nominal expiry to avoid a race between check + use.
-_REFRESH_BUFFER_SECONDS = 60
+_PRINCIPAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_MAX_CREDENTIAL_BYTES = 16 * 1024
+_MAX_PROVIDER_BYTES = 64 * 1024
+_MAX_TOKEN_CHARACTERS = 8_192
+_MAX_SCOPE_CHARACTERS = 2_048
+_MAX_SCOPES = 64
+_REFRESH_BUFFER_MS = 60_000
+_CALLBACK_SECONDS = 5 * 60
+_OPERATION_SECONDS = 30
+_MAX_SAFE_INTEGER = 9_007_199_254_740_991
+
+
+try:
+    keyring: Any = import_module("keyring")
+except ImportError:  # pragma: no cover - optional compatibility dependency
+    keyring = None
 
 
 class OAuthError(RuntimeError):
-    """Raised when the OAuth flow fails (missing creds, refresh failure,
-    user denied consent, etc.)."""
+    """Redacted non-certified OAuth failure."""
+
+    def __init__(self) -> None:
+        super().__init__("OAuth operation failed")
+
+
+class _OAuthScopeDrift(OAuthError):
+    pass
+
+
+def _policy_error() -> IntegrationPolicyError:
+    return IntegrationPolicyError()
+
+
+def _auth_required(reason: Literal["gmail_grant_missing", "gmail_scope_drift"]):
+    return IntegrationAuthRequiredError(reason)
+
+
+def _auth_error(reason: Literal["keychain_corrupt"] = "keychain_corrupt"):
+    return IntegrationAuthError(reason)
+
+
+def _require_principal(value: object) -> str:
+    if not isinstance(value, str) or not _PRINCIPAL.fullmatch(value):
+        raise _policy_error()
+    return value
+
+
+def _bounded_string(value: object, *, maximum: int) -> str:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        raise _auth_error()
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise _auth_error() from None
+    return value
+
+
+def _normalize_scopes(value: Collection[str]) -> tuple[str, ...]:
+    try:
+        scopes = tuple(sorted(set(value)))
+    except (TypeError, ValueError):
+        raise _policy_error() from None
+    if (
+        not scopes
+        or len(scopes) > _MAX_SCOPES
+        or any(
+            not isinstance(scope, str)
+            or not scope
+            or len(scope) > _MAX_SCOPE_CHARACTERS
+            or any(character.isspace() for character in scope)
+            for scope in scopes
+        )
+    ):
+        raise _policy_error()
+    return scopes
+
+
+@dataclass(frozen=True, slots=True)
+class OAuthTokenSet:
+    access_token: str
+    refresh_token: str
+    expires_at_epoch_ms: int
+    granted_scopes: tuple[str, ...]
+    token_type: Literal["Bearer"] = "Bearer"
+
+    def __post_init__(self) -> None:
+        _bounded_string(self.access_token, maximum=_MAX_TOKEN_CHARACTERS)
+        _bounded_string(self.refresh_token, maximum=_MAX_TOKEN_CHARACTERS)
+        if (
+            type(self.expires_at_epoch_ms) is not int
+            or not 1 <= self.expires_at_epoch_ms <= _MAX_SAFE_INTEGER
+            or self.token_type != "Bearer"
+        ):
+            raise _auth_error()
+        normalized = _normalize_record_scopes(self.granted_scopes)
+        if normalized != self.granted_scopes:
+            raise _auth_error()
+
+
+@dataclass(frozen=True, slots=True)
+class OAuthCredentialRecord:
+    schema_version: Literal[1]
+    state: Literal["active", "revocation_pending"]
+    tokens: OAuthTokenSet
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1 or self.state not in {
+            "active",
+            "revocation_pending",
+        }:
+            raise _auth_error()
+
+    def to_wire(self) -> dict[str, object]:
+        return {
+            "schemaVersion": 1,
+            "state": self.state,
+            "tokens": {
+                "accessToken": self.tokens.access_token,
+                "refreshToken": self.tokens.refresh_token,
+                "expiresAtEpochMs": self.tokens.expires_at_epoch_ms,
+                "grantedScopes": list(self.tokens.granted_scopes),
+                "tokenType": "Bearer",
+            },
+        }
+
+    @classmethod
+    def from_wire(cls, value: object) -> OAuthCredentialRecord:
+        try:
+            if type(value) is not dict or set(value) != {
+                "schemaVersion",
+                "state",
+                "tokens",
+            }:
+                raise ValueError
+            document = cast(dict[str, object], value)
+            tokens = document["tokens"]
+            if type(tokens) is not dict or set(tokens) != {
+                "accessToken",
+                "refreshToken",
+                "expiresAtEpochMs",
+                "grantedScopes",
+                "tokenType",
+            }:
+                raise ValueError
+            token_document = cast(dict[str, object], tokens)
+            scopes = token_document["grantedScopes"]
+            if type(scopes) is not list:
+                raise ValueError
+            return cls(
+                schema_version=cast(Literal[1], document["schemaVersion"]),
+                state=cast(Literal["active", "revocation_pending"], document["state"]),
+                tokens=OAuthTokenSet(
+                    access_token=cast(str, token_document["accessToken"]),
+                    refresh_token=cast(str, token_document["refreshToken"]),
+                    expires_at_epoch_ms=cast(int, token_document["expiresAtEpochMs"]),
+                    granted_scopes=cast(tuple[str, ...], tuple(scopes)),
+                    token_type=cast(Literal["Bearer"], token_document["tokenType"]),
+                ),
+            )
+        except (KeyError, TypeError, ValueError, IntegrationAuthError):
+            raise _auth_error() from None
+
+
+def _normalize_record_scopes(value: object) -> tuple[str, ...]:
+    if type(value) not in {tuple, list}:
+        raise _auth_error()
+    scopes = cast(tuple[object, ...] | list[object], value)
+    if (
+        not scopes
+        or len(scopes) > _MAX_SCOPES
+        or any(
+            not isinstance(scope, str)
+            or not scope
+            or len(scope) > _MAX_SCOPE_CHARACTERS
+            or any(character.isspace() for character in scope)
+            for scope in scopes
+        )
+    ):
+        raise _auth_error()
+    normalized = tuple(sorted(set(cast(Collection[str], scopes))))
+    if len(normalized) != len(scopes):
+        raise _auth_error()
+    return normalized
+
+
+@dataclass(frozen=True, slots=True)
+class DisconnectResult:
+    local_state: Literal["deleted", "revocation_pending", "missing"]
+    remote_revoked: bool
 
 
 @runtime_checkable
 class TokenStorage(Protocol):
-    """Persist OAuth tokens. Implementations round-trip a JSON-serialisable
-    dict produced by :meth:`_Tokens.to_dict`."""
+    """Legacy synchronous credential storage compatibility API."""
 
-    def load(self) -> Optional[dict[str, Any]]: ...
-    def save(self, data: dict[str, Any]) -> None: ...
+    def load(self) -> dict[str, object] | None: ...
+
+    def save(self, data: dict[str, object]) -> None: ...
+
+    def delete(self) -> None: ...
+
+
+TokenStorageFor = Callable[[str], TokenStorage]
+
+
+def _canonical_wire(data: object) -> tuple[OAuthCredentialRecord, bytes]:
+    record = OAuthCredentialRecord.from_wire(data)
+    encoded = json.dumps(
+        record.to_wire(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    if len(encoded) > _MAX_CREDENTIAL_BYTES:
+        raise _auth_error()
+    return record, encoded
 
 
 class FileTokenStorage:
-    """Tokens stored as JSON at a user-controlled path, chmod 0600.
-
-    Default backend. Suitable for single-user developer machines. On shared
-    hosts prefer :class:`KeyringTokenStorage`.
-    """
+    """Legacy synchronous, principal-scoped file storage with atomic writes."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser()
 
-    def load(self) -> Optional[dict[str, Any]]:
-        if not self.path.exists():
-            return None
+    def _existing_stat(self) -> os.stat_result | None:
         try:
-            return json.loads(self.path.read_text())
-        except (json.JSONDecodeError, ValueError) as error:
-            log_redacted_failure(
-                logger,
-                logging.WARNING,
-                "Failed to load tokens from file",
-                error,
-                identifiers={"storage": "file"},
-            )
+            value = self.path.lstat()
+        except FileNotFoundError:
             return None
-
-    def save(self, data: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2))
-        try:
-            self.path.chmod(0o600)
         except OSError:
-            pass
+            raise _auth_error() from None
+        if stat.S_ISLNK(value.st_mode) or not stat.S_ISREG(value.st_mode):
+            raise _auth_error()
+        return value
+
+    def load(self) -> dict[str, object] | None:
+        if self._existing_stat() is None:
+            return None
+        try:
+            with self.path.open("rb") as handle:
+                encoded = handle.read(_MAX_CREDENTIAL_BYTES + 1)
+        except OSError:
+            raise _auth_error() from None
+        if len(encoded) > _MAX_CREDENTIAL_BYTES:
+            raise _auth_error()
+        try:
+            value = json.loads(encoded.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise _auth_error() from None
+        record, _ = _canonical_wire(value)
+        return record.to_wire()
+
+    def save(self, data: dict[str, object]) -> None:
+        _, encoded = _canonical_wire(data)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._existing_stat()
+        temporary = self.path.parent / f".{self.path.name}.{secrets.token_hex(8)}.tmp"
+        descriptor: int | None = None
+        try:
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(temporary, flags, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = None
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+            os.chmod(self.path, 0o600)
+            self._fsync_parent()
+        except (OSError, ValueError):
+            raise _auth_error() from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+
+    def delete(self) -> None:
+        if self._existing_stat() is None:
+            return
+        try:
+            self.path.unlink()
+            self._fsync_parent()
+        except OSError:
+            raise _auth_error() from None
+
+    def _fsync_parent(self) -> None:
+        descriptor = os.open(self.path.parent, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 class KeyringTokenStorage:
-    """Tokens stored in the OS keyring (Keychain, libsecret, Credential Manager).
-
-    Requires the optional ``keyring`` extra:
-
-        pip install 'kaji[oauth-keyring]'
-
-    Recommended over :class:`FileTokenStorage` on shared machines. Stores
-    the token dict as a single JSON string. The full Google OAuth payload
-    is well under 1KB; cross-platform keyring backends cap secrets in the
-    hundreds of KB, which leaves plenty of headroom.
-    """
+    """Legacy synchronous keyring compatibility adapter; not beta evidence."""
 
     def __init__(self, *, service_name: str, account: str) -> None:
         self.service_name = service_name
         self.account = account
 
-    def _require_keyring(self) -> Any:
-        """Return the loaded keyring module, raising a clear error if absent.
-
-        Returns the module rather than a bare ``None``-guard so the caller
-        works against a narrowed local; the static type-checker cannot
-        track that ``self.keyring`` stays non-None after a separate
-        method call.
-        """
+    def _backend(self) -> Any:
         if keyring is None:
-            raise OAuthError(
-                "KeyringTokenStorage requires the 'keyring' package. "
-                "Install with: pip install 'kaji[oauth-keyring]'"
-            )
+            raise OAuthError()
         return keyring
 
-    def load(self) -> Optional[dict[str, Any]]:
-        kr = self._require_keyring()
-        secret = kr.get_password(self.service_name, self.account)
+    def load(self) -> dict[str, object] | None:
+        secret = self._backend().get_password(self.service_name, self.account)
         if secret is None:
             return None
         try:
-            return json.loads(secret)
-        except (json.JSONDecodeError, ValueError) as error:
-            # Symmetric with FileTokenStorage: a corrupt entry should
-            # trigger a clean re-consent, not crash the caller.
-            log_redacted_failure(
-                logger,
-                logging.WARNING,
-                "Failed to parse tokens from keyring entry",
-                error,
-                identifiers={"storage": "keyring"},
+            value = json.loads(secret)
+        except (TypeError, json.JSONDecodeError):
+            raise _auth_error() from None
+        record, _ = _canonical_wire(value)
+        return record.to_wire()
+
+    def save(self, data: dict[str, object]) -> None:
+        record, encoded = _canonical_wire(data)
+        del record
+        try:
+            self._backend().set_password(
+                self.service_name, self.account, encoded.decode("utf-8")
             )
-            return None
+        except Exception:
+            raise _auth_error() from None
 
-    def save(self, data: dict[str, Any]) -> None:
-        kr = self._require_keyring()
-        kr.set_password(self.service_name, self.account, json.dumps(data))
+    def delete(self) -> None:
+        try:
+            self._backend().delete_password(self.service_name, self.account)
+        except Exception:
+            raise _auth_error() from None
 
 
-@dataclass
-class _Tokens:
-    access_token: str
-    refresh_token: str
-    expires_at: float  # epoch seconds
-    scopes: tuple[str, ...]
+class _AsyncCredentialStore(Protocol):
+    async def load(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> OAuthCredentialRecord | None: ...
 
-    def to_dict(self) -> dict[str, Any]:
-        d = asdict(self)
-        d["scopes"] = list(self.scopes)
-        return d
+    async def save(
+        self,
+        principal_id: str,
+        record: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None: ...
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "_Tokens":
-        return cls(
-            access_token=data["access_token"],
-            refresh_token=data["refresh_token"],
-            expires_at=float(data["expires_at"]),
-            scopes=tuple(data.get("scopes") or ()),
+    async def delete(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None: ...
+
+
+class _LegacyStoreAdapter:
+    def __init__(self, storage_for: TokenStorageFor) -> None:
+        self._storage_for = storage_for
+
+    def _storage(self, principal_id: str) -> TokenStorage:
+        _require_principal(principal_id)
+        try:
+            storage = self._storage_for(principal_id)
+        except Exception:
+            raise _auth_error() from None
+        if not isinstance(storage, TokenStorage):
+            raise _auth_error()
+        return storage
+
+    async def load(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> OAuthCredentialRecord | None:
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+        value = self._storage(principal_id).load()
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+        return None if value is None else OAuthCredentialRecord.from_wire(value)
+
+    async def save(
+        self,
+        principal_id: str,
+        record: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+        self._storage(principal_id).save(record.to_wire())
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+
+    async def delete(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+        self._storage(principal_id).delete()
+        _check_scope(cancellation, deadline_monotonic, SYSTEM_CLOCK)
+
+
+@dataclass(frozen=True, slots=True)
+class _OAuthHttpResponse:
+    status: int
+    body: bytes
+
+
+class _OAuthTransport(Protocol):
+    async def post_form(
+        self,
+        endpoint: str,
+        form: dict[str, str],
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> _OAuthHttpResponse: ...
+
+
+class _HttpxOAuthTransport:
+    async def post_form(
+        self,
+        endpoint: str,
+        form: dict[str, str],
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> _OAuthHttpResponse:
+        if endpoint not in {GOOGLE_TOKEN_URL, GOOGLE_REVOKE_URL}:
+            raise _policy_error()
+        cancellation.raise_if_cancelled()
+
+        async def request() -> _OAuthHttpResponse:
+            async with httpx.AsyncClient(
+                timeout=_OPERATION_SECONDS, trust_env=False, follow_redirects=False
+            ) as client:
+                async with client.stream("POST", endpoint, data=form) as response:
+                    chunks: list[bytes] = []
+                    size = 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > _MAX_PROVIDER_BYTES:
+                            raise OAuthError()
+                        chunks.append(chunk)
+                    return _OAuthHttpResponse(response.status_code, b"".join(chunks))
+
+        operation = asyncio.create_task(request())
+        cancelled = asyncio.create_task(cancellation.wait())
+        try:
+            remaining = deadline_monotonic - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("OAuth operation timed out")
+            done, _ = await asyncio.wait(
+                {operation, cancelled},
+                timeout=min(_OPERATION_SECONDS, remaining),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancelled in done:
+                operation.cancel()
+                cancellation.raise_if_cancelled()
+            if operation not in done:
+                operation.cancel()
+                raise TimeoutError("OAuth operation timed out")
+            return await operation
+        except (asyncio.CancelledError, TimeoutError):
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+            raise
+        except Exception:
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+            raise OAuthError() from None
+        finally:
+            cancelled.cancel()
+            await asyncio.gather(cancelled, return_exceptions=True)
+
+
+class _AuthorizationCallback(Protocol):
+    redirect_uri: str
+
+    async def wait_for_code(
+        self,
+        expected_state: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> str: ...
+
+    async def close(self) -> None: ...
+
+
+class _CallbackFactory(Protocol):
+    async def open(
+        self, cancellation: CancellationToken, deadline_monotonic: float
+    ) -> _AuthorizationCallback: ...
+
+
+class _Browser(Protocol):
+    async def open(
+        self,
+        url: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> None: ...
+
+
+class _SystemBrowser:
+    async def open(
+        self,
+        url: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> None:
+        cancellation.raise_if_cancelled()
+        process: asyncio.subprocess.Process | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "/usr/bin/open",
+                url,
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            waiter = asyncio.create_task(process.wait())
+            cancelled = asyncio.create_task(cancellation.wait())
+            remaining = deadline_monotonic - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("OAuth browser timed out")
+            done, _ = await asyncio.wait(
+                {waiter, cancelled},
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancelled in done:
+                cancellation.raise_if_cancelled()
+            if waiter not in done:
+                raise TimeoutError("OAuth browser timed out")
+            if await waiter != 0:
+                raise OAuthError()
+            cancelled.cancel()
+            await asyncio.gather(cancelled, return_exceptions=True)
+        except (asyncio.CancelledError, TimeoutError):
+            if process is not None:
+                await self._terminate(process)
+            raise
+        except Exception:
+            if process is not None:
+                await self._terminate(process)
+            raise OAuthError() from None
+        cancellation.raise_if_cancelled()
+
+    async def _terminate(self, process: asyncio.subprocess.Process) -> None:
+        if process.returncode is not None:
+            await process.wait()
+            return
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(process.wait(), 0.25)
+        except TimeoutError:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await process.wait()
+
+
+class _LoopbackCallback:
+    def __init__(
+        self,
+        server: asyncio.AbstractServer,
+        future: asyncio.Future[tuple[str, str]],
+        writers: set[asyncio.StreamWriter],
+    ) -> None:
+        self._server = server
+        self._future = future
+        self._writers = writers
+        sockets = getattr(server, "sockets", None) or ()
+        if len(sockets) != 1:
+            raise OAuthError()
+        self.redirect_uri = (
+            f"http://127.0.0.1:{sockets[0].getsockname()[1]}/oauth/callback"
         )
+
+    async def wait_for_code(
+        self,
+        expected_state: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> str:
+        cancelled = asyncio.create_task(cancellation.wait())
+        try:
+            remaining = deadline_monotonic - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("OAuth callback timed out")
+            done, _ = await asyncio.wait(
+                {self._future, cancelled},
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancelled in done:
+                cancellation.raise_if_cancelled()
+            if self._future not in done:
+                raise TimeoutError("OAuth callback timed out")
+            state, code = self._future.result()
+            if not hmac.compare_digest(state, expected_state):
+                raise OAuthError()
+            if not code:
+                raise OAuthError()
+            return code
+        finally:
+            cancelled.cancel()
+            await asyncio.gather(cancelled, return_exceptions=True)
+
+    async def close(self) -> None:
+        self._server.close()
+        await self._server.wait_closed()
+        writers = tuple(self._writers)
+        for writer in writers:
+            writer.close()
+        if writers:
+            await asyncio.gather(
+                *(writer.wait_closed() for writer in writers), return_exceptions=True
+            )
+
+
+class _LoopbackCallbackFactory:
+    async def open(
+        self, cancellation: CancellationToken, deadline_monotonic: float
+    ) -> _AuthorizationCallback:
+        cancellation.raise_if_cancelled()
+        future: asyncio.Future[tuple[str, str]] = (
+            asyncio.get_running_loop().create_future()
+        )
+        writers: set[asyncio.StreamWriter] = set()
+
+        async def handle(
+            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        ) -> None:
+            writers.add(writer)
+            try:
+                raw = await reader.readuntil(b"\r\n\r\n")
+                if len(raw) > 8_192:
+                    raise ValueError
+                first = raw.split(b"\r\n", 1)[0].decode("ascii")
+                method, target, _version = first.split(" ", 2)
+                parsed = urlparse(target)
+                query = parse_qs(parsed.query, strict_parsing=True)
+                state = query.get("state", [""])[0]
+                code = query.get("code", [""])[0]
+                valid = method == "GET" and parsed.path == "/oauth/callback"
+                if not valid or "error" in query:
+                    state, code = "", ""
+                if not future.done():
+                    future.set_result((state[:256], code[:8_192]))
+                status = b"200 OK" if valid and code else b"400 Bad Request"
+            except Exception:
+                if not future.done():
+                    future.set_result(("", ""))
+                status = b"400 Bad Request"
+            finally:
+                try:
+                    writer.write(
+                        b"HTTP/1.1 "
+                        + status
+                        + b"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    await writer.drain()
+                finally:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    writers.discard(writer)
+
+        try:
+            server = await asyncio.start_server(handle, "127.0.0.1", 0, limit=8_193)
+        except Exception:
+            raise OAuthError() from None
+        return _LoopbackCallback(server, future, writers)
+
+
+@dataclass(slots=True)
+class _OwnedOperation:
+    task: asyncio.Task[None]
+    cancellation: CancellationToken
+    generation: int
+
+
+@dataclass(slots=True)
+class _RefreshFlight:
+    task: asyncio.Task[str]
+    cancellation: CancellationToken
+    generation: int
+    waiters: int = 0
+
+
+class _PrincipalSlot:
+    def __init__(self) -> None:
+        self.gate = asyncio.Lock()
+        self.generation = 0
+        self.blocked = False
+        self.connect: _OwnedOperation | None = None
+        self.refresh: _RefreshFlight | None = None
+        self.disconnect: asyncio.Task[Any] | None = None
+        self.references = 0
+
+
+def _check_scope(
+    cancellation: CancellationToken,
+    deadline_monotonic: float | None,
+    clock: Clock,
+) -> None:
+    cancellation.raise_if_cancelled()
+    if deadline_monotonic is not None and deadline_monotonic <= clock.now_monotonic():
+        raise TimeoutError("OAuth operation timed out")
 
 
 class GoogleOAuthClient:
-    """OAuth 2.0 installed-application flow for Google APIs.
-
-    ``client_id`` and ``client_secret`` come from your Google Cloud OAuth
-    consent screen; see your out-of-tree integration docs.
-
-    ``scopes`` declares the access you need; the user's consent screen
-    shows them this list. Use the most restrictive scope possible
-    (e.g. ``gmail.readonly`` rather than ``gmail.modify``).
-
-    ``token_path`` is where refresh + access tokens are persisted by the
-    default :class:`FileTokenStorage`. Treat the file like a secret; do not
-    check it in. May be omitted when ``token_storage`` is supplied.
-
-    ``token_storage`` overrides the default file backend; pass
-    :class:`KeyringTokenStorage` or any object satisfying
-    :class:`TokenStorage` to plug in a different secret store.
-
-    ``callback_port`` is the localhost port the helper listens on while
-    capturing the auth code. Defaults to 0 (OS picks a free port).
-    """
+    """Google OAuth client whose only consent entry point is :meth:`connect`."""
 
     def __init__(
         self,
         *,
-        client_id: str,
-        client_secret: str,
-        scopes: list[str] | tuple[str, ...],
-        token_path: Optional[str | Path] = None,
-        callback_port: int = 0,
-        open_browser: bool = True,
-        token_storage: Optional[TokenStorage] = None,
+        client_id: str | None,
+        client_secret: str | None = None,
+        scopes: Collection[str],
+        token_storage_for: TokenStorageFor | None = None,
+        credential_store: _AsyncCredentialStore | None = None,
     ) -> None:
-        if not client_id or not client_secret:
-            raise OAuthError(
-                "GoogleOAuthClient requires client_id and client_secret. "
-                "See your integration docs for the Google Cloud step."
-            )
-        if token_path is None and token_storage is None:
-            raise OAuthError(
-                "GoogleOAuthClient requires either token_path (default file "
-                "backend) or token_storage (custom backend)."
-            )
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.scopes = tuple(scopes)
-        self.token_path = (
-            Path(token_path).expanduser() if token_path is not None else None
+        if (token_storage_for is None) == (credential_store is None):
+            raise _policy_error()
+        self._initialize(
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=scopes,
+            credential_store=(
+                credential_store
+                if credential_store is not None
+                else _LegacyStoreAdapter(cast(TokenStorageFor, token_storage_for))
+            ),
+            http=_HttpxOAuthTransport(),
+            callback_factory=_LoopbackCallbackFactory(),
+            browser=_SystemBrowser(),
+            clock=SYSTEM_CLOCK,
+            random_bytes=secrets.token_bytes,
         )
-        self.callback_port = callback_port
-        self.open_browser = open_browser
-        self._tokens: Optional[_Tokens] = None
-        self._http: Optional[httpx.AsyncClient] = None
-        # Explicit token_storage wins; otherwise default to the file backend
-        # at token_path.
-        if token_storage is not None:
-            self._token_storage: TokenStorage = token_storage
-        else:
-            assert self.token_path is not None  # validated above
-            self._token_storage = FileTokenStorage(self.token_path)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def _initialize(
+        self,
+        *,
+        client_id: str | None,
+        client_secret: str | None,
+        scopes: Collection[str],
+        credential_store: _AsyncCredentialStore,
+        http: _OAuthTransport,
+        callback_factory: _CallbackFactory,
+        browser: _Browser,
+        clock: Clock,
+        random_bytes: Callable[[int], bytes],
+    ) -> None:
+        if client_id is not None and (
+            not isinstance(client_id, str) or not client_id or len(client_id) > 4_096
+        ):
+            client_id = None
+        if client_secret is not None and (
+            not isinstance(client_secret, str)
+            or not client_secret
+            or len(client_secret) > 8_192
+        ):
+            raise _policy_error()
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._scopes = _normalize_scopes(scopes)
+        self._store = credential_store
+        self._http = http
+        self._callback_factory = callback_factory
+        self._browser = browser
+        self._clock = clock
+        self._random_bytes = random_bytes
+        self._slots: dict[str, _PrincipalSlot] = {}
+        self._slots_gate = asyncio.Lock()
 
-    async def ensure_authorized(self) -> None:
-        """Ensure we have a valid access token, running the consent flow if not.
-
-        Idempotent: subsequent calls are cheap.
-        """
-        if self._tokens is None:
-            self._tokens = self._load_tokens()
-        if self._tokens is None:
-            self._tokens = await self._run_installed_flow()
-            self._save_tokens(self._tokens)
-        elif self._is_expiring(self._tokens):
-            self._tokens = await self._refresh(self._tokens)
-            self._save_tokens(self._tokens)
-
-    async def access_token(self) -> str:
-        """Return a currently-valid access token, refreshing if needed."""
-        await self.ensure_authorized()
-        assert self._tokens is not None
-        return self._tokens.access_token
-
-    async def authorized_headers(self) -> dict[str, str]:
-        token = await self.access_token()
-        return {"Authorization": f"Bearer {token}"}
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _is_expiring(self, tokens: _Tokens) -> bool:
-        return tokens.expires_at - time.time() < _REFRESH_BUFFER_SECONDS
-
-    def _load_tokens(self) -> Optional[_Tokens]:
-        data = self._token_storage.load()
-        if data is None:
-            return None
+    async def connect(self, principal_id: str, cancellation: CancellationToken) -> None:
+        principal_id = _require_principal(principal_id)
+        _check_scope(cancellation, None, self._clock)
+        client_id = self._required_client_id()
+        slot = await self._acquire_slot(principal_id)
         try:
-            return _Tokens.from_dict(data)
-        except (KeyError, ValueError) as error:
-            log_redacted_failure(
-                logger,
-                logging.WARNING,
-                "Failed to parse loaded tokens",
-                error,
-                identifiers={"storage": type(self._token_storage).__name__},
-            )
-            return None
+            while True:
+                pending_disconnect: asyncio.Task[Any] | None = None
+                async with slot.gate:
+                    if slot.disconnect is not None:
+                        pending_disconnect = slot.disconnect
+                    else:
+                        slot.generation += 1
+                        slot.blocked = True
+                        generation = slot.generation
+                        previous: list[asyncio.Task[Any]] = []
+                        if slot.connect is not None:
+                            slot.connect.cancellation.cancel()
+                            slot.connect.task.cancel()
+                            previous.append(slot.connect.task)
+                        if slot.refresh is not None:
+                            slot.refresh.cancellation.cancel()
+                            slot.refresh.task.cancel()
+                            previous.append(slot.refresh.task)
+                        internal = CancellationToken()
+                        task = asyncio.create_task(
+                            self._run_connect_after(
+                                principal_id,
+                                slot,
+                                generation,
+                                client_id,
+                                internal,
+                                tuple(previous),
+                            )
+                        )
+                        operation = _OwnedOperation(task, internal, generation)
+                        slot.connect = operation
+                if pending_disconnect is None:
+                    break
+                await self._await_owned(pending_disconnect, cancellation, None)
+            try:
+                await self._await_owned(task, cancellation, None)
+            except BaseException:
+                internal.cancel()
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+                raise
+            finally:
+                async with slot.gate:
+                    if slot.connect is operation:
+                        slot.connect = None
+        finally:
+            await self._release_slot(principal_id, slot)
 
-    def _save_tokens(self, tokens: _Tokens) -> None:
-        self._token_storage.save(tokens.to_dict())
-
-    async def _run_installed_flow(self) -> _Tokens:
-        """Run the localhost-callback consent flow."""
-        state = secrets.token_urlsafe(24)
-        code, redirect_uri = _capture_auth_code(
-            client_id=self.client_id,
-            scopes=self.scopes,
-            state=state,
-            port=self.callback_port,
-            open_browser=self.open_browser,
+    async def access_token(self, context: ToolExecutionContext) -> str:
+        principal_id = _require_principal(context.principal_id)
+        _check_scope(
+            context.cancellation_token, context.deadline_monotonic, self._clock
         )
-        return await self._exchange_code(code, redirect_uri)
-
-    async def _exchange_code(self, code: str, redirect_uri: str) -> _Tokens:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                GOOGLE_TOKEN_URL,
-                data={
-                    "code": code,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "redirect_uri": redirect_uri,
-                    "grant_type": "authorization_code",
-                },
-            )
-            if resp.status_code != 200:
-                raise OAuthError(f"Token exchange failed ({resp.status_code})")
-            payload = resp.json()
-        return _tokens_from_payload(payload, fallback_scopes=self.scopes)
-
-    async def _refresh(self, tokens: _Tokens) -> _Tokens:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                GOOGLE_TOKEN_URL,
-                data={
-                    "refresh_token": tokens.refresh_token,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "grant_type": "refresh_token",
-                },
-            )
-            if resp.status_code != 200:
-                raise OAuthError(f"Token refresh failed ({resp.status_code})")
-            payload = resp.json()
-        # Refresh responses don't always echo refresh_token; preserve the old.
-        payload.setdefault("refresh_token", tokens.refresh_token)
-        return _tokens_from_payload(payload, fallback_scopes=tokens.scopes)
-
-
-def _tokens_from_payload(
-    payload: dict[str, Any],
-    fallback_scopes: tuple[str, ...],
-) -> _Tokens:
-    expires_in = float(payload.get("expires_in", 3600))
-    scope_str = payload.get("scope")
-    scopes = tuple(scope_str.split()) if scope_str else fallback_scopes
-    return _Tokens(
-        access_token=payload["access_token"],
-        refresh_token=payload["refresh_token"],
-        expires_at=time.time() + expires_in,
-        scopes=scopes,
-    )
-
-
-def _capture_auth_code(
-    *,
-    client_id: str,
-    scopes: tuple[str, ...],
-    state: str,
-    port: int,
-    open_browser: bool,
-) -> tuple[str, str]:
-    """Spin up a localhost server, open the consent URL, capture the code.
-
-    Returns ``(code, redirect_uri)``. The redirect_uri must be passed back
-    to the token endpoint or the exchange will fail.
-    """
-    received: dict[str, str] = {}
-    server_ready = threading.Event()
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        # Silence default per-request logging to stderr; we surface our own.
-        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
-            return
-
-        def do_GET(self) -> None:  # noqa: N802 (http.server API)
-            parsed = urllib.parse.urlparse(self.path)
-            params = dict(urllib.parse.parse_qsl(parsed.query))
-            if params.get("state") != state:
-                self._reply(400, "<h1>State mismatch -- aborting.</h1>")
-                received["error"] = "state_mismatch"
-                return
-            if "error" in params:
-                self._reply(400, f"<h1>Consent denied: {params['error']}</h1>")
-                received["error"] = params["error"]
-                return
-            if "code" not in params:
-                self._reply(400, "<h1>No code in callback.</h1>")
-                received["error"] = "no_code"
-                return
-            received["code"] = params["code"]
-            self._reply(
-                200,
-                "<h1>kaji: consent captured. You can close this tab.</h1>",
-            )
-
-        def _reply(self, status: int, body: str) -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(body.encode("utf-8"))
-
-    httpd = socketserver.TCPServer(("127.0.0.1", port), Handler)
-    actual_port = httpd.server_address[1]
-    redirect_uri = f"http://127.0.0.1:{actual_port}/oauth/callback"
-
-    def serve() -> None:
-        server_ready.set()
-        # Handle exactly one request, then shut down.
-        httpd.handle_request()
-        httpd.server_close()
-
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
-    server_ready.wait()
-
-    auth_url = _build_auth_url(client_id, scopes, state, redirect_uri)
-    if open_browser:
+        slot = await self._acquire_slot(principal_id)
         try:
-            webbrowser.open(auth_url)
+            async with slot.gate:
+                if slot.blocked:
+                    raise _auth_required("gmail_grant_missing")
+                generation = slot.generation
+            record = await self._store.load(
+                principal_id,
+                context.cancellation_token,
+                context.deadline_monotonic,
+            )
+            if record is None or record.state == "revocation_pending":
+                raise _auth_required("gmail_grant_missing")
+            if not set(record.tokens.granted_scopes).issuperset(self._scopes):
+                await self._delete_if_current(
+                    principal_id,
+                    slot,
+                    generation,
+                    context.cancellation_token,
+                    context.deadline_monotonic,
+                )
+                raise _auth_required("gmail_scope_drift")
+            if (
+                record.tokens.expires_at_epoch_ms
+                > int(self._clock.now_wall_seconds() * 1_000) + _REFRESH_BUFFER_MS
+            ):
+                async with slot.gate:
+                    if slot.blocked or slot.generation != generation:
+                        raise _auth_required("gmail_grant_missing")
+                    return record.tokens.access_token
+            return await self._join_refresh(
+                principal_id, slot, generation, record, context
+            )
+        finally:
+            await self._release_slot(principal_id, slot)
+
+    async def authorized_headers(self, context: ToolExecutionContext) -> dict[str, str]:
+        return {"Authorization": f"Bearer {await self.access_token(context)}"}
+
+    async def disconnect(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        *,
+        force_local: bool = False,
+    ) -> DisconnectResult:
+        principal_id = _require_principal(principal_id)
+        _check_scope(cancellation, None, self._clock)
+        slot = await self._acquire_slot(principal_id)
+        current = asyncio.current_task()
+        assert current is not None
+        async with slot.gate:
+            previous_disconnect = slot.disconnect
+            slot.disconnect = current
+        try:
+            if previous_disconnect is not None and previous_disconnect is not current:
+                await self._await_owned(previous_disconnect, cancellation, None)
+            async with slot.gate:
+                slot.generation += 1
+                slot.blocked = True
+                generation = slot.generation
+                operations: list[asyncio.Task[object]] = []
+                if slot.connect is not None:
+                    slot.connect.cancellation.cancel()
+                    slot.connect.task.cancel()
+                    operations.append(cast(asyncio.Task[object], slot.connect.task))
+                if slot.refresh is not None:
+                    slot.refresh.cancellation.cancel()
+                    slot.refresh.task.cancel()
+                    operations.append(cast(asyncio.Task[object], slot.refresh.task))
+            if operations:
+                await asyncio.gather(*operations, return_exceptions=True)
+            record = await self._store.load(principal_id, cancellation, None)
+            if record is None:
+                return DisconnectResult("missing", False)
+            if force_local:
+                await self._delete_blocked_if_current(
+                    principal_id, slot, generation, cancellation, None
+                )
+                return DisconnectResult("deleted", False)
+            pending = OAuthCredentialRecord(
+                schema_version=1,
+                state="revocation_pending",
+                tokens=record.tokens,
+            )
+            cleanup = CancellationToken()
+            deadline = self._clock.now_monotonic() + _OPERATION_SECONDS
+            try:
+                response = await self._http.post_form(
+                    GOOGLE_REVOKE_URL,
+                    {"token": record.tokens.refresh_token},
+                    cancellation,
+                    deadline,
+                )
+            except asyncio.CancelledError:
+                await self._save_if_current(
+                    principal_id,
+                    slot,
+                    generation,
+                    pending,
+                    cleanup,
+                    self._clock.now_monotonic() + _OPERATION_SECONDS,
+                )
+                raise
+            except Exception:
+                await self._save_if_current(
+                    principal_id,
+                    slot,
+                    generation,
+                    pending,
+                    cleanup,
+                    self._clock.now_monotonic() + _OPERATION_SECONDS,
+                )
+                return DisconnectResult("revocation_pending", False)
+            if response.status == 200:
+                try:
+                    await self._delete_blocked_if_current(
+                        principal_id,
+                        slot,
+                        generation,
+                        cleanup,
+                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                    )
+                except Exception:
+                    await self._save_if_current(
+                        principal_id,
+                        slot,
+                        generation,
+                        pending,
+                        cleanup,
+                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                    )
+                    return DisconnectResult("revocation_pending", True)
+                return DisconnectResult("deleted", True)
+            await self._save_if_current(
+                principal_id,
+                slot,
+                generation,
+                pending,
+                cleanup,
+                self._clock.now_monotonic() + _OPERATION_SECONDS,
+            )
+            return DisconnectResult("revocation_pending", False)
+        finally:
+            async with slot.gate:
+                if slot.disconnect is current:
+                    slot.disconnect = None
+            await self._release_slot(principal_id, slot)
+
+    def _required_client_id(self) -> str:
+        if self._client_id is None:
+            raise _auth_required("gmail_grant_missing")
+        return self._client_id
+
+    async def _run_connect_after(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        client_id: str,
+        cancellation: CancellationToken,
+        previous: tuple[asyncio.Task[Any], ...],
+    ) -> None:
+        if previous:
+            await asyncio.gather(*previous, return_exceptions=True)
+        cancellation.raise_if_cancelled()
+        async with slot.gate:
+            current = asyncio.current_task()
+            if (
+                slot.generation != generation
+                or slot.connect is None
+                or slot.connect.task is not current
+            ):
+                raise _auth_required("gmail_grant_missing")
+            slot.blocked = False
+        await self._run_connect(principal_id, slot, generation, client_id, cancellation)
+
+    async def _run_connect(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        client_id: str,
+        cancellation: CancellationToken,
+    ) -> None:
+        deadline = self._clock.now_monotonic() + _CALLBACK_SECONDS
+        callback = await self._callback_factory.open(cancellation, deadline)
+        try:
+            state = _base64url(self._random_bytes(32))
+            verifier = _base64url(self._random_bytes(64))
+            if not 43 <= len(verifier) <= 128:
+                raise OAuthError()
+            challenge = _base64url(hashlib.sha256(verifier.encode("ascii")).digest())
+            params = {
+                "client_id": client_id,
+                "redirect_uri": callback.redirect_uri,
+                "response_type": "code",
+                "scope": " ".join(self._scopes),
+                "state": state,
+                "access_type": "offline",
+                "prompt": "consent",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }
+            authorization_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+            await self._browser.open(authorization_url, cancellation, deadline)
+            code = await callback.wait_for_code(state, cancellation, deadline)
+            code = _bounded_provider_string(code, 8_192)
+            form = {
+                "code": code,
+                "code_verifier": verifier,
+                "client_id": client_id,
+                "redirect_uri": callback.redirect_uri,
+                "grant_type": "authorization_code",
+            }
+            if self._client_secret is not None:
+                form["client_secret"] = self._client_secret
+            response = await self._http.post_form(
+                GOOGLE_TOKEN_URL,
+                form,
+                cancellation,
+                self._clock.now_monotonic() + _OPERATION_SECONDS,
+            )
+            if response.status != 200:
+                raise OAuthError()
+            tokens = self._tokens_from_response(
+                response.body, fallback=None, require_scope=True
+            )
+            record = OAuthCredentialRecord(1, "active", tokens)
+            await self._save_if_current(
+                principal_id,
+                slot,
+                generation,
+                record,
+                cancellation,
+                self._clock.now_monotonic() + _OPERATION_SECONDS,
+            )
+        except (asyncio.CancelledError, TimeoutError):
+            raise
+        except (IntegrationAuthRequiredError, IntegrationPolicyError):
+            raise
         except Exception:
-            pass
-    print(f"Open this URL to authorize kaji:\n  {auth_url}\n")
+            raise OAuthError() from None
+        finally:
+            await callback.close()
 
-    # Block until the handler runs (the server thread services one request).
-    thread.join(timeout=300)
-    if thread.is_alive():
-        # The server thread is parked inside ``handle_request`` waiting on the
-        # accept socket. ``shutdown()`` is for stopping a ``serve_forever``
-        # loop and would hang here; closing the socket forcibly unblocks the
-        # ``select``/``accept`` so the thread can exit.
-        httpd.server_close()
-        raise OAuthError("OAuth consent timed out after 5 minutes.")
+    async def _join_refresh(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        record: OAuthCredentialRecord,
+        context: ToolExecutionContext,
+    ) -> str:
+        async with slot.gate:
+            if slot.blocked or slot.generation != generation:
+                raise _auth_required("gmail_grant_missing")
+            flight = slot.refresh
+            if flight is None or flight.generation != generation:
+                internal = CancellationToken()
+                task = asyncio.create_task(
+                    self._run_refresh(principal_id, slot, generation, record, internal)
+                )
+                flight = _RefreshFlight(task, internal, generation)
+                slot.refresh = flight
+            flight.waiters += 1
+        try:
+            return await self._await_owned(
+                flight.task,
+                context.cancellation_token,
+                context.deadline_monotonic,
+            )
+        finally:
+            cancel = False
+            async with slot.gate:
+                flight.waiters -= 1
+                cancel = flight.waiters == 0 and not flight.task.done()
+            if cancel:
+                flight.cancellation.cancel()
+                flight.task.cancel()
+                await asyncio.gather(flight.task, return_exceptions=True)
 
-    if "error" in received:
-        raise OAuthError(f"OAuth consent failed: {received['error']}")
-    if "code" not in received:
-        raise OAuthError("OAuth flow ended without a code.")
-    return received["code"], redirect_uri
+    async def _run_refresh(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        record: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+    ) -> str:
+        task = asyncio.current_task()
+        try:
+            client_id = self._required_client_id()
+            form = {
+                "refresh_token": record.tokens.refresh_token,
+                "client_id": client_id,
+                "grant_type": "refresh_token",
+            }
+            if self._client_secret is not None:
+                form["client_secret"] = self._client_secret
+            response = await self._http.post_form(
+                GOOGLE_TOKEN_URL,
+                form,
+                cancellation,
+                self._clock.now_monotonic() + _OPERATION_SECONDS,
+            )
+            if response.status != 200:
+                if _provider_error_code(response.body) == "invalid_grant":
+                    await self._delete_if_current(
+                        principal_id,
+                        slot,
+                        generation,
+                        cancellation,
+                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                    )
+                    raise _auth_required("gmail_grant_missing")
+                raise IntegrationExecutionError("api_rejected")
+            try:
+                tokens = self._tokens_from_response(
+                    response.body, fallback=record.tokens, require_scope=False
+                )
+            except _OAuthScopeDrift:
+                await self._delete_if_current(
+                    principal_id,
+                    slot,
+                    generation,
+                    cancellation,
+                    self._clock.now_monotonic() + _OPERATION_SECONDS,
+                )
+                raise _auth_required("gmail_scope_drift") from None
+            updated = OAuthCredentialRecord(1, "active", tokens)
+            await self._save_if_current(
+                principal_id,
+                slot,
+                generation,
+                updated,
+                cancellation,
+                self._clock.now_monotonic() + _OPERATION_SECONDS,
+            )
+            return tokens.access_token
+        finally:
+            async with slot.gate:
+                if slot.refresh is not None and slot.refresh.task is task:
+                    slot.refresh = None
+
+    def _tokens_from_response(
+        self,
+        body: bytes,
+        *,
+        fallback: OAuthTokenSet | None,
+        require_scope: bool,
+    ) -> OAuthTokenSet:
+        value = _provider_json(body)
+        access_token = _bounded_provider_string(value.get("access_token"), 8_192)
+        token_type = value.get("token_type")
+        if token_type != "Bearer":
+            raise OAuthError()
+        refresh_value = value.get("refresh_token")
+        if refresh_value is None and fallback is not None:
+            refresh_token = fallback.refresh_token
+        else:
+            refresh_token = _bounded_provider_string(refresh_value, 8_192)
+        expires = value.get("expires_in")
+        if (
+            isinstance(expires, bool)
+            or not isinstance(expires, (int, float))
+            or not math.isfinite(float(expires))
+            or not 0 < float(expires) <= 604_800
+        ):
+            raise OAuthError()
+        scope_value = value.get("scope")
+        if scope_value is None:
+            if require_scope or fallback is None:
+                raise OAuthError()
+            granted = fallback.granted_scopes
+        else:
+            if not isinstance(scope_value, str):
+                raise OAuthError()
+            granted = _normalize_provider_scopes(scope_value)
+            if not set(granted).issuperset(self._scopes):
+                if fallback is not None:
+                    raise _OAuthScopeDrift()
+                raise OAuthError()
+        expiry = int(self._clock.now_wall_seconds() * 1_000 + float(expires) * 1_000)
+        return OAuthTokenSet(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at_epoch_ms=expiry,
+            granted_scopes=granted,
+        )
+
+    async def _save_if_current(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        record: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+        deadline: float | None,
+    ) -> None:
+        async with slot.gate:
+            if slot.generation != generation or (
+                slot.blocked and record.state == "active"
+            ):
+                raise _auth_required("gmail_grant_missing")
+            await self._store.save(principal_id, record, cancellation, deadline)
+
+    async def _delete_if_current(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        cancellation: CancellationToken,
+        deadline: float | None,
+    ) -> None:
+        async with slot.gate:
+            if slot.generation != generation or slot.blocked:
+                raise _auth_required("gmail_grant_missing")
+            await self._store.delete(principal_id, cancellation, deadline)
+
+    async def _delete_blocked_if_current(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        cancellation: CancellationToken,
+        deadline: float | None,
+    ) -> None:
+        async with slot.gate:
+            if slot.generation != generation or not slot.blocked:
+                raise _auth_required("gmail_grant_missing")
+            await self._store.delete(principal_id, cancellation, deadline)
+
+    async def _await_owned(
+        self,
+        task: asyncio.Task[Any],
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> Any:
+        cancellation.raise_if_cancelled()
+        waiter = asyncio.ensure_future(asyncio.shield(task))
+        cancelled = asyncio.create_task(cancellation.wait())
+        remaining = (
+            None
+            if deadline_monotonic is None
+            else max(0.0, deadline_monotonic - self._clock.now_monotonic())
+        )
+        try:
+            done, _ = await asyncio.wait(
+                {waiter, cancelled},
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if cancelled in done:
+                cancellation.raise_if_cancelled()
+            if waiter not in done:
+                raise TimeoutError("OAuth operation timed out")
+            return await waiter
+        finally:
+            waiter.cancel()
+            cancelled.cancel()
+            await asyncio.gather(waiter, cancelled, return_exceptions=True)
+
+    async def _acquire_slot(self, principal_id: str) -> _PrincipalSlot:
+        async with self._slots_gate:
+            slot = self._slots.get(principal_id)
+            if slot is None:
+                slot = _PrincipalSlot()
+                self._slots[principal_id] = slot
+            slot.references += 1
+            return slot
+
+    async def _release_slot(self, principal_id: str, slot: _PrincipalSlot) -> None:
+        async with self._slots_gate:
+            slot.references -= 1
+            if (
+                slot.references == 0
+                and slot.connect is None
+                and slot.refresh is None
+                and slot.disconnect is None
+                and self._slots.get(principal_id) is slot
+            ):
+                del self._slots[principal_id]
 
 
-def _build_auth_url(
-    client_id: str,
-    scopes: tuple[str, ...],
-    state: str,
-    redirect_uri: str,
-) -> str:
-    params = {
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": " ".join(scopes),
-        "state": state,
-        # Force refresh-token issuance so the user doesn't have to re-consent
-        # after the first access token expires.
-        "access_type": "offline",
-        "prompt": "consent",
-    }
-    return f"{GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
+def _create_google_oauth_client_for_test(
+    *,
+    client_id: str | None,
+    client_secret: str | None,
+    scopes: Collection[str],
+    credential_store: _AsyncCredentialStore,
+    http: _OAuthTransport,
+    callback_factory: _CallbackFactory,
+    browser: _Browser,
+    clock: Clock,
+    random_bytes: Callable[[int], bytes],
+) -> GoogleOAuthClient:
+    client = object.__new__(GoogleOAuthClient)
+    client._initialize(
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=scopes,
+        credential_store=credential_store,
+        http=http,
+        callback_factory=callback_factory,
+        browser=browser,
+        clock=clock,
+        random_bytes=random_bytes,
+    )
+    return client
+
+
+def _base64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _bounded_provider_string(value: object, maximum: int) -> str:
+    if not isinstance(value, str) or not value or len(value) > maximum:
+        raise OAuthError()
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise OAuthError() from None
+    return value
+
+
+def _provider_json(body: bytes) -> dict[str, object]:
+    if len(body) > _MAX_PROVIDER_BYTES:
+        raise OAuthError()
+    try:
+        value = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise OAuthError() from None
+    if type(value) is not dict:
+        raise OAuthError()
+    return cast(dict[str, object], value)
+
+
+def _provider_error_code(body: bytes) -> str | None:
+    try:
+        value = _provider_json(body)
+    except OAuthError:
+        return None
+    error = value.get("error")
+    return cast(str, error) if error in {"invalid_grant"} else None
+
+
+def _normalize_provider_scopes(value: str) -> tuple[str, ...]:
+    scopes = tuple(sorted(set(value.split())))
+    if (
+        not scopes
+        or len(scopes) > _MAX_SCOPES
+        or any(not scope or len(scope) > _MAX_SCOPE_CHARACTERS for scope in scopes)
+    ):
+        raise OAuthError()
+    return scopes
+
+
+__all__ = [
+    "DisconnectResult",
+    "FileTokenStorage",
+    "GoogleOAuthClient",
+    "KeyringTokenStorage",
+    "OAuthCredentialRecord",
+    "OAuthError",
+    "OAuthTokenSet",
+    "TokenStorage",
+    "TokenStorageFor",
+]

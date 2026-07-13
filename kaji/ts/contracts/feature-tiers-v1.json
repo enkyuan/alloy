@@ -28,6 +28,20 @@
           "createGmailRequester",
           "snapshotIntegrationResult"
         ]
+      },
+      "./auth": {
+        "tier": "experimental",
+        "exports": [
+          "GoogleOAuthClient",
+          "GoogleOAuthClientOptions",
+          "MacOSKeychainTokenStorage",
+          "OAuthAccessTokenProvider",
+          "OAuthCredentialRecord",
+          "OAuthTokenSet",
+          "OAuthTokenStorage",
+          "canonicalOAuthCredentialJson",
+          "snapshotOAuthCredentialRecord"
+        ]
       }
     }
   },
@@ -121,16 +135,21 @@
       "experimental": [
         "AppendResult",
         "Chunk",
+        "DisconnectResult",
         "Document",
         "DocumentRAG",
         "Embedder",
         "EmbeddingCache",
         "EventBus",
+        "GoogleOAuthClient",
         "HistoryStore",
         "InMemoryEventBus",
         "InMemoryHistoryStore",
         "InMemoryVectorStore",
         "JournalEventEmitter",
+        "MacOSKeychainTokenStorage",
+        "OAuthCredentialRecord",
+        "OAuthTokenSet",
         "SplitEventJournal",
         "ToolRetriever",
         "VectorStore",

@@ -19,6 +19,7 @@ export default defineConfig([
     entry: {
       openai: "src/providers/openai.ts",
       anthropic: "src/providers/anthropic.ts",
+      auth: "src/auth/index.ts",
       integrations: "src/integrations/public.ts",
     },
     format: ["esm", "cjs"],

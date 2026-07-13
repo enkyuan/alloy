@@ -24,6 +24,7 @@ from kaji.infra.observability.protocols import TraceSink, start_span
 from kaji.infra.realtime.dlq import build_generic_dlq_entry, drain_generic_dlq
 from kaji.infra.realtime.history_ops import get_history
 from kaji.infra.realtime import publish as publish_module
+from kaji.integrations.errors import IntegrationAuthError
 from kaji.integrations.oauth import FileTokenStorage
 from kaji.knowledge.rag import DocumentRAG
 from kaji.modalities.voice.tts.gemini_provider import GeminiTTSProvider
@@ -983,6 +984,7 @@ async def test_redis_bus_rejects_cross_session_rows() -> None:
 def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() -> None:
     sdk_root = Path(__file__).resolve().parents[1]
     relatives = (
+        "src/integrations/keychain.py",
         "src/integrations/oauth.py",
         "src/infra/realtime/history_ops.py",
         "src/infra/realtime/streams.py",
@@ -1077,7 +1079,10 @@ async def test_realtime_and_secret_storage_failure_logs_are_redacted(
 
     token_file = tmp_path / "tokens.json"
     token_file.write_text(f'{{"access_token":"{secret}"')
-    assert FileTokenStorage(token_file).load() is None
+    with pytest.raises(IntegrationAuthError) as corrupt:
+        FileTokenStorage(token_file).load()
+    assert secret not in str(corrupt.value)
+    assert secret not in repr(corrupt.value)
 
     rendered = caplog.text + repr([record.__dict__ for record in caplog.records])
     assert secret not in rendered

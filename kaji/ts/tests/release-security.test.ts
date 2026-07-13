@@ -12,6 +12,29 @@ import { ToolExecutionController } from "@/tools/execution";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 
 describe("release redaction boundaries", () => {
+  it("keeps OAuth and Keychain production boundaries fixed and shell-free", async () => {
+    const oauthSource = readFileSync(resolve("src/auth/oauth.ts"), "utf8");
+    const keychainSource = readFileSync(resolve("src/auth/keychain.ts"), "utf8");
+
+    expect(oauthSource).toContain("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(oauthSource).toContain("https://oauth2.googleapis.com/token");
+    expect(oauthSource).toContain("https://oauth2.googleapis.com/revoke");
+    expect(oauthSource).not.toMatch(/authorizationEndpoint|tokenEndpoint|revocationEndpoint/);
+    expect(keychainSource).toContain('const SECURITY = "/usr/bin/security"');
+    expect(keychainSource).toContain("shell: false");
+    expect(keychainSource).toContain('new TextDecoder("utf-8", { fatal: true })');
+    expect(keychainSource).not.toContain("shell: true");
+    expect(keychainSource).not.toMatch(/\bexec(?:File)?\s*\(/);
+
+    const publicAuth = await import("@/auth");
+    expect(Object.keys(publicAuth).sort()).toEqual([
+      "GoogleOAuthClient",
+      "MacOSKeychainTokenStorage",
+      "canonicalOAuthCredentialJson",
+      "snapshotOAuthCredentialRecord",
+    ]);
+  });
+
   it("redacts provider details from public exception strings", () => {
     const secret = "sk-provider-key-secret";
     const error = providerAPIErrorFromUnknown(

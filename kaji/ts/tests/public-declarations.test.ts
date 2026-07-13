@@ -20,6 +20,32 @@ function readFreshDeclaration(file: string, sourceFiles: string[]): string {
 }
 
 describe("public declarations", () => {
+  it("exposes only the experimental OAuth and Keychain auth surface", () => {
+    const sources = ["src/auth/index.ts", "src/auth/oauth.ts", "src/auth/keychain.ts"];
+    const contract = JSON.parse(
+      readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
+    ) as { packageSubpaths: { typescript: { "./auth": { exports: string[] } } } };
+    for (const declaration of [
+      readFreshDeclaration("auth.d.ts", sources),
+      readFreshDeclaration("auth.d.cts", sources),
+    ]) {
+      const allowed = contract.packageSubpaths.typescript["./auth"].exports;
+      for (const name of allowed) expect(declaration).toContain(name);
+      const exportBlock = declaration.match(/^export \{ (.*?) \};$/m)?.[1];
+      expect(exportBlock).toBeDefined();
+      const exports = exportBlock!.split(", ").map((item) => item.replace(/^type /, ""));
+      expect(exports.sort()).toEqual([...allowed].sort());
+      for (const internal of [
+        "KeychainProcess",
+        "_createGoogleOAuthClientForTest",
+        "_createMacOSKeychainTokenStorageForTest",
+        "validateOAuthPrincipal",
+      ]) {
+        expect(exportBlock).not.toContain(internal);
+      }
+    }
+  });
+
   it("exposes only the experimental fixed-origin integration surface", () => {
     const sources = [
       "src/integrations/public.ts",

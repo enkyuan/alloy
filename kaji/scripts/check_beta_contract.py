@@ -1769,7 +1769,21 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
                     "createGmailRequester",
                     "snapshotIntegrationResult",
                 ],
-            }
+            },
+            "./auth": {
+                "tier": "experimental",
+                "exports": [
+                    "GoogleOAuthClient",
+                    "GoogleOAuthClientOptions",
+                    "MacOSKeychainTokenStorage",
+                    "OAuthAccessTokenProvider",
+                    "OAuthCredentialRecord",
+                    "OAuthTokenSet",
+                    "OAuthTokenStorage",
+                    "canonicalOAuthCredentialJson",
+                    "snapshotOAuthCredentialRecord",
+                ],
+            },
         }
     }
     if document.get("packageSubpaths") != expected:
@@ -1797,6 +1811,21 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
         raise fail(
             package_path, "/exports/~1integrations", "unexpected integrations targets"
         )
+
+    auth_subpath = package.get("exports", {}).get("./auth")
+    if not isinstance(auth_subpath, dict):
+        raise fail(package_path, "/exports/~1auth", "missing auth export")
+    expected_auth_targets = {
+        "./dist/auth.js",
+        "./dist/auth.cjs",
+        "./dist/auth.d.ts",
+        "./dist/auth.d.cts",
+    }
+    actual_auth_targets = set(
+        re.findall(r"\./dist/auth\.(?:js|cjs|d\.ts|d\.cts)", json.dumps(auth_subpath))
+    )
+    if actual_auth_targets != expected_auth_targets:
+        raise fail(package_path, "/exports/~1auth", "unexpected auth targets")
 
 
 def check_cli_init_cases(document: dict[str, Any]) -> None:

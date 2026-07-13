@@ -1,361 +1,657 @@
-"""Tests for the Google OAuth installed-app helper.
-
-The localhost-callback consent flow is interactive (opens a browser) and
-not exercised here. We test the parts that ARE deterministic:
-
-- token persistence to disk
-- "fresh tokens" path
-- expiring-token detection
-- refresh exchange
-- error surfaces (missing creds, refresh failure)
-"""
-
 from __future__ import annotations
 
+import asyncio
+import base64
+import hashlib
 import json
-import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-import httpx
 import pytest
 
-from kaji.integrations.oauth import (
-    GoogleOAuthClient,
-    OAuthError,
-    _Tokens,
+from kaji.integrations.errors import (
+    IntegrationAuthRequiredError,
+    IntegrationPolicyError,
 )
+from kaji.integrations.oauth import (
+    DisconnectResult,
+    FileTokenStorage,
+    GoogleOAuthClient,
+    OAuthCredentialRecord,
+    OAuthTokenSet,
+    _OAuthHttpResponse,
+    _create_google_oauth_client_for_test,
+)
+from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.context import ToolExecutionContext
 
 
-def _write_tokens(path: Path, **overrides) -> None:
-    base = {
-        "access_token": "valid-access",
-        "refresh_token": "valid-refresh",
-        "expires_at": time.time() + 3600,
-        "scopes": ["scope/a"],
-    }
-    base.update(overrides)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(base))
+SCOPES = ("scope/a", "scope/b")
 
 
-def _client(tmp_path: Path, **overrides) -> GoogleOAuthClient:
-    # Build kwargs explicitly so ty can check each argument's type.
-    return GoogleOAuthClient(
-        client_id=overrides.get("client_id", "cid"),
-        client_secret=overrides.get("client_secret", "csec"),
-        scopes=overrides.get("scopes", ["scope/a"]),
-        token_path=overrides.get("token_path", tmp_path / "tokens.json"),
-        open_browser=overrides.get("open_browser", False),
-        callback_port=overrides.get("callback_port", 0),
-        token_storage=overrides.get("token_storage", None),
+class Clock:
+    wall = 1_700_000_000.0
+    monotonic = 100.0
+
+    def now_wall_seconds(self) -> float:
+        return self.wall
+
+    def now_monotonic(self) -> float:
+        return self.monotonic
+
+
+def context(
+    principal_id: str = "user-123",
+    *,
+    cancellation: CancellationToken | None = None,
+    deadline: float | None = None,
+) -> ToolExecutionContext:
+    return ToolExecutionContext(
+        principal_id=principal_id,
+        session_id="session",
+        turn_id="turn",
+        request_id="request",
+        trace_id="trace",
+        tool_call_id="call",
+        idempotency_key="session:call",
+        cancellation_token=cancellation or CancellationToken(),
+        deadline_monotonic=deadline,
+        db=None,
+        metadata={},
     )
 
 
-def test_requires_client_id_and_secret(tmp_path: Path) -> None:
-    with pytest.raises(OAuthError, match="client_id and client_secret"):
-        GoogleOAuthClient(
-            client_id="",
-            client_secret="csec",
-            scopes=["a"],
-            token_path=tmp_path / "t.json",
-        )
-
-
-@pytest.mark.asyncio
-async def test_loads_existing_tokens_when_fresh(tmp_path: Path) -> None:
-    tokens_path = tmp_path / "tokens.json"
-    _write_tokens(tokens_path)
-    client = _client(tmp_path, token_path=tokens_path)
-    token = await client.access_token()
-    assert token == "valid-access"
-
-
-@pytest.mark.asyncio
-async def test_authorized_headers_carries_bearer(tmp_path: Path) -> None:
-    tokens_path = tmp_path / "tokens.json"
-    _write_tokens(tokens_path)
-    client = _client(tmp_path, token_path=tokens_path)
-    headers = await client.authorized_headers()
-    assert headers["Authorization"] == "Bearer valid-access"
-
-
-@pytest.mark.asyncio
-async def test_refreshes_when_token_is_expiring(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    tokens_path = tmp_path / "tokens.json"
-    _write_tokens(tokens_path, expires_at=time.time() - 1, access_token="old-access")
-
-    refreshed_payload = {
-        "access_token": "new-access",
-        # Google's refresh response may or may not include refresh_token; this
-        # test omits it to confirm the helper preserves the existing one.
-        "expires_in": 3600,
-        "scope": "scope/a",
-    }
-
-    def transport(request: httpx.Request) -> httpx.Response:
-        assert request.url == "https://oauth2.googleapis.com/token"
-        body = dict(httpx.QueryParams(request.content.decode()))
-        assert body["grant_type"] == "refresh_token"
-        assert body["refresh_token"] == "valid-refresh"
-        return httpx.Response(200, json=refreshed_payload)
-
-    # Patch the AsyncClient constructor used inside _refresh.
-    original = httpx.AsyncClient
-
-    def patched(*args, **kwargs):
-        kwargs.setdefault("transport", httpx.MockTransport(transport))
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", patched)
-
-    client = _client(tmp_path, token_path=tokens_path)
-    token = await client.access_token()
-    assert token == "new-access"
-
-    # Refresh-token was preserved (not echoed by Google in this response).
-    saved = json.loads(tokens_path.read_text())
-    assert saved["refresh_token"] == "valid-refresh"
-    assert saved["access_token"] == "new-access"
-
-
-@pytest.mark.asyncio
-async def test_refresh_failure_raises_oauth_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    tokens_path = tmp_path / "tokens.json"
-    _write_tokens(tokens_path, expires_at=time.time() - 1)
-
-    def transport(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(400, text='{"error":"invalid_grant"}')
-
-    original = httpx.AsyncClient
-
-    def patched(*args, **kwargs):
-        kwargs.setdefault("transport", httpx.MockTransport(transport))
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", patched)
-
-    client = _client(tmp_path, token_path=tokens_path)
-    with pytest.raises(OAuthError, match="Token refresh failed"):
-        await client.access_token()
-
-
-def test_corrupt_token_file_is_ignored(tmp_path: Path) -> None:
-    """A malformed tokens file should not crash the helper at load time;
-    the next call to ensure_authorized just re-runs the consent flow."""
-    tokens_path = tmp_path / "tokens.json"
-    tokens_path.write_text("not json")
-    # Just confirm the load returns None rather than raising.
-    client = _client(tmp_path, token_path=tokens_path)
-    assert client._load_tokens() is None  # type: ignore[attr-defined]
-
-
-def test_tokens_persist_chmod_0600(tmp_path: Path) -> None:
-    tokens_path = tmp_path / "tokens.json"
-    client = _client(tmp_path, token_path=tokens_path)
-    tok = _Tokens(
-        access_token="a",
-        refresh_token="r",
-        expires_at=time.time() + 3600,
-        scopes=("s",),
+def record(
+    *,
+    access: str = "access",
+    refresh: str = "refresh",
+    expires: int = 1_700_003_600_000,
+    scopes: tuple[str, ...] = SCOPES,
+    state: str = "active",
+) -> OAuthCredentialRecord:
+    return OAuthCredentialRecord(
+        schema_version=1,
+        state=state,  # type: ignore[arg-type]
+        tokens=OAuthTokenSet(
+            access_token=access,
+            refresh_token=refresh,
+            expires_at_epoch_ms=expires,
+            granted_scopes=scopes,
+        ),
     )
-    client._save_tokens(tok)  # type: ignore[attr-defined]
-    mode = tokens_path.stat().st_mode & 0o777
-    # Best-effort permission setting; on platforms where chmod is a noop
-    # this assertion would be too strict, but darwin / linux honor it.
-    assert mode == 0o600
 
 
-# ---------------------------------------------------------------------------
-# TokenStorage protocol + backends
-# ---------------------------------------------------------------------------
+class MemoryStore:
+    def __init__(self, records: dict[str, OAuthCredentialRecord] | None = None) -> None:
+        self.records = dict(records or {})
+        self.calls: list[tuple[str, str]] = []
+
+    async def load(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> OAuthCredentialRecord | None:
+        cancellation.raise_if_cancelled()
+        self.calls.append(("load", principal_id))
+        return self.records.get(principal_id)
+
+    async def save(
+        self,
+        principal_id: str,
+        value: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        cancellation.raise_if_cancelled()
+        self.calls.append(("save", principal_id))
+        self.records[principal_id] = value
+
+    async def delete(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        cancellation.raise_if_cancelled()
+        self.calls.append(("delete", principal_id))
+        self.records.pop(principal_id, None)
 
 
-def test_file_token_storage_roundtrips(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage
+class PausingStore(MemoryStore):
+    def __init__(self, records: dict[str, OAuthCredentialRecord]) -> None:
+        super().__init__(records)
+        self.delete_entered = asyncio.Event()
+        self.release_delete = asyncio.Event()
 
-    storage = FileTokenStorage(tmp_path / "tokens.json")
-    payload = {
-        "access_token": "a",
-        "refresh_token": "r",
-        "expires_at": 1.0,
-        "scopes": ["s"],
-    }
-    storage.save(payload)
-    assert storage.load() == payload
-
-
-def test_file_token_storage_returns_none_when_missing(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage
-
-    storage = FileTokenStorage(tmp_path / "does_not_exist.json")
-    assert storage.load() is None
+    async def delete(
+        self,
+        principal_id: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        self.delete_entered.set()
+        await self.release_delete.wait()
+        await super().delete(principal_id, cancellation, deadline_monotonic)
 
 
-def test_file_token_storage_writes_chmod_0600(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage
+class Http:
+    def __init__(self, responses: list[_OAuthHttpResponse] | None = None) -> None:
+        self.responses = list(responses or [])
+        self.calls: list[tuple[str, dict[str, str]]] = []
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.pause = False
 
+    async def post_form(
+        self,
+        endpoint: str,
+        form: dict[str, str],
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> _OAuthHttpResponse:
+        self.calls.append((endpoint, dict(form)))
+        self.entered.set()
+        try:
+            if self.pause:
+                release = asyncio.create_task(self.release.wait())
+                cancelled = asyncio.create_task(cancellation.wait())
+                done, _ = await asyncio.wait(
+                    {release, cancelled}, return_when=asyncio.FIRST_COMPLETED
+                )
+                for task in (release, cancelled):
+                    if task not in done:
+                        task.cancel()
+                cancellation.raise_if_cancelled()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        return self.responses.pop(0)
+
+
+class Callback:
+    redirect_uri = "http://127.0.0.1:43117/oauth/callback"
+
+    def __init__(self, code: str = "auth-code") -> None:
+        self.code = code
+        self.state: str | None = None
+        self.closed = False
+
+    async def wait_for_code(
+        self,
+        expected_state: str,
+        cancellation: CancellationToken,
+        deadline_monotonic: float,
+    ) -> str:
+        cancellation.raise_if_cancelled()
+        self.state = expected_state
+        return self.code
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class CallbackFactory:
+    def __init__(self, callback: Callback) -> None:
+        self.callback = callback
+        self.calls = 0
+
+    async def open(
+        self, cancellation: CancellationToken, deadline_monotonic: float
+    ) -> Callback:
+        cancellation.raise_if_cancelled()
+        self.calls += 1
+        return self.callback
+
+
+class Browser:
+    def __init__(self) -> None:
+        self.urls: list[str] = []
+
+    async def open(
+        self, url: str, cancellation: CancellationToken, deadline_monotonic: float
+    ) -> None:
+        cancellation.raise_if_cancelled()
+        self.urls.append(url)
+
+
+def client(
+    *,
+    store: MemoryStore,
+    http: Http | None = None,
+    callback: Callback | None = None,
+    browser: Browser | None = None,
+    client_id: str | None = "client-id",
+    client_secret: str | None = None,
+    clock: Clock | None = None,
+):
+    callback = callback or Callback()
+    browser = browser or Browser()
+    return _create_google_oauth_client_for_test(
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=SCOPES,
+        credential_store=store,
+        http=http or Http(),
+        callback_factory=CallbackFactory(callback),
+        browser=browser,
+        clock=clock or Clock(),
+        random_bytes=lambda count: bytes(range(count)),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "principal", ["", " user", "user@example.com", "üser", "a" * 129]
+)
+async def test_principal_is_rejected_before_every_dependency(principal: str) -> None:
+    store = MemoryStore()
+    http = Http()
+    callback = Callback()
+    browser = Browser()
+    oauth = client(store=store, http=http, callback=callback, browser=browser)
+
+    if principal not in {"", " user"}:
+        with pytest.raises(IntegrationPolicyError):
+            await oauth.access_token(context(principal))
+    with pytest.raises(IntegrationPolicyError):
+        await oauth.connect(principal, CancellationToken())
+    with pytest.raises(IntegrationPolicyError):
+        await oauth.disconnect(principal, CancellationToken())
+
+    assert store.calls == []
+    assert http.calls == []
+    assert browser.urls == []
+
+
+@pytest.mark.asyncio
+async def test_access_without_grant_never_starts_consent() -> None:
+    store = MemoryStore()
+    callback = Callback()
+    browser = Browser()
+    oauth = client(store=store, callback=callback, browser=browser)
+
+    with pytest.raises(IntegrationAuthRequiredError) as captured:
+        await oauth.access_token(context())
+
+    assert captured.value.reason_code == "gmail_grant_missing"
+    assert browser.urls == []
+    assert callback.state is None
+
+
+@pytest.mark.asyncio
+async def test_fresh_token_is_principal_bound_and_never_calls_http() -> None:
+    store = MemoryStore({"user-123": record()})
+    http = Http()
+    oauth = client(store=store, http=http, client_id=None)
+    assert await oauth.access_token(context()) == "access"
+    assert http.calls == []
+
+
+@pytest.mark.asyncio
+async def test_pending_or_scope_drift_never_yields_a_token() -> None:
+    pending = MemoryStore({"user-123": record(state="revocation_pending")})
+    with pytest.raises(IntegrationAuthRequiredError):
+        await client(store=pending, client_id=None).access_token(context())
+
+    drift = MemoryStore({"user-123": record(scopes=("scope/a",))})
+    with pytest.raises(IntegrationAuthRequiredError) as captured:
+        await client(store=drift, client_id=None).access_token(context())
+    assert captured.value.reason_code == "gmail_scope_drift"
+    assert "user-123" not in drift.records
+
+
+@pytest.mark.asyncio
+async def test_refresh_is_single_flight_and_preserves_omitted_fields() -> None:
+    store = MemoryStore({"user-123": record(access="old", expires=1)})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                json.dumps(
+                    {"access_token": "new", "expires_in": 3600, "token_type": "Bearer"}
+                ).encode(),
+            )
+        ]
+    )
+    http.pause = True
+    oauth = client(store=store, http=http)
+    first = asyncio.create_task(oauth.access_token(context()))
+    await http.entered.wait()
+    second = asyncio.create_task(oauth.access_token(context()))
+    await asyncio.sleep(0)
+    http.release.set()
+
+    assert await first == "new"
+    assert await second == "new"
+    assert len(http.calls) == 1
+    saved = store.records["user-123"].tokens
+    assert saved.refresh_token == "refresh"
+    assert saved.granted_scopes == SCOPES
+
+
+@pytest.mark.asyncio
+async def test_refreshes_for_different_principals_overlap() -> None:
+    store = MemoryStore(
+        {
+            "user-a": record(access="old-a", refresh="refresh-a", expires=1),
+            "user-b": record(access="old-b", refresh="refresh-b", expires=1),
+        }
+    )
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new-a","expires_in":3600,"token_type":"Bearer"}',
+            ),
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new-b","expires_in":3600,"token_type":"Bearer"}',
+            ),
+        ]
+    )
+    http.pause = True
+    oauth = client(store=store, http=http)
+    first = asyncio.create_task(oauth.access_token(context("user-a")))
+    second = asyncio.create_task(oauth.access_token(context("user-b")))
+    for _ in range(10):
+        if len(http.calls) == 2:
+            break
+        await asyncio.sleep(0)
+    assert len(http.calls) == 2
+    http.release.set()
+    assert set(await asyncio.gather(first, second)) == {"new-a", "new-b"}
+
+
+@pytest.mark.asyncio
+async def test_cancelled_refresh_waiter_does_not_cancel_another_waiter() -> None:
+    store = MemoryStore({"user-123": record(expires=1)})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","expires_in":3600,"token_type":"Bearer"}',
+            )
+        ]
+    )
+    http.pause = True
+    oauth = client(store=store, http=http)
+    first_cancellation = CancellationToken()
+    first = asyncio.create_task(
+        oauth.access_token(context(cancellation=first_cancellation))
+    )
+    await http.entered.wait()
+    second = asyncio.create_task(oauth.access_token(context()))
+    await asyncio.sleep(0)
+    first_cancellation.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    assert not second.done()
+    assert len(http.calls) == 1
+    http.release.set()
+    assert await second == "new"
+
+
+@pytest.mark.asyncio
+async def test_last_refresh_waiter_cancels_shared_operation() -> None:
+    store = MemoryStore({"user-123": record(expires=1)})
+    http = Http()
+    http.pause = True
+    cancellation = CancellationToken()
+    pending = asyncio.create_task(
+        client(store=store, http=http).access_token(context(cancellation=cancellation))
+    )
+    await http.entered.wait()
+    cancellation.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+    assert http.cancelled.is_set()
+
+
+@pytest.mark.asyncio
+async def test_invalid_grant_deletes_local_record() -> None:
+    store = MemoryStore({"user-123": record(expires=1)})
+    http = Http([_OAuthHttpResponse(400, b'{"error":"invalid_grant"}')])
+    with pytest.raises(IntegrationAuthRequiredError):
+        await client(store=store, http=http).access_token(context())
+    assert "user-123" not in store.records
+
+
+@pytest.mark.asyncio
+async def test_refresh_scope_drift_deletes_local_record() -> None:
+    store = MemoryStore({"user-123": record(expires=1)})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","expires_in":3600,"token_type":"Bearer","scope":"scope/a"}',
+            )
+        ]
+    )
+    with pytest.raises(IntegrationAuthRequiredError) as captured:
+        await client(store=store, http=http).access_token(context())
+    assert captured.value.reason_code == "gmail_scope_drift"
+    assert "user-123" not in store.records
+
+
+@pytest.mark.asyncio
+async def test_scope_drift_delete_finishes_before_new_connect_save() -> None:
+    store = PausingStore({"user-123": record(scopes=("scope/a",))})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","refresh_token":"new-refresh","expires_in":3600,"token_type":"Bearer","scope":"scope/a scope/b"}',
+            )
+        ]
+    )
+    oauth = client(store=store, http=http)
+    stale = asyncio.create_task(oauth.access_token(context()))
+    await store.delete_entered.wait()
+    reconnect = asyncio.create_task(oauth.connect("user-123", CancellationToken()))
+    await asyncio.sleep(0)
+    assert http.calls == []
+    store.release_delete.set()
+    with pytest.raises(IntegrationAuthRequiredError):
+        await stale
+    await reconnect
+    assert store.records["user-123"].tokens.access_token == "new"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_revoke_uses_internal_cleanup_after_caller_cancel() -> None:
+    cancellation = CancellationToken()
+
+    class CancellingHttp(Http):
+        async def post_form(
+            self,
+            endpoint: str,
+            form: dict[str, str],
+            request_cancellation: CancellationToken,
+            deadline_monotonic: float,
+        ) -> _OAuthHttpResponse:
+            response = await super().post_form(
+                endpoint, form, request_cancellation, deadline_monotonic
+            )
+            cancellation.cancel()
+            return response
+
+    store = MemoryStore({"user-123": record()})
+    result = await client(
+        store=store,
+        http=CancellingHttp([_OAuthHttpResponse(200, b"")]),
+        client_id=None,
+    ).disconnect("user-123", cancellation)
+    assert result == DisconnectResult("deleted", True)
+    assert "user-123" not in store.records
+
+
+@pytest.mark.asyncio
+async def test_public_client_composes_with_async_credential_store() -> None:
+    store = MemoryStore({"user-123": record(expires=9_000_000_000_000_000)})
+    oauth = GoogleOAuthClient(
+        client_id=None,
+        scopes=SCOPES,
+        credential_store=store,
+    )
+    assert await oauth.access_token(context()) == "access"
+
+
+@pytest.mark.asyncio
+async def test_connect_uses_fixed_endpoint_pkce_and_closes_callback() -> None:
+    store = MemoryStore()
+    callback = Callback()
+    browser = Browser()
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "access_token": "access",
+                        "refresh_token": "refresh",
+                        "expires_in": 3600,
+                        "token_type": "Bearer",
+                        "scope": "scope/b scope/a",
+                    }
+                ).encode(),
+            )
+        ]
+    )
+    oauth = client(store=store, http=http, callback=callback, browser=browser)
+    await oauth.connect("user-123", CancellationToken())
+
+    assert callback.closed
+    auth = urlparse(browser.urls[0])
+    assert (
+        f"{auth.scheme}://{auth.netloc}{auth.path}"
+        == "https://accounts.google.com/o/oauth2/v2/auth"
+    )
+    query = parse_qs(auth.query)
+    verifier = base64.urlsafe_b64encode(bytes(range(64))).rstrip(b"=").decode()
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    assert query["code_challenge"] == [challenge]
+    assert query["code_challenge_method"] == ["S256"]
+    assert query["redirect_uri"] == [callback.redirect_uri]
+    endpoint, form = http.calls[0]
+    assert endpoint == "https://oauth2.googleapis.com/token"
+    assert form["code_verifier"] == verifier
+    assert "client_secret" not in form
+    assert store.records["user-123"].state == "active"
+
+
+@pytest.mark.asyncio
+async def test_disconnect_needs_no_client_id_and_confirms_revoke_before_delete() -> (
+    None
+):
+    store = MemoryStore({"user-123": record()})
+    http = Http([_OAuthHttpResponse(200, b"")])
+    result = await client(store=store, http=http, client_id=None).disconnect(
+        "user-123", CancellationToken()
+    )
+    assert result == DisconnectResult(local_state="deleted", remote_revoked=True)
+    assert http.calls == [
+        ("https://oauth2.googleapis.com/revoke", {"token": "refresh"})
+    ]
+    assert "user-123" not in store.records
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_revoke_persists_pending_and_force_local_deletes() -> None:
+    store = MemoryStore({"user-123": record()})
+    http = Http([_OAuthHttpResponse(503, b"private-provider-body")])
+    oauth = client(store=store, http=http, client_id=None)
+    result = await oauth.disconnect("user-123", CancellationToken())
+    assert result == DisconnectResult(
+        local_state="revocation_pending", remote_revoked=False
+    )
+    assert store.records["user-123"].state == "revocation_pending"
+    forced = await oauth.disconnect("user-123", CancellationToken(), force_local=True)
+    assert forced == DisconnectResult(local_state="deleted", remote_revoked=False)
+    assert "user-123" not in store.records
+
+
+@pytest.mark.asyncio
+async def test_connect_waits_for_disconnect_before_old_token_can_be_used() -> None:
+    store = MemoryStore({"user-123": record()})
+    http = Http(
+        [
+            _OAuthHttpResponse(200, b""),
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","refresh_token":"new-refresh","expires_in":3600,"token_type":"Bearer","scope":"scope/a scope/b"}',
+            ),
+        ]
+    )
+    http.pause = True
+    browser = Browser()
+    oauth = client(store=store, http=http, browser=browser)
+    disconnect = asyncio.create_task(oauth.disconnect("user-123", CancellationToken()))
+    await http.entered.wait()
+    reconnect = asyncio.create_task(oauth.connect("user-123", CancellationToken()))
+    await asyncio.sleep(0)
+    assert browser.urls == []
+    with pytest.raises(IntegrationAuthRequiredError):
+        await oauth.access_token(context())
+    http.release.set()
+    assert await disconnect == DisconnectResult("deleted", True)
+    await reconnect
+    assert await oauth.access_token(context()) == "new"
+
+
+def test_file_store_uses_canonical_wire_atomic_mode_and_delete(tmp_path: Path) -> None:
     path = tmp_path / "tokens.json"
     storage = FileTokenStorage(path)
-    storage.save({"access_token": "a"})
-    assert path.stat().st_mode & 0o777 == 0o600
-
-
-def test_keyring_token_storage_uses_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
-    from kaji.integrations.oauth import KeyringTokenStorage
-
-    fake_store: dict[tuple[str, str], str] = {}
-
-    class FakeKeyring:
-        @staticmethod
-        def set_password(service: str, account: str, secret: str) -> None:
-            fake_store[(service, account)] = secret
-
-        @staticmethod
-        def get_password(service: str, account: str):
-            return fake_store.get((service, account))
-
-    monkeypatch.setattr("kaji.integrations.oauth.keyring", FakeKeyring, raising=False)
-
-    storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
-    payload = {"access_token": "a", "refresh_token": "r", "expires_at": 1.0}
+    payload = record().to_wire()
     storage.save(payload)
     assert storage.load() == payload
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert json.loads(path.read_text())["schemaVersion"] == 1
+    assert not list(tmp_path.glob("*.tmp"))
+    storage.delete()
+    assert not path.exists()
 
 
-def test_keyring_token_storage_returns_none_when_unset(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    "payload",
+    [b"not-json", b'{"schemaVersion":2}', b"x" * (16 * 1024 + 1)],
+)
+def test_file_store_rejects_corrupt_unknown_and_oversize(
+    tmp_path: Path, payload: bytes
 ) -> None:
-    from kaji.integrations.oauth import KeyringTokenStorage
-
-    class FakeKeyring:
-        @staticmethod
-        def get_password(_service: str, _account: str):
-            return None
-
-    monkeypatch.setattr("kaji.integrations.oauth.keyring", FakeKeyring, raising=False)
-
-    storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
-    assert storage.load() is None
+    path = tmp_path / "tokens.json"
+    path.write_bytes(payload)
+    with pytest.raises(Exception) as captured:
+        FileTokenStorage(path).load()
+    assert "not-json" not in str(captured.value)
 
 
-def test_keyring_token_storage_raises_clear_error_without_keyring(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from kaji.integrations.oauth import KeyringTokenStorage
-
-    monkeypatch.setattr("kaji.integrations.oauth.keyring", None, raising=False)
-    storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
-    # Assert the exact install instruction so a refactor that shortens the
-    # message degrades the test, not the user's stderr.
-    msg_re = r"pip install 'kaji\[oauth-keyring\]'"
-    with pytest.raises(OAuthError, match=msg_re):
-        storage.save({"a": 1})
-    with pytest.raises(OAuthError, match=msg_re):
-        storage.load()
+def test_file_store_rejects_symlink(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    target.write_text("secret")
+    link = tmp_path / "tokens.json"
+    link.symlink_to(target)
+    with pytest.raises(Exception):
+        FileTokenStorage(link).load()
+    with pytest.raises(Exception):
+        FileTokenStorage(link).save(record().to_wire())
+    assert target.read_text() == "secret"
 
 
-def test_keyring_token_storage_returns_none_on_corrupt_entry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A corrupt keyring entry triggers re-consent, matching the file
-    backend's behaviour. Without the fix, json.JSONDecodeError escaped
-    the storage and crashed ensure_authorized()."""
-    from kaji.integrations.oauth import KeyringTokenStorage
-
-    class CorruptKeyring:
-        @staticmethod
-        def get_password(_service: str, _account: str):
-            return "{not json"
-
-    monkeypatch.setattr(
-        "kaji.integrations.oauth.keyring", CorruptKeyring, raising=False
-    )
-
-    storage = KeyringTokenStorage(service_name="kaji-test", account="gmail")
-    assert storage.load() is None
-
-
-def test_client_accepts_custom_token_storage(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage
-
-    storage = FileTokenStorage(tmp_path / "tok.json")
-    client = GoogleOAuthClient(
-        client_id="id",
-        client_secret="sec",
-        scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-        token_path=tmp_path / "ignored.json",
-        token_storage=storage,
-    )
-    assert client._token_storage is storage  # type: ignore[attr-defined]
-
-
-def test_client_defaults_to_file_token_storage(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage
-
-    client = _client(tmp_path)
-    assert isinstance(client._token_storage, FileTokenStorage)  # type: ignore[attr-defined]
-
-
-def test_client_requires_token_path_or_token_storage() -> None:
-    """Omitting both backends is a config error: the helper has nowhere to
-    persist tokens and would re-prompt on every call."""
-    with pytest.raises(OAuthError, match=r"token_path.*token_storage"):
-        GoogleOAuthClient(
-            client_id="id",
-            client_secret="sec",
-            scopes=["s"],
-        )
-
-
-def test_client_accepts_token_storage_without_token_path(tmp_path: Path) -> None:
-    """token_path is no longer required when an explicit token_storage is
-    provided. The client should construct cleanly and route through the
-    given storage."""
-    from kaji.integrations.oauth import FileTokenStorage
-
-    storage = FileTokenStorage(tmp_path / "via_storage.json")
-    client = GoogleOAuthClient(
-        client_id="id",
-        client_secret="sec",
-        scopes=["s"],
-        token_storage=storage,
-    )
-    assert client.token_path is None
-    assert client._token_storage is storage  # type: ignore[attr-defined]
-
-
-def test_token_storage_protocol_is_runtime_checkable(tmp_path: Path) -> None:
-    from kaji.integrations.oauth import FileTokenStorage, TokenStorage
-
-    assert isinstance(FileTokenStorage(tmp_path / "x.json"), TokenStorage)
-
-
-def test_client_round_trips_through_custom_storage(tmp_path: Path) -> None:
-    """The client's _load_tokens / _save_tokens go through storage, not the
-    legacy file path, when a token_storage is provided."""
-    from kaji.integrations.oauth import FileTokenStorage
-
-    storage_path = tmp_path / "via_storage.json"
-    storage = FileTokenStorage(storage_path)
-    client = GoogleOAuthClient(
-        client_id="id",
-        client_secret="sec",
-        scopes=["s"],
-        token_path=tmp_path / "legacy_path_should_not_be_used.json",
-        token_storage=storage,
-    )
-    tok = _Tokens(
-        access_token="a",
-        refresh_token="r",
-        expires_at=time.time() + 3600,
-        scopes=("s",),
-    )
-    client._save_tokens(tok)  # type: ignore[attr-defined]
-    assert storage_path.exists()
-    assert not (tmp_path / "legacy_path_should_not_be_used.json").exists()
-    loaded = client._load_tokens()  # type: ignore[attr-defined]
-    assert loaded is not None and loaded.access_token == "a"
+def test_credential_wire_is_lower_camel_and_closed() -> None:
+    wire = record().to_wire()
+    assert set(wire) == {"schemaVersion", "state", "tokens"}
+    assert set(wire["tokens"]) == {
+        "accessToken",
+        "refreshToken",
+        "expiresAtEpochMs",
+        "grantedScopes",
+        "tokenType",
+    }
+    with pytest.raises(Exception):
+        OAuthCredentialRecord.from_wire({**wire, "unknown": True})
