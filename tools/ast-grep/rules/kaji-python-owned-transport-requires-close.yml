@@ -1,0 +1,16 @@
+id: kaji-python-owned-transport-requires-close
+language: Python
+severity: error
+message: Classes that own an HTTPX async client must close it.
+files:
+  - "kaji/sdk/src/integrations/fixed_origin.py"
+rule:
+  all:
+    - kind: class_definition
+    - has:
+        pattern: httpx.AsyncClient($$$ARGS)
+        stopBy: end
+    - not:
+        has:
+          pattern: await self.$CLIENT.aclose()
+          stopBy: end

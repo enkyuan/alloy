@@ -1,0 +1,14 @@
+id: kaji-python-owned-transport-requires-close
+valid:
+  - |
+      class FixedOriginClient:
+          def __init__(self):
+              self._client = httpx.AsyncClient(timeout=None)
+
+          async def aclose(self) -> None:
+              await self._client.aclose()
+invalid:
+  - |
+      class FixedOriginClient:
+          def __init__(self):
+              self._client = httpx.AsyncClient(timeout=None)

@@ -1,0 +1,14 @@
+id: kaji-owned-transport-requires-close
+valid:
+  - |
+      class NodeHttpsTransport {
+        private readonly agent = new Agent({ keepAlive: true });
+        close(): void {
+          this.agent.destroy();
+        }
+      }
+invalid:
+  - |
+      class NodeHttpsTransport {
+        private readonly agent = new Agent({ keepAlive: true });
+      }

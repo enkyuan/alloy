@@ -3,10 +3,12 @@ kaji-copied-imports-public-subpath
 kaji-external-effect-not-parallel
 kaji-fixed-origin-no-unbounded-read
 kaji-no-module-secret-read
+kaji-owned-transport-requires-close
 kaji-public-factory-no-origin-override
 kaji-python-auth-no-shell-process
 kaji-python-fixed-origin-no-unbounded-read
 kaji-python-no-module-secret-read
+kaji-python-owned-transport-requires-close
 kaji-python-public-factory-no-origin-override
 kaji-registry-no-direct-fetch
 no-generic-ts-cancelled-error

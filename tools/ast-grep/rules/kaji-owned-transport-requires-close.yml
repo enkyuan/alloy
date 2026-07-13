@@ -1,0 +1,16 @@
+id: kaji-owned-transport-requires-close
+language: TypeScript
+severity: error
+message: Classes that own a pooled HTTPS Agent must destroy it.
+files:
+  - "kaji/ts/src/integrations/fixed-origin.ts"
+rule:
+  all:
+    - kind: class_declaration
+    - has:
+        pattern: new Agent($$$ARGS)
+        stopBy: end
+    - not:
+        has:
+          pattern: this.$CLIENT.destroy()
+          stopBy: end
