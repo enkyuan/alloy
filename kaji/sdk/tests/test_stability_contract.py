@@ -12,6 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json"
+PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "scenarios.json"
 RELEASE_MATRIX = REPO_ROOT / "kaji" / "RELEASE_MATRIX.md"
 CONTRACT_CHECKER = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 DOC_PATHS = [
@@ -96,6 +97,36 @@ def test_release_matrix_matches_machine_readable_feature_tiers() -> None:
     stable_section = matrix.split("## Stable Core", 1)[1].split("\n## ", 1)[0]
     for entry in tiers["stable"]:
         assert f"| {entry['surface']} | Stable core | Stable core |" in stable_section
+
+
+def _release_matrix_parity_scenario_count(matrix: str) -> int:
+    marker_name = "beta-parity-scenarios"
+    assert matrix.count(marker_name) == 1
+    marker_line = next(line for line in matrix.splitlines() if marker_name in line)
+    marker = re.fullmatch(r"<!-- beta-parity-scenarios: ([0-9]+) -->", marker_line)
+    assert marker is not None
+    return int(marker.group(1))
+
+
+def test_release_matrix_parity_scenario_count_matches_fixture() -> None:
+    document = json.loads(PARITY_SCENARIOS.read_text())
+    assert _release_matrix_parity_scenario_count(RELEASE_MATRIX.read_text()) == len(
+        document["scenarios"]
+    )
+
+
+@pytest.mark.parametrize(
+    "matrix",
+    [
+        "<!-- beta-parity-scenarios: 67 --> trailing garbage",
+        "<!-- beta-parity-scenarios: 67 -->\n<!-- beta-parity-scenarios: malformed -->",
+    ],
+)
+def test_release_matrix_parity_scenario_marker_rejects_malformed_lines(
+    matrix: str,
+) -> None:
+    with pytest.raises(AssertionError):
+        _release_matrix_parity_scenario_count(matrix)
 
 
 def test_python_public_exports_have_one_tier_and_exact_generated_docs() -> None:
