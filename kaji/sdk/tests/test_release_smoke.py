@@ -196,6 +196,15 @@ async def test_installed_github_proof_uses_current_approval_handler_contract() -
     )
 
 
+@pytest.mark.asyncio
+async def test_installed_github_proof_closes_factory_owned_transport() -> None:
+    module = _load_script("installed_github_smoke.py")
+    bundle = SDK_ROOT / "src/integrations/registry/github"
+    _, integration = module._load_copied_modules(bundle)
+
+    assert await module._factory_closes_owned_transport(integration)
+
+
 def test_release_smoke_consumes_verified_archives_without_building(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

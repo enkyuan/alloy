@@ -307,6 +307,41 @@ async def _approval_precedes_credentials(
     )
 
 
+async def _factory_closes_owned_transport(integration_module: ModuleType) -> bool:
+    class OwnedHttp:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        async def request(self, *_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("HTTP must not run")
+
+        async def aclose(self) -> None:
+            self.close_calls += 1
+
+    http = OwnedHttp()
+
+    class FixedOriginFactory:
+        @staticmethod
+        def for_github(**_kwargs: object) -> OwnedHttp:
+            return http
+
+    async def token_for(_context: object) -> str:
+        raise RuntimeError("credential access must not run")
+
+    original = getattr(integration_module, "FixedOriginClient")
+    setattr(integration_module, "FixedOriginClient", FixedOriginFactory)
+    try:
+        integration = integration_module.create_github_integration(
+            token_for=token_for,
+            repositories={"octo/widgets"},
+        )
+        await asyncio.gather(integration.aclose(), integration.aclose())
+        await integration.aclose()
+    finally:
+        setattr(integration_module, "FixedOriginClient", original)
+    return http.close_calls == 1
+
+
 def _deny_network() -> list[int]:
     attempts: list[int] = []
 
@@ -349,11 +384,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     approval_first = await _approval_precedes_credentials(
         client_module, integration_module, fixture["repository"]
     )
+    factory_lifecycle_closed = await _factory_closes_owned_transport(integration_module)
     if (
         executed != EXPECTED_TOOLS
         or not unknown_preserved
         or retries != 0
         or not approval_first
+        or not factory_lifecycle_closed
         or network_attempts
     ):
         raise RuntimeError("installed GitHub proof assertions failed")

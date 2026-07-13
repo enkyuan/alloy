@@ -53,16 +53,27 @@ interface GitHubClientLike {
   ): object;
 }
 
+interface GitHubIntegrationInstance {
+  tools(): Array<
+    [
+      Readonly<{ name: string }>,
+      (args: Record<string, unknown>, context: ToolExecutionContext) => Promise<unknown>,
+    ]
+  >;
+  register(registry: ToolRegistry): void;
+  close(): void;
+}
+
 interface GitHubIntegrationLike {
-  new (client: object): {
-    tools(): Array<
-      [
-        Readonly<{ name: string }>,
-        (args: Record<string, unknown>, context: ToolExecutionContext) => Promise<unknown>,
-      ]
-    >;
-    register(registry: ToolRegistry): void;
-  };
+  new (client: object, closeOwnedRequester?: () => void): GitHubIntegrationInstance;
+}
+
+interface GitHubIntegrationModule {
+  GitHubIntegration: GitHubIntegrationLike;
+  createGithubIntegration(options: {
+    tokenFor: (context: ToolExecutionContext) => Promise<string>;
+    repositories: readonly string[];
+  }): GitHubIntegrationInstance;
 }
 
 function contained(path: string, root: string, label: string): string {
@@ -329,6 +340,33 @@ async function approvalPrecedesCredentials(
   );
 }
 
+async function factoryClosesOwnedTransport(
+  integrationModule: GitHubIntegrationModule,
+  repository: string,
+): Promise<boolean> {
+  let closeCalls = 0;
+  const direct = new integrationModule.GitHubIntegration({}, () => {
+    closeCalls += 1;
+  });
+  direct.close();
+  direct.close();
+
+  const integration = integrationModule.createGithubIntegration({
+    tokenFor: async () => "artifact-proof-token",
+    repositories: [repository],
+  });
+  integration.close();
+  integration.close();
+  const getIssue = integration.tools().find(([spec]) => spec.name === "get_issue")?.[1];
+  if (getIssue === undefined) return false;
+  try {
+    await getIssue({ repository, issue_number: 1 }, context());
+  } catch (error) {
+    return closeCalls === 1 && error instanceof Error && error.name === "IntegrationPolicyError";
+  }
+  return false;
+}
+
 async function runProof(argv: string[]) {
   proofStage = "environment";
   if ("GITHUB_TOKEN" in process.env || "NODE_PATH" in process.env) {
@@ -373,9 +411,7 @@ async function runProof(argv: string[]) {
       contained(join(bundle, "index.ts"), bundle, "GitHub integration"),
     );
     const clientModule = (await import(clientUrl.href)) as { GitHubClient: GitHubClientLike };
-    const integrationModule = (await import(integrationUrl.href)) as {
-      GitHubIntegration: GitHubIntegrationLike;
-    };
+    const integrationModule = (await import(integrationUrl.href)) as GitHubIntegrationModule;
     proofStage = "conformance";
     const { executedTools, unknownMutationPreserved, mutationRetries } = await runCases(
       sdk,
@@ -390,6 +426,11 @@ async function runProof(argv: string[]) {
       integrationModule.GitHubIntegration,
       fixture.repository,
     );
+    proofStage = "lifecycle";
+    const factoryLifecycleClosed = await factoryClosesOwnedTransport(
+      integrationModule,
+      fixture.repository,
+    );
     proofStage = "assertions";
     if (
       executedTools.size !== EXPECTED_TOOLS.size ||
@@ -397,6 +438,7 @@ async function runProof(argv: string[]) {
       !unknownMutationPreserved ||
       mutationRetries !== 0 ||
       !approvalFirst ||
+      !factoryLifecycleClosed ||
       networkAttempts !== 0
     ) {
       throw new Error("installed GitHub proof assertions failed");

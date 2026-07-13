@@ -367,6 +367,10 @@ describe("npm contract artifact", () => {
       'fields.get("text") !== EXPECTED_MOCK_REPLY',
       "coldResult.text !== warmResult.text",
       "coldResult.finalSequence !== warmResult.finalSequence",
+      "const githubRequester = integrations.createGitHubRequester();",
+      "const gmailRequester = integrations.createGmailRequester();",
+      "githubRequester.close();",
+      "gmailRequester.close();",
     ]) {
       expect(source).toContain(required);
     }
@@ -400,6 +404,10 @@ describe("npm contract artifact", () => {
       "sourceRuntimeDetected: false",
       'const sdk = await import("@kaji/sdk");',
       'Reflect.set(Socket.prototype, "connect"',
+      "factoryClosesOwnedTransport",
+      "createGithubIntegration",
+      "factoryLifecycleClosed",
+      'error.name === "IntegrationPolicyError"',
     ]) {
       expect(runner).toContain(required);
     }
