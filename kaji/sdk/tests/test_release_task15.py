@@ -319,11 +319,15 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "offline-gates",
         "performance",
         "tthw-evidence",
-        "keyed-proof",
         "python-compat",
         "node-compat",
     ):
         assert f"needs.{dependency}.result == 'success'" in publish
+    assert (
+        "if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}"
+        in publish
+    )
+    assert "validate_release_evidence.py" in publish
     _assert_external_actions_are_sha_pinned(publish)
 
     attach = _read("kaji/scripts/attach_release_assets.py")
@@ -524,7 +528,11 @@ def test_keyed_proof_secrets_are_step_scoped_and_initial_evidence_precedes_setup
     assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in proof_step
     assert "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}" in proof_step
     assert "uv run --project kaji/sdk --no-sync python" in proof_step
-    assert "sync-args: --frozen --extra openai --extra anthropic" in keyed
+    assert "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6" in keyed
+    assert "uses: ./.github/actions/setup-bun-cache" not in keyed
+    assert "sync-args: --frozen" in keyed
+    assert "--extra openai" not in keyed
+    assert "--extra anthropic" not in keyed
     assert "timeout-minutes: 30" in keyed
     assert "${{ runner.temp }}/provider-evidence.initial.json" in keyed
     assert keyed.index("kaji-provider-evidence-initial") < keyed.index(
@@ -1779,6 +1787,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         "EXPECTED_COMMIT": commit,
         "KAJI_COMPAT_RUNTIME_KIND": runtime_kind,
         "KAJI_COMPAT_RUNTIME_VERSION": runtime_version,
+        "GITHUB_SERVER_URL": "https://github.example",
+        "GITHUB_REPOSITORY": "example/alloy",
+        "GITHUB_RUN_ID": "1234",
+        "GITHUB_RUN_ATTEMPT": "1",
     }
 
     def run_case(
@@ -1928,7 +1940,541 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         outcomes=all_success,
     )
     assert nominal_passed.returncode == 0
-    assert passed_receipt == passed
+    assert passed_receipt == {
+        **passed,
+        "workflowRun": "https://github.example/example/alloy/actions/runs/1234",
+        "workflowRunAttempt": 1,
+    }
     assert (
         tmp_path / "nominal-passed/compatibility-receipt.json"
-    ).read_bytes() == original
+    ).read_bytes() != original
+
+
+def _write_release_evidence_json(path: Path, document: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+
+def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
+    commit = "a" * 40
+    workflow_run = "https://github.com/kaji-dev/alloy/actions/runs/123"
+    workflow_run_attempt = 1
+    release_artifact_id = "456"
+    release_artifact_digest = "b" * 64
+    artifacts_dir = tmp_path / "release"
+    artifacts_dir.mkdir()
+    payloads = {
+        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji-0.2.0b1.tar.gz": b"sdist",
+        "kaji-sdk-0.2.0-beta.1.tgz": b"npm",
+    }
+    entries: list[dict[str, object]] = []
+    for name, payload in payloads.items():
+        (artifacts_dir / name).write_bytes(payload)
+        package = "typescript" if name.endswith(".tgz") else "python"
+        entries.append(
+            {
+                "commit": commit,
+                "contractVersion": "1.0.0",
+                "file": name,
+                "package": package,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+                "version": ("0.2.0-beta.1" if package == "typescript" else "0.2.0b1"),
+            }
+        )
+    manifest = {
+        "schemaVersion": 1,
+        "commit": commit,
+        "buildTools": {
+            "bun": "1.3.11",
+            "editables": "0.6",
+            "node": "24.4.1",
+            "npm": "11.4.2",
+            "setuptools": "83.0.0",
+            "uv": "0.11.25",
+        },
+        "buildAudit": {
+            "file": "kaji/sdk/build-requirements.txt",
+            "sha256": hashlib.sha256(
+                (REPO_ROOT / "kaji/sdk/build-requirements.txt").read_bytes()
+            ).hexdigest(),
+        },
+        "packages": {
+            "contract": "1.0.0",
+            "python": "0.2.0b1",
+            "typescript": "0.2.0-beta.1",
+        },
+        "artifacts": entries,
+    }
+    _write_release_evidence_json(artifacts_dir / "manifest.json", manifest)
+    (artifacts_dir / "SHA256SUMS").write_text(
+        "".join(f"{entry['sha256']}  {entry['file']}\n" for entry in entries)
+    )
+    manifest_hash = hashlib.sha256(
+        (artifacts_dir / "manifest.json").read_bytes()
+    ).hexdigest()
+    artifact_hashes = {str(entry["file"]): str(entry["sha256"]) for entry in entries}
+    runtime_artifacts = {
+        "python": {
+            "file": "kaji-0.2.0b1-py3-none-any.whl",
+            "sha256": artifact_hashes["kaji-0.2.0b1-py3-none-any.whl"],
+        },
+        "typescript": {
+            "file": "kaji-sdk-0.2.0-beta.1.tgz",
+            "sha256": artifact_hashes["kaji-sdk-0.2.0-beta.1.tgz"],
+        },
+    }
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    benchmark_packages = {
+        "python": "/opt/kaji-installed-release-benchmark/python/lib/python3.11/site-packages/kaji/__init__.py",
+        "typescript": "/opt/kaji-installed-release-benchmark/typescript/node_modules/@kaji/sdk",
+    }
+    soak_packages = {
+        "python": "/opt/kaji-installed-release-soak/python/lib/python3.11/site-packages/kaji/__init__.py",
+        "typescript": "/opt/kaji-installed-release-soak/typescript/node_modules/@kaji/sdk",
+    }
+    run_identity = {
+        "workflowRun": workflow_run,
+        "workflowRunAttempt": workflow_run_attempt,
+    }
+    evidence_dir = tmp_path / "evidence"
+    paths = {
+        "compat-python-3.11": evidence_dir / "compat-python-3.11.json",
+        "compat-python-3.14": evidence_dir / "compat-python-3.14.json",
+        "compat-node-22": evidence_dir / "compat-node-22.json",
+        "compat-node-24": evidence_dir / "compat-node-24.json",
+        "performance-status": evidence_dir / "performance-status.json",
+        "benchmark-results": evidence_dir / "benchmark-results.json",
+        "soak-results": evidence_dir / "soak-results.json",
+        "provider-evidence": evidence_dir / "provider-evidence.json",
+        "tthw-status": evidence_dir / "tthw/status.json",
+        "tthw-evidence": evidence_dir / "tthw/tthw-evidence.json",
+    }
+
+    for version in ("3.11", "3.14"):
+        _write_release_evidence_json(
+            paths[f"compat-python-{version}"],
+            {
+                "schemaVersion": 1,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifactSha256": {
+                    name: artifact_hashes[name]
+                    for name in (
+                        "kaji-0.2.0b1-py3-none-any.whl",
+                        "kaji-0.2.0b1.tar.gz",
+                    )
+                },
+                "runtime": {
+                    "implementation": "CPython",
+                    "version": f"{version}.9",
+                    "executable": f"/opt/python/{version}/bin/python",
+                },
+                "artifacts": {
+                    "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+                    "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
+                },
+                "conclusion": "passed",
+                "failureCode": None,
+                **run_identity,
+            },
+        )
+    for version in ("22", "24"):
+        _write_release_evidence_json(
+            paths[f"compat-node-{version}"],
+            {
+                "schemaVersion": 1,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifactSha256": {
+                    "kaji-sdk-0.2.0-beta.1.tgz": artifact_hashes[
+                        "kaji-sdk-0.2.0-beta.1.tgz"
+                    ]
+                },
+                "runtime": {"version": f"v{version}.14.0"},
+                "artifacts": {
+                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.1.tgz",
+                    "package": f"/opt/kaji-node-{version}/node_modules/@kaji/sdk",
+                },
+                "conclusion": "passed",
+                "failureCode": None,
+                **run_identity,
+            },
+        )
+
+    fingerprint = {
+        "runner": {"imageDigest": "sha256:" + "c" * 64},
+        "dependencyLockHash": "d" * 64,
+        "sourceHash": "e" * 64,
+    }
+    benchmark = {
+        "schemaVersion": 1,
+        "mode": "full",
+        "protected": True,
+        "commit": commit,
+        "fingerprint": fingerprint,
+        "releaseManifestSha256": manifest_hash,
+        "artifacts": runtime_artifacts,
+        "resolvedPackages": benchmark_packages,
+        "results": {
+            runtime: {"echo": {"resolvedPackage": package}}
+            for runtime, package in benchmark_packages.items()
+        },
+        "failures": [],
+        "passed": True,
+    }
+    soak = {
+        "schemaVersion": 1,
+        "protected": True,
+        "commit": commit,
+        "fingerprint": fingerprint,
+        "releaseManifestSha256": manifest_hash,
+        "artifacts": runtime_artifacts,
+        "resolvedPackages": soak_packages,
+        "requestedMinutes": 30,
+        "results": {
+            runtime: {"resolvedPackage": package}
+            for runtime, package in soak_packages.items()
+        },
+        "failures": [],
+        "passed": True,
+    }
+    _write_release_evidence_json(paths["benchmark-results"], benchmark)
+    _write_release_evidence_json(paths["soak-results"], soak)
+    _write_release_evidence_json(
+        paths["performance-status"],
+        {
+            "schemaVersion": 1,
+            "commit": commit,
+            "conclusion": "passed",
+            "failureCode": None,
+            "benchmarkOutcome": "success",
+            "soakOutcome": "success",
+            "validationOutcome": "success",
+            "fingerprint": fingerprint,
+            "releaseManifestSha256": manifest_hash,
+            "artifacts": runtime_artifacts,
+            "resolvedPackages": {
+                "benchmark": benchmark_packages,
+                "soak": soak_packages,
+            },
+            **run_identity,
+        },
+    )
+
+    proof_rows = []
+    for sdk, provider in (
+        ("python", "openai"),
+        ("typescript", "openai"),
+        ("python", "anthropic"),
+        ("typescript", "anthropic"),
+    ):
+        artifact = runtime_artifacts[sdk]
+        call_id = f"{sdk}-{provider}-call"
+        proof_rows.append(
+            {
+                "sdk": sdk,
+                "provider": provider,
+                "proof": "real_normalized_tool_loop",
+                "status": "passed",
+                "model": f"{provider}-test-model",
+                "artifactFile": artifact["file"],
+                "artifactSha256": artifact["sha256"],
+                "releaseManifestSha256": manifest_hash,
+                "resolvedPackage": benchmark_packages[sdk],
+                "requestedToolCalls": 1,
+                "completedToolCalls": 1,
+                "requestedToolCallIds": [call_id],
+                "completedToolCallIds": [call_id],
+                "echoResultMatched": True,
+                "finalTextPresent": True,
+                "forbiddenTerminalEvents": [],
+            }
+        )
+    _write_release_evidence_json(
+        paths["provider-evidence"],
+        {
+            "schemaVersion": 1,
+            "commit": commit,
+            "releaseManifestSha256": manifest_hash,
+            "artifacts": runtime_artifacts,
+            "conclusion": "passed",
+            "failureCode": None,
+            "proofs": proof_rows,
+            "releaseArtifactId": release_artifact_id,
+            "releaseArtifactDigest": release_artifact_digest,
+            **run_identity,
+        },
+    )
+
+    toolchain = {
+        "python": "3.14.6",
+        "uv": "0.11.25",
+        "node": "24.4.1",
+        "npm": "11.4.2",
+        "bun": "1.3.11",
+        "typescript": "5.7.3",
+    }
+    tthw_runs = []
+    for index, (path_name, system) in enumerate(
+        zip(
+            ("python", "npm", "bun", "python", "npm"),
+            ("macos", "linux", "macos", "linux", "macos"),
+            strict=True,
+        ),
+        1,
+    ):
+        tthw_runs.append(
+            {
+                "participantId": f"user-{index:03d}",
+                "os": system,
+                "path": path_name,
+                "cleanEnvironment": True,
+                "noSourceCheckout": True,
+                "toolchain": toolchain,
+                "steps": [
+                    {"name": name, "durationMs": 10_000}
+                    for name in (
+                        "artifact-install",
+                        "scaffold-init",
+                        "no-key-run",
+                        "echo-setup",
+                        "echo-run",
+                    )
+                ],
+                "noKeyTotalMs": 30_000,
+                "echoTotalMs": 50_000,
+                "assertions": {
+                    "deterministicText": True,
+                    "nonEmptyTurnId": True,
+                    "positiveSequence": True,
+                    "echoToolRequested": True,
+                    "echoToolStarted": True,
+                    "echoToolCompleted": True,
+                    "echoResultObserved": True,
+                },
+                "confusion": [],
+                "redacted": True,
+                "owner": "kaji-maintainer",
+                "reviewDate": "2026-07-13",
+                "followUpDate": "2026-08-13",
+            }
+        )
+    tthw = {
+        "schemaVersion": "1.0.0",
+        "commit": commit,
+        "releaseManifestSha256": manifest_hash,
+        "artifacts": [
+            {
+                "name": entry["file"],
+                "package": entry["package"],
+                "version": entry["version"],
+                "size": entry["size"],
+                "sha256": entry["sha256"],
+            }
+            for entry in entries
+        ],
+        "automatedTimings": {
+            name: {
+                "coldSetupToOutputMs": 10_000,
+                "warmRunMs": 500,
+                "toolchain": toolchain,
+            }
+            for name in ("python", "npm", "bun")
+        },
+        "humanRuns": tthw_runs,
+        "summary": {
+            "noKeyMedianMs": 30_000,
+            "noKeyMaxMs": 30_000,
+            "echoMedianMs": 50_000,
+            "echoMaxMs": 50_000,
+        },
+    }
+    _write_release_evidence_json(paths["tthw-evidence"], tthw)
+    _write_release_evidence_json(
+        paths["tthw-status"],
+        {
+            "schemaVersion": 1,
+            "commit": commit,
+            "conclusion": "passed",
+            "failureCode": None,
+            "exitCode": 0,
+            "releaseManifestSha256": manifest_hash,
+            "artifactSha256": artifact_hashes,
+            **run_identity,
+        },
+    )
+
+    output = evidence_dir / "release-evidence-validation.json"
+    command = [
+        sys.executable,
+        str(REPO_ROOT / "kaji/scripts/validate_release_evidence.py"),
+        "--artifacts-dir",
+        str(artifacts_dir),
+        "--expected-commit",
+        commit,
+        "--workflow-run",
+        workflow_run,
+        "--workflow-run-attempt",
+        str(workflow_run_attempt),
+        "--release-artifact-id",
+        release_artifact_id,
+        "--release-artifact-digest",
+        release_artifact_digest,
+        "--python-compat-311",
+        str(paths["compat-python-3.11"]),
+        "--python-compat-314",
+        str(paths["compat-python-3.14"]),
+        "--node-compat-22",
+        str(paths["compat-node-22"]),
+        "--node-compat-24",
+        str(paths["compat-node-24"]),
+        "--performance-status",
+        str(paths["performance-status"]),
+        "--benchmark-results",
+        str(paths["benchmark-results"]),
+        "--soak-results",
+        str(paths["soak-results"]),
+        "--provider-evidence",
+        str(paths["provider-evidence"]),
+        "--tthw-status",
+        str(paths["tthw-status"]),
+        "--tthw-evidence",
+        str(paths["tthw-evidence"]),
+        "--workspace",
+        str(workspace),
+        "--output",
+        str(output),
+    ]
+    return SimpleNamespace(
+        command=command,
+        output=output,
+        paths=paths,
+        workspace=workspace,
+        artifact_hashes=artifact_hashes,
+        manifest_hash=manifest_hash,
+    )
+
+
+def test_release_evidence_validator_accepts_one_canonical_current_run(
+    tmp_path: Path,
+) -> None:
+    fixture = _release_evidence_fixture(tmp_path)
+
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    summary = json.loads(fixture.output.read_text())
+    assert summary["conclusion"] == "passed"
+    assert summary["failureCode"] is None
+    assert summary["failures"] == []
+    assert summary["releaseManifestSha256"] == fixture.manifest_hash
+    assert summary["artifactSha256"] == fixture.artifact_hashes
+    assert summary["validatedEvidence"] == sorted(fixture.paths)
+    first = fixture.output.read_bytes()
+    repeated = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert repeated.returncode == 0
+    assert fixture.output.read_bytes() == first
+    assert repeated.stdout == completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("hostile_case", "expected_code"),
+    (
+        ("missing_receipt", "evidence_missing"),
+        ("not_run_receipt", "receipt_not_passed"),
+        ("failed_receipt", "receipt_not_passed"),
+        ("mixed_manifest", "manifest_hash_mismatch"),
+        ("stale_workflow_run", "workflow_run_mismatch"),
+        ("prior_artifact_id", "release_artifact_id_mismatch"),
+        ("source_path", "source_path_detected"),
+        ("missing_provider_cell", "provider_cells_mismatch"),
+        ("mixed_tthw_status", "artifact_hash_mismatch"),
+        ("invalid_tthw_raw", "tthw_evidence_invalid"),
+    ),
+)
+def test_release_evidence_validator_rejects_hostile_retained_receipts(
+    tmp_path: Path,
+    hostile_case: str,
+    expected_code: str,
+) -> None:
+    fixture = _release_evidence_fixture(tmp_path)
+    if hostile_case == "missing_receipt":
+        fixture.paths["compat-python-3.11"].unlink()
+    else:
+        target = {
+            "not_run_receipt": "compat-python-3.11",
+            "failed_receipt": "compat-node-22",
+            "mixed_manifest": "soak-results",
+            "stale_workflow_run": "performance-status",
+            "prior_artifact_id": "provider-evidence",
+            "source_path": "benchmark-results",
+            "missing_provider_cell": "provider-evidence",
+            "mixed_tthw_status": "tthw-status",
+            "invalid_tthw_raw": "tthw-evidence",
+        }[hostile_case]
+        path = fixture.paths[target]
+        document = json.loads(path.read_text())
+        if hostile_case == "not_run_receipt":
+            document["conclusion"] = "not_run"
+            document["failureCode"] = "compatibility_not_completed"
+        elif hostile_case == "failed_receipt":
+            document["conclusion"] = "failed"
+            document["failureCode"] = "compatibility_smoke_not_completed"
+        elif hostile_case == "mixed_manifest":
+            document["releaseManifestSha256"] = "0" * 64
+        elif hostile_case == "stale_workflow_run":
+            document["workflowRun"] = (
+                "https://github.com/kaji-dev/alloy/actions/runs/122"
+            )
+        elif hostile_case == "prior_artifact_id":
+            document["releaseArtifactId"] = "455"
+        elif hostile_case == "source_path":
+            document["resolvedPackages"]["typescript"] = str(
+                fixture.workspace / "kaji/ts/dist/node_modules/@kaji/sdk"
+            )
+        elif hostile_case == "missing_provider_cell":
+            document["proofs"].pop()
+        elif hostile_case == "mixed_tthw_status":
+            document["artifactSha256"]["kaji-sdk-0.2.0-beta.1.tgz"] = "0" * 64
+        else:
+            document["artifacts"][0]["sha256"] = "0" * 64
+        _write_release_evidence_json(path, document)
+
+    first = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert first.returncode != 0
+    summary = json.loads(fixture.output.read_text())
+    assert summary["conclusion"] == "failed"
+    assert summary["failureCode"] == "release_evidence_validation_failed"
+    assert expected_code in {failure["code"] for failure in summary["failures"]}
+    first_output = fixture.output.read_bytes()
+    repeated = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert repeated.returncode != 0
+    assert fixture.output.read_bytes() == first_output
+    assert repeated.stdout == first.stdout

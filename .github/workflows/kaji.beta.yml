@@ -14,6 +14,9 @@ jobs:
   offline-release:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      artifact-id: ${{ steps.release-artifacts.outputs.artifact-id }}
+      artifact-digest: ${{ steps.release-artifacts.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -63,6 +66,7 @@ jobs:
           if-no-files-found: error
       - name: Upload exact release artifacts
         if: ${{ steps.offline.outcome == 'success' }}
+        id: release-artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-beta-artifacts
@@ -237,6 +241,12 @@ jobs:
             fi
             mv "$temporary" "$receipt"
           fi
+          jq \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '. + {workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            "$receipt" >"$temporary"
+          mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
             echo "compatibility steps succeeded without a passed terminal receipt" >&2
             exit 1
@@ -423,6 +433,12 @@ jobs:
             fi
             mv "$temporary" "$receipt"
           fi
+          jq \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '. + {workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            "$receipt" >"$temporary"
+          mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
             echo "compatibility steps succeeded without a passed terminal receipt" >&2
             exit 1
@@ -454,8 +470,11 @@ jobs:
           jq --null-input \
             --arg commit "$KAJI_RELEASE_COMMIT" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
             '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
-              exitCode: null, releaseManifestSha256: null, workflowRun: $workflowRun}' \
+              failureCode: "tthw_not_completed", exitCode: null,
+              releaseManifestSha256: null, artifactSha256: {}, workflowRun: $workflowRun,
+              workflowRunAttempt: $workflowRunAttempt}' \
             >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
       - name: Retain initial not-run TTHW status before setup
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -463,22 +482,28 @@ jobs:
           name: kaji-tthw-evidence-initial
           path: ${{ runner.temp }}/kaji-tthw-evidence
           if-no-files-found: error
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: ./.github/actions/setup-python-uv
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
           python-version: "3.14"
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
       - name: Revalidate exact current-run artifacts before TTHW validation
+        id: verify
         env:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: >-
           python3 kaji/scripts/verify_release_artifacts.py
           --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$EXPECTED_COMMIT"
       - name: Validate protected exact-commit five-user TTHW evidence
+        id: tthw
         shell: bash
         env:
           KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
@@ -496,20 +521,85 @@ jobs:
           status=$?
           set -e
           manifest_sha="$(sha256sum .artifacts/kaji-release/manifest.json | cut -d ' ' -f 1)"
+          artifact_hashes='{}'
           if [ "$status" -eq 0 ]; then
             cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"
+            artifact_hashes="$(jq -c '.artifacts | map({key: .name, value: .sha256}) | from_entries' "$raw_evidence")"
           fi
           jq --null-input \
             --arg commit "$KAJI_RELEASE_COMMIT" \
             --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
             --argjson exitCode "$status" \
             --arg releaseManifestSha256 "$manifest_sha" \
+            --argjson artifactSha256 "$artifact_hashes" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
             '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              failureCode: (if $exitCode == 0 then null else "tthw_validation_failed" end),
               exitCode: $exitCode, releaseManifestSha256: $releaseManifestSha256,
-              workflowRun: $workflowRun}' \
+              artifactSha256: $artifactSha256, workflowRun: $workflowRun,
+              workflowRunAttempt: $workflowRunAttempt}' \
             >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
           exit "$status"
+      - name: Normalize terminal TTHW status
+        if: ${{ always() }}
+        shell: bash
+        env:
+          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          RUNTIME_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+          TTHW_OUTCOME: ${{ steps.tthw.outcome }}
+        run: |
+          set -euo pipefail
+          receipt="$KAJI_TTHW_EVIDENCE_DIR/status.json"
+          temporary="$KAJI_TTHW_EVIDENCE_DIR/status.tmp"
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=artifact_download_not_completed
+          elif [ "$VERIFICATION_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$TTHW_OUTCOME" != success ]; then
+            failure_code=tthw_validation_not_completed
+          else
+            failure_code=tthw_receipt_not_terminal
+          fi
+          if [ "$CHECKOUT_OUTCOME" = success ] && [ "$RUNTIME_SETUP_OUTCOME" = success ] && \
+            [ "$DOWNLOAD_OUTCOME" = success ] && [ "$VERIFICATION_OUTCOME" = success ] && \
+            [ "$TTHW_OUTCOME" = success ] && jq -e \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              '.schemaVersion == 1 and .commit == $commit and .conclusion == "passed" and
+               .failureCode == null and .exitCode == 0' "$receipt" >/dev/null; then
+            exit 0
+          fi
+          if [ -f "$receipt" ] && jq -e --arg commit "$KAJI_RELEASE_COMMIT" \
+            'type == "object" and .schemaVersion == 1 and .commit == $commit' \
+            "$receipt" >/dev/null; then
+            jq --arg failureCode "$failure_code" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+              '. + {conclusion: "failed", failureCode: $failureCode,
+                    workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+              "$receipt" >"$temporary"
+          else
+            jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg failureCode "$failure_code" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                failureCode: $failureCode, exitCode: null, releaseManifestSha256: null,
+                artifactSha256: {}, workflowRun: $workflowRun,
+                workflowRunAttempt: $workflowRunAttempt}' >"$temporary"
+          fi
+          mv "$temporary" "$receipt"
+          if [ "$TTHW_OUTCOME" = success ]; then
+            echo "TTHW validation succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
       - name: Retain exact-commit TTHW evidence and status
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -528,6 +618,8 @@ jobs:
     environment: kaji-beta
     env:
       KAJI_RELEASE_COMMIT: ${{ github.sha }}
+      KAJI_RELEASE_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
+      KAJI_RELEASE_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
       KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-evidence.json
     steps:
       - name: Initialize exact-commit provider evidence before setup
@@ -536,7 +628,14 @@ jobs:
           KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
         run: |
           jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg releaseArtifactId "$KAJI_RELEASE_ARTIFACT_ID" \
+            --arg releaseArtifactDigest "$KAJI_RELEASE_ARTIFACT_DIGEST" \
             '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "provider_proof_not_completed", workflowRun: $workflowRun,
+              workflowRunAttempt: $workflowRunAttempt, releaseArtifactId: $releaseArtifactId,
+              releaseArtifactDigest: $releaseArtifactDigest,
               proofs: [
                 {sdk: "python", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
                 {sdk: "typescript", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
@@ -549,30 +648,112 @@ jobs:
           name: kaji-provider-evidence-initial
           path: ${{ runner.temp }}/provider-evidence.initial.json
           if-no-files-found: error
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Restore not-run provider evidence after checkout
         if: ${{ always() }}
         env:
           KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
         run: cp "$KAJI_INITIAL_PROVIDER_STATUS_FILE" "$KAJI_PROVIDER_STATUS_FILE"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
-      - uses: ./.github/actions/setup-bun-cache
+      - id: setup_bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          working-directory: kaji/ts
           bun-version: "1.3.11"
-          install-args: --frozen-lockfile
-      - uses: ./.github/actions/setup-python-uv
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
           python-version: "3.14"
-          sync-args: --frozen --extra openai --extra anthropic
+          sync-args: --frozen
+      - id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+      - name: Verify exact candidate artifacts before provider proof
+        id: verify
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Run protected provider proof
+        id: provider
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/live_provider_proof.py
+        run: >-
+          uv run --project kaji/sdk --no-sync python kaji/scripts/live_provider_proof.py
+          --protected --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$KAJI_RELEASE_COMMIT"
+      - name: Normalize terminal provider evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          NODE_SETUP_OUTCOME: ${{ steps.setup_node.outcome }}
+          BUN_SETUP_OUTCOME: ${{ steps.setup_bun.outcome }}
+          PYTHON_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+          PROVIDER_OUTCOME: ${{ steps.provider.outcome }}
+        run: |
+          set -euo pipefail
+          temporary="$RUNNER_TEMP/provider-evidence.tmp.json"
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$NODE_SETUP_OUTCOME" != success ] || [ "$BUN_SETUP_OUTCOME" != success ] || \
+            [ "$PYTHON_SETUP_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=artifact_download_not_completed
+          elif [ "$VERIFICATION_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$PROVIDER_OUTCOME" != success ]; then
+            failure_code=provider_proof_not_completed
+          else
+            failure_code=provider_receipt_not_terminal
+          fi
+          if [ "$CHECKOUT_OUTCOME" = success ] && [ "$NODE_SETUP_OUTCOME" = success ] && \
+            [ "$BUN_SETUP_OUTCOME" = success ] && [ "$PYTHON_SETUP_OUTCOME" = success ] && \
+            [ "$DOWNLOAD_OUTCOME" = success ] && [ "$VERIFICATION_OUTCOME" = success ] && \
+            [ "$PROVIDER_OUTCOME" = success ] && jq -e --arg commit "$KAJI_RELEASE_COMMIT" \
+              '.schemaVersion == 1 and .commit == $commit and .conclusion == "passed" and
+               .failureCode == null and (.proofs | length == 4 and all(.[]; .status == "passed"))' \
+              "$KAJI_PROVIDER_STATUS_FILE" >/dev/null; then
+            jq --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+              --arg releaseArtifactId "$KAJI_RELEASE_ARTIFACT_ID" \
+              --arg releaseArtifactDigest "$KAJI_RELEASE_ARTIFACT_DIGEST" \
+              '. + {workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt,
+                    releaseArtifactId: $releaseArtifactId,
+                    releaseArtifactDigest: $releaseArtifactDigest}' \
+              "$KAJI_PROVIDER_STATUS_FILE" >"$temporary"
+            mv "$temporary" "$KAJI_PROVIDER_STATUS_FILE"
+            exit 0
+          fi
+          if [ ! -f "$KAJI_PROVIDER_STATUS_FILE" ]; then
+            cp "$KAJI_INITIAL_PROVIDER_STATUS_FILE" "$KAJI_PROVIDER_STATUS_FILE"
+          fi
+          jq --arg failureCode "$failure_code" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg releaseArtifactId "$KAJI_RELEASE_ARTIFACT_ID" \
+            --arg releaseArtifactDigest "$KAJI_RELEASE_ARTIFACT_DIGEST" \
+            '. + {conclusion: "failed", failureCode: $failureCode,
+                  workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt,
+                  releaseArtifactId: $releaseArtifactId,
+                  releaseArtifactDigest: $releaseArtifactDigest}' \
+            "$KAJI_PROVIDER_STATUS_FILE" >"$temporary"
+          mv "$temporary" "$KAJI_PROVIDER_STATUS_FILE"
+          if [ "$PROVIDER_OUTCOME" = success ]; then
+            echo "provider proof succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
       - name: Retain exact-commit provider evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

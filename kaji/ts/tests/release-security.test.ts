@@ -807,6 +807,10 @@ describe("Kaji workflow contracts", () => {
       DOWNLOAD_OUTCOME: "success",
       VERIFICATION_OUTCOME: "success",
       SMOKE_OUTCOME: "cancelled",
+      GITHUB_SERVER_URL: "https://github.example",
+      GITHUB_REPOSITORY: "example/alloy",
+      GITHUB_RUN_ID: "1234",
+      GITHUB_RUN_ATTEMPT: "1",
     };
     try {
       writeFileSync(
@@ -874,7 +878,11 @@ describe("Kaji workflow contracts", () => {
         env: environment,
       });
       expect(preserved.status, preserved.stderr).toBe(0);
-      expect(readFileSync(receipt, "utf8")).toBe(terminal);
+      expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
+        ...JSON.parse(terminal),
+        workflowRun: "https://github.example/example/alloy/actions/runs/1234",
+        workflowRunAttempt: 1,
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -971,10 +979,239 @@ describe("Kaji workflow contracts", () => {
     },
   );
 
+  it("fans every release-byte consumer out from one same-run artifact producer", () => {
+    const cases = [
+      {
+        name: "kaji.beta.yml" as const,
+        producer: "offline-release",
+        consumers: ["python-compat", "node-compat", "tthw-evidence", "keyed-proof"],
+      },
+      {
+        name: "kaji.beta-publish.yml" as const,
+        producer: "offline-gates",
+        consumers: [
+          "performance",
+          "python-compat",
+          "node-compat",
+          "tthw-evidence",
+          "keyed-proof",
+          "supply-chain",
+          "publish-python",
+          "publish-npm",
+          "publication-status",
+          "release-evidence",
+        ],
+      },
+      {
+        name: "kaji.benchmark.yml" as const,
+        producer: "release-artifacts",
+        consumers: ["benchmark", "soak", "calibrate"],
+      },
+    ];
+
+    for (const { name, producer, consumers } of cases) {
+      const { workflow } = readWorkflow(name);
+      const jobs = workflow.jobs ?? {};
+      const producerJob = jobs[producer];
+      expect(producerJob, `${name}:${producer}`).toBeDefined();
+      const candidateUploads = Object.values(jobs)
+        .flatMap((job) => job.steps ?? [])
+        .filter(
+          (step) =>
+            step.uses?.startsWith("actions/upload-artifact@") &&
+            step.with?.name === "kaji-beta-artifacts",
+        );
+      expect(candidateUploads, `${name}: one candidate producer`).toHaveLength(1);
+      expect(candidateUploads[0]?.with).toMatchObject({
+        name: "kaji-beta-artifacts",
+        path: ".artifacts/kaji-release",
+        "if-no-files-found": "error",
+      });
+
+      for (const jobId of consumers) {
+        const job = jobs[jobId];
+        expect(job, `${name}:${jobId}`).toBeDefined();
+        expect(dependencyClosure(workflow, jobId), `${name}:${jobId}`).toContain(producer);
+        const steps = job?.steps ?? [];
+        const downloads = steps.filter(
+          (step) =>
+            step.uses?.startsWith("actions/download-artifact@") &&
+            step.with?.name === "kaji-beta-artifacts",
+        );
+        expect(downloads, `${name}:${jobId}: exact candidate download`).toHaveLength(1);
+        expect(downloads[0]?.with).toEqual({
+          name: "kaji-beta-artifacts",
+          path: ".artifacts/kaji-release",
+        });
+        const downloadIndex = steps.indexOf(downloads[0]!);
+        const verifyIndex = steps.findIndex((step) =>
+          step.run?.includes("kaji/scripts/verify_release_artifacts.py"),
+        );
+        expect(verifyIndex, `${name}:${jobId}: verifier`).toBeGreaterThan(downloadIndex);
+        expect(steps[verifyIndex]?.run, `${name}:${jobId}: expected commit`).toContain(
+          "--expected-commit",
+        );
+      }
+    }
+  });
+
+  it("runs protected benchmark and provider consumers only from installed candidate bytes", () => {
+    const benchmark = readWorkflow("kaji.benchmark.yml").workflow;
+    for (const [jobId, fragment] of [
+      ["benchmark", "run_beta_benchmarks.py --full"],
+      ["soak", "run_beta_soak.py --minutes 30"],
+      ["calibrate", "run_beta_benchmarks.py --calibrate"],
+    ] as const) {
+      const command = benchmark.jobs?.[jobId]?.steps?.find((step) =>
+        step.run?.includes(fragment),
+      )?.run;
+      expect(command, jobId).toContain("--protected");
+      expect(command, jobId).toContain("--artifacts-dir .artifacts/kaji-release");
+    }
+
+    for (const workflowName of ["kaji.beta.yml", "kaji.beta-publish.yml"] as const) {
+      const provider = readWorkflow(workflowName).workflow.jobs?.["keyed-proof"];
+      const command = provider?.steps?.find((step) =>
+        step.run?.includes("live_provider_proof.py"),
+      )?.run;
+      expect(command, workflowName).toContain("--protected");
+      expect(command, workflowName).toContain("--artifacts-dir .artifacts/kaji-release");
+      expect(command, workflowName).toContain("--expected-commit");
+    }
+  });
+
+  it("terminal-normalizes protected TTHW and provider receipts after every failure boundary", () => {
+    for (const workflowName of ["kaji.beta.yml", "kaji.beta-publish.yml"] as const) {
+      const workflow = readWorkflow(workflowName).workflow;
+      for (const [jobId, normalizerName, uploadName] of [
+        ["tthw-evidence", "Normalize terminal TTHW status", "kaji-tthw-evidence"],
+        ["keyed-proof", "Normalize terminal provider evidence", "kaji-provider-evidence"],
+      ] as const) {
+        const steps = workflow.jobs?.[jobId]?.steps ?? [];
+        const normalizer = steps.find((step) => step.name === normalizerName);
+        const finalUpload = steps.findIndex(
+          (step) =>
+            step.uses?.startsWith("actions/upload-artifact@") && step.with?.name === uploadName,
+        );
+        expect(normalizer, `${workflowName}:${jobId}`).toBeDefined();
+        expect(normalizer?.if).toBe("${{ always() }}");
+        expect(normalizer?.run).toContain('conclusion: "failed"');
+        expect(normalizer?.run).toContain("workflowRunAttempt");
+        expect(
+          steps.indexOf(normalizer!),
+          `${workflowName}:${jobId}: normalization order`,
+        ).toBeLessThan(finalUpload);
+        expect(steps[finalUpload]?.if).toBe("${{ always() }}");
+      }
+    }
+  });
+
+  it("centrally validates and attests every current-run publish receipt", () => {
+    const { workflow } = readWorkflow("kaji.beta-publish.yml");
+    const supplyChain = workflow.jobs?.["supply-chain"];
+    expect(supplyChain?.if).toBe(
+      "${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}",
+    );
+    const steps = supplyChain?.steps ?? [];
+    const compatibilityDownloads = steps.filter((step) =>
+      String(step.with?.name ?? "").match(/^kaji-(python|node)-compat-(3\.11|3\.14|22|24)$/),
+    );
+    expect(compatibilityDownloads.map((step) => step.with?.name)).toEqual([
+      "kaji-python-compat-3.11",
+      "kaji-python-compat-3.14",
+      "kaji-node-compat-22",
+      "kaji-node-compat-24",
+    ]);
+    const rename = steps.find((step) => step.name === "Uniquely name final compatibility receipts");
+    expect(rename?.run).toContain("compat-python-3.11.json");
+    expect(rename?.run).toContain("compat-python-3.14.json");
+    expect(rename?.run).toContain("compat-node-22.json");
+    expect(rename?.run).toContain("compat-node-24.json");
+
+    const validateIndex = steps.findIndex((step) =>
+      step.run?.includes("kaji/scripts/validate_release_evidence.py"),
+    );
+    const attestIndex = steps.findIndex((step) =>
+      step.uses?.startsWith("actions/attest-build-provenance@"),
+    );
+    expect(validateIndex).toBeGreaterThan(0);
+    expect(attestIndex).toBeGreaterThan(validateIndex);
+    const validation = steps[validateIndex]?.run ?? "";
+    for (const flag of [
+      "--release-artifact-id",
+      "--release-artifact-digest",
+      "--workflow-run",
+      "--workflow-run-attempt",
+      "--python-compat-311",
+      "--python-compat-314",
+      "--node-compat-22",
+      "--node-compat-24",
+      "--performance-status",
+      "--benchmark-results",
+      "--soak-results",
+      "--provider-evidence",
+      "--tthw-status",
+      "--tthw-evidence",
+      "--workspace",
+      "--output",
+    ]) {
+      expect(validation).toContain(flag);
+    }
+    const subjectPaths = String(steps[attestIndex]?.with?.["subject-path"] ?? "");
+    for (const filename of [
+      "compat-python-3.11.json",
+      "compat-python-3.14.json",
+      "compat-node-22.json",
+      "compat-node-24.json",
+      "release-evidence-validation.json",
+    ]) {
+      expect(subjectPaths).toContain(filename);
+    }
+
+    const releaseEvidence = workflow.jobs?.["release-evidence"]?.steps ?? [];
+    const attach = releaseEvidence.find((step) =>
+      step.run?.includes("kaji/scripts/attach_release_assets.py"),
+    );
+    for (const filename of [
+      "compat-python-3.11.json",
+      "compat-python-3.14.json",
+      "compat-node-22.json",
+      "compat-node-24.json",
+      "release-evidence-validation.json",
+    ]) {
+      expect(attach?.run).toContain(filename);
+    }
+  });
+
+  it("sets up frozen Python dependencies before central evidence validation", () => {
+    const { source, workflow } = readWorkflow("kaji.beta-publish.yml");
+    const steps = workflow.jobs?.["supply-chain"]?.steps ?? [];
+    const setupIndex = steps.findIndex((step) => step.uses === "./.github/actions/setup-python-uv");
+    const validationSteps = steps.filter((step) =>
+      step.run?.includes("kaji/scripts/validate_release_evidence.py"),
+    );
+    const validateIndex = steps.indexOf(validationSteps[0]!);
+
+    expect(setupIndex).toBeGreaterThan(0);
+    expect(steps[setupIndex]?.with).toMatchObject({
+      "working-directory": "kaji/sdk",
+      "python-version": "3.14",
+      "sync-args": "--frozen",
+    });
+    expect(validationSteps).toHaveLength(1);
+    expect(setupIndex).toBeLessThan(validateIndex);
+    expect(validationSteps[0]?.run).toContain(
+      "uv run --project kaji/sdk --no-sync python kaji/scripts/validate_release_evidence.py",
+    );
+    expect(source).not.toMatch(/^\s+python(?:3)?\s+kaji\/scripts\/validate_release_evidence\.py/m);
+  });
+
   it("keeps calibration on the protected pinned runner", () => {
     const { workflow } = readWorkflow("kaji.benchmark.yml");
     const jobs = workflow.jobs ?? {};
-    for (const [jobId, job] of Object.entries(jobs)) {
+    expect(jobs["release-artifacts"]?.["runs-on"]).toBe("ubuntu-latest");
+    for (const jobId of ["benchmark", "soak", "calibrate"] as const) {
+      const job = jobs[jobId]!;
       expect(job["runs-on"], jobId).toEqual(["self-hosted", "linux", "x64", "kaji-benchmark"]);
       const environment = effectiveEnvironment(workflow, job);
       expect(environment.KAJI_BENCHMARK_PINNED_RUNNER, jobId).toBe("1");
@@ -996,7 +1233,7 @@ describe("Kaji workflow contracts", () => {
     for (const guard of [
       'os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1"',
       'os.environ.get("KAJI_BENCHMARK_PINNED_RUNNER") != "1"',
-      'current["runner"]["imageDigest"] == "local-unpinned"',
+      'current.get("runner", {}).get("imageDigest") == "local-unpinned"',
     ]) {
       expect(runtimeGuard).toContain(guard);
     }
