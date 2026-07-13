@@ -1501,6 +1501,122 @@ def test_benchmark_child_must_report_matching_installed_package(
         module._run_case("python", "replay10k", 1, 1, installed)
 
 
+def _complete_soak_receipt(
+    *,
+    prior_rss_mib: float = 100.0,
+    late_rss_mib: float = 100.0,
+) -> dict[str, Any]:
+    samples = [
+        {
+            "minute": float(minute),
+            "heapMiB": 100.0,
+            "heapUsedMiB": 100.0,
+            "rssMiB": prior_rss_mib if minute <= 25 else late_rss_mib,
+        }
+        for minute in range(21, 31)
+    ]
+    rss_growth_mib = late_rss_mib - prior_rss_mib
+    rss_growth_percent = rss_growth_mib / prior_rss_mib * 100
+    return {
+        "requestedMinutes": 30.0,
+        "elapsedSeconds": 1_800.0,
+        "attemptedTurns": 10_000,
+        "lateWindowHeapGrowthPercent": 0.0,
+        "lateWindowRssGrowthPercent": rss_growth_percent,
+        "lateWindowRssGrowthMiB": rss_growth_mib,
+        "memorySamples": samples,
+        "internal": {
+            "coordinatorEntries": 0,
+            "coordinatorWaiters": 0,
+            "stuckToolCalls": 0,
+            "maxSubscriberQueueDepth": 1_024,
+            "subscriberOverflows": 1,
+            "projectionCacheSize": 0,
+            "projectionCacheLimit": 1,
+            "ledgerSize": 0,
+            "ledgerLimit": 10_000,
+            "ledgerPeakSize": 0,
+            "ledgerCounts": {"running": 0},
+            "maxContextMessages": 1,
+            "maxContextCharacters": 100,
+        },
+        "provider": {
+            "approvalBridgeRequests": 1,
+            "maxMessages": 1,
+            "maxCharacters": 100,
+        },
+        "passed": True,
+    }
+
+
+@pytest.mark.parametrize("runtime", ["python", "typescript"])
+def test_soak_gate_accepts_trustworthy_memory_windows(runtime: str) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+
+    assert module._failures(_complete_soak_receipt(), runtime, 30.0) == []
+
+
+def test_soak_gate_rejects_late_window_rss_leak() -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt(prior_rss_mib=10.0, late_rss_mib=1_000.0)
+
+    failures = module._failures(receipt, "typescript", 30.0)
+
+    assert any("RSS growth" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("case", ["sparse", "duplicate", "nonfinite"])
+def test_soak_gate_rejects_untrustworthy_memory_windows(case: str) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt()
+    samples = receipt["memorySamples"]
+    assert isinstance(samples, list)
+    if case == "sparse":
+        samples.pop(3)
+    elif case == "duplicate":
+        samples.append(dict(samples[0]))
+    else:
+        samples[0]["rssMiB"] = float("inf")
+
+    failures = module._failures(receipt, "typescript", 30.0)
+
+    assert any("memory samples" in failure for failure in failures)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("lateWindowHeapGrowthPercent", 1.0),
+        ("lateWindowRssGrowthPercent", 1.0),
+        ("lateWindowRssGrowthMiB", 1.0),
+    ],
+)
+def test_soak_gate_rejects_memory_summary_drift(field: str, value: float) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    receipt = _complete_soak_receipt()
+    receipt[field] = value
+
+    failures = module._failures(receipt, "typescript", 30.0)
+
+    assert any("memory summary" in failure for failure in failures)
+
+
+def test_soak_drivers_and_budget_publish_rss_growth_contract() -> None:
+    budgets = json.loads(
+        (REPO_ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_text()
+    )["soak"]
+    assert budgets["maxLateWindowRssGrowthPercent"] > 0
+    assert budgets["maxLateWindowRssGrowthMiB"] > 0
+
+    for relative in (
+        Path("kaji/sdk/benchmarks/runtime_soak.py"),
+        Path("kaji/ts/benchmarks/runtime-soak.ts"),
+    ):
+        source = (REPO_ROOT / relative).read_text()
+        assert "lateWindowRssGrowthPercent" in source
+        assert "lateWindowRssGrowthMiB" in source
+
+
 def test_soak_identity_rejects_missing_fields_and_child_path_drift(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

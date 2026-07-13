@@ -34,6 +34,9 @@ import {
 const RESOLVED_PACKAGE = realpathSync(
   join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
 );
+const MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT = 5;
+const MAX_LATE_WINDOW_RSS_GROWTH_PERCENT = 5;
+const MAX_LATE_WINDOW_RSS_GROWTH_MIB = 64;
 
 interface Options {
   readonly minutes: number;
@@ -58,6 +61,13 @@ interface HeapSample {
   readonly maxToolActive: number;
   readonly maxSubscriberQueueDepth: number;
   readonly subscriberOverflows: number;
+}
+
+interface LateWindowGrowth {
+  readonly priorMedianMiB: number;
+  readonly lateMedianMiB: number;
+  readonly growthMiB: number;
+  readonly growthPercent: number;
 }
 
 class Mulberry32 {
@@ -389,6 +399,26 @@ function median(values: readonly number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
 }
 
+function lateWindowGrowth(
+  samples: readonly HeapSample[],
+  field: "heapUsedMiB" | "rssMiB",
+): LateWindowGrowth | null {
+  const priorMedianMiB = median(
+    samples.filter(({ minute }) => minute >= 21 && minute < 26).map((sample) => sample[field]),
+  );
+  const lateMedianMiB = median(
+    samples.filter(({ minute }) => minute >= 26 && minute < 31).map((sample) => sample[field]),
+  );
+  if (priorMedianMiB === null || lateMedianMiB === null || priorMedianMiB <= 0) return null;
+  const growthMiB = lateMedianMiB - priorMedianMiB;
+  return {
+    priorMedianMiB,
+    lateMedianMiB,
+    growthMiB,
+    growthPercent: (growthMiB / priorMedianMiB) * 100,
+  };
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rng = new Mulberry32(options.seed);
@@ -577,20 +607,20 @@ async function main(): Promise<void> {
   const elapsed = elapsedMs(started);
   if (heapSamples.length === 0) sample(elapsed / 60_000);
 
-  const priorHeapMedianMiB = median(
-    heapSamples
-      .filter(({ minute }) => minute >= 21 && minute <= 25)
-      .map(({ heapUsedMiB }) => heapUsedMiB),
-  );
-  const lateHeapMedianMiB = median(
-    heapSamples
-      .filter(({ minute }) => minute >= 26 && minute <= 30)
-      .map(({ heapUsedMiB }) => heapUsedMiB),
-  );
-  const lateWindowHeapGrowthPercent =
-    priorHeapMedianMiB === null || lateHeapMedianMiB === null || priorHeapMedianMiB === 0
+  const heapGrowth = lateWindowGrowth(heapSamples, "heapUsedMiB");
+  const rssGrowth = lateWindowGrowth(heapSamples, "rssMiB");
+  const priorHeapMedianMiB = heapGrowth?.priorMedianMiB ?? null;
+  const lateHeapMedianMiB = heapGrowth?.lateMedianMiB ?? null;
+  const lateWindowHeapGrowthPercent = heapGrowth?.growthPercent ?? null;
+  const lateWindowRssGrowthPercent = rssGrowth?.growthPercent ?? null;
+  const lateWindowRssGrowthMiB = rssGrowth?.growthMiB ?? null;
+  const rssGrowthLimitMiB =
+    rssGrowth === null
       ? null
-      : ((lateHeapMedianMiB - priorHeapMedianMiB) / priorHeapMedianMiB) * 100;
+      : Math.max(
+          MAX_LATE_WINDOW_RSS_GROWTH_MIB,
+          (rssGrowth.priorMedianMiB * MAX_LATE_WINDOW_RSS_GROWTH_PERCENT) / 100,
+        );
   const fullSoak = options.minutes >= 30;
   const boundsMet =
     coordinator.entryCount === 0 &&
@@ -614,7 +644,13 @@ async function main(): Promise<void> {
     durationMet: fullSoak && elapsed >= requestedMs && elapsed >= 30 * 60_000,
     minimumTurnsTarget: 10_000,
     minimumTurnsMet: attempted >= 10_000,
-    lateWindowGrowthMet: lateWindowHeapGrowthPercent !== null && lateWindowHeapGrowthPercent <= 5,
+    lateWindowGrowthMet:
+      lateWindowHeapGrowthPercent !== null &&
+      lateWindowHeapGrowthPercent <= MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT,
+    lateWindowRssGrowthMet:
+      lateWindowRssGrowthMiB !== null &&
+      rssGrowthLimitMiB !== null &&
+      lateWindowRssGrowthMiB <= rssGrowthLimitMiB,
     accountingMet: attempted === completed + failed,
     boundsMet,
     scenarioMixMet,
@@ -623,6 +659,7 @@ async function main(): Promise<void> {
     checks.durationMet &&
     checks.minimumTurnsMet &&
     checks.lateWindowGrowthMet &&
+    checks.lateWindowRssGrowthMet &&
     checks.accountingMet &&
     checks.boundsMet &&
     checks.scenarioMixMet;
@@ -649,6 +686,8 @@ async function main(): Promise<void> {
     },
     noncooperativeTimeouts: scenarios.nonCooperativeTimeouts,
     lateWindowHeapGrowthPercent,
+    lateWindowRssGrowthPercent,
+    lateWindowRssGrowthMiB,
     memorySamples: heapSamples,
     provider: {
       kind: "offline-fixture",

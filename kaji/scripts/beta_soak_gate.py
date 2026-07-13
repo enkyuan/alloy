@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
+import statistics
 from typing import Any
 
 from beta_benchmark_gate import COMMIT_PATTERN, HASH_PATTERN, performance_provenance
@@ -37,6 +39,8 @@ def _load(path: Path, runtime: str) -> tuple[dict[str, Any] | None, list[str]]:
         "completedTurns",
         "failedTurns",
         "lateWindowHeapGrowthPercent",
+        "lateWindowRssGrowthPercent",
+        "lateWindowRssGrowthMiB",
         "memorySamples",
         "internal",
         "passed",
@@ -47,6 +51,72 @@ def _load(path: Path, runtime: str) -> tuple[dict[str, Any] | None, list[str]]:
     if value["schemaVersion"] != 1 or value["runtime"] != runtime:
         return value, [f"{runtime} soak artifact has the wrong schema identity"]
     return value, []
+
+
+def _finite_number(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) else None
+
+
+def _memory_summary(
+    value: dict[str, Any], runtime: str
+) -> tuple[dict[str, float] | None, list[str]]:
+    samples = value.get("memorySamples")
+    if not isinstance(samples, list):
+        return None, [f"{runtime} soak memory samples are not an array"]
+    heap_field = "heapMiB" if runtime == "python" else "heapUsedMiB"
+    buckets: dict[int, tuple[float, float]] = {}
+    failures: list[str] = []
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, dict):
+            failures.append(
+                f"{runtime} soak memory samples contain a non-object at index {index}"
+            )
+            continue
+        minute = _finite_number(sample.get("minute"))
+        heap_mib = _finite_number(sample.get(heap_field))
+        rss_mib = _finite_number(sample.get("rssMiB"))
+        if minute is None or heap_mib is None or rss_mib is None:
+            failures.append(
+                f"{runtime} soak memory samples contain missing or non-finite values"
+            )
+            continue
+        if 21 <= minute < 31:
+            bucket = math.floor(minute)
+            if bucket in buckets:
+                failures.append(
+                    f"{runtime} soak memory samples duplicate minute {bucket}"
+                )
+            else:
+                buckets[bucket] = (heap_mib, rss_mib)
+    missing = sorted(set(range(21, 31)) - buckets.keys())
+    if missing:
+        failures.append(
+            f"{runtime} soak memory samples are missing late-window minutes: "
+            + ", ".join(str(minute) for minute in missing)
+        )
+    if failures:
+        return None, failures
+
+    prior_heap = statistics.median(buckets[minute][0] for minute in range(21, 26))
+    late_heap = statistics.median(buckets[minute][0] for minute in range(26, 31))
+    prior_rss = statistics.median(buckets[minute][1] for minute in range(21, 26))
+    late_rss = statistics.median(buckets[minute][1] for minute in range(26, 31))
+    if prior_heap <= 0 or prior_rss <= 0:
+        return None, [f"{runtime} soak memory samples have a non-positive baseline"]
+    heap_growth_mib = late_heap - prior_heap
+    rss_growth_mib = late_rss - prior_rss
+    return (
+        {
+            "heapGrowthPercent": heap_growth_mib / prior_heap * 100,
+            "rssGrowthPercent": rss_growth_mib / prior_rss * 100,
+            "rssGrowthMiB": rss_growth_mib,
+            "priorRssMiB": prior_rss,
+        },
+        [],
+    )
 
 
 def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
@@ -66,12 +136,40 @@ def _failures(value: dict[str, Any], runtime: str, minutes: float) -> list[str]:
             f"{runtime} soak attempted {value['attemptedTurns']} turns; "
             f"minimum is {BUDGETS['minimumTurns']}"
         )
-    growth = value["lateWindowHeapGrowthPercent"]
-    if growth is None or growth > BUDGETS["maxLateWindowHeapGrowthPercent"]:
-        failures.append(
-            f"{runtime} soak late-window heap growth {growth!r} exceeds "
-            f"{BUDGETS['maxLateWindowHeapGrowthPercent']}% or is unavailable"
+    summary, memory_failures = _memory_summary(value, runtime)
+    failures.extend(memory_failures)
+    if summary is not None:
+        reported_fields = {
+            "lateWindowHeapGrowthPercent": summary["heapGrowthPercent"],
+            "lateWindowRssGrowthPercent": summary["rssGrowthPercent"],
+            "lateWindowRssGrowthMiB": summary["rssGrowthMiB"],
+        }
+        for field, expected in reported_fields.items():
+            reported = _finite_number(value.get(field))
+            if reported is None or not math.isclose(
+                reported, expected, rel_tol=1e-9, abs_tol=1e-9
+            ):
+                failures.append(
+                    f"{runtime} soak memory summary {field} does not match samples"
+                )
+        if summary["heapGrowthPercent"] > BUDGETS["maxLateWindowHeapGrowthPercent"]:
+            failures.append(
+                f"{runtime} soak late-window heap growth "
+                f"{summary['heapGrowthPercent']!r} exceeds "
+                f"{BUDGETS['maxLateWindowHeapGrowthPercent']}%"
+            )
+        rss_growth_limit_mib = max(
+            float(BUDGETS["maxLateWindowRssGrowthMiB"]),
+            summary["priorRssMiB"]
+            * float(BUDGETS["maxLateWindowRssGrowthPercent"])
+            / 100,
         )
+        if summary["rssGrowthMiB"] > rss_growth_limit_mib:
+            failures.append(
+                f"{runtime} soak late-window RSS growth "
+                f"{summary['rssGrowthMiB']!r} MiB exceeds "
+                f"{rss_growth_limit_mib!r} MiB"
+            )
     internal = value["internal"]
     provider = value.get("provider", {})
     if (

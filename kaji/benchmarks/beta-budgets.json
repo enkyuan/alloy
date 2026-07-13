@@ -48,6 +48,8 @@
   "soak": {
     "durationMinutes": 30,
     "minimumTurns": 10000,
-    "maxLateWindowHeapGrowthPercent": 5
+    "maxLateWindowHeapGrowthPercent": 5,
+    "maxLateWindowRssGrowthPercent": 5,
+    "maxLateWindowRssGrowthMiB": 64
   }
 }

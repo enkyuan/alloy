@@ -38,6 +38,11 @@ from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 
 
+MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT = 5.0
+MAX_LATE_WINDOW_RSS_GROWTH_PERCENT = 5.0
+MAX_LATE_WINDOW_RSS_GROWTH_MIB = 64.0
+
+
 class _Ids:
     def __init__(self, seed: int) -> None:
         self.seed = seed
@@ -288,16 +293,24 @@ def _sample_memory(minute: float) -> dict[str, float]:
     }
 
 
-def _late_growth(samples: list[dict[str, float]]) -> float | None:
-    prior = [sample["heapMiB"] for sample in samples if 21 <= sample["minute"] <= 25]
-    late = [sample["heapMiB"] for sample in samples if 26 <= sample["minute"] <= 30]
+def _late_window_growth(
+    samples: list[dict[str, float]], field: str
+) -> tuple[float, float, float, float] | None:
+    prior = [sample[field] for sample in samples if 21 <= sample["minute"] < 26]
+    late = [sample[field] for sample in samples if 26 <= sample["minute"] < 31]
     if not prior or not late:
         return None
     prior_median = statistics.median(prior)
     late_median = statistics.median(late)
-    if prior_median == 0:
-        return 0.0 if late_median == 0 else float("inf")
-    return (late_median - prior_median) / prior_median * 100
+    if prior_median <= 0:
+        return None
+    growth_mib = late_median - prior_median
+    return (
+        prior_median,
+        late_median,
+        growth_mib,
+        growth_mib / prior_median * 100,
+    )
 
 
 async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
@@ -477,7 +490,21 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
     if await store.last_sequence(subscriber_session):
         await runtime.append_event(SessionClosed(session_id=subscriber_session))
     stuck = await controller.drain_tools(0)
-    growth = _late_growth(samples)
+    heap_growth = _late_window_growth(samples, "heapMiB")
+    rss_growth = _late_window_growth(samples, "rssMiB")
+    late_window_heap_growth_percent = (
+        heap_growth[3] if heap_growth is not None else None
+    )
+    late_window_rss_growth_mib = rss_growth[2] if rss_growth is not None else None
+    late_window_rss_growth_percent = rss_growth[3] if rss_growth is not None else None
+    rss_growth_limit_mib = (
+        max(
+            MAX_LATE_WINDOW_RSS_GROWTH_MIB,
+            rss_growth[0] * MAX_LATE_WINDOW_RSS_GROWTH_PERCENT / 100,
+        )
+        if rss_growth is not None
+        else None
+    )
     internal = {
         "coordinatorEntries": coordinator.entry_count,
         "coordinatorWaiters": coordinator.waiter_count,
@@ -516,8 +543,11 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
         minutes >= required_minutes
         and elapsed_seconds >= max(minutes, required_minutes) * 60
         and attempted >= required_turns
-        and growth is not None
-        and growth <= 5
+        and late_window_heap_growth_percent is not None
+        and late_window_heap_growth_percent <= MAX_LATE_WINDOW_HEAP_GROWTH_PERCENT
+        and late_window_rss_growth_mib is not None
+        and rss_growth_limit_mib is not None
+        and late_window_rss_growth_mib <= rss_growth_limit_mib
         and bounds_ok
         and provider.multi_tool_batches > 0
         and provider.approvals > 0
@@ -546,7 +576,9 @@ async def _run(minutes: float, minimum_turns: int, seed: int) -> dict[str, Any]:
         "terminalOutcomes": terminal_outcomes,
         "noncooperativeTimeouts": timeout_unknown,
         "cooperativeTimeouts": cooperative_timeout_unknown,
-        "lateWindowHeapGrowthPercent": growth,
+        "lateWindowHeapGrowthPercent": late_window_heap_growth_percent,
+        "lateWindowRssGrowthPercent": late_window_rss_growth_percent,
+        "lateWindowRssGrowthMiB": late_window_rss_growth_mib,
         "memorySamples": samples,
         "provider": {
             "calls": provider.calls,
