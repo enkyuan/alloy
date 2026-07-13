@@ -504,7 +504,7 @@ async function runScaffold(
   );
   assertExperimentalDenial(denialOutput, deniedGithub);
 
-  const github = join(root, "github");
+  const github = join(bootstrap, "owner-integrations/github");
   const githubOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
@@ -513,7 +513,7 @@ async function runScaffold(
     ownerEnvironment,
   );
   assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
-  const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));
+  const githubModule = JSON.stringify(join(github, "index.ts"));
   await runCommand(
     `${manager}:cli-inspect`,
     "bun",

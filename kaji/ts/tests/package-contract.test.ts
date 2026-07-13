@@ -324,7 +324,8 @@ describe("npm contract artifact", () => {
       '[...cli, "--no-color", "list-integrations", "--json"]',
       '[...cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
       'join(installedPackageRoot, "registry/echo/index.ts")',
-      'join(installedPackageRoot, "registry/github/index.ts")',
+      'const github = join(bootstrap, "owner-integrations/github");',
+      'const githubModule = JSON.stringify(join(github, "index.ts"));',
       "readFileSync(copied).equals(readFileSync(packaged))",
       'type: "session.created"',
       "sequence: 1",
@@ -347,6 +348,9 @@ describe("npm contract artifact", () => {
     expect(source).not.toContain("completed.stderr");
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
+    expect(source).not.toContain(
+      'const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));',
+    );
     expect(source).not.toContain("node_modules/@kaji/sdk/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
     expect(source).toMatch(

@@ -6,7 +6,6 @@ from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any, Protocol, cast
 
 from kaji.integrations.fixed_origin import FixedOriginClient
-from kaji.integrations.registry.github.client import GitHubClient
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
@@ -16,6 +15,8 @@ from kaji.infra.observability.protocols import (
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.integrations.base import Integration
 from kaji.runtime.tools.registry import ToolHandler, ToolSpec
+
+from .client import GitHubClient
 
 
 class _GitHubClientLike(Protocol):

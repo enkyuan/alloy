@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
+import sys
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -133,6 +135,34 @@ def test_github_manifest_is_experimental_and_declares_the_owner_bundle() -> None
         "owner-fixtures.json",
         "LICENSE",
     ]
+
+
+def test_copied_python_bundle_uses_its_owner_client(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kaji.integrations import load_manifest
+    from kaji.integrations.copy import install_integration_bundle
+
+    destination = tmp_path / "owner_integrations" / "github"
+    install_integration_bundle(
+        load_manifest("github"),
+        destination,
+        runtime="python",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    imported = (
+        "owner_integrations",
+        "owner_integrations.github",
+        "owner_integrations.github.client",
+        "owner_integrations.github.github",
+    )
+    try:
+        module = importlib.import_module("owner_integrations.github.github")
+        assert module.GitHubClient.__module__ == "owner_integrations.github.client"
+        assert len(module.inspect_integration().tools()) == 6
+    finally:
+        for name in reversed(imported):
+            sys.modules.pop(name, None)
 
 
 @pytest.mark.asyncio

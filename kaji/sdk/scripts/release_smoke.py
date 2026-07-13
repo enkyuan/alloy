@@ -462,7 +462,7 @@ def smoke_archives(
             )
             assert_experimental_denial(denial_output, denied_github)
 
-            github = workdir / f"github-{safe_name}"
+            github = workdir / f"owner-{safe_name}" / "owner_integrations" / "github"
             github_output = run_capture(
                 [
                     kaji,
@@ -483,6 +483,26 @@ def smoke_archives(
                     "-c",
                     "from kaji.integrations.registry.github.github import inspect_integration; "
                     "assert len(inspect_integration().tools()) == 6",
+                ],
+                cwd=artifact_workdir,
+                environment=environment,
+            )
+            run_capture(
+                [
+                    str(python),
+                    "-c",
+                    "import sys; from pathlib import Path; "
+                    "sys.path.insert(0, sys.argv[1]); "
+                    "import owner_integrations.github.client as owner_client; "
+                    "from owner_integrations.github.github import "
+                    "GitHubClient, inspect_integration; "
+                    "assert GitHubClient.__module__ == "
+                    "'owner_integrations.github.client'; "
+                    "assert Path(owner_client.__file__).resolve() == "
+                    "Path(sys.argv[2]).resolve(); "
+                    "assert len(inspect_integration().tools()) == 6",
+                    str(github.parents[1]),
+                    str(github / "client.py"),
                 ],
                 cwd=artifact_workdir,
                 environment=environment,
