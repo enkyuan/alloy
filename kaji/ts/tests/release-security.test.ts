@@ -1,8 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { inspect } from "node:util";
 
 import { startSpan, type TraceSink } from "@/observability";
@@ -12,16 +20,16 @@ import { ToolExecutionController } from "@/tools/execution";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 
 describe("release redaction boundaries", () => {
-  it.each([
-    "tests/integration/openai-tools.test.ts",
-    "tests/integration/anthropic-live.test.ts",
-  ])("keeps %s on the stable event committer path", (relativePath) => {
-    const source = readFileSync(resolve(relativePath), "utf8");
+  it.each(["tests/integration/openai-tools.test.ts", "tests/integration/anthropic-live.test.ts"])(
+    "keeps %s on the stable event committer path",
+    (relativePath) => {
+      const source = readFileSync(resolve(relativePath), "utf8");
 
-    expect(source).not.toContain("import { EventBus }");
-    expect(source).not.toMatch(/\.build\(\{[^}]*\bbus:/s);
-    expect(source).toMatch(/\.build\(\{\s*store(?:\s*:|\s*\})/s);
-  });
+      expect(source).not.toContain("import { EventBus }");
+      expect(source).not.toMatch(/\.build\(\{[^}]*\bbus:/s);
+      expect(source).toMatch(/\.build\(\{\s*store(?:\s*:|\s*\})/s);
+    },
+  );
 
   it("keeps OAuth and Keychain production boundaries fixed and shell-free", async () => {
     const oauthSource = readFileSync(resolve("src/auth/oauth.ts"), "utf8");
@@ -374,6 +382,18 @@ function readWorkflow(name: (typeof workflowFiles)[number]): {
   return { source, workflow: value as Workflow };
 }
 
+function bunExecutableFromParentPath(): string {
+  if (basename(process.execPath) === "bun") return process.execPath;
+  const lookup = spawnSync("sh", ["-c", "command -v bun"], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (lookup.status !== 0 || lookup.stdout.trim() === "") {
+    throw new Error(`Bun is unavailable on the parent PATH: ${lookup.stderr}`);
+  }
+  return lookup.stdout.trim();
+}
+
 function effectivePermissions(workflow: Workflow, job: WorkflowJob): PermissionMap {
   return job.permissions ?? workflow.permissions ?? {};
 }
@@ -669,6 +689,287 @@ describe("Kaji workflow contracts", () => {
     expect(classifier?.run).toContain('[ "$PYPI_PUBLISH_RESULT" = skipped ]');
     expect(classifier?.run).toContain('[ "$NPM_PUBLISH_RESULT" = skipped ]');
   });
+
+  it("smokes compatibility matrices only from verified producer artifacts", () => {
+    const rehearsal = readWorkflow("kaji.beta.yml").workflow;
+    const publish = readWorkflow("kaji.beta-publish.yml").workflow;
+
+    for (const [workflow, producer] of [
+      [rehearsal, "offline-release"],
+      [publish, "offline-gates"],
+    ] as const) {
+      for (const [jobId, smokeScript] of [
+        ["python-compat", "kaji/sdk/scripts/release_smoke.py"],
+        ["node-compat", "kaji/ts/scripts/smoke_package.mts"],
+      ] as const) {
+        const job = workflow.jobs?.[jobId];
+        expect(job, jobId).toBeDefined();
+        expect(dependencyClosure(workflow, jobId)).toContain(producer);
+        const steps = job?.steps ?? [];
+        const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"));
+        const initialize = steps.findIndex(
+          (step) => step.name === "Initialize compatibility receipt before setup",
+        );
+        const initialUpload = steps.findIndex(
+          (step) => step.name === "Retain initial not-run compatibility receipt",
+        );
+        const download = steps.findIndex((step) =>
+          step.uses?.startsWith("actions/download-artifact@"),
+        );
+        const verify = steps.findIndex((step) => step.run?.includes("verify_release_artifacts.py"));
+        const smoke = steps.findIndex((step) => step.run?.includes(smokeScript));
+        const normalize = steps.findIndex(
+          (step) => step.name === "Normalize compatibility receipt",
+        );
+        const finalUpload = steps.findIndex(
+          (step) => step.name === "Retain final compatibility receipt",
+        );
+        expect(initialize, `${jobId}: initialize`).toBeGreaterThanOrEqual(0);
+        expect(initialize, `${jobId}: initialize before initial upload`).toBeLessThan(
+          initialUpload,
+        );
+        expect(initialUpload, `${jobId}: initial upload before checkout`).toBeLessThan(checkout);
+        expect(download, `${jobId}: download`).toBeGreaterThan(checkout);
+        expect(verify, `${jobId}: verify`).toBeGreaterThan(download);
+        expect(smoke, `${jobId}: smoke`).toBeGreaterThan(verify);
+        expect(normalize, `${jobId}: normalize`).toBeGreaterThan(smoke);
+        expect(finalUpload, `${jobId}: final upload`).toBeGreaterThan(normalize);
+        expect(JSON.stringify(job?.env ?? {})).not.toContain("${{ runner.");
+        expect(steps[download]?.with).toMatchObject({
+          name: "kaji-beta-artifacts",
+          path: ".artifacts/kaji-release",
+        });
+        expect(steps[verify]?.run).toContain("--expected-commit");
+        expect(steps[smoke]?.run).toContain("--output");
+        if (jobId === "python-compat") {
+          expect(steps[smoke]?.run).toContain("--artifacts-dir .artifacts/kaji-release");
+        } else {
+          expect(steps[smoke]?.run).toContain(
+            "--release-manifest .artifacts/kaji-release/manifest.json",
+          );
+          expect(steps[smoke]?.run).toContain("--expected-commit");
+        }
+        expect(steps[normalize]?.if).toBe("${{ always() }}");
+        expect(steps[normalize]?.run).toContain('conclusion == "passed"');
+        expect(steps[normalize]?.run).toContain('conclusion == "failed"');
+        expect(steps[normalize]?.run).toContain("compatibility_receipt_not_terminal");
+        const source = steps.map((step) => step.run ?? "").join("\n");
+        expect(source).not.toContain("uv build");
+        expect(source).not.toContain("npm pack");
+        expect(source).not.toContain("bun run package:smoke");
+        const uploads = steps.filter((step) => step.uses?.startsWith("actions/upload-artifact@"));
+        const runtime = jobId === "python-compat" ? "python" : "node";
+        const version = jobId === "python-compat" ? "python-version" : "node-version";
+        const matrixExpression = `\${{ matrix.${version} }}`;
+        const artifactName = `kaji-${runtime}-compat-${matrixExpression}`;
+        const receiptPath = `\${{ runner.temp }}/kaji-${runtime}-compat-${matrixExpression}`;
+        expect(uploads).toHaveLength(2);
+        expect(uploads.map((step) => step.with?.name)).toEqual([
+          `${artifactName}-initial`,
+          artifactName,
+        ]);
+        expect(uploads[0]?.if).toBeUndefined();
+        expect(uploads[1]?.if).toBe("${{ always() }}");
+        expect(uploads.map((step) => step.with?.path)).toEqual([receiptPath, receiptPath]);
+        expect(steps[initialize]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
+        expect(steps[smoke]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
+        expect(steps[normalize]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
+      }
+    }
+  });
+
+  it.each(["kaji.beta.yml", "kaji.beta-publish.yml"] as const)(
+    "keeps runner contexts out of every job-level environment in %s",
+    (workflowName) => {
+      const jobs = readWorkflow(workflowName).workflow.jobs ?? {};
+      for (const [jobId, job] of Object.entries(jobs)) {
+        expect(JSON.stringify(job.env ?? {}), jobId).not.toContain("${{ runner.");
+      }
+    },
+  );
+
+  it("normalizes interrupted compatibility receipts and preserves terminal evidence", () => {
+    const job = readWorkflow("kaji.beta.yml").workflow.jobs?.["python-compat"];
+    const script = job?.steps?.find((step) => step.name === "Normalize compatibility receipt")?.run;
+    expect(script).toBeDefined();
+    const root = mkdtempSync(join(tmpdir(), "kaji-compat-normalize-"));
+    const receipt = resolve(root, "compatibility-receipt.json");
+    const commit = "a".repeat(40);
+    const environment = {
+      ...process.env,
+      EXPECTED_COMMIT: commit,
+      KAJI_COMPAT_RECEIPT_DIR: root,
+      KAJI_COMPAT_RUNTIME_KIND: "python",
+      KAJI_COMPAT_RUNTIME_VERSION: "3.11",
+      CHECKOUT_OUTCOME: "success",
+      RUNTIME_SETUP_OUTCOME: "success",
+      DEPENDENCY_SETUP_OUTCOME: "success",
+      DOWNLOAD_OUTCOME: "success",
+      VERIFICATION_OUTCOME: "success",
+      SMOKE_OUTCOME: "cancelled",
+    };
+    try {
+      writeFileSync(
+        receipt,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          commit,
+          conclusion: "passed",
+          failureCode: null,
+        })}\n`,
+      );
+      const interrupted = spawnSync("/bin/bash", ["-c", script!], {
+        encoding: "utf8",
+        env: environment,
+      });
+      expect(interrupted.status, interrupted.stderr).toBe(0);
+      expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
+        conclusion: "failed",
+        failureCode: "compatibility_smoke_not_completed",
+      });
+
+      environment.SMOKE_OUTCOME = "success";
+      writeFileSync(
+        receipt,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          commit,
+          conclusion: "passed",
+          failureCode: null,
+        })}\n`,
+      );
+      const identityFree = spawnSync("/bin/bash", ["-c", script!], {
+        encoding: "utf8",
+        env: environment,
+      });
+      expect(identityFree.status).not.toBe(0);
+      expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
+        conclusion: "failed",
+        failureCode: "compatibility_receipt_not_terminal",
+      });
+
+      const terminal = `${JSON.stringify({
+        schemaVersion: 1,
+        commit,
+        conclusion: "passed",
+        failureCode: null,
+        releaseManifestSha256: "b".repeat(64),
+        artifactSha256: {
+          "kaji-0.2.0b1-py3-none-any.whl": "c".repeat(64),
+          "kaji-0.2.0b1.tar.gz": "d".repeat(64),
+        },
+        runtime: {
+          implementation: "CPython",
+          version: "3.11.9",
+          executable: "/opt/python/bin/python",
+        },
+        artifacts: {
+          wheel: "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+          sdist: "/artifacts/kaji-0.2.0b1.tar.gz",
+        },
+      })}\n`;
+      writeFileSync(receipt, terminal);
+      const preserved = spawnSync("/bin/bash", ["-c", script!], {
+        encoding: "utf8",
+        env: environment,
+      });
+      expect(preserved.status, preserved.stderr).toBe(0);
+      expect(readFileSync(receipt, "utf8")).toBe(terminal);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    [
+      "unexpected flag",
+      ["--output", "$RECEIPT", "--malformed"],
+      true,
+      "unexpected package smoke argument",
+    ],
+    ["output missing value", ["--output"], false, "--output requires a value"],
+    ["output empty value", ["--output", ""], false, "--output requires a value"],
+    ["output flag value", ["--output", "--malformed"], false, "--output requires a value"],
+    [
+      "manifest missing value",
+      ["--output", "$RECEIPT", "--release-manifest"],
+      true,
+      "--release-manifest requires a value",
+    ],
+    [
+      "manifest empty value",
+      ["--output", "$RECEIPT", "--release-manifest", ""],
+      true,
+      "--release-manifest requires a value",
+    ],
+    [
+      "manifest flag value",
+      ["--output", "$RECEIPT", "--release-manifest", "--malformed"],
+      true,
+      "--release-manifest requires a value",
+    ],
+    [
+      "commit missing value",
+      ["--output", "$RECEIPT", "--expected-commit"],
+      true,
+      "--expected-commit requires a value",
+    ],
+    [
+      "commit empty value",
+      ["--output", "$RECEIPT", "--expected-commit", ""],
+      true,
+      "--expected-commit requires a value",
+    ],
+    [
+      "commit flag value",
+      ["--output", "$RECEIPT", "--expected-commit", "--malformed"],
+      true,
+      "--expected-commit requires a value",
+    ],
+  ] as const)(
+    "rejects %s before package/network work and cleans temporary state",
+    (_label, rawArguments, expectsReceipt, expectedError) => {
+      const bunExecutable = bunExecutableFromParentPath();
+      expect(existsSync(bunExecutable)).toBe(true);
+      const bunVersion = spawnSync(bunExecutable, ["--version"], {
+        encoding: "utf8",
+        env: process.env,
+      });
+      expect(bunVersion.status, bunVersion.stderr).toBe(0);
+      expect(bunVersion.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+      const root = mkdtempSync(join(tmpdir(), "kaji-invalid-smoke-"));
+      const temporary = resolve(root, "tmp");
+      const receipt = resolve(root, "failed-receipt.json");
+      mkdirSync(temporary);
+      try {
+        const completed = spawnSync(
+          bunExecutable,
+          [
+            resolve(repositoryRoot, "kaji/ts/scripts/smoke_package.mts"),
+            ...rawArguments.map((argument) => (argument === "$RECEIPT" ? receipt : argument)),
+          ],
+          {
+            cwd: root,
+            encoding: "utf8",
+            env: { ...process.env, PATH: "/nonexistent", TMPDIR: temporary },
+          },
+        );
+        expect(completed.status).not.toBe(0);
+        expect(completed.stderr).toContain(expectedError);
+        if (expectsReceipt) {
+          expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
+            conclusion: "failed",
+            failureCode: "artifact_identity_failed",
+          });
+        } else {
+          expect(existsSync(receipt)).toBe(false);
+        }
+        expect(readdirSync(temporary)).toEqual([]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("keeps calibration on the protected pinned runner", () => {
     const { workflow } = readWorkflow("kaji.benchmark.yml");

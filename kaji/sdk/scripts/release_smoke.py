@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -24,6 +25,11 @@ from _repo_process import (
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = SDK_ROOT / "scripts"
+KAJI_SCRIPTS = SDK_ROOT.parent / "scripts"
+if str(KAJI_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(KAJI_SCRIPTS))
+import verify_release_artifacts  # noqa: E402
+
 EXPECTED_MOCK_REPLY = "mock"
 EXPECTED_ECHO_DESCRIPTION = (
     "Trivial echo integration. Two pure functions, no auth, no network. "
@@ -259,7 +265,17 @@ def assert_matching_scaffold_outputs(
         raise SystemExit("FAIL: cold and warm scaffold outputs differed")
 
 
-def release_smoke(dist_dir: Path) -> None:
+def archive_paths(dist_dir: Path) -> tuple[Path, Path]:
+    wheels = sorted(dist_dir.glob("*.whl"))
+    sdists = sorted(dist_dir.glob("*.tar.gz"))
+    if len(wheels) != 1 or len(sdists) != 1:
+        raise SystemExit(
+            f"FAIL: expected exactly one wheel and one sdist under {dist_dir}"
+        )
+    return wheels[0].resolve(), sdists[0].resolve()
+
+
+def build_archives(dist_dir: Path) -> tuple[Path, Path]:
     dist_dir = dist_dir if dist_dir.is_absolute() else SDK_ROOT / dist_dir
 
     run([sys.executable, str(SCRIPTS / "clean_caches.py")])
@@ -278,6 +294,38 @@ def release_smoke(dist_dir: Path) -> None:
             "--require-hashes",
         ]
     )
+    return archive_paths(dist_dir)
+
+
+def python_artifact_sha256(
+    identity: verify_release_artifacts.VerifiedReleaseArtifacts,
+) -> dict[str, str]:
+    return {
+        identity.python_wheel.name: identity.artifact_sha256[
+            identity.python_wheel.name
+        ],
+        identity.python_sdist.name: identity.artifact_sha256[
+            identity.python_sdist.name
+        ],
+    }
+
+
+def smoke_archives(
+    wheel: Path,
+    sdist: Path,
+    *,
+    identity: verify_release_artifacts.VerifiedReleaseArtifacts | None,
+) -> dict[str, object]:
+    wheel = wheel.resolve()
+    sdist = sdist.resolve()
+    if wheel.parent != sdist.parent:
+        raise SystemExit("FAIL: wheel and sdist must share one artifact directory")
+    if identity is not None and (
+        wheel != identity.python_wheel or sdist != identity.python_sdist
+    ):
+        raise SystemExit("FAIL: supplied Python archives differ from verified identity")
+    dist_dir = wheel.parent
+
     run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
     run(
         [
@@ -310,11 +358,6 @@ def release_smoke(dist_dir: Path) -> None:
                 str(runtime_requirements),
             ]
         )
-
-        wheel = next(dist_dir.glob("*.whl"), None)
-        sdist = next(dist_dir.glob("*.tar.gz"), None)
-        if wheel is None or sdist is None:
-            raise SystemExit(f"FAIL: expected wheel and sdist under {dist_dir}")
 
         conflicting_bin = install_conflicting_kaji_binary(workdir)
 
@@ -490,8 +533,43 @@ def release_smoke(dist_dir: Path) -> None:
     run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
     print("PASS: release smoke verified")
 
+    return {
+        "schemaVersion": 1,
+        "commit": (
+            identity.commit
+            if identity is not None
+            else os.environ.get("KAJI_RELEASE_COMMIT")
+            or os.environ.get("GITHUB_SHA")
+            or "uncommitted-local-build"
+        ),
+        "releaseManifestSha256": (
+            identity.manifest_sha256 if identity is not None else None
+        ),
+        "artifactSha256": (
+            python_artifact_sha256(identity)
+            if identity is not None
+            else {
+                wheel.name: verify_release_artifacts.sha256(wheel),
+                sdist.name: verify_release_artifacts.sha256(sdist),
+            }
+        ),
+        "runtime": {
+            "implementation": platform.python_implementation(),
+            "version": platform.python_version(),
+            "executable": str(Path(sys.executable).resolve()),
+        },
+        "artifacts": {"wheel": str(wheel), "sdist": str(sdist)},
+        "conclusion": "passed",
+        "failureCode": None,
+    }
 
-def parse_args() -> argparse.Namespace:
+
+def release_smoke(dist_dir: Path) -> dict[str, object]:
+    wheel, sdist = build_archives(dist_dir)
+    return smoke_archives(wheel, sdist, identity=None)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dist-dir",
@@ -499,12 +577,97 @@ def parse_args() -> argparse.Namespace:
         default=Path(os.environ.get("DIST_DIR") or "dist"),
         help="artifact output directory (default: DIST_DIR or dist)",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        help="verified release artifact directory to consume without rebuilding",
+    )
+    parser.add_argument(
+        "--expected-commit",
+        default=os.environ.get("EXPECTED_COMMIT"),
+        help="exact release commit required with --artifacts-dir",
+    )
+    parser.add_argument("--output", type=Path, help="write the final JSON receipt")
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
-    release_smoke(args.dist_dir)
+def emit_receipt(receipt: dict[str, object], output: Path | None) -> None:
+    encoded = json.dumps(receipt, sort_keys=True)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(encoded + "\n")
+    print(encoded)
+
+
+def failure_receipt(
+    *,
+    commit: str | None,
+    artifacts: Path | None,
+    identity: verify_release_artifacts.VerifiedReleaseArtifacts | None,
+    failure_code: str,
+) -> dict[str, object]:
+    root = artifacts.resolve() if artifacts is not None else None
+    return {
+        "schemaVersion": 1,
+        "commit": identity.commit if identity is not None else commit,
+        "releaseManifestSha256": (
+            identity.manifest_sha256 if identity is not None else None
+        ),
+        "artifactSha256": (
+            python_artifact_sha256(identity) if identity is not None else {}
+        ),
+        "runtime": {
+            "implementation": platform.python_implementation(),
+            "version": platform.python_version(),
+            "executable": str(Path(sys.executable).resolve()),
+        },
+        "artifacts": {
+            "wheel": (str(root / "kaji-0.2.0b1-py3-none-any.whl") if root else None),
+            "sdist": str(root / "kaji-0.2.0b1.tar.gz") if root else None,
+        },
+        "conclusion": "failed",
+        "failureCode": failure_code,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    identity: verify_release_artifacts.VerifiedReleaseArtifacts | None = None
+    stage = "build"
+    try:
+        if args.artifacts_dir is None:
+            receipt = release_smoke(args.dist_dir)
+        else:
+            stage = "verification"
+            if args.expected_commit is None:
+                raise SystemExit(
+                    "FAIL: --expected-commit or EXPECTED_COMMIT is required with --artifacts-dir"
+                )
+            identity = verify_release_artifacts.verify(
+                args.artifacts_dir, args.expected_commit
+            )
+            stage = "smoke"
+            receipt = smoke_archives(
+                identity.python_wheel,
+                identity.python_sdist,
+                identity=identity,
+            )
+    except (Exception, SystemExit):
+        failure_code = {
+            "verification": "artifact_verification_failed",
+            "smoke": "python_smoke_failed",
+        }.get(stage, "python_build_failed")
+        emit_receipt(
+            failure_receipt(
+                commit=args.expected_commit,
+                artifacts=args.artifacts_dir,
+                identity=identity,
+                failure_code=failure_code,
+            ),
+            args.output,
+        )
+        raise
+    emit_receipt(receipt, args.output)
     return 0
 
 

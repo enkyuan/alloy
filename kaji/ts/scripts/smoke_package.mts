@@ -8,8 +8,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { assertCliListOutput } from "./cli_assertions";
@@ -43,11 +44,22 @@ interface PackageManifest {
   peerDependencies: Record<string, string>;
   devDependencies: Record<string, string>;
 }
+interface ArtifactIdentity {
+  commit: string | null;
+  manifestSha256: string | null;
+  artifactSha256: Record<string, string>;
+}
+interface SmokeArguments {
+  tarball?: string;
+  releaseManifest?: string;
+  expectedCommit?: string;
+  output?: string;
+}
 
 const packageRoot = resolve(import.meta.dir, "..");
 const repositoryRoot = resolve(packageRoot, "../..");
-const workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
-const installRoot = join(workdir, "project");
+let workdir = "";
+let installRoot = "";
 const nodeBinary = process.env.NODE_BINARY ?? "node";
 const LOCAL_TIMEOUT_MS = 60_000;
 const PACKAGE_TIMEOUT_MS = 300_000;
@@ -69,6 +81,92 @@ const baseEnvironment = {
   npm_config_fund: "false",
   npm_config_update_notifier: "false",
 };
+
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function parseArguments(argv: string[]): SmokeArguments {
+  const parsed: SmokeArguments = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]!;
+    if (argument === "--release-manifest") {
+      parsed.releaseManifest = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--expected-commit") {
+      parsed.expectedCommit = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--output") {
+      parsed.output = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument.startsWith("--") || parsed.tarball !== undefined) {
+      throw new Error(`unexpected package smoke argument: ${argument}`);
+    } else {
+      parsed.tarball = argument;
+    }
+  }
+  if ((parsed.releaseManifest === undefined) !== (parsed.expectedCommit === undefined)) {
+    throw new Error("--release-manifest and --expected-commit must be supplied together");
+  }
+  return parsed;
+}
+
+function requiredFlagValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (value === undefined || value === "" || value.startsWith("--")) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function requestedOutput(argv: string[]): string | undefined {
+  const index = argv.indexOf("--output");
+  const output = index === -1 ? undefined : argv[index + 1];
+  if (output === undefined || output === "" || output.startsWith("--")) return undefined;
+  return output;
+}
+
+function artifactIdentity(
+  tarball: string,
+  releaseManifest: string | undefined,
+  expectedCommit: string | undefined,
+): ArtifactIdentity {
+  const artifactHash = sha256(tarball);
+  if (releaseManifest === undefined || expectedCommit === undefined) {
+    return {
+      commit: process.env.KAJI_RELEASE_COMMIT ?? process.env.GITHUB_SHA ?? null,
+      manifestSha256: null,
+      artifactSha256: { [basename(tarball)]: artifactHash },
+    };
+  }
+  const manifestPath = resolve(releaseManifest);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    commit?: unknown;
+    artifacts?: Array<{ file?: unknown; sha256?: unknown }>;
+  };
+  if (manifest.commit !== expectedCommit) {
+    throw new Error("release manifest commit differs from the expected commit");
+  }
+  const entry = manifest.artifacts?.find((candidate) => candidate.file === basename(tarball));
+  if (entry?.sha256 !== artifactHash) {
+    throw new Error("supplied npm tarball differs from its release manifest identity");
+  }
+  return {
+    commit: expectedCommit,
+    manifestSha256: sha256(manifestPath),
+    artifactSha256: { [basename(tarball)]: artifactHash },
+  };
+}
+
+function emitReceipt(receipt: Record<string, unknown>, output: string | undefined): void {
+  const encoded = `${JSON.stringify(receipt)}\n`;
+  if (output !== undefined) {
+    const path = resolve(output);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, encoded);
+  }
+  process.stdout.write(encoded);
+}
 
 async function runCommand(
   phase: SmokePhase,
@@ -498,9 +596,20 @@ async function runScaffold(
   return { coldSetupToOutputMs, warmRunMs };
 }
 
+const rawArguments = process.argv.slice(2);
+const fallbackOutput = requestedOutput(rawArguments);
+let arguments_: SmokeArguments = {};
+let receiptIdentity: ArtifactIdentity | null = null;
+let receiptTarball: string | null = null;
+let installedPackagePath: string | null = null;
+let receiptNodeVersion = process.version;
+
 try {
+  arguments_ = parseArguments(rawArguments);
+  workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
+  installRoot = join(workdir, "project");
   mkdirSync(installRoot, { recursive: true });
-  const requestedTarball = process.argv[2];
+  const requestedTarball = arguments_.tarball;
   let tarball: string;
   if (requestedTarball === undefined) {
     const environment = {
@@ -523,8 +632,16 @@ try {
     tarball = resolve(requestedTarball);
     if (!existsSync(tarball)) throw new Error("supplied npm tarball does not exist");
   }
+  tarball = realpathSync(tarball);
+  receiptTarball = tarball;
+  receiptIdentity = artifactIdentity(
+    tarball,
+    arguments_.releaseManifest,
+    arguments_.expectedCommit,
+  );
 
   const nodeVersion = (await runCommand("node:version", nodeBinary, ["--version"])).trim();
+  receiptNodeVersion = nodeVersion;
   const nodeMajor = Number(/^v(\d+)/.exec(nodeVersion)?.[1]);
   if (nodeMajor !== 22 && nodeMajor !== 24) {
     throw new Error(
@@ -556,6 +673,7 @@ try {
   if (!existsSync(join(installRoot, "node_modules/@kaji/sdk/dist/cli/init-worker.js"))) {
     throw new Error("installed package is missing the pinned init worker");
   }
+  installedPackagePath = realpathSync(join(installRoot, "node_modules/@kaji/sdk"));
   await runCommand(
     "npm:audit",
     "npm",
@@ -634,6 +752,34 @@ if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["Integr
   console.log(
     "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",
   );
+  emitReceipt(
+    {
+      schemaVersion: 1,
+      commit: receiptIdentity.commit,
+      releaseManifestSha256: receiptIdentity.manifestSha256,
+      artifactSha256: receiptIdentity.artifactSha256,
+      runtime: { version: receiptNodeVersion },
+      artifacts: { tarball: receiptTarball, package: installedPackagePath },
+      conclusion: "passed",
+      failureCode: null,
+    },
+    arguments_.output,
+  );
+} catch (error) {
+  emitReceipt(
+    {
+      schemaVersion: 1,
+      commit: receiptIdentity?.commit ?? arguments_.expectedCommit ?? null,
+      releaseManifestSha256: receiptIdentity?.manifestSha256 ?? null,
+      artifactSha256: receiptIdentity?.artifactSha256 ?? {},
+      runtime: { version: receiptNodeVersion },
+      artifacts: { tarball: receiptTarball, package: installedPackagePath },
+      conclusion: "failed",
+      failureCode: receiptIdentity === null ? "artifact_identity_failed" : "node_smoke_failed",
+    },
+    arguments_.output ?? fallbackOutput,
+  );
+  throw error;
 } finally {
-  rmSync(workdir, { recursive: true, force: true });
+  if (workdir !== "") rmSync(workdir, { recursive: true, force: true });
 }

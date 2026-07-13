@@ -150,10 +150,11 @@ jobs:
       KAJI_BENCHMARK_PINNED_RUNNER: "1"
       KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST: ${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
-      KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Initialize exact-commit performance status before setup
         shell: bash
+        env:
+          KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR"
           jq --null-input \
@@ -168,7 +169,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-performance-evidence-initial
-          path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -193,6 +194,8 @@ jobs:
         run: uv run --project kaji/sdk python kaji/scripts/run_beta_soak.py --minutes 30 --protected
       - name: Validate and normalize exact-commit performance evidence
         id: performance-validation
+        env:
+          KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           benchmark=.artifacts/kaji-benchmarks/results.json
           soak=.artifacts/kaji-soak/results.json
@@ -229,6 +232,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         env:
+          KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           BENCHMARK_OUTCOME: ${{ steps.benchmark.outcome }}
           SOAK_OUTCOME: ${{ steps.soak.outcome }}
           VALIDATION_OUTCOME: ${{ steps.performance-validation.outcome }}
@@ -295,52 +299,378 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-performance-evidence
-          path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}
+          path: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
 
   python-compat:
-    needs: verify-tag
+    needs: [verify-tag, offline-gates]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Initialize compatibility receipt before setup
+        shell: bash
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
+          KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.python-version }}
+        run: |
+          mkdir -p "$KAJI_COMPAT_RECEIPT_DIR"
+          jq --null-input \
+            --arg commit "$EXPECTED_COMMIT" \
+            --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "compatibility_not_completed", runtime: {kind: "python", requestedVersion: $version},
+              releaseManifestSha256: null, artifactSha256: {}, artifacts: {wheel: null, sdist: null}}' \
+            >"$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+      - name: Retain initial not-run compatibility receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-python-compat-${{ matrix.python-version }}-initial
+          path: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
+          if-no-files-found: error
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: ./.github/actions/setup-python-uv
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji/sdk
           python-version: ${{ matrix.python-version }}
+      - id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+      - name: Verify exact candidate artifacts before Python smoke
+        id: verify
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$EXPECTED_COMMIT"
       - name: Install and smoke wheel and sdist
-        working-directory: kaji/sdk
-        run: uv run --no-sync python scripts/release_smoke.py
+        id: smoke
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
+        run: >-
+          uv run --project kaji/sdk --no-sync python kaji/sdk/scripts/release_smoke.py
+          --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$EXPECTED_COMMIT"
+          --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+      - name: Normalize compatibility receipt
+        if: ${{ always() }}
+        shell: bash
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
+          KAJI_COMPAT_RUNTIME_KIND: python
+          KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.python-version }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          RUNTIME_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
+          DEPENDENCY_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$KAJI_COMPAT_RECEIPT_DIR"
+          receipt="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+          temporary="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.tmp"
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$DEPENDENCY_SETUP_OUTCOME" != success ]; then
+            failure_code=dependency_setup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=artifact_download_not_completed
+          elif [ "$VERIFICATION_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$SMOKE_OUTCOME" != success ]; then
+            failure_code=compatibility_smoke_not_completed
+          else
+            failure_code=compatibility_receipt_not_terminal
+          fi
+          all_success=true
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
+            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
+            "$VERIFICATION_OUTCOME" "$SMOKE_OUTCOME"; do
+            if [ "$outcome" != success ]; then
+              all_success=false
+              break
+            fi
+          done
+          terminal=false
+          if [ -f "$receipt" ] && jq -e \
+            --arg commit "$EXPECTED_COMMIT" \
+            --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+            --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
+            def nonempty: type == "string" and length > 0;
+            def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            (.schemaVersion == 1) and (.commit == $commit) and (
+              (.conclusion == "failed" and
+               (.failureCode | type == "string" and length > 0)) or
+              (.conclusion == "passed" and .failureCode == null and
+               (.releaseManifestSha256 | sha256) and (
+                if $kind == "python" then
+                  (.artifactSha256 |
+                    type == "object" and
+                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
+                    all(.[]; sha256)) and
+                  (.runtime |
+                    type == "object" and
+                    (.implementation | nonempty) and
+                    (.version | nonempty and startswith($version + ".")) and
+                    (.executable | nonempty)) and
+                  (.artifacts |
+                    type == "object" and
+                    (.wheel | nonempty) and
+                    (.sdist | nonempty))
+                else
+                  (.artifactSha256 |
+                    type == "object" and
+                    keys == ["kaji-sdk-0.2.0-beta.1.tgz"] and
+                    all(.[]; sha256)) and
+                  (.runtime |
+                    type == "object" and
+                    (.version | nonempty and startswith("v" + $version + "."))) and
+                  (.artifacts |
+                    type == "object" and
+                    (.tarball | nonempty) and
+                    (.package | nonempty))
+                end
+              ))
+            )
+          ' "$receipt" >/dev/null; then
+            terminal=true
+          fi
+          if [ "$terminal" = true ] && [ "$all_success" != true ] && \
+            [ "$(jq -r '.conclusion' "$receipt")" = passed ]; then
+            terminal=false
+          fi
+          if [ "$terminal" != true ]; then
+            if [ -f "$receipt" ] && jq -e --arg commit "$EXPECTED_COMMIT" \
+              'type == "object" and .schemaVersion == 1 and .commit == $commit' \
+              "$receipt" >/dev/null; then
+              jq --arg failureCode "$failure_code" \
+                '. + {conclusion: "failed", failureCode: $failureCode}' \
+                "$receipt" >"$temporary"
+            else
+              jq --null-input \
+                --arg commit "$EXPECTED_COMMIT" \
+                --arg failureCode "$failure_code" \
+                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+                '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                  failureCode: $failureCode, runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {}}' \
+                >"$temporary"
+            fi
+            mv "$temporary" "$receipt"
+          fi
+          if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
+            echo "compatibility steps succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
+      - name: Retain final compatibility receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-python-compat-${{ matrix.python-version }}
+          path: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
+          if-no-files-found: error
 
   node-compat:
-    needs: verify-tag
+    needs: [verify-tag, offline-gates]
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
         node-version: ["22", "24"]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Initialize compatibility receipt before setup
+        shell: bash
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
+          KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
+        run: |
+          mkdir -p "$KAJI_COMPAT_RECEIPT_DIR"
+          jq --null-input \
+            --arg commit "$EXPECTED_COMMIT" \
+            --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "compatibility_not_completed", runtime: {kind: "node", requestedVersion: $version},
+              releaseManifestSha256: null, artifactSha256: {}, artifacts: {tarball: null, package: null}}' \
+            >"$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+      - name: Retain initial not-run compatibility receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-node-compat-${{ matrix.node-version }}-initial
+          path: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
+          if-no-files-found: error
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
-      - uses: ./.github/actions/setup-bun-cache
+      - id: setup_bun
+        uses: ./.github/actions/setup-bun-cache
         with:
           working-directory: kaji/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
+      - id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-release
+      - name: Verify exact candidate artifacts before Node smoke
+        id: verify
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-release
+          --expected-commit "$EXPECTED_COMMIT"
       - name: Install and smoke ESM and CommonJS
-        working-directory: kaji/ts
-        run: bun run package:smoke
+        id: smoke
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
+        run: >-
+          bun kaji/ts/scripts/smoke_package.mts
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.1.tgz
+          --release-manifest .artifacts/kaji-release/manifest.json
+          --expected-commit "$EXPECTED_COMMIT"
+          --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+      - name: Normalize compatibility receipt
+        if: ${{ always() }}
+        shell: bash
+        env:
+          KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
+          KAJI_COMPAT_RUNTIME_KIND: node
+          KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          RUNTIME_SETUP_OUTCOME: ${{ steps.setup_node.outcome }}
+          DEPENDENCY_SETUP_OUTCOME: ${{ steps.setup_bun.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$KAJI_COMPAT_RECEIPT_DIR"
+          receipt="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
+          temporary="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.tmp"
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$DEPENDENCY_SETUP_OUTCOME" != success ]; then
+            failure_code=dependency_setup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=artifact_download_not_completed
+          elif [ "$VERIFICATION_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$SMOKE_OUTCOME" != success ]; then
+            failure_code=compatibility_smoke_not_completed
+          else
+            failure_code=compatibility_receipt_not_terminal
+          fi
+          all_success=true
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
+            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
+            "$VERIFICATION_OUTCOME" "$SMOKE_OUTCOME"; do
+            if [ "$outcome" != success ]; then
+              all_success=false
+              break
+            fi
+          done
+          terminal=false
+          if [ -f "$receipt" ] && jq -e \
+            --arg commit "$EXPECTED_COMMIT" \
+            --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+            --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
+            def nonempty: type == "string" and length > 0;
+            def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            (.schemaVersion == 1) and (.commit == $commit) and (
+              (.conclusion == "failed" and
+               (.failureCode | type == "string" and length > 0)) or
+              (.conclusion == "passed" and .failureCode == null and
+               (.releaseManifestSha256 | sha256) and (
+                if $kind == "python" then
+                  (.artifactSha256 |
+                    type == "object" and
+                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
+                    all(.[]; sha256)) and
+                  (.runtime |
+                    type == "object" and
+                    (.implementation | nonempty) and
+                    (.version | nonempty and startswith($version + ".")) and
+                    (.executable | nonempty)) and
+                  (.artifacts |
+                    type == "object" and
+                    (.wheel | nonempty) and
+                    (.sdist | nonempty))
+                else
+                  (.artifactSha256 |
+                    type == "object" and
+                    keys == ["kaji-sdk-0.2.0-beta.1.tgz"] and
+                    all(.[]; sha256)) and
+                  (.runtime |
+                    type == "object" and
+                    (.version | nonempty and startswith("v" + $version + "."))) and
+                  (.artifacts |
+                    type == "object" and
+                    (.tarball | nonempty) and
+                    (.package | nonempty))
+                end
+              ))
+            )
+          ' "$receipt" >/dev/null; then
+            terminal=true
+          fi
+          if [ "$terminal" = true ] && [ "$all_success" != true ] && \
+            [ "$(jq -r '.conclusion' "$receipt")" = passed ]; then
+            terminal=false
+          fi
+          if [ "$terminal" != true ]; then
+            if [ -f "$receipt" ] && jq -e --arg commit "$EXPECTED_COMMIT" \
+              'type == "object" and .schemaVersion == 1 and .commit == $commit' \
+              "$receipt" >/dev/null; then
+              jq --arg failureCode "$failure_code" \
+                '. + {conclusion: "failed", failureCode: $failureCode}' \
+                "$receipt" >"$temporary"
+            else
+              jq --null-input \
+                --arg commit "$EXPECTED_COMMIT" \
+                --arg failureCode "$failure_code" \
+                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+                '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                  failureCode: $failureCode, runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {}}' \
+                >"$temporary"
+            fi
+            mv "$temporary" "$receipt"
+          fi
+          if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
+            echo "compatibility steps succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
+      - name: Retain final compatibility receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-node-compat-${{ matrix.node-version }}
+          path: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
+          if-no-files-found: error
 
   tthw-evidence:
     needs: [verify-tag, offline-gates]
@@ -350,10 +680,11 @@ jobs:
     environment: kaji-beta
     env:
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
-      KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
     steps:
       - name: Initialize exact-commit TTHW status before setup
         shell: bash
+        env:
+          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
         run: |
           mkdir -p "$KAJI_TTHW_EVIDENCE_DIR"
           echo "TTHW validation did not start." >"$KAJI_TTHW_EVIDENCE_DIR/validation.log"
@@ -389,6 +720,7 @@ jobs:
       - name: Validate protected exact-commit five-user TTHW evidence
         shell: bash
         env:
+          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
           KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}
         run: |
           raw_evidence="$RUNNER_TEMP/kaji-tthw-evidence.raw.json"
@@ -436,10 +768,11 @@ jobs:
     env:
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
       KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-evidence.json
-      KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
     steps:
       - name: Initialize exact-commit provider evidence before setup
         shell: bash
+        env:
+          KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
         run: |
           jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
             '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
@@ -460,6 +793,8 @@ jobs:
           ref: ${{ needs.verify-tag.outputs.commit }}
       - name: Restore not-run provider evidence after checkout
         if: ${{ always() }}
+        env:
+          KAJI_INITIAL_PROVIDER_STATUS_FILE: ${{ runner.temp }}/provider-evidence.initial.json
         run: cp "$KAJI_INITIAL_PROVIDER_STATUS_FILE" "$KAJI_PROVIDER_STATUS_FILE"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

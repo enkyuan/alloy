@@ -8,8 +8,11 @@ import subprocess
 import sys
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import MutableMapping, cast
+import textwrap
 import urllib.request
 
 import pytest
@@ -422,7 +425,10 @@ def test_publish_performance_evidence_is_bound_before_retention() -> None:
         "      - name: Upload exact-run performance evidence", 1
     )[1]
     assert "        if: ${{ always() }}" in upload
-    assert "path: ${{ env.KAJI_PERFORMANCE_EVIDENCE_DIR }}" in upload
+    assert (
+        "path: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
+        in upload
+    )
     for retained in (
         ".artifacts/kaji-evidence/performance-status.json",
         ".artifacts/kaji-evidence/raw/benchmarks/results.json",
@@ -1628,8 +1634,301 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         commit,
     ]
 
+    module = _load_root_script("verify_release_artifacts.py")
+    verified = module.verify(artifacts, commit)
+    assert verified.root == artifacts.resolve()
+    assert verified.commit == commit
+    assert (
+        verified.manifest_sha256
+        == hashlib.sha256((artifacts / "manifest.json").read_bytes()).hexdigest()
+    )
+    assert (
+        verified.python_wheel == (artifacts / "kaji-0.2.0b1-py3-none-any.whl").resolve()
+    )
+    assert verified.python_sdist == (artifacts / "kaji-0.2.0b1.tar.gz").resolve()
+    assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.1.tgz").resolve()
+    with pytest.raises(TypeError):
+        cast(MutableMapping[str, str], verified.artifact_sha256)["extra"] = (
+            "not immutable"
+        )
+
     assert subprocess.run(command, check=False).returncode == 0
     (artifacts / "kaji-sdk-0.2.0-beta.1.tgz").write_bytes(b"tampered")
     result = subprocess.run(command, capture_output=True, check=False, text=True)
     assert result.returncode != 0
     assert "size/hash mismatch" in result.stderr
+
+    (artifacts / "kaji-sdk-0.2.0-beta.1.tgz").write_bytes(
+        payloads["kaji-sdk-0.2.0-beta.1.tgz"]
+    )
+    unexpected = artifacts / "unexpected.whl"
+    unexpected.write_bytes(b"extra")
+    result = subprocess.run(command, capture_output=True, check=False, text=True)
+    assert result.returncode != 0
+    assert "artifact file set mismatch" in result.stderr
+    unexpected.unlink()
+
+    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
+    wheel.unlink()
+    result = subprocess.run(command, capture_output=True, check=False, text=True)
+    assert result.returncode != 0
+    assert "artifact file set mismatch" in result.stderr
+    wheel.write_bytes(payloads[wheel.name])
+
+    npm = artifacts / "kaji-sdk-0.2.0-beta.1.tgz"
+    npm.unlink()
+    npm.symlink_to(wheel)
+    result = subprocess.run(command, capture_output=True, check=False, text=True)
+    assert result.returncode != 0
+    assert "non-regular file or symlink" in result.stderr
+
+
+def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
+    rehearsal = _read(".github/workflows/kaji.beta.yml")
+    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    rehearsal_python = rehearsal.split("  python-compat:", 1)[1].split(
+        "  node-compat:", 1
+    )[0]
+    rehearsal_node = rehearsal.split("  node-compat:", 1)[1].split(
+        "  tthw-evidence:", 1
+    )[0]
+    publish_python = publish.split("  python-compat:", 1)[1].split("  node-compat:", 1)[
+        0
+    ]
+    publish_node = publish.split("  node-compat:", 1)[1].split("  tthw-evidence:", 1)[0]
+
+    assert "needs: offline-release" in rehearsal_python
+    assert "needs: offline-release" in rehearsal_node
+    assert "needs: [verify-tag, offline-gates]" in publish_python
+    assert "needs: [verify-tag, offline-gates]" in publish_node
+
+    for job, smoke in (
+        (rehearsal_python, "kaji/sdk/scripts/release_smoke.py"),
+        (publish_python, "kaji/sdk/scripts/release_smoke.py"),
+        (rehearsal_node, "kaji/ts/scripts/smoke_package.mts"),
+        (publish_node, "kaji/ts/scripts/smoke_package.mts"),
+    ):
+        initialize = job.index("Initialize compatibility receipt before setup")
+        initial_upload = job.index("Retain initial not-run compatibility receipt")
+        checkout = job.index("actions/checkout@")
+        normalize = job.index("Normalize compatibility receipt")
+        final_upload = job.index("Retain final compatibility receipt")
+        assert initialize < initial_upload < checkout
+        assert (
+            job.index("actions/download-artifact@")
+            < job.index("verify_release_artifacts.py")
+            < job.index(smoke)
+            < normalize
+            < final_upload
+        )
+        job_environment = job.split("    strategy:", 1)[0]
+        assert "${{ runner." not in job_environment
+        assert "name: kaji-beta-artifacts" in job
+        assert "path: .artifacts/kaji-release" in job
+        assert "--expected-commit" in job
+        assert "--output" in job
+        assert job.count("if: ${{ always() }}") == 2
+        assert job.count("uses: actions/upload-artifact@") == 2
+        assert "-initial" in job
+        assert "compatibility-receipt.json" in job
+        assert '.conclusion == "passed" and .failureCode == null' in job
+        assert ".releaseManifestSha256 | sha256" in job
+        assert "all(.[]; sha256)" in job
+        assert "compatibility_receipt_not_terminal" in job
+        assert "uv build" not in job
+        assert "npm pack" not in job
+        assert "bun run package:smoke" not in job
+
+    for job in (rehearsal_python, publish_python):
+        assert "--artifacts-dir .artifacts/kaji-release" in job
+    for job in (rehearsal_node, publish_node):
+        assert "--release-manifest .artifacts/kaji-release/manifest.json" in job
+        assert '--expected-commit "$EXPECTED_COMMIT"' in job
+
+
+def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
+    workflow = _read(f".github/workflows/{workflow_name}")
+    next_job = "node-compat" if job_name == "python-compat" else "tthw-evidence"
+    job = workflow.split(f"  {job_name}:", 1)[1].split(f"  {next_job}:", 1)[0]
+    step = job.split("      - name: Normalize compatibility receipt", 1)[1].split(
+        "\n      - name:", 1
+    )[0]
+    return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "job_name", "runtime_kind", "runtime_version"),
+    (
+        ("kaji.beta.yml", "python-compat", "python", "3.11"),
+        ("kaji.beta.yml", "node-compat", "node", "22"),
+        ("kaji.beta-publish.yml", "python-compat", "python", "3.14"),
+        ("kaji.beta-publish.yml", "node-compat", "node", "24"),
+    ),
+)
+def test_compatibility_normalizer_fails_closed_across_hostile_states(
+    tmp_path: Path,
+    workflow_name: str,
+    job_name: str,
+    runtime_kind: str,
+    runtime_version: str,
+) -> None:
+    script = _compatibility_normalizer_script(workflow_name, job_name)
+    commit = "a" * 40
+    base_environment = {
+        **os.environ,
+        "EXPECTED_COMMIT": commit,
+        "KAJI_COMPAT_RUNTIME_KIND": runtime_kind,
+        "KAJI_COMPAT_RUNTIME_VERSION": runtime_version,
+    }
+
+    def run_case(
+        name: str,
+        *,
+        receipt: dict[str, object] | None,
+        outcomes: tuple[str, str, str, str, str, str],
+    ) -> tuple[subprocess.CompletedProcess[str], dict[str, object], bytes | None]:
+        directory = tmp_path / name
+        directory.mkdir()
+        path = directory / "compatibility-receipt.json"
+        original: bytes | None = None
+        if receipt is not None:
+            path.write_text(json.dumps(receipt) + "\n")
+            original = path.read_bytes()
+        environment = {
+            **base_environment,
+            "KAJI_COMPAT_RECEIPT_DIR": str(directory),
+            "CHECKOUT_OUTCOME": outcomes[0],
+            "RUNTIME_SETUP_OUTCOME": outcomes[1],
+            "DEPENDENCY_SETUP_OUTCOME": outcomes[2],
+            "DOWNLOAD_OUTCOME": outcomes[3],
+            "VERIFICATION_OUTCOME": outcomes[4],
+            "SMOKE_OUTCOME": outcomes[5],
+        }
+        completed = subprocess.run(
+            ["/bin/bash", "-c", script],
+            capture_output=True,
+            check=False,
+            env=environment,
+            text=True,
+        )
+        return completed, json.loads(path.read_text()), original
+
+    not_run: dict[str, object] = {
+        "schemaVersion": 1,
+        "commit": commit,
+        "conclusion": "not_run",
+        "failureCode": "compatibility_not_completed",
+    }
+    setup_failure, setup_receipt, _ = run_case(
+        "setup-failure",
+        receipt=not_run,
+        outcomes=("success", "failure", "skipped", "skipped", "skipped", "skipped"),
+    )
+    assert setup_failure.returncode == 0
+    assert setup_receipt["conclusion"] == "failed"
+    assert setup_receipt["failureCode"] == "runtime_setup_not_completed"
+
+    verify_failure, verify_receipt, _ = run_case(
+        "verify-failure",
+        receipt=None,
+        outcomes=("success", "success", "success", "success", "failure", "skipped"),
+    )
+    assert verify_failure.returncode == 0
+    assert verify_receipt["conclusion"] == "failed"
+    assert verify_receipt["failureCode"] == "artifact_verification_not_completed"
+
+    all_success: tuple[str, str, str, str, str, str] = (
+        "success",
+        "success",
+        "success",
+        "success",
+        "success",
+        "success",
+    )
+    nominal_missing, nominal_receipt, _ = run_case(
+        "nominal-missing",
+        receipt=not_run,
+        outcomes=all_success,
+    )
+    assert nominal_missing.returncode != 0
+    assert nominal_receipt["conclusion"] == "failed"
+    assert nominal_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    identity_free_passed: dict[str, object] = {
+        **not_run,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+    identity_free, identity_free_receipt, _ = run_case(
+        "identity-free-passed",
+        receipt=identity_free_passed,
+        outcomes=all_success,
+    )
+    assert identity_free.returncode != 0
+    assert identity_free_receipt["conclusion"] == "failed"
+    assert identity_free_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    if runtime_kind == "python":
+        passed: dict[str, object] = {
+            **identity_free_passed,
+            "releaseManifestSha256": "b" * 64,
+            "artifactSha256": {
+                "kaji-0.2.0b1-py3-none-any.whl": "c" * 64,
+                "kaji-0.2.0b1.tar.gz": "d" * 64,
+            },
+            "runtime": {
+                "implementation": "CPython",
+                "version": f"{runtime_version}.9",
+                "executable": "/opt/python/bin/python",
+            },
+            "artifacts": {
+                "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+                "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
+            },
+        }
+    else:
+        passed = {
+            **identity_free_passed,
+            "releaseManifestSha256": "b" * 64,
+            "artifactSha256": {"kaji-sdk-0.2.0-beta.1.tgz": "c" * 64},
+            "runtime": {"version": f"v{runtime_version}.1.0"},
+            "artifacts": {
+                "tarball": "/artifacts/kaji-sdk-0.2.0-beta.1.tgz",
+                "package": "/tmp/node_modules/@kaji/sdk",
+            },
+        }
+    valid_hashes = passed["artifactSha256"]
+    short_hashes = dict(valid_hashes)
+    short_hashes[next(iter(short_hashes))] = "f" * 63
+    for label, invalid_hashes in (
+        ("extra-artifact-hash", {**valid_hashes, "unexpected.tgz": "f" * 64}),
+        ("short-artifact-hash", short_hashes),
+    ):
+        invalid_identity, invalid_receipt, _ = run_case(
+            label,
+            receipt={**passed, "artifactSha256": invalid_hashes},
+            outcomes=all_success,
+        )
+        assert invalid_identity.returncode != 0
+        assert invalid_receipt["conclusion"] == "failed"
+        assert invalid_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    interrupted_passed, interrupted_receipt, _ = run_case(
+        "interrupted-passed",
+        receipt=passed,
+        outcomes=("success", "success", "success", "success", "success", "cancelled"),
+    )
+    assert interrupted_passed.returncode == 0
+    assert interrupted_receipt["conclusion"] == "failed"
+    assert interrupted_receipt["failureCode"] == "compatibility_smoke_not_completed"
+
+    nominal_passed, passed_receipt, original = run_case(
+        "nominal-passed",
+        receipt=passed,
+        outcomes=all_success,
+    )
+    assert nominal_passed.returncode == 0
+    assert passed_receipt == passed
+    assert (
+        tmp_path / "nominal-passed/compatibility-receipt.json"
+    ).read_bytes() == original

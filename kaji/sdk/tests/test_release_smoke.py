@@ -4,7 +4,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from types import ModuleType
+from types import MappingProxyType, ModuleType, SimpleNamespace
 
 import pytest
 
@@ -117,6 +117,157 @@ def test_release_smoke_preserves_build_verify_install_order(
         )
         == 2
     )
+
+
+def test_release_smoke_consumes_verified_archives_without_building(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_script("release_smoke.py")
+    artifacts = tmp_path / "release"
+    artifacts.mkdir()
+    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
+    sdist = artifacts / "kaji-0.2.0b1.tar.gz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.1.tgz"
+    for path in (wheel, sdist, npm):
+        path.write_bytes(path.name.encode())
+    commit = "a" * 40
+    hashes = MappingProxyType(
+        {path.name: f"hash-{path.name}" for path in (wheel, sdist, npm)}
+    )
+    identity = SimpleNamespace(
+        root=artifacts.resolve(),
+        commit=commit,
+        manifest_sha256="manifest-hash",
+        python_wheel=wheel.resolve(),
+        python_sdist=sdist.resolve(),
+        npm_tarball=npm.resolve(),
+        artifact_sha256=hashes,
+    )
+    verified: list[tuple[Path, str]] = []
+    smoked: list[tuple[Path, Path, object]] = []
+    receipt_path = tmp_path / "receipt.json"
+
+    monkeypatch.setattr(
+        module.verify_release_artifacts,
+        "verify",
+        lambda root, expected: verified.append((root, expected)) or identity,
+    )
+    monkeypatch.setattr(
+        module,
+        "build_archives",
+        lambda _dist: pytest.fail("consume-only mode must not build archives"),
+    )
+
+    def fake_smoke(
+        supplied_wheel: Path,
+        supplied_sdist: Path,
+        *,
+        identity: object,
+    ) -> dict[str, object]:
+        smoked.append((supplied_wheel, supplied_sdist, identity))
+        return {
+            "schemaVersion": 1,
+            "commit": commit,
+            "releaseManifestSha256": "manifest-hash",
+            "artifactSha256": dict(hashes),
+            "runtime": {"implementation": "CPython", "version": "3.test"},
+            "artifacts": {
+                "wheel": str(wheel.resolve()),
+                "sdist": str(sdist.resolve()),
+            },
+            "conclusion": "passed",
+            "failureCode": None,
+        }
+
+    monkeypatch.setattr(module, "smoke_archives", fake_smoke)
+
+    assert (
+        module.main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--expected-commit",
+                commit,
+                "--output",
+                str(receipt_path),
+            ]
+        )
+        == 0
+    )
+
+    assert verified == [(artifacts, commit)]
+    assert smoked == [(wheel.resolve(), sdist.resolve(), identity)]
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt == json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert receipt["commit"] == commit
+    assert receipt["releaseManifestSha256"] == "manifest-hash"
+    assert receipt["artifactSha256"] == dict(hashes)
+    assert receipt["runtime"]["version"] == "3.test"
+    assert receipt["conclusion"] == "passed"
+
+
+def test_python_compatibility_identity_excludes_unconsumed_npm_hash(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("release_smoke.py")
+    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
+    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
+    npm = tmp_path / "kaji-sdk-0.2.0-beta.1.tgz"
+    hashes = MappingProxyType(
+        {
+            wheel.name: "a" * 64,
+            sdist.name: "b" * 64,
+            npm.name: "c" * 64,
+        }
+    )
+    identity = module.verify_release_artifacts.VerifiedReleaseArtifacts(
+        root=tmp_path,
+        commit="d" * 40,
+        manifest_sha256="e" * 64,
+        python_wheel=wheel,
+        python_sdist=sdist,
+        npm_tarball=npm,
+        artifact_sha256=hashes,
+    )
+
+    assert module.python_artifact_sha256(identity) == {
+        wheel.name: "a" * 64,
+        sdist.name: "b" * 64,
+    }
+
+
+def test_release_smoke_consume_failure_overwrites_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("release_smoke.py")
+    artifacts = tmp_path / "release"
+    artifacts.mkdir()
+    receipt_path = tmp_path / "receipt.json"
+
+    def reject(_root: Path, _expected: str) -> None:
+        raise SystemExit("FAIL: artifact file set mismatch")
+
+    monkeypatch.setattr(module.verify_release_artifacts, "verify", reject)
+
+    with pytest.raises(SystemExit, match="artifact file set mismatch"):
+        module.main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--expected-commit",
+                "a" * 40,
+                "--output",
+                str(receipt_path),
+            ]
+        )
+
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["commit"] == "a" * 40
+    assert receipt["conclusion"] == "failed"
+    assert receipt["failureCode"] == "artifact_verification_failed"
 
 
 def test_release_smoke_asserts_all_installed_stable_cli_results(

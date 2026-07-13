@@ -8,8 +8,10 @@ import hashlib
 import json
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
+from types import MappingProxyType
+from typing import Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
@@ -41,6 +43,17 @@ ENTRY_KEYS = {
 }
 
 
+@dataclass(frozen=True)
+class VerifiedReleaseArtifacts:
+    root: Path
+    commit: str
+    manifest_sha256: str
+    python_wheel: Path
+    python_sdist: Path
+    npm_tarball: Path
+    artifact_sha256: Mapping[str, str]
+
+
 def fail(message: str) -> NoReturn:
     raise SystemExit(f"FAIL: {message}")
 
@@ -53,7 +66,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify(artifacts: Path, expected_commit: str) -> None:
+def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
     commit = expected_commit.lower()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         fail("expected commit must be exactly 40 hexadecimal characters")
@@ -137,6 +150,17 @@ def verify(artifacts: Path, expected_commit: str) -> None:
         checksum_hashes[match.group(2)] = match.group(1)
     if checksum_hashes != manifest_hashes:
         fail("SHA256SUMS does not exactly match manifest")
+
+    root = artifacts.resolve()
+    return VerifiedReleaseArtifacts(
+        root=root,
+        commit=commit,
+        manifest_sha256=sha256(artifacts / "manifest.json"),
+        python_wheel=(root / "kaji-0.2.0b1-py3-none-any.whl"),
+        python_sdist=(root / "kaji-0.2.0b1.tar.gz"),
+        npm_tarball=(root / "kaji-sdk-0.2.0-beta.1.tgz"),
+        artifact_sha256=MappingProxyType(dict(sorted(manifest_hashes.items()))),
+    )
 
 
 def main() -> None:
