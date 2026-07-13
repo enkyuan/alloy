@@ -553,6 +553,18 @@ def _wire_preflight(value: object, *, stored: bool) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise EventSchemaIncompatibleError("/")
     document = cast(dict[str, Any], value)
+    if any(field in document for field in ("reason_code", "recovery_code", "doc_url")):
+        from kaji.integrations.recovery import (  # noqa: PLC0415
+            is_closed_recovery_tuple,
+        )
+
+        if not is_closed_recovery_tuple(
+            document.get("reason_code"),
+            document.get("recovery_code"),
+            document.get("doc_url"),
+            document.get("error_code"),
+        ):
+            raise EventSchemaIncompatibleError("/reason_code")
     for field in _REQUIRED_WIRE_FIELDS:
         if field not in document:
             raise EventSchemaIncompatibleError(f"/{field}")

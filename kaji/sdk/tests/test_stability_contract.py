@@ -121,7 +121,7 @@ def test_python_public_exports_have_one_tier_and_exact_generated_docs() -> None:
 def test_release_matrix_matches_registry_stability() -> None:
     matrix = RELEASE_MATRIX.read_text()
     assert "<!-- beta-integrations: echo -->" in matrix
-    assert "<!-- experimental-integrations: fs,http,sqlite,web -->" in matrix
+    assert "<!-- experimental-integrations: fs,github,http,sqlite,web -->" in matrix
     assert "| echo | beta | python, typescript |" in matrix
     for name in ("fs", "http", "sqlite", "web"):
         assert f"| {name} | experimental | typescript |" in matrix
