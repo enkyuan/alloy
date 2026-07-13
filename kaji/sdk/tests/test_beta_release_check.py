@@ -207,6 +207,7 @@ def test_beta_release_check_wraps_required_gates() -> None:
     for expected in [
         '"pytest"',
         '"not integration"',
+        '"--cov-fail-under=80"',
         '"scripts/check_types.py"',
         '"scripts/release_smoke.py"',
         '"package:smoke"',
@@ -226,6 +227,19 @@ def test_beta_release_check_wraps_required_gates() -> None:
 
     assert "run_optional_ast_grep" not in script
     assert "SKIP: ast-grep CLI not installed" not in script
+    assert script.count('"--cov-fail-under=80"') == 2
+    python_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "python.test.yml"
+    ).read_text()
+    assert (
+        'pytest tests/ -m "not integration" --cov=kaji --cov-report=xml '
+        "--cov-fail-under=80"
+    ) in python_workflow
+    typescript_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "ts.test.yml"
+    ).read_text()
+    assert "run: bun run test:coverage" in typescript_workflow
+    assert 'node-version: "24"' in typescript_workflow
 
     parity = script.index('"Cross-SDK behavioral parity"')
     assert parity < script.index("run_gates(common_gates(), environment)")
@@ -260,6 +274,9 @@ def test_integration_quick_benchmark_immediately_follows_core_quick_gate() -> No
 def test_canonical_typescript_test_script_selects_node() -> None:
     package = json.loads((REPO_ROOT / "kaji" / "ts" / "package.json").read_text())
     command = package["scripts"]["test"]
+    coverage_command = package["scripts"]["test:coverage"]
+    assert package["devDependencies"]["vitest"] == "4.1.9"
+    assert package["devDependencies"]["@vitest/coverage-v8"] == "4.1.9"
 
     assert command.startswith(
         'PATH="${PATH#*:}:/usr/local/bin:/opt/homebrew/bin" /bin/sh -c '
@@ -267,8 +284,12 @@ def test_canonical_typescript_test_script_selects_node() -> None:
     assert 'exec "$(command -v node)"' in command
     assert '"$@"' in command
     assert "vitest" in command
+    assert '--coverage.include="src/**/*.ts"' in coverage_command
+    assert '--coverage.include="registry/**/*.ts"' in coverage_command
+    for metric in ("lines", "functions", "branches", "statements"):
+        assert f"--coverage.thresholds.{metric}=80" in coverage_command
     commands = {gate.command for gate in _load_beta_gate().common_gates()}
-    assert any(command[-3:] == ("bun", "run", "test") for command in commands)
+    assert any(command[-3:] == ("bun", "run", "test:coverage") for command in commands)
 
 
 def test_release_wrapper_builds_before_consumers_from_checkout_without_dist(
@@ -320,7 +341,7 @@ if name == "bun":
     if args[:2] == ["run", "build"]:
         dist.mkdir(parents=True, exist_ok=True)
         (dist / "index.js").write_text("built")
-    consumer = args[:2] in (["run", "test"], ["run", "test:quickstart"], ["run", "package:smoke"])
+    consumer = args[:2] in (["run", "test:coverage"], ["run", "test:quickstart"], ["run", "package:smoke"])
     consumer = consumer or (args and args[0] == "scripts/smoke_package.mts")
     if consumer and not dist.is_dir():
         print("artifact consumer ran before build", file=sys.stderr)
@@ -381,7 +402,9 @@ if name == "npm" and args and args[0] == "pack":
         if command.endswith("|run build")
     ]
     test_indices = [
-        index for index, command in enumerate(commands) if command.endswith("|run test")
+        index
+        for index, command in enumerate(commands)
+        if command.endswith("|run test:coverage")
     ]
     assert len(build_indices) == len(test_indices) == 2
     assert all(build < test for build, test in zip(build_indices, test_indices))

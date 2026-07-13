@@ -79,7 +79,7 @@ jobs:
         run: uv run pytest tests/test_quickstart.py -q
 
       - name: Run non-network tests
-        run: uv run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=35
+        run: uv run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

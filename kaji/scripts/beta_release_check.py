@@ -64,7 +64,7 @@ TS_COMMON_GATES = (
     Gate(
         "TypeScript unit tests (offline)",
         TYPESCRIPT,
-        offline_command("bun", "run", "test"),
+        offline_command("bun", "run", "test:coverage"),
     ),
     Gate(
         "TypeScript package smoke",
@@ -102,7 +102,7 @@ TS_RELEASE_GATES = (
     Gate(
         "TypeScript tests (release, offline)",
         TYPESCRIPT,
-        offline_command("bun", "run", "test"),
+        offline_command("bun", "run", "test:coverage"),
     ),
     Gate(
         "TypeScript quickstart (release)",
@@ -374,6 +374,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
                 "pytest",
                 "-m",
                 "not integration",
+                "--cov-fail-under=80",
             )
         ),
         environment,
@@ -482,7 +483,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
         run_in_dir(
             "Python tests (release)",
             SDK,
-            ["uv", "run", "pytest"],
+            ["uv", "run", "pytest", "--cov-fail-under=80"],
             environment,
         )
         run_in_dir(
