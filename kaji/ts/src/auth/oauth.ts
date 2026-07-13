@@ -601,9 +601,18 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
               ) {
                 throw authRequired("gmail_grant_missing");
               }
-              slot.blocked = false;
             });
             await this.runConnect(principalId, slot, generation, clientId, controller.signal);
+            await slot.gate.run(() => {
+              if (
+                slot.generation !== generation ||
+                slot.connect?.generation !== generation ||
+                slot.connect.controller !== controller
+              ) {
+                throw authRequired("gmail_grant_missing");
+              }
+              slot.blocked = false;
+            });
           })();
           operation = { generation, controller, promise };
           slot.connect = operation;
@@ -632,6 +641,7 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
     this.checkDeadline(context.deadlineMonotonicMs);
     const slot = await this.acquireSlot(principalId);
     try {
+      if (slot.blocked) throw authRequired("gmail_grant_missing");
       const generation = await slot.gate.run(() => {
         if (slot.blocked) throw authRequired("gmail_grant_missing");
         return slot.generation;
@@ -808,6 +818,7 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
         generation,
         snapshotOAuthCredentialRecord({ schemaVersion: 1, state: "active", tokens }),
         signal,
+        true,
       );
     } catch (error) {
       if (error instanceof DOMException || error instanceof IntegrationExecutionError) throw error;
@@ -830,12 +841,10 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
       if (slot.refresh === undefined || slot.refresh.generation !== generation) {
         const controller = new AbortController();
         const identity = {};
-        const promise = this.runRefresh(
-          principalId,
-          slot,
-          generation,
-          record,
-          controller.signal,
+        const deadline = this.dependencies.clock.nowMonotonic() + OPERATION_MS;
+        const promise = this.runRefreshWithDeadline(
+          () => this.runRefresh(principalId, slot, generation, record, controller.signal, deadline),
+          controller,
         ).finally(async () => {
           await slot.gate.run(() => {
             if (slot.refresh?.identity === identity) delete slot.refresh;
@@ -869,6 +878,7 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
     generation: number,
     record: OAuthCredentialRecord,
     signal: AbortSignal,
+    deadlineMonotonicMs: number,
   ): Promise<string> {
     const form: Record<string, string> = {
       refresh_token: record.tokens.refreshToken,
@@ -880,7 +890,7 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
       GOOGLE_TOKEN_URL,
       form,
       signal,
-      this.dependencies.clock.nowMonotonic() + OPERATION_MS,
+      deadlineMonotonicMs,
     );
     if (response.status !== 200) {
       if (providerErrorCode(response.bytes) === "invalid_grant") {
@@ -905,6 +915,31 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
       signal,
     );
     return tokens.accessToken;
+  }
+
+  private async runRefreshWithDeadline(
+    start: () => Promise<string>,
+    controller: AbortController,
+  ): Promise<string> {
+    const operation = start();
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort(abortError());
+        reject(timeoutError());
+      }, OPERATION_MS);
+    });
+    try {
+      return await Promise.race([operation, timeout]);
+    } catch (error) {
+      if (!timedOut) throw error;
+      await Promise.allSettled([operation]);
+      throw timeoutError();
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   private tokensFromResponse(
@@ -956,9 +991,13 @@ export class GoogleOAuthClient implements OAuthAccessTokenProvider {
     generation: number,
     record: OAuthCredentialRecord,
     signal: AbortSignal,
+    allowBlockedActive = false,
   ): Promise<void> {
     await slot.gate.run(() => {
-      if (slot.generation !== generation || (slot.blocked && record.state === "active")) {
+      if (
+        slot.generation !== generation ||
+        (slot.blocked && record.state === "active" && !allowBlockedActive)
+      ) {
         throw authRequired("gmail_grant_missing");
       }
       return this.options.storage.save(principalId, record, signal);

@@ -90,6 +90,30 @@ class PausingDeleteStorage extends MemoryStorage {
   }
 }
 
+class PausingSaveStorage extends MemoryStorage {
+  readonly saveEntered = Promise.withResolvers<void>();
+  readonly saveReaped = Promise.withResolvers<void>();
+
+  override async save(
+    _principalId: string,
+    _value: OAuthCredentialRecord,
+    signal: AbortSignal,
+  ): Promise<void> {
+    this.saveEntered.resolve();
+    try {
+      await new Promise<never>((_, reject) => {
+        if (signal.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    } finally {
+      this.saveReaped.resolve();
+    }
+  }
+}
+
 interface OAuthResponse {
   readonly status: number;
   readonly bytes: Uint8Array;
@@ -98,6 +122,7 @@ interface OAuthResponse {
 class Http {
   readonly calls: Array<readonly [string, Readonly<Record<string, string>>]> = [];
   readonly responses: OAuthResponse[];
+  readonly deadlines: number[] = [];
   pause = false;
   readonly entered = Promise.withResolvers<void>();
   readonly release = Promise.withResolvers<void>();
@@ -111,9 +136,10 @@ class Http {
     endpoint: string,
     form: Readonly<Record<string, string>>,
     signal: AbortSignal,
-    _deadlineMonotonicMs: number,
+    deadlineMonotonicMs: number,
   ): Promise<OAuthResponse> {
     this.calls.push([endpoint, { ...form }]);
+    this.deadlines.push(deadlineMonotonicMs);
     this.entered.resolve();
     signal.addEventListener("abort", () => this.aborted.resolve(), { once: true });
     if (this.pause) {
@@ -335,6 +361,30 @@ describe("GoogleOAuthClient", () => {
     await http.aborted.promise;
   });
 
+  it("aborts and reaps a refresh whose persistence exceeds its owned deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const storage = new PausingSaveStorage({
+        "user-123": record({ accessToken: "old", expiresAtEpochMs: 1 }),
+      });
+      const http = new Http([
+        response(200, { access_token: "new", expires_in: 3600, token_type: "Bearer" }),
+      ]);
+      const pending = makeClient({ storage, http }).accessToken(context());
+      await storage.saveEntered.promise;
+      const rejected = expect(pending).rejects.toThrow("OAuth operation timed out");
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await storage.saveReaped.promise;
+      await rejected;
+      expect(http.deadlines).toEqual([130_000]);
+      expect(storage.records.get("user-123")?.tokens.accessToken).toBe("old");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("detaches a short-deadline waiter without cancelling a longer waiter", async () => {
     vi.useFakeTimers();
     try {
@@ -461,6 +511,31 @@ describe("GoogleOAuthClient", () => {
     expect(http.calls[0]?.[0]).toBe("https://oauth2.googleapis.com/token");
     expect(http.calls[0]?.[1]).toMatchObject({ code_verifier: verifier });
     expect(http.calls[0]?.[1]).not.toHaveProperty("client_secret");
+  });
+
+  it("blocks access to the old token until the active connect saves", async () => {
+    const storage = new MemoryStorage({ "user-123": record({ accessToken: "old" }) });
+    const http = new Http([
+      response(200, {
+        access_token: "new",
+        refresh_token: "new-refresh",
+        expires_in: 3600,
+        token_type: "Bearer",
+        scope: "scope/a scope/b",
+      }),
+    ]);
+    http.pause = true;
+    const client = makeClient({ storage, http });
+    const connecting = client.connect("user-123", new AbortController().signal);
+    await http.entered.promise;
+
+    await expect(client.accessToken(context())).rejects.toMatchObject({
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+    });
+
+    http.release.resolve();
+    await connecting;
+    await expect(client.accessToken(context())).resolves.toBe("new");
   });
 
   it("disconnects without client id and persists ambiguous revocation", async () => {

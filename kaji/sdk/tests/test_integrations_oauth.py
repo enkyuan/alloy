@@ -4,7 +4,9 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -135,10 +137,35 @@ class PausingStore(MemoryStore):
         await super().delete(principal_id, cancellation, deadline_monotonic)
 
 
+class PausingSaveStore(MemoryStore):
+    def __init__(self, records: dict[str, OAuthCredentialRecord]) -> None:
+        super().__init__(records)
+        self.save_entered = asyncio.Event()
+        self.save_cancelled = asyncio.Event()
+        self.deadlines: list[float | None] = []
+
+    async def save(
+        self,
+        principal_id: str,
+        value: OAuthCredentialRecord,
+        cancellation: CancellationToken,
+        deadline_monotonic: float | None,
+    ) -> None:
+        del principal_id, value, cancellation
+        self.deadlines.append(deadline_monotonic)
+        self.save_entered.set()
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            self.save_cancelled.set()
+            raise
+
+
 class Http:
     def __init__(self, responses: list[_OAuthHttpResponse] | None = None) -> None:
         self.responses = list(responses or [])
         self.calls: list[tuple[str, dict[str, str]]] = []
+        self.deadlines: list[float] = []
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
         self.cancelled = asyncio.Event()
@@ -152,6 +179,7 @@ class Http:
         deadline_monotonic: float,
     ) -> _OAuthHttpResponse:
         self.calls.append((endpoint, dict(form)))
+        self.deadlines.append(deadline_monotonic)
         self.entered.set()
         try:
             if self.pause:
@@ -225,6 +253,7 @@ def client(
     client_id: str | None = "client-id",
     client_secret: str | None = None,
     clock: Clock | None = None,
+    operation_seconds: float = 30,
 ):
     callback = callback or Callback()
     browser = browser or Browser()
@@ -238,6 +267,7 @@ def client(
         browser=browser,
         clock=clock or Clock(),
         random_bytes=lambda count: bytes(range(count)),
+        operation_seconds=operation_seconds,
     )
 
 
@@ -410,6 +440,30 @@ async def test_last_refresh_waiter_cancels_shared_operation() -> None:
 
 
 @pytest.mark.asyncio
+async def test_refresh_deadline_cancels_a_stalled_save_and_reaps_the_flight() -> None:
+    store = PausingSaveStore({"user-123": record(access="old", expires=1)})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","expires_in":3600,"token_type":"Bearer"}',
+            )
+        ]
+    )
+    pending = asyncio.create_task(
+        client(store=store, http=http, operation_seconds=0.01).access_token(context())
+    )
+    await store.save_entered.wait()
+
+    with pytest.raises(TimeoutError, match="OAuth operation timed out"):
+        await pending
+
+    assert store.save_cancelled.is_set()
+    assert http.deadlines == store.deadlines == [100.01]
+    assert store.records["user-123"].tokens.access_token == "old"
+
+
+@pytest.mark.asyncio
 async def test_invalid_grant_deletes_local_record() -> None:
     store = MemoryStore({"user-123": record(expires=1)})
     http = Http([_OAuthHttpResponse(400, b'{"error":"invalid_grant"}')])
@@ -488,6 +542,30 @@ async def test_confirmed_revoke_uses_internal_cleanup_after_caller_cancel() -> N
 
 
 @pytest.mark.asyncio
+async def test_confirmed_revoke_delete_survives_caller_task_cancellation() -> None:
+    store = PausingStore({"user-123": record()})
+    oauth = client(
+        store=store,
+        http=Http([_OAuthHttpResponse(200, b"")]),
+        client_id=None,
+    )
+    disconnect = asyncio.create_task(oauth.disconnect("user-123", CancellationToken()))
+    await store.delete_entered.wait()
+    disconnect.cancel()
+    await asyncio.sleep(0)
+    assert not disconnect.done()
+
+    with pytest.raises(IntegrationAuthRequiredError):
+        await oauth.access_token(context())
+
+    store.release_delete.set()
+    with pytest.raises(asyncio.CancelledError):
+        await disconnect
+    with pytest.raises(IntegrationAuthRequiredError):
+        await client(store=store, client_id=None).access_token(context())
+
+
+@pytest.mark.asyncio
 async def test_public_client_composes_with_async_credential_store() -> None:
     store = MemoryStore({"user-123": record(expires=9_000_000_000_000_000)})
     oauth = GoogleOAuthClient(
@@ -543,6 +621,30 @@ async def test_connect_uses_fixed_endpoint_pkce_and_closes_callback() -> None:
     assert form["code_verifier"] == verifier
     assert "client_secret" not in form
     assert store.records["user-123"].state == "active"
+
+
+@pytest.mark.asyncio
+async def test_connect_blocks_access_to_the_old_token_until_new_save_finishes() -> None:
+    store = MemoryStore({"user-123": record(access="old")})
+    http = Http(
+        [
+            _OAuthHttpResponse(
+                200,
+                b'{"access_token":"new","refresh_token":"new-refresh","expires_in":3600,"token_type":"Bearer","scope":"scope/a scope/b"}',
+            )
+        ]
+    )
+    http.pause = True
+    oauth = client(store=store, http=http)
+    connecting = asyncio.create_task(oauth.connect("user-123", CancellationToken()))
+    await http.entered.wait()
+
+    with pytest.raises(IntegrationAuthRequiredError):
+        await oauth.access_token(context())
+
+    http.release.set()
+    await connecting
+    assert await oauth.access_token(context()) == "new"
 
 
 @pytest.mark.asyncio
@@ -641,6 +743,44 @@ def test_file_store_rejects_symlink(tmp_path: Path) -> None:
     with pytest.raises(Exception):
         FileTokenStorage(link).save(record().to_wire())
     assert target.read_text() == "secret"
+
+
+def test_file_store_rejects_a_symlink_swapped_at_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "tokens.json"
+    victim = tmp_path / "victim.json"
+    path.write_text(json.dumps(record(access="original").to_wire()))
+    victim_payload = json.dumps(record(access="victim").to_wire())
+    victim.write_text(victim_payload)
+    original_path_open = Path.open
+    original_os_open = os.open
+    swapped = False
+
+    def swap() -> None:
+        nonlocal swapped
+        if swapped:
+            return
+        swapped = True
+        path.unlink()
+        path.symlink_to(victim)
+
+    def swapping_path_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == path:
+            swap()
+        return original_path_open(self, *args, **kwargs)
+
+    def swapping_os_open(file: Any, *args: Any, **kwargs: Any) -> Any:
+        if Path(file) == path:
+            swap()
+        return original_os_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", swapping_path_open)
+    monkeypatch.setattr(os, "open", swapping_os_open)
+
+    with pytest.raises(Exception):
+        FileTokenStorage(path).load()
+    assert victim.read_text() == victim_payload
 
 
 def test_credential_wire_is_lower_camel_and_closed() -> None:

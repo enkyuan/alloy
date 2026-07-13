@@ -269,13 +269,25 @@ class FileTokenStorage:
         return value
 
     def load(self) -> dict[str, object] | None:
-        if self._existing_stat() is None:
-            return None
+        descriptor: int | None = None
         try:
-            with self.path.open("rb") as handle:
+            if not hasattr(os, "O_NOFOLLOW"):
+                raise _auth_error()
+            flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+            descriptor = os.open(self.path, flags)
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode):
+                raise _auth_error()
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = None
                 encoded = handle.read(_MAX_CREDENTIAL_BYTES + 1)
+        except FileNotFoundError:
+            return None
         except OSError:
             raise _auth_error() from None
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
         if len(encoded) > _MAX_CREDENTIAL_BYTES:
             raise _auth_error()
         try:
@@ -292,17 +304,17 @@ class FileTokenStorage:
         temporary = self.path.parent / f".{self.path.name}.{secrets.token_hex(8)}.tmp"
         descriptor: int | None = None
         try:
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
             if hasattr(os, "O_NOFOLLOW"):
                 flags |= os.O_NOFOLLOW
             descriptor = os.open(temporary, flags, 0o600)
+            os.fchmod(descriptor, 0o600)
             with os.fdopen(descriptor, "wb") as handle:
                 descriptor = None
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
-            os.chmod(self.path, 0o600)
             self._fsync_parent()
         except (OSError, ValueError):
             raise _auth_error() from None
@@ -802,6 +814,7 @@ class GoogleOAuthClient:
         browser: _Browser,
         clock: Clock,
         random_bytes: Callable[[int], bytes],
+        operation_seconds: float = _OPERATION_SECONDS,
     ) -> None:
         if client_id is not None and (
             not isinstance(client_id, str) or not client_id or len(client_id) > 4_096
@@ -822,6 +835,7 @@ class GoogleOAuthClient:
         self._browser = browser
         self._clock = clock
         self._random_bytes = random_bytes
+        self._operation_seconds = operation_seconds
         self._slots: dict[str, _PrincipalSlot] = {}
         self._slots_gate = asyncio.Lock()
 
@@ -886,6 +900,8 @@ class GoogleOAuthClient:
         )
         slot = await self._acquire_slot(principal_id)
         try:
+            if slot.blocked:
+                raise _auth_required("gmail_grant_missing")
             async with slot.gate:
                 if slot.blocked:
                     raise _auth_required("gmail_grant_missing")
@@ -958,11 +974,13 @@ class GoogleOAuthClient:
                 await asyncio.gather(*operations, return_exceptions=True)
             record = await self._store.load(principal_id, cancellation, None)
             if record is None:
+                await self._unblock_if_current(slot, generation)
                 return DisconnectResult("missing", False)
             if force_local:
                 await self._delete_blocked_if_current(
                     principal_id, slot, generation, cancellation, None
                 )
+                await self._unblock_if_current(slot, generation)
                 return DisconnectResult("deleted", False)
             pending = OAuthCredentialRecord(
                 schema_version=1,
@@ -979,54 +997,44 @@ class GoogleOAuthClient:
                     deadline,
                 )
             except asyncio.CancelledError:
-                await self._save_if_current(
-                    principal_id,
-                    slot,
-                    generation,
-                    pending,
-                    cleanup,
-                    self._clock.now_monotonic() + _OPERATION_SECONDS,
+                await self._await_disconnect_cleanup(
+                    asyncio.create_task(
+                        self._complete_disconnect(
+                            principal_id,
+                            slot,
+                            generation,
+                            pending,
+                            cleanup,
+                            remote_revoked=False,
+                        )
+                    )
                 )
                 raise
             except Exception:
-                await self._save_if_current(
-                    principal_id,
-                    slot,
-                    generation,
-                    pending,
-                    cleanup,
-                    self._clock.now_monotonic() + _OPERATION_SECONDS,
-                )
-                return DisconnectResult("revocation_pending", False)
-            if response.status == 200:
-                try:
-                    await self._delete_blocked_if_current(
-                        principal_id,
-                        slot,
-                        generation,
-                        cleanup,
-                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                return await self._await_disconnect_cleanup(
+                    asyncio.create_task(
+                        self._complete_disconnect(
+                            principal_id,
+                            slot,
+                            generation,
+                            pending,
+                            cleanup,
+                            remote_revoked=False,
+                        )
                     )
-                except Exception:
-                    await self._save_if_current(
+                )
+            return await self._await_disconnect_cleanup(
+                asyncio.create_task(
+                    self._complete_disconnect(
                         principal_id,
                         slot,
                         generation,
                         pending,
                         cleanup,
-                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                        remote_revoked=response.status == 200,
                     )
-                    return DisconnectResult("revocation_pending", True)
-                return DisconnectResult("deleted", True)
-            await self._save_if_current(
-                principal_id,
-                slot,
-                generation,
-                pending,
-                cleanup,
-                self._clock.now_monotonic() + _OPERATION_SECONDS,
+                )
             )
-            return DisconnectResult("revocation_pending", False)
         finally:
             async with slot.gate:
                 if slot.disconnect is current:
@@ -1058,8 +1066,16 @@ class GoogleOAuthClient:
                 or slot.connect.task is not current
             ):
                 raise _auth_required("gmail_grant_missing")
-            slot.blocked = False
         await self._run_connect(principal_id, slot, generation, client_id, cancellation)
+        async with slot.gate:
+            current = asyncio.current_task()
+            if (
+                slot.generation != generation
+                or slot.connect is None
+                or slot.connect.task is not current
+            ):
+                raise _auth_required("gmail_grant_missing")
+            slot.blocked = False
 
     async def _run_connect(
         self,
@@ -1120,6 +1136,7 @@ class GoogleOAuthClient:
                 record,
                 cancellation,
                 self._clock.now_monotonic() + _OPERATION_SECONDS,
+                allow_blocked_active=True,
             )
         except (asyncio.CancelledError, TimeoutError):
             raise
@@ -1144,8 +1161,16 @@ class GoogleOAuthClient:
             flight = slot.refresh
             if flight is None or flight.generation != generation:
                 internal = CancellationToken()
+                deadline = self._clock.now_monotonic() + self._operation_seconds
                 task = asyncio.create_task(
-                    self._run_refresh(principal_id, slot, generation, record, internal)
+                    self._run_refresh(
+                        principal_id,
+                        slot,
+                        generation,
+                        record,
+                        internal,
+                        deadline,
+                    )
                 )
                 flight = _RefreshFlight(task, internal, generation)
                 slot.refresh = flight
@@ -1173,58 +1198,65 @@ class GoogleOAuthClient:
         generation: int,
         record: OAuthCredentialRecord,
         cancellation: CancellationToken,
+        deadline: float,
     ) -> str:
         task = asyncio.current_task()
         try:
-            client_id = self._required_client_id()
-            form = {
-                "refresh_token": record.tokens.refresh_token,
-                "client_id": client_id,
-                "grant_type": "refresh_token",
-            }
-            if self._client_secret is not None:
-                form["client_secret"] = self._client_secret
-            response = await self._http.post_form(
-                GOOGLE_TOKEN_URL,
-                form,
-                cancellation,
-                self._clock.now_monotonic() + _OPERATION_SECONDS,
-            )
-            if response.status != 200:
-                if _provider_error_code(response.body) == "invalid_grant":
-                    await self._delete_if_current(
+            try:
+                async with asyncio.timeout(self._operation_seconds):
+                    client_id = self._required_client_id()
+                    form = {
+                        "refresh_token": record.tokens.refresh_token,
+                        "client_id": client_id,
+                        "grant_type": "refresh_token",
+                    }
+                    if self._client_secret is not None:
+                        form["client_secret"] = self._client_secret
+                    response = await self._http.post_form(
+                        GOOGLE_TOKEN_URL,
+                        form,
+                        cancellation,
+                        deadline,
+                    )
+                    if response.status != 200:
+                        if _provider_error_code(response.body) == "invalid_grant":
+                            await self._delete_if_current(
+                                principal_id,
+                                slot,
+                                generation,
+                                cancellation,
+                                deadline,
+                            )
+                            raise _auth_required("gmail_grant_missing")
+                        raise IntegrationExecutionError("api_rejected")
+                    try:
+                        tokens = self._tokens_from_response(
+                            response.body, fallback=record.tokens, require_scope=False
+                        )
+                    except _OAuthScopeDrift:
+                        await self._delete_if_current(
+                            principal_id,
+                            slot,
+                            generation,
+                            cancellation,
+                            deadline,
+                        )
+                        raise _auth_required("gmail_scope_drift") from None
+                    updated = OAuthCredentialRecord(1, "active", tokens)
+                    await self._save_if_current(
                         principal_id,
                         slot,
                         generation,
+                        updated,
                         cancellation,
-                        self._clock.now_monotonic() + _OPERATION_SECONDS,
+                        deadline,
                     )
-                    raise _auth_required("gmail_grant_missing")
-                raise IntegrationExecutionError("api_rejected")
-            try:
-                tokens = self._tokens_from_response(
-                    response.body, fallback=record.tokens, require_scope=False
-                )
-            except _OAuthScopeDrift:
-                await self._delete_if_current(
-                    principal_id,
-                    slot,
-                    generation,
-                    cancellation,
-                    self._clock.now_monotonic() + _OPERATION_SECONDS,
-                )
-                raise _auth_required("gmail_scope_drift") from None
-            updated = OAuthCredentialRecord(1, "active", tokens)
-            await self._save_if_current(
-                principal_id,
-                slot,
-                generation,
-                updated,
-                cancellation,
-                self._clock.now_monotonic() + _OPERATION_SECONDS,
-            )
-            return tokens.access_token
+                    return tokens.access_token
+            except TimeoutError:
+                cancellation.cancel()
+                raise TimeoutError("OAuth operation timed out") from None
         finally:
+            cancellation.cancel()
             async with slot.gate:
                 if slot.refresh is not None and slot.refresh.task is task:
                     slot.refresh = None
@@ -1283,13 +1315,64 @@ class GoogleOAuthClient:
         record: OAuthCredentialRecord,
         cancellation: CancellationToken,
         deadline: float | None,
+        *,
+        allow_blocked_active: bool = False,
     ) -> None:
         async with slot.gate:
             if slot.generation != generation or (
-                slot.blocked and record.state == "active"
+                slot.blocked and record.state == "active" and not allow_blocked_active
             ):
                 raise _auth_required("gmail_grant_missing")
             await self._store.save(principal_id, record, cancellation, deadline)
+
+    async def _complete_disconnect(
+        self,
+        principal_id: str,
+        slot: _PrincipalSlot,
+        generation: int,
+        pending: OAuthCredentialRecord,
+        cleanup: CancellationToken,
+        *,
+        remote_revoked: bool,
+    ) -> DisconnectResult:
+        deadline = self._clock.now_monotonic() + self._operation_seconds
+        if remote_revoked:
+            try:
+                await self._delete_blocked_if_current(
+                    principal_id, slot, generation, cleanup, deadline
+                )
+            except (Exception, asyncio.CancelledError):
+                await self._save_if_current(
+                    principal_id, slot, generation, pending, cleanup, deadline
+                )
+                await self._unblock_if_current(slot, generation)
+                return DisconnectResult("revocation_pending", True)
+            await self._unblock_if_current(slot, generation)
+            return DisconnectResult("deleted", True)
+        await self._save_if_current(
+            principal_id, slot, generation, pending, cleanup, deadline
+        )
+        await self._unblock_if_current(slot, generation)
+        return DisconnectResult("revocation_pending", False)
+
+    async def _await_disconnect_cleanup(
+        self, task: asyncio.Task[DisconnectResult]
+    ) -> DisconnectResult:
+        caller_cancelled = False
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                caller_cancelled = True
+        result = task.result()
+        if caller_cancelled:
+            raise asyncio.CancelledError
+        return result
+
+    async def _unblock_if_current(self, slot: _PrincipalSlot, generation: int) -> None:
+        async with slot.gate:
+            if slot.generation == generation:
+                slot.blocked = False
 
     async def _delete_if_current(
         self,
@@ -1364,6 +1447,7 @@ class GoogleOAuthClient:
                 and slot.connect is None
                 and slot.refresh is None
                 and slot.disconnect is None
+                and not slot.blocked
                 and self._slots.get(principal_id) is slot
             ):
                 del self._slots[principal_id]
@@ -1380,6 +1464,7 @@ def _create_google_oauth_client_for_test(
     browser: _Browser,
     clock: Clock,
     random_bytes: Callable[[int], bytes],
+    operation_seconds: float = _OPERATION_SECONDS,
 ) -> GoogleOAuthClient:
     client = object.__new__(GoogleOAuthClient)
     client._initialize(
@@ -1392,6 +1477,7 @@ def _create_google_oauth_client_for_test(
         browser=browser,
         clock=clock,
         random_bytes=random_bytes,
+        operation_seconds=operation_seconds,
     )
     return client
 
