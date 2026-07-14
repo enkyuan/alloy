@@ -1,25 +1,21 @@
 ---
-title: Reference Service
-description: kaji-serve wraps the SDK as three Redis-backed processes (api, bus-worker, worker) for multi-process hand-off and real-time voice. This page shows how to run them.
+title: Experimental Reference Service
+description: kaji-serve is a pre-beta FastAPI and Soniox STT edge. It is not part of the supported 0.2 SDK beta.
 ---
 
-`kaji-serve` (`kaji/serve`) wraps the SDK as three processes
-over Redis so heavy tool execution never stalls a real-time exchange.
+`kaji-serve` (`kaji/serve`) exposes one FastAPI process with REST routes and a
+Soniox speech-to-text WebSocket on port 8080. It is an experimental reference
+edge, not part of the 0.2 SDK beta core or a production durability or
+horizontal-scaling claim.
 
-| Process      | Role                                                      | Port |
-| ------------ | --------------------------------------------------------- | ---- |
-| `api`        | FastAPI app: REST routes and STT WebSocket                | 8080 |
-| `bus-worker` | reasoning loop: LLM calls, event bus, tool dispatch       | -    |
-| `worker`     | async tool execution (TaskIQ), results back to bus-worker | -    |
-
-Redis Streams provide at-least-once hand-off between processes. Redis
-Pub/Sub fans agent responses out to the connected client in real time.
-Session-list metadata is stored in Postgres; durable event replay needs
-a persistent `EventStore` before production use.
+The STT socket authenticates the caller, accepts audio frames, and returns
+partial, final, and complete transcripts. It does not queue an agent command,
+run `AgentRuntime`, relay an agent response, or synthesize speech. Applications
+own the explicit hand-off from a final transcript to the embedded SDK runtime.
 
 ## Run with docker compose
 
-The fastest path. Provides Redis automatically.
+The fastest path. It starts the API and its Postgres/Supabase dependencies.
 
 ```bash
 cd docker/kaji
@@ -32,33 +28,24 @@ The `api` is reachable at `http://localhost:8080`. Health check:
 curl http://localhost:8080/health
 ```
 
-## Run the processes directly
+## Run directly
 
-If you already have a Redis instance, you can start each process by hand
-in three separate terminals.
+If its dependencies are already available, start the single API process:
 
 ```bash
 cd kaji/serve
-poetry install
-export REDIS_URL=redis://localhost:6379/0
-
-# Terminal 1: api
-poetry run uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
-
-# Terminal 2: bus-worker
-poetry run python -m kaji_serve.workers.main
-
-# Terminal 3: worker
-poetry run taskiq worker kaji_serve.workers.broker:broker kaji_serve.workers.tasks.tools
+uv sync
+uv run uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
 ```
 
 ## When to use the reference service
 
 Reach for it when you need:
 
-- multi-process hand-off for worker execution,
-- real-time voice over a WebSocket,
-- horizontal scale: more workers behind one bus.
+- the current FastAPI service shell,
+- real-time Soniox transcription over a WebSocket,
+- service migration requirements before a supported hosted beta.
 
-For everything else -- in-process agents, single-replica deployments,
-embedded apps -- embed the SDK directly. See [index](/docs).
+For agent execution and embedded apps, use the SDK directly. A future hosted
+runtime needs a canonical adapter, persistent event store, restart-safe tool
+idempotency, and distributed same-session coordination. See [index](/docs).

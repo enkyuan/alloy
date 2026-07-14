@@ -3,29 +3,30 @@ title: kaji
 description: kaji is an embeddable SDK for building agents in Python and TypeScript. Event-sourced runtime, tool registry, pluggable providers, STT/TTS modalities. No database or server required.
 ---
 
-kaji is an embeddable SDK for building agents. The core needs no database
-or server. Run `kaji-serve` when you want multi-process durability and
-real-time voice.
+Kaji is an embeddable SDK for building agents. The stable core needs no
+database or server. Run `kaji-serve` only when you need its experimental REST
+or Soniox speech-to-text edge.
 
 ## Packages
 
-| Package      | Path         | What it is                                   |
-| ------------ | ------------ | -------------------------------------------- |
-| `kaji`       | `kaji/sdk`   | Python SDK: core runtime, embed anywhere     |
-| `kaji-serve` | `kaji/serve` | Python: FastAPI + workers, reference service |
-| `@kaji/sdk`  | `kaji/ts`    | TypeScript port of the core runtime          |
+| Package      | Path         | What it is                                         |
+| ------------ | ------------ | -------------------------------------------------- |
+| `kaji`       | `kaji/sdk`   | Python SDK: stable core plus experimental add-ons  |
+| `@kaji/sdk`  | `kaji/ts`    | TypeScript SDK: stable core and copyable catalog   |
+| `@kaji/cli`  | `apps/cli`   | Standalone cross-language scaffold and diagnostics |
+| `kaji-serve` | `kaji/serve` | Experimental REST + Soniox STT reference service   |
 
 The wire format (event-type strings, field names) is identical across the
 Python SDK and the TypeScript port, so logs round-trip between them.
 
 ## Embed or serve?
 
-| If you want…                                      | Use          |
-| ------------------------------------------------- | ------------ |
-| In-process agent in your own app, no infra        | `kaji`       |
-| Multi-process durability, real-time voice over WS | `kaji-serve` |
+| If you want…                                   | Use          |
+| ---------------------------------------------- | ------------ |
+| In-process agent in your own app, no infra     | `kaji`       |
+| REST routes or real-time transcription over WS | `kaji-serve` |
 
-See [reference service](/docs/reference-service) for the multi-process layout.
+See [reference service](/docs/reference-service) for the supported edge surface.
 
 ## Composition
 

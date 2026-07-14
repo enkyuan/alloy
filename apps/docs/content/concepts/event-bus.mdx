@@ -1,12 +1,56 @@
 ---
 title: Event Bus
-description: The event bus fans events out to per-session subscribers. In-memory by default in both SDKs; Redis Streams in kaji-serve for cross-process hand-off.
+description: The event bus fans events out to per-session subscribers. In-memory by default in both SDKs, with optional Python Redis adapters for cross-process hand-off.
 ---
 
 Subscribe to the bus when you want to stream events as they happen -- e.g.
 push agent deltas to a UI, or tee them into your own log.
 
-The default implementation is in-memory (`InMemoryEventBus` in Python,
-`EventBus` in TS), sufficient for embedded single-process agents.
-`kaji-serve` swaps in a Redis Stream-backed bus for cross-process
-hand-off. Durable event replay still requires a persistent event store.
+The default builders create `InMemoryEventJournal` (Python) or
+`InMemoryEventCommitter` (TypeScript). Each commits to an `EventStore` and
+attaches bounded per-session subscribers through one gap-free process-local
+boundary.
+
+<Tabs items={["python", "typescript"]}>
+  <Tab value="python">
+    ```python
+    import kaji
+
+    journal = kaji.InMemoryEventJournal()
+    runtime = kaji.AgentBuilder().provider(provider).build(journal=journal)
+
+    subscription = await journal.open_subscription("session-1")
+    try:
+        async for event in subscription:
+            print(event.sequence, event.type)
+    finally:
+        await subscription.aclose()
+    ```
+
+  </Tab>
+  <Tab value="typescript">
+    ```ts
+    import { AgentBuilder, InMemoryEventCommitter } from "@kaji/sdk";
+
+    const committer = new InMemoryEventCommitter();
+    const runtime = new AgentBuilder().provider(provider).build({ committer });
+
+    for await (const event of committer.subscribe("session-1")) {
+      console.log(event.sequence, event.type);
+    }
+    ```
+
+  </Tab>
+</Tabs>
+
+Resume strictly after the last persisted cursor with `after_sequence` in
+Python or `afterSequence` in TypeScript. A subscriber queue holds 1,024 events
+by default and raises `EventBufferOverflowError` instead of silently dropping
+history. Always close or return a subscription when the consumer stops.
+
+`EventBus` / `InMemoryEventBus` and the split journal/committer adapters remain
+compatibility surfaces for deployments that cannot share one atomic boundary.
+They are experimental because a separate store and bus need explicit retry and
+delivery-failure policy. Python's optional Redis adapters can provide
+cross-process hand-off, not durable replay; production replay still needs an
+application-owned persistent `EventStore`.
