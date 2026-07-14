@@ -27,10 +27,15 @@ describe("init command", () => {
     // Provider is wired at scaffold time via a factory call, not a runtime env switch.
     expect(agent).toMatch(/\.provider\(openai\(\)\)/);
     expect(agent).toMatch(/\.turn\("Say hello\."\)/);
-    expect(agent).not.toMatch(/EventBus|InMemoryEventStore|KajiEvent|SESSION_CREATED|runtime\.send/);
+    expect(agent).not.toMatch(
+      /EventBus|InMemoryEventStore|KajiEvent|SESSION_CREATED|runtime\.send/,
+    );
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
-    expect(pkg.dependencies["@kaji/sdk"]).toBe("^0.1.0");
-    expect(pkg.dependencies.openai).toBe("^6.42.0");
+    expect(pkg.engines.node).toBe("22.x || 24.x");
+    expect(pkg.scripts.typecheck).toBe("tsc --noEmit");
+    expect(pkg.dependencies["@kaji/sdk"]).toBe("^0.2.0-beta.1");
+    expect(pkg.dependencies.zod).toBe(">=4.3 <5");
+    expect(pkg.dependencies.openai).toBe(">=4 <8");
   });
 
   it("ts --provider kimi wires the kimi() factory", async () => {
@@ -51,7 +56,7 @@ describe("init command", () => {
     expect(agent).toMatch(/\.provider\(kimi\(\)\)/);
     expect(agent).not.toMatch(/\.provider\(openai\(\)\)/);
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
-    expect(pkg.dependencies.openai).toBe("^6.42.0");
+    expect(pkg.dependencies.openai).toBe(">=4 <8");
   });
 
   it("ts --provider gemini wires the gemini() factory", async () => {
@@ -70,7 +75,7 @@ describe("init command", () => {
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
     expect(agent).toMatch(/\.provider\(gemini\(\)\)/);
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
-    expect(pkg.dependencies.openai).toBe("^6.42.0");
+    expect(pkg.dependencies.openai).toBe(">=4 <8");
   });
 
   it("ts --provider anthropic adds the anthropic peer dependency", async () => {
@@ -87,7 +92,7 @@ describe("init command", () => {
       "--yes",
     ]);
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
-    expect(pkg.dependencies["@anthropic-ai/sdk"]).toBe("^0.104.1");
+    expect(pkg.dependencies["@anthropic-ai/sdk"]).toBe(">=0.30 <2");
     expect(pkg.dependencies.openai).toBeUndefined();
   });
 
