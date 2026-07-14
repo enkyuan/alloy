@@ -27,11 +27,13 @@ if __name__ == "__main__":
 }
 
 const PYTHON_EXTRAS: Record<string, string> = {
-  openai: "kaji[openai]",
-  anthropic: "kaji[anthropic]",
-  gemini: "kaji[gemini]",
-  kimi: "kaji",
+  openai: "kaji-sdk[openai]",
+  anthropic: "kaji-sdk[anthropic]",
+  gemini: "kaji-sdk[gemini]",
+  kimi: "kaji-sdk",
 };
+
+const PYTHON_SDK_RANGE = ">=0.2.0b1,<0.3";
 
 function resolvePythonRequirement(provider: string): string {
   const requirement = PYTHON_EXTRAS[provider];
@@ -42,7 +44,7 @@ function resolvePythonRequirement(provider: string): string {
 }
 
 export function pyRequirementsTemplate(provider: string): string {
-  return `${resolvePythonRequirement(provider)}>=0.1.0\n`;
+  return `${resolvePythonRequirement(provider)}${PYTHON_SDK_RANGE}\n`;
 }
 
 export function pyEnvTemplate(provider: string): string {
@@ -52,6 +54,6 @@ KAJI_MODEL_PROVIDER=${provider}
 # OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
 # GEMINI_API_KEY=...
-# KIMI_API_KEY=...
+# OPENROUTER_API_KEY=...
 `;
 }

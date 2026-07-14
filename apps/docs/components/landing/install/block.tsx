@@ -130,11 +130,13 @@ export function InstallBlock() {
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">pip</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">install kaji</span>
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        install kaji-sdk==0.2.0b1
+                      </span>
                     </code>
                     <button
                       type="button"
-                      onClick={() => copy("pip install kaji")}
+                      onClick={() => copy("pip install kaji-sdk==0.2.0b1")}
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >

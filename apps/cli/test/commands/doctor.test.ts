@@ -49,7 +49,8 @@ describe("doctor.runChecks", () => {
   it("checks Python scaffolds without requiring package.json", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, "agent.py"), "print('hello')\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.1.0\n");
+    writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji-sdk[openai]>=0.2.0b1,<0.3\n");
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },
@@ -59,13 +60,16 @@ describe("doctor.runChecks", () => {
     });
     expect(out.failed).toBe(false);
     expect(out.checks.find((c) => c.name === "python >= 3.11")?.ok).toBe(true);
-    expect(out.checks.find((c) => c.name === "kaji python package declared")?.ok).toBe(true);
+    expect(out.checks.find((c) => c.name === "kaji-sdk Python distribution declared")?.ok).toBe(
+      true,
+    );
     expect(out.checks.some((c) => c.name === "@kaji/sdk installed")).toBe(false);
   });
 
   it("auto-detects package.json as a TypeScript signal in mixed scaffolds", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.1.0\n");
+    writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji-sdk[openai]>=0.2.0b1,<0.3\n");
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({ dependencies: { "@kaji/sdk": "0.1.0", openai: "6.42.0" } }),
@@ -83,7 +87,8 @@ describe("doctor.runChecks", () => {
 
   it("flags old Python versions", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.1.0\n");
+    writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji-sdk[openai]>=0.2.0b1,<0.3\n");
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },

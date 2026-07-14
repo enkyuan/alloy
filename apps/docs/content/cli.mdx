@@ -9,22 +9,24 @@ command sets. Install the one that owns the workflow you need, and use its
 
 ## Command surfaces
 
-| Command             | Python `kaji` package |   Embedded `@kaji/sdk`   |         Standalone `@kaji/cli`          |
-| ------------------- | :-------------------: | :----------------------: | :-------------------------------------: |
-| `init`              | Yes, Python scaffold  | Yes, TypeScript scaffold |   Yes, Python or TypeScript scaffold    |
-| `gen`               |          Yes          |            No            |                   Yes                   |
-| `add`               |          Yes          |           Yes            |                   No                    |
-| `list-integrations` |          Yes          |           Yes            |                   No                    |
-| `replay`            |          No           |           Yes            |                   No                    |
-| `info`              |          Yes          |            No            |                   Yes                   |
-| `secret`            |          Yes          |            No            |                   Yes                   |
-| `doctor`            |          Yes          |            No            |                   Yes                   |
-| `upgrade`           |          Yes          |            No            |                   Yes                   |
-| `mcp`               |          No           |            No            | Status only; no server or config writer |
+| Command             | Python `kaji-sdk` distribution | Embedded `@kaji/sdk` |         Standalone `@kaji/cli`          |
+| ------------------- | :----------------------------: | :------------------: | :-------------------------------------: |
+| `init`              |        Python scaffold         | TypeScript scaffold  |      Python or TypeScript scaffold      |
+| `add`               |              Yes               |         Yes          |                   No                    |
+| `connect`           |              Yes               |         Yes          |                   No                    |
+| `disconnect`        |              Yes               |         Yes          |                   No                    |
+| `list-integrations` |              Yes               |         Yes          |                   No                    |
+| `replay`            |               No               |         Yes          |                   No                    |
+| `gen`               |          Experimental          |          No          |              Experimental               |
+| `info`              |          Experimental          |          No          |              Experimental               |
+| `secret`            |          Experimental          |          No          |              Experimental               |
+| `doctor`            |          Experimental          |          No          |              Experimental               |
+| `upgrade`           |          Experimental          |          No          |              Experimental               |
+| `mcp`               |               No               |          No          | Status only; no server or config writer |
 
 ## Python SDK CLI
 
-`pip install kaji` installs the Python SDK and its CLI. It scaffolds Python
+`pip install kaji-sdk` installs the Python SDK and its `kaji` CLI. It scaffolds Python
 projects, generates Python or TypeScript OpenAPI handlers, and manages the
 packaged integration registry.
 
@@ -84,6 +86,9 @@ It provides `init`, `gen`, `info`, `secret`, `doctor`, `upgrade`, and `mcp`.
 Its `init` uses `--cwd` and requires an explicit `--lang` for non-interactive
 cross-language scaffolding. The `mcp` command only reports that server support
 is deferred; it does not install a server or write AI-tool configuration.
+
+The standalone package is currently `0.1.x`; its maintenance commands are
+outside the SDK beta-core compatibility promise.
 
 If both npm packages are present, avoid relying on whichever `kaji` bin wins
 package-manager linking. Invoke the standalone package explicitly (for example,

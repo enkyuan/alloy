@@ -111,7 +111,7 @@ describe("init command", () => {
     expect(agent).toMatch(/runtime\.turn\("Say hello\."\)/);
     expect(agent).not.toMatch(/InMemoryEventBus|InMemoryEventStore|store\.append|run_turn/);
     const requirements = readFileSync(join(dir, "requirements.txt"), "utf-8");
-    expect(requirements).toContain("kaji[openai]>=0.1.0");
+    expect(requirements).toContain("kaji-sdk[openai]>=0.2.0b1,<0.3");
   });
 
   it("refuses to overwrite without --force", async () => {
