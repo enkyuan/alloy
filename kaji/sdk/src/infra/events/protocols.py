@@ -15,8 +15,12 @@ from kaji.infra.events.store.base import EventStore
 
 
 @runtime_checkable
-class EventSubscription(AsyncIterator[StoredKajiEvent], Protocol):
+class EventSubscription(Protocol):
     """A ready, explicitly closable event cursor."""
+
+    def __aiter__(self) -> EventSubscription: ...
+
+    async def __anext__(self) -> StoredKajiEvent: ...
 
     async def aclose(self) -> None: ...
 
