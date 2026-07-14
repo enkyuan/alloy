@@ -24,16 +24,16 @@ concurrency:
 
 jobs:
   format:
-    name: kaji/${{ matrix.package }}
+    name: ${{ matrix.package }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
-          - package: sdk
+          - package: kaji
             working-directory: kaji
-          - package: serve
+          - package: kaji/serve
             working-directory: kaji/serve
     defaults:
       run:
