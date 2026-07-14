@@ -7,30 +7,10 @@
       "stability": "beta",
       "runtimes": ["python", "typescript"]
     },
-    "fs": {
-      "manifest": "fs/manifest.json",
-      "stability": "experimental",
-      "runtimes": ["typescript"]
-    },
-    "http": {
-      "manifest": "http/manifest.json",
-      "stability": "experimental",
-      "runtimes": ["typescript"]
-    },
     "github": {
       "manifest": "github/manifest.json",
       "stability": "experimental",
       "runtimes": ["python", "typescript"]
-    },
-    "sqlite": {
-      "manifest": "sqlite/manifest.json",
-      "stability": "experimental",
-      "runtimes": ["typescript"]
-    },
-    "web": {
-      "manifest": "web/manifest.json",
-      "stability": "experimental",
-      "runtimes": ["typescript"]
     }
   }
 }

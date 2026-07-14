@@ -5,7 +5,7 @@ message: Auth and registry process calls must use a fixed argument-array runner 
 files:
   - "kaji/ts/src/auth/**/*.ts"
   - "kaji/ts/registry/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/**/*.ts"
+  - "kaji/src/kaji/integrations/registry/**/*.ts"
 rule:
   any:
     - pattern: exec($$$ARGS)

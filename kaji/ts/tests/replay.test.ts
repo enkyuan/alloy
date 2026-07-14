@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent, EventType, replayLegacySession } from "@/index";
+import { StoredKajiEvent, EventType, replaySession } from "@/index";
 import { EventSchemaIncompatibleError } from "@/events/errors";
 
 function ev(input: Record<string, unknown>) {
   const type = input.type;
-  return KajiEvent.parse({
+  return StoredKajiEvent.parse({
     ...input,
+    sequence: input.timestamp,
     ...(typeof type === "string" && type.startsWith("tool.call.") && input.turn_id === undefined
       ? { turn_id: "test-turn" }
       : {}),
@@ -22,13 +23,12 @@ function invalidToolResultEvent(result: unknown) {
     result: {},
     timestamp: 1,
   });
-  (event as { result: unknown }).result = result;
-  return event;
+  return { ...event, result } as typeof event;
 }
 
-describe("replayLegacySession", () => {
+describe("replaySession", () => {
   it("projects a conversation from the event log", () => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.USER_MESSAGE,
@@ -52,16 +52,16 @@ describe("replayLegacySession", () => {
     ]);
   });
 
-  it("orders by timestamp and flips isActive on close", () => {
-    const state = replayLegacySession([
-      ev({ type: EventType.SESSION_CLOSED, session_id: "s1", timestamp: 9 }),
+  it("replays stored order and flips isActive on close", () => {
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
+      ev({ type: EventType.SESSION_CLOSED, session_id: "s1", timestamp: 9 }),
     ]);
     expect(state.isActive).toBe(false);
   });
 
   it("treats a final transcript as a user message and records tool results", () => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TRANSCRIPT_FINAL,
@@ -91,7 +91,7 @@ describe("replayLegacySession", () => {
   });
 
   it("preserves the real tool_call_id on tool messages (H3)", () => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TOOL_CALL_COMPLETED,
@@ -123,7 +123,7 @@ describe("replayLegacySession", () => {
     [{ 2: "two", 10: "ten" }, '{"10":"ten","2":"two"}'],
     [{ "\ue000": "bmp", "\u{10000}": "astral" }, '{"\u{10000}":"astral","\ue000":"bmp"}'],
   ])("renders JSON tool result %j canonically", (result, expected) => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({
         type: EventType.TOOL_CALL_COMPLETED,
         session_id: "s-json",
@@ -142,7 +142,7 @@ describe("replayLegacySession", () => {
     ["Map", new Map([["visible", true]])],
   ])("rejects non-plain %s tool results", (_label, result) => {
     try {
-      replayLegacySession([invalidToolResultEvent(result)]);
+      replaySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -154,7 +154,7 @@ describe("replayLegacySession", () => {
     const result = { visible: true, [Symbol("hidden")]: false };
 
     try {
-      replayLegacySession([invalidToolResultEvent(result)]);
+      replaySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -164,7 +164,7 @@ describe("replayLegacySession", () => {
 
   it("rejects an exact integer represented outside the Number domain", () => {
     try {
-      replayLegacySession([invalidToolResultEvent(9007199254740993n)]);
+      replaySession([invalidToolResultEvent(9007199254740993n)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -174,7 +174,7 @@ describe("replayLegacySession", () => {
 
   it.each([2 ** 53, -(2 ** 53)])("rejects unsafe integral number %s", (result) => {
     try {
-      replayLegacySession([invalidToolResultEvent(result)]);
+      replaySession([invalidToolResultEvent(result)]);
       throw new Error("expected incompatible event");
     } catch (error) {
       expect(error).toBeInstanceOf(EventSchemaIncompatibleError);
@@ -183,7 +183,7 @@ describe("replayLegacySession", () => {
   });
 
   it("attaches requested tool calls to the preceding assistant message", () => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.AGENT_MESSAGE_COMPLETED,
@@ -217,7 +217,7 @@ describe("replayLegacySession", () => {
   });
 
   it("synthesizes an assistant message for tool-only model output", () => {
-    const state = replayLegacySession([
+    const state = replaySession([
       ev({ type: EventType.SESSION_CREATED, session_id: "s1", timestamp: 1 }),
       ev({
         type: EventType.TOOL_CALL_REQUESTED,
@@ -253,6 +253,6 @@ describe("replayLegacySession", () => {
   });
 
   it("throws on an empty log", () => {
-    expect(() => replayLegacySession([])).toThrow(/empty event log/);
+    expect(() => replaySession([])).toThrow(/empty event log/);
   });
 });

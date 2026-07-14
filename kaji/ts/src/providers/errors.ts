@@ -2,8 +2,6 @@ export interface ProviderErrorOptions {
   service?: string;
   action?: string;
   statusCode?: number;
-  responseText?: string;
-  cause?: unknown;
 }
 
 const PROVIDER_ERROR_BRAND = Symbol.for("kaji.ProviderError.v1");
@@ -25,7 +23,6 @@ export class ProviderError extends Error {
   readonly service: string;
   readonly action: string;
   readonly statusCode?: number;
-  readonly responseText?: string;
 
   static [Symbol.hasInstance](value: unknown): boolean {
     return hasBrand(value, PROVIDER_ERROR_BRAND);
@@ -38,10 +35,6 @@ export class ProviderError extends Error {
     this.service = options.service ?? "provider";
     this.action = options.action ?? "request";
     if (options.statusCode !== undefined) this.statusCode = options.statusCode;
-    // Response bodies are vendor-controlled and may contain credentials.
-    // Keep the compatibility property undefined rather than retaining them.
-    // Deliberately discard vendor causes: SDK errors are public values and
-    // vendor exceptions may retain request bodies, credentials, or headers.
   }
 }
 

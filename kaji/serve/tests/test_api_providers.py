@@ -1,35 +1,44 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
 
-from kaji.runtime.providers.errors import ServiceNetworkError, ServiceRateLimitError
+from kaji.runtime.providers.errors import (
+    ProviderConnectionError,
+    ProviderRateLimitedError,
+)
+from kaji.runtime.providers.types import (
+    GenerateResponse as ProviderGenerateResponse,
+    ModelResponseChunk,
+)
+from kaji_serve.server.app import app
+from kaji_serve.server.v1.providers import provide_gemini_provider
 
 
 @pytest.fixture
-def mock_gemini_service():
-    with patch("kaji_serve.server.v1.providers.get_gemini_service") as mock_get:
-        service_mock = MagicMock()
+def mock_gemini_provider():
+    provider_mock = MagicMock()
 
-        chat_resp = MagicMock()
-        chat_resp.text = "Mocked chat response"
+    async def mock_generate(*, messages, **_kwargs):
+        text = "Mocked chat response" if len(messages) > 1 else "Mocked response"
+        return ProviderGenerateResponse(text=text)
 
-        service_mock.generate_response = AsyncMock(return_value="Mocked response")
-        service_mock.generate_chat_response = AsyncMock(return_value=chat_resp)
+    provider_mock.generate = AsyncMock(side_effect=mock_generate)
 
-        async def mock_stream(*args, **kwargs):
-            yield "Chunk 1"
-            yield "Chunk 2"
+    async def mock_stream(*args, **kwargs):
+        yield ModelResponseChunk(delta="Chunk 1")
+        yield ModelResponseChunk(delta="Chunk 2")
 
-        service_mock.generate_streaming_response = mock_stream
+    provider_mock.generate_stream = MagicMock(side_effect=mock_stream)
 
-        mock_get.return_value = service_mock
-        yield service_mock
+    app.dependency_overrides[provide_gemini_provider] = lambda: provider_mock
+    yield provider_mock
+    app.dependency_overrides.pop(provide_gemini_provider, None)
 
 
 @pytest.mark.asyncio
 async def test_api_providers_generate_text(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     payload = {"prompt": "Hello"}
@@ -39,12 +48,17 @@ async def test_api_providers_generate_text(
 
     assert response.status_code == 200
     assert response.json()["text"] == "Mocked response"
-    mock_gemini_service.generate_response.assert_called_once()
+    mock_gemini_provider.generate.assert_awaited_once_with(
+        messages=[{"role": "user", "content": "Hello"}],
+        system_instruction=None,
+        temperature=0.7,
+        max_tokens=None,
+    )
 
 
 @pytest.mark.asyncio
 async def test_api_providers_generate_rejects_empty_prompt(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     response = await async_client.post(
@@ -52,14 +66,14 @@ async def test_api_providers_generate_rejects_empty_prompt(
     )
 
     assert response.status_code == 422
-    mock_gemini_service.generate_response.assert_not_called()
+    mock_gemini_provider.generate.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_api_providers_generate_maps_rate_limit_error(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
-    mock_gemini_service.generate_response.side_effect = ServiceRateLimitError(
+    mock_gemini_provider.generate.side_effect = ProviderRateLimitedError(
         service="gemini",
         action="generate",
         message="rate limited",
@@ -75,9 +89,9 @@ async def test_api_providers_generate_maps_rate_limit_error(
 
 @pytest.mark.asyncio
 async def test_api_providers_generate_maps_network_error(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
-    mock_gemini_service.generate_response.side_effect = ServiceNetworkError(
+    mock_gemini_provider.generate.side_effect = ProviderConnectionError(
         service="gemini",
         action="generate",
         message="network failed",
@@ -93,7 +107,7 @@ async def test_api_providers_generate_maps_network_error(
 
 @pytest.mark.asyncio
 async def test_api_providers_chat_completion(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     payload = {
@@ -109,12 +123,19 @@ async def test_api_providers_chat_completion(
 
     assert response.status_code == 200
     assert response.json()["text"] == "Mocked chat response"
-    mock_gemini_service.generate_chat_response.assert_called_once()
+    mock_gemini_provider.generate.assert_awaited_once_with(
+        messages=[
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "hello"},
+        ],
+        system_instruction=None,
+        temperature=0.5,
+    )
 
 
 @pytest.mark.asyncio
 async def test_api_providers_chat_accepts_gemini_model_role(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     payload = {
@@ -128,15 +149,13 @@ async def test_api_providers_chat_accepts_gemini_model_role(
     )
 
     assert response.status_code == 200
-    called_messages = mock_gemini_service.generate_chat_response.call_args.kwargs[
-        "messages"
-    ]
+    called_messages = mock_gemini_provider.generate.call_args.kwargs["messages"]
     assert called_messages[1]["role"] == "model"
 
 
 @pytest.mark.asyncio
 async def test_api_providers_chat_rejects_invalid_role(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     payload = {"messages": [{"role": "hacker", "content": "Hi"}]}
@@ -145,12 +164,12 @@ async def test_api_providers_chat_rejects_invalid_role(
     )
 
     assert response.status_code == 422
-    mock_gemini_service.generate_chat_response.assert_not_called()
+    mock_gemini_provider.generate.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_api_providers_generate_stream(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     headers = {"Authorization": "Bearer token"}
     payload = {"prompt": "Stream me"}
@@ -164,21 +183,27 @@ async def test_api_providers_generate_stream(
         combined = "".join(content)
         assert "Chunk 1" in combined
         assert "Chunk 2" in combined
+    mock_gemini_provider.generate_stream.assert_called_once_with(
+        messages=[{"role": "user", "content": "Stream me"}],
+        system_instruction=None,
+        temperature=0.7,
+        max_tokens=None,
+    )
 
 
 @pytest.mark.asyncio
 async def test_api_providers_stream_maps_error_before_headers(
-    async_client: AsyncClient, mock_current_user, mock_gemini_service
+    async_client: AsyncClient, mock_current_user, mock_gemini_provider
 ):
     async def error_stream(*args, **kwargs):
-        raise ServiceRateLimitError(
+        raise ProviderRateLimitedError(
             service="gemini",
             action="stream",
             message="rate limited",
         )
         yield ""
 
-    mock_gemini_service.generate_streaming_response = error_stream
+    mock_gemini_provider.generate_stream = error_stream
 
     response = await async_client.post(
         "/api/v1/gemini/stream",

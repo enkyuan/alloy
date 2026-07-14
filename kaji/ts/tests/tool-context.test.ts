@@ -40,7 +40,7 @@ class CaptureIntegration implements Integrable {
 }
 
 describe("tool execution context", () => {
-  it("converts durations once and rejects legacy or invalid public deadlines", async () => {
+  it("converts durations once and rejects removed or invalid public deadlines", async () => {
     const clock = { nowWallSeconds: () => 1_700_000_000, nowMonotonic: () => 10 };
     expect(deadlineAfter(2_500, clock)).toBe(1_700_000_002_500);
     for (const invalid of [true, "1", Number.NaN, Number.POSITIVE_INFINITY, -1]) {

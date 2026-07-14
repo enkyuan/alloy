@@ -1,11 +1,11 @@
 id: kaji-public-factory-no-origin-override
 valid:
   - |
-      export function createGmailIntegration(options: GmailOptions) {
+      export function createGmailRequester(options: GmailRequesterOptions) {
         return build(options);
       }
   - |
-      function createGmailIntegrationForTest(origin: string, transport: Transport) {
+      function createGmailRequesterForTest(origin: string, transport: Transport) {
         return build(origin, transport);
       }
   - |
@@ -14,7 +14,7 @@ valid:
       }
 invalid:
   - |
-      export function createGmailIntegration(origin: string) {
+      export function createGmailRequester(origin: string) {
         return build(origin);
       }
   - |

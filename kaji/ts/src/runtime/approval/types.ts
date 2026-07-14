@@ -43,11 +43,6 @@ export interface ApprovalRequestContext {
   readonly timerScheduler: TimerScheduler;
 }
 
-/** @deprecated Use ApprovalRequestContext. */
-export type EventApprovalContext = ApprovalRequestContext;
-/** @deprecated Use ApprovalRequestContext. */
-export type ToolContext = ApprovalRequestContext;
-
 export interface TypedApprovalHandler {
   request(call: ToolCall, context: ApprovalRequestContext): Promise<ApprovalDecision>;
 }
@@ -55,42 +50,4 @@ export interface TypedApprovalHandler {
 /** Dedicated marker for the one handler that owns approval-request emission. */
 export interface EventBackedApprovalHandler extends TypedApprovalHandler {
   readonly approvalRequestOwner: "handler";
-}
-
-/** @deprecated Return ApprovalDecision from a TypedApprovalHandler instead. */
-export type LegacyApprovalHandler = (
-  name: string,
-  args: Record<string, unknown>,
-  risk: string | undefined,
-) => Promise<boolean>;
-
-let legacyWarningEmitted = false;
-
-/** Single compatibility adapter for hosts migrating to TypedApprovalHandler. */
-export function adaptLegacyApprovalHandler(handler: LegacyApprovalHandler): TypedApprovalHandler {
-  return {
-    async request(call, context) {
-      if (!legacyWarningEmitted) {
-        legacyWarningEmitted = true;
-        try {
-          console.warn(
-            "[kaji] Boolean approval callbacks are deprecated; implement TypedApprovalHandler instead",
-          );
-        } catch {
-          // Diagnostics are observational and must not block the callback.
-        }
-      }
-      const granted = await handler(call.name, structuredClone(context.arguments), context.risk);
-      if (typeof granted !== "boolean") {
-        throw new TypeError("Legacy approval callback must return Boolean");
-      }
-      return granted
-        ? { granted: true, code: "approved" }
-        : {
-            granted: false,
-            code: "rejected",
-            reason: "Rejected by approval handler",
-          };
-    },
-  };
 }

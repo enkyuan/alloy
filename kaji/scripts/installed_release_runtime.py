@@ -23,7 +23,7 @@ from verify_release_artifacts import VerifiedReleaseArtifacts, verify
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "sdk"
+SDK = ROOT / "kaji"
 TS = ROOT / "kaji" / "ts"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
 TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"

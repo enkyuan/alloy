@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Runtime provider iterations must use projection-indexed context, not full-scan helpers.
 files:
-  - "kaji/sdk/src/kaji/runtime/agents/runtime.py"
+  - "kaji/src/kaji/runtime/agents/runtime.py"
 rule:
   all:
     - any:

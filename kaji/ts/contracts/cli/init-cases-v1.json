@@ -22,8 +22,6 @@
     { "name": "unknown-provider", "args": ["--provider", "unknown"], "exitCode": 2 },
     { "name": "missing-provider-value", "args": ["--provider"], "exitCode": 2 },
     { "name": "unknown-option", "args": ["--unknown"], "exitCode": 2 },
-    { "name": "existing-file-refusal", "args": [], "setup": "existing-file", "exitCode": 1 },
-    { "name": "deprecated-out", "typescriptOnly": true, "args": ["--out", "project"], "exitCode": 0 },
-    { "name": "conflicting-path-out", "typescriptOnly": true, "args": ["project", "--out", "other"], "exitCode": 2 }
+    { "name": "existing-file-refusal", "args": [], "setup": "existing-file", "exitCode": 1 }
   ]
 }

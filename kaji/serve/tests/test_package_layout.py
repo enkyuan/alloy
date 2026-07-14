@@ -27,6 +27,15 @@ def test_setuptools_discovers_packages_below_src() -> None:
     }
 
 
+def test_service_installs_only_its_provider_and_validation_extras() -> None:
+    project = tomllib.loads((SERVE_ROOT / "pyproject.toml").read_text())
+    dependencies = project["project"]["dependencies"]
+
+    assert "kaji-sdk[gemini]" in dependencies
+    assert not any("kaji-sdk[providers]" in dep for dep in dependencies)
+    assert any(dep.startswith("pydantic[email]") for dep in dependencies)
+
+
 def test_compose_build_context_targets_repository_dockerfile() -> None:
     compose_file = REPO_ROOT / "docker" / "kaji" / "docker-compose.yml"
     compose = compose_file.read_text()

@@ -47,7 +47,6 @@ export { type EventStore, InMemoryEventStore } from "@/events/store";
 
 // Sessions
 export {
-  replayLegacySession,
   replaySession,
   applyEvent,
   approvalKey,
@@ -64,7 +63,6 @@ export { type SessionRecord, type SessionStore, InMemorySessionStore } from "@/s
 // Tools
 export {
   type ToolSpec,
-  type ToolContext,
   type ToolHandler,
   type JSONSchema,
   type ToolParameters,
@@ -89,7 +87,6 @@ export {
   type ToolCallInstruction,
   type ToolCallResult,
   type ToolExecutor,
-  type ApprovalHandler,
   type AnyApprovalHandler,
 } from "@/tools/planner";
 export {
@@ -269,13 +266,9 @@ export type {
   ApprovalDeadlineSource,
   ApprovalRequestContext,
   ApprovalRejectionCode,
-  EventApprovalContext,
   ApprovalRequestContext as ApprovalContext,
   ApprovalDecision,
-  LegacyApprovalHandler,
-  ToolContext as TypedApprovalContext,
 } from "@/runtime/approval/types";
-export { adaptLegacyApprovalHandler } from "@/runtime/approval/types";
 export { EventApprovalHandler, type EventApprovalHandlerOptions } from "@/runtime/approval/handler";
 export { AutoApprovalHandler, type AutoApprovalPolicy } from "@/runtime/approval/auto";
 

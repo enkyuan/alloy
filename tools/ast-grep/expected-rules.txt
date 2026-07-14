@@ -21,10 +21,10 @@ python-release-no-bare-popen-wait
 python-release-no-unbounded-subprocess-run
 python-runtime-no-direct-event-append
 python-runtime-no-full-context-build-in-provider-loop
-python-runtime-no-legacy-tooldefinition
 python-runtime-no-replay-in-loop
 python-runtime-no-stream-string-concatenation
 python-runtime-provider-stream-requires-deadline-scope
+python-runtime-toolspec-only
 python-sdk-no-service-imports
 ts-event-committer-no-global-serial-executor
 ts-events-no-unknown-durable-result

@@ -1,0 +1,38 @@
+{
+  "python": {
+    "coldSetupToOutputMs": -1,
+    "warmRunMs": -1,
+    "toolchain": {
+      "python": "replace-with-version",
+      "uv": "replace-with-version",
+      "node": "replace-with-version",
+      "npm": "replace-with-version",
+      "bun": "replace-with-version",
+      "typescript": "replace-with-version"
+    }
+  },
+  "npm": {
+    "coldSetupToOutputMs": -1,
+    "warmRunMs": -1,
+    "toolchain": {
+      "python": "replace-with-version",
+      "uv": "replace-with-version",
+      "node": "replace-with-version",
+      "npm": "replace-with-version",
+      "bun": "replace-with-version",
+      "typescript": "replace-with-version"
+    }
+  },
+  "bun": {
+    "coldSetupToOutputMs": -1,
+    "warmRunMs": -1,
+    "toolchain": {
+      "python": "replace-with-version",
+      "uv": "replace-with-version",
+      "node": "replace-with-version",
+      "npm": "replace-with-version",
+      "bun": "replace-with-version",
+      "typescript": "replace-with-version"
+    }
+  }
+}

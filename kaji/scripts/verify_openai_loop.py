@@ -61,7 +61,7 @@ def main() -> int:
             "tests/integration/test_openai_tools.py",
             "-q",
         ],
-        cwd=ROOT / "kaji" / "sdk",
+        cwd=ROOT / "kaji",
         environment=environment,
     )
     if status != 0:

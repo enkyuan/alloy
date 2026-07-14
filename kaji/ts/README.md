@@ -148,18 +148,18 @@ native provider implementations.
 For the cross-SDK release gate, run from the repository root:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
 checks, TS package smoke, mandatory pinned ast-grep boundary checks, and no-key
-live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, legacy tool-model imports, TypeScript optional provider imports, and cancellation error shape.
+live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, core package dependency direction, removed tool-model imports, TypeScript optional provider imports, and cancellation error shape.
 
 For the live-gate credential modes specifically:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+uv run --project kaji python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
@@ -167,7 +167,7 @@ It is not provider evidence. The protected release mode requires both
 `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` and fails when either is absent.
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
 `KAJI_RUN_KEYED_LIVE=1` is not a one-key shortcut. It is the fail-closed
@@ -178,7 +178,7 @@ the exact 40-character release commit:
 OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \
 KAJI_RELEASE_ARTIFACTS_DIR="$PWD/.artifacts/kaji-release" \
 KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
 The protected `kaji-beta` workflow is authoritative release evidence; the
@@ -188,7 +188,7 @@ single-provider command above is only a local paid smoke test.
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
   `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
-  event store/committer form the embedded-agent compatibility surface.
+  event store/committer form the supported embedded-agent surface.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities exist in Python but are not production-hardened.
@@ -209,29 +209,25 @@ provider implementations.
 ## Approval handler
 
 Tools whose risk exceeds your policy threshold pause for approval before the
-runtime executes them. Production hosts implement `TypedApprovalHandler` and
-return an `ApprovalDecision`. `cliApprovalHandler` is only a deprecated
-dev/REPL compatibility helper that prints the tool name, risk, and arguments,
-then reads `y` / `N` on stdin:
+runtime executes them. All hosts use `TypedApprovalHandler` and return an
+`ApprovalDecision`. `cliApprovalHandler` is a typed dev/REPL implementation
+that prints the tool name, risk, and arguments, then reads `y` / `N` on stdin:
 
 ```ts
 import {
   AgentBuilder,
-  adaptLegacyApprovalHandler,
   cliApprovalHandler,
   openai,
 } from "@kaji/sdk";
 
 const agent = new AgentBuilder()
   .provider(openai())
-  .approvalHandler(adaptLegacyApprovalHandler(cliApprovalHandler({ label: "agent-a" })))
+  .approvalHandler(cliApprovalHandler({ label: "agent-a" }))
   .build();
 ```
 
-`ApprovalHandler` and `cliApprovalHandler` are deprecated Boolean compatibility
-paths and must be passed through `adaptLegacyApprovalHandler` before entering
-the stable builder/runtime boundary. Production hosts implement
-`TypedApprovalHandler.request(call, context)` and return an `ApprovalDecision`, for example
+Custom hosts implement `TypedApprovalHandler.request(call, context)` and return
+an `ApprovalDecision`, for example
 `{ granted: true, code: "approved" }` or a rejected decision with an explicit
 code and safe reason. See
 [`tool-contracts.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/tool-contracts.md) for the lifecycle.
@@ -255,12 +251,8 @@ This is the embedded `@kaji/sdk` CLI. The standalone cross-language
 `@kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
 package also exposes additional Python-only maintenance commands.
 
-`echo` is the only beta catalog entry. HTTP, Web, filesystem, and SQLite are
-direct-import templates outside the beta guarantee and require
-`--allow-experimental` when copied. HTTP and Web additionally require an
-application-owned bound transport or egress proxy that connects only to the
-addresses validated by the SDK; Kaji deliberately does not provide a native
-`fetch()` fallback that could reopen DNS-rebinding risk.
+`echo` is the only beta catalog entry. `github` is the only experimental
+catalog entry and requires `--allow-experimental` when copied.
 
 ## Global tool registry (advanced)
 
@@ -306,8 +298,7 @@ const result = await executeTool(
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
 | `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
 | `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
-| `ApprovalHandler`, `cliApprovalHandler` | Approval callback type + default stdin handler for dev / REPL |
-| `TypedApprovalHandler`, `EventApprovalHandler`, `AutoApprovalHandler` | Structured approval handlers: event-driven (publishes `TOOL_APPROVAL_REQUESTED` for a host UI to answer) and auto-decide by policy, as alternatives to `cliApprovalHandler` |
+| `TypedApprovalHandler`, `cliApprovalHandler`, `EventApprovalHandler`, `AutoApprovalHandler` | Structured approval handlers: stdin, event-driven (publishes `TOOL_APPROVAL_REQUESTED` for a host UI to answer), and auto-decide by policy |
 | `OpenAIProvider`, `AnthropicProvider` | LLM providers |
 | `normalizeProviderError`, `NormalizedProviderError` | Redaction-safe semantic classification for Kaji provider errors |
 | `openai`, `anthropic`, `kimi`, `gemini`, `openrouter` | One-line provider factories; Kimi, Gemini, and OpenRouter presets are experimental |

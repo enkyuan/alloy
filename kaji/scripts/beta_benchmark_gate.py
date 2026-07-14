@@ -47,13 +47,13 @@ BENCHMARK_SEED = 13
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 SOURCE_TREE_ROOTS = (
-    Path("kaji/sdk/src/kaji"),
+    Path("kaji/src/kaji"),
     Path("kaji/ts/src"),
 )
 SOURCE_INPUTS = (
-    Path("kaji/sdk/benchmarks/runtime_benchmark.py"),
+    Path("kaji/benchmarks/python/runtime_benchmark.py"),
     Path("kaji/ts/benchmarks/runtime-benchmark.ts"),
-    Path("kaji/sdk/benchmarks/runtime_soak.py"),
+    Path("kaji/benchmarks/python/runtime_soak.py"),
     Path("kaji/ts/benchmarks/runtime-soak.ts"),
     Path("kaji/scripts/beta_benchmark_gate.py"),
     Path("kaji/scripts/run_beta_benchmarks.py"),
@@ -67,7 +67,7 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     Path("kaji/scripts/verify_release_artifacts.py"),
     Path("kaji/benchmarks/beta-budgets.json"),
-    Path("kaji/sdk/pyproject.toml"),
+    Path("kaji/pyproject.toml"),
     Path("kaji/ts/package.json"),
     Path("kaji/ts/tsconfig.json"),
 )
@@ -106,7 +106,7 @@ def _ram_mib() -> int:
 
 def _lock_hash() -> str:
     digest = hashlib.sha256()
-    for relative in ("bun.lock", "kaji/sdk/uv.lock"):
+    for relative in ("bun.lock", "kaji/uv.lock"):
         path = ROOT / relative
         digest.update(relative.encode())
         digest.update(b"\0")
@@ -221,7 +221,7 @@ def _runtime_command(
             str(installed.python_executable)
             if installed is not None
             else sys.executable,
-            str(ROOT / "kaji" / "sdk" / "benchmarks" / "runtime_benchmark.py"),
+            str(ROOT / "kaji" / "benchmarks" / "python" / "runtime_benchmark.py"),
             *common,
         ]
     return [
@@ -566,6 +566,13 @@ def _baseline_fingerprint(baseline: dict[str, Any]) -> dict[str, Any]:
 
 
 def _validate_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> None:
+    """Validate applicability, not release-artifact identity.
+
+    Calibration commit and artifact fields are retained provenance for the
+    measured artifact set A. A later candidate B may use that baseline only
+    when its benchmark source, dependency locks, toolchain, and pinned runner
+    fingerprint match. Full and soak receipts bind B's own artifact hashes.
+    """
     if not isinstance(baseline, dict):
         raise RuntimeError("baseline must be an object")
     if baseline.get("schemaVersion") != 1 or baseline.get("status") != "calibrated":

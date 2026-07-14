@@ -1,20 +1,22 @@
 """Gemini convenience HTTP routes for the reference service."""
 
 import logging
-from typing import Any, Literal, NoReturn
+from functools import lru_cache
+from typing import Annotated, Any, Literal, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from kaji.core.safe_logging import log_redacted_failure
-from kaji.runtime.providers.gemini import get_gemini_service
-from kaji.runtime.providers.errors import (
-    ServiceError,
-    service_error_to_detail,
-    service_error_to_http_status,
-)
+from kaji.runtime.providers.base import ModelProvider
+from kaji.runtime.providers.errors import ProviderError
+from kaji.runtime.providers.gemini import GeminiProvider
 from kaji_serve.server.deps import get_current_supabase_user
+from kaji_serve.server.errors import (
+    provider_error_to_detail,
+    provider_error_to_http_status,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gemini", tags=["gemini"])
@@ -22,6 +24,19 @@ router = APIRouter(prefix="/gemini", tags=["gemini"])
 MAX_PROMPT_CHARS = 20_000
 MAX_CHAT_MESSAGES = 128
 MAX_OUTPUT_TOKENS = 8_192
+
+
+@lru_cache(maxsize=1)
+def provide_gemini_provider() -> GeminiProvider:
+    """Own the shared Gemini provider at the reference-service boundary."""
+    return GeminiProvider()
+
+
+CurrentUser = Annotated[dict[str, Any], Depends(get_current_supabase_user)]
+GeminiProviderDependency = Annotated[
+    ModelProvider,
+    Depends(provide_gemini_provider),
+]
 
 
 def _raise_generation_http_error(detail: str, *, error: Exception) -> NoReturn:
@@ -32,11 +47,11 @@ def _raise_generation_http_error(detail: str, *, error: Exception) -> NoReturn:
     ) from error
 
 
-def _raise_service_http_error(detail: str, *, error: ServiceError) -> NoReturn:
+def _raise_provider_http_error(detail: str, *, error: ProviderError) -> NoReturn:
     log_redacted_failure(logger, logging.WARNING, detail, error)
     raise HTTPException(
-        status_code=service_error_to_http_status(error),
-        detail=service_error_to_detail(error, fallback=detail),
+        status_code=provider_error_to_http_status(error),
+        detail=provider_error_to_detail(error, fallback=detail),
     ) from error
 
 
@@ -73,25 +88,25 @@ class GenerateResponse(BaseModel):
 @router.post("/generate", response_model=GenerateResponse)
 async def generate_text(
     request: GenerateRequest,
-    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    supabase_user: CurrentUser,
+    gemini: GeminiProviderDependency,
 ):
     """Generate text using Gemini AI."""
     try:
-        gemini = get_gemini_service()
-        response_text = await gemini.generate_response(
-            prompt=request.prompt,
+        response = await gemini.generate(
+            messages=[{"role": "user", "content": request.prompt}],
             system_instruction=request.system_instruction,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
         )
 
         logger.info("Generated text for user %s", supabase_user["id"])
-        return GenerateResponse(text=response_text)
+        return GenerateResponse(text=response.text)
 
     except HTTPException:
         raise
-    except ServiceError as error:
-        _raise_service_http_error("Failed to generate text", error=error)
+    except ProviderError as error:
+        _raise_provider_http_error("Failed to generate text", error=error)
     except Exception as error:
         _raise_generation_http_error("Failed to generate text", error=error)
 
@@ -99,7 +114,8 @@ async def generate_text(
 @router.post("/chat", response_model=GenerateResponse)
 async def chat_completion(
     request: ChatRequest,
-    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    supabase_user: CurrentUser,
+    gemini: GeminiProviderDependency,
 ):
     """Generate chat completion using Gemini AI."""
     try:
@@ -107,21 +123,19 @@ async def chat_completion(
             {"role": msg.role, "content": msg.content} for msg in request.messages
         ]
 
-        gemini = get_gemini_service()
-        response = await gemini.generate_chat_response(
+        response = await gemini.generate(
             messages=messages,
             system_instruction=request.system_instruction,
             temperature=request.temperature,
         )
-        response_text = response.text or ""
 
         logger.info("Generated chat response for user %s", supabase_user["id"])
-        return GenerateResponse(text=response_text)
+        return GenerateResponse(text=response.text)
 
     except HTTPException:
         raise
-    except ServiceError as error:
-        _raise_service_http_error("Failed to generate chat response", error=error)
+    except ProviderError as error:
+        _raise_provider_http_error("Failed to generate chat response", error=error)
     except Exception as error:
         _raise_generation_http_error(
             "Failed to generate chat response",
@@ -132,15 +146,16 @@ async def chat_completion(
 @router.post("/stream")
 async def stream_generation(
     request: GenerateRequest,
-    supabase_user: dict[str, Any] = Depends(get_current_supabase_user),
+    supabase_user: CurrentUser,
+    gemini: GeminiProviderDependency,
 ):
     """Stream text generation using Gemini AI."""
     try:
-        gemini = get_gemini_service()
-        stream = gemini.generate_streaming_response(
-            prompt=request.prompt,
+        stream = gemini.generate_stream(
+            messages=[{"role": "user", "content": request.prompt}],
             system_instruction=request.system_instruction,
             temperature=request.temperature,
+            max_tokens=request.max_tokens,
         )
 
         try:
@@ -149,17 +164,18 @@ async def stream_generation(
             first_chunk = None
 
         async def generate():
-            if first_chunk is not None:
-                yield first_chunk
+            if first_chunk is not None and first_chunk.delta:
+                yield first_chunk.delta
             async for chunk in stream:
-                yield chunk
+                if chunk.delta:
+                    yield chunk.delta
 
         logger.info("Started streaming generation for user %s", supabase_user["id"])
         return StreamingResponse(generate(), media_type="text/plain")
 
     except HTTPException:
         raise
-    except ServiceError as error:
-        _raise_service_http_error("Failed to stream generation", error=error)
+    except ProviderError as error:
+        _raise_provider_http_error("Failed to stream generation", error=error)
     except Exception as error:
         _raise_generation_http_error("Failed to stream generation", error=error)

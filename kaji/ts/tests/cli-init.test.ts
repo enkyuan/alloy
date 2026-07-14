@@ -71,9 +71,7 @@ describe("kaji init", () => {
       });
       expect(code, testCase.name).toBe(testCase.exitCode);
 
-      const project = ["explicit-path", "deprecated-out"].includes(testCase.name)
-        ? join(root, "project")
-        : root;
+      const project = testCase.name === "explicit-path" ? join(root, "project") : root;
       switch (testCase.name) {
         case "defaults":
         case "mock-provider":
@@ -109,16 +107,6 @@ describe("kaji init", () => {
         case "unknown-option":
           expect(stderr.join("\n")).toContain("unknown argument");
           expect(existsSync(join(project, "package.json"))).toBe(false);
-          break;
-        case "deprecated-out":
-          expect(stderr).toHaveLength(1);
-          expect(stderr[0]).toContain("deprecated");
-          expect(existsSync(join(project, "package.json"))).toBe(true);
-          break;
-        case "conflicting-path-out":
-          expect(stderr.join("\n")).toContain("cannot use positional path with --out");
-          expect(existsSync(join(root, "project"))).toBe(false);
-          expect(existsSync(join(root, "other"))).toBe(false);
           break;
         case "existing-file-refusal":
           expect(testCase.setup).toBe("existing-file");
@@ -329,7 +317,7 @@ describe("kaji init", () => {
     expect(existsSync(join(out, "package.json"))).toBe(true);
   });
 
-  it("errors when --out has no value (trailing position)", async () => {
+  it("rejects the removed --out alias", async () => {
     const stderr: string[] = [];
     const code = await sourceInit(["--out"], {
       registryRoot: "",
@@ -337,18 +325,7 @@ describe("kaji init", () => {
       err: (m) => stderr.push(m),
     });
     expect(code).toBe(2);
-    expect(stderr.join("\n")).toMatch(/--out requires a directory argument/);
-  });
-
-  it("errors when --out is followed by another flag", async () => {
-    const stderr: string[] = [];
-    const code = await sourceInit(["--out", "--force"], {
-      registryRoot: "",
-      log: () => {},
-      err: (m) => stderr.push(m),
-    });
-    expect(code).toBe(2);
-    expect(stderr.join("\n")).toMatch(/--out requires a directory argument/);
+    expect(stderr.join("\n")).toMatch(/unknown argument: --out/);
   });
 
   it("errors on unknown arguments", async () => {
@@ -391,34 +368,6 @@ describe("kaji init", () => {
 
     expect(code).toBe(0);
     expect(readFileSync(join(out, "agent.ts"), "utf8")).toContain("new MockProvider");
-  });
-
-  it("accepts deprecated --out, warns exactly once on stderr", async () => {
-    const out = mkdtempSync(join(tmpdir(), "kaji-init-alias-"));
-    const stderr: string[] = [];
-    const code = await sourceInit(["--out", out], {
-      registryRoot: "",
-      log: () => {},
-      err: (m) => stderr.push(m),
-    });
-
-    expect(code).toBe(0);
-    expect(stderr).toHaveLength(1);
-    expect(stderr[0]).toContain("deprecated");
-    expect(stderr[0]).toContain("positional path");
-  });
-
-  it("rejects positional path together with deprecated --out", async () => {
-    const out = mkdtempSync(join(tmpdir(), "kaji-init-conflicting-paths-"));
-    const stderr: string[] = [];
-    const code = await sourceInit([out, "--out", join(out, "other")], {
-      registryRoot: "",
-      log: () => {},
-      err: (m) => stderr.push(m),
-    });
-
-    expect(code).toBe(2);
-    expect(stderr.join("\n")).toMatch(/cannot use positional path with --out/);
   });
 
   it.each(["unknown", "kimi", "gemini"])("rejects unsupported provider %s", async (provider) => {

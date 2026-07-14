@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { KajiEvent } from "@/events/schemas";
-import { EventType } from "@/events/types";
 import {
-  approvalKey,
-  applyEvent,
-  createSessionState,
-  replayLegacySession,
-} from "@/sessions/replay";
+  NewKajiEvent,
+  StoredKajiEvent,
+  type NewKajiEvent as NewKajiEventType,
+} from "@/events/schemas";
+import { EventType } from "@/events/types";
+import { approvalKey, applyEvent, createSessionState, replaySession } from "@/sessions/replay";
 
 const SESSION_ID = "s1";
 
 function makeEvent(input: Record<string, unknown>) {
-  return KajiEvent.parse({ session_id: SESSION_ID, ...input });
+  return NewKajiEvent.parse({ session_id: SESSION_ID, ...input });
+}
+
+function storeEvents(events: readonly NewKajiEventType[]) {
+  return events.map((event, index) => StoredKajiEvent.parse({ ...event, sequence: index + 1 }));
 }
 
 function approvalRequest(turnId: string, callId: string, toolName: string) {
@@ -49,7 +52,7 @@ describe("approval replay projection", () => {
       }),
     ];
 
-    const state = replayLegacySession(events);
+    const state = replaySession(storeEvents(events));
     expect(state.approvedApprovals).toEqual(new Set([approvalKey("turn-1", "reused", "ship")]));
     expect(state.rejectedApprovals).toEqual(
       new Map([[approvalKey("turn-2", "reused", "refund"), "APPROVAL_REJECTED"]]),
@@ -79,7 +82,7 @@ describe("approval replay projection", () => {
       );
     }
 
-    const state = replayLegacySession(events);
+    const state = replaySession(storeEvents(events));
     expect(state.pendingApprovals.size).toBe(0);
     expect(state.rejectedApprovals.size).toBe(3);
   });
@@ -95,10 +98,10 @@ describe("approval replay projection", () => {
         tool_call_id: "call",
       }),
     ];
-    const stored = drafts.map((event, index) => ({ ...event, sequence: index + 1 }));
-    const cold = replayLegacySession(drafts);
+    const stored = storeEvents(drafts);
+    const cold = replaySession(stored);
     const warm = createSessionState(SESSION_ID);
-    for (const event of stored) applyEvent(warm, event as never);
+    for (const event of stored) applyEvent(warm, event);
 
     expect(warm.pendingApprovals).toEqual(cold.pendingApprovals);
     expect(warm.approvedApprovals).toEqual(cold.approvedApprovals);
@@ -133,7 +136,7 @@ describe("approval replay projection", () => {
       }),
     ];
 
-    const state = replayLegacySession(events);
+    const state = replaySession(storeEvents(events));
     const key = approvalKey("turn", "call", "ship");
     expect(state.pendingApprovals.size).toBe(0);
     expect(state.approvedApprovals.has(key)).toBe(false);

@@ -24,7 +24,6 @@ import type {
   ApprovalRejectionCode,
   ApprovalRequestContext,
   EventBackedApprovalHandler,
-  LegacyApprovalHandler,
   TypedApprovalHandler,
 } from "@/runtime/approval/types";
 import { TurnTimeoutError, type TurnPhase } from "@/runtime/limits";
@@ -96,8 +95,6 @@ export type ToolExecutor = (
   args: Readonly<Record<string, unknown>>,
   context: ToolExecutionContext,
 ) => Promise<unknown>;
-/** @deprecated Return ApprovalDecision from a TypedApprovalHandler instead. */
-export type ApprovalHandler = LegacyApprovalHandler;
 /** Start acknowledgements receive `signal`; custom emitters must settle when it aborts. */
 export type EmitFn = (event: KajiEvent, signal?: AbortSignal) => Promise<StoredKajiEvent | void>;
 

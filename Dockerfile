@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the monorepo. kaji/serve has a path dep on ../sdk, so both must be present.
+# Copy the monorepo. kaji/serve has a path dependency on the Kaji root, so both must be present.
 COPY . .
 
 # Install. Frozen = lockfile must already exist and resolve; no remote re-resolution.

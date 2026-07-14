@@ -153,7 +153,7 @@ describe("real registry", () => {
   it("loads every indexed manifest through the shared loader", async () => {
     const index = await loadRegistryIndex(registryRoot);
     const names = Object.keys(index.integrations).sort();
-    expect(names).toEqual(["echo", "fs", "github", "http", "sqlite", "web"]);
+    expect(names).toEqual(["echo", "github"]);
     for (const name of names) {
       const manifest = await loadManifest(registryRoot, name, { index });
       expect(manifest.name).toBe(name);

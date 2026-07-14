@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Durable BaseEvent result fields must use JsonValue, never Any.
 files:
-  - "kaji/sdk/src/kaji/infra/events/**/*.py"
+  - "kaji/src/kaji/infra/events/**/*.py"
 rule:
   all:
     - pattern: "result: $TYPE"

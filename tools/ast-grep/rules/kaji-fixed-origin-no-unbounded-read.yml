@@ -6,9 +6,7 @@ files:
   - "kaji/ts/src/integrations/fixed-origin.ts"
   - "kaji/ts/src/auth/**/*.ts"
   - "kaji/ts/registry/github/client.ts"
-  - "kaji/ts/registry/gmail/client.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/github/client.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/gmail/client.ts"
+  - "kaji/src/kaji/integrations/registry/github/client.ts"
 rule:
   any:
     - pattern: $RESPONSE.text()

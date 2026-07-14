@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "kaji" / "contracts"
 TARGETS = (
-    ROOT / "kaji" / "sdk" / "src" / "kaji" / "contracts",
+    ROOT / "kaji" / "src" / "kaji" / "contracts",
     ROOT / "kaji" / "ts" / "contracts",
 )
 

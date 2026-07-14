@@ -6,9 +6,7 @@ files:
   - "kaji/ts/src/auth/**/*.ts"
   - "kaji/ts/src/integrations/**/*.ts"
   - "kaji/ts/registry/github/**/*.ts"
-  - "kaji/ts/registry/gmail/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/github/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/gmail/**/*.ts"
+  - "kaji/src/kaji/integrations/registry/github/**/*.ts"
 rule:
   all:
     - kind: function_declaration

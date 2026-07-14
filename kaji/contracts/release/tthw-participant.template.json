@@ -1,0 +1,36 @@
+{
+  "participantId": "user-replace-me",
+  "os": "macos",
+  "path": "python",
+  "cleanEnvironment": true,
+  "noSourceCheckout": true,
+  "toolchain": {
+    "python": "replace-with-version",
+    "uv": "replace-with-version",
+    "node": "replace-with-version",
+    "npm": "replace-with-version",
+    "bun": "replace-with-version",
+    "typescript": "replace-with-version"
+  },
+  "steps": [
+    { "name": "artifact-install", "durationMs": -1 },
+    { "name": "scaffold-init", "durationMs": -1 },
+    { "name": "no-key-run", "durationMs": -1 },
+    { "name": "echo-setup", "durationMs": -1 },
+    { "name": "echo-run", "durationMs": -1 }
+  ],
+  "assertions": {
+    "deterministicText": true,
+    "nonEmptyTurnId": true,
+    "positiveSequence": true,
+    "echoToolRequested": true,
+    "echoToolStarted": true,
+    "echoToolCompleted": true,
+    "echoResultObserved": true
+  },
+  "confusion": [],
+  "redacted": true,
+  "owner": "replace-with-owner",
+  "reviewDate": "2000-01-01",
+  "followUpDate": "2000-01-01"
+}

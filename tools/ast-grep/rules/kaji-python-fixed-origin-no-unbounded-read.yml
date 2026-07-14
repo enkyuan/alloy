@@ -3,11 +3,10 @@ language: Python
 severity: error
 message: Python fixed-origin and auth responses must use bounded readers.
 files:
-  - "kaji/sdk/src/kaji/integrations/fixed_origin.py"
-  - "kaji/sdk/src/kaji/integrations/oauth.py"
-  - "kaji/sdk/src/kaji/integrations/keychain.py"
-  - "kaji/sdk/src/kaji/integrations/registry/github/client.py"
-  - "kaji/sdk/src/kaji/integrations/registry/gmail/client.py"
+  - "kaji/src/kaji/integrations/fixed_origin.py"
+  - "kaji/src/kaji/integrations/oauth.py"
+  - "kaji/src/kaji/integrations/keychain.py"
+  - "kaji/src/kaji/integrations/registry/github/client.py"
 rule:
   any:
     - pattern: $RESPONSE.read()

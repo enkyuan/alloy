@@ -92,9 +92,11 @@ describe("tool registry", () => {
 
     expect(listToolSpecs()).toHaveLength(1);
 
-    const result = await executeTool("user-1", "get_weather", {
-      city: "Seattle",
-    });
+    const result = await executeTool(
+      "get_weather",
+      { city: "Seattle" },
+      executionContext({ principalId: "user-1" }),
+    );
     expect(result).toEqual({ user: "user-1", city: "Seattle", tempF: 68 });
   });
 
@@ -105,7 +107,23 @@ describe("tool registry", () => {
   });
 
   it("throws when executing an unknown tool", async () => {
-    await expect(executeTool("u", "nope", {})).rejects.toThrow(/Unknown tool/);
+    await expect(executeTool("nope", {}, executionContext({ principalId: "u" }))).rejects.toThrow(
+      /Unknown tool/,
+    );
+  });
+
+  it("requires the canonical process-default execution signature", async () => {
+    registerTool(
+      { name: "global_shape", description: "shape", parameters: {}, risk: "read" },
+      async () => ({ ok: true }),
+    );
+    const execute = executeTool as (...args: unknown[]) => Promise<unknown>;
+
+    await expect(execute("global_shape", {}, executionContext())).resolves.toEqual({ ok: true });
+    await expect(execute("global_shape", {}, executionContext(), undefined)).rejects.toThrow(
+      TypeError,
+    );
+    await expect(execute("principal", "global_shape", {})).rejects.toThrow(TypeError);
   });
 
   it("passes an injected db handle through the context", async () => {
@@ -116,7 +134,7 @@ describe("tool registry", () => {
         sawDb: context.db === db,
       }),
     );
-    const result = await executeTool("u", "needs_db", {}, db);
+    const result = await executeTool("needs_db", {}, executionContext({ principalId: "u", db }));
     expect(result).toEqual({ sawDb: true });
   });
 
@@ -185,7 +203,11 @@ describe("tool registry", () => {
       required: ["message"],
     });
 
-    const result = await executeTool("u", "ping", { message: "hello" });
+    const result = await executeTool(
+      "ping",
+      { message: "hello" },
+      executionContext({ principalId: "u" }),
+    );
     expect(result).toEqual({ pong: true });
   });
 
@@ -247,55 +269,6 @@ describe("ToolRegistry", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it("dispatches compatibility overloads by exact arity and shape", async () => {
-    const registry = new ToolRegistry().register(
-      { name: "shape", description: "shape", parameters: {}, risk: "read" },
-      async () => ({ ok: true }),
-    );
-    const untypedExecute = registry.execute.bind(registry) as (
-      ...args: unknown[]
-    ) => Promise<unknown>;
-
-    await expect(untypedExecute("shape", {}, executionContext())).resolves.toEqual({ ok: true });
-    await expect(untypedExecute("principal", "shape", {})).resolves.toEqual({ ok: true });
-    await expect(untypedExecute("shape", {}, executionContext(), undefined)).rejects.toThrow(
-      TypeError,
-    );
-    await expect(untypedExecute("principal", "shape", executionContext())).rejects.toThrow(
-      TypeError,
-    );
-    await expect(untypedExecute("shape", {}, { principalId: "partial" })).rejects.toThrow(
-      TypeError,
-    );
-    await expect(untypedExecute("shape", {})).rejects.toThrow(TypeError);
-  });
-
-  it("never treats partial context-shaped arguments as legacy tool args", async () => {
-    const handler = vi.fn().mockResolvedValue({ ok: true });
-    const registry = new ToolRegistry().register(
-      { name: "bad-args", description: "bad args", parameters: {}, risk: "read" },
-      handler,
-    );
-    const untypedExecute = registry.execute.bind(registry) as (
-      ...args: unknown[]
-    ) => Promise<unknown>;
-    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    await expect(
-      untypedExecute("intended-tool", "bad-args", { requestId: "request" }),
-    ).rejects.toThrow(TypeError);
-    await expect(
-      untypedExecute("intended-tool", "bad-args", {
-        principalId: "principal",
-        signal: new AbortController().signal,
-      }),
-    ).rejects.toThrow(TypeError);
-
-    expect(warning).not.toHaveBeenCalled();
-    expect(handler).not.toHaveBeenCalled();
-    warning.mockRestore();
-  });
-
   it("rejects non-JSON metadata at the canonical registry boundary", async () => {
     const handler = vi.fn().mockResolvedValue({ ok: true });
     const registry = new ToolRegistry().register(
@@ -309,6 +282,20 @@ describe("ToolRegistry", () => {
       ).rejects.toThrow(TypeError);
     }
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("requires the canonical registry execution signature", async () => {
+    const registry = new ToolRegistry().register(
+      { name: "shape", description: "shape", parameters: {}, risk: "read" },
+      async () => ({ ok: true }),
+    );
+    const execute = registry.execute.bind(registry) as (...args: unknown[]) => Promise<unknown>;
+
+    await expect(execute("shape", {}, executionContext())).resolves.toEqual({ ok: true });
+    await expect(execute("shape", {}, executionContext(), undefined)).rejects.toThrow(TypeError);
+    await expect(execute("principal", "shape", {})).rejects.toThrow(TypeError);
+    await expect(execute("shape", {}, { principalId: "partial" })).rejects.toThrow(TypeError);
+    await expect(execute("shape", {})).rejects.toThrow(TypeError);
   });
 
   it("preserves padded opaque context ids exactly", async () => {
@@ -339,24 +326,6 @@ describe("ToolRegistry", () => {
       traceId: " trace ",
       toolCallId: " call ",
     });
-  });
-
-  it("applies the same exact overload dispatch to executeTool", async () => {
-    registerTool(
-      { name: "global_shape", description: "shape", parameters: {}, risk: "read" },
-      async () => ({ ok: true }),
-    );
-    const untypedExecute = executeTool as (...args: unknown[]) => Promise<unknown>;
-
-    await expect(untypedExecute("global_shape", {}, executionContext())).resolves.toEqual({
-      ok: true,
-    });
-    await expect(untypedExecute("global_shape", {}, executionContext(), undefined)).rejects.toThrow(
-      TypeError,
-    );
-    await expect(untypedExecute("principal", "global_shape", executionContext())).rejects.toThrow(
-      TypeError,
-    );
   });
 
   it("adds every registration to the injected compiler environment", async () => {
@@ -440,18 +409,6 @@ describe("ToolRegistry", () => {
     await expect(
       registry.execute("immutable", { value: "stable" }, executionContext({ principalId: "u" })),
     ).resolves.toEqual({ ok: true });
-  });
-
-  it("supports the deprecated userId execute overload at the compatibility boundary", async () => {
-    const registry = new ToolRegistry();
-    registry.register(
-      { name: "ping", description: "d", parameters: {}, risk: "read" },
-      async () => ({
-        pong: true,
-      }),
-    );
-    const result = await registry.execute("u", "ping", {});
-    expect(result).toEqual({ pong: true });
   });
 
   it("duplicate registration throws", () => {

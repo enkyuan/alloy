@@ -87,10 +87,9 @@ describe("provider error semantics", () => {
     const error = new ProviderAPIError("private", {
       service: "anthropic",
       statusCode: 429,
-      responseText: "private response",
     });
 
-    expect(error.responseText).toBeUndefined();
+    expect("responseText" in error).toBe(false);
     expect(normalizeProviderError(error)).toEqual({
       type: "rate_limit",
       code: "PROVIDER_RATE_LIMITED",
@@ -115,8 +114,6 @@ describe("provider error semantics", () => {
         service: "fixture",
         action: "request",
         ...(testCase.status === null ? {} : { statusCode: testCase.status }),
-        responseText: "private response",
-        cause: new Error("private cause"),
       });
     }
 
@@ -148,8 +145,6 @@ describe("provider error semantics", () => {
       source: new ProviderAPIError("sk-auth-secret", {
         service: "vendor",
         statusCode: 401,
-        responseText: "sk-response-secret",
-        cause: new Error("sk-cause-secret"),
       }),
       expectedType: ProviderAPIError,
       expectedCode: "PROVIDER_AUTH_ERROR",
@@ -164,7 +159,7 @@ describe("provider error semantics", () => {
       expect(normalizeProviderError(normalized).code).toBe(expectedCode);
       expect(normalized.service).toBe("openai");
       expect(normalized.cause).toBeUndefined();
-      expect(normalized.responseText).toBeUndefined();
+      expect("responseText" in normalized).toBe(false);
       expect(inspect(normalized, { depth: 5 })).not.toContain("sk-");
     },
   );

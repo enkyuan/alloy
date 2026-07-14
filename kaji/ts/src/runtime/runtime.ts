@@ -6,7 +6,6 @@
  * events -> execute a bounded tool batch -> loop until the
  * provider returns no tool calls -> emit AgentMessageCompleted.
  */
-import type { EventBusProtocol } from "@/events/protocols";
 import type { EventCommitter } from "@/events/protocols";
 import {
   KajiEvent,
@@ -17,7 +16,6 @@ import {
 } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { EventStore } from "@/events/store";
-import { SplitEventCommitter } from "@/events/committer";
 import {
   resolveProviderResponseLimits,
   withProviderResponseDiagnostics,
@@ -62,7 +60,7 @@ import {
 import {
   DEFAULT_CONTEXT_WINDOW,
   MissingToolIdentityError,
-  assertNoLegacyDeadline,
+  assertNoRemovedDeadline,
   assertNonEmptyContextId,
   assertValidDeadline,
   normalizePrincipalId,
@@ -126,9 +124,7 @@ export interface AgentRuntimeOptions {
   provider: ModelProvider;
   store: EventStore;
   /** Canonical append + subscription boundary. */
-  committer?: EventCommitter;
-  /** @deprecated Pass `committer`; a bus implies the experimental split adapter. */
-  bus?: EventBusProtocol;
+  committer: EventCommitter;
   systemPrompt?: string;
   strategy?: AgentStrategy;
   /**
@@ -318,18 +314,13 @@ export class AgentRuntime {
       toolCallsMax: this.turnLimits.providerToolCallsMax,
     });
     this.store = options.store;
-    if (options.committer !== undefined) {
-      if (options.committer.store !== options.store) {
-        throw new Error("AgentRuntime store must match the injected committer store");
-      }
-      this.committer = options.committer;
-    } else if (options.bus !== undefined) {
-      this.committer = new SplitEventCommitter(options.store, options.bus, {
-        metricsSink: this.metrics,
-      });
-    } else {
-      throw new Error("AgentRuntime requires an event committer or compatibility bus");
+    if (options.committer === undefined) {
+      throw new Error("AgentRuntime requires an event committer");
     }
+    if (options.committer.store !== options.store) {
+      throw new Error("AgentRuntime store must match the injected committer store");
+    }
+    this.committer = options.committer;
     if (
       options.planner?.approvalCommitter !== undefined &&
       options.planner.approvalCommitter !== this.committer
@@ -348,7 +339,7 @@ export class AgentRuntime {
       this.defaultContext = undefined;
     } else {
       const context = options.defaultContext;
-      assertNoLegacyDeadline(context);
+      assertNoRemovedDeadline(context);
       if (context.requestId !== undefined) assertNonEmptyContextId(context.requestId, "requestId");
       if (context.traceId !== undefined) assertNonEmptyContextId(context.traceId, "traceId");
       assertValidDeadline(context.deadlineAtMs, "deadlineAtMs");
@@ -472,7 +463,7 @@ export class AgentRuntime {
 
   private resolveTurnContext(context?: TurnContext): ResolvedTurnContext {
     const fallback = this.defaultContext;
-    if (context !== undefined) assertNoLegacyDeadline(context);
+    if (context !== undefined) assertNoRemovedDeadline(context);
     const metadata = {
       ...(fallback?.metadata ?? {}),
       ...(context?.metadata ?? {}),

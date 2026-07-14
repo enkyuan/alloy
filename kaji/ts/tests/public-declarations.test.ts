@@ -124,10 +124,10 @@ describe("public declarations", () => {
 
     const fragment = [
       "### TypeScript public exports",
-      ...["stable", "experimental", "deprecated"].map(
-        (tier) =>
-          `- ${tier[0]!.toUpperCase()}${tier.slice(1)}: ${tiers[tier]!.map((name) => `\`${name}\``).join(", ")}`,
-      ),
+      ...["stable", "experimental", "deprecated"].map((tier) => {
+        const exports = tiers[tier]!.map((name) => `\`${name}\``).join(", ") || "none";
+        return `- ${tier[0]!.toUpperCase()}${tier.slice(1)}: ${exports}`;
+      }),
     ].join("\n");
     const docs = readFileSync(resolve(root, "../../docs/kaji/api-parity.md"), "utf8");
     const actual = docs.match(

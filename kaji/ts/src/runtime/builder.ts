@@ -8,8 +8,8 @@ import type { ModelProvider } from "@/providers/base";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
 import { ToolRegistry } from "@/tools/registry";
-import type { EventBusProtocol, EventCommitter } from "@/events/protocols";
-import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
+import type { EventCommitter } from "@/events/protocols";
+import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
 import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
 import type { ContextWindow, TurnContext } from "@/runtime/context";
@@ -33,8 +33,6 @@ export interface Integrable {
 export interface AgentBuilderBuildOptions {
   /** Canonical append + subscription boundary. */
   committer?: EventCommitter;
-  /** @deprecated Supplying a bus opts into the experimental split adapter. */
-  bus?: EventBusProtocol;
   /** Defaults to the injected committer's store, otherwise a fresh in-memory store. */
   store?: EventStore;
   /** Defaults to the process-local coordinator shared by this store object. */
@@ -160,13 +158,10 @@ export class AgentBuilder {
       committer = opts.committer;
     } else {
       store = opts.store ?? new InMemoryEventStore();
-      committer =
-        opts.bus !== undefined
-          ? new SplitEventCommitter(store, opts.bus, { metricsSink: this._metricsSink })
-          : new InMemoryEventCommitter(store, { metricsSink: this._metricsSink });
+      committer = new InMemoryEventCommitter(store, { metricsSink: this._metricsSink });
     }
 
-    const registry = new ToolRegistry(undefined, this._idFactory);
+    const registry = new ToolRegistry();
     for (const integration of this._integrations) {
       integration.register(registry);
     }

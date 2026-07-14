@@ -154,7 +154,7 @@ export function deadlineAfter(timeoutMs: number, clock: Clock = systemClock): nu
 }
 
 /** Reject the removed pre-beta field even when its value is undefined. */
-export function assertNoLegacyDeadline(context: object): void {
+export function assertNoRemovedDeadline(context: object): void {
   if (Object.prototype.hasOwnProperty.call(context, "deadlineMs")) {
     throw new TypeError(
       "TurnContext.deadlineMs was removed; use deadlineAtMs or deadlineAfter(timeoutMs)",

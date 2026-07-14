@@ -5,12 +5,7 @@
  */
 import { EventType } from "@/events/types";
 import { canonicalJsonValue } from "@/events/json";
-import {
-  type KajiEvent,
-  type StoredKajiEvent,
-  validateNewEvent,
-  validateStoredEvent,
-} from "@/events/schemas";
+import { type StoredKajiEvent, validateStoredEvent } from "@/events/schemas";
 
 /** A single conversation turn in the projected state. */
 export interface MessageToolCall {
@@ -96,7 +91,7 @@ export function createSessionState(sessionId: string): SessionState {
 
 /**
  * Reconstruct session state from stored events. Sequences must already be
- * strictly monotonic. Use `replayLegacySession` for fully unsequenced logs.
+ * strictly monotonic.
  *
  * TOOL_CALL_REQUESTED events are attached to the most recent assistant message
  * so provider history includes the assistant-side tool call before the matching
@@ -132,19 +127,6 @@ export function replaySession(events: readonly StoredKajiEvent[]): SessionState 
   return state;
 }
 
-/** Compatibility entry point for fully unsequenced pre-beta logs. */
-export function replayLegacySession(events: readonly KajiEvent[]): SessionState {
-  const validated = events.map(validateNewEvent);
-  const first = validated[0];
-  if (first === undefined) throw new Error("Cannot replay empty event log");
-  if (validated.some((event) => event.session_id !== first.session_id)) {
-    throw new Error("Cannot replay events from mixed sessions");
-  }
-  const state = createSessionState(first.session_id);
-  for (const event of orderLegacyUnsequencedEvents(validated)) applyKajiEvent(state, event);
-  return state;
-}
-
 /** Apply one persisted event to an existing session projection in place. */
 export function applyEvent(state: SessionState, event: StoredKajiEvent): number | null {
   if (event.session_id !== state.sessionId) {
@@ -153,7 +135,7 @@ export function applyEvent(state: SessionState, event: StoredKajiEvent): number 
   return applyKajiEvent(state, event);
 }
 
-function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent): number | null {
+function applyKajiEvent(state: SessionState, event: StoredKajiEvent): number | null {
   switch (event.type) {
     case EventType.SESSION_CREATED:
       state.isActive = true;
@@ -261,15 +243,6 @@ function applyKajiEvent(state: SessionState, event: KajiEvent | StoredKajiEvent)
       break;
   }
   return null;
-}
-
-/** Compatibility only: new writes are always sequenced by the store. */
-export function orderLegacyUnsequencedEvents(events: readonly KajiEvent[]): KajiEvent[] {
-  console.warn("Replaying legacy unsequenced events by timestamp and input order");
-  return events
-    .map((event, index) => ({ event, index }))
-    .sort((left, right) => left.event.timestamp - right.event.timestamp || left.index - right.index)
-    .map(({ event }) => event);
 }
 
 /**

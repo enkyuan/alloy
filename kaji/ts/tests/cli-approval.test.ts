@@ -4,7 +4,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { Readable, Writable } from "node:stream";
+import { InMemoryEventCommitter } from "@/events/committer";
+import { InMemoryEventStore } from "@/events/store";
+import { systemTimerScheduler } from "@/internal/uuid";
+import type { ApprovalRequestContext, TypedApprovalHandler } from "@/runtime/approval/types";
 import { cliApprovalHandler } from "@/tools/approval";
+import type { ToolRisk } from "@/tools/policy";
 
 function streamFromString(s: string): NodeJS.ReadableStream {
   return Readable.from([s]);
@@ -21,12 +26,46 @@ function captureWritable(): { stream: NodeJS.WritableStream; chunks: string[] } 
   return { stream, chunks };
 }
 
+const committer = new InMemoryEventCommitter(new InMemoryEventStore());
+
+function request(
+  handler: TypedApprovalHandler,
+  name: string,
+  args: Record<string, unknown> = {},
+  risk: ToolRisk = "write",
+) {
+  const toolCallId = `call-${name}`;
+  const context: ApprovalRequestContext = {
+    execution: {
+      principalId: "test-principal",
+      sessionId: "test-session",
+      turnId: "test-turn",
+      requestId: "test-request",
+      traceId: "test-trace",
+      toolCallId,
+      idempotencyKey: `test-session:${toolCallId}`,
+      signal: new AbortController().signal,
+      metadata: {},
+    },
+    toolName: name,
+    risk,
+    arguments: args,
+    committer,
+    emit: (event) => committer.commit(event),
+    deadlineMonotonicMs: performance.now() + 1_000,
+    deadlineSource: "approval",
+    nowMonotonic: () => performance.now(),
+    timerScheduler: systemTimerScheduler,
+  };
+  return handler.request({ id: toolCallId, name, args }, context);
+}
+
 describe("cliApprovalHandler", () => {
-  it("returns true for 'y'", async () => {
+  it("approves 'y'", async () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input: streamFromString("y\n"), output: out.stream });
-    const result = await handler("ship_it", { force: true }, "write");
-    expect(result).toBe(true);
+    const result = await request(handler, "ship_it", { force: true });
+    expect(result).toEqual({ granted: true, code: "approved" });
     const printed = out.chunks.join("");
     expect(printed).toMatch(/ship_it/);
     expect(printed).toMatch(/write/);
@@ -36,36 +75,33 @@ describe("cliApprovalHandler", () => {
   it("is case-insensitive on 'Y'", async () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input: streamFromString("Y\n"), output: out.stream });
-    const result = await handler("ship_it", {}, "write");
-    expect(result).toBe(true);
+    const result = await request(handler, "ship_it");
+    expect(result).toEqual({ granted: true, code: "approved" });
   });
 
-  it("returns false for 'n'", async () => {
+  it("rejects 'n'", async () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input: streamFromString("n\n"), output: out.stream });
-    const result = await handler("ship_it", {}, undefined);
-    expect(result).toBe(false);
+    const result = await request(handler, "ship_it");
+    expect(result).toEqual({
+      granted: false,
+      code: "rejected",
+      reason: "Rejected by operator",
+    });
   });
 
-  it("returns false for any other input", async () => {
+  it("rejects any other input", async () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input: streamFromString("maybe\n"), output: out.stream });
-    const result = await handler("ship_it", {}, undefined);
-    expect(result).toBe(false);
+    const result = await request(handler, "ship_it");
+    expect(result).toMatchObject({ granted: false, code: "rejected" });
   });
 
-  it("returns false on empty input", async () => {
+  it("rejects empty input", async () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input: streamFromString("\n"), output: out.stream });
-    const result = await handler("ship_it", {}, undefined);
-    expect(result).toBe(false);
-  });
-
-  it("renders 'unknown' when risk is undefined", async () => {
-    const out = captureWritable();
-    const handler = cliApprovalHandler({ input: streamFromString("n\n"), output: out.stream });
-    await handler("ship_it", {}, undefined);
-    expect(out.chunks.join("")).toMatch(/risk: unknown/);
+    const result = await request(handler, "ship_it");
+    expect(result).toMatchObject({ granted: false, code: "rejected" });
   });
 
   it("prints the optional label to disambiguate concurrent agents", async () => {
@@ -75,17 +111,17 @@ describe("cliApprovalHandler", () => {
       output: out.stream,
       label: "agent-a",
     });
-    await handler("ship_it", {}, "write");
+    await request(handler, "ship_it");
     expect(out.chunks.join("")).toMatch(/\[agent-a\]/);
   });
 
-  it("returns false (does not hang) when stdin closes without a line", async () => {
+  it("rejects without hanging when stdin closes without a line", async () => {
     // EOF-only stream — readline emits 'close' but never 'line'.
     const input = Readable.from([] as string[]);
     const out = captureWritable();
     const handler = cliApprovalHandler({ input, output: out.stream });
-    const result = await handler("ship_it", {}, "write");
-    expect(result).toBe(false);
+    const result = await request(handler, "ship_it");
+    expect(result).toEqual({ granted: false, code: "rejected", reason: "Approval input ended" });
   });
 
   it("does not hang when a queued prompt finds the shared stream already ended", async () => {
@@ -96,11 +132,15 @@ describe("cliApprovalHandler", () => {
     const out = captureWritable();
     const handler = cliApprovalHandler({ input, output: out.stream });
     const [first, second] = await Promise.all([
-      handler("first", {}, "write"),
-      handler("second", {}, "write"),
+      request(handler, "first"),
+      request(handler, "second"),
     ]);
-    expect(first).toBe(true);
-    expect(second).toBe(false);
+    expect(first).toEqual({ granted: true, code: "approved" });
+    expect(second).toEqual({
+      granted: false,
+      code: "rejected",
+      reason: "Approval input ended",
+    });
   });
 
   it("queues concurrent prompts on the same input stream (second waits for first to finish)", async () => {
@@ -120,8 +160,8 @@ describe("cliApprovalHandler", () => {
     const handler1 = cliApprovalHandler({ input: firstInput, output: out.stream, label: "a" });
     const handler2 = cliApprovalHandler({ input: secondInput, output: out.stream, label: "b" });
     await Promise.all([
-      handler1("first", {}, "write").then(() => order.push("first")),
-      handler2("second", {}, "write").then(() => order.push("second")),
+      request(handler1, "first").then(() => order.push("first")),
+      request(handler2, "second").then(() => order.push("second")),
     ]);
     // Both completed; ordering is best-effort but the prompt headers must
     // appear in some order in the captured output.

@@ -107,8 +107,10 @@
         "ProviderAPIError",
         "ProviderCancellationContractViolation",
         "ProviderConfigError",
+        "ProviderConnectionError",
         "ProviderError",
         "ProviderOutputLimitError",
+        "ProviderRateLimitedError",
         "ProviderResponseLimits",
         "SessionManager",
         "SessionRecord",
@@ -155,6 +157,7 @@
       "experimental": [
         "AppendResult",
         "Chunk",
+        "CredentialStore",
         "DisconnectResult",
         "Document",
         "DocumentRAG",
@@ -175,7 +178,7 @@
         "VectorStore",
         "to_gemini"
       ],
-      "deprecated": ["ToolContext", "replay_legacy_session"]
+      "deprecated": []
     },
     "typescript": {
       "stable": [
@@ -374,6 +377,7 @@
         "applyEvent",
         "approvalKey",
         "calculateCostUsd",
+        "cliApprovalHandler",
         "deadlineAfter",
         "executeTool",
         "formatIntegrationError",
@@ -415,16 +419,7 @@
         "openrouter",
         "safeRequest"
       ],
-      "deprecated": [
-        "ApprovalHandler",
-        "EventApprovalContext",
-        "LegacyApprovalHandler",
-        "ToolContext",
-        "TypedApprovalContext",
-        "adaptLegacyApprovalHandler",
-        "cliApprovalHandler",
-        "replayLegacySession"
-      ]
+      "deprecated": []
     }
   },
   "stable": [
@@ -454,22 +449,6 @@
     { "id": "rag-retrieval", "surface": "RAG/retrieval" },
     { "id": "native-gemini-kimi", "surface": "Native Gemini/Kimi" },
     { "id": "retriever-selection", "surface": "Retriever selection" },
-    {
-      "id": "typescript-http-integration",
-      "surface": "TypeScript HTTP integration"
-    },
-    {
-      "id": "typescript-web-integration",
-      "surface": "TypeScript Web integration"
-    },
-    {
-      "id": "typescript-filesystem-integration",
-      "surface": "TypeScript filesystem integration"
-    },
-    {
-      "id": "typescript-sqlite-integration",
-      "surface": "TypeScript SQLite integration"
-    },
     {
       "id": "distributed-session-serialization",
       "surface": "Distributed same-session serialization"

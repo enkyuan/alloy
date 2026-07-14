@@ -50,21 +50,21 @@ describe("kaji add", () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "kaji-add-"));
     registry = join(tmp, "registry");
-    mkdirSync(join(registry, "fs"), { recursive: true });
-    mkdirSync(join(registry, "http"), { recursive: true });
+    mkdirSync(join(registry, "echo"), { recursive: true });
+    mkdirSync(join(registry, "github"), { recursive: true });
     writeFileSync(
       join(registry, "index.json"),
       JSON.stringify(
         registryIndex({
-          fs: "fs/manifest.json",
-          http: "http/manifest.json",
+          echo: "echo/manifest.json",
+          github: "github/manifest.json",
         }),
       ),
     );
     writeFileSync(
-      join(registry, "fs/manifest.json"),
+      join(registry, "echo/manifest.json"),
       JSON.stringify({
-        name: "fs",
+        name: "echo",
         version: "0.1.0",
         namespace: "demo",
         description: "demo ts",
@@ -81,11 +81,11 @@ describe("kaji add", () => {
         ],
       }),
     );
-    writeFileSync(join(registry, "fs/demo.ts"), "export const x = 1;\n");
+    writeFileSync(join(registry, "echo/demo.ts"), "export const x = 1;\n");
     writeFileSync(
-      join(registry, "http/manifest.json"),
+      join(registry, "github/manifest.json"),
       JSON.stringify({
-        name: "http",
+        name: "github",
         version: "0.1.0",
         namespace: "demo",
         description: "demo py",
@@ -102,13 +102,13 @@ describe("kaji add", () => {
         ],
       }),
     );
-    writeFileSync(join(registry, "http/demo.py"), "# py\n");
+    writeFileSync(join(registry, "github/demo.py"), "# py\n");
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
   it("copies .ts files into --out", async () => {
     const out = join(tmp, "integrations");
-    const code = await add(["fs", "--out", out], {
+    const code = await add(["echo", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -119,11 +119,11 @@ describe("kaji add", () => {
   it("refuses experimental integrations without creating the output directory", async () => {
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify(registryIndex({ fs: "fs/manifest.json" }, "experimental")),
+      JSON.stringify(registryIndex({ echo: "echo/manifest.json" }, "experimental")),
     );
     const out = join(tmp, "experimental-out");
     const logs: string[] = [];
-    const code = await add(["fs", "--out", out], {
+    const code = await add(["echo", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),
@@ -131,17 +131,17 @@ describe("kaji add", () => {
     expect(code).toBe(1);
     expect(existsSync(out)).toBe(false);
     expect(logs).toEqual([
-      "INTEGRATION_EXPERIMENTAL at /integrations/fs/stability: Integration 'fs' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
+      "INTEGRATION_EXPERIMENTAL at /integrations/echo/stability: Integration 'echo' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
     ]);
   });
 
   it("copies an experimental integration only with explicit opt-in", async () => {
     writeFileSync(
       join(registry, "index.json"),
-      JSON.stringify(registryIndex({ fs: "fs/manifest.json" }, "experimental")),
+      JSON.stringify(registryIndex({ echo: "echo/manifest.json" }, "experimental")),
     );
     const out = join(tmp, "experimental-out");
-    const code = await add(["fs", "--allow-experimental", "--out", out], {
+    const code = await add(["echo", "--allow-experimental", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -221,7 +221,7 @@ describe("kaji add", () => {
   it("rejects unknown flags before loading or copying", async () => {
     const out = join(tmp, "unknown-flag-out");
     const logs: string[] = [];
-    const code = await add(["fs", "--unsafe", "--out", out], {
+    const code = await add(["echo", "--unsafe", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),
@@ -234,7 +234,7 @@ describe("kaji add", () => {
   it("copies every manifest-declared native asset", async () => {
     const out = join(tmp, "integrations");
     const logs: string[] = [];
-    const code = await add(["http", "--out", out], {
+    const code = await add(["github", "--out", out], {
       registryRoot: registry,
       schemaRoot,
       log: (m) => logs.push(m),
@@ -256,7 +256,7 @@ describe("kaji add", () => {
     const out = join(tmp, "integrations");
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "demo.ts"), "existing\n");
-    const code = await add(["fs", "--out", out], {
+    const code = await add(["echo", "--out", out], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -267,7 +267,7 @@ describe("kaji add", () => {
     const out = join(tmp, "integrations");
     mkdirSync(out, { recursive: true });
     writeFileSync(join(out, "demo.ts"), "existing\n");
-    const code = await add(["fs", "--out", out, "--force"], {
+    const code = await add(["echo", "--out", out, "--force"], {
       registryRoot: registry,
       schemaRoot,
     });
@@ -283,7 +283,7 @@ describe("kaji add", () => {
     symlinkSync(victim, join(out, "demo.ts"));
     const logs: string[] = [];
 
-    const code = await add(["fs", "--out", out, "--force"], {
+    const code = await add(["echo", "--out", out, "--force"], {
       registryRoot: registry,
       schemaRoot,
       log: (message) => logs.push(message),

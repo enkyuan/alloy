@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AgentRuntime } from "@/runtime/runtime";
 import { InMemoryEventStore } from "@/events/store";
 import { EventBus } from "@/events/bus";
+import { SplitEventCommitter } from "@/events/committer";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { EventBusProtocol } from "@/events/protocols";
@@ -42,12 +43,13 @@ const stubProvider: ModelProvider = {
 };
 
 describe("EventBusProtocol", () => {
-  it("AgentRuntime accepts a non-EventBus implementation", async () => {
+  it("SplitEventCommitter accepts a non-EventBus implementation", async () => {
     const bus = new RecordingBus();
+    const store = new InMemoryEventStore();
     const runtime = new AgentRuntime({
       provider: stubProvider,
-      store: new InMemoryEventStore(),
-      bus,
+      store,
+      committer: new SplitEventCommitter(store, bus),
     });
     await runtime.send("s1", "hello");
     expect(bus.published.length).toBeGreaterThan(0);

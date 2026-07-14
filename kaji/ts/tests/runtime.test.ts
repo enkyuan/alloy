@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 
 import { EventBus } from "@/events/bus";
-import { InMemoryEventCommitter } from "@/events/committer";
-import { KajiEvent } from "@/events/schemas";
+import { InMemoryEventCommitter, SplitEventCommitter } from "@/events/committer";
+import { KajiEvent, StoredKajiEvent, type KajiEvent as KajiEventType } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import type { ModelProviderOptions } from "@/providers/base";
@@ -15,10 +15,14 @@ import { AgentRuntime, type AgentStrategy } from "@/runtime/runtime";
 import { AgentBuilder } from "@/runtime/builder";
 import { ToolPolicy } from "@/tools/policy";
 import { clearTools, registerTool, toolSpecFromSchema } from "@/tools/registry";
-import { replayLegacySession } from "@/sessions/replay";
+import { replaySession } from "@/sessions/replay";
 import type { Message } from "@/sessions/replay";
 
 afterEach(() => clearTools());
+
+function storedEvents(events: readonly KajiEventType[]) {
+  return events.map((event, index) => StoredKajiEvent.parse({ ...event, sequence: index + 1 }));
+}
 
 describe("replaySession", () => {
   const SESSION = "test-session";
@@ -51,7 +55,7 @@ describe("replaySession", () => {
       }),
     ];
 
-    const state = replayLegacySession(events);
+    const state = replaySession(storedEvents(events));
 
     expect(state.messages).toHaveLength(3);
     const assistantMsg = state.messages[1]!;
@@ -109,7 +113,7 @@ describe("replaySession", () => {
       }),
     ];
 
-    const state = replayLegacySession(events);
+    const state = replaySession(storedEvents(events));
 
     // user + assistant parent + failed tool + completed tool = provider-safe history.
     expect(state.messages).toHaveLength(4);
@@ -181,7 +185,7 @@ describe("buildMessages", () => {
   });
 
   it("fails closed when a tool result has no originating call id", () => {
-    expect(() => buildMessages([{ role: "tool", content: "{}", name: "legacy" }])).toThrow(
+    expect(() => buildMessages([{ role: "tool", content: "{}", name: "missing-id" }])).toThrow(
       ContextIntegrityError,
     );
   });
@@ -512,13 +516,13 @@ describe("AgentRuntime.send", () => {
     expect(events.some((e) => e.type === EventType.AGENT_MESSAGE_COMPLETED)).toBe(true);
   });
 
-  it("publishes the USER_MESSAGE to the bus before running the turn", async () => {
+  it("publishes the USER_MESSAGE through an explicit split committer", async () => {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new SplitEventCommitter(store, bus),
     });
     const s = "s-send-bus";
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));

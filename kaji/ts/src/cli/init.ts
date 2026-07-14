@@ -15,7 +15,6 @@ interface Args {
   out: string;
   provider: Provider;
   force: boolean;
-  deprecatedOut: boolean;
 }
 
 interface PackageMetadata {
@@ -88,20 +87,12 @@ function throwIfCancelled(signal: AbortSignal | undefined): void {
 
 function parseArgs(rest: string[]): Args {
   let positionalPath: string | undefined;
-  let outAlias: string | undefined;
   let provider: Provider = "mock";
   let force = false;
 
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index]!;
-    if (arg === "--out") {
-      const next = rest[index + 1];
-      if (next === undefined || next.startsWith("--")) {
-        throw new CliArgError("--out requires a directory argument");
-      }
-      outAlias = next;
-      index++;
-    } else if (arg === "--provider") {
+    if (arg === "--provider") {
       const next = rest[index + 1];
       if (next === undefined || next.startsWith("--")) {
         throw new CliArgError("--provider requires a value");
@@ -124,14 +115,10 @@ function parseArgs(rest: string[]): Args {
     }
   }
 
-  if (positionalPath !== undefined && outAlias !== undefined) {
-    throw new CliArgError("cannot use positional path with --out");
-  }
   return {
-    out: resolve(positionalPath ?? outAlias ?? "."),
+    out: resolve(positionalPath ?? "."),
     provider,
     force,
-    deprecatedOut: outAlias !== undefined,
   };
 }
 
@@ -788,10 +775,6 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
       return 2;
     }
     throw error;
-  }
-
-  if (args.deprecatedOut) {
-    err("Warning: --out is deprecated; pass the destination as the positional path instead.");
   }
 
   let files: Record<string, string>;

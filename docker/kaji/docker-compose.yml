@@ -77,7 +77,7 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
+      - ../../kaji/src:/app/kaji/src:ro
       - ../../kaji/serve/src:/app/kaji/serve/src:ro
 
   # ============================================================================

@@ -4,7 +4,7 @@ severity: error
 message: Copied registry code must use the provider-fixed bounded requester.
 files:
   - "kaji/ts/registry/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/**/*.ts"
+  - "kaji/src/kaji/integrations/registry/**/*.ts"
 rule:
   any:
     - pattern: fetch($$$ARGS)

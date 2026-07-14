@@ -9,8 +9,9 @@ authors = [
 ]
 dependencies = [
     # Shape A: extras live on the project dep; uv.sources is path-only.
-    "kaji-sdk[providers]",
+    "kaji-sdk[gemini]",
     "fastapi>=0.119.0,<0.120",
+    "pydantic[email]>=2.12.0,<3",
     "uvicorn>=0.37.0,<0.38",
     "websockets>=13.0,<16",
     "sqlalchemy>=2.0.44,<3",
@@ -23,7 +24,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-kaji-sdk = { path = "../sdk", editable = true }
+kaji-sdk = { path = "..", editable = true }
 
 [build-system]
 requires = ["setuptools>=68", "editables>=0.5"]
@@ -59,6 +60,9 @@ addopts = [
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+[tool.ruff]
+target-version = "py311"
 
 [tool.coverage.run]
 source = ["kaji_serve"]

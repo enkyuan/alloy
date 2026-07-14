@@ -33,25 +33,21 @@ is checked against the machine feature contract and both registry indexes by
 | Echo integration | Stable core | Stable core | integration tests |
 
 The echo integration is the only catalog entry inside the first beta promise.
-GitHub, HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
+GitHub remains an explicit opt-in experiment.
 `kaji-serve`, its REST/STT surface, and its Postgres/Supabase adapters are also
 excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 ## Catalog Stability
 
 <!-- beta-integrations: echo -->
-<!-- experimental-integrations: fs,github,http,sqlite,web -->
+<!-- experimental-integrations: github -->
 
 | Integration | Stability | Runtimes |
 | --- | --- | --- |
 | echo | beta | python, typescript |
-| fs | experimental | typescript |
 | github | experimental | python, typescript |
-| http | experimental | typescript |
-| sqlite | experimental | typescript |
-| web | experimental | typescript |
 
-<!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,retriever-selection,typescript-http-integration,typescript-web-integration,typescript-filesystem-integration,typescript-sqlite-integration,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
+<!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,retriever-selection,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 
 ## Experimental Python-Only
 
@@ -67,10 +63,6 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 | Surface                                | Status       | Why                                     |
 | -------------------------------------- | ------------ | --------------------------------------- |
-| TypeScript HTTP integration            | Experimental | requires a bound transport              |
-| TypeScript Web integration             | Experimental | requires a bound transport              |
-| TypeScript filesystem integration      | Experimental | excluded from the first beta promise    |
-| TypeScript SQLite integration          | Experimental | excluded from the first beta promise    |
 | Distributed same-session serialization | Deferred     | the beta coordinator is process-local   |
 | Exactly-once external side effects     | Deferred     | external systems must honor idempotency |
 | Unbounded or cross-process replay      | Deferred     | beta replay is capacity-limited         |
@@ -90,7 +82,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 | Surface                | Promotion requirement before beta claim                                                                                                              |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Redis realtime/history | Fake-Redis unit tests, keyed Redis integration tests, reconnect/backlog behavior tests, and documented durability limits.                            |
-| voice/TTS              | Event registry tests, configured TTS adapter smoke tests, interruption/cancellation tests, and explicit fallback behavior for unconfigured adapters. |
+| voice/TTS              | Configured TTS adapter smoke tests, interruption/cancellation tests, and explicit fallback behavior for unconfigured adapters.                        |
 | DocumentRAG            | Deterministic retrieval tests, fixture-based indexing tests, eval set for answer grounding, and documented storage requirements.                     |
 | native Gemini/Kimi     | Native keyed provider smoke tests, tool-call tests where supported, error mapping tests, and cost metadata tests.                                    |
 | tool retrieval         | Ranking fixture tests, policy interaction tests, and runtime integration tests proving retrieved tools are callable.                                 |
@@ -100,7 +92,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 Use the root wrapper as the default local gate before a beta checkpoint:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
 The wrapper runs the non-keyed local checks below and fails clearly when
@@ -115,11 +107,11 @@ TypeScript optional provider imports, and cancellation error shape.
 
 | Gate                      | Command or workflow                                                             | Required for beta                                                   | Current evidence                       |
 | ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| Offline release rehearsal | `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Offline release rehearsal | `uv run --project kaji python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
 
 <!-- beta-parity-scenarios: 67 -->
 
-| Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
+| Cross-SDK behavioral parity | `uv run --project kaji python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
 | Shared schemas and registry | `Kaji beta PR gate` / `Kaji beta PR gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.beta.yml` and `kaji.beta-publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |

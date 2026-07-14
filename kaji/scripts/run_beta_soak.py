@@ -29,7 +29,7 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "sdk"
+SDK = ROOT / "kaji"
 GATE = Path(__file__).with_name("beta_soak_gate.py")
 
 
@@ -215,7 +215,7 @@ def main() -> int:
             failure_code="missing_python_runtime",
             commit=expected_commit,
         )
-        print("uv or kaji/sdk/.venv is required", file=sys.stderr)
+        print("uv or kaji/.venv is required", file=sys.stderr)
         return 2
 
     python_result = artifacts / "python.json"
@@ -259,7 +259,7 @@ def main() -> int:
                     CommandSpec(
                         [
                             *child_python,
-                            str(SDK / "benchmarks" / "runtime_soak.py"),
+                            str(SDK / "benchmarks" / "python" / "runtime_soak.py"),
                             "--minutes",
                             args.minutes,
                             "--seed",

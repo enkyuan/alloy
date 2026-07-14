@@ -75,7 +75,7 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
-    sdk = repo / "kaji/sdk"
+    sdk = repo / "kaji"
     ts = repo / "kaji/ts"
     artifacts = args.artifacts_dir
     if not artifacts.is_absolute():
@@ -135,11 +135,11 @@ def main() -> None:
         fail("Python package license differs from root LICENSE")
     if (ts / "LICENSE").read_bytes() != root_license:
         fail("TypeScript package license differs from root LICENSE")
-    if (
-        python_metadata["project"].get("license")
-        != "PolyForm-Noncommercial-1.0.0"
-        or python_metadata["project"].get("license-files") != ["LICENSE"]
-    ):
+    if python_metadata["project"].get(
+        "license"
+    ) != "PolyForm-Noncommercial-1.0.0" or python_metadata["project"].get(
+        "license-files"
+    ) != ["LICENSE"]:
         fail("Python metadata does not declare its SPDX license and packaged file")
     if typescript_metadata.get("license") != "SEE LICENSE IN LICENSE":
         fail("TypeScript metadata does not reference its packaged LICENSE")
@@ -274,7 +274,7 @@ def main() -> None:
             "uv": actual_tools["uv"],
         },
         "buildAudit": {
-            "file": "kaji/sdk/build-requirements.txt",
+            "file": "kaji/build-requirements.txt",
             "sha256": sha256(build_audit),
         },
         "packages": {

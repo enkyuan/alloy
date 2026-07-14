@@ -339,8 +339,8 @@ describe("AnthropicProvider.generate", () => {
       service: "anthropic",
       action: "request",
       statusCode: 529,
-      responseText: undefined,
     });
+    expect("responseText" in (caught as ProviderAPIError)).toBe(false);
     expect(String(caught)).not.toContain("try later");
     expect((caught as ProviderAPIError).cause).toBeUndefined();
   });

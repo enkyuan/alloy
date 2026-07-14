@@ -207,7 +207,7 @@ def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
     require(
         not any(
             marker in normalized
-            for marker in ("/kaji/sdk/src/", "/kaji/ts/src/", "/kaji/ts/dist/")
+            for marker in ("/kaji/src/", "/kaji/ts/src/", "/kaji/ts/dist/")
         ),
         "source_path_detected",
     )

@@ -32,7 +32,7 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "sdk"
+SDK = ROOT / "kaji"
 TYPESCRIPT = ROOT / "kaji" / "ts"
 SCRIPTS = ROOT / "kaji" / "scripts"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
@@ -273,7 +273,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "--project",
-                "kaji/sdk",
+                "kaji",
                 "--no-sync",
                 "python",
                 "kaji/scripts/check_sdk_parity.py",
@@ -289,7 +289,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
             "uv",
             "run",
             "--project",
-            "kaji/sdk",
+            "kaji",
             "python",
             "kaji/scripts/check_beta_contract.py",
         ],
@@ -303,7 +303,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
             "uv",
             "run",
             "--project",
-            "kaji/sdk",
+            "kaji",
             "python",
             "kaji/scripts/sync_beta_contracts.py",
             "--check",
@@ -317,7 +317,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
             "uv",
             "run",
             "--project",
-            "kaji/sdk",
+            "kaji",
             "python",
             "kaji/scripts/sync_integration_contracts.py",
             "--check",
@@ -332,7 +332,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "--project",
-                "kaji/sdk",
+                "kaji",
                 "--no-sync",
                 "python",
                 "kaji/scripts/run_beta_benchmarks.py",
@@ -350,7 +350,7 @@ def run_shared_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "--project",
-                "kaji/sdk",
+                "kaji",
                 "--no-sync",
                 "python",
                 "kaji/scripts/integration_benchmark.py",
@@ -459,7 +459,7 @@ def package_metadata_command(
         "uv",
         "run",
         "--project",
-        "kaji/sdk",
+        "kaji",
         "python",
         "kaji/scripts/verify_package_metadata.py",
     ]
@@ -634,7 +634,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "--project",
-                "kaji/sdk",
+                "kaji",
                 "python",
                 "kaji/scripts/verify_npm_package.py",
                 str(tarball),

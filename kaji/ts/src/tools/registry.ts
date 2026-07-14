@@ -1,11 +1,10 @@
 /**
  * Tool registry for LLM-callable functions, mirroring
  * `kaji.runtime.tools.registry`. A process-level registry holds specs and
- * handlers; tools run with a `ToolContext` and need no infra by default.
+ * handlers; tools run with a `ToolExecutionContext` and need no infra by default.
  */
 import * as z from "zod";
 
-import { systemIdFactory, type IdFactory } from "@/internal/uuid";
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
 import {
   TOOL_ARGUMENT_VALIDATOR,
@@ -120,14 +119,6 @@ export function assertClassifiedToolSpec(spec: ToolSpec): void {
   if (spec.risk === undefined) throw new UnclassifiedToolRiskError(spec.name);
   if (!TOOL_RISKS.has(spec.risk)) throw ToolSchemaValidationError.invalidRisk(spec.name);
 }
-
-/**
- * Execution context for registered tools. `db` is optional: tools that don't
- * touch a database (the default for an embedded SDK) receive `undefined`. A
- * host that needs persistence injects its own handle here.
- */
-/** @deprecated Use ToolExecutionContext. */
-export type ToolContext = ToolExecutionContext;
 
 /** A tool handler: receives validated args and canonical execution context. */
 export type ToolHandler = (
@@ -247,6 +238,22 @@ function filterSpecs(all: ToolSpec[], options: ListToolSpecsOptions): ToolSpec[]
   return specs;
 }
 
+function assertCanonicalExecutionCall(args: IArguments): void {
+  if (
+    args.length !== 3 ||
+    typeof args[0] !== "string" ||
+    args[0].trim().length === 0 ||
+    typeof args[1] !== "object" ||
+    args[1] === null ||
+    Array.isArray(args[1]) ||
+    typeof args[2] !== "object" ||
+    args[2] === null ||
+    Array.isArray(args[2])
+  ) {
+    throw new TypeError("execute expects (toolName, toolArgs, ToolExecutionContext)");
+  }
+}
+
 /**
  * Build a tool spec from a Zod schema while preserving its complete validation
  * schema, including nested constraints and references.
@@ -300,14 +307,9 @@ export class ToolRegistry {
   private readonly specs = new Map<string, ToolSpec>();
   private readonly handlers = new Map<string, ToolHandler>();
   private readonly schemaValidator: ToolSchemaValidator;
-  private readonly idFactory: IdFactory;
 
-  constructor(
-    schemaValidator: ToolSchemaValidator = new ToolSchemaValidator(),
-    idFactory: IdFactory = systemIdFactory,
-  ) {
+  constructor(schemaValidator: ToolSchemaValidator = new ToolSchemaValidator()) {
     this.schemaValidator = schemaValidator;
-    this.idFactory = idFactory;
   }
 
   register(spec: ToolSpec, handler: ToolHandler): this;
@@ -333,17 +335,9 @@ export class ToolRegistry {
     toolName: string,
     toolArgs: Record<string, unknown>,
     context: ToolExecutionContext,
-  ): Promise<Record<string, unknown>>;
-  /** @deprecated Pass (toolName, toolArgs, ToolExecutionContext). */
-  async execute(
-    userId: string,
-    toolName: string,
-    toolArgs: Record<string, unknown>,
-    db?: unknown,
-  ): Promise<Record<string, unknown>>;
-  async execute(...args: unknown[]): Promise<Record<string, unknown>> {
-    const { toolName, toolArgs, context, legacy } = parseExecutionCall(args, this.idFactory);
-    if (legacy) warnLegacyExecute();
+  ): Promise<Record<string, unknown>> {
+    assertCanonicalExecutionCall(arguments);
+    const executionContext = snapshotToolExecutionContext(context);
     const handler = this.handlers.get(toolName);
     if (handler === undefined) {
       throw new UnknownToolError(toolName);
@@ -364,9 +358,9 @@ export class ToolRegistry {
         throw new Error(`Tool validation receipt could not be claimed: ${toolName}`);
       }
     }
-    if (receipt !== undefined) attachValidationReceipt(context, receipt);
+    if (receipt !== undefined) attachValidationReceipt(executionContext, receipt);
     try {
-      return await handler(executionArgs, context);
+      return await handler(executionArgs, executionContext);
     } finally {
       if (receipt !== undefined) revokeValidationReceipt(receipt);
     }
@@ -377,104 +371,6 @@ export class ToolRegistry {
     this.handlers.clear();
     clearToolSchemas(this.schemaValidator);
   }
-}
-
-let warnedLegacyExecute = false;
-
-function warnLegacyExecute(): void {
-  if (warnedLegacyExecute) return;
-  warnedLegacyExecute = true;
-  console.warn("[kaji] execute(userId, name, args, db) is deprecated; pass ToolExecutionContext");
-}
-
-function legacyExecutionContext(
-  principalId: string,
-  db: unknown,
-  idFactory: IdFactory,
-): ToolExecutionContext {
-  const turnId = idFactory.next("turn");
-  const toolCallId = idFactory.next("tool_call");
-  return {
-    principalId,
-    sessionId: turnId,
-    turnId,
-    requestId: idFactory.next("request"),
-    traceId: idFactory.next("trace"),
-    toolCallId,
-    idempotencyKey: `${turnId}:${toolCallId}`,
-    signal: new AbortController().signal,
-    db,
-    metadata: {},
-  };
-}
-
-interface ParsedExecutionCall {
-  readonly toolName: string;
-  readonly toolArgs: Record<string, unknown>;
-  readonly context: ToolExecutionContext;
-  readonly legacy: boolean;
-}
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-const CONTEXT_ONLY_KEYS = new Set([
-  "principalId",
-  "sessionId",
-  "turnId",
-  "requestId",
-  "traceId",
-  "toolCallId",
-  "idempotencyKey",
-  "deadlineMonotonicMs",
-  "signal",
-  "metadata",
-  "db",
-]);
-
-function hasContextOnlyKey(value: Record<string, unknown>): boolean {
-  for (const key of CONTEXT_ONLY_KEYS) {
-    if (key in value) return true;
-  }
-  return false;
-}
-
-function invalidExecutionCall(): TypeError {
-  return new TypeError(
-    "execute expects (toolName, toolArgs, ToolExecutionContext) or deprecated (userId, toolName, toolArgs, db?)",
-  );
-}
-
-function parseExecutionCall(args: readonly unknown[], idFactory: IdFactory): ParsedExecutionCall {
-  if (args.length === 3 && isNonEmptyString(args[0]) && isObjectRecord(args[1])) {
-    if (!isObjectRecord(args[2])) throw invalidExecutionCall();
-    return {
-      toolName: args[0],
-      toolArgs: args[1],
-      context: snapshotToolExecutionContext(args[2] as unknown as ToolExecutionContext),
-      legacy: false,
-    };
-  }
-  if (
-    (args.length === 3 || args.length === 4) &&
-    isNonEmptyString(args[0]) &&
-    isNonEmptyString(args[1]) &&
-    isObjectRecord(args[2]) &&
-    !hasContextOnlyKey(args[2])
-  ) {
-    return {
-      toolName: args[1],
-      toolArgs: args[2],
-      context: snapshotToolExecutionContext(legacyExecutionContext(args[0], args[3], idFactory)),
-      legacy: true,
-    };
-  }
-  throw invalidExecutionCall();
 }
 
 /** Thrown when a tool is requested by name but not registered. */
@@ -508,19 +404,9 @@ export async function executeTool(
   toolName: string,
   toolArgs: Record<string, unknown>,
   context: ToolExecutionContext,
-): Promise<Record<string, unknown>>;
-/** @deprecated Pass (toolName, toolArgs, ToolExecutionContext). */
-export async function executeTool(
-  userId: string,
-  toolName: string,
-  toolArgs: Record<string, unknown>,
-  db?: unknown,
-): Promise<Record<string, unknown>>;
-export async function executeTool(...args: unknown[]): Promise<Record<string, unknown>> {
-  const execute = defaultRegistry.execute as (
-    ...values: unknown[]
-  ) => Promise<Record<string, unknown>>;
-  return execute.apply(defaultRegistry, args);
+): Promise<Record<string, unknown>> {
+  assertCanonicalExecutionCall(arguments);
+  return defaultRegistry.execute(toolName, toolArgs, context);
 }
 
 /** Clear the process-default registry. Primarily for tests. */

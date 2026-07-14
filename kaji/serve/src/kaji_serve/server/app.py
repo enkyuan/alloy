@@ -10,16 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from kaji_serve import __version__
 from kaji_serve.config import settings
 from kaji_serve.server.router import api_router
-from kaji.core.logging import setup_logging
 from kaji.core.safe_logging import log_redacted_failure
+from kaji.runtime.providers.errors import ProviderError
 from kaji_serve.server.database import close_async_engine
-from kaji_serve.server.lifecycle import close_registered_services
-from kaji_serve.server.v1.health import health_payload, root_payload
-from kaji.runtime.providers.errors import (
+from kaji_serve.server.errors import (
     ServiceError,
+    provider_error_to_detail,
+    provider_error_to_http_status,
     service_error_to_detail,
     service_error_to_http_status,
 )
+from kaji_serve.server.lifecycle import close_registered_services
+from kaji_serve.server.logging import setup_logging
+from kaji_serve.server.v1.health import health_payload, root_payload
 
 setup_logging(debug=settings.DEBUG)
 
@@ -56,6 +59,21 @@ async def service_error_handler(request: Request, exc: ServiceError):
     return JSONResponse(
         status_code=service_error_to_http_status(exc),
         content={"detail": service_error_to_detail(exc, fallback="Service error")},
+    )
+
+
+@app.exception_handler(ProviderError)
+async def provider_error_handler(request: Request, exc: ProviderError):
+    log_redacted_failure(
+        logger,
+        logging.WARNING,
+        "Model provider request failed",
+        exc,
+        identifiers={"path": request.url.path},
+    )
+    return JSONResponse(
+        status_code=provider_error_to_http_status(exc),
+        content={"detail": provider_error_to_detail(exc, fallback="Provider error")},
     )
 
 

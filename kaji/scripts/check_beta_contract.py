@@ -20,11 +20,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
 REGISTRY_INDEXES = (
-    ROOT / "kaji" / "sdk" / "src" / "kaji" / "integrations" / "registry" / "index.json",
+    ROOT / "kaji" / "src" / "kaji" / "integrations" / "registry" / "index.json",
     ROOT / "kaji" / "ts" / "registry" / "index.json",
 )
 PACKAGE_CONTRACT_TARGETS = (
-    ROOT / "kaji" / "sdk" / "src" / "kaji" / "contracts",
+    ROOT / "kaji" / "src" / "kaji" / "contracts",
     ROOT / "kaji" / "ts" / "contracts",
 )
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
@@ -49,10 +49,18 @@ REQUIRED_JSON = {
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
     "providers/cost-conformance.json",
+    "release/tthw-automated-timings.template.json",
     "release/tthw-evidence-v1.schema.json",
+    "release/tthw-participant.template.json",
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
+}
+DATA_DOCUMENTS = {
+    "integrations/abi-index-v1.json",
+    "parity/expected-normalized.json",
+    "release/tthw-automated-timings.template.json",
+    "release/tthw-participant.template.json",
 }
 APPROVAL_FAILURE_RETRYABILITY = {
     "APPROVAL_REJECTED": False,
@@ -375,10 +383,7 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
                 raise fail(path, "/$schema", "expected './scenarios.schema.json'")
             documents[relative] = document
             continue
-        if relative == "parity/expected-normalized.json":
-            documents[relative] = document
-            continue
-        if relative == "integrations/abi-index-v1.json":
+        if relative in DATA_DOCUMENTS:
             documents[relative] = document
             continue
         if document.get("$schema") != DRAFT_2020_12:
@@ -679,7 +684,7 @@ def integration_recovery_entries(
 
 def runtime_event_types() -> set[str]:
     python_source = (
-        ROOT / "kaji" / "sdk" / "src" / "kaji" / "infra" / "events" / "types.py"
+        ROOT / "kaji" / "src" / "kaji" / "infra" / "events" / "types.py"
     ).read_text()
     typescript_source = (
         ROOT / "kaji" / "ts" / "src" / "events" / "types.ts"
@@ -1421,12 +1426,12 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
     digest = "0" * 64
     sample_provenance = {
         "schemaVersion": "1.0.0",
-        "integration": "fs",
+        "integration": "echo",
         "sdkVersion": "0.1.0",
-        "runtime": "typescript",
-        "stability": "experimental",
+        "runtime": "python",
+        "stability": "beta",
         "registryEntrySha256": digest,
-        "abiSha256": None,
+        "abiSha256": digest,
         "manifestSha256": digest,
         "license": {
             "identifier": "PolyForm-Noncommercial-1.0.0",
@@ -1435,25 +1440,8 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
         },
         "files": {"index.ts": digest},
     }
-    for legacy_name in ("fs", "http", "sqlite", "web"):
-        legacy_provenance = deepcopy(sample_provenance)
-        legacy_provenance["integration"] = legacy_name
-        if first_error(provenance_validator, legacy_provenance) is not None:
-            raise fail(
-                provenance_path,
-                "/",
-                "schema rejects valid legacy copied-bundle provenance",
-            )
-
     echo_provenance = deepcopy(sample_provenance)
-    echo_provenance.update(
-        {
-            "integration": "echo",
-            "runtime": "python",
-            "abiSha256": digest,
-            "files": {"echo.py": digest},
-        }
-    )
+    echo_provenance["files"] = {"echo.py": digest}
     if first_error(provenance_validator, echo_provenance) is not None:
         raise fail(provenance_path, "/", "schema rejects valid Echo provenance")
     echo_provenance["abiSha256"] = None
@@ -1696,7 +1684,7 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
         raise fail(path, "/cliCommands", "expected python and typescript command tiers")
 
     python_commands: set[str] = set()
-    for source in (ROOT / "kaji" / "sdk" / "src" / "kaji" / "cli").glob("*.py"):
+    for source in (ROOT / "kaji" / "src" / "kaji" / "cli").glob("*.py"):
         python_commands.update(
             re.findall(r'\.add_parser\(\s*["\']([^"\']+)["\']', source.read_text())
         )
@@ -1897,13 +1885,16 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
         "force",
         "unknown-provider",
         "missing-provider-value",
+        "unknown-option",
         "existing-file-refusal",
-        "deprecated-out",
-        "conflicting-path-out",
     }
-    if set(names) < required:
+    actual = set(names)
+    if actual != required:
         raise fail(
-            path, "/cases", f"missing required cases: {sorted(required - set(names))}"
+            path,
+            "/cases",
+            f"case set differs; missing={sorted(required - actual)}, "
+            f"unexpected={sorted(actual - required)}",
         )
 
 
@@ -1951,7 +1942,7 @@ def render_public_exports_fragment(runtime: str, tiers: dict[str, list[str]]) ->
     title = "Python" if runtime == "python" else "TypeScript"
     lines = [f"### {title} public exports"]
     for tier in ("stable", "experimental", "deprecated"):
-        values = ", ".join(f"`{value}`" for value in tiers[tier])
+        values = ", ".join(f"`{value}`" for value in tiers[tier]) or "none"
         lines.append(f"- {tier.title()}: {values}")
     return "\n".join(lines)
 

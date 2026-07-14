@@ -219,7 +219,7 @@ describe("npm contract artifact", () => {
         CANONICAL_GITHUB_ROW,
       ]),
     ],
-    ["legacy incomplete row", JSON.stringify([{ name: "echo" }, CANONICAL_GITHUB_ROW])],
+    ["incomplete Echo row", JSON.stringify([{ name: "echo" }, CANONICAL_GITHUB_ROW])],
     [
       "duplicate Echo row",
       JSON.stringify([CANONICAL_ECHO_ROW, CANONICAL_ECHO_ROW, CANONICAL_GITHUB_ROW]),

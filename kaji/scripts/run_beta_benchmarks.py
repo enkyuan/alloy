@@ -23,7 +23,7 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "sdk"
+SDK = ROOT / "kaji"
 TYPESCRIPT = ROOT / "kaji" / "ts"
 GATE = Path(__file__).with_name("beta_benchmark_gate.py")
 
@@ -91,7 +91,7 @@ def main() -> int:
         return 2
     selected = commands()
     if selected is None:
-        print("uv or kaji/sdk/.venv is required", file=sys.stderr)
+        print("uv or kaji/.venv is required", file=sys.stderr)
         return 2
     python, pytest = selected
     installed_args = (

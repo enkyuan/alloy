@@ -71,7 +71,7 @@ interface Provenance {
   readonly runtime: "typescript";
   readonly stability: "experimental" | "beta";
   readonly registryEntrySha256: string;
-  readonly abiSha256: string | null;
+  readonly abiSha256: string;
   readonly manifestSha256: string;
   readonly license: Readonly<{ identifier: string; url: string; sha256: string }>;
   readonly files: Readonly<Record<string, string>>;
@@ -84,7 +84,6 @@ interface ReservationIdentity {
 }
 
 const SIDECAR = ".kaji-integration-provenance.json";
-const LEGACY_NULL_ABI = new Set(["fs", "http", "sqlite", "web"]);
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const CONTRACTS_ROOT = join(PACKAGE_ROOT, "contracts/integrations");
 const PACKAGE_LICENSE = join(PACKAGE_ROOT, "LICENSE");
@@ -139,13 +138,12 @@ async function packageVersion(): Promise<string> {
   return value.version;
 }
 
-async function abiDigest(name: string): Promise<string | null> {
+async function abiDigest(name: string): Promise<string> {
   const index = JSON.parse(await readFile(join(CONTRACTS_ROOT, "abi-index-v1.json"), "utf8")) as {
     integrations: Record<string, string>;
   };
   const relativePath = index.integrations[name];
   if (relativePath === undefined) {
-    if (LEGACY_NULL_ABI.has(name)) return null;
     throw new Error(`Integration '${name}' has no canonical ABI contract`);
   }
   const path = resolve(CONTRACTS_ROOT, relativePath);

@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Public Python provider factories must fix origins and production dependencies internally.
 files:
-  - "kaji/sdk/src/kaji/integrations/**/*.py"
+  - "kaji/src/kaji/integrations/**/*.py"
 rule:
   all:
     - kind: function_definition

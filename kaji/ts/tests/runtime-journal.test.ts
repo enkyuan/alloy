@@ -6,6 +6,15 @@ import { MockProvider } from "@/providers/mock";
 import { InMemoryEventStore } from "@/events/store";
 
 describe("runtime event committer", () => {
+  it("requires an explicit committer at the direct runtime boundary", () => {
+    const provider = new MockProvider({ reply: "ok" });
+    const store = new InMemoryEventStore();
+
+    expect(() => new AgentRuntime({ provider, store } as never)).toThrow(
+      /requires an event committer/i,
+    );
+  });
+
   it("derives runtime reads from an injected committer store", async () => {
     const store = new InMemoryEventStore();
     const committer = new InMemoryEventCommitter(store);

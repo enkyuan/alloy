@@ -1,0 +1,87 @@
+"""Tests for the TTS provider factory and the placeholder adapter."""
+
+import pytest
+
+from kaji.modalities.voice.tts import (
+    TTSNotConfiguredError,
+    VoiceTTSAdapter,
+    get_tts_provider,
+)
+
+
+def test_factory_defaults_to_placeholder_adapter():
+    """With TTS_PROVIDER unset/'none', the factory returns the stub adapter."""
+    provider = get_tts_provider("none")
+    assert isinstance(provider, VoiceTTSAdapter)
+
+
+def test_factory_unknown_provider_raises():
+    with pytest.raises(ValueError, match="Unknown TTS_PROVIDER"):
+        get_tts_provider("not-a-provider")
+
+
+def test_factory_selects_gemini():
+    """'gemini' returns a provider satisfying the synthesize/stream surface."""
+    provider = get_tts_provider("gemini")
+    assert hasattr(provider, "synthesize")
+    assert hasattr(provider, "stream")
+    assert not isinstance(provider, VoiceTTSAdapter)
+
+
+def test_factory_selects_openai():
+    """'openai' returns a provider satisfying the synthesize/stream surface."""
+    provider = get_tts_provider("openai")
+    assert hasattr(provider, "synthesize")
+    assert hasattr(provider, "stream")
+    assert not isinstance(provider, VoiceTTSAdapter)
+
+
+def test_factory_is_case_insensitive():
+    from kaji.modalities.voice.tts.openai_provider import OpenAITTSProvider
+
+    assert isinstance(get_tts_provider("OpenAI"), OpenAITTSProvider)
+
+
+def test_providers_use_their_own_voice_model_defaults():
+    """With TTS_VOICE/TTS_MODEL unset, each provider falls back to its own
+    default rather than another provider's value."""
+    from kaji.modalities.voice.tts.gemini_service import GeminiTTSService
+    from kaji.modalities.voice.tts.openai_service import OpenAITTSService
+
+    gemini = GeminiTTSService(api_key="x")
+    openai = OpenAITTSService(api_key="x")
+
+    assert gemini.voice == GeminiTTSService.DEFAULT_VOICE
+    assert gemini.model == GeminiTTSService.DEFAULT_MODEL
+    assert openai.voice == OpenAITTSService.DEFAULT_VOICE
+    assert openai.model == OpenAITTSService.DEFAULT_MODEL
+    # The two providers must not share defaults.
+    assert gemini.voice != openai.voice
+    assert gemini.model != openai.model
+
+
+async def test_openai_provider_rejects_empty_text():
+    from kaji.modalities.voice.tts.openai_provider import OpenAITTSProvider
+
+    provider = OpenAITTSProvider()
+    with pytest.raises(ValueError):
+        await provider.synthesize("   ")
+
+
+async def test_placeholder_synthesize_raises_when_not_configured():
+    provider = VoiceTTSAdapter()
+    with pytest.raises(TTSNotConfiguredError):
+        await provider.synthesize("hello")
+
+
+async def test_placeholder_rejects_empty_text():
+    provider = VoiceTTSAdapter()
+    with pytest.raises(ValueError):
+        await provider.synthesize("   ")
+
+
+async def test_placeholder_stream_raises_when_not_configured():
+    provider = VoiceTTSAdapter()
+    with pytest.raises(TTSNotConfiguredError):
+        async for _ in provider.stream("hello"):
+            pass

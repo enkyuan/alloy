@@ -65,7 +65,7 @@ describe("release redaction boundaries", () => {
     expect(String(error)).toBe("ProviderAPIError: openai request failed");
     expect(String(error)).not.toContain(secret);
     expect(error.cause).toBeUndefined();
-    expect(error.responseText).toBeUndefined();
+    expect("responseText" in error).toBe(false);
     expect(inspect(error, { depth: 5 })).not.toContain(secret);
     expect(JSON.stringify(error)).not.toContain(secret);
   });
@@ -289,7 +289,7 @@ const sharedBetaPaths = [
   "sgconfig.yml",
   "package.json",
   "bun.lock",
-  "kaji/sdk/uv.lock",
+  "kaji/uv.lock",
   ...workflowFiles.map((name) => `.github/workflows/${name}`),
 ];
 const reviewedActionPins: Record<string, string> = {
@@ -339,17 +339,17 @@ const expectedJobPermissionDeclarations: Partial<
   },
 };
 const requiredGateCommands = [
-  "uv run --project kaji/sdk python kaji/scripts/check_beta_contract.py",
-  "uv run --project kaji/sdk python kaji/scripts/sync_beta_contracts.py --check",
-  "uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check",
-  "uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain",
-  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/check_sdk_parity.py",
+  "uv run --project kaji python kaji/scripts/check_beta_contract.py",
+  "uv run --project kaji python kaji/scripts/sync_beta_contracts.py --check",
+  "uv run --project kaji python kaji/scripts/sync_integration_contracts.py --check",
+  "uv run --project kaji python kaji/scripts/check_integration_abi.py --explain",
+  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/check_sdk_parity.py",
   "bun run audit:ast-grep",
-  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --quick",
-  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/integration_benchmark.py --mode quick",
-  'uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest kaji/sdk/tests -m "not integration" --cov-fail-under=80',
-  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build",
-  "uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test:coverage",
+  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py --quick",
+  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/integration_benchmark.py --mode quick",
+  'uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync pytest kaji/tests -m "not integration" --cov-fail-under=80',
+  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build",
+  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test:coverage",
 ];
 
 function readYaml(
@@ -533,7 +533,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(checkout?.uses).toBe(`actions/checkout@${reviewedActionPins["actions/checkout"]}`);
   expect(
     steps.find((step) => step.uses === "./.github/actions/setup-python-uv")?.with,
-  ).toMatchObject({ "working-directory": "kaji/sdk", "sync-args": "--frozen" });
+  ).toMatchObject({ "working-directory": "kaji", "sync-args": "--frozen" });
   expect(
     steps.find((step) => step.uses === "./.github/actions/setup-bun-cache")?.with,
   ).toMatchObject({
@@ -585,7 +585,7 @@ function gateJob(workflow: Workflow): WorkflowJob {
 
 describe("Kaji workflow contracts", () => {
   it.each([
-    ["python.test.yml", ["kaji/sdk/**", "kaji/serve/**"]],
+    ["python.test.yml", ["kaji/**", "kaji/serve/**"]],
     ["ts.test.yml", ["kaji/ts/**", "ryo/auth/**", "packages/ui/**"]],
   ] as const)("routes shared beta inputs through %s", (name, packagePaths) => {
     const { source, workflow } = readWorkflow(name);
@@ -699,7 +699,7 @@ describe("Kaji workflow contracts", () => {
       [publish, "offline-gates"],
     ] as const) {
       for (const [jobId, smokeScript] of [
-        ["python-compat", "kaji/sdk/scripts/release_smoke.py"],
+        ["python-compat", "kaji/scripts/release_smoke.py"],
         ["node-compat", "kaji/ts/scripts/smoke_package.mts"],
       ] as const) {
         const job = workflow.jobs?.[jobId];
@@ -1298,14 +1298,14 @@ describe("Kaji workflow contracts", () => {
 
     expect(setupIndex).toBeGreaterThan(0);
     expect(steps[setupIndex]?.with).toMatchObject({
-      "working-directory": "kaji/sdk",
+      "working-directory": "kaji",
       "python-version": "3.14",
       "sync-args": "--frozen",
     });
     expect(validationSteps).toHaveLength(1);
     expect(setupIndex).toBeLessThan(validateIndex);
     expect(validationSteps[0]?.run).toContain(
-      "uv run --project kaji/sdk --no-sync python kaji/scripts/validate_release_evidence.py",
+      "uv run --project kaji --no-sync python kaji/scripts/validate_release_evidence.py",
     );
     expect(source).not.toMatch(/^\s+python(?:3)?\s+kaji\/scripts\/validate_release_evidence\.py/m);
   });

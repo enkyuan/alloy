@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from kaji.core.errors import (
+from kaji_serve.server.errors import (
     ServiceAPIError,
     ServiceNetworkError,
     classify_http_error,

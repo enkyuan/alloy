@@ -348,8 +348,8 @@ describe("OpenAIProvider.generate", () => {
       service: "openai",
       action: "request",
       statusCode: 429,
-      responseText: undefined,
     });
+    expect("responseText" in (caught as ProviderAPIError)).toBe(false);
     expect(String(caught)).not.toContain("too many requests");
     expect((caught as ProviderAPIError).cause).toBeUndefined();
   });

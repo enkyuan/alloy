@@ -4,9 +4,7 @@ severity: error
 message: Copied providers must import fixed-origin contracts from @kaji/sdk/integrations.
 files:
   - "kaji/ts/registry/github/**/*.ts"
-  - "kaji/ts/registry/gmail/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/github/**/*.ts"
-  - "kaji/sdk/src/kaji/integrations/registry/gmail/**/*.ts"
+  - "kaji/src/kaji/integrations/registry/github/**/*.ts"
 rule:
   all:
     - kind: import_statement

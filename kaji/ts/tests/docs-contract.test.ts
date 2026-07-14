@@ -33,7 +33,7 @@ describe("cross-SDK release matrix docs", () => {
   it("keeps stable core, experimental, and not-ported surfaces explicit", () => {
     const combined = [
       read("kaji/RELEASE_MATRIX.md"),
-      read("kaji/sdk/README.md"),
+      read("kaji/README.md"),
       read("kaji/ts/README.md"),
       read("docs/MVP.md"),
     ].join("\n");
@@ -70,12 +70,11 @@ describe("cross-SDK release matrix docs", () => {
     expect(mvp).not.toContain("no shared manifest/auth/credential shape");
   });
 
-  it("keeps experimental catalog quarantine and transport ownership explicit", () => {
+  it("keeps the two-entry catalog and experimental quarantine explicit", () => {
     const readme = read("kaji/ts/README.md");
     expect(readme).toContain("--allow-experimental");
-    expect(readme).toContain("direct-import templates outside the beta guarantee");
-    expect(readme).toContain("application-owned bound transport or egress proxy");
-    expect(readme).toContain("does not provide a native");
+    expect(readme).toContain("`echo` is the only beta catalog entry");
+    expect(readme).toContain("`github` is the only experimental");
   });
 
   it("matches the machine-readable beta feature tiers exactly", () => {
@@ -104,7 +103,7 @@ describe("cross-SDK release matrix docs", () => {
 
   it("matches both integration registry stability indexes", () => {
     const matrix = read("kaji/RELEASE_MATRIX.md");
-    const python = JSON.parse(read("kaji/sdk/src/kaji/integrations/registry/index.json")) as {
+    const python = JSON.parse(read("kaji/src/kaji/integrations/registry/index.json")) as {
       integrations: Record<string, { stability: string; runtimes: string[] }>;
     };
     const typescript = JSON.parse(read("kaji/ts/registry/index.json")) as {
@@ -117,14 +116,10 @@ describe("cross-SDK release matrix docs", () => {
     }
   });
 
-  it("typechecks and runs every TypeScript migration before/after snippet", () => {
+  it("typechecks and runs every current TypeScript migration snippet", () => {
     const migration = read("docs/kaji/migrating-to-beta.md");
     const names = [
-      "docs-test:typescript-migration-before",
       "docs-test:typescript-migration-after",
-      "docs-test:typescript-replay-before",
-      "docs-test:typescript-replay-after",
-      "docs-test:typescript-approval-before",
       "docs-test:typescript-approval-after",
       "docs-test:typescript-risk-context-before",
       "docs-test:typescript-risk-context-after",
