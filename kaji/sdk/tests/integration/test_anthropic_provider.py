@@ -31,7 +31,7 @@ class EchoProbeIntegration(kaji.Integration):
         risk="read",
     )
     async def echo_probe(
-        self, ctx: kaji.ToolContext, args: dict[str, Any]
+        self, ctx: kaji.ToolExecutionContext, args: dict[str, Any]
     ) -> dict[str, Any]:
         return {"marker": args["marker"], "source": "kaji-live-tool-loop"}
 
@@ -62,7 +62,6 @@ async def test_anthropic_agent_executes_tool_and_finishes() -> None:
     from kaji.runtime.providers.anthropic import AnthropicProvider
 
     marker = "kaji-anthropic-live-marker"
-    bus = kaji.InMemoryEventBus()
     store = kaji.InMemoryEventStore()
     runtime = (
         kaji.AgentBuilder()
@@ -79,7 +78,7 @@ async def test_anthropic_agent_executes_tool_and_finishes() -> None:
             "`probe_echo_probe` tool exactly once with the marker from the "
             "user message before giving a final answer."
         )
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
 
     result = await runtime.turn(

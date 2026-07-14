@@ -5,8 +5,8 @@ message: Copied providers must import fixed-origin contracts from @kaji/sdk/inte
 files:
   - "kaji/ts/registry/github/**/*.ts"
   - "kaji/ts/registry/gmail/**/*.ts"
-  - "kaji/sdk/src/integrations/registry/github/**/*.ts"
-  - "kaji/sdk/src/integrations/registry/gmail/**/*.ts"
+  - "kaji/sdk/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/sdk/src/kaji/integrations/registry/gmail/**/*.ts"
 rule:
   all:
     - kind: import_statement

@@ -74,7 +74,7 @@ def test_release_matrix_lists_non_core_promotion_criteria() -> None:
         "native Gemini/Kimi",
         "tool retrieval",
         "not a beta release gate",
-        "`kaji-serve`, its legacy worker runtime",
+        "`kaji-serve`, its REST/STT surface",
     ]:
         assert phrase in matrix
 

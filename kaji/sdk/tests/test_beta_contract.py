@@ -14,7 +14,7 @@ ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors" / "error-codes.json"
 EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_event_migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
-PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "sdk" / "src" / "contracts"
+PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "sdk" / "src" / "kaji" / "contracts"
 EVENT_SCHEMAS = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json",
     REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json",

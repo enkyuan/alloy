@@ -93,7 +93,7 @@ to build a working embedded agent and are not part of the getting-started path:
 | Text modality adapter            | Python only                                             |
 | Voice / TTS adapters             | Python only (not hardened)                              |
 | Redis realtime bus               | Python only (not hardened)                              |
-| `kaji-serve` (FastAPI + workers) | Python only (not hardened)                              |
+| `kaji-serve` (REST + Soniox STT) | Python only; excluded from the 0.2 SDK beta             |
 | Durable event/session stores     | Neither; bring your own                                 |
 | Observability / token metrics    | Core event schema and streamed usage/cost metadata only |
 
@@ -382,7 +382,8 @@ The in-memory stores lose state on process restart. To persist:
 
 - Inject an `EventStore` with append, exclusive cursor reads, and
   `lastSequence`/`last_sequence`, plus the canonical journal/committer boundary.
-- For a full platform with Postgres, Redis, and workers, see `kaji-serve`
+- `kaji-serve` provides a Postgres-backed session index, not persistent runtime
+  event replay; a host must supply that boundary explicitly.
 
 ---
 
@@ -420,11 +421,16 @@ the wheel into a temporary virtualenv, and runs `scripts/smoke_install.py`.
 
 ---
 
-## When to use Redis vs kaji-serve
+## Choosing an embedding or service boundary
 
 - **Single-process app, only one agent runtime:** in-memory bus and store. No Redis needed.
-- **Multiple processes that need to share events:** add `pip install 'kaji-sdk[realtime]'` and swap `InMemoryEventBus` for `EventBus` (Redis-backed). Still no `kaji-serve` required.
-- **Full hosted platform (REST API, voice WebSocket, async tool workers):** install `kaji-serve`. It wires the SDK + Redis + Postgres + TaskIQ into a deployable reference service.
+- **Multiple processes that need to share events:** bring a durable event store
+  and coordination layer. The Redis split adapter is experimental and is not a
+  production durability claim.
+- **REST and live transcription edge:** `kaji-serve` exposes reference REST
+  routes and a Soniox STT WebSocket. The host application owns the hand-off of
+  final transcripts to an embedded `AgentRuntime`; the service has no hosted
+  agent loop or background tool worker.
 
 ---
 
@@ -444,10 +450,10 @@ AgentBuilder
 
 Current code paths:
 
-- Python: `kaji/sdk/src/runtime/agents/builder.py` creates a scoped
+- Python: `kaji/sdk/src/kaji/runtime/agents/builder.py` creates a scoped
   registry, registers each integration, builds a planner, and passes
   `registry.list_specs()` into `AgentRuntime`.
-- Python: `kaji/sdk/src/runtime/agents/runtime.py` commits runtime events through
+- Python: `kaji/sdk/src/kaji/runtime/agents/runtime.py` commits runtime events through
   the journal and advances a cursor-based session projector.
 - TypeScript: `kaji/ts/src/runtime/builder.ts` mirrors the Python builder
   by creating a scoped `ToolRegistry`, `ToolPlanner`, and runtime.

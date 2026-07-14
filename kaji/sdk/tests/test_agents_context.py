@@ -1,9 +1,9 @@
-from kaji.runtime.agents.context import ContextBuilder
+from kaji.runtime.agents.context import build_messages
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.infra.events.replay import SessionState
 
 
-def test_context_builder_includes_system_prompt_and_history():
+def test_build_messages_includes_system_prompt_and_history():
     state = SessionState(
         session_id="s1",
         messages=[
@@ -12,7 +12,7 @@ def test_context_builder_includes_system_prompt_and_history():
         ],
     )
     prompt = SystemPrompt("You are Kaji.")
-    messages = ContextBuilder.build_messages(state, prompt, variables={"name": "Ada"})
+    messages = build_messages(state, prompt, variables={"name": "Ada"})
 
     assert messages[0]["role"] == "system"
     assert "Kaji" in messages[0]["content"]

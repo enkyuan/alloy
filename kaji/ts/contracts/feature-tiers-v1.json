@@ -119,7 +119,6 @@
         "SystemClock",
         "SystemIdFactory",
         "ToolArgumentValidationError",
-        "ToolContext",
         "ToolExecutionContext",
         "ToolExecutionController",
         "ToolExecutionError",
@@ -176,7 +175,7 @@
         "VectorStore",
         "to_gemini"
       ],
-      "deprecated": ["replay_legacy_session"]
+      "deprecated": ["ToolContext", "replay_legacy_session"]
     },
     "typescript": {
       "stable": [

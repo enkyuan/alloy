@@ -5,7 +5,7 @@ from pathlib import Path
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SDK_ROOT.parents[1]
-PACKAGE_ROOT = SDK_ROOT / "src"
+PACKAGE_ROOT = SDK_ROOT / "src" / "kaji"
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -89,7 +89,7 @@ def test_core_package_has_no_infra_or_runtime_dependencies():
 
 
 def test_redis_client_is_confined_to_realtime_boundary():
-    allowed = Path("src/infra/realtime/redis.py")
+    allowed = Path("src/kaji/infra/realtime/redis.py")
     violations: list[str] = []
 
     for path in _python_files(PACKAGE_ROOT):

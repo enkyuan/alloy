@@ -191,7 +191,9 @@ describe("functionTool", () => {
 
     const registry = new ToolRegistry();
     bound.register(registry);
-    await expect(registry.execute("user-2", "fn_validation_only", original)).resolves.toEqual({
+    await expect(
+      registry.execute("fn_validation_only", original, toolContext("user-2")),
+    ).resolves.toEqual({
       args: original,
       context: expect.objectContaining({ principalId: "user-2" }),
     });
@@ -243,7 +245,7 @@ describe("functionTool", () => {
     );
     const registry = new ToolRegistry();
     bound.register(registry);
-    const executor = vi.fn((name, args) => registry.execute("user-1", name, args));
+    const executor = vi.fn((name, args, context) => registry.execute(name, args, context));
     const planner = new ToolPlanner({
       executor,
       specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
@@ -412,7 +414,7 @@ describe("functionTool", () => {
     );
     await started;
     await expect(
-      registry.execute("direct-user", "fn_invocation_bound", original),
+      registry.execute("fn_invocation_bound", original, toolContext("direct-user")),
     ).rejects.toMatchObject({ code: "INVALID_TOOL_ARGUMENTS", path: "/value" });
     releaseExecutor();
 
@@ -441,7 +443,7 @@ describe("functionTool", () => {
     Object.defineProperty(schema, "parseAsync", { value: replacement });
 
     await expect(
-      registry.execute("user-1", "fn_parser_snapshot", { value: 123 }),
+      registry.execute("fn_parser_snapshot", { value: 123 }, toolContext("user-1")),
     ).rejects.toMatchObject({ code: "INVALID_TOOL_ARGUMENTS", path: "/value" });
     expect(replacement).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
@@ -498,11 +500,11 @@ describe("functionTool", () => {
       resolveDelayed = resolve;
     });
     const planner = new ToolPlanner({
-      executor: async (name, executorArgs) => {
+      executor: async (name, executorArgs, context) => {
         setTimeout(
           () =>
             resolveDelayed(
-              registry.execute("user-1", name, executorArgs).then(
+              registry.execute(name, executorArgs, context).then(
                 (value) => ({ value }),
                 (error: unknown) => ({ error }),
               ),

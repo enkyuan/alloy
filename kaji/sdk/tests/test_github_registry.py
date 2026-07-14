@@ -12,9 +12,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.integrations.base import Integration
 from kaji.runtime.tools.registry import list_tool_specs
+from tests.helpers.approval import StaticApprovalHandler
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -132,13 +134,15 @@ async def test_production_integration_closes_its_owned_http_once(
 
 def test_github_manifest_is_experimental_and_declares_the_owner_bundle() -> None:
     python = json.loads(
-        (ROOT / "kaji/sdk/src/integrations/registry/github/manifest.json").read_text()
+        (
+            ROOT / "kaji/sdk/src/kaji/integrations/registry/github/manifest.json"
+        ).read_text()
     )
     typescript = json.loads(
         (ROOT / "kaji/ts/registry/github/manifest.json").read_text()
     )
     python_index = json.loads(
-        (ROOT / "kaji/sdk/src/integrations/registry/index.json").read_text()
+        (ROOT / "kaji/sdk/src/kaji/integrations/registry/index.json").read_text()
     )
     typescript_index = json.loads((ROOT / "kaji/ts/registry/index.json").read_text())
 
@@ -252,7 +256,9 @@ async def test_mutation_approval_rejection_never_reads_token_or_runs_http(
     planner = ToolPlanner(
         execute,
         policy=ToolPolicy(require_approval_for={"external_effect"}),
-        approval_handler=AsyncMock(return_value=False),
+        approval_handler=StaticApprovalHandler(
+            ApprovalDecision(False, "rejected", "Rejected by test")
+        ),
         specs=specs,
     )
     result = await planner.execute_batch(

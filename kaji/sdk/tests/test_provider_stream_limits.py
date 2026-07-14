@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 import kaji
 
-from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.json import canonical_json
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
@@ -76,7 +75,7 @@ def _runtime(
     store = InMemoryEventStore()
     return (
         AgentRuntime(
-            bus=InMemoryEventBus(),
+            bus=None,
             store=store,
             provider=provider,
             turn_execution_limits=limits,
@@ -316,7 +315,7 @@ async def test_residual_delta_is_durable_before_tool_execution() -> None:
         ]
     )
     runtime = AgentRuntime(
-        bus=InMemoryEventBus(),
+        bus=None,
         store=store,
         provider=provider,
         planner=planner,

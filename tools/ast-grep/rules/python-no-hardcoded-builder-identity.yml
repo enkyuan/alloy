@@ -3,8 +3,8 @@ language: Python
 severity: error
 message: Tool identity must come from TurnContext, never a builder literal.
 files:
-  - "kaji/sdk/src/runtime/agents/builder.py"
-  - "kaji/sdk/src/runtime/agents/runtime.py"
+  - "kaji/sdk/src/kaji/runtime/agents/builder.py"
+  - "kaji/sdk/src/kaji/runtime/agents/runtime.py"
 rule:
   any:
     - pattern: $REGISTRY.execute("builder", $$$ARGS)

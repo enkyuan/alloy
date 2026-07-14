@@ -198,11 +198,11 @@ describe("openrouter factory", () => {
     const prev = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = "or-key";
     try {
-      const p = openrouter("meta-llama/llama-3.1-70b-instruct");
+      const p = openrouter("openai/gpt-5.4-mini");
       expect(p).toBeInstanceOf(OpenAIProvider);
       const opts = readOpts(p);
       expect(opts.baseURL).toBe("https://openrouter.ai/api/v1");
-      expect(opts.model).toBe("meta-llama/llama-3.1-70b-instruct");
+      expect(opts.model).toBe("openai/gpt-5.4-mini");
       expect(opts.apiKey).toBe("or-key");
     } finally {
       if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
@@ -216,7 +216,7 @@ describe("openrouter factory", () => {
     delete process.env.OPENROUTER_API_KEY;
     process.env.OPENAI_API_KEY = "fallback-key";
     try {
-      expect(() => openrouter("anthropic/claude-3.5-sonnet")).toThrow();
+      expect(() => openrouter("anthropic/claude-sonnet-4.6")).toThrow();
     } finally {
       if (prevOR !== undefined) process.env.OPENROUTER_API_KEY = prevOR;
       if (prevOA === undefined) delete process.env.OPENAI_API_KEY;
@@ -292,8 +292,8 @@ describe("gemini factory", () => {
     const prev = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = "g-key";
     try {
-      const p = gemini("gemini-2.5-pro");
-      expect(readOpts(p).model).toBe("gemini-2.5-pro");
+      const p = gemini("gemini-3.5-flash");
+      expect(readOpts(p).model).toBe("gemini-3.5-flash");
     } finally {
       if (prev === undefined) delete process.env.GEMINI_API_KEY;
       else process.env.GEMINI_API_KEY = prev;

@@ -47,7 +47,7 @@ BENCHMARK_SEED = 13
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
 SOURCE_TREE_ROOTS = (
-    Path("kaji/sdk/src"),
+    Path("kaji/sdk/src/kaji"),
     Path("kaji/ts/src"),
 )
 SOURCE_INPUTS = (

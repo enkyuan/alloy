@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EventBus } from "@/events/bus";
+import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 import type {
@@ -45,7 +45,10 @@ class ScriptedProvider implements ModelProvider {
 
 function build(
   provider: ModelProvider,
-  options: Omit<ConstructorParameters<typeof AgentRuntime>[0], "provider" | "store" | "bus"> = {},
+  options: Omit<
+    ConstructorParameters<typeof AgentRuntime>[0],
+    "provider" | "store" | "committer" | "bus"
+  > = {},
 ) {
   const store = new InMemoryEventStore();
   return {
@@ -53,7 +56,7 @@ function build(
     runtime: new AgentRuntime({
       provider,
       store,
-      bus: new EventBus(),
+      committer: new InMemoryEventCommitter(store),
       ...options,
     }),
   };
@@ -420,7 +423,7 @@ describe("AgentRuntime provider response boundary", () => {
     const runtime = new AgentRuntime({
       provider,
       store,
-      bus: new EventBus(),
+      committer: new InMemoryEventCommitter(store),
       tools: [{ name: "lookup", description: "lookup", parameters: {}, risk: "read" }],
       toolExecutor: async () => {
         typesAtExecution = (await store.getEvents("tool-order")).map((event) => event.type);

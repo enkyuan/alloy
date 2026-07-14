@@ -52,6 +52,9 @@ def clean_caches(root: Path) -> None:
                 if artifact.is_file() or artifact.is_symlink():
                     artifact.unlink(missing_ok=True)
 
+        for egg_info in tree.rglob("*.egg-info"):
+            remove_path(egg_info)
+
     for relative in ROOT_CACHE_PATHS:
         remove_path(root / relative)
 

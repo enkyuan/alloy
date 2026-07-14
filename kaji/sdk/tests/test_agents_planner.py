@@ -10,10 +10,12 @@ from kaji.infra.events.schemas import (
     ToolCallStarted,
 )
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
 from kaji.runtime.agents.cancellation import CancellationToken
-from kaji.runtime.agents.context import TurnContext
+from kaji.runtime.agents.context import ToolInvocation, TurnContext
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
+from tests.helpers.approval import StaticApprovalHandler
 
 
 _TURN_CONTEXT = TurnContext(principal_id="test-principal")
@@ -157,15 +159,12 @@ async def test_approval_approved_proceeds_to_execution():
     async def executor(_name: str, _args: dict):
         return {"ok": True}
 
-    async def approve(_name, _args, _risk):
-        return True
-
     policy = ToolPolicy(require_approval_for={"destructive"})
     spec = ToolSpec(name="nuke", description="nuke", parameters={}, risk="destructive")
     planner = ToolPlanner(
         executor=executor,
         policy=policy,
-        approval_handler=approve,
+        approval_handler=StaticApprovalHandler(ApprovalDecision(True, "approved")),
         specs={"nuke": spec},
     )
     results = await _execute(
@@ -195,9 +194,6 @@ async def test_approval_rejected_skips_execution():
         executor_called = True
         return {"ok": True}
 
-    async def reject(_name, _args, _risk):
-        return False
-
     policy = ToolPolicy(require_approval_for={"destructive"})
     spec = ToolSpec(
         name="charge", description="charge card", parameters={}, risk="destructive"
@@ -205,7 +201,9 @@ async def test_approval_rejected_skips_execution():
     planner = ToolPlanner(
         executor=executor,
         policy=policy,
-        approval_handler=reject,
+        approval_handler=StaticApprovalHandler(
+            ApprovalDecision(False, "rejected", "Rejected by test")
+        ),
         specs={"charge": spec},
     )
     results = await _execute(
@@ -299,9 +297,13 @@ async def test_policy_denied_tool_skips_execution_and_approval():
         called["executor"] = True
         return {"ok": True}
 
-    async def approve(_name, _args, _risk):
-        called["approval"] = True
-        return True
+    class CountingApprovalHandler:
+        async def request(
+            self, call: ToolInvocation, context: ApprovalRequestContext
+        ) -> ApprovalDecision:
+            _ = (call, context)
+            called["approval"] = True
+            return ApprovalDecision(True, "approved")
 
     policy = ToolPolicy(denied={"delete"}, require_approval_for={"destructive"})
     spec = ToolSpec(
@@ -313,7 +315,7 @@ async def test_policy_denied_tool_skips_execution_and_approval():
     planner = ToolPlanner(
         executor=executor,
         policy=policy,
-        approval_handler=approve,
+        approval_handler=CountingApprovalHandler(),
         specs={"delete": spec},
     )
 

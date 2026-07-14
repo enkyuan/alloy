@@ -30,14 +30,13 @@ class WeatherIntegration(kaji.Integration):
         },
         risk="read",
     )
-    async def get_weather(self, ctx: kaji.ToolContext, args: dict) -> dict:
+    async def get_weather(self, ctx: kaji.ToolExecutionContext, args: dict) -> dict:
         return {"city": args.get("city", "unknown"), "tempF": 68}
 
 
 @pytest.mark.asyncio
 async def test_quickstart_agent_builder_path() -> None:
     """The AgentBuilder quickstart from the README runs end-to-end."""
-    bus = kaji.InMemoryEventBus()
     store = kaji.InMemoryEventStore()
 
     runtime = (
@@ -46,7 +45,7 @@ async def test_quickstart_agent_builder_path() -> None:
         .integration(WeatherIntegration())
         .default_context(kaji.TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
 
     await store.append(kaji.UserMessage(session_id="s1", content="Weather in Seattle?"))
@@ -65,7 +64,6 @@ async def test_quickstart_agent_builder_path() -> None:
 @pytest.mark.asyncio
 async def test_quickstart_event_inspection() -> None:
     """Events from the README step 5 (inspect events) are present and typed."""
-    bus = kaji.InMemoryEventBus()
     store = kaji.InMemoryEventStore()
 
     runtime = (
@@ -73,7 +71,7 @@ async def test_quickstart_event_inspection() -> None:
         .provider(MockProvider())
         .integration(WeatherIntegration())
         .default_context(kaji.TurnContext(principal_id="quickstart"))
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
 
     await store.append(kaji.UserMessage(session_id="s2", content="hi"))
@@ -90,10 +88,9 @@ async def test_quickstart_event_inspection() -> None:
 @pytest.mark.asyncio
 async def test_quickstart_send_convenience_method() -> None:
     """runtime.send() appends a UserMessage and runs the turn atomically."""
-    bus = kaji.InMemoryEventBus()
     store = kaji.InMemoryEventStore()
 
-    runtime = kaji.AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
+    runtime = kaji.AgentBuilder().provider(MockProvider()).build(store=store)
 
     # seed SESSION_CREATED so replay doesn't error on empty log
     await store.append(kaji.UserMessage(session_id="s3", content="first"))

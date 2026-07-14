@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from "vitest";
 import * as z from "zod";
-import { AgentBuilder, EventBus, InMemoryEventStore, functionTool } from "@/index";
+import { AgentBuilder, InMemoryEventStore, functionTool } from "@/index";
 import { MockProvider } from "@/providers/mock";
 import { say, shout } from "../registry/echo/index";
 
@@ -33,7 +33,7 @@ describe("echo registry template", () => {
         .provider(new MockProvider({ reply: "ok" }))
         .tool(say)
         .tool(shout)
-        .build({ bus: new EventBus(), store: new InMemoryEventStore() });
+        .build({ store: new InMemoryEventStore() });
     }).not.toThrow();
   });
 
@@ -62,7 +62,7 @@ describe("echo registry template", () => {
         .provider(new MockProvider({ reply: "ok" }))
         .tool(a)
         .tool(b)
-        .build({ bus: new EventBus(), store: new InMemoryEventStore() });
+        .build({ store: new InMemoryEventStore() });
     }).toThrow(/already registered/i);
   });
 });

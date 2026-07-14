@@ -6,8 +6,9 @@ import { describe, expect, it, vi } from "vitest";
 import { listToolSpecs, ToolRegistry } from "@kaji/sdk";
 import type { FixedOriginRequester } from "@kaji/sdk/integrations";
 import { EventType } from "@/events/types";
-import { StoredKajiEvent } from "@/events/schemas";
-import { ToolPlanner } from "@/tools/planner";
+import { InMemoryEventCommitter } from "@/events/committer";
+import { InMemoryEventStore } from "@/events/store";
+import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { GitHubClient } from "../registry/github/client";
 import { GitHubIntegration, inspectIntegration } from "../registry/github/index";
@@ -134,20 +135,30 @@ describe("GitHub registry bundle", () => {
     integration.register(registry);
     const specs = new Map(registry.listSpecs().map((spec) => [spec.name, spec]));
     const events: Array<{ type: string }> = [];
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     const planner = new ToolPlanner({
       specs,
       policy: new ToolPolicy({ requireApprovalFor: new Set(["external_effect"]) }),
-      approvalHandler: async () => false,
+      approvalHandler: {
+        async request() {
+          return {
+            granted: false as const,
+            code: "rejected" as const,
+            reason: "Rejected by test policy",
+          };
+        },
+      },
+      approvalCommitter,
       executor: async (toolName, toolArgs, toolContext) =>
         registry.execute(toolName, { ...toolArgs }, toolContext),
     });
     const results = await planner.executeBatch(
       "session",
       [{ id: "call", name, arguments: args }],
-      async (event) => {
+      bindEmitterToCommitter(async (event) => {
         events.push(event);
-        return StoredKajiEvent.parse({ ...event, sequence: events.length });
-      },
+        return approvalCommitter.commit(event);
+      }, approvalCommitter),
       "turn",
       { principalId: "principal", requestId: "request", traceId: "trace" },
     );

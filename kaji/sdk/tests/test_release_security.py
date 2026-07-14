@@ -21,9 +21,7 @@ from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.schemas import validate_event_json
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.observability.protocols import TraceSink, start_span
-from kaji.infra.realtime.dlq import build_generic_dlq_entry, drain_generic_dlq
 from kaji.infra.realtime.history_ops import get_history
-from kaji.infra.realtime import publish as publish_module
 from kaji.integrations.errors import IntegrationAuthError
 from kaji.integrations.oauth import FileTokenStorage
 from kaji.knowledge.rag import DocumentRAG
@@ -985,12 +983,9 @@ async def test_redis_bus_rejects_cross_session_rows() -> None:
 def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() -> None:
     sdk_root = Path(__file__).resolve().parents[1]
     relatives = (
-        "src/integrations/keychain.py",
-        "src/integrations/oauth.py",
-        "src/infra/realtime/history_ops.py",
-        "src/infra/realtime/streams.py",
-        "src/infra/realtime/publish.py",
-        "src/infra/realtime/dlq.py",
+        "src/kaji/integrations/keychain.py",
+        "src/kaji/integrations/oauth.py",
+        "src/kaji/infra/realtime/history_ops.py",
     )
     for relative in relatives:
         source = (sdk_root / relative).read_text()
@@ -1015,62 +1010,12 @@ def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() ->
 
 
 @pytest.mark.asyncio
-async def test_realtime_and_secret_storage_failure_logs_are_redacted(
+async def test_history_and_secret_storage_failure_logs_are_redacted(
     caplog: pytest.LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
     secret = "sk-structured-log-secret"
     caplog.set_level(logging.WARNING)
-
-    with patch.object(
-        publish_module,
-        "publish_user_update",
-        new=AsyncMock(side_effect=RuntimeError(secret)),
-    ):
-        published = await publish_module.publish_user_update_safely(
-            object(),
-            event_type="tool.result",
-            user_id="user",
-            payload={"secret": secret},
-            context={"tool_args": secret},
-        )
-    assert published is False
-
-    raw = build_generic_dlq_entry(
-        {"secret": secret},
-        reason=secret,
-        attempts=0,
-        context={"secret": secret},
-    )
-
-    class Redis:
-        item: str | None = raw
-
-        async def rpop(self, _key: str) -> str | None:
-            item, self.item = self.item, None
-            return item
-
-    async def broken_handler(*_args: object, **_kwargs: object) -> bool:
-        raise RuntimeError(secret)
-
-    with patch(
-        "kaji.infra.realtime.dlq.enqueue_generic_dlq",
-        new=AsyncMock(return_value=None),
-    ):
-        assert (
-            await drain_generic_dlq(
-                Redis(),
-                "dlq",
-                "dead",
-                1,
-                0,
-                10,
-                60,
-                60,
-                broken_handler,
-            )
-            == 0
-        )
 
     class HistoryRedis:
         async def lrange(self, *_args: object) -> list[bytes]:

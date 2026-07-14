@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { EventBus } from "@/events/bus";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
@@ -14,7 +13,7 @@ import { ToolRegistry, type ToolSpec, type ToolHandler } from "@/tools/registry"
 // ---------------------------------------------------------------------------
 
 function makeInfra() {
-  return { bus: new EventBus(), store: new InMemoryEventStore() };
+  return { store: new InMemoryEventStore() };
 }
 
 /** A minimal integration that registers a single "ping" tool. */
@@ -32,18 +31,18 @@ class PingIntegration implements Integrable {
 
 describe("AgentBuilder", () => {
   it("throws when provider not set", () => {
-    const { bus, store } = makeInfra();
-    expect(() => new AgentBuilder().build({ bus, store })).toThrow(/provider/i);
+    const { store } = makeInfra();
+    expect(() => new AgentBuilder().build({ store })).toThrow(/provider/i);
   });
 
   it("builds runtime with no integrations", () => {
-    const { bus, store } = makeInfra();
-    const runtime = new AgentBuilder().provider(new MockProvider()).build({ bus, store });
+    const { store } = makeInfra();
+    const runtime = new AgentBuilder().provider(new MockProvider()).build({ store });
     expect(runtime).toBeInstanceOf(AgentRuntime);
   });
 
   it("accepts typed approval handlers in the fluent builder", () => {
-    const { bus, store } = makeInfra();
+    const { store } = makeInfra();
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .approvalHandler({
@@ -51,13 +50,13 @@ describe("AgentBuilder", () => {
           return { granted: true, code: "approved" as const };
         },
       })
-      .build({ bus, store });
+      .build({ store });
 
     expect(runtime).toBeInstanceOf(AgentRuntime);
   });
 
   it("executes integration tools via scoped registry", async () => {
-    const { bus, store } = makeInfra();
+    const { store } = makeInfra();
     const sessionId = "s-builder-ping";
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }));
     await store.append(
@@ -72,7 +71,7 @@ describe("AgentBuilder", () => {
       .provider(new MockProvider())
       .integration(new PingIntegration())
       .defaultContext({ principalId: "test" })
-      .build({ bus, store });
+      .build({ store });
 
     await runtime.runTurn(sessionId);
 
@@ -84,11 +83,11 @@ describe("AgentBuilder", () => {
   });
 
   it("registers integration tools into runtime", () => {
-    const { bus, store } = makeInfra();
+    const { store } = makeInfra();
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .integration(new PingIntegration())
-      .build({ bus, store });
+      .build({ store });
     expect(runtime).toBeInstanceOf(AgentRuntime);
     // Access the private fixedTools field via casting to verify the tool was registered.
     const tools = (runtime as unknown as { fixedTools: ToolSpec[] | undefined }).fixedTools;
@@ -97,11 +96,11 @@ describe("AgentBuilder", () => {
   });
 
   it("applies system prompt", () => {
-    const { bus, store } = makeInfra();
+    const { store } = makeInfra();
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .systemPrompt("You are a payment assistant.")
-      .build({ bus, store });
+      .build({ store });
     // Access the private systemPrompt field to verify it was applied.
     const sp = (runtime as unknown as { systemPrompt: string | undefined }).systemPrompt;
     expect(sp).toBe("You are a payment assistant.");

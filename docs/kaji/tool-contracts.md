@@ -64,7 +64,7 @@ should inject a restart-safe ledger.
 Python executors accept one `ToolInvocation` containing name, arguments, and
 `ToolExecutionContext`. TypeScript executors accept `(name, args, context)`.
 Integration handlers in both SDKs receive arguments plus the resolved context;
-Python's `ToolContext` remains a compatibility alias for
+Python's `ToolContext` remains only as a deprecated compatibility alias for
 `ToolExecutionContext`.
 
 ## Approval decisions

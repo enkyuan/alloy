@@ -70,11 +70,10 @@ async def mock_executor(name: str, args: Dict[str, Any]) -> Any:
 @pytest.mark.asyncio
 async def test_agent_runtime_basic_turn():
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
     provider = MockProvider()
 
-    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    runtime = AgentRuntime(bus=None, store=store, provider=provider, planner=planner)
 
     # Simulate a user message
     await store.append(UserMessage(session_id="test-1", content="Hi"))
@@ -101,7 +100,6 @@ async def test_agent_runtime_basic_turn():
 @pytest.mark.asyncio
 async def test_agent_runtime_emits_streamed_usage_on_completed_message():
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
 
     class TelemetryProvider(ModelProvider):
@@ -139,7 +137,7 @@ async def test_agent_runtime_emits_streamed_usage_on_completed_message():
             )
 
     runtime = AgentRuntime(
-        bus=bus,
+        bus=None,
         store=store,
         provider=TelemetryProvider(),
         planner=planner,
@@ -167,7 +165,6 @@ async def test_agent_runtime_tool_loop_end_to_end():
     tool result) and finishes with a plain text response.
     """
     store = InMemoryEventStore()
-    bus = MockEventBus()
 
     executed: List[str] = []
 
@@ -188,7 +185,7 @@ async def test_agent_runtime_tool_loop_end_to_end():
     planner = ToolPlanner(executor=executor, specs={"lookup": tools[0]})
 
     runtime = AgentRuntime(
-        bus=bus, store=store, provider=provider, planner=planner, tools=tools
+        bus=None, store=store, provider=provider, planner=planner, tools=tools
     )
 
     await store.append(UserMessage(session_id="tool-1", content="Use a tool"))
@@ -217,7 +214,6 @@ async def test_agent_runtime_skips_tool_execution_when_allow_tool_calls_false():
     complete with a normal assistant response instead of an empty tool-only turn.
     """
     store = InMemoryEventStore()
-    bus = MockEventBus()
 
     executed: List[str] = []
 
@@ -238,7 +234,7 @@ async def test_agent_runtime_skips_tool_execution_when_allow_tool_calls_false():
     ]
 
     runtime = AgentRuntime(
-        bus=bus,
+        bus=None,
         store=store,
         provider=provider,
         planner=planner,
@@ -261,7 +257,6 @@ async def test_agent_runtime_skips_tool_execution_when_allow_tool_calls_false():
 @pytest.mark.asyncio
 async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
     store = InMemoryEventStore()
-    bus = MockEventBus()
 
     async def executor(name: str, args: Dict[str, Any]) -> Any:
         return {"ok": True}
@@ -302,7 +297,7 @@ async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
         risk="read",
     )
     runtime = AgentRuntime(
-        bus=bus,
+        bus=None,
         store=store,
         provider=AlwaysToolProvider(),
         planner=ToolPlanner(executor=executor, specs={"lookup": lookup_spec}),
@@ -330,11 +325,10 @@ async def test_agent_runtime_emits_exhausted_event_at_max_iterations():
 async def test_agent_runtime_no_tools_runs_clean():
     """With no tools configured the loop still runs a plain text turn."""
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
     provider = _RegistryMockProvider()
 
-    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    runtime = AgentRuntime(bus=None, store=store, provider=provider, planner=planner)
 
     await store.append(UserMessage(session_id="notools-1", content="Hi"))
     await runtime.run_turn("notools-1")
@@ -360,7 +354,6 @@ async def test_get_provider_mock_is_public_zero_setup_provider():
 @pytest.mark.asyncio
 async def test_agent_runtime_cancellation():
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
 
     class SlowMockProvider(ModelProvider):
@@ -396,7 +389,7 @@ async def test_agent_runtime_cancellation():
             yield ModelResponseChunk(delta="Finish")
 
     provider = SlowMockProvider()
-    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    runtime = AgentRuntime(bus=None, store=store, provider=provider, planner=planner)
 
     token = CancellationToken()
 
@@ -429,7 +422,6 @@ async def test_agent_runtime_emits_cancellation_when_provider_cancels_mid_stream
 ):
     """Provider-scope cancellation is terminal whether it raises or yields."""
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
 
     captured_token: Dict[str, Any] = {}
@@ -470,7 +462,7 @@ async def test_agent_runtime_emits_cancellation_when_provider_cancels_mid_stream
             yield ModelResponseChunk(delta="after-cancel")
 
     provider = RaisingProvider()
-    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    runtime = AgentRuntime(bus=None, store=store, provider=provider, planner=planner)
 
     await store.append(UserMessage(session_id="cancel-mid", content="go"))
 
@@ -497,7 +489,6 @@ async def test_agent_runtime_reraises_when_cancel_is_external():
     than miscategorize the external cancel as a user-requested one.
     """
     store = InMemoryEventStore()
-    bus = MockEventBus()
     planner = ToolPlanner(executor=mock_executor)
 
     class ExternallyCancelledProvider(ModelProvider):
@@ -530,7 +521,7 @@ async def test_agent_runtime_reraises_when_cancel_is_external():
             raise asyncio.CancelledError()
 
     provider = ExternallyCancelledProvider()
-    runtime = AgentRuntime(bus=bus, store=store, provider=provider, planner=planner)
+    runtime = AgentRuntime(bus=None, store=store, provider=provider, planner=planner)
 
     await store.append(UserMessage(session_id="ext-cancel", content="go"))
 
@@ -680,7 +671,7 @@ def test_explicit_planner_lives_on_self_planner():
     rebuilding. Same identity, plain attribute access."""
     explicit = ToolPlanner(executor=mock_executor)
     runtime = AgentRuntime(
-        bus=MockEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         planner=explicit,
@@ -691,7 +682,7 @@ def test_explicit_planner_lives_on_self_planner():
 def test_default_planner_lives_on_self_planner():
     """When no planner is given, runtime.planner is the lazily-built default."""
     runtime = AgentRuntime(
-        bus=MockEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         tool_executor=mock_executor,
@@ -710,7 +701,7 @@ def test_planner_attribute_is_plain_not_property():
     ...`, which raised AttributeError if anything tried `self.planner = x`.
     """
     runtime = AgentRuntime(
-        bus=MockEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         tool_executor=mock_executor,
@@ -725,7 +716,7 @@ def test_underscore_planner_attrs_are_gone():
     """No leftover `_planner` or `_explicit_planner` book-keeping attributes
     after the collapse; the source of truth is `self.planner` only."""
     runtime = AgentRuntime(
-        bus=MockEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         tool_executor=mock_executor,

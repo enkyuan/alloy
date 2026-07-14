@@ -2,12 +2,12 @@
  * Tests for AgentRuntime.turn — the one-call hello-world wrapper.
  */
 import { describe, it, expect } from "vitest";
-import { AgentBuilder, EventBus, InMemoryEventStore, EventType } from "@kaji/sdk";
+import { AgentBuilder, InMemoryEventStore, EventType } from "@kaji/sdk";
 import { MockProvider } from "@/providers/mock";
 
 function build(provider: MockProvider) {
   const store = new InMemoryEventStore();
-  const runtime = new AgentBuilder().provider(provider).build({ bus: new EventBus(), store });
+  const runtime = new AgentBuilder().provider(provider).build({ store });
   return { runtime, store };
 }
 
@@ -49,7 +49,7 @@ describe("AgentRuntime.turn", () => {
           );
         },
       })
-      .build({ bus: new EventBus(), store });
+      .build({ store });
     const r = await runtime.turn("call ping", { context: { principalId: "test" } });
     expect(r.toolCallEvents.some((e) => e.type === EventType.TOOL_CALL_REQUESTED)).toBe(true);
   });
@@ -67,7 +67,7 @@ describe("AgentRuntime.turn", () => {
         },
       })
       .strategy({ allowToolCalls: false })
-      .build({ bus: new EventBus(), store });
+      .build({ store });
     const r = await runtime.turn("call ping");
     expect(r.text).toBeTruthy();
     expect(r.toolCallEvents).toEqual([]);

@@ -7,9 +7,8 @@
 #   View logs:             docker compose logs -f [service_name]
 #
 # Services:
-#   - Kaji SDK (FastAPI)
-#   - Redis (Caching, Sessions, Streams, TaskIQ)
-#   - Supabase Stack (Auth, Database, Storage, etc.)
+#   - Kaji Serve (FastAPI REST + Soniox STT)
+#   - Supabase Stack (Auth and Postgres)
 
 name: kaji
 
@@ -23,27 +22,10 @@ services:
   # Kaji Application Services
   # ============================================================================
 
-  redis:
-    container_name: redis
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    networks:
-      - kaji_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-
   api:
-    container_name: kaji-sdk
+    container_name: kaji-serve
     build:
-      context: ..
+      context: ../..
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
@@ -51,20 +33,11 @@ services:
     networks:
       - kaji_network
     depends_on:
-      redis:
-        condition: service_healthy
       db:
         condition: service_healthy
     environment:
       # Database
       DATABASE_URL: ${DATABASE_URL}
-
-      # Redis
-      REDIS_URL: ${REDIS_URL}
-
-      # TaskIQ
-      TASKIQ_BROKER: redis
-      TASKIQ_RESULT_BACKEND: redis
 
       # Supabase
       SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
@@ -82,7 +55,7 @@ services:
       # Application
       DEBUG: ${DEBUG:-false}
       API_V1_PREFIX: /api/v1
-      PROJECT_NAME: Kaji SDK
+      PROJECT_NAME: Kaji Serve
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:5173}
 
       # Python logging
@@ -94,11 +67,7 @@ services:
 
       # Gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
-
-      # Agent pipeline
-      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
-      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -108,136 +77,6 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
-      - ../../kaji/serve/src:/app/kaji/serve/src:ro
-
-  worker:
-    container_name: kaji-worker
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    healthcheck:
-      test:
-        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-    networks:
-      - kaji_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-    environment:
-      # Database
-      DATABASE_URL: ${DATABASE_URL}
-
-      # Redis
-      REDIS_URL: ${REDIS_URL}
-
-      # TaskIQ
-      TASKIQ_BROKER: redis
-      TASKIQ_RESULT_BACKEND: redis
-
-      # Supabase
-      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-
-      # JWT
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
-
-      # Soniox
-      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
-
-      # Gemini
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
-
-      # Application
-      DEBUG: ${DEBUG:-false}
-      PROJECT_NAME: Kaji Worker
-      PYTHONUNBUFFERED: 1
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-
-    command:
-      [
-        "taskiq",
-        "worker",
-        "kaji_serve.workers.broker:broker",
-        "kaji_serve.workers.tasks.tools",
-      ]
-    volumes:
-      - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
-      - ../../kaji/serve/src:/app/kaji/serve/src:ro
-
-  bus-worker:
-    container_name: kaji-bus-worker
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    healthcheck:
-      test:
-        ["CMD-SHELL", "python -c \"import os; os.kill(1, 0)\""]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-    networks:
-      - kaji_network
-    depends_on:
-      redis:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-    environment:
-      # Database
-      DATABASE_URL: ${DATABASE_URL}
-
-      # Redis
-      REDIS_URL: ${REDIS_URL}
-
-      # TaskIQ
-      TASKIQ_BROKER: redis
-      TASKIQ_RESULT_BACKEND: redis
-
-      # Supabase
-      SUPABASE_KONG_URL: ${SUPABASE_KONG_URL}
-      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
-
-      # JWT
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
-
-      # Soniox
-      SONIOX_API_KEY: ${SONIOX_API_KEY:-}
-
-      # Gemini
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3-flash-preview}
-
-      # Agent pipeline
-      AGENT_HISTORY_LIMIT: ${AGENT_HISTORY_LIMIT:-200}
-      AGENT_CACHE_TTL_SECONDS: ${AGENT_CACHE_TTL_SECONDS:-300}
-
-      # Application
-      DEBUG: ${DEBUG:-false}
-      PROJECT_NAME: Kaji Bus Worker
-      PYTHONUNBUFFERED: 1
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-
-    command: ["python", "-m", "kaji_serve.workers.main"]
-    volumes:
       - ../../kaji/sdk/src:/app/kaji/sdk/src:ro
       - ../../kaji/serve/src:/app/kaji/serve/src:ro
 
@@ -382,5 +221,3 @@ services:
 
 volumes:
   db-config:
-  redis-data:
-    driver: local

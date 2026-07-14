@@ -718,7 +718,7 @@ def test_installed_runtime_rejects_source_and_workspace_resolution(
         module._require_contained(installed, isolated, "python") == installed.resolve()
     )
     for unsafe in (
-        REPO_ROOT / "kaji" / "sdk" / "src" / "__init__.py",
+        REPO_ROOT / "kaji" / "sdk" / "src" / "kaji" / "__init__.py",
         REPO_ROOT / "kaji" / "ts" / "src",
         REPO_ROOT / "kaji" / "ts" / "dist",
     ):
@@ -1919,7 +1919,7 @@ def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> 
     module = _load_root_script("beta_benchmark_gate.py")
 
     assert module.SOURCE_TREE_ROOTS == (
-        Path("kaji/sdk/src"),
+        Path("kaji/sdk/src/kaji"),
         Path("kaji/ts/src"),
     )
     assert {

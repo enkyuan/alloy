@@ -3,9 +3,9 @@ from typing import Any, List, Tuple
 import pytest
 from pydantic import BaseModel, ConfigDict, Field
 
+from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.integrations import Integration, tool
 from kaji.runtime.tools.registry import (
-    ToolContext,
     ToolHandler,
     ToolRegistry,
     ToolSpec,
@@ -19,7 +19,7 @@ _DUMMY_SPEC = ToolSpec(
 )
 
 
-async def _dummy_handler(ctx: ToolContext, args: dict) -> dict:
+async def _dummy_handler(ctx: ToolExecutionContext, args: dict) -> dict:
     return {"ok": True}
 
 
@@ -78,7 +78,7 @@ def test_tool_decorator_auto_registers():
             parameters={"charge_id": {"type": "string"}},
             risk="read",
         )
-        async def retrieve_charge(self, ctx: ToolContext, args: dict) -> dict:
+        async def retrieve_charge(self, ctx: ToolExecutionContext, args: dict) -> dict:
             return {}
 
     integration = ChargeIntegration()
@@ -106,7 +106,7 @@ def test_tool_decorator_exposes_execution_settings_for_manifest_inspection() -> 
             parallel_safe=True,
             timeout_ms=250,
         )
-        async def run(self, ctx: ToolContext, args: dict) -> dict:
+        async def run(self, ctx: ToolExecutionContext, args: dict) -> dict:
             return {}
 
     spec, _ = BatchIntegration().tools()[0]
@@ -125,7 +125,7 @@ def test_tool_decorator_namespace_prefix():
             parameters={},
             risk="destructive",
         )
-        async def make_payment(self, ctx: ToolContext, args: dict) -> dict:
+        async def make_payment(self, ctx: ToolExecutionContext, args: dict) -> dict:
             return {}
 
     registry = ToolRegistry()
@@ -152,7 +152,7 @@ def test_tool_decorator_accepts_pydantic_model():
             parameters=WeatherArgs,
             risk="read",
         )
-        async def get_weather(self, ctx: ToolContext, args: dict) -> dict:
+        async def get_weather(self, ctx: ToolExecutionContext, args: dict) -> dict:
             return {"city": args["city"]}
 
     specs = WeatherIntegration().tools()

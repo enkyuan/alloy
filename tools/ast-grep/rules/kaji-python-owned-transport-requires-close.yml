@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Classes that own an HTTPX async client must close it.
 files:
-  - "kaji/sdk/src/integrations/fixed_origin.py"
+  - "kaji/sdk/src/kaji/integrations/fixed_origin.py"
 rule:
   all:
     - kind: class_definition

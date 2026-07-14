@@ -23,7 +23,7 @@ CONTRACTS = KAJI / "contracts" / "integrations"
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
 PYTHON_SDK = KAJI / "sdk"
 TYPESCRIPT_SDK = KAJI / "ts"
-PYTHON_REGISTRY = PYTHON_SDK / "src" / "integrations" / "registry"
+PYTHON_REGISTRY = PYTHON_SDK / "src" / "kaji" / "integrations" / "registry"
 TYPESCRIPT_REGISTRY = TYPESCRIPT_SDK / "registry"
 _INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentBuilder,
   AgentRuntime,
-  EventBus,
+  InMemoryEventCommitter,
   InMemoryEventStore,
   ToolExecutionController,
   ToolPlanner,
@@ -22,22 +22,24 @@ describe("AgentRuntime effective limits", () => {
     ["positive infinity", Number.POSITIVE_INFINITY],
     ["negative infinity", Number.NEGATIVE_INFINITY],
   ])("rejects a %s maxToolIterations value", (_label, value) => {
+    const store = new InMemoryEventStore();
     expect(
       () =>
         new AgentRuntime({
           provider: new MockProvider(),
-          store: new InMemoryEventStore(),
-          bus: new EventBus(),
+          store,
+          committer: new InMemoryEventCommitter(store),
           strategy: { maxToolIterations: value as unknown as number },
         }),
     ).toThrowError(new RangeError("maxToolIterations must be a positive integer"));
   });
 
   it("reports beta defaults as an immutable public type", () => {
+    const store = new InMemoryEventStore();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
-      store: new InMemoryEventStore(),
-      bus: new EventBus(),
+      store,
+      committer: new InMemoryEventCommitter(store),
     });
 
     const limits: EffectiveRuntimeLimits = runtime.effectiveLimits();
@@ -99,10 +101,11 @@ describe("AgentRuntime effective limits", () => {
       executor: async () => ({}),
       executionController,
     });
+    const store = new InMemoryEventStore();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
-      store: new InMemoryEventStore(),
-      bus: new EventBus(),
+      store,
+      committer: new InMemoryEventCommitter(store),
       planner,
       strategy: { maxToolIterations: 3 },
       contextWindow: { maxTurns: null, maxCharacters: 9_999 },

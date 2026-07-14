@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Load/project session state once, then apply committed events incrementally.
 files:
-  - "kaji/sdk/src/runtime/agents/runtime.py"
+  - "kaji/sdk/src/kaji/runtime/agents/runtime.py"
 rule:
   all:
     - any:

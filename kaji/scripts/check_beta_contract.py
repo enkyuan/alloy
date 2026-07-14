@@ -20,11 +20,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
 REGISTRY_INDEXES = (
-    ROOT / "kaji" / "sdk" / "src" / "integrations" / "registry" / "index.json",
+    ROOT / "kaji" / "sdk" / "src" / "kaji" / "integrations" / "registry" / "index.json",
     ROOT / "kaji" / "ts" / "registry" / "index.json",
 )
 PACKAGE_CONTRACT_TARGETS = (
-    ROOT / "kaji" / "sdk" / "src" / "contracts",
+    ROOT / "kaji" / "sdk" / "src" / "kaji" / "contracts",
     ROOT / "kaji" / "ts" / "contracts",
 )
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
@@ -679,7 +679,7 @@ def integration_recovery_entries(
 
 def runtime_event_types() -> set[str]:
     python_source = (
-        ROOT / "kaji" / "sdk" / "src" / "infra" / "events" / "types.py"
+        ROOT / "kaji" / "sdk" / "src" / "kaji" / "infra" / "events" / "types.py"
     ).read_text()
     typescript_source = (
         ROOT / "kaji" / "ts" / "src" / "events" / "types.ts"
@@ -1696,7 +1696,7 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
         raise fail(path, "/cliCommands", "expected python and typescript command tiers")
 
     python_commands: set[str] = set()
-    for source in (ROOT / "kaji" / "sdk" / "src" / "cli").glob("*.py"):
+    for source in (ROOT / "kaji" / "sdk" / "src" / "kaji" / "cli").glob("*.py"):
         python_commands.update(
             re.findall(r'\.add_parser\(\s*["\']([^"\']+)["\']', source.read_text())
         )

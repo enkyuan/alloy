@@ -15,7 +15,14 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts" / "integrations"
 COPIES = {
     CONTRACTS / "manifest.schema.json": (
-        ROOT / "kaji" / "sdk" / "src" / "integrations" / "registry" / "schema.json",
+        ROOT
+        / "kaji"
+        / "sdk"
+        / "src"
+        / "kaji"
+        / "integrations"
+        / "registry"
+        / "schema.json",
         ROOT / "kaji" / "ts" / "registry" / "schema.json",
     ),
     CONTRACTS / "index.schema.json": (
@@ -23,6 +30,7 @@ COPIES = {
         / "kaji"
         / "sdk"
         / "src"
+        / "kaji"
         / "integrations"
         / "registry"
         / "index.schema.json",
@@ -33,6 +41,7 @@ COPIES = {
         / "kaji"
         / "sdk"
         / "src"
+        / "kaji"
         / "integrations"
         / "registry"
         / "github"
@@ -44,6 +53,7 @@ COPIES = {
         / "kaji"
         / "sdk"
         / "src"
+        / "kaji"
         / "integrations"
         / "registry"
         / "github"
@@ -51,7 +61,7 @@ COPIES = {
     ),
 }
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
-PYTHON_REGISTRY = ROOT / "kaji" / "sdk" / "src" / "integrations" / "registry"
+PYTHON_REGISTRY = ROOT / "kaji" / "sdk" / "src" / "kaji" / "integrations" / "registry"
 TYPESCRIPT_REGISTRY = ROOT / "kaji" / "ts" / "registry"
 _INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 

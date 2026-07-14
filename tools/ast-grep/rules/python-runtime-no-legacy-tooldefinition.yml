@@ -3,7 +3,7 @@ language: Python
 message: Runtime tools must use ToolSpec from kaji.runtime.tools.registry, not the deleted legacy kaji.types.tool surface.
 severity: error
 files:
-  - "kaji/sdk/src/runtime/tools/**/*.py"
+  - "kaji/sdk/src/kaji/runtime/tools/**/*.py"
 rule:
   any:
     - pattern: import kaji.types.tool

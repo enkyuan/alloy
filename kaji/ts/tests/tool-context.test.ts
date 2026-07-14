@@ -152,12 +152,15 @@ describe("tool execution context", () => {
 
   it("requires identity before approval or execution without poisoning replay", async () => {
     const seen: ToolExecutionContext[] = [];
-    const approval = vi.fn(async () => true);
+    const requestApproval = vi.fn(async () => ({
+      granted: true as const,
+      code: "approved" as const,
+    }));
     const runtime = new AgentBuilder()
       .provider(new MockProvider())
       .integration(new CaptureIntegration(seen))
       .policy(new ToolPolicy({ requireApprovalFor: new Set(["read"]) }))
-      .approvalHandler(approval)
+      .approvalHandler({ request: requestApproval })
       .build();
 
     await expect(runtime.turn("capture", { sessionId: "missing-principal" })).rejects.toMatchObject(
@@ -165,7 +168,7 @@ describe("tool execution context", () => {
         code: "MISSING_TOOL_IDENTITY",
       },
     );
-    expect(approval).not.toHaveBeenCalled();
+    expect(requestApproval).not.toHaveBeenCalled();
     expect(seen).toEqual([]);
     const failedEvents = await runtime.history("missing-principal");
     expect(failedEvents.some((event) => event.type === EventType.TOOL_CALL_REQUESTED)).toBe(false);

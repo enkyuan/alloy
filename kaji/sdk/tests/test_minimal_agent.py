@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.store import InMemoryEventStore
 from kaji.runtime.agents import AgentBuilder, TurnContext
 from kaji.runtime.integrations import function_tool
 from kaji.runtime.providers.mock import MockProvider
@@ -29,7 +27,7 @@ async def test_function_tool_runs_through_turn():
         .tool(get_weather)
         .default_context(TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
-        .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
+        .build()
     )
     result = await runtime.turn("What's the weather in Seattle?")
     assert result.text == "It is 68F in Seattle."
@@ -48,7 +46,7 @@ async def test_function_tool_drives_a_tool_call():
         )
         .tool(get_weather)
         .default_context(TurnContext(principal_id="quickstart"))
-        .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
+        .build()
     )
     result = await runtime.turn("What is the weather?")
     # The mock fires one tool call on iteration 1, then terminal text on iteration 2.

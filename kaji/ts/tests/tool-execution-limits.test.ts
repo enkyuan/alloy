@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import { EventType } from "@/events/types";
 import { StoredKajiEvent } from "@/events/schemas";
+import { InMemoryEventCommitter } from "@/events/committer";
+import { InMemoryEventStore } from "@/events/store";
 import type { TimerHandle, TimerScheduler } from "@/internal/uuid";
 import type { MetricMeasurement } from "@/observability";
 import { ToolExecutionController } from "@/tools/execution";
 import { ToolExecutionError, toolTimedOut } from "@/tools/execution-errors";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
-import { ToolPlanner } from "@/tools/planner";
+import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import type { ToolExecutionContext } from "@/runtime/context";
 import type { ToolSpec } from "@/tools/registry";
@@ -1235,6 +1237,7 @@ describe("bounded tool execution", () => {
       args?: Record<string, unknown>;
       signal?: AbortSignal;
       cleanup?: () => Promise<void>;
+      approvalCommitter?: InMemoryEventCommitter;
     }> = [];
     cases.push({
       id: "success",
@@ -1316,11 +1319,22 @@ describe("bounded tool execution", () => {
         executor: async () => ({ ok: true }),
       }),
     });
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     cases.push({
       id: "approval-rejected",
+      approvalCommitter,
       planner: new ToolPlanner({
         policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
-        approvalHandler: async () => false,
+        approvalHandler: {
+          async request() {
+            return {
+              granted: false as const,
+              code: "rejected" as const,
+              reason: "Rejected by test policy",
+            };
+          },
+        },
+        approvalCommitter,
         specs: new Map([["tool", spec("tool", { risk: "destructive" })]]),
         executor: async () => ({ ok: true }),
       }),
@@ -1331,13 +1345,23 @@ describe("bounded tool execution", () => {
       for (const testCase of cases) {
         const events: Array<{ type: string; tool_call_id?: string }> = [];
         let sequence = 0;
+        const emit = async (
+          event: Parameters<ToolPlanner["executeBatch"]>[2] extends (event: infer T) => unknown
+            ? T
+            : never,
+        ) => {
+          events.push(event);
+          return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
+        };
         await testCase.planner.executeBatch(
           `matrix-${testCase.id}`,
           [{ id: testCase.id, name: "tool", arguments: testCase.args ?? {} }],
-          async (event) => {
-            events.push(event);
-            return StoredKajiEvent.parse({ ...event, sequence: ++sequence });
-          },
+          testCase.approvalCommitter === undefined
+            ? emit
+            : bindEmitterToCommitter(async (event) => {
+                events.push(event);
+                return testCase.approvalCommitter!.commit(event);
+              }, testCase.approvalCommitter),
           "turn",
           TURN,
           testCase.signal,

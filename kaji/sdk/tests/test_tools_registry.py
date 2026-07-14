@@ -5,16 +5,14 @@ from types import SimpleNamespace
 
 from kaji.runtime.agents import CancellationToken, MissingToolIdentityError
 from kaji.runtime.context import ToolExecutionContext, ToolInvocation
+from kaji.runtime.tools import registry as registry_module
 from kaji.runtime.tools.registry import (
-    ToolContext,
     ToolRegistry,
     ToolSpec,
     execute_tool,
     list_tool_specs,
     register_tool,
     tool_spec_from_model,
-    _TOOL_HANDLERS,
-    _TOOL_SPECS,
 )
 
 
@@ -23,16 +21,8 @@ class SampleArgs(BaseModel):
 
 
 @pytest.fixture(autouse=True)
-def isolated_registry():
-    saved_specs = dict(_TOOL_SPECS)
-    saved_handlers = dict(_TOOL_HANDLERS)
-    _TOOL_SPECS.clear()
-    _TOOL_HANDLERS.clear()
-    yield
-    _TOOL_SPECS.clear()
-    _TOOL_HANDLERS.clear()
-    _TOOL_SPECS.update(saved_specs)
-    _TOOL_HANDLERS.update(saved_handlers)
+def isolated_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(registry_module, "_default_registry", ToolRegistry())
 
 
 def test_tool_spec_from_model_builds_json_schema():
@@ -64,29 +54,30 @@ def test_register_tool_rejects_duplicates():
     spec = ToolSpec(name="dup", description="d", parameters={}, risk="read")
 
     @register_tool(spec)
-    async def first(_ctx: ToolContext, _args: dict):
+    async def first(_ctx: ToolExecutionContext, _args: dict):
         return {}
 
     with pytest.raises(ValueError, match="already registered"):
 
         @register_tool(spec)
-        async def second(_ctx: ToolContext, _args: dict):
+        async def second(_ctx: ToolExecutionContext, _args: dict):
             return {}
 
 
 @pytest.mark.asyncio
 async def test_execute_tool_unknown_raises():
-    db = AsyncMock()
     with pytest.raises(ValueError, match="Unknown tool"):
-        await execute_tool("user", "missing", {}, db)
+        await execute_tool(
+            ToolInvocation(name="missing", arguments={}, context=_execution_context())
+        )
 
 
 @pytest.mark.asyncio
-async def test_execute_tool_invokes_handler():
+async def test_deprecated_execute_tool_overload_invokes_handler():
     spec = ToolSpec(name="echo", description="echo", parameters={}, risk="read")
 
     @register_tool(spec)
-    async def echo(_ctx: ToolContext, args: dict):
+    async def echo(_ctx: ToolExecutionContext, args: dict):
         return {"echo": args.get("x")}
 
     db = AsyncMock()
@@ -111,39 +102,47 @@ def _make_spec(name: str, *, tags: tuple = (), enabled: bool = True) -> ToolSpec
     )
 
 
+def _register_spec(spec: ToolSpec) -> None:
+    @register_tool(spec)
+    async def handler(
+        _context: ToolExecutionContext, _args: dict[str, object]
+    ) -> dict[str, bool]:
+        return {"ok": True}
+
+
 def test_list_tool_specs_excludes_disabled_by_default():
     spec_on = _make_spec("on")
     spec_off = _make_spec("off", enabled=False)
-    _TOOL_SPECS["on"] = spec_on
-    _TOOL_SPECS["off"] = spec_off
+    _register_spec(spec_on)
+    _register_spec(spec_off)
     result = list_tool_specs()
     assert [s.name for s in result] == ["on"]
 
 
 def test_list_tool_specs_enabled_only_false_returns_all():
-    _TOOL_SPECS["on"] = _make_spec("on")
-    _TOOL_SPECS["off"] = _make_spec("off", enabled=False)
+    _register_spec(_make_spec("on"))
+    _register_spec(_make_spec("off", enabled=False))
     result = list_tool_specs(enabled_only=False)
     assert {s.name for s in result} == {"on", "off"}
 
 
 def test_list_tool_specs_tag_filter_returns_matching():
-    _TOOL_SPECS["a"] = _make_spec("a", tags=("payments",))
-    _TOOL_SPECS["b"] = _make_spec("b", tags=("crm",))
-    _TOOL_SPECS["c"] = _make_spec("c", tags=("payments", "crm"))
+    _register_spec(_make_spec("a", tags=("payments",)))
+    _register_spec(_make_spec("b", tags=("crm",)))
+    _register_spec(_make_spec("c", tags=("payments", "crm")))
     result = list_tool_specs(tags=["payments"])
     assert {s.name for s in result} == {"a", "c"}
 
 
 def test_list_tool_specs_tag_and_enabled_compose():
-    _TOOL_SPECS["a"] = _make_spec("a", tags=("payments",), enabled=False)
-    _TOOL_SPECS["b"] = _make_spec("b", tags=("payments",))
+    _register_spec(_make_spec("a", tags=("payments",), enabled=False))
+    _register_spec(_make_spec("b", tags=("payments",)))
     result = list_tool_specs(tags=["payments"])
     assert [s.name for s in result] == ["b"]
 
 
 def test_list_tool_specs_empty_tags_treated_as_no_filter():
-    _TOOL_SPECS["a"] = _make_spec("a", tags=("payments",))
+    _register_spec(_make_spec("a", tags=("payments",)))
     # empty list = falsy, same as not passing tags — no tag constraint applied
     result = list_tool_specs(tags=[])
     assert len(result) == 1
@@ -160,10 +159,12 @@ async def test_tool_registry_register_and_execute():
     spec = ToolSpec(name="ping", description="ping", parameters={}, risk="read")
 
     @registry.register(spec)
-    async def ping(_ctx: ToolContext, _args: dict) -> dict:
+    async def ping(_ctx: ToolExecutionContext, _args: dict) -> dict:
         return {"pong": True}
 
-    result = await registry.execute("user-1", "ping", {})
+    result = await registry.execute(
+        ToolInvocation(name="ping", arguments={}, context=_execution_context())
+    )
     assert result == {"pong": True}
 
 
@@ -186,7 +187,9 @@ def test_tool_registry_duplicate_raises():
 async def test_tool_registry_execute_unknown_raises():
     registry = ToolRegistry()
     with pytest.raises(ValueError, match="Unknown tool"):
-        await registry.execute("user-1", "ghost", {})
+        await registry.execute(
+            ToolInvocation(name="ghost", arguments={}, context=_execution_context())
+        )
 
 
 def test_tool_registry_list_specs_filtering():

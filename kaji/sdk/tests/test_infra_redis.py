@@ -1,8 +1,4 @@
-"""Unit tests for Redis client helpers and configuration classes.
-
-Consolidates key-contract, config-constant, client-lifecycle, and fakeredis
-smoke tests in one module. This replaces the former test_redis_realtime.py.
-"""
+"""Unit tests for optional Redis client lifecycle helpers."""
 
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kaji.infra.realtime.redis import RedisConfig, RedisKeys, close_redis_client
+from kaji.infra.realtime.redis import close_redis_client
 
 try:
     import fakeredis.aioredis as _fakeredis_async  # type: ignore[import]
@@ -19,92 +15,6 @@ try:
     HAS_FAKEREDIS = True
 except ImportError:
     HAS_FAKEREDIS = False
-
-
-# ---------------------------------------------------------------------------
-# RedisKeys — just a namespace; verify key format
-# ---------------------------------------------------------------------------
-
-
-# Addressable Redis keys that consumers subscribe to / produce on must carry
-# a :v1 version suffix.  Consumer name constants and raw prefixes are excluded
-# (see RedisKeys docstring).
-_VERSIONED_KEYS = {
-    "STREAM_AGENT_INPUT",
-    "STREAM_TOOL_RESULTS",
-    "GROUP_LLM_WORKER",
-    "GROUP_LLM_WORKER_TOOL_RESULTS",
-    "CHANNEL_USER_UPDATES",
-    "AGENT_CACHE_HIT",
-    "AGENT_CACHE_MISS",
-    "USER_UPDATE_OUTBOX_KEY",
-    "USER_UPDATE_OUTBOX_DLQ_KEY",
-    "TOOL_RESULT_DLQ_KEY",
-    "TOOL_RESULT_DLQ_DEAD_KEY",
-    "VOICE_INPUT_DLQ_KEY",
-    "VOICE_INPUT_DLQ_DEAD_KEY",
-    "TOOL_RESULT_SEEN_KEY_PREFIX",
-    "TOOL_CALL_DEDUP_IN_PROGRESS_PREFIX",
-    "TOOL_CALL_DEDUP_DONE_PREFIX",
-}
-
-# These constants are intentionally not versioned (see RedisKeys docstring).
-_UNVERSIONED_ALLOWED = {
-    "CONSUMER_LLM_WORKER",
-    "CONSUMER_TOOL_RESULTS_WORKER",
-    "AGENT_CACHE_PREFIX",
-}
-
-
-def test_redis_keys_addressable_keys_are_versioned() -> None:
-    """All addressable keys (streams, groups, channels, queues) must carry :v1."""
-    missing: list[str] = []
-    for name in _VERSIONED_KEYS:
-        value = getattr(RedisKeys, name)
-        if ":v1" not in value:
-            missing.append(f"{name} = {value!r}")
-    assert missing == [], "These keys are missing :v1 suffix:\n" + "\n".join(missing)
-
-
-def test_redis_keys_unversioned_constants_are_accounted_for() -> None:
-    """Consumer names and prefixes are excluded from versioning — document all of them."""
-    all_string_attrs = {
-        name
-        for name in vars(RedisKeys)
-        if not name.startswith("_")
-        and not callable(getattr(RedisKeys, name))
-        and isinstance(getattr(RedisKeys, name), str)
-    }
-    unversioned = {
-        name for name in all_string_attrs if ":v1" not in getattr(RedisKeys, name)
-    }
-    unexpected = unversioned - _UNVERSIONED_ALLOWED
-    assert unexpected == set(), (
-        "New unversioned RedisKeys constants found that are not in the allowed set. "
-        "Either add :v1 to these keys or add them to _UNVERSIONED_ALLOWED with a comment:\n"
-        + "\n".join(sorted(unexpected))
-    )
-
-
-def test_redis_keys_conversation_history_format() -> None:
-    key = RedisKeys.conversation_history("abc-123")
-    assert key == "conversation:abc-123:history:v1"
-
-
-# ---------------------------------------------------------------------------
-# RedisConfig — sanity-check constants
-# ---------------------------------------------------------------------------
-
-
-def test_redis_config_ttls_are_positive() -> None:
-    assert RedisConfig.TOOL_RESULT_SEEN_TTL_SECONDS > 0
-    assert RedisConfig.TOOL_CALL_DEDUP_TTL_SECONDS > 0
-    assert RedisConfig.USER_UPDATE_OUTBOX_TTL_SECONDS > 0
-
-
-def test_redis_config_maxlen_values_are_positive() -> None:
-    assert RedisConfig.TOOL_RESULT_STREAM_MAXLEN > 0
-    assert RedisConfig.USER_UPDATE_OUTBOX_MAXLEN > 0
 
 
 # ---------------------------------------------------------------------------

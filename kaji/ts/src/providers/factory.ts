@@ -85,8 +85,8 @@ function mergeOpenRouterHeaders(
  * an `OpenAIProvider` pointed at the OpenRouter base URL. Reads
  * `OPENROUTER_API_KEY` when no `apiKey` is passed.
  *
- *   const p = openrouter("anthropic/claude-3.5-sonnet");
- *   const p = openrouter({ model: "meta-llama/llama-3.1-70b-instruct", appTitle: "My agent" });
+ *   const p = openrouter("openai/gpt-5.4-mini");
+ *   const p = openrouter({ model: "anthropic/claude-sonnet-4.6", appTitle: "My agent" });
  */
 /** @internal */
 export function resolveOpenRouterOptions(
@@ -138,8 +138,8 @@ export interface GeminiFactoryOptions extends Omit<OpenAIProviderOptions, "apiKe
  * passed. Defaults to model `gemini-3.5-flash`.
  *
  *   const p = gemini();                        // gemini-3.5-flash
- *   const p = gemini("gemini-2.5-pro");
- *   const p = gemini({ model: "gemini-2.5-pro", maxTokens: 2048 });
+ *   const p = gemini("gemini-3.5-flash");
+ *   const p = gemini({ model: "gemini-3.5-flash", maxTokens: 2048 });
  *
  * This factory speaks the OpenAI chat-completions wire format, which Google
  * supports as a compatibility layer. Native Gemini features (context

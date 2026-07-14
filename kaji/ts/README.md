@@ -215,17 +215,23 @@ dev/REPL compatibility helper that prints the tool name, risk, and arguments,
 then reads `y` / `N` on stdin:
 
 ```ts
-import { AgentBuilder, cliApprovalHandler, openai } from "@kaji/sdk";
+import {
+  AgentBuilder,
+  adaptLegacyApprovalHandler,
+  cliApprovalHandler,
+  openai,
+} from "@kaji/sdk";
 
 const agent = new AgentBuilder()
   .provider(openai())
-  .approvalHandler(cliApprovalHandler({ label: "agent-a" }))
+  .approvalHandler(adaptLegacyApprovalHandler(cliApprovalHandler({ label: "agent-a" })))
   .build();
 ```
 
 `ApprovalHandler` and `cliApprovalHandler` are deprecated Boolean compatibility
-paths. Production hosts implement `TypedApprovalHandler.request(call, context)`
-and return an `ApprovalDecision`, for example
+paths and must be passed through `adaptLegacyApprovalHandler` before entering
+the stable builder/runtime boundary. Production hosts implement
+`TypedApprovalHandler.request(call, context)` and return an `ApprovalDecision`, for example
 `{ granted: true, code: "approved" }` or a rejected decision with an explicit
 code and safe reason. See
 [`tool-contracts.md`](https://github.com/enkyuan/alloy/blob/main/docs/kaji/tool-contracts.md) for the lifecycle.

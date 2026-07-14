@@ -3,8 +3,8 @@
 kaji is an embeddable SDK for building agents: an event-sourced runtime,
 tool registry, and pluggable LLM/TTS providers. the core is infra-free -- no
 database or server required to import and use it. `kaji-serve` is a separate,
-experimental reference service for evaluating FastAPI, Redis/Postgres, and STT
-voice integration; it is not part of the 0.2 SDK beta promise.
+experimental reference service for evaluating FastAPI, Postgres/Supabase, and
+Soniox STT; it is not part of the 0.2 SDK beta promise.
 
 it is used by ryo as the agent runtime layer. it can also be used
 standalone in any python or typescript project.
@@ -49,12 +49,14 @@ the shared concepts across all three.
    └──────────────────┘        └──────────────────────┘
 ```
 
-the reasoning loop is modality-agnostic. `kaji-serve` adds STT at the input
-edge and TTS at the output edge; text skips both.
+the reasoning loop is modality-agnostic. `kaji-serve` exposes Soniox STT as a
+standalone input edge; the host application decides whether to pass a final
+transcript to the embedded runtime. Python TTS adapters remain SDK-level
+experiments and are not wired into the service.
 
 ```
-   voice:   audio → STT → [runtime loop] → TTS → audio
-   text:    text  →       [runtime loop] →       text
+   voice edge:   audio → kaji-serve STT → transcript
+   agent turn:   text/transcript → embedded runtime → response
 ```
 
 ## core concepts
@@ -93,7 +95,7 @@ identical across both SDKs.
 | cancellation  | `cancellation.completed`     | runtime acknowledged and stopped                                         |
 
 the canonical sources are
-[`kaji/sdk/src/infra/events/types.py`](sdk/src/infra/events/types.py)
+[`kaji/sdk/src/kaji/infra/events/types.py`](sdk/src/kaji/infra/events/types.py)
 and [`kaji/ts/src/events/types.ts`](ts/src/events/types.ts);
 the table above must match them byte-for-byte.
 
@@ -210,18 +212,17 @@ SDK.
 ## the reference service (kaji-serve)
 
 `kaji-serve` (`kaji/serve`) is an experimental service shell around the SDK.
-Its current voice path uses Redis plus the pre-beta service worker runtime:
+It runs as one FastAPI process:
 
-| process      | role                                                    |
-| ------------ | ------------------------------------------------------- |
-| `api`        | FastAPI app: REST routes and STT WebSocket              |
-| `bus-worker` | legacy runtime: LLM calls and in-process tool execution |
-| `worker`     | TaskIQ surface, not used by the normal reasoning path   |
+| process | role                                                          |
+| ------- | ------------------------------------------------------------- |
+| `api`   | REST routes plus a Soniox STT WebSocket; no hosted agent loop |
 
-Redis Pub/Sub fans out agent responses to the connected client in real time.
-The service is excluded from the 0.2 SDK beta because it does not yet use the
-canonical `AgentRuntime`, acknowledge input only after a completed turn, or
-provide persistent event replay and distributed coordination.
+The STT socket returns transcript events directly and does not publish agent
+input or relay agent responses. The service is excluded from the 0.2 SDK beta
+because REST/STT hosting is not part of the embedded SDK contract and it does
+not provide a canonical hosted runtime, persistent event replay, or distributed
+coordination.
 
 Use `kaji-serve` only for reference-service evaluation and voice experiments.
 Embed `kaji` directly for the supported SDK beta surface.

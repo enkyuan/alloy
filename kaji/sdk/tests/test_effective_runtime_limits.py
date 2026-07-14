@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 from kaji import EffectiveRuntimeLimits
-from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ContextWindow
@@ -42,7 +41,7 @@ def test_agent_strategy_rejects_invalid_max_iterations(
 def test_agent_strategy_cannot_drift_after_runtime_construction() -> None:
     strategy = AgentStrategy(max_iterations=2)
     runtime = AgentRuntime(
-        bus=InMemoryEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         strategy=strategy,
@@ -56,7 +55,7 @@ def test_agent_strategy_cannot_drift_after_runtime_construction() -> None:
 
 def test_effective_limits_report_beta_defaults_as_an_immutable_public_type() -> None:
     runtime = AgentRuntime(
-        bus=InMemoryEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
     )
@@ -136,7 +135,7 @@ def test_effective_limits_use_an_explicit_planners_controller() -> None:
     )
     planner = ToolPlanner(executor=executor, controller=controller)
     runtime = AgentRuntime(
-        bus=InMemoryEventBus(),
+        bus=None,
         store=InMemoryEventStore(),
         provider=MockProvider(),
         planner=planner,

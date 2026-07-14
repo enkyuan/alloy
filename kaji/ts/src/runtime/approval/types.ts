@@ -66,45 +66,31 @@ export type LegacyApprovalHandler = (
 
 let legacyWarningEmitted = false;
 
-function warnLegacyApprovalHandler(): void {
-  try {
-    console.warn(
-      "[kaji] Boolean approval callbacks are deprecated; implement TypedApprovalHandler instead",
-    );
-  } catch {
-    // Diagnostics are observational and must not block the callback.
-  }
-}
-
-/** Single compatibility boundary for the pre-beta Boolean callback. */
-export async function requestLegacyApproval(
-  handler: LegacyApprovalHandler,
-  call: ToolCall,
-  args: Readonly<Record<string, unknown>>,
-  risk: ToolRisk,
-): Promise<ApprovalDecision> {
-  if (!legacyWarningEmitted) {
-    legacyWarningEmitted = true;
-    warnLegacyApprovalHandler();
-  }
-  const granted = await handler(call.name, structuredClone(args), risk);
-  if (typeof granted !== "boolean") {
-    throw new TypeError("Legacy approval callback must return Boolean");
-  }
-  return granted
-    ? { granted: true, code: "approved" }
-    : {
-        granted: false,
-        code: "rejected",
-        reason: "Rejected by approval handler",
-      };
-}
-
 /** Single compatibility adapter for hosts migrating to TypedApprovalHandler. */
 export function adaptLegacyApprovalHandler(handler: LegacyApprovalHandler): TypedApprovalHandler {
   return {
     async request(call, context) {
-      return requestLegacyApproval(handler, call, context.arguments, context.risk);
+      if (!legacyWarningEmitted) {
+        legacyWarningEmitted = true;
+        try {
+          console.warn(
+            "[kaji] Boolean approval callbacks are deprecated; implement TypedApprovalHandler instead",
+          );
+        } catch {
+          // Diagnostics are observational and must not block the callback.
+        }
+      }
+      const granted = await handler(call.name, structuredClone(context.arguments), context.risk);
+      if (typeof granted !== "boolean") {
+        throw new TypeError("Legacy approval callback must return Boolean");
+      }
+      return granted
+        ? { granted: true, code: "approved" }
+        : {
+            granted: false,
+            code: "rejected",
+            reason: "Rejected by approval handler",
+          };
     },
   };
 }

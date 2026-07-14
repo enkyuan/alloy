@@ -13,8 +13,6 @@ from __future__ import annotations
 import asyncio
 import os
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.store import InMemoryEventStore
 from kaji.runtime.agents import AgentBuilder, TurnContext
 from kaji.runtime.integrations import function_tool
 from kaji.runtime.providers.openai import OpenAIProvider
@@ -32,7 +30,7 @@ async def main() -> None:
         .tool(get_weather)
         .default_context(TurnContext(principal_id="quickstart"))
         .system_prompt("You are a weather assistant.")
-        .build(bus=InMemoryEventBus(), store=InMemoryEventStore())
+        .build()
     )
     result = await runtime.turn("What is the weather in Seattle?")
     print(result.text)

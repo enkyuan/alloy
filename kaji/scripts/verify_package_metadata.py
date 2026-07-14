@@ -83,7 +83,7 @@ def main() -> None:
     artifacts.mkdir(parents=True, exist_ok=True)
 
     python_metadata = tomllib.loads((sdk / "pyproject.toml").read_text())
-    python_source = (sdk / "src/__init__.py").read_text()
+    python_source = (sdk / "src/kaji/__init__.py").read_text()
     source_match = re.search(r'^__version__ = "([^"]+)"$', python_source, re.MULTILINE)
     typescript_metadata = json.loads((ts / "package.json").read_text())
     typescript_source = (ts / "src/index.ts").read_text()
@@ -135,8 +135,12 @@ def main() -> None:
         fail("Python package license differs from root LICENSE")
     if (ts / "LICENSE").read_bytes() != root_license:
         fail("TypeScript package license differs from root LICENSE")
-    if python_metadata["project"].get("license") != {"file": "LICENSE"}:
-        fail("Python metadata does not reference its packaged LICENSE")
+    if (
+        python_metadata["project"].get("license")
+        != "PolyForm-Noncommercial-1.0.0"
+        or python_metadata["project"].get("license-files") != ["LICENSE"]
+    ):
+        fail("Python metadata does not declare its SPDX license and packaged file")
     if typescript_metadata.get("license") != "SEE LICENSE IN LICENSE":
         fail("TypeScript metadata does not reference its packaged LICENSE")
 

@@ -4,9 +4,9 @@
  * from `input` (stdin by default). Returns `true` only on `"y"` (case-
  * insensitive). Anything else, including empty input or EOF, returns `false`.
  *
- * Production hosts should implement their own ApprovalHandler that talks
- * to a web modal, Slack, etc. This handler exists so the approval flow is
- * wireable end-to-end without writing a custom prompt.
+ * Production hosts should implement `TypedApprovalHandler`. This deprecated
+ * helper must be passed through `adaptLegacyApprovalHandler` before entering
+ * the stable builder/runtime boundary.
  *
  * Concurrency: prompts against the same input stream are serialized through
  * a per-stream mutex so concurrent approval gates from `Promise.all`-style

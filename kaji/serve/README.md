@@ -3,26 +3,25 @@
 The experimental FastAPI + voice reference service for the
 [Kaji SDK](../sdk/README.md).
 
-Wraps `kaji` as a real-time service experiment with REST, a voice WebSocket,
-and a Redis-backed reasoning worker. For the supported beta surface, embed the
-SDK in your own app.
+Wraps `kaji` as a service experiment with REST and a Soniox speech-to-text
+WebSocket. For the supported beta surface, embed the SDK in your own app.
 
-Status: excluded from the 0.2 SDK beta. The active worker still uses the legacy
-service Bus/AgentReasoningNode path and executes ordinary tool calls in-process.
-TaskIQ code is present, but the normal reasoning path does not dispatch through
-it. This package is not a production durability or horizontal-scaling claim.
+Status: excluded from the 0.2 SDK beta. This package intentionally has no hosted
+agent runtime or background tool worker; applications own the hand-off from a
+final transcript to the canonical embedded `AgentRuntime`. It is not a
+production durability or horizontal-scaling claim.
 
 Current surface:
 
-- REST health, auth, Gemini convenience, tool, and session-index routes.
-- Real-time STT WebSocket backed by Soniox.
-- A legacy Redis-backed reasoning worker and separate TaskIQ worker surface.
+- REST health, auth, Gemini convenience, and session-index routes.
+- Real-time Soniox STT WebSocket that returns partial, final, and complete
+  transcripts without queuing an agent turn.
 
 Not included yet:
 
-- A canonical `AgentRuntime` service adapter and persistent `EventStore`.
-- Input acknowledgement after successful turn completion and output hand-off.
-- Restart-safe tool idempotency and distributed same-session coordination.
+- A hosted `AgentRuntime` adapter or persistent `EventStore`.
+- Agent command submission, response relay, or TTS output hand-off.
+- Background tool execution and distributed same-session coordination.
 - A generic hosted-agent REST API beyond the current reference routes.
 - Load-tested voice/runtime production hardening.
 

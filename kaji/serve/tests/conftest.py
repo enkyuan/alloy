@@ -21,19 +21,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from fastapi.testclient import TestClient
-import fakeredis.aioredis
 
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-# Expose the SDK's tests/helpers (which contains MockProvider and other shared
-# test utilities) to serve's test suite. test_agents_node_infra_free.py imports
-# tests.helpers.mock_provider — that module lives in kaji/sdk/tests/helpers/.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "sdk"))
 
 from unittest.mock import AsyncMock
 
 from kaji_serve.server.app import app
 from kaji_serve.server.database import Base, get_db
-from kaji.infra.realtime.redis import get_redis_client
 from kaji_serve.server.deps import get_current_supabase_user
 
 DB_USER = os.getenv("POSTGRES_USER", "postgres")
@@ -119,13 +113,6 @@ async def session_fixture(async_db_engine) -> AsyncGenerator[AsyncSession, None]
 @pytest.fixture(name="async_client")
 async def async_client_fixture() -> AsyncGenerator[AsyncClient, None]:
     """Provide a no-DB async client for routes that do not touch Postgres."""
-    fake_redis = fakeredis.aioredis.FakeRedis()
-
-    async def override_get_redis():
-        return fake_redis
-
-    app.dependency_overrides[get_redis_client] = override_get_redis
-
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -137,15 +124,10 @@ async def async_client_fixture() -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture(name="db_async_client")
 async def db_async_client_fixture(session) -> AsyncGenerator[AsyncClient, None]:
     """Provide an async client with Postgres dependency override."""
-    fake_redis = fakeredis.aioredis.FakeRedis()
-
-    async def override_get_redis():
-        return fake_redis
 
     async def override_get_db():
         yield session
 
-    app.dependency_overrides[get_redis_client] = override_get_redis
     app.dependency_overrides[get_db] = override_get_db
 
     async with AsyncClient(
@@ -159,13 +141,6 @@ async def db_async_client_fixture(session) -> AsyncGenerator[AsyncClient, None]:
 @pytest.fixture(name="test_client")
 def test_client_fixture():
     """Provide a synchronous TestClient for WebSocket tests."""
-    fake_redis = fakeredis.aioredis.FakeRedis()
-
-    async def override_get_redis():
-        return fake_redis
-
-    app.dependency_overrides[get_redis_client] = override_get_redis
-
     with TestClient(app) as client:
         yield client
 

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { EventType } from "@/events/types";
+import type { ToolExecutionContext } from "@/runtime/context";
 import { ToolPlanner } from "@/tools/planner";
 import { ToolRegistry, type ToolSpec } from "@/tools/registry";
 import {
@@ -31,6 +32,20 @@ function readCases(name: string): ConformanceCase[] {
 
 const validCases = readCases("conformance-valid.json");
 const invalidCases = readCases("conformance-invalid.json");
+
+function executionContext(principalId = "user-1"): ToolExecutionContext {
+  return {
+    principalId,
+    sessionId: "direct-session",
+    turnId: "direct-turn",
+    requestId: "direct-request",
+    traceId: "direct-trace",
+    toolCallId: "direct-call",
+    idempotencyKey: "direct-session:direct-call",
+    signal: new AbortController().signal,
+    metadata: {},
+  };
+}
 
 function specFor(testCase: ConformanceCase): ToolSpec {
   return {
@@ -109,9 +124,9 @@ describe("shared tool-schema conformance", () => {
       const handler = vi.fn().mockResolvedValue({ ok: true });
       const registry = new ToolRegistry().register(specFor(testCase), handler);
 
-      await expect(registry.execute("user-1", "fixture_tool", testCase.arguments)).resolves.toEqual(
-        { ok: true },
-      );
+      await expect(
+        registry.execute("fixture_tool", testCase.arguments, executionContext()),
+      ).resolves.toEqual({ ok: true });
       expect(handler).toHaveBeenCalledOnce();
     });
   }
@@ -170,7 +185,7 @@ describe("shared tool-schema conformance", () => {
       const registry = new ToolRegistry().register(specFor(testCase), handler);
 
       await expect(
-        registry.execute("user-1", "fixture_tool", testCase.arguments),
+        registry.execute("fixture_tool", testCase.arguments, executionContext()),
       ).rejects.toMatchObject({
         code: testCase.expectedCode,
         path: testCase.expectedPath,
@@ -306,7 +321,7 @@ describe("shared tool-schema conformance", () => {
     );
 
     await expect(
-      registry.execute("user-1", "array_expando", { value: unsafe }),
+      registry.execute("array_expando", { value: unsafe }, executionContext()),
     ).rejects.toMatchObject({ code: "INVALID_TOOL_ARGUMENTS", path: "/value/extra" });
     expect(handler).not.toHaveBeenCalled();
   });

@@ -134,33 +134,32 @@ class _Metrics:
 def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
     repo = Path(__file__).resolve().parents[3]
     inventory = {
-        "kaji/sdk/src/modalities/text/adapter.py": (
+        "kaji/sdk/src/kaji/modalities/text/adapter.py": (
             ".get_events(",
             1,
             "revalidate_stored_event",
         ),
-        "kaji/sdk/src/runtime/sessions/manager.py": (
+        "kaji/sdk/src/kaji/runtime/sessions/manager.py": (
             ".get_events(",
             1,
             "replay_session",
         ),
-        "kaji/sdk/src/runtime/sessions/projector.py": (
+        "kaji/sdk/src/kaji/runtime/sessions/projector.py": (
             ".get_events(",
             1,
             "revalidate_stored_event",
         ),
-        "kaji/sdk/src/infra/events/journal.py": (
+        "kaji/sdk/src/kaji/infra/events/journal.py": (
             ".get_events(",
             2,
             "revalidate_stored_event",
         ),
-        "kaji/sdk/src/runtime/agents/state.py": (".get_events(", 1, "replay_session"),
-        "kaji/sdk/src/runtime/agents/planner.py": (
+        "kaji/sdk/src/kaji/runtime/agents/planner.py": (
             ".get_events(",
             3,
             "revalidate_stored_event",
         ),
-        "kaji/sdk/src/runtime/agents/runtime.py": (
+        "kaji/sdk/src/kaji/runtime/agents/runtime.py": (
             ".get_events(",
             3,
             "revalidate_stored_event",
@@ -179,7 +178,7 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
 
     actual = set()
     for source_root, pattern, suffix in (
-        (repo / "kaji" / "sdk" / "src", ".get_events(", "*.py"),
+        (repo / "kaji" / "sdk" / "src" / "kaji", ".get_events(", "*.py"),
         (repo / "kaji" / "ts" / "src", ".getEvents(", "*.ts"),
     ):
         for path in source_root.rglob(suffix):

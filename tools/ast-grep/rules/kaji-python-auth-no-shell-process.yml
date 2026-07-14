@@ -3,9 +3,9 @@ language: Python
 severity: error
 message: Python auth and registry process calls must use fixed argument-array execution.
 files:
-  - "kaji/sdk/src/integrations/oauth.py"
-  - "kaji/sdk/src/integrations/keychain.py"
-  - "kaji/sdk/src/integrations/registry/**/*.py"
+  - "kaji/sdk/src/kaji/integrations/oauth.py"
+  - "kaji/sdk/src/kaji/integrations/keychain.py"
+  - "kaji/sdk/src/kaji/integrations/registry/**/*.py"
 rule:
   any:
     - pattern: subprocess.run($$$ARGS)

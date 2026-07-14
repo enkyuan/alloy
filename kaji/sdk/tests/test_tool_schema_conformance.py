@@ -11,7 +11,11 @@ import pytest
 
 from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallStarted
 from kaji.runtime.agents.cancellation import CancellationToken
-from kaji.runtime.agents.context import TurnContext
+from kaji.runtime.agents.context import (
+    ToolExecutionContext,
+    ToolInvocation,
+    TurnContext,
+)
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.errors import (
     ToolArgumentValidationError,
@@ -46,6 +50,26 @@ def _spec(case: dict[str, Any]) -> ToolSpec:
     )
 
 
+def _invocation(arguments: dict[str, Any]) -> ToolInvocation:
+    return ToolInvocation(
+        name="fixture_tool",
+        arguments=arguments,
+        context=ToolExecutionContext(
+            principal_id="user-1",
+            session_id="session-1",
+            turn_id="turn-1",
+            request_id="request-1",
+            trace_id="trace-1",
+            tool_call_id="call-1",
+            idempotency_key="session-1:call-1",
+            cancellation_token=CancellationToken(),
+            deadline_monotonic=None,
+            db=None,
+            metadata={},
+        ),
+    )
+
+
 def _integer_object_schema() -> dict[str, Any]:
     return {
         "type": "object",
@@ -74,7 +98,7 @@ async def test_shared_valid_arguments_execute_through_direct_registry(
     handler = AsyncMock(return_value={"ok": True})
     registry.register(_spec(case))(handler)
 
-    result = await registry.execute("user-1", "fixture_tool", case["arguments"])
+    result = await registry.execute(_invocation(case["arguments"]))
 
     assert result == {"ok": True}
     handler.assert_awaited_once()
@@ -143,7 +167,7 @@ async def test_direct_registry_execute_rejects_before_handler(
     registry.register(_spec(case))(handler)
 
     with pytest.raises(ToolArgumentValidationError) as caught:
-        await registry.execute("user-1", "fixture_tool", case["arguments"])
+        await registry.execute(_invocation(case["arguments"]))
 
     handler.assert_not_awaited()
     assert caught.value.code == case["expectedCode"]
@@ -263,11 +287,9 @@ async def test_registry_snapshots_the_source_spec_at_registration() -> None:
     assert registered.tags == ("safe",)
     assert registered.enabled is False
     assert registered.risk == "write"
-    assert await registry.execute("user-1", "fixture_tool", {"value": 1}) == {
-        "ok": True
-    }
+    assert await registry.execute(_invocation({"value": 1})) == {"ok": True}
     with pytest.raises(ToolArgumentValidationError, match="type validation"):
-        await registry.execute("user-1", "fixture_tool", {"value": "invalid"})
+        await registry.execute(_invocation({"value": "invalid"}))
     handler.assert_awaited_once()
 
 
@@ -289,11 +311,9 @@ async def test_registry_list_specs_returns_copy_safe_schemas() -> None:
 
     fresh = registry.list_specs()[0]
     assert fresh.parameters["properties"]["value"]["type"] == "integer"
-    assert await registry.execute("user-1", "fixture_tool", {"value": 1}) == {
-        "ok": True
-    }
+    assert await registry.execute(_invocation({"value": 1})) == {"ok": True}
     with pytest.raises(ToolArgumentValidationError, match="type validation"):
-        await registry.execute("user-1", "fixture_tool", {"value": "invalid"})
+        await registry.execute(_invocation({"value": "invalid"}))
     handler.assert_awaited_once()
 
 

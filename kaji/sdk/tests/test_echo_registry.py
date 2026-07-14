@@ -80,7 +80,7 @@ def test_echo_executable_specs_match_authoritative_abi() -> None:
 def test_bundled_typescript_echo_is_the_authoritative_source_copy() -> None:
     root = Path(__file__).resolve().parents[3]
     source = root / "kaji/ts/registry/echo/index.ts"
-    bundled = root / "kaji/sdk/src/integrations/registry/echo/echo.ts"
+    bundled = root / "kaji/sdk/src/kaji/integrations/registry/echo/echo.ts"
     assert bundled.read_bytes() == source.read_bytes()
 
 
@@ -90,7 +90,9 @@ def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
         (root / "kaji/contracts/integrations/echo-tool-abi-v1.json").read_text()
     )
     python_manifest = json.loads(
-        (root / "kaji/sdk/src/integrations/registry/echo/manifest.json").read_text()
+        (
+            root / "kaji/sdk/src/kaji/integrations/registry/echo/manifest.json"
+        ).read_text()
     )
     typescript_manifest = json.loads(
         (root / "kaji/ts/registry/echo/manifest.json").read_text()

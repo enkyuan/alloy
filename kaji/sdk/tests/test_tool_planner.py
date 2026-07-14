@@ -11,11 +11,13 @@ from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallRequest
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
+from tests.helpers.approval import RaisingApprovalHandler, StaticApprovalHandler
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +383,7 @@ async def test_planner_approval_approved_proceeds():
         )
     }
     policy = ToolPolicy(require_approval_for={"destructive"})
-    approval_handler = AsyncMock(return_value=True)
+    approval_handler = StaticApprovalHandler(ApprovalDecision(True, "approved"))
     planner = _planner(
         executor, policy=policy, approval_handler=approval_handler, specs=specs
     )
@@ -406,7 +408,9 @@ async def test_planner_approval_rejected_skips_execution():
         )
     }
     policy = ToolPolicy(require_approval_for={"destructive"})
-    approval_handler = AsyncMock(return_value=False)
+    approval_handler = StaticApprovalHandler(
+        ApprovalDecision(False, "rejected", "Rejected by test")
+    )
     planner = _planner(
         executor, policy=policy, approval_handler=approval_handler, specs=specs
     )
@@ -433,14 +437,11 @@ async def test_planner_closes_approval_handler_exceptions_without_secret_leak(
     executor = AsyncMock()
     secret = "sk-approval-secret"
 
-    async def approval_handler(_name, _args, _risk):
-        raise RuntimeError(secret)
-
     spec = ToolSpec(name="search", description="search", parameters={}, risk="read")
     planner = _planner(
         executor,
         policy=ToolPolicy(require_approval_for={"read"}),
-        approval_handler=approval_handler,
+        approval_handler=RaisingApprovalHandler(RuntimeError(secret)),
         specs={"search": spec},
     )
 

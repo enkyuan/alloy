@@ -5,8 +5,8 @@ message: Named external-effect tools must be non-parallel and send_draft must bi
 files:
   - "kaji/ts/registry/github/**/*.ts"
   - "kaji/ts/registry/gmail/**/*.ts"
-  - "kaji/sdk/src/integrations/registry/github/**/*.ts"
-  - "kaji/sdk/src/integrations/registry/gmail/**/*.ts"
+  - "kaji/sdk/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/sdk/src/kaji/integrations/registry/gmail/**/*.ts"
 rule:
   all:
     - kind: object

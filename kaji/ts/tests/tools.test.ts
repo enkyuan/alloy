@@ -6,7 +6,7 @@ import { TOOL_META, ToolRegistry, clearTools, executeTool } from "@/tools/regist
 import { ToolSchemaValidator } from "@/tools/validation";
 import { AgentRuntime } from "@/runtime/runtime";
 import { MockProvider } from "@/providers/mock";
-import { EventBus } from "@/events/bus";
+import { InMemoryEventCommitter } from "@/events/committer";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import { KajiEvent } from "@/events/schemas";
@@ -403,10 +403,12 @@ describe("ToolRegistry", () => {
 
     spec.parameters.properties.value.type = "number";
 
-    await expect(registry.execute("u", "snapshot", { value: "stable" })).resolves.toEqual({
-      value: "stable",
-    });
-    await expect(registry.execute("u", "snapshot", { value: 1 })).rejects.toMatchObject({
+    await expect(
+      registry.execute("snapshot", { value: "stable" }, executionContext({ principalId: "u" })),
+    ).resolves.toEqual({ value: "stable" });
+    await expect(
+      registry.execute("snapshot", { value: 1 }, executionContext({ principalId: "u" })),
+    ).rejects.toMatchObject({
       code: "INVALID_TOOL_ARGUMENTS",
       path: "/value",
     });
@@ -435,12 +437,12 @@ describe("ToolRegistry", () => {
       (listed.parameters.properties as any).value.type = "number";
     }).toThrow();
     expect(() => (listed.tags as string[]).push("mutated")).toThrow();
-    await expect(registry.execute("u", "immutable", { value: "stable" })).resolves.toEqual({
-      ok: true,
-    });
+    await expect(
+      registry.execute("immutable", { value: "stable" }, executionContext({ principalId: "u" })),
+    ).resolves.toEqual({ ok: true });
   });
 
-  it("register and execute round-trip", async () => {
+  it("supports the deprecated userId execute overload at the compatibility boundary", async () => {
     const registry = new ToolRegistry();
     registry.register(
       { name: "ping", description: "d", parameters: {}, risk: "read" },
@@ -468,7 +470,9 @@ describe("ToolRegistry", () => {
 
   it("execute throws for unknown tool", async () => {
     const registry = new ToolRegistry();
-    await expect(registry.execute("u", "ghost", {})).rejects.toThrow(/Unknown tool/);
+    await expect(
+      registry.execute("ghost", {}, executionContext({ principalId: "u" })),
+    ).rejects.toThrow(/Unknown tool/);
   });
 
   it("listSpecs excludes disabled by default", () => {
@@ -540,7 +544,7 @@ describe("ToolRegistry", () => {
       tags: ["finance"],
     });
 
-    const result = await registry.execute("u", "getBalance", {});
+    const result = await registry.execute("getBalance", {}, executionContext({ principalId: "u" }));
     expect(result).toEqual({ balance: 42 });
   });
 
@@ -572,12 +576,11 @@ describe("AgentRuntime with ToolPolicy", () => {
 
   it("emits TOOL_CALL_FAILED when a denied tool is called", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const policy = new ToolPolicy({ denied: new Set(["dangerous_op"]) });
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       policy,
       defaultContext: { principalId: "test-user" },
     });
@@ -608,12 +611,11 @@ describe("AgentRuntime with ToolPolicy", () => {
     // (for approval-aware consumers) AND TOOL_CALL_FAILED (so replaySession projects
     // the outcome into model history and the loop terminates cleanly).
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       policy,
       defaultContext: { principalId: "test-user" },
     });
@@ -643,11 +645,10 @@ describe("AgentRuntime with ToolPolicy", () => {
 
   it("executes tools normally when no policy is configured", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       defaultContext: { principalId: "test-user" },
     });
 

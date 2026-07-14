@@ -3,7 +3,8 @@ name = "kaji-sdk"
 version = "0.2.0b1"
 description = "An embeddable SDK for building agentic platforms (text + voice)."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11,<4"
 authors = [
     { name = "enkyuan", email = "yuan.enkng@gmail.com" },
@@ -41,79 +42,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
+package-dir = { "" = "src" }
 
-# src/ IS the kaji package root (no src/kaji/ subdirectory exists).
-# We enumerate all packages explicitly with kaji.* names so setuptools
-# knows to remap src/ → kaji at install time. The pinned editables backend
-# then implements the prefix-change case via a runtime MetaPathFinder.
-packages = [
-    "kaji",
-    "kaji.cli",
-    "kaji.contracts",
-    "kaji.contracts.errors",
-    "kaji.contracts.events",
-    "kaji.contracts.integrations",
-    "kaji.contracts.parity",
-    "kaji.contracts.providers",
-    "kaji.contracts.tools",
-    "kaji.core",
-    "kaji.infra",
-    "kaji.infra.events",
-    "kaji.infra.events.store",
-    "kaji.infra.observability",
-    "kaji.infra.realtime",
-    "kaji.integrations",
-    "kaji.integrations.registry",
-    "kaji.integrations.registry.echo",
-    "kaji.integrations.registry.github",
-    "kaji.knowledge",
-    "kaji.modalities",
-    "kaji.modalities.text",
-    "kaji.modalities.voice",
-    "kaji.modalities.voice.tts",
-    "kaji.modalities.voice.utils",
-    "kaji.runtime",
-    "kaji.runtime.agents",
-    "kaji.runtime.integrations",
-    "kaji.runtime.providers",
-    "kaji.runtime.sessions",
-    "kaji.runtime.tools",
-    "kaji.runtime.workflows",
-]
-
-[tool.setuptools.package-dir]
-kaji = "src"
-"kaji.cli" = "src/cli"
-"kaji.contracts" = "src/contracts"
-"kaji.contracts.errors" = "src/contracts/errors"
-"kaji.contracts.events" = "src/contracts/events"
-"kaji.contracts.integrations" = "src/contracts/integrations"
-"kaji.contracts.parity" = "src/contracts/parity"
-"kaji.contracts.providers" = "src/contracts/providers"
-"kaji.contracts.tools" = "src/contracts/tools"
-"kaji.core" = "src/core"
-"kaji.infra" = "src/infra"
-"kaji.infra.events" = "src/infra/events"
-"kaji.infra.events.store" = "src/infra/events/store"
-"kaji.infra.observability" = "src/infra/observability"
-"kaji.infra.realtime" = "src/infra/realtime"
-"kaji.integrations" = "src/integrations"
-"kaji.integrations.registry" = "src/integrations/registry"
-"kaji.integrations.registry.echo" = "src/integrations/registry/echo"
-"kaji.integrations.registry.github" = "src/integrations/registry/github"
-"kaji.knowledge" = "src/knowledge"
-"kaji.modalities" = "src/modalities"
-"kaji.modalities.text" = "src/modalities/text"
-"kaji.modalities.voice" = "src/modalities/voice"
-"kaji.modalities.voice.tts" = "src/modalities/voice/tts"
-"kaji.modalities.voice.utils" = "src/modalities/voice/utils"
-"kaji.runtime" = "src/runtime"
-"kaji.runtime.agents" = "src/runtime/agents"
-"kaji.runtime.integrations" = "src/runtime/integrations"
-"kaji.runtime.providers" = "src/runtime/providers"
-"kaji.runtime.sessions" = "src/runtime/sessions"
-"kaji.runtime.tools" = "src/runtime/tools"
-"kaji.runtime.workflows" = "src/runtime/workflows"
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kaji", "kaji.*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 kaji = [

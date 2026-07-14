@@ -131,7 +131,7 @@ Tool-capable turns require a caller identity. Supply a `TurnContext` per turn,
 or configure an explicit builder `default_context` for a deliberately
 single-tenant host. Each handler
 receives an immutable `ToolExecutionContext` through `ToolInvocation` (with
-`ToolContext` retained as a compatibility alias). Missing identity raises
+`ToolContext` retained only as a deprecated compatibility alias). Missing identity raises
 `MissingToolIdentityError`; enabled tools without an explicit risk raise
 `UnclassifiedToolRiskError` before registration or execution.
 
@@ -326,7 +326,7 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 | `UserMessage`                                                                                                                                | Convenience constructor for the initial `user.message` event                                                                              |
 | `replay_session`, `SessionManager`, `SessionState`                                                                                           | Session state projection and management                                                                                                   |
 | `SessionStore`, `InMemorySessionStore`, `SessionRecord`                                                                                      | Cross-session index keyed by user (process-local default; postgres opt-in)                                                                |
-| `HistoryStore`, `InMemoryHistoryStore`                                                                                                       | Conversation history backend for reasoning nodes (in-memory default; Redis opt-in)                                                        |
+| `HistoryStore`, `InMemoryHistoryStore`                                                                                                       | Host-facing bounded conversation history (in-memory default; Redis opt-in)                                                                |
 | `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore`                                                                     | Document RAG primitives: chunking, ingest, retrieval                                                                                      |
 | `ToolRetriever`, `Embedder`, `EmbeddingCache`                                                                                                | Semantic tool retrieval with a pluggable embedder and cache                                                                               |
 | `build_tools_payload`, `spec_to_neutral`                                                                                                     | Build the neutral tool payload from the registry                                                                                          |
@@ -475,10 +475,10 @@ async def main():
 asyncio.run(main())
 ```
 
-### Redis realtime bus
+### Experimental Redis split adapter
 
-For multi-process deployments where multiple workers share events, replace the
-in-memory bus with the Redis-backed `EventBus`:
+For evaluating cross-process event delivery, replace the in-memory journal with
+the Redis-backed `EventBus`:
 
 ```bash
 pip install 'kaji-sdk[realtime]'
@@ -490,52 +490,35 @@ from kaji.infra.events.bus import EventBus
 bus = EventBus()  # Redis-backed; same interface as InMemoryEventBus
 ```
 
-This is the SDK-level building block. The full hosted platform (FastAPI, async
-tool workers, Postgres) is in `kaji-serve`.
+This is an experimental SDK building block, not a durability or distributed
+coordination claim. The REST/STT reference service in `kaji-serve` does not use
+this adapter.
 
 ### When to use Redis vs kaji-serve
 
-| Need                                       | Use                               |
-| ------------------------------------------ | --------------------------------- |
-| Single process, one agent                  | `InMemoryEventBus` -- no Redis    |
-| Multiple processes sharing events          | `kaji-sdk[realtime]` + `EventBus` |
-| Experimental REST/voice service evaluation | `kaji-serve`                      |
+| Need                                       | Use                                    |
+| ------------------------------------------ | -------------------------------------- |
+| Single process, one agent                  | default `InMemoryEventJournal`         |
+| Experimental cross-process event delivery  | `kaji-sdk[realtime]` + `EventBus`      |
+| Experimental REST/STT service evaluation   | `kaji-serve`                           |
 
 ---
 
 ## Reference service architecture
 
 `kaji-serve` is an experimental reference service and is excluded from the 0.2
-SDK beta. Its current voice path uses three process entry points over Redis:
-
-| Process      | Responsibility                                                     |
-| ------------ | ------------------------------------------------------------------ |
-| `api`        | FastAPI app: REST routes and the (voice) STT WebSocket endpoint    |
-| `bus-worker` | Legacy loop: consumes input and executes ordinary tools in-process |
-| `worker`     | TaskIQ surface, not used by the normal reasoning path              |
+SDK beta. It currently exposes one FastAPI process for REST routes and a Soniox
+STT WebSocket. It does not host `AgentRuntime`, reasoning/tool execution, or
+TTS.
 
 ```
-   ┌────────────────────────────────┐
-   │             client             │
-   └────────┬──────────────┴────────┘
-            ▼              │
-   ┌────────────────────────────────┐
-   │         api (FastAPI)          │
-   └────────┬──────────────┴────────┘
-            ▼              │            Redis streams / pub-sub
-   ┌────────────────────────────────┐
-   │     bus-worker (reasoning)     │
-   └────────┬──────────────┴────────┘
-            ▼              │            TaskIQ / Redis streams
-   ┌────────────────────────────────┐
-   │       worker (tool exec)       │
-   └────────────────────────────────┘
+client -> FastAPI REST + Soniox STT -> Supabase/Postgres adapters
 ```
 
-FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, the legacy
-service runtime, and TaskIQ workers are **not** in the SDK. Before promotion,
-the service needs a canonical `AgentRuntime` adapter, persistent `EventStore`,
-post-turn acknowledgement, and distributed coordination. See the separate
+FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, and the service
+adapters are **not** in the SDK. Before promotion, the service needs a hosted
+`AgentRuntime` adapter, persistent `EventStore`, post-turn acknowledgement,
+and distributed coordination. See the separate
 [`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) package.
 
 ## Module layout
@@ -545,7 +528,7 @@ kaji/
 ├── core/             # foundation: config, logging, errors
 ├── infra/            # backbone above core
 │   ├── events/       #   event envelopes, store, replay
-│   ├── realtime/     #   redis stream/pub-sub helpers (opt-in, [realtime] extra)
+│   ├── realtime/     #   redis event/history/cache adapters (opt-in)
 │   └── observability/#   tracing, metrics, timeline
 ├── modalities/       # input/output channels that plug into the runtime
 │   ├── voice/        #   TTS adapters (not hardened)
@@ -581,6 +564,6 @@ See [`.env.example`](https://github.com/enkyuan/alloy/blob/main/.env.example) fo
 
 The repo contains **two Python distributions**: `kaji-sdk` (this SDK, imported
 as `kaji`) and
-[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) (the reference FastAPI + workers
+[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) (the reference FastAPI + STT
 service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.

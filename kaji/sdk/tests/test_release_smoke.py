@@ -1,6 +1,8 @@
 import importlib.util
 import json
+import os
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -188,7 +190,7 @@ def test_github_package_proof_receipt_is_closed_and_fail_closed() -> None:
 @pytest.mark.asyncio
 async def test_installed_github_proof_uses_current_approval_handler_contract() -> None:
     module = _load_script("installed_github_smoke.py")
-    bundle = SDK_ROOT / "src/integrations/registry/github"
+    bundle = SDK_ROOT / "src/kaji/integrations/registry/github"
     client, integration = module._load_copied_modules(bundle)
 
     assert await module._approval_precedes_credentials(
@@ -199,7 +201,7 @@ async def test_installed_github_proof_uses_current_approval_handler_contract() -
 @pytest.mark.asyncio
 async def test_installed_github_proof_closes_factory_owned_transport() -> None:
     module = _load_script("installed_github_smoke.py")
-    bundle = SDK_ROOT / "src/integrations/registry/github"
+    bundle = SDK_ROOT / "src/kaji/integrations/registry/github"
     _, integration = module._load_copied_modules(bundle)
 
     assert await module._factory_closes_owned_transport(integration)
@@ -589,12 +591,13 @@ def test_adversarial_archive_verifier_covers_generated_metadata_and_size_bombs()
 
 def test_python_release_metadata_and_versions_are_self_contained() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    source = (SDK_ROOT / "src" / "__init__.py").read_text()
+    source = (SDK_ROOT / "src" / "kaji" / "__init__.py").read_text()
     version = re.search(r'^__version__ = "([^"]+)"$', source, re.MULTILINE)
 
     assert version is not None
     assert pyproject["project"]["version"] == version.group(1) == "0.2.0b1"
-    assert pyproject["project"]["license"] == {"file": "LICENSE"}
+    assert pyproject["project"]["license"] == "PolyForm-Noncommercial-1.0.0"
+    assert pyproject["project"]["license-files"] == ["LICENSE"]
     assert (SDK_ROOT / "LICENSE").read_bytes() == (REPO_ROOT / "LICENSE").read_bytes()
     assert (SDK_ROOT / "MANIFEST.in").is_file()
     build_requirements = (SDK_ROOT / "build-requirements.txt").read_text()
@@ -630,6 +633,7 @@ def test_clean_caches_removes_project_caches_without_touching_venv(
         tmp_path / "htmlcov" / "index.html",
         tmp_path / "logs" / "kaji.log",
         tmp_path / "kaji.egg-info" / "SOURCES.txt",
+        tmp_path / "src" / "kaji_sdk.egg-info" / "SOURCES.txt",
         tmp_path / ".coverage",
     ]
     preserved = tmp_path / ".venv" / "lib" / "keep.pyc"
@@ -657,43 +661,57 @@ def test_release_docs_reference_release_smoke() -> None:
 
 def test_registry_namespace_packages_are_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    packages = set(pyproject["tool"]["setuptools"]["packages"])
-    package_dir = pyproject["tool"]["setuptools"]["package-dir"]
+    setuptools = pyproject["tool"]["setuptools"]
+    discovery = setuptools["packages"]["find"]
 
-    assert "kaji.integrations.registry" in packages
-    assert "kaji.integrations.registry.echo" in packages
-    assert "kaji.integrations.registry.github" in packages
-    assert package_dir["kaji.integrations.registry"] == "src/integrations/registry"
-    assert (
-        package_dir["kaji.integrations.registry.echo"]
-        == "src/integrations/registry/echo"
-    )
-    assert (
-        package_dir["kaji.integrations.registry.github"]
-        == "src/integrations/registry/github"
-    )
+    assert setuptools["package-dir"] == {"": "src"}
+    assert discovery == {
+        "where": ["src"],
+        "include": ["kaji", "kaji.*"],
+        "namespaces": False,
+    }
+    for relative in ("registry", "registry/echo", "registry/github"):
+        assert (
+            SDK_ROOT / "src" / "kaji" / "integrations" / relative / "__init__.py"
+        ).is_file()
 
 
 def test_parity_contract_package_is_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    packages = set(pyproject["tool"]["setuptools"]["packages"])
-    package_dir = pyproject["tool"]["setuptools"]["package-dir"]
     package_data = pyproject["tool"]["setuptools"]["package-data"]
 
-    assert "kaji.contracts.parity" in packages
-    assert "kaji.contracts.integrations" in packages
-    assert package_dir["kaji.contracts.parity"] == "src/contracts/parity"
-    assert package_dir["kaji.contracts.integrations"] == "src/contracts/integrations"
+    assert (SDK_ROOT / "src/kaji/contracts/parity/__init__.py").is_file()
+    assert (SDK_ROOT / "src/kaji/contracts/integrations/__init__.py").is_file()
     assert package_data["kaji.contracts.parity"] == ["*.json"]
     assert package_data["kaji.contracts.integrations"] == ["*.json"]
 
 
 def test_provider_cost_contract_package_is_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    packages = set(pyproject["tool"]["setuptools"]["packages"])
-    package_dir = pyproject["tool"]["setuptools"]["package-dir"]
     package_data = pyproject["tool"]["setuptools"]["package-data"]
 
-    assert "kaji.contracts.providers" in packages
-    assert package_dir["kaji.contracts.providers"] == "src/contracts/providers"
+    assert (SDK_ROOT / "src/kaji/contracts/providers/__init__.py").is_file()
     assert package_data["kaji.contracts.providers"] == ["*.json"]
+
+
+def test_repo_root_editable_import_resolves_sdk_package() -> None:
+    environment = os.environ.copy()
+    environment.pop("PYTHONHOME", None)
+    environment.pop("PYTHONPATH", None)
+    environment["PYTHONNOUSERSITE"] = "1"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, kaji; print(json.dumps({'file': kaji.__file__}))",
+        ],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    imported = Path(json.loads(result.stdout)["file"]).resolve()
+    assert imported == SDK_ROOT / "src" / "kaji" / "__init__.py"

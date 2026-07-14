@@ -6,7 +6,9 @@ Gemini key and no Redis. These tests inject fakes — no infra, no network.
 
 import pytest
 
-from kaji.runtime.tools.registry import ToolSpec, _TOOL_SPECS
+from kaji.runtime.context import ToolExecutionContext
+from kaji.runtime.tools import registry as registry_module
+from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from kaji.runtime.tools.retriever import (
     InMemoryEmbeddingCache,
     ToolRetriever,
@@ -38,7 +40,7 @@ class NullEmbedder:
 
 
 @pytest.fixture
-def one_tool():
+def one_tool(monkeypatch: pytest.MonkeyPatch):
     """Register a single tool and clean up the global registry after."""
     spec = ToolSpec(
         name="weather",
@@ -46,11 +48,16 @@ def one_tool():
         parameters={"type": "object", "properties": {}, "required": []},
         risk="read",
     )
-    _TOOL_SPECS[spec.name] = spec
-    try:
-        yield spec
-    finally:
-        _TOOL_SPECS.pop(spec.name, None)
+    registry = ToolRegistry()
+    monkeypatch.setattr(registry_module, "_default_registry", registry)
+
+    @registry.register(spec)
+    async def weather(
+        _context: ToolExecutionContext, _args: dict[str, object]
+    ) -> dict[str, bool]:
+        return {"ok": True}
+
+    yield spec
 
 
 def test_cosine_similarity_basics():

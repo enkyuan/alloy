@@ -34,6 +34,7 @@ from kaji.runtime.agents.approval import (
     ApprovalHandler,
     ApprovalRequestContext,
     EventApprovalHandler,
+    adapt_approval_handler,
 )
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
@@ -1565,3 +1566,50 @@ def test_approval_decision_and_context_invariants_are_bounded() -> None:
             observe=observe,
             deadline_monotonic=1,
         )
+
+
+@pytest.mark.asyncio
+async def test_legacy_boolean_approval_callback_isolated_compatibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kaji.runtime.agents import approval as approval_module
+
+    monkeypatch.setattr(approval_module, "_legacy_handler_warned", False)
+
+    async def legacy_callback(
+        tool_name: str,
+        arguments: dict[str, Any],
+        risk: str | None,
+    ) -> bool:
+        assert (tool_name, arguments, risk) == ("charge", {"amount": 5}, "write")
+        return True
+
+    with pytest.warns(DeprecationWarning, match="Boolean approval callbacks"):
+        handler = adapt_approval_handler(legacy_callback)
+
+    assert handler is not None
+    tool_context = _context()
+    journal = InMemoryEventJournal(InMemoryEventStore())
+
+    async def request() -> StoredKajiEvent:
+        raise AssertionError("legacy callbacks must not own approval events")
+
+    async def observe(_event: StoredKajiEvent) -> None:
+        raise AssertionError("legacy callbacks must not observe approval events")
+
+    call = ToolInvocation(
+        name="charge",
+        arguments={"amount": 5},
+        context=tool_context,
+    )
+    context = ApprovalRequestContext(
+        tool_context=tool_context,
+        risk="write",
+        arguments=call.arguments,
+        journal=journal,
+        request=request,
+        observe=observe,
+        deadline_monotonic=1,
+    )
+
+    assert await handler.request(call, context) == ApprovalDecision(True, "approved")

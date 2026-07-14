@@ -6,10 +6,10 @@
 .
 ├── kaji/
 │   ├── sdk/             # the `kaji` SDK (Python)
-│   ├── serve/           # `kaji-serve` -- FastAPI + workers (path-depends on ../sdk)
+│   ├── serve/           # `kaji-serve` -- REST + Soniox STT (path-depends on ../sdk)
 │   └── ts/              # `@kaji/sdk` -- TypeScript SDK
 └── docker/
-    ├── kaji/        # Postgres, Redis, Supabase for kaji-serve
+    ├── kaji/        # Postgres and Supabase for kaji-serve
     └── ryo/        # docker stack for the ryo product
 ```
 
@@ -57,7 +57,9 @@ cp .env.example .env   # configure credentials
 docker compose up -d
 ```
 
-Services use the `kaji` Compose project name (`kaji-sdk`, `kaji-worker`, `kaji-bus-worker`).
+Compose uses the `kaji` project name and starts the `kaji-serve` API plus its
+Postgres/Supabase dependencies. It does not host an agent runtime or background
+tool worker.
 
 ## Running Tests
 
@@ -72,9 +74,9 @@ cd kaji/serve && uv run pytest tests/
 ## Quick Start
 
 ```bash
-# Terminal 1: infrastructure + API (from docker/kaji/)
+# Option 1: infrastructure + API (from docker/kaji/)
 cd docker/kaji && docker compose up -d
 
-# Terminal 2: API server (from kaji/serve/)
+# Option 2: API server directly (from kaji/serve/; requires its dependencies)
 cd kaji/serve && uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

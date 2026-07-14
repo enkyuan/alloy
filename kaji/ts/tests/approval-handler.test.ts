@@ -8,7 +8,7 @@ import { EventType } from "@/events/types";
 import type { ToolCall } from "@/providers/base";
 import { AutoApprovalHandler } from "@/runtime/approval/auto";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
-import { requestLegacyApproval, type ApprovalRequestContext } from "@/runtime/approval/types";
+import { adaptLegacyApprovalHandler, type ApprovalRequestContext } from "@/runtime/approval/types";
 import { replaySession } from "@/sessions/replay";
 import { systemTimerScheduler } from "@/internal/uuid";
 
@@ -367,14 +367,16 @@ describe("EventApprovalHandler", () => {
     expect(returned).toHaveBeenCalledOnce();
   });
 
-  it("keeps the legacy callback functional when the deprecation console throws", async () => {
+  it("isolates Boolean callbacks behind the deprecated compatibility adapter", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {
       throw new Error("console unavailable");
     });
     const handler = vi.fn().mockResolvedValue(true);
+    const call = makeCall({ name: "legacy" });
+    const committer = new InMemoryEventCommitter(new InMemoryEventStore());
     try {
       await expect(
-        requestLegacyApproval(handler, makeCall({ name: "legacy" }), {}, "write"),
+        adaptLegacyApprovalHandler(handler).request(call, makeContext(committer, call)),
       ).resolves.toEqual({ granted: true, code: "approved" });
       expect(handler).toHaveBeenCalledOnce();
     } finally {

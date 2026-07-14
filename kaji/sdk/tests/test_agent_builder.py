@@ -6,15 +6,16 @@ from typing import Any
 
 import pytest
 
-from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.schemas import UserMessage
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
+from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.builder import AgentBuilder
-from kaji.runtime.agents.context import TurnContext
+from kaji.runtime.agents.context import ToolExecutionContext, TurnContext
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.tools.policies import ToolPolicy
-from kaji.runtime.tools.registry import ToolContext, ToolRegistry, ToolSpec
+from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
+from tests.helpers.approval import StaticApprovalHandler
 from tests.helpers.mock_provider import MockProvider
 
 
@@ -30,7 +31,7 @@ class PingIntegration:
         spec = ToolSpec(name="ping", description="Ping", parameters={}, risk="read")
 
         @registry.register(spec)
-        async def _ping(ctx: ToolContext, args: dict) -> dict:
+        async def _ping(ctx: ToolExecutionContext, args: dict) -> dict:
             return {"pong": True}
 
 
@@ -43,16 +44,12 @@ class MultiIntegration:
 
             # Use a default arg to capture loop variable
             def _make_handler(tool_name: str) -> Any:
-                async def _handler(ctx: ToolContext, args: dict) -> dict:
+                async def _handler(ctx: ToolExecutionContext, args: dict) -> dict:
                     return {"tool": tool_name}
 
                 return _handler
 
             registry.register(spec)(_make_handler(name))
-
-
-def _make_infra() -> tuple[InMemoryEventBus, InMemoryEventStore]:
-    return InMemoryEventBus(), InMemoryEventStore()
 
 
 # ---------------------------------------------------------------------------
@@ -61,24 +58,24 @@ def _make_infra() -> tuple[InMemoryEventBus, InMemoryEventStore]:
 
 
 def test_builder_requires_provider() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     with pytest.raises(ValueError, match="provider"):
-        AgentBuilder().build(bus=bus, store=store)
+        AgentBuilder().build(store=store)
 
 
 def test_builder_builds_agent_runtime_with_no_integrations() -> None:
-    bus, store = _make_infra()
-    runtime = AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
+    store = InMemoryEventStore()
+    runtime = AgentBuilder().provider(MockProvider()).build(store=store)
     assert isinstance(runtime, AgentRuntime)
 
 
 def test_builder_system_prompt_is_applied() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     runtime = (
         AgentBuilder()
         .provider(MockProvider())
         .system_prompt("You are a test assistant.")
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
     assert runtime.prompt.template == "You are a test assistant."
 
@@ -89,26 +86,26 @@ def test_builder_system_prompt_is_applied() -> None:
 
 
 def test_builder_registers_integration_tools() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     runtime = (
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
         .default_context(TurnContext(principal_id="test"))
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
     tool_names = [spec.name for spec in runtime.tools]
     assert "ping" in tool_names
 
 
 def test_builder_registers_multiple_integrations() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     runtime = (
         AgentBuilder()
         .provider(MockProvider())
         .integration(PingIntegration())
         .integration(MultiIntegration())
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
     tool_names = {spec.name for spec in runtime.tools}
     assert {"ping", "alpha", "beta"}.issubset(tool_names)
@@ -122,7 +119,7 @@ def test_builder_registers_multiple_integrations() -> None:
 @pytest.mark.asyncio
 async def test_builder_tool_executes_via_scoped_registry() -> None:
     """Integration tools registered via builder run through the scoped registry."""
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     session_id = "s-builder-e2e"
 
     runtime = (
@@ -130,7 +127,7 @@ async def test_builder_tool_executes_via_scoped_registry() -> None:
         .provider(MockProvider())
         .integration(PingIntegration())
         .default_context(TurnContext(principal_id="test"))
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
 
     await store.append(UserMessage(session_id=session_id, content="ping please"))
@@ -151,7 +148,7 @@ async def test_builder_tool_executes_via_scoped_registry() -> None:
 
 @pytest.mark.asyncio
 async def test_builder_deny_policy_blocks_tool() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     session_id = "s-builder-deny"
 
     runtime = (
@@ -160,7 +157,7 @@ async def test_builder_deny_policy_blocks_tool() -> None:
         .integration(PingIntegration())
         .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(denied={"ping"}))
-        .build(bus=bus, store=store)
+        .build(store=store)
     )
 
     await store.append(UserMessage(session_id=session_id, content="ping"))
@@ -175,10 +172,10 @@ async def test_builder_deny_policy_blocks_tool() -> None:
 
 @pytest.mark.asyncio
 async def test_builder_no_integrations_completes_without_tool_calls() -> None:
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     session_id = "s-builder-no-tools"
 
-    runtime = AgentBuilder().provider(MockProvider()).build(bus=bus, store=store)
+    runtime = AgentBuilder().provider(MockProvider()).build(store=store)
 
     await store.append(UserMessage(session_id=session_id, content="hello"))
     await runtime.run_turn(session_id)
@@ -197,12 +194,9 @@ async def test_builder_no_integrations_completes_without_tool_calls() -> None:
 
 @pytest.mark.asyncio
 async def test_builder_approval_handler_approves_tool() -> None:
-    """When approval_handler returns True the tool executes and completes."""
-    bus, store = _make_infra()
+    """A typed approval decision allows the tool to execute and complete."""
+    store = InMemoryEventStore()
     session_id = "s-builder-approval-approved"
-
-    async def _approve(name: str, args: dict, risk: str | None) -> bool:
-        return True
 
     runtime = (
         AgentBuilder()
@@ -210,8 +204,8 @@ async def test_builder_approval_handler_approves_tool() -> None:
         .integration(PingIntegration())
         .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(require_approval_for={"read"}))
-        .approval_handler(_approve)
-        .build(bus=bus, store=store)
+        .approval_handler(StaticApprovalHandler(ApprovalDecision(True, "approved")))
+        .build(store=store)
     )
 
     await store.append(UserMessage(session_id=session_id, content="ping"))
@@ -227,11 +221,8 @@ async def test_builder_approval_handler_approves_tool() -> None:
 @pytest.mark.asyncio
 async def test_builder_approval_handler_rejection_is_terminal() -> None:
     """Rejected approval emits TOOL_CALL_FAILED so replay sees it and the loop stops."""
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     session_id = "s-builder-approval-rejected"
-
-    async def _reject(name: str, args: dict, risk: str | None) -> bool:
-        return False
 
     runtime = (
         AgentBuilder()
@@ -239,8 +230,12 @@ async def test_builder_approval_handler_rejection_is_terminal() -> None:
         .integration(PingIntegration())
         .default_context(TurnContext(principal_id="test"))
         .policy(ToolPolicy(require_approval_for={"read"}))
-        .approval_handler(_reject)
-        .build(bus=bus, store=store)
+        .approval_handler(
+            StaticApprovalHandler(
+                ApprovalDecision(False, "rejected", "Rejected by test")
+            )
+        )
+        .build(store=store)
     )
 
     await store.append(UserMessage(session_id=session_id, content="ping"))
@@ -274,14 +269,14 @@ async def test_runtime_without_explicit_planner_completes_turn() -> None:
     async def _noop(ctx, args: dict) -> dict:
         return {}
 
-    bus, store = _make_infra()
+    store = InMemoryEventStore()
     session_id = "s-runtime-no-planner"
 
     # Construct without planner — should build one from global registry
     from kaji.runtime.tools.registry import list_tool_specs
 
     runtime = AgentRuntime(
-        bus=bus,
+        bus=None,
         store=store,
         provider=MockProvider(),
         tools=list_tool_specs(),

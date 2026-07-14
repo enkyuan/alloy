@@ -27,7 +27,6 @@ import type {
   LegacyApprovalHandler,
   TypedApprovalHandler,
 } from "@/runtime/approval/types";
-import { requestLegacyApproval } from "@/runtime/approval/types";
 import { TurnTimeoutError, type TurnPhase } from "@/runtime/limits";
 import {
   MissingToolIdentityError,
@@ -123,10 +122,8 @@ function emitterCommitter(emit: EmitFn): EventCommitter | undefined {
   return (emit as Partial<CommitterBoundEmitFn>)[EMITTER_COMMITTER];
 }
 
-export type AnyApprovalHandler =
-  | ApprovalHandler
-  | TypedApprovalHandler
-  | EventBackedApprovalHandler;
+/** Approval handlers accepted by stable planner and runtime construction paths. */
+export type AnyApprovalHandler = TypedApprovalHandler | EventBackedApprovalHandler;
 
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
@@ -383,8 +380,7 @@ function approvalDecisionFromEvent(event: StoredKajiEvent): ApprovalDecision | u
 export class ToolPlanner {
   private readonly executor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
-  private readonly approvalHandler: TypedApprovalHandler | EventBackedApprovalHandler | undefined;
-  private readonly legacyApprovalHandler: LegacyApprovalHandler | undefined;
+  private readonly approvalHandler: TypedApprovalHandler | undefined;
   readonly approvalCommitter: EventCommitter | undefined;
   private readonly specs: Map<string, ToolSpec>;
   private readonly schemaValidator: ToolSchemaValidator;
@@ -410,10 +406,7 @@ export class ToolPlanner {
     }
     this.executor = opts.executor;
     this.policy = opts.policy;
-    this.legacyApprovalHandler =
-      typeof opts.approvalHandler === "function" ? opts.approvalHandler : undefined;
-    this.approvalHandler =
-      typeof opts.approvalHandler === "function" ? undefined : opts.approvalHandler;
+    this.approvalHandler = opts.approvalHandler;
     this.approvalCommitter = opts.approvalCommitter;
     this.specs = new Map(
       [...(opts.specs ?? new Map())].map(([name, spec]) => [name, snapshotToolSpec(spec)]),
@@ -795,7 +788,6 @@ export class ToolPlanner {
 
       let decision: ApprovalDecision;
       const handler = this.approvalHandler;
-      const legacyHandler = this.legacyApprovalHandler;
       const localApprovalDeadlineMonotonicMs =
         this.now() + this.executionController.limits.approvalTimeoutMs;
       const turnDeadlineMonotonicMs = call.context.deadlineMonotonicMs ?? Number.POSITIVE_INFINITY;
@@ -823,28 +815,12 @@ export class ToolPlanner {
             code: deadlineSource === "turn" ? "turn_timeout" : "timeout",
             reason: "Tool approval timed out",
           };
-        } else if (handler === undefined && legacyHandler === undefined) {
+        } else if (handler === undefined) {
           decision = {
             granted: false,
             code: "unavailable",
             reason: "No approval handler registered",
           };
-        } else if (legacyHandler !== undefined) {
-          decision = await this.raceApprovalDecision(
-            requestLegacyApproval(
-              legacyHandler,
-              {
-                id: call.id,
-                name: call.name,
-                args: cloneToolExecutionArguments(call.name, call.args),
-              },
-              call.args,
-              call.spec.risk,
-            ),
-            call.context.signal,
-            deadlineMonotonicMs,
-            deadlineSource,
-          );
         } else if (handlerOwnsRequest && this.approvalCommitter === undefined) {
           decision = {
             granted: false,

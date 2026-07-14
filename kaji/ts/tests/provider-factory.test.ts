@@ -91,18 +91,18 @@ describe("anthropic()", () => {
 describe("openrouter()", () => {
   it("pins baseURL to the OpenRouter endpoint", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
-    const p = openrouter("anthropic/claude-3.5-sonnet");
-    const resolved = resolveOpenRouterOptions("anthropic/claude-3.5-sonnet");
+    const p = openrouter("openai/gpt-5.4-mini");
+    const resolved = resolveOpenRouterOptions("openai/gpt-5.4-mini");
     expect(p).toBeInstanceOf(OpenAIProvider);
     expect(resolved.baseURL).toBe("https://openrouter.ai/api/v1");
-    expect(resolved.model).toBe("anthropic/claude-3.5-sonnet");
+    expect(resolved.model).toBe("openai/gpt-5.4-mini");
     expect(resolved.apiKey).toBe("or-key");
   });
 
   it("does not use OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
     process.env.OPENAI_API_KEY = "sk-fallback";
-    expect(resolveOpenRouterOptions("meta-llama/llama-3.1-70b-instruct").apiKey).toBe("");
-    expect(() => openrouter("meta-llama/llama-3.1-70b-instruct")).toThrow(ProviderConfigError);
+    expect(resolveOpenRouterOptions("anthropic/claude-sonnet-4.6").apiKey).toBe("");
+    expect(() => openrouter("anthropic/claude-sonnet-4.6")).toThrow(ProviderConfigError);
   });
 
   it("merges httpReferer and appTitle into defaultHeaders", () => {
@@ -163,9 +163,9 @@ describe("gemini()", () => {
 
   it("falls back to GOOGLE_API_KEY when GEMINI_API_KEY is unset", () => {
     process.env.GOOGLE_API_KEY = "g-fallback";
-    const resolved = resolveGeminiOptions("gemini-2.5-pro");
+    const resolved = resolveGeminiOptions("gemini-3.5-flash");
     expect(resolved.apiKey).toBe("g-fallback");
-    expect(resolved.model).toBe("gemini-2.5-pro");
+    expect(resolved.model).toBe("gemini-3.5-flash");
   });
 
   it("forwards requestTimeoutMs", () => {

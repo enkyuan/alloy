@@ -104,7 +104,7 @@ describe("cross-SDK release matrix docs", () => {
 
   it("matches both integration registry stability indexes", () => {
     const matrix = read("kaji/RELEASE_MATRIX.md");
-    const python = JSON.parse(read("kaji/sdk/src/integrations/registry/index.json")) as {
+    const python = JSON.parse(read("kaji/sdk/src/kaji/integrations/registry/index.json")) as {
       integrations: Record<string, { stability: string; runtimes: string[] }>;
     };
     const typescript = JSON.parse(read("kaji/ts/registry/index.json")) as {

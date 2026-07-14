@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents import AgentBuilder, TurnContext
@@ -14,10 +13,9 @@ from kaji.runtime.providers.mock import MockProvider
 
 
 def _build(provider: ModelProvider, store: InMemoryEventStore | None = None):
-    bus = InMemoryEventBus()
     store = store or InMemoryEventStore()
     return (
-        AgentBuilder().provider(provider).build(bus=bus, store=store),
+        AgentBuilder().provider(provider).build(store=store),
         store,
     )
 

@@ -223,28 +223,6 @@ def expected_requires_dist() -> list[str]:
     return requirements
 
 
-def metadata_license(data: bytes, label: str) -> bytes:
-    """Recover setuptools' indented multi-line License header exactly."""
-    if b"\r" in data:
-        fail(f"{label} uses non-canonical metadata newlines")
-    header, separator, _body = data.partition(b"\n\n")
-    if not separator:
-        fail(f"{label} has no metadata/body separator")
-    lines = header.split(b"\n")
-    starts = [
-        index for index, line in enumerate(lines) if line.startswith(b"License: ")
-    ]
-    if len(starts) != 1:
-        fail(f"{label} must contain exactly one License header")
-    index = starts[0]
-    recovered = [lines[index].removeprefix(b"License: ")]
-    index += 1
-    while index < len(lines) and lines[index].startswith(b"        "):
-        recovered.append(lines[index][8:])
-        index += 1
-    return b"\n".join(recovered)
-
-
 def validate_core_metadata(data: bytes, label: str) -> None:
     """Validate all generated core metadata against pyproject and checkout bytes."""
     try:
@@ -257,7 +235,7 @@ def validate_core_metadata(data: bytes, label: str) -> None:
         "Version",
         "Summary",
         "Author-email",
-        "License",
+        "License-Expression",
         "Project-URL",
         "Requires-Python",
         "Description-Content-Type",
@@ -284,6 +262,7 @@ def validate_core_metadata(data: bytes, label: str) -> None:
         "Version": project_version,
         "Summary": project["description"],
         "Author-email": expected_author_email,
+        "License-Expression": project["license"],
         "Requires-Python": canonical_specifier_list(project["requires-python"]),
         "Description-Content-Type": "text/markdown",
         "License-File": "LICENSE",
@@ -304,8 +283,6 @@ def validate_core_metadata(data: bytes, label: str) -> None:
     ]
     if (message.get_all("Project-URL") or []) != expected_project_urls:
         fail(f"{label} Project-URL differs from pyproject")
-    if metadata_license(data, label) != license_bytes:
-        fail(f"{label} License header differs from checkout LICENSE")
     _header, separator, body = data.partition(b"\n\n")
     if not separator or body != readme_bytes:
         fail(f"{label} description body differs from checkout README.md")
@@ -430,10 +407,11 @@ def validate_requires_txt(data: bytes, label: str) -> None:
 def verify_archives() -> None:
     if project_name != "kaji-sdk":
         fail(f"unexpected Python project name: {project_name}")
-    egg_info = f"{wheel_distribution}.egg-info"
+    egg_info = f"src/{wheel_distribution}.egg-info"
+    package_root = sdk_root / "src" / "kaji"
     expected_source_bytes = {
-        f"kaji/{path.relative_to(sdk_root / 'src').as_posix()}": path.read_bytes()
-        for path in (sdk_root / "src").rglob("*")
+        path.relative_to(sdk_root / "src").as_posix(): path.read_bytes()
+        for path in package_root.rglob("*")
         if path.is_file()
         and path.name != ".DS_Store"
         and "__pycache__" not in path.parts
@@ -576,8 +554,7 @@ def verify_archives() -> None:
             fail(f"forbidden artifacts in sdist: {forbidden[:5]}")
 
         expected_sdist_source_bytes = {
-            f"src/{path.removeprefix('kaji/')}": expected
-            for path, expected in expected_source_bytes.items()
+            f"src/{path}": expected for path, expected in expected_source_bytes.items()
         }
         missing_sources = sorted(set(expected_sdist_source_bytes) - relative_names)
         if missing_sources:
@@ -702,9 +679,9 @@ def verify_archives() -> None:
                 fail(f"sdist checkout metadata differs from source: {relative}")
 
         packaged_contracts = {
-            path.removeprefix("src/contracts/")
+            path.removeprefix("src/kaji/contracts/")
             for path in relative_names
-            if path.startswith("src/contracts/")
+            if path.startswith("src/kaji/contracts/")
             and Path(path).suffix in {".json", ".md"}
         }
         if packaged_contracts != set(canonical_contracts):
@@ -712,11 +689,11 @@ def verify_archives() -> None:
             extra = sorted(packaged_contracts - set(canonical_contracts))
             fail(f"sdist contract set mismatch; missing={missing}, extra={extra}")
         for relative, expected in sorted(canonical_contracts.items()):
-            path = f"{root}/src/contracts/{relative}"
+            path = f"{root}/src/kaji/contracts/{relative}"
             member = members[path]
             extracted = tf.extractfile(member)
             if extracted is None or extracted.read() != expected:
-                fail(f"src/contracts/{relative} differs from canonical bytes")
+                fail(f"src/kaji/contracts/{relative} differs from canonical bytes")
 
         license_path = f"{root}/LICENSE"
         member = members.get(license_path)

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as z from "zod";
 
 import { EventBus } from "@/events/bus";
+import { InMemoryEventCommitter } from "@/events/committer";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
@@ -189,14 +190,13 @@ describe("buildMessages", () => {
 describe("AgentRuntime.runTurn", () => {
   function setup() {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       defaultContext: { principalId: "test" },
     });
-    return { store, bus, runtime };
+    return { store, runtime };
   }
 
   async function seed(store: InMemoryEventStore, sessionId: string) {
@@ -221,7 +221,6 @@ describe("AgentRuntime.runTurn", () => {
 
   it("attaches streamed usage and cost to completed messages", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const provider = {
       generate: async () => ({ content: "", toolCalls: [] }),
       generateStream: async function* () {
@@ -234,7 +233,11 @@ describe("AgentRuntime.runTurn", () => {
         };
       },
     };
-    const runtime = new AgentRuntime({ provider, store, bus });
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
     const s = "s-usage";
 
     await seed(store, s);
@@ -311,7 +314,6 @@ describe("AgentRuntime.runTurn", () => {
     // text. The first turn's text must be finalized into an
     // AgentMessageCompleted, not dropped (matches the Python reference).
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const mixedProvider = {
       generate: async () => ({ content: "", toolCalls: [] }),
       generateStream: async function* (messages: { role: string }[]) {
@@ -329,7 +331,7 @@ describe("AgentRuntime.runTurn", () => {
     const runtime = new AgentRuntime({
       provider: mixedProvider,
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       defaultContext: { principalId: "test" },
     });
     const s = "s-mixed";
@@ -368,7 +370,6 @@ describe("AgentRuntime.runTurn", () => {
 
   it("emits cancellation.completed without completing partial text after mid-stream cancel", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const measurements: MetricMeasurement[] = [];
     const metricsSink: MetricsSink = {
       record(measurement) {
@@ -387,7 +388,12 @@ describe("AgentRuntime.runTurn", () => {
         yield { delta: "after-cancel", toolCalls: [] };
       },
     };
-    const runtime = new AgentRuntime({ provider, store, bus, metricsSink });
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+      metricsSink,
+    });
     const s = "s-mid-stream-cancel";
     await seed(store, s);
 
@@ -414,7 +420,6 @@ describe("AgentRuntime.runTurn", () => {
 
   it("still rejects provider errors when the cancellation token is not cancelled", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const error = new Error("provider broke");
     const provider = {
       generate: async () => ({ content: "", toolCalls: [] }),
@@ -423,7 +428,11 @@ describe("AgentRuntime.runTurn", () => {
         yield { delta: "", toolCalls: [] };
       },
     };
-    const runtime = new AgentRuntime({ provider, store, bus });
+    const runtime = new AgentRuntime({
+      provider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
     const s = "s-provider-error";
     await seed(store, s);
 
@@ -439,7 +448,6 @@ describe("AgentRuntime.runTurn", () => {
     // A provider that ALWAYS requests a tool forces the loop to exhaust
     // MAX_TOOL_ITERATIONS. The runtime must not emit an empty AgentMessageCompleted.
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const alwaysToolProvider = {
       generate: async () => ({
         content: "",
@@ -452,7 +460,7 @@ describe("AgentRuntime.runTurn", () => {
     const runtime = new AgentRuntime({
       provider: alwaysToolProvider,
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       defaultContext: { principalId: "test" },
     });
     const s = "s-exhaust";
@@ -486,8 +494,11 @@ describe("AgentRuntime.send", () => {
 
   it("appends a USER_MESSAGE event then produces a completion", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
-    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
     const s = "s-send";
     // Seed only session_created — no user message yet.
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
@@ -504,7 +515,11 @@ describe("AgentRuntime.send", () => {
   it("publishes the USER_MESSAGE to the bus before running the turn", async () => {
     const store = new InMemoryEventStore();
     const bus = new EventBus();
-    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      bus,
+    });
     const s = "s-send-bus";
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
 
@@ -522,8 +537,11 @@ describe("AgentRuntime.send", () => {
 
   it("does not append a user message when cancelled before send acquisition", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
-    const runtime = new AgentRuntime({ provider: new MockProvider(), store, bus });
+    const runtime = new AgentRuntime({
+      provider: new MockProvider(),
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
     const s = "s-send-cancel";
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
 
@@ -556,7 +574,7 @@ describe("AgentStrategy.maxToolIterations", () => {
         },
       },
       store,
-      bus: new EventBus(),
+      committer: new InMemoryEventCommitter(store),
       defaultContext: { principalId: "test" },
     });
     await store.append(
@@ -578,7 +596,6 @@ describe("AgentStrategy.maxToolIterations", () => {
 
   it("respects a custom maxToolIterations lower than the default", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     let callCount = 0;
     const countingProvider = {
       generate: async () => ({ content: "", toolCalls: [] }),
@@ -592,7 +609,7 @@ describe("AgentStrategy.maxToolIterations", () => {
     const runtime = new AgentRuntime({
       provider: countingProvider,
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       strategy,
       defaultContext: { principalId: "test" },
     });
@@ -626,11 +643,10 @@ describe("AgentRuntime policy via ToolPlanner", () => {
 
   it("rejects denied tools through runTurn", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       policy: new ToolPolicy({ denied: new Set(["get_weather"]) }),
       defaultContext: { principalId: "test" },
     });
@@ -650,13 +666,16 @@ describe("AgentRuntime policy via ToolPlanner", () => {
 
   it("runs approval-required tools when approvalHandler approves", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
-      approvalHandler: async () => true,
+      approvalHandler: {
+        async request() {
+          return { granted: true as const, code: "approved" as const };
+        },
+      },
       tools: [
         {
           name: "get_weather",
@@ -680,11 +699,10 @@ describe("AgentRuntime policy via ToolPlanner", () => {
 
   it("runs approval-required tools when a typed approval handler approves", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const runtime = new AgentRuntime({
       provider: new MockProvider(),
       store,
-      bus,
+      committer: new InMemoryEventCommitter(store),
       policy: new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) }),
       approvalHandler: {
         async request() {
@@ -716,7 +734,6 @@ describe("AgentRuntime policy via ToolPlanner", () => {
 describe("AgentBuilder policy", () => {
   it("enforces deny policy through builder-created runtime", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const sessionId = "s-builder-deny";
 
     class WeatherIntegration {
@@ -733,7 +750,7 @@ describe("AgentBuilder policy", () => {
       .integration(new WeatherIntegration())
       .defaultContext({ principalId: "test" })
       .policy(new ToolPolicy({ denied: new Set(["get_weather"]) }))
-      .build({ bus, store });
+      .build({ store });
 
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }));
     await store.append(
@@ -755,7 +772,6 @@ describe("AgentRuntime cancellationToken forwarded to provider", () => {
 
   it("passes the cancellationToken to generateStream options", async () => {
     const store = new InMemoryEventStore();
-    const bus = new EventBus();
     const s = "s-cancel-forward";
 
     let receivedToken: { isCancelled: boolean } | undefined;
@@ -772,7 +788,11 @@ describe("AgentRuntime cancellationToken forwarded to provider", () => {
       },
     };
 
-    const runtime = new AgentRuntime({ provider: tokenCapturingProvider, store, bus });
+    const runtime = new AgentRuntime({
+      provider: tokenCapturingProvider,
+      store,
+      committer: new InMemoryEventCommitter(store),
+    });
     await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: s }));
     await store.append(
       KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: s, content: "hi" }),

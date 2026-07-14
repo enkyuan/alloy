@@ -5,6 +5,8 @@ import { EventType } from "@/events/types";
 import { InMemoryEventStore } from "@/events/store";
 import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
+import type { ApprovalRequestContext } from "@/runtime/approval/types";
+import type { ToolCall } from "@/providers/base";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { UnclassifiedToolRiskError, UnknownToolError, type ToolSpec } from "@/tools/registry";
 
@@ -273,21 +275,33 @@ describe("ToolPlanner", () => {
   it("approval approved proceeds to execution", async () => {
     const emitted: any[] = [];
     const executor = vi.fn().mockResolvedValue({ ok: true });
-    const approvalHandler = vi.fn().mockResolvedValue(true);
+    const requestApproval = vi.fn().mockResolvedValue({
+      granted: true as const,
+      code: "approved" as const,
+    });
+    const approvalHandler = { request: requestApproval };
 
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     const specs = new Map([
       ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
     ]);
-    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const planner = new ToolPlanner({
+      executor,
+      policy,
+      approvalHandler,
+      approvalCommitter,
+      specs,
+    });
 
     const results = await executePlanner(
       planner,
       "sess-approval",
       [{ id: "c1", name: "nuke", arguments: {} }],
-      sequencedEmitter((e) => {
-        emitted.push(e);
-      }),
+      bindEmitterToCommitter(async (event) => {
+        emitted.push(event);
+        return approvalCommitter.commit(event);
+      }, approvalCommitter),
     );
 
     const types = emitted.map((e) => e.type);
@@ -297,14 +311,16 @@ describe("ToolPlanner", () => {
     expect(results[0]).toHaveProperty("result", { ok: true });
   });
 
-  it("isolates execution arguments from event and approval mutations", async () => {
+  it("isolates execution arguments from approval mutations", async () => {
     const original = { nested: { value: "validated" } };
     const executor = vi.fn(async (_name, args) => ({ value: (args.nested as any).value }));
-    const approvalHandler = vi.fn(async (_name, args: Record<string, unknown>) => {
-      (args.nested as any).value = "approval-mutated";
-      return true;
+    const requestApproval = vi.fn(async (_call: ToolCall, context: ApprovalRequestContext) => {
+      (context.arguments.nested as any).value = "approval-mutated";
+      return { granted: true as const, code: "approved" as const };
     });
+    const approvalHandler = { request: requestApproval };
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     const specs = new Map([
       [
         "nuke",
@@ -326,20 +342,19 @@ describe("ToolPlanner", () => {
         },
       ],
     ]);
-    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const planner = new ToolPlanner({
+      executor,
+      policy,
+      approvalHandler,
+      approvalCommitter,
+      specs,
+    });
 
     const results = await executePlanner(
       planner,
       "sess-isolation",
       [{ id: "c-isolation", name: "nuke", arguments: original }],
-      sequencedEmitter((event) => {
-        if (
-          event.type === EventType.TOOL_CALL_REQUESTED ||
-          event.type === EventType.TOOL_APPROVAL_REQUESTED
-        ) {
-          (event.tool_args.nested as any).value = "event-mutated";
-        }
-      }),
+      bindEmitterToCommitter((event) => approvalCommitter.commit(event), approvalCommitter),
     );
 
     expect(results[0]).toHaveProperty("result", { value: "validated" });
@@ -348,7 +363,7 @@ describe("ToolPlanner", () => {
       { nested: { value: "validated" } },
       expect.objectContaining({ principalId: "test" }),
     );
-    expect(approvalHandler).toHaveBeenCalledOnce();
+    expect(requestApproval).toHaveBeenCalledOnce();
     expect(original).toEqual({ nested: { value: "validated" } });
   });
 
@@ -462,7 +477,12 @@ describe("ToolPlanner", () => {
     const specs = new Map([
       ["nuke", { name: "nuke", description: "nuke", parameters: {}, risk: "destructive" as const }],
     ]);
-    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const planner = new ToolPlanner({
+      executor,
+      policy,
+      approvalHandler,
+      specs,
+    });
 
     const results = await planner.executeBatch(
       "sess-missing-turn",
@@ -490,9 +510,16 @@ describe("ToolPlanner", () => {
   it("approval rejected skips execution", async () => {
     const emitted: any[] = [];
     const executor = vi.fn();
-    const approvalHandler = vi.fn().mockResolvedValue(false);
+    const approvalHandler = {
+      request: vi.fn().mockResolvedValue({
+        granted: false as const,
+        code: "rejected" as const,
+        reason: "Rejected by test policy",
+      }),
+    };
 
     const policy = new ToolPolicy({ requireApprovalFor: new Set(["destructive"]) });
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     const specs = new Map([
       [
         "charge",
@@ -504,15 +531,22 @@ describe("ToolPlanner", () => {
         },
       ],
     ]);
-    const planner = new ToolPlanner({ executor, policy, approvalHandler, specs });
+    const planner = new ToolPlanner({
+      executor,
+      policy,
+      approvalHandler,
+      approvalCommitter,
+      specs,
+    });
 
     const results = await executePlanner(
       planner,
       "sess-reject",
       [{ id: "c2", name: "charge", arguments: {} }],
-      sequencedEmitter((e) => {
-        emitted.push(e);
-      }),
+      bindEmitterToCommitter(async (event) => {
+        emitted.push(event);
+        return approvalCommitter.commit(event);
+      }, approvalCommitter),
     );
 
     expect(executor).not.toHaveBeenCalled();
@@ -819,11 +853,13 @@ describe("ToolPlanner", () => {
     const emitted: any[] = [];
     const executor = vi.fn();
     const secret = "sk-approval-secret";
-    const approvalHandler = vi.fn().mockRejectedValue(new Error(secret));
+    const approvalHandler = { request: vi.fn().mockRejectedValue(new Error(secret)) };
+    const approvalCommitter = new InMemoryEventCommitter(new InMemoryEventStore());
     const planner = new ToolPlanner({
       executor,
       policy: new ToolPolicy({ requireApprovalFor: new Set(["read"]) }),
       approvalHandler,
+      approvalCommitter,
       specs: specsFor("search"),
     });
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -832,9 +868,10 @@ describe("ToolPlanner", () => {
       planner,
       "session",
       [{ id: "call", name: "search", arguments: {} }],
-      sequencedEmitter((event) => {
+      bindEmitterToCommitter(async (event) => {
         emitted.push(event);
-      }),
+        return approvalCommitter.commit(event);
+      }, approvalCommitter),
     );
 
     expect(executor).not.toHaveBeenCalled();

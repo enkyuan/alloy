@@ -197,14 +197,14 @@ def test_load_manifest_freezes_nested_parameter_schema(
 
 def test_packaged_schemas_match_canonical_contracts() -> None:
     for packaged in (
-        REPO_ROOT / "kaji/sdk/src/integrations/registry/schema.json",
+        REPO_ROOT / "kaji/sdk/src/kaji/integrations/registry/schema.json",
         REPO_ROOT / "kaji/ts/registry/schema.json",
     ):
         assert (
             packaged.read_bytes() == (CONTRACTS / "manifest.schema.json").read_bytes()
         )
     for packaged in (
-        REPO_ROOT / "kaji/sdk/src/integrations/registry/index.schema.json",
+        REPO_ROOT / "kaji/sdk/src/kaji/integrations/registry/index.schema.json",
         REPO_ROOT / "kaji/ts/registry/index.schema.json",
     ):
         assert packaged.read_bytes() == (CONTRACTS / "index.schema.json").read_bytes()

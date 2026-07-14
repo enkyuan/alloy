@@ -1,25 +1,17 @@
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.websockets import WebSocketState
 
-from kaji.infra.events.envelope import parse_event_envelope
 from kaji_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,
     compose_final_text,
     extract_websocket_access_token,
-    handle_command_message,
-    normalize_command_text,
-    publish_transcription,
+    process_client_messages,
     safe_send_json,
     send_error_message,
 )
-
-
-def test_normalize_command_text_collapses_whitespace():
-    assert normalize_command_text("  Play   Jazz  ") == "play jazz"
 
 
 def test_extract_websocket_access_token_from_header():
@@ -58,17 +50,6 @@ def test_compose_final_text_joins_tokens():
 
 
 @pytest.mark.asyncio
-async def test_publish_transcription_writes_stream_entry():
-    redis = AsyncMock()
-    await publish_transcription(redis, "user-1", "hello", session_id="sess-1")
-    redis.xadd.assert_awaited_once()
-    fields = redis.xadd.await_args.args[1]
-    parsed = parse_event_envelope(fields)
-    assert parsed.type == "user.transcription"
-    assert parsed.user_id == "user-1"
-
-
-@pytest.mark.asyncio
 async def test_authenticate_ws_missing_token_closes_socket():
     websocket = AsyncMock()
     websocket.headers = {}
@@ -92,40 +73,41 @@ async def test_authenticate_ws_invalid_user_closes_socket():
 
 
 @pytest.mark.asyncio
-async def test_handle_command_message_publishes_and_acks():
-    redis = AsyncMock()
+async def test_authenticate_ws_returns_user_id():
     websocket = AsyncMock()
-    websocket.client_state = WebSocketState.CONNECTED
-    state = TranscriptionSessionState(final_tokens=[])
-    payload = json.dumps({"type": "command", "text": "play jazz", "mode": "auto"})
-    handled = await handle_command_message(
-        payload,
-        state=state,
-        websocket=websocket,
-        redis_conn=redis,
-        user_id="user-1",
-        session_id="sess-1",
-    )
-    assert handled is True
-    websocket.send_json.assert_awaited_once()
-    redis.xadd.assert_awaited_once()
+    websocket.headers = {"authorization": "Bearer good"}
+    with patch(
+        "kaji_serve.modalities.voice.stt.handler.decode_bearer_token",
+        return_value={"sub": "user-1"},
+    ):
+        result = await authenticate_ws(websocket)
+    assert result == "user-1"
 
 
 @pytest.mark.asyncio
-async def test_handle_command_message_ignores_non_command_json():
-    redis = AsyncMock()
+async def test_process_client_messages_rejects_non_stt_control_message():
     websocket = AsyncMock()
+    websocket.client_state = WebSocketState.CONNECTED
+    websocket.receive.side_effect = [
+        {"text": '{"type":"command","text":"play jazz"}'},
+        {"type": "websocket.disconnect"},
+    ]
     state = TranscriptionSessionState(final_tokens=[])
-    handled = await handle_command_message(
-        '{"type":"ping"}',
-        state=state,
+    soniox_task = AsyncMock()
+
+    await process_client_messages(
         websocket=websocket,
-        redis_conn=redis,
-        user_id="user-1",
-        session_id="sess-1",
+        soniox_ws=AsyncMock(),
+        soniox_task=soniox_task,
+        state=state,
     )
-    assert handled is False
-    redis.xadd.assert_not_awaited()
+
+    websocket.send_json.assert_awaited_once_with(
+        {
+            "type": "error",
+            "message": "Only audio and the END control message are supported.",
+        }
+    )
 
 
 @pytest.mark.asyncio

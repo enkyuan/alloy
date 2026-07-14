@@ -152,7 +152,7 @@ describe("Integration", () => {
 
     const registry = new ToolRegistry();
     registry.register("validate", handler);
-    await expect(registry.execute("user-2", "validate", original)).resolves.toEqual({
+    await expect(registry.execute("validate", original, context)).resolves.toEqual({
       args: original,
     });
     expect(transformCalls).toBe(2);

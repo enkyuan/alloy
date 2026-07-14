@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 import kaji
+from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
 from kaji.runtime.agents.context import (
     MissingToolIdentityError,
     ToolExecutionContext,
@@ -16,6 +17,7 @@ from kaji.runtime.agents.context import (
 )
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.planner import ToolPlanner
+from kaji.runtime.context import ToolInvocation
 from kaji.runtime.tools.errors import (
     ToolSchemaValidationError,
     UnclassifiedToolRiskError,
@@ -111,17 +113,21 @@ async def test_tool_enabled_turn_requires_identity_before_approval_or_execution(
     seen: list[ToolExecutionContext] = []
     approvals = 0
 
-    async def approve(_name: str, _args: dict[str, Any], _risk: str | None) -> bool:
-        nonlocal approvals
-        approvals += 1
-        return True
+    class CountingApprovalHandler:
+        async def request(
+            self, call: ToolInvocation, context: ApprovalRequestContext
+        ) -> ApprovalDecision:
+            _ = (call, context)
+            nonlocal approvals
+            approvals += 1
+            return ApprovalDecision(True, "approved")
 
     runtime = (
         kaji.AgentBuilder()
         .provider(MockProvider())
         .integration(CaptureIntegration(seen))
         .policy(ToolPolicy(require_approval_for={"read"}))
-        .approval_handler(approve)
+        .approval_handler(CountingApprovalHandler())
         .build()
     )
 

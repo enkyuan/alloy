@@ -34,8 +34,8 @@ is checked against the machine feature contract and both registry indexes by
 
 The echo integration is the only catalog entry inside the first beta promise.
 GitHub, HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
-`kaji-serve`, its legacy worker runtime, Redis transport, and voice path are
-also excluded from the 0.2 SDK beta promise.
+`kaji-serve`, its REST/STT surface, and its Postgres/Supabase adapters are also
+excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 ## Catalog Stability
 
