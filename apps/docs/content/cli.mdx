@@ -35,6 +35,7 @@ kaji init ./my-agent --provider mock --yes
 kaji gen --spec openapi.yaml --out tools/ --lang python
 kaji list-integrations
 kaji add echo --out ./integrations
+kaji add github --out ./integrations --allow-experimental
 kaji info --json
 kaji doctor
 ```
@@ -42,7 +43,9 @@ kaji doctor
 `init` takes the destination as a positional path. It writes `agent.py` and
 `.env.example`. Use `--force` to overwrite. `add` copies integration source so
 the application owns it; inspect the manifest's risk and auth requirements
-before enabling the copied tools.
+before enabling the copied tools. `connect` and `disconnect` manage grants only
+for integrations whose manifest declares OAuth; no such integration is bundled
+in the current catalog.
 
 ## Embedded TypeScript SDK CLI
 
@@ -53,14 +56,18 @@ and replay tooling. It is not the standalone scaffold/diagnostics package.
 kaji init ./my-agent --provider mock --yes
 kaji list-integrations
 kaji add echo --out ./integrations
-kaji add http --out ./integrations --allow-experimental
+kaji add github --out ./integrations --allow-experimental
+kaji connect <oauth-integration> --principal <stable-host-principal-id>
+kaji disconnect <oauth-integration> --principal <stable-host-principal-id>
 kaji replay ./session.jsonl --format summary
 ```
 
 The embedded `init` uses the same positional path, provider, `--yes`, and
 `--force` grammar as Python. TypeScript temporarily accepts deprecated `--out`
 with one stderr warning, but maintained examples use the positional path.
-Experimental integrations require `--allow-experimental`. `replay` accepts
+Experimental integrations require `--allow-experimental`. The auth commands
+are present for manifest-declared OAuth integrations, but Gmail tools and a
+Gmail manifest are not shipped at this checkpoint. `replay` accepts
 `tree`, `summary`, or `json` output plus optional `--filter`, `--grep`, and
 `--tail` arguments.
 
@@ -87,8 +94,8 @@ Its `init` uses `--cwd` and requires an explicit `--lang` for non-interactive
 cross-language scaffolding. The `mcp` command only reports that server support
 is deferred; it does not install a server or write AI-tool configuration.
 
-The standalone package is currently `0.1.x`; its maintenance commands are
-outside the SDK beta-core compatibility promise.
+The published standalone package remains `0.1.x`; the next CLI changes in this
+repository are unreleased and outside the SDK beta-core compatibility promise.
 
 If both npm packages are present, avoid relying on whichever `kaji` bin wins
 package-manager linking. Invoke the standalone package explicitly (for example,

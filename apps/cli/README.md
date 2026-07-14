@@ -1,47 +1,72 @@
-# @kaji/cli
+# `@kaji/cli`
 
-CLI for kaji. Works with TypeScript and Python projects.
+Cross-language scaffolding, OpenAPI tool generation, and diagnostics for Kaji
+projects. The Python and TypeScript SDKs also ship smaller package-local CLIs;
+use this standalone package when one command needs to work with either language.
 
-## Install
+## Availability
+
+`@kaji/cli` is not published yet. From the monorepo, install workspace
+dependencies and run the source directly:
 
 ```bash
-bun add -D @kaji/cli
-# or
-npx @kaji/cli --help
+bun install
+bun run --cwd apps/cli dev -- --help
 ```
 
-## Commands
-
-- `kaji init` - scaffold a new agent (`--lang ts|python`, `--provider openai|anthropic|kimi|gemini`)
-- `kaji gen --spec <path> --out <dir>` - generate tool stubs from an OpenAPI spec (`--lang ts|python`)
-- `kaji info` - show environment + installed kaji packages
-- `kaji doctor` - check the environment for common issues
-- `kaji secret` - generate a random 32-byte hex secret
-- `kaji upgrade` - upgrade installed `@kaji/*` packages
-- `kaji mcp` - explain MCP setup status; server support is planned separately
-
-Run any command with `--help` for full flags.
+If this package is published later, invoke it explicitly when `@kaji/sdk` is
+installed too, because both packages expose a binary named `kaji`.
 
 ## First run
 
+The no-key mock provider is the default in non-interactive mode:
+
 ```bash
-kaji init --cwd ./my-agent --lang ts --provider openai --yes
+bun run --cwd apps/cli dev -- init --cwd "$PWD/my-agent" --lang ts --yes
 cd ./my-agent
 bun install
-export OPENAI_API_KEY=sk-...
 bun start
 ```
 
-Python scaffolds use the same high-level SDK path:
+Python uses the same output contract:
 
 ```bash
-kaji init --cwd ./my-agent --lang python --provider openai --yes
+bun run --cwd apps/cli dev -- init --cwd "$PWD/my-agent" --lang python --yes
 cd ./my-agent
 python -m pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...
 python agent.py
 ```
 
-The generated agents call `turn("Say hello.")`. OpenAI `gpt-5.4-mini` is the
-recommended first live model in the SDK test path; provider env overrides remain
-available in each SDK.
+Both scaffolds print deterministic `text`, `turn_id`, and `final_sequence`
+fields. Select `--provider openai` or `--provider anthropic` for a live model
+and set the generated `.env.example` credential. The beta scaffold intentionally
+supports `mock`, `openai`, and `anthropic`; other SDK provider adapters remain
+outside this first-run contract.
+
+## Commands
+
+- `kaji init` -- scaffold a TypeScript or Python agent.
+- `kaji gen --spec <path> --out <dir>` -- generate typed tool stubs from an OpenAPI JSON or YAML document.
+- `kaji doctor` -- verify runtimes, SDK packages, required peers, and selected-provider credentials.
+- `kaji info` -- report the local environment and installed Kaji packages.
+- `kaji secret` -- generate a random 32-byte hexadecimal secret.
+- `kaji upgrade` -- upgrade installed `@kaji/*` packages.
+- `kaji mcp` -- report MCP availability; it does not write configuration or install a server.
+
+Run any command with `--help` for its exact flags.
+
+## Contributing
+
+Install dependencies from the monorepo root, then run the package checks:
+
+```bash
+bun --cwd apps/cli run format:check
+bun --cwd apps/cli run lint
+bun --cwd apps/cli run typecheck
+bun --cwd apps/cli run test
+bun --cwd apps/cli run smoke
+```
+
+Keep generated scaffolds aligned with the public `kaji` and `@kaji/sdk`
+quickstarts. Add regression coverage whenever a command, provider choice,
+generated dependency, or output field changes.

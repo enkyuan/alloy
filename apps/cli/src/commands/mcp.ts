@@ -10,8 +10,6 @@ export function runMcp(log: (message: string) => void = console.error): number {
   return 1;
 }
 
-export const mcp = new Command("mcp")
-  .description("explain MCP setup availability")
-  .action(() => {
-    runMcp();
-  });
+export const mcp = new Command("mcp").description("explain MCP setup availability").action(() => {
+  runMcp();
+});

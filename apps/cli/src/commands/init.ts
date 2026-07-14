@@ -1,35 +1,27 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { Command } from "commander";
+import { isProvider, PROVIDERS, type Provider } from "../providers.js";
 import {
-  tsAgentTemplate,
-  tsConfigTemplate,
-  tsEnvTemplate,
-  tsPackageTemplate,
-} from "../templates/ts-agent.js";
-import { pyAgentTemplate, pyEnvTemplate, pyRequirementsTemplate } from "../templates/py-agent.js";
+  typescriptAgentTemplate,
+  typescriptConfigTemplate,
+  typescriptEnvTemplate,
+  typescriptPackageTemplate,
+} from "../templates/typescript-agent.js";
+import {
+  pythonAgentTemplate,
+  pythonEnvTemplate,
+  pythonRequirementsTemplate,
+} from "../templates/python-agent.js";
+import { writeScaffoldFiles, type ScaffoldFile } from "../utils/scaffold.js";
 
 type Lang = "ts" | "python";
-type Provider = "openai" | "anthropic" | "kimi" | "gemini";
 
 const LANGS = ["ts", "python"] as const;
-const PROVIDERS = ["openai", "anthropic", "kimi", "gemini"] as const;
-
-function writeFile(target: string, body: string, force: boolean): boolean {
-  if (existsSync(target) && !force) return false;
-  mkdirSync(resolve(target, ".."), { recursive: true });
-  writeFileSync(target, body);
-  return true;
-}
 
 function isLang(value: string | undefined): value is Lang {
   return LANGS.includes(value as Lang);
-}
-
-function isProvider(value: string | undefined): value is Provider {
-  return PROVIDERS.includes(value as Provider);
 }
 
 function printArgError(message: string): void {
@@ -53,10 +45,9 @@ async function interactive(): Promise<{ lang: Lang; provider: Provider }> {
         p.select({
           message: "Default LLM provider",
           options: [
+            { value: "mock", label: "Mock (no key required)" },
             { value: "openai", label: "OpenAI" },
             { value: "anthropic", label: "Anthropic" },
-            { value: "kimi", label: "Kimi" },
-            { value: "gemini", label: "Gemini" },
           ],
         }) as Promise<Provider>,
     },
@@ -74,9 +65,9 @@ export const init = new Command("init")
   .description("scaffold a new kaji project")
   .option("--cwd <cwd>", "target directory", process.cwd())
   .option("--lang <lang>", "ts|python")
-  .option("--provider <provider>", "openai|anthropic|kimi|gemini")
+  .option("--provider <provider>", "mock|openai|anthropic")
   .option("--force", "overwrite existing files", false)
-  .option("--yes", "non-interactive (requires --lang and --provider)", false)
+  .option("--yes", "non-interactive (requires --lang; provider defaults to mock)", false)
   .action(
     async (opts: {
       cwd: string;
@@ -95,36 +86,43 @@ export const init = new Command("init")
         printArgError(`--provider must be one of: ${PROVIDERS.join(", ")}`);
         return;
       }
+      if (opts.yes) provider ??= "mock";
       if (!opts.yes && (!lang || !provider)) {
         const r = await interactive();
         lang ??= r.lang;
         provider ??= r.provider;
       }
       if (!lang || !provider) {
-        printArgError("--lang and --provider are required in --yes mode.");
+        printArgError("--lang is required in --yes mode.");
         return;
       }
       const cwd = resolve(opts.cwd);
-      const written: string[] = [];
+      let files: ScaffoldFile[];
       if (lang === "ts") {
-        if (writeFile(join(cwd, "package.json"), tsPackageTemplate(provider), opts.force))
-          written.push("package.json");
-        if (writeFile(join(cwd, "tsconfig.json"), tsConfigTemplate(), opts.force))
-          written.push("tsconfig.json");
-        if (writeFile(join(cwd, "agent.ts"), tsAgentTemplate(provider), opts.force))
-          written.push("agent.ts");
-        if (writeFile(join(cwd, ".env.example"), tsEnvTemplate(provider), opts.force))
-          written.push(".env.example");
+        files = [
+          { name: "package.json", contents: typescriptPackageTemplate(provider) },
+          { name: "tsconfig.json", contents: typescriptConfigTemplate() },
+          { name: "agent.ts", contents: typescriptAgentTemplate(provider) },
+          { name: ".env.example", contents: typescriptEnvTemplate(provider) },
+        ];
       } else {
-        if (writeFile(join(cwd, "agent.py"), pyAgentTemplate(provider), opts.force))
-          written.push("agent.py");
-        if (writeFile(join(cwd, ".env.example"), pyEnvTemplate(provider), opts.force))
-          written.push(".env.example");
-        if (writeFile(join(cwd, "requirements.txt"), pyRequirementsTemplate(provider), opts.force))
-          written.push("requirements.txt");
+        files = [
+          { name: "agent.py", contents: pythonAgentTemplate(provider) },
+          { name: ".env.example", contents: pythonEnvTemplate(provider) },
+          { name: "requirements.txt", contents: pythonRequirementsTemplate(provider) },
+        ];
+      }
+      let written: string[];
+      try {
+        written = writeScaffoldFiles(cwd, files, opts.force);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "Failed to write scaffold.");
+        process.exitCode = 1;
+        return;
       }
       if (written.length === 0) {
         console.log(chalk.yellow("Nothing written -- pass --force to overwrite."));
+        process.exitCode = 1;
         return;
       }
       if (opts.yes) {
@@ -132,7 +130,9 @@ export const init = new Command("init")
         if (lang === "ts") {
           console.log(`Next: cd ${cwd} && bun install && bun start`);
         } else {
-          console.log(`Next: cd ${cwd} && python -m pip install -r requirements.txt && python agent.py`);
+          console.log(
+            `Next: cd ${cwd} && python -m pip install -r requirements.txt && python agent.py`,
+          );
         }
         return;
       }

@@ -13,26 +13,32 @@ export function ToolsSection() {
     { id: "ts" as const, label: "TypeScript", filename: "tools.ts" },
   ];
 
-  const pySnippet = `from kaji import register_tool, tool_spec_from_model
+  const pySnippet = `import kaji
 
-class WeatherArgs(BaseModel):
-    city: str
+@kaji.function_tool(risk="read")
+async def get_weather(
+    context: kaji.ToolExecutionContext,
+    city: str,
+) -> dict:
+    """Look up the weather for a city."""
+    return {"city": city, "principal": context.principal_id}
 
-@register_tool(tool_spec_from_model(
-    "get_weather", "Look up the weather", WeatherArgs
-))
-async def get_weather(ctx, args):
-    return await fetch_weather(args["city"])`;
+runtime = kaji.AgentBuilder().provider(provider).tool(get_weather).build()`;
 
-  const tsSnippet = `import { registerTool, toolSpecFromSchema } from "@kaji/sdk"
+  const tsSnippet = `import { AgentBuilder, functionTool } from "@kaji/sdk"
 import { z } from "zod"
 
-registerTool(
-  toolSpecFromSchema("get_weather", "Look up the weather",
-    z.object({ city: z.string() }),
-  ),
-  async (ctx, args) => fetchWeather(args.city),
-)`;
+const getWeather = functionTool(
+  {
+    name: "get_weather",
+    description: "Look up the weather for a city.",
+    parameters: z.object({ city: z.string() }),
+    risk: "read",
+  },
+  async ({ city }, context) => ({ city, principal: context.principalId }),
+)
+
+const runtime = new AgentBuilder().provider(provider).tool(getWeather).build()`;
 
   const snippets: Record<ToolLanguage, string> = {
     py: pySnippet,

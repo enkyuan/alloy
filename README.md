@@ -1,38 +1,46 @@
-# alloy
+# Alloy
 
-this repository contains two related projects:
+Alloy is the monorepo for two related projects:
 
-**ryo** is a platform for small businesses to deploy ai agents that take
-orders, answer questions, and collect payments. a merchant configures an agent
+**Ryo** is a platform for small businesses to deploy AI agents that take
+orders, answer questions, and collect payments. A merchant configures an agent
 via the studio web app; the agent embeds on their site or phone system and
 handles the full customer interaction, including payment.
 
-**kaji** is the embeddable sdk that powers ryo's agent runtime: an
-event-sourced agent loop, toolgen, pluggable llm providers, and optional voice
-edges through `kaji-serve`. kaji can also be used standalone in any
-python or typescript project.
+**Kaji** is the embeddable SDK that powers Ryo's agent runtime: an
+event-sourced agent loop, toolgen, pluggable LLM providers, and optional voice
+edges through `kaji-serve`. Kaji can also be used standalone in any Python or
+TypeScript project.
 
-## repository layout
+## Repository layout
 
-| path | project | what it is | stack |
-| ---------------------------------- | ---------- | ------------------------------------------------- | ------------------------------- |
-| [`ryo/api`](ryo/api) | ryo | rest api: agents, wallets, payment configs, sessions | go, postgresql, redis |
-| [`ryo/consumer`](ryo/consumer) | ryo | consumer identity, wallet, transaction history | go, postgresql |
-| [`ryo/auth`](ryo/auth) | ryo | auth service (better-auth + jwt) | bun, typescript |
-| [`apps/web`](apps/web) | ryo | studio: configure agents, connect payment providers | react, tanstack router, shadcn |
-| [`kaji`](kaji) | kaji | `kaji`: agent runtime, toolgen, providers | python 3.11 |
-| [`kaji/serve`](kaji/serve) | kaji | `kaji-serve`: experimental rest + soniox stt edge | python 3.11, fastapi, soniox |
-| [`kaji/ts`](kaji/ts) | kaji | `@kaji/sdk`: typescript runtime port | typescript |
+| path                                 | project      | what it is                                                  | stack                             |
+| ------------------------------------ | ------------ | ----------------------------------------------------------- | --------------------------------- |
+| [`ryo/api`](ryo/api)                 | Ryo          | REST API: agents, wallets, payment configs, sessions        | Go, PostgreSQL, Redis             |
+| [`ryo/consumer`](ryo/consumer)       | Ryo          | Consumer identity, wallet, transaction history              | Go, PostgreSQL                    |
+| [`ryo/auth`](ryo/auth)               | Ryo          | Auth service (Better Auth + JWT)                            | Bun, TypeScript                   |
+| [`apps/web`](apps/web)               | Ryo          | Studio: configure agents and payment providers              | React, TanStack Router, shadcn/ui |
+| [`kaji`](kaji)                       | Kaji         | `kaji`: agent runtime, toolgen, providers                   | Python 3.11+                      |
+| [`kaji/serve`](kaji/serve)           | Kaji         | `kaji-serve`: experimental REST + Soniox STT edge           | Python, FastAPI, Soniox           |
+| [`kaji/ts`](kaji/ts)                 | Kaji         | `@kaji/sdk`: TypeScript runtime                             | TypeScript                        |
+| [`apps/cli`](apps/cli)               | Kaji tooling | `@kaji/cli`: cross-language scaffolding and code generation | Bun, TypeScript                   |
+| [`apps/docs`](apps/docs)             | Kaji tooling | `@kaji/docs`: public documentation site                     | Next.js, Fumadocs                 |
+| [`packages/ui`](packages/ui)         | Shared       | `@kaji/ui`: shared UI and development helpers               | React, TypeScript                 |
+| [`packages/shared`](packages/shared) | Shared       | `@kaji/shared`: workspace TypeScript configurations         | TypeScript                        |
 
-each package has its own readme with setup instructions and architecture details.
-the canonical kaji operating path starts at [`docs/kaji/README.md`](docs/kaji/README.md),
-with current release evidence in [`kaji/RELEASE_MATRIX.md`](kaji/RELEASE_MATRIX.md).
+Each top-level area has an index: [`apps/README.md`](apps/README.md),
+[`packages/README.md`](packages/README.md), [`ryo/README.md`](ryo/README.md), and
+[`kaji/README.md`](kaji/README.md). [`docs/README.md`](docs/README.md)
+distinguishes maintained guides from historical plans. Package READMEs contain
+local setup; the canonical Kaji operating path starts at
+[`docs/kaji/README.md`](docs/kaji/README.md), with current release evidence in
+[`kaji/RELEASE_MATRIX.md`](kaji/RELEASE_MATRIX.md).
 
-## architecture
+## Architecture
 
-ryo is built on kaji. the go api configures and spawns agents; the
-kaji runtime handles the actual llm loop, tool execution, and voice
-modalities. payment collection is a tool the agent calls.
+Ryo is built on Kaji. The Go API configures and spawns agents; the Kaji runtime
+handles the LLM loop, tool execution, and voice modalities. Payment collection
+is a tool the agent calls.
 
 ```
    ┌──────────────────────────┐
@@ -56,32 +64,49 @@ modalities. payment collection is a tool the agent calls.
    └──────────────────────────┘
 ```
 
-## getting started
+## Getting started
 
-**prerequisites:** go 1.25+; [bun](https://bun.sh) ≥ 1.3 and node ≥ 22;
-python 3.11+ and [uv](https://docs.astral.sh/uv/); docker (postgres + redis).
+**Prerequisites:** Go 1.25+; [Bun](https://bun.sh) >= 1.3 and Node.js >= 22;
+Python 3.11+ and [uv](https://docs.astral.sh/uv/); Docker (PostgreSQL + Redis).
 
 ```bash
-# js/ts workspace (studio + kaji/ts)
+# JavaScript/TypeScript workspace
 bun install
 
-# go api
+# Go API
 cd ryo/api
 go mod download
 go run ./cmd/migrate/main.go up
 go run ./cmd/api/main.go
 
-# studio
+# Studio
 bun --filter @ryo/web dev
 
-# kaji python sdk
+# Kaji Python SDK
 cd kaji && uv sync && uv run pytest
 ```
 
-see [`ryo/README.md`](ryo/README.md) for the full ryo setup, routes, and environment variables.
-see [`kaji/README.md`](kaji/README.md) for kaji concepts, architecture, and package overview.
-see [`docs/MVP.md`](docs/MVP.md) for the five-step kaji developer path (install → configure provider → register tools → run agent → inspect events).
+Run JavaScript/TypeScript checks from the root, or target one workspace:
 
-## license
+```bash
+bun run build
+bun run lint
+bun run typecheck
+bun run format:check
 
-source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). the source is public and contributions are welcome, but commercial use and redistribution are not permitted. this is not an OSI-approved open-source license.
+bun --filter @kaji/cli test
+bun --filter @kaji/docs typecheck
+```
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for focused checks and repository
+conventions. See [`ryo/README.md`](ryo/README.md) for the full Ryo setup, routes,
+and environment variables. See
+[`docs/kaji/production-beta.md`](docs/kaji/production-beta.md) for the installed
+Kaji quickstart and current support boundary.
+
+## License
+
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+The source is public and contributions are welcome, but commercial use and
+redistribution are not permitted. This is not an OSI-approved open-source
+license.

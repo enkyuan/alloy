@@ -28,6 +28,8 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 | `agent.reasoning.started`    | Model began reasoning                         |
 | `agent.message.delta`        | Provider streaming a text chunk               |
 | `agent.message.completed`    | Provider finished a turn                      |
+| `agent.turn.exhausted`       | Runtime reached its configured iteration cap  |
+| `agent.turn.failed`          | Runtime persisted a closed turn failure       |
 | `tool.call.requested`        | Model decided to call a tool                  |
 | `tool.call.started`          | Tool handler execution began                  |
 | `tool.call.completed`        | Tool handler returned a result                |

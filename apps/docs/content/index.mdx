@@ -1,6 +1,6 @@
 ---
-title: kaji
-description: kaji is an embeddable SDK for building agents in Python and TypeScript. Event-sourced runtime, tool registry, pluggable providers, STT/TTS modalities. No database or server required.
+title: Kaji
+description: Kaji is an embeddable agent runtime for Python and TypeScript with event-sourced sessions, bounded tool execution, and pluggable model providers.
 ---
 
 Kaji is an embeddable SDK for building agents. The stable core needs no
@@ -11,7 +11,7 @@ or Soniox speech-to-text edge.
 
 | Package      | Path         | What it is                                         |
 | ------------ | ------------ | -------------------------------------------------- |
-| `kaji`       | `kaji`   | Python SDK: stable core plus experimental add-ons  |
+| `kaji`       | `kaji`       | Python SDK: stable core plus experimental add-ons  |
 | `@kaji/sdk`  | `kaji/ts`    | TypeScript SDK: stable core and copyable catalog   |
 | `@kaji/cli`  | `apps/cli`   | Standalone cross-language scaffold and diagnostics |
 | `kaji-serve` | `kaji/serve` | Experimental REST + Soniox STT reference service   |
@@ -30,22 +30,22 @@ See [reference service](/docs/reference-service) for the supported edge surface.
 
 ## Composition
 
-kaji's core is a set of primitives -- events, sessions, tools,
-providers, runtime. By design the core does not ship verticals (no
-built-in payment, calendar, or email tools), and it does not pick a
-vendor for you -- `get_provider()` with no name returns an in-memory mock,
-not a third-party service.
+Kaji's core is a set of primitives: events, sessions, tools, providers, and
+runtime. It does not pick a vendor for you: Python configuration and generated
+scaffolds select the in-memory mock by default, not a third-party service. Both
+SDKs also package a source-owned integration catalog. `echo` is the only beta
+catalog entry; GitHub and the TypeScript-only filesystem, HTTP, SQLite, and web
+entries remain explicit opt-in experiments.
 
-For v0.1.0 the Python SDK still bundles a few opinionated modules at the
-top level for convenience: `kaji.cli` (project scaffolding),
+For the 0.2 beta candidate, the Python SDK still bundles a few opinionated
+modules for convenience: `kaji.cli` (project scaffolding),
 `kaji.knowledge` (RAG building blocks), `kaji.modalities.voice`
 (STT / TTS edges), and `kaji.infra.observability` (metrics, tracing).
-These are slated to split into their own packages (`@kaji/cli`,
-`@kaji/knowledge`, etc.) in a future release. Treat them as optional
-add-ons today and avoid relying on their top-level imports if you want a
-smaller v1.0 upgrade path.
+Only observability is part of the stable core; RAG, voice, Redis realtime, and
+native Gemini/Kimi remain experimental Python-only surfaces.
 
-The TypeScript SDK ships only the core primitives.
+See [integrations](/docs/integrations) for the exact catalog and the explicit
+Gmail hold.
 
 ## Next
 

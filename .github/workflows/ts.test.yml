@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "kaji/ts/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "kaji/contracts/**"
@@ -33,6 +34,7 @@ on:
   pull_request:
     paths:
       - "kaji/ts/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "kaji/contracts/**"
@@ -61,6 +63,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   kaji-ts:

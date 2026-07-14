@@ -1,0 +1,70 @@
+name: test / cli
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/**"
+      - "packages/shared/**"
+      - "kaji/contracts/cli/**"
+      - "kaji/pyproject.toml"
+      - "kaji/src/kaji/cli/**"
+      - "kaji/src/kaji/runtime/providers/**"
+      - "kaji/ts/package.json"
+      - "kaji/ts/src/cli/**"
+      - "kaji/ts/src/index.ts"
+      - "kaji/ts/src/testing.ts"
+      - "kaji/ts/src/providers/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/cli.test.yml"
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - "packages/shared/**"
+      - "kaji/contracts/cli/**"
+      - "kaji/pyproject.toml"
+      - "kaji/src/kaji/cli/**"
+      - "kaji/src/kaji/runtime/providers/**"
+      - "kaji/ts/package.json"
+      - "kaji/ts/src/cli/**"
+      - "kaji/ts/src/index.ts"
+      - "kaji/ts/src/testing.ts"
+      - "kaji/ts/src/providers/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/cli.test.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: apps/cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: apps/cli
+
+      - name: Test
+        run: bun run test
+
+      - name: Build and smoke test the package
+        run: bun run smoke

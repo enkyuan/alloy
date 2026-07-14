@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "kaji/ts/**"
+      - "apps/cli/**"
+      - "apps/web/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -14,6 +17,9 @@ on:
   pull_request:
     paths:
       - "kaji/ts/**"
+      - "apps/cli/**"
+      - "apps/web/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -24,54 +30,28 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  kaji-ts:
-    name: kaji/ts
+  format:
+    name: ${{ matrix.workspace }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [kaji/ts, apps/cli, apps/web, ryo/auth, packages/ui, packages/shared]
     defaults:
       run:
-        working-directory: kaji/ts
+        working-directory: ${{ matrix.workspace }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/ts
-
-      - name: Check formatting
-        run: bun run format:check
-
-  auth:
-    name: ryo/auth
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: ryo/auth
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: ./.github/actions/setup-bun-cache
-        with:
-          working-directory: ryo/auth
-
-      - name: Check formatting
-        run: bun run format:check
-
-  ui:
-    name: packages/ui
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: packages/ui
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: ./.github/actions/setup-bun-cache
-        with:
-          working-directory: packages/ui
+          working-directory: ${{ matrix.workspace }}
 
       - name: Check formatting
         run: bun run format:check

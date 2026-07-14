@@ -7,22 +7,22 @@ import { CopyIcon, CheckIcon, EyeIcon } from "@components/docs/icons/ui";
 import { McpDropdown } from "../install/mcp-dropdown";
 import { PromptDialog } from "../install/prompt-dialog";
 
-const aiPromptText = `Set up an agent in my project using kaji (kaji npm package).
+const aiPromptText = `Set up a TypeScript agent in my project using @kaji/sdk.
 
-1. Install kaji.
+1. Install @kaji/sdk@0.2.0-beta.1, zod@>=4.3 <5, and openai.
 
-2. Create lib/agent.ts — instantiate the agent runtime with:
-   - An LLM provider (OpenAI or Kimi)
-   - A tool registry with my project's tools
-   - The in-memory event bus for local development
+2. Create agent.ts with AgentBuilder and the OpenAI provider. Use the default
+   in-memory event store/committer; do not add a database or server.
 
-3. Wire up the agent loop so it can call tools and stream responses.
+3. Add one functionTool with an explicit Zod schema and an explicit risk.
+   Pass a stable principalId and deadlineAfter(...) to turn().
 
-4. Add the API route handler for my framework (e.g. app/api/agent/route.ts for Next.js App Router).
+4. Run one runtime.turn(...) call and print its text, sessionId, and turnId.
 
-5. Add KAJI_API_KEY to my .env if it doesn't exist.
+5. Read OPENAI_API_KEY from the environment. Do not invent a Kaji-specific
+   provider key or log credentials, prompts, tool arguments, or raw errors.
 
-Refer to github.com/enkyuan/alloy for exact API and tool syntax.`;
+Use only public @kaji/sdk exports and follow https://kaji.dev/docs/getting-started.`;
 
 type UIState = { copied: boolean; pmOpen: boolean; promptOpen: boolean };
 type UIAction =
@@ -149,12 +149,19 @@ export function InstallBlock() {
                       className="text-[13px]"
                       style={{ fontFamily: "var(--font-geist-pixel-square)" }}
                     >
-                      <span className="text-purple-600/90 dark:text-purple-400/90">npx</span>{" "}
-                      <span className="text-neutral-700 dark:text-neutral-300">kaji init</span>
+                      <span className="text-purple-600/90 dark:text-purple-400/90">bunx</span>{" "}
+                      <span className="text-neutral-700 dark:text-neutral-300">
+                        --package=@kaji/sdk@0.2.0-beta.1 kaji init ./my-agent --provider openai
+                        --yes
+                      </span>
                     </code>
                     <button
                       type="button"
-                      onClick={() => copy("npx kaji init")}
+                      onClick={() =>
+                        copy(
+                          "bunx --package=@kaji/sdk@0.2.0-beta.1 kaji init ./my-agent --provider openai --yes",
+                        )
+                      }
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
                       aria-label="Copy command"
                     >
@@ -184,15 +191,15 @@ export function InstallBlock() {
                 ) : (
                   <div className="bg-neutral-100/50 dark:bg-[#050505] px-5 py-4">
                     <p className="text-[13px] font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                      Set up an agent in my project using kaji.
+                      Set up a TypeScript agent using @kaji/sdk.
                     </p>
                     <div className="relative mt-1.5">
                       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 leading-relaxed line-clamp-2">
-                        Install kaji. Create lib/agent.ts with the{" "}
+                        Install @kaji/sdk. Create agent.ts with the{" "}
                         <code className="text-neutral-500 dark:text-neutral-400">
                           agent runtime
                         </code>
-                        , register your tools, add the route handler, and start the loop...
+                        , register one risk-classified tool, and run one turn...
                       </p>
                       <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-neutral-100/50 dark:from-[#050505] to-transparent pointer-events-none" />
                     </div>

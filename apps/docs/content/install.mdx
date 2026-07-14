@@ -3,10 +3,10 @@ title: Install
 description: Install kaji in Python or TypeScript, pick the provider extras you need, and learn the v0.x compatibility policy.
 ---
 
-kaji ships as two SDKs that share the stable-core wire format. Install one per
-app and pick provider extras as needed. The release implementation remains
-pre-beta until protected evidence passes; all `0.x` releases are pre-1.0, so
-minor versions may break the public surface. Pin exact versions in production.
+Kaji ships as two SDKs that share the stable-core wire format. The current
+release candidates are Python `0.2.0b1` and TypeScript `0.2.0-beta.1`. They are
+not promotable beta releases until the protected release evidence passes. All
+`0.x` releases are pre-1.0, so pin exact versions in production.
 
 ## Python
 
@@ -40,8 +40,8 @@ Optional extras:
 ## TypeScript
 
 ```bash
-bun add @kaji/sdk "zod@>=4.3 <5" openai
-bun add @kaji/sdk "zod@>=4.3 <5" @anthropic-ai/sdk
+bun add @kaji/sdk@0.2.0-beta.1 "zod@>=4.3 <5" openai
+bun add @kaji/sdk@0.2.0-beta.1 "zod@>=4.3 <5" @anthropic-ai/sdk
 ```
 
 `zod >=4.3 <5` is a required peer dependency of `@kaji/sdk`. `openai >=4 <8`

@@ -18,6 +18,9 @@ export function ProviderLogosGrid({ exclude }: { exclude?: string[] }) {
           <span className="text-[9px] font-mono text-foreground/70 dark:text-foreground/60 group-hover/prov:text-foreground/80 transition-colors duration-200 text-center">
             {provider.name}
           </span>
+          <span className="text-[7px] font-mono uppercase tracking-wider text-foreground/40">
+            {provider.tier}
+          </span>
         </div>
       ))}
     </div>
@@ -32,7 +35,7 @@ export function ProvidersSection() {
       <div className="w-full">
         <div className="relative p-3 sm:p-4 min-h-[200px] sm:min-h-[240px] cursor-default overflow-hidden group/provider">
           <div className="absolute top-2 right-2 sm:top-3 sm:right-3 text-[10px] font-semibold text-white bg-orange-500 dark:bg-orange-500 px-2 py-0.5 rounded opacity-0 group-hover/provider:opacity-100 transition-opacity duration-200">
-            default
+            beta core
           </div>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-foreground/80 dark:text-foreground/70 [&_svg]:w-5 [&_svg]:h-5">

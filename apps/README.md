@@ -1,33 +1,59 @@
-# apps
+# Apps
 
-frontend and tooling surfaces for the alloy monorepo. these are not standalone products -- they are the ui and developer-tooling layer on top of the two products in [`kaji/`](../kaji) and [`ryo/`](../ryo).
+Deployable frontends and user-facing developer tools for the Alloy monorepo.
+Reusable TypeScript code belongs in [`packages/`](../packages); Kaji runtime
+implementations and contracts belong in [`kaji/`](../kaji).
 
-## packages
+## Packages
 
-| path | name | what it is | stack |
-| ---- | ---- | ---------- | ----- |
-| [`apps/web`](web) | `@ryo/web` | studio: merchant dashboard for configuring agents, wallets, payment configs, and webhooks | react 19, vite, tanstack router, tailwind v4, shadcn/ui |
-| [`apps/docs`](docs) | `@kaji/docs` | public documentation site for kaji | next.js, fumadocs |
-| [`apps/cli`](cli) | `@kaji/cli` | `kaji` CLI for scaffolding and codegen | bun, typescript |
+| path                | name         | what it is                                                                                | stack                                                   |
+| ------------------- | ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [`apps/web`](web)   | `@ryo/web`   | Studio: merchant dashboard for configuring agents, wallets, payment configs, and webhooks | React 19, Vite, TanStack Router, Tailwind v4, shadcn/ui |
+| [`apps/docs`](docs) | `@kaji/docs` | Private deployment package for the public Kaji documentation site                         | Next.js, Fumadocs                                       |
+| [`apps/cli`](cli)   | `@kaji/cli`  | Published cross-language `kaji` CLI for scaffolding and code generation                   | Bun, TypeScript                                         |
 
-## workspace
+The standalone `@kaji/cli` is a project-level developer tool. The Python
+`kaji` package and TypeScript `@kaji/sdk` also ship package-specific CLIs; the
+command surfaces are intentionally distinct and documented in
+[`docs/kaji/cli.md`](../docs/kaji/cli.md).
 
-these packages are part of the bun workspace defined at the repo root. install all dependencies from the root:
+## Workspace
+
+These packages are part of the Bun workspace defined at the repository root.
+Install all dependencies from the root:
 
 ```bash
 bun install
 ```
 
-then run any package with `--filter`:
+Then run any package with `--filter`:
 
 ```bash
 bun --filter @ryo/web dev
 bun --filter @kaji/docs dev
+bun --filter @kaji/cli dev -- --help
 ```
 
-or `cd` into the package directory and run directly.
+## Checks
 
-## further reading
+```bash
+bun --filter @kaji/cli format:check
+bun --filter @kaji/cli lint
+bun --filter @kaji/cli typecheck
+bun --filter @kaji/cli test
+bun --filter @kaji/cli smoke
 
-- [`ryo/README.md`](../ryo/README.md) -- ryo product overview, api routes, data model
-- [`kaji/README.md`](../kaji/README.md) -- kaji SDK concepts and architecture
+bun --filter @kaji/docs format:check
+bun --filter @kaji/docs lint
+bun --filter @kaji/docs typecheck
+bun --filter @kaji/docs build
+```
+
+Run a package directly from its directory when iterating on a package-specific
+command.
+
+## Further reading
+
+- [`ryo/README.md`](../ryo/README.md) -- Ryo product overview, API routes, data model
+- [`kaji/README.md`](../kaji/README.md) -- Kaji SDK concepts and architecture
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md) -- repository conventions and check matrix

@@ -1,7 +1,7 @@
 import type { SVGProps } from "react";
 import { cn } from "@lib/utils";
 
-export function AgentkitMark({
+export function KajiMark({
   fill = "#FF6E3C",
   ...props
 }: SVGProps<SVGSVGElement> & { fill?: string }) {

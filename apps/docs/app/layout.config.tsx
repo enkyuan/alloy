@@ -1,13 +1,13 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { appName, gitConfig } from "@lib/shared";
-import { AgentkitMark } from "@components/icons";
+import { KajiMark } from "@components/icons";
 
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       title: (
         <>
-          <AgentkitMark />
+          <KajiMark />
           <span>{appName}</span>
         </>
       ),

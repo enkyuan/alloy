@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
+import { load as parseYaml } from "js-yaml";
 import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, extname } from "node:path";
-import { parseYaml } from "../utils/yaml.js";
+import { extname, join, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -11,6 +11,9 @@ import { parseYaml } from "../utils/yaml.js";
 
 type PrimitiveType = "string" | "integer" | "number" | "boolean";
 type ParamLocation = "path" | "query";
+type Lang = "ts" | "python";
+
+const LANGS = ["ts", "python"] as const;
 
 interface OpenApiParameter {
   name: string;
@@ -47,13 +50,16 @@ const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"
 
 /** Convert any string to snake_case. */
 function toSnakeCase(s: string): string {
-  return s
-    .replace(/([A-Z])/g, "_$1")
+  const normalized = s
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[-\s]+/g, "_")
     .replace(/[^a-zA-Z0-9_]/g, "")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "")
     .toLowerCase();
+  if (!normalized) return "operation";
+  return /^\d/.test(normalized) ? `_${normalized}` : normalized;
 }
 
 /** Extract `{param}` names from a URL path template. */
@@ -173,6 +179,32 @@ function pythonTuple(names: string[]): string {
   return `(${names.map((name) => JSON.stringify(name)).join(", ")}${names.length === 1 ? "," : ""})`;
 }
 
+function pythonUrlExpression(path: string): string {
+  const pieces: string[] = [];
+  let offset = 0;
+  for (const match of path.matchAll(/\{([^}]+)\}/g)) {
+    const index = match.index ?? 0;
+    if (index > offset) pieces.push(JSON.stringify(path.slice(offset, index)));
+    pieces.push(`quote(str(args[${JSON.stringify(match[1]!)}]), safe="")`);
+    offset = index + match[0].length;
+  }
+  if (offset < path.length) pieces.push(JSON.stringify(path.slice(offset)));
+  return ["BASE_URL", ...pieces].join(" + ");
+}
+
+function tsUrlExpression(path: string): string {
+  const pieces: string[] = [];
+  let offset = 0;
+  for (const match of path.matchAll(/\{([^}]+)\}/g)) {
+    const index = match.index ?? 0;
+    if (index > offset) pieces.push(JSON.stringify(path.slice(offset, index)));
+    pieces.push(`encodeURIComponent(String(args[${JSON.stringify(match[1]!)}]))`);
+    offset = index + match[0].length;
+  }
+  if (offset < path.length) pieces.push(JSON.stringify(path.slice(offset)));
+  return ["BASE_URL", ...pieces].join(" + ");
+}
+
 function generateToolsArray(ops: ParsedOperation[], prefix: string): string {
   const entries = ops.map((op) => {
     const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
@@ -187,10 +219,10 @@ function generateToolsArray(ops: ParsedOperation[], prefix: string): string {
       requiredParams.length > 0
         ? `\n      required: [${requiredParams.map((p) => JSON.stringify(p)).join(", ")}],`
         : "";
-    const tag = op.tag ? `\n    tags: ["${op.tag}"],` : "";
+    const tag = op.tag ? `\n    tags: [${JSON.stringify(op.tag)}],` : "";
 
     return `  {
-    name: "${name}",
+    name: ${JSON.stringify(name)},
     description: ${JSON.stringify(op.summary)},
     parameters: {
       type: "object",
@@ -205,15 +237,11 @@ ${props || "        // no params"}
   return `export const tools: ToolSpec[] = [\n${entries.join(",\n")},\n];`;
 }
 
-function generateHandlers(ops: ParsedOperation[], _baseUrl: string, prefix: string): string {
+function generateHandlers(ops: ParsedOperation[], envVarName: string, prefix: string): string {
   return ops
     .map((op) => {
       const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
-      const urlPath = op.path.replace(
-        /\{([^}]+)\}/g,
-        (_match, paramName: string) =>
-          `\${encodeURIComponent(String(args[${JSON.stringify(paramName)}]))}`,
-      );
+      const urlExpression = tsUrlExpression(op.path);
       const hasBody = op.method !== "GET" && op.method !== "HEAD" && op.method !== "OPTIONS";
       const queryParams = op.params.filter((p) => p.location === "query");
       const queryLines = queryParams
@@ -236,7 +264,8 @@ function generateHandlers(ops: ParsedOperation[], _baseUrl: string, prefix: stri
       const contentTypeHeader = hasBody ? `, "Content-Type": "application/json"` : "";
 
       return `export async function ${name}(args: Record<string, unknown>): Promise<unknown> {
-  const url = new URL(\`\${BASE_URL}${urlPath}\`);
+  if (!API_KEY) throw new Error(${JSON.stringify(`${envVarName} is required`)});
+  const url = new URL(${urlExpression});
 ${queryLines ? `${queryLines}\n` : ""}${bodySetup}
   const r = await fetch(url.toString(), {
     method: "${op.method}",
@@ -245,7 +274,7 @@ ${queryLines ? `${queryLines}\n` : ""}${bodySetup}
   if (!r.ok) {
     throw new Error(\`${op.method} \${url.pathname} failed: \${r.status} \${await r.text()}\`);
   }
-  return r.json();
+  return r.status === 204 ? {} : r.json();
 }`;
     })
     .join("\n\n");
@@ -256,14 +285,14 @@ function generateTsFile(spec: OpenApiSpec, ops: ParsedOperation[], prefix: strin
   const envVarName = inferEnvVarName(spec);
 
   const toolsArray = generateToolsArray(ops, prefix);
-  const handlers = generateHandlers(ops, baseUrl, prefix);
+  const handlers = generateHandlers(ops, envVarName, prefix);
 
   return `// Auto-generated by kaji gen. Do not edit.
 import type { ToolSpec } from "@kaji/sdk";
 
 // Auth: set ${envVarName} in your environment
-const BASE_URL = "${baseUrl}";
-const API_KEY = process.env.${envVarName} ?? "";
+const BASE_URL = ${JSON.stringify(baseUrl)};
+const API_KEY = process.env[${JSON.stringify(envVarName)}] ?? "";
 
 ${toolsArray}
 
@@ -290,7 +319,7 @@ function generatePythonFile(spec: OpenApiSpec, ops: ParsedOperation[], prefix: s
           ? `, "required": [${requiredParams.map((p) => JSON.stringify(p)).join(", ")}]`
           : "";
       return `    {
-        "name": "${name}",
+        "name": ${JSON.stringify(name)},
         "description": ${JSON.stringify(op.summary)},
         "parameters": {
             "type": "object",
@@ -306,8 +335,7 @@ ${props || "                # no params"}
   const handlers = ops
     .map((op) => {
       const name = prefix ? `${prefix}_${op.fnName}` : op.fnName;
-      // Replace {param} with {args['param']} for Python f-string interpolation
-      const urlPath = op.path.replace(/\{([^}]+)\}/g, "{args['$1']}");
+      const urlExpression = pythonUrlExpression(op.path);
       const hasBody = op.method !== "GET" && op.method !== "HEAD" && op.method !== "OPTIONS";
       const queryParams = op.params.filter((p) => p.location === "query").map((p) => p.name);
       const allParams = op.params.map((p) => p.name);
@@ -322,21 +350,25 @@ ${props || "                # no params"}
           : "";
       const jsonArg = hasBody ? `, json=${allParams.length > 0 ? "body" : "args"}` : "";
 
-      return `async def ${name}(args: dict) -> dict:
-    url = f"{BASE_URL}${urlPath}"
+      return `async def ${name}(args: dict[str, object]) -> object:
+    if not API_KEY:
+        raise RuntimeError(${JSON.stringify(`${envVarName} is required`)})
+    url = ${urlExpression}
 ${paramsLine}${bodyLine}
     async with httpx.AsyncClient() as c:
         r = await c.request("${op.method}", url, headers={"Authorization": f"Bearer {API_KEY}"}${paramsArg}${jsonArg})
         r.raise_for_status()
-        return r.json()`;
+        return {} if r.status_code == 204 else r.json()`;
     })
     .join("\n\n");
 
   return `# Auto-generated by kaji gen. Do not edit.
 import os
+from urllib.parse import quote
+
 import httpx
 
-BASE_URL = "${baseUrl}"
+BASE_URL = ${JSON.stringify(baseUrl)}
 API_KEY = os.environ.get("${envVarName}", "")
 
 TOOLS = [
@@ -364,9 +396,17 @@ export const gen = new Command("gen")
     const specPath = resolve(opts.spec);
     const outDir = resolve(opts.out);
 
+    if (!LANGS.includes(opts.lang as Lang)) {
+      p.cancel(`--lang must be one of: ${LANGS.join(", ")}`);
+      process.exitCode = 2;
+      return;
+    }
+    const lang = opts.lang as Lang;
+
     if (!existsSync(specPath)) {
       p.cancel(`Spec file not found: ${specPath}`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // ---- Load spec ----
@@ -379,7 +419,8 @@ export const gen = new Command("gen")
     } catch (err) {
       s.stop("Failed to read spec");
       p.cancel(String(err));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     let spec: OpenApiSpec;
@@ -400,7 +441,8 @@ export const gen = new Command("gen")
     } catch (err) {
       s.stop("Failed to parse spec");
       p.cancel(`Parse error: ${String(err)}`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     s.stop("Spec loaded");
@@ -409,7 +451,8 @@ export const gen = new Command("gen")
     const ops = parseSpec(spec);
     if (ops.length === 0) {
       p.cancel("No operations with operationId found in spec.");
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     p.log.info(`Found ${chalk.cyan(ops.length)} operations`);
@@ -418,14 +461,14 @@ export const gen = new Command("gen")
     const s2 = p.spinner();
     s2.start("Generating");
 
-    const file = opts.lang === "python" ? "tools.py" : "index.ts";
+    const file = lang === "python" ? "tools.py" : "index.ts";
     const code =
-      opts.lang === "python"
+      lang === "python"
         ? generatePythonFile(spec, ops, opts.prefix)
         : generateTsFile(spec, ops, opts.prefix);
 
     mkdirSync(outDir, { recursive: true });
-    const outFile = `${outDir}/${file}`;
+    const outFile = join(outDir, file);
     writeFileSync(outFile, code, "utf-8");
 
     s2.stop(`Written to ${chalk.green(outFile)}`);

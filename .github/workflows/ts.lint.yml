@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - "kaji/ts/**"
+      - "apps/cli/**"
+      - "apps/web/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -14,6 +17,9 @@ on:
   pull_request:
     paths:
       - "kaji/ts/**"
+      - "apps/cli/**"
+      - "apps/web/**"
+      - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
       - "bun.lock"
@@ -23,6 +29,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   kaji-ts:
@@ -58,6 +68,43 @@ jobs:
 
       - name: Check integrations
         run: bun run check:integrations
+
+  cli:
+    name: apps/cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/cli
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: apps/cli
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+  web:
+    name: apps/web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: apps/web
+
+      - name: Lint
+        run: bun run lint
 
   auth:
     name: ryo/auth

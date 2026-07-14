@@ -1,6 +1,6 @@
 import { cn } from "@lib/utils";
 
-export const AgentkitWordmark = ({ className }: { className?: string }) => {
+export const KajiWordmark = ({ className }: { className?: string }) => {
   return (
     <span className={cn("inline-flex items-center gap-2", className)}>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="size-6 shrink-0">

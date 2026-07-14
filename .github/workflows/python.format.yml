@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
   pull_request:
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
@@ -18,37 +18,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  sdk:
-    name: kaji/sdk
+  format:
+    name: kaji/${{ matrix.package }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: sdk
+            working-directory: kaji
+          - package: serve
+            working-directory: kaji/serve
     defaults:
       run:
-        working-directory: kaji/sdk
+        working-directory: ${{ matrix.working-directory }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
-
-      - name: Check formatting
-        run: uv run ruff format --check .
-
-  serve:
-    name: kaji/serve
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: kaji/serve
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-      - uses: ./.github/actions/setup-python-uv
-        with:
-          working-directory: kaji/serve
+          working-directory: ${{ matrix.working-directory }}
 
       - name: Check formatting
         run: uv run ruff format --check .

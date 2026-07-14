@@ -18,57 +18,57 @@ const featureCards = [
   {
     label: "Framework Agnostic",
     headline: "Works with your stack.",
-    desc: "Python and TypeScript, with route handlers for every major framework.",
+    desc: "Embed in any Python or Node host; no framework adapter is required.",
     logos: true,
-    href: "/docs",
+    href: "/docs/getting-started",
   },
   {
     label: "Agent Loop",
     headline: "Event-sourced runtime.",
     desc: "A tool-using agent loop with replay and full event history.",
-    href: "/docs",
+    href: "/docs/concepts/runtime",
   },
   {
     label: "Tools",
-    headline: "Tool registry + toolgen.",
-    desc: "Register functions as tools with a provider-neutral payload.",
-    href: "/docs",
+    headline: "Risk-classified tools.",
+    desc: "Validate, approve, bound, and replay tools through one neutral contract.",
+    href: "/docs/concepts/tool-registry",
   },
   {
     label: "Providers",
     headline: "Pluggable LLM providers.",
-    desc: "OpenAI, Kimi, and Gemini behind one streaming interface.",
-    href: "/docs",
+    desc: "OpenAI and Anthropic share one stable streaming boundary.",
+    href: "/docs/concepts/providers",
   },
   {
     label: "Modalities",
-    headline: "Text and voice.",
-    desc: "Streaming text agents or full voice loops with STT/TTS — same runtime core.",
-    href: "/docs",
+    headline: "Text core, voice edge.",
+    desc: "Text is core; STT/TTS remains an experimental Python-only edge.",
+    href: "/docs/architecture",
   },
   {
     label: "Retrieval",
-    headline: "RAG tool retriever.",
-    desc: "Pluggable embedder and cache to select tools by relevance.",
+    headline: "Optional Python RAG.",
+    desc: "Experimental retrieval primitives stay outside the beta-core promise.",
     href: "/docs",
   },
   {
-    label: "Event Bus",
-    headline: "In-memory or Redis.",
-    desc: "Run infra-free locally, swap in Redis for live fan-out.",
-    href: "/docs",
+    label: "Event Delivery",
+    headline: "Atomic in-memory delivery.",
+    desc: "Journal or committer by default; split and Redis paths remain experimental.",
+    href: "/docs/concepts/event-bus",
   },
   {
     label: "Observability",
     headline: "Replay & projection.",
     desc: "Every turn is an event; project state and replay sessions.",
-    href: "/docs",
+    href: "/docs/concepts/events",
   },
   {
     label: "Two SDKs",
     headline: "Python & TypeScript.",
-    desc: "The same runtime core, embeddable in either ecosystem.",
-    href: "/docs",
+    desc: "One beta-core contract with deterministic cross-SDK parity.",
+    href: "/docs/install",
   },
 ];
 
@@ -83,7 +83,7 @@ type RuntimeTabId = (typeof runtimeTabs)[number]["id"];
 const runtimeTabDescriptions: Record<RuntimeTabId, string> = {
   loop: "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done.",
   providers:
-    "Swap LLM providers behind one interface. OpenAI, Kimi, Gemini, and more, with no lock-in.",
+    "Use OpenAI or Anthropic behind one stable interface; other factories remain experimental.",
   tools: "Register any function as a tool. One provider-neutral payload, translated per provider.",
 };
 
@@ -117,10 +117,9 @@ export function HeroReadMe({ stats }: { stats: CommunityHeroStats }) {
                 <span className="font-medium text-foreground/90 dark:text-foreground/80">
                   inside your app
                 </span>
-                . Build text, voice, and multi-modal agents with a tool registry and pluggable LLM
-                providers, in one{" "}
+                . Build tool-using agents with a bounded runtime and pluggable LLM providers in{" "}
                 <span className="font-medium text-foreground/90 dark:text-foreground/80">
-                  embeddable SDK
+                  two parity-tested SDKs
                 </span>{" "}
                 for Python and TypeScript.
               </p>

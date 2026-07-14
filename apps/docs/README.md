@@ -1,8 +1,9 @@
 # @kaji/docs
 
-public documentation site for kaji. built with [fumadocs](https://fumadocs.dev) on next.js.
+Public documentation for Kaji, built with
+[Fumadocs](https://fumadocs.dev) and Next.js.
 
-## running locally
+## Local development
 
 ```bash
 # from repo root
@@ -12,35 +13,41 @@ bun --filter @kaji/docs dev
 bun dev
 ```
 
-open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000).
 
-## structure
+## Structure
 
-| path                      | purpose                            |
-| ------------------------- | ---------------------------------- |
-| `app/(home)`              | landing page                       |
-| `app/docs`                | documentation layout and pages     |
-| `content/docs/`           | MDX source files for all doc pages |
-| `lib/source.ts`           | fumadocs content source adapter    |
-| `app/api/search/route.ts` | full-text search endpoint          |
+| Path                      | Purpose                              |
+| ------------------------- | ------------------------------------ |
+| `app/page.tsx`            | Landing page                         |
+| `app/docs/`               | Documentation routes and layout      |
+| `content/`                | MDX pages and navigation metadata    |
+| `components/`             | Site, navigation, and MDX components |
+| `lib/source.ts`           | Fumadocs content source adapter      |
+| `app/api/search/route.ts` | Full-text search endpoint            |
 
-## content
+## Content contracts
 
-documentation content lives in `content/docs/` as MDX files. the source
-config in `source.config.ts` controls frontmatter schema and page
-metadata. a CI test (`test/docs-sync`) checks that code examples in the
-docs match the shipped SDK surface.
+Documentation lives in `content/`. The source config in `source.config.ts`
+controls frontmatter and page metadata. `bun run check:sdk-sync` verifies the
+documented SDK versions, CLI commands, event types, integration catalog, and
+recovery anchors against the repository contracts.
 
-## development
+When changing `kaji`, `kaji/ts`, or either embedded CLI, update the relevant
+MDX page in the same pull request. Keep beta and experimental surfaces labeled
+explicitly; do not turn local or unprotected evidence into a release claim.
+
+## Checks
 
 ```bash
+bun run check:sdk-sync
 bun run build      # production build
 bun run typecheck  # tsc --noemit
-bun run lint       # eslint
+bun run lint       # oxlint
+bun run format:check
 ```
 
-## further reading
+## Further reading
 
-- [`kaji/README.md`](../../kaji/README.md) -- kaji concepts and architecture
-- [`kaji/sdk/README.md`](../../kaji/sdk/README.md) -- Python SDK reference
+- [`kaji/README.md`](../../kaji/README.md) -- Kaji concepts, architecture, and Python SDK reference
 - [`kaji/ts/README.md`](../../kaji/ts/README.md) -- TypeScript SDK reference

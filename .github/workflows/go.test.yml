@@ -15,13 +15,25 @@ on:
       - ".github/actions/setup-go-cache/**"
       - ".github/workflows/go.test.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  api:
-    name: ryo/api
+  test:
+    name: ryo/${{ matrix.component }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, consumer]
     defaults:
       run:
-        working-directory: ryo/api
+        working-directory: ryo/${{ matrix.component }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -40,47 +52,11 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-go-cache
         with:
-          working-directory: ryo/api
-
-      - name: Run migrations
-        run: go run ./cmd/migrate up
-
-      - name: Test
-        run: go test ./... -v -race -count=1
-
-  consumer:
-    name: ryo/consumer
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ryo/consumer
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-go-cache
-        with:
-          working-directory: ryo/consumer
+          working-directory: ryo/${{ matrix.component }}
 
       - name: Run migrations
         run: go run ./cmd/migrate up

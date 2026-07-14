@@ -6,9 +6,9 @@ import { SignatureMark } from "@components/landing/footer/signature-mark";
 import { getCommunityStats } from "@lib/community-stats";
 
 export const metadata: Metadata = {
-  title: "kaji — open-source agentic platform",
+  title: "Kaji — embeddable agent SDK",
   description:
-    "The open-source SDK for building agentic applications. Tool registry, LLM providers, event bus, and more.",
+    "Build agents in Python or TypeScript with an event-sourced runtime, bounded tools, and pluggable model providers.",
 };
 
 export default async function HomePage() {

@@ -1,0 +1,62 @@
+name: test / docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - "apps/cli/**"
+      - "kaji/**"
+      - "kaji/ts/**"
+      - "kaji/contracts/**"
+      - "packages/shared/**"
+      - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/docs.test.yml"
+  pull_request:
+    paths:
+      - "apps/docs/**"
+      - "apps/cli/**"
+      - "kaji/**"
+      - "kaji/ts/**"
+      - "kaji/contracts/**"
+      - "packages/shared/**"
+      - "packages/ui/**"
+      - "bun.lock"
+      - "package.json"
+      - ".github/actions/setup-bun-cache/**"
+      - ".github/workflows/docs.test.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: apps/docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: apps/docs
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build

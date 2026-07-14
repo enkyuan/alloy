@@ -7,5 +7,12 @@
     "./tsconfig/base": "./tsconfig/base.json",
     "./tsconfig/react": "./tsconfig/react.json",
     "./tsconfig/node": "./tsconfig/node.json"
+  },
+  "scripts": {
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check ."
+  },
+  "devDependencies": {
+    "oxfmt": "^0.41.0"
   }
 }

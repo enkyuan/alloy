@@ -2,8 +2,8 @@
 
 Uses the official async OpenAI SDK (the same dependency the OpenAI TTS path
 uses). Consumes the SDK's neutral tool payload and translates it to OpenAI's
-function-tool format at this boundary via ``to_openai``. Kimi remains the
-default provider; this is opt-in via ``KAJI_MODEL_PROVIDER=openai``.
+function-tool format at this boundary via ``to_openai``. The safe default is
+the mock provider; OpenAI is opt-in via ``KAJI_MODEL_PROVIDER=openai``.
 """
 
 from __future__ import annotations

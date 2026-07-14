@@ -15,7 +15,7 @@ three packages live under `kaji/`:
 
 | package      | path         | what it is                                       |
 | ------------ | ------------ | ------------------------------------------------ |
-| `kaji-sdk`   | `kaji/sdk`   | python SDK: the core runtime, imported as `kaji` |
+| `kaji-sdk`   | `kaji`       | python SDK: the core runtime, imported as `kaji` |
 | `kaji-serve` | `kaji/serve` | python: experimental FastAPI + voice service     |
 | `@kaji/sdk`  | `kaji/ts`    | TypeScript SDK for the shared embedded core      |
 
@@ -95,7 +95,7 @@ identical across both SDKs.
 | cancellation  | `cancellation.completed`     | runtime acknowledged and stopped                                         |
 
 the canonical sources are
-[`kaji/sdk/src/kaji/infra/events/types.py`](sdk/src/kaji/infra/events/types.py)
+[`kaji/src/kaji/infra/events/types.py`](src/kaji/infra/events/types.py)
 and [`kaji/ts/src/events/types.ts`](ts/src/events/types.ts);
 the table above must match them byte-for-byte.
 
@@ -239,9 +239,14 @@ voice modalities (STT, TTS) are not yet ported to TypeScript.
 
 ## further reading
 
-- [docs/CLI.md](docs/CLI.md) -- `kaji` CLI subcommand reference.
-- [docs/RUNTIME_API.md](docs/RUNTIME_API.md) -- headline API surface for embedding.
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) -- common errors and fixes.
-- individual package READMEs: [sdk/README.md](sdk/README.md),
-  [serve/README.md](serve/README.md), [ts/README.md](ts/README.md).
+- [canonical Kaji docs](../docs/kaji/README.md) -- support boundaries, testing,
+  migration, and release operations.
+- [CLI reference](../docs/kaji/cli.md) -- the distinct Python, TypeScript SDK,
+  and standalone `@kaji/cli` command surfaces.
+- [API parity](../docs/kaji/api-parity.md) -- shared and language-specific
+  embedding surfaces.
+- [troubleshooting](../docs/kaji/troubleshooting.md) -- common errors and
+  recovery procedures.
+- package READMEs: this Python SDK guide, [serve/README.md](serve/README.md),
+  and [ts/README.md](ts/README.md).
 - ryo (the product built on kaji): [`ryo/README.md`](../ryo/README.md).

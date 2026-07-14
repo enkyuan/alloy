@@ -1,5 +1,10 @@
 # Roadmap
 
+> Historical planning record. Counts, paths, and completion states below were
+> captured during earlier implementation phases and are not the current Kaji
+> beta-readiness authority. Use [`kaji/README.md`](kaji/README.md) and the
+> [`Kaji release matrix`](../kaji/RELEASE_MATRIX.md) for maintained guidance.
+
 What remains before kaji and ryo are production-ready. Items are ordered by leverage and grouped into shared timeline blocks -- kaji SDK work and ryo product work are interleaved because ryo depends on kaji capabilities landing first.
 
 Status legend: **DONE** / **PARTIAL** / **MISSING** reflects current state, not the issue itself.

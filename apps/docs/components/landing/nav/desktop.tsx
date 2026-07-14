@@ -6,7 +6,7 @@ import { LazyMotion, domAnimation, m } from "motion/react";
 import { RiStarFill } from "@remixicon/react";
 import { cn } from "@lib/utils";
 import { ChevronDownSmallIcon } from "@components/icons";
-import { AgentkitWordmark } from "@components/icons/logo";
+import { KajiWordmark } from "@components/icons/logo";
 import { GitHubIcon } from "@components/docs/icons/ui";
 import { ResourcesDropdown } from "./dropdowns";
 import { navTabs } from "@lib/landing/nav-sections";
@@ -82,7 +82,7 @@ export function DesktopNavTabs({
             href="/"
             className={`flex h-full shrink-0 items-center gap-1 px-4 lg:px-7 py-3 border-r ${styles.tabDividerClass} transition-colors duration-150`}
           >
-            <AgentkitWordmark />
+            <KajiWordmark />
           </Link>
         )}
 

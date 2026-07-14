@@ -3,10 +3,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import chalk from "chalk";
 import { Command } from "commander";
+import {
+  isProvider,
+  PROVIDER_ENV_KEYS,
+  TYPESCRIPT_PROVIDER_PACKAGES,
+  type Provider,
+} from "../providers.js";
 import { readNearestPackageJson } from "../utils/package-info.js";
 
 type DoctorLang = "auto" | "ts" | "python";
-type Provider = "openai" | "anthropic" | "gemini" | "kimi";
+const DOCTOR_LANGS = ["auto", "ts", "python"] as const;
 
 interface Check {
   name: string;
@@ -23,23 +29,12 @@ interface RunOptions {
   runCommand?: (cmd: string, args: string[]) => { ok: boolean; stdout: string; stderr: string };
 }
 
-const PROVIDER_KEYS: Record<Provider, string> = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  gemini: "GEMINI_API_KEY",
-  kimi: "OPENROUTER_API_KEY",
-};
-
-const TS_PROVIDER_PACKAGES: Record<Provider, string> = {
-  openai: "openai",
-  anthropic: "@anthropic-ai/sdk",
-  gemini: "openai",
-  kimi: "openai",
-};
-
 function defaultRunCommand(cmd: string, args: string[]) {
   try {
-    const stdout = execFileSync(cmd, args, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+    const stdout = execFileSync(cmd, args, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     return { ok: true, stdout, stderr: "" };
   } catch (error) {
     const e = error as { stdout?: Buffer | string; stderr?: Buffer | string };
@@ -55,12 +50,16 @@ function readIfExists(path: string): string {
   return existsSync(path) ? readFileSync(path, "utf-8") : "";
 }
 
-function detectProvider(cwd: string, env: Record<string, string | undefined>): Provider {
-  const raw =
+function isDoctorLang(value: string | undefined): value is DoctorLang {
+  return value === undefined || DOCTOR_LANGS.includes(value as DoctorLang);
+}
+
+function configuredProvider(cwd: string, env: Record<string, string | undefined>): string {
+  return (
     env.KAJI_MODEL_PROVIDER ??
     readIfExists(join(cwd, ".env.example")).match(/^KAJI_MODEL_PROVIDER=(.+)$/m)?.[1] ??
-    "openai";
-  return raw === "anthropic" || raw === "gemini" || raw === "kimi" ? raw : "openai";
+    "mock"
+  ).trim();
 }
 
 function hasDependency(all: Record<string, string>, name: string): boolean {
@@ -86,13 +85,21 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
   const checks: Check[] = [];
   const lang = o.lang ?? "auto";
   const langs = detectLangs(o.cwd, lang);
-  const provider = detectProvider(o.cwd, o.env);
-  const providerKey = PROVIDER_KEYS[provider];
+  const configured = configuredProvider(o.cwd, o.env);
+  const provider: Provider = isProvider(configured) ? configured : "mock";
   const pkg = readNearestPackageJson(o.cwd);
   const all = {
     ...(pkg?.dependencies as Record<string, string> | undefined),
     ...(pkg?.devDependencies as Record<string, string> | undefined),
   };
+
+  checks.push({
+    name: "supported provider",
+    ok: isProvider(configured),
+    detail: configured,
+    hint: "Use mock, openai, or anthropic for the beta scaffold.",
+    severity: "hard",
+  });
 
   if (langs.includes("ts")) {
     const major = parseInt(o.nodeVersion.replace(/^v/, "").split(".")[0] ?? "0", 10);
@@ -109,14 +116,22 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
       hint: "Run `bun add @kaji/sdk` or regenerate with `kaji init --lang ts`.",
       severity: "hard",
     });
-    const providerPackage = TS_PROVIDER_PACKAGES[provider];
     checks.push({
-      name: `${providerPackage} installed`,
-      ok: hasDependency(all, providerPackage),
-      detail: provider,
-      hint: `Run \`bun add ${providerPackage}\` for the selected ${provider} provider.`,
-      severity: pkg ? "hard" : "soft",
+      name: "zod installed",
+      ok: hasDependency(all, "zod"),
+      hint: 'Run `bun add "zod@>=4.3 <5"`; Zod is a required @kaji/sdk peer.',
+      severity: "hard",
     });
+    const providerPackage = TYPESCRIPT_PROVIDER_PACKAGES[provider];
+    if (providerPackage) {
+      checks.push({
+        name: `${providerPackage} installed`,
+        ok: hasDependency(all, providerPackage),
+        detail: provider,
+        hint: `Run \`bun add ${providerPackage}\` for the selected ${provider} provider.`,
+        severity: pkg ? "hard" : "soft",
+      });
+    }
   }
 
   if (langs.includes("python")) {
@@ -147,13 +162,16 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
     });
   }
 
-  checks.push({
-    name: "provider key",
-    ok: (o.env[providerKey] ?? "").length > 0,
-    detail: providerKey,
-    hint: `Set ${providerKey} for the selected ${provider} provider.`,
-    severity: "hard",
-  });
+  const providerKey = PROVIDER_ENV_KEYS[provider];
+  if (providerKey) {
+    checks.push({
+      name: "provider key",
+      ok: (o.env[providerKey] ?? "").length > 0,
+      detail: providerKey,
+      hint: `Set ${providerKey} for the selected ${provider} provider.`,
+      severity: "hard",
+    });
+  }
   checks.push({
     name: ".env.example present",
     ok: existsSync(join(o.cwd, ".env.example")),
@@ -169,7 +187,12 @@ export const doctor = new Command("doctor")
   .option("--cwd <cwd>", "working directory", process.cwd())
   .option("--lang <lang>", "auto|ts|python", "auto")
   .option("--json", "output as JSON")
-  .action((opts: { cwd: string; lang?: DoctorLang; json?: boolean }) => {
+  .action((opts: { cwd: string; lang?: string; json?: boolean }) => {
+    if (!isDoctorLang(opts.lang)) {
+      console.error(`--lang must be one of: ${DOCTOR_LANGS.join(", ")}`);
+      process.exitCode = 2;
+      return;
+    }
     const out = runChecks({
       cwd: resolve(opts.cwd),
       env: process.env,
@@ -186,5 +209,5 @@ export const doctor = new Command("doctor")
         console.log(`${mark} ${c.name}${suffix}${hint}`);
       }
     }
-    if (out.failed) process.exit(1);
+    if (out.failed) process.exitCode = 1;
   });

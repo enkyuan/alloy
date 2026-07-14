@@ -1,8 +1,17 @@
 {
   "name": "@kaji/cli",
   "version": "0.1.0",
-  "description": "The CLI for kaji",
-  "license": "SEE LICENSE IN ../../LICENSE",
+  "description": "Cross-language scaffolding and diagnostics for Kaji projects.",
+  "homepage": "https://github.com/enkyuan/alloy/blob/main/apps/cli/README.md",
+  "bugs": {
+    "url": "https://github.com/enkyuan/alloy/issues"
+  },
+  "license": "SEE LICENSE IN dist/LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enkyuan/alloy.git",
+    "directory": "apps/cli"
+  },
   "bin": {
     "kaji": "./dist/index.js"
   },
@@ -17,16 +26,16 @@
     ]
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "node ./scripts/build.mjs",
     "dev": "tsx ./src/index.ts",
     "start": "node ./dist/index.js",
     "prepack": "bun run build",
     "smoke": "bun run build && node ./scripts/smoke.mjs",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint .",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
-    "clean": "rm -rf dist",
+    "lint": "oxlint src test scripts vitest.config.ts",
+    "format": "oxfmt --write --ignore-path .oxfmtignore .",
+    "format:check": "oxfmt --check --ignore-path .oxfmtignore .",
+    "clean": "node ./scripts/clean.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -35,6 +44,7 @@
     "chalk": "^5.4.1",
     "commander": "^14.0.0",
     "dotenv": "^17.3.1",
+    "js-yaml": "^4.3.0",
     "semver": "^7.8.5",
     "yocto-spinner": "^1.2.0"
   },
@@ -44,9 +54,11 @@
     "@types/semver": "^7.7.1",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.68.0",
-    "tsdown": "^0.12.9",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
+  },
+  "engines": {
+    "node": "22.x || 24.x"
   }
 }

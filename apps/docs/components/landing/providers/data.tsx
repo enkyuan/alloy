@@ -8,72 +8,77 @@ import { KimiLogo, AnthropicLogo } from "@components/icons/providers";
 export const providerDrivers = [
   {
     name: "OpenAI",
+    tier: "beta core",
     icon: () => <OpenAILogo />,
   },
   {
-    name: "OpenRouter",
-    icon: () => <OpenRouterLogo />,
-  },
-  {
-    name: "Kimi",
-    icon: () => <KimiLogo />,
-  },
-  {
-    name: "Gemini",
-    icon: () => <GeminiLogo />,
+    name: "Anthropic",
+    tier: "beta core",
+    icon: () => <AnthropicLogo />,
   },
 ];
 
 export const moreProviders = [
   {
-    name: "Anthropic",
-    icon: () => <AnthropicLogo />,
+    name: "OpenRouter",
+    tier: "experimental",
+    icon: () => <OpenRouterLogo />,
+  },
+  {
+    name: "Kimi",
+    tier: "experimental",
+    icon: () => <KimiLogo />,
+  },
+  {
+    name: "Gemini",
+    tier: "experimental",
+    icon: () => <GeminiLogo />,
   },
 ];
 
 export const providerSnippets: Record<string, string> = {
-  OpenAI: `import { AgentBuilder, EventBus, InMemoryEventStore, openai } from "@kaji/sdk"
+  OpenAI: `import { AgentBuilder, openai } from "@kaji/sdk"
 
 const runtime = new AgentBuilder()
-  .provider(openai("gpt-4o"))
-  .build({ bus: new EventBus(), store: new InMemoryEventStore() })`,
-  OpenRouter: `import { openrouter } from "@kaji/sdk"
-
-provider: openrouter("anthropic/claude-sonnet-4-5")`,
-  Kimi: `import { kimi } from "@kaji/sdk"
-
-provider: kimi()`,
-  Gemini: `import { gemini } from "@kaji/sdk"
-
-provider: gemini("gemini-2.5-flash")`,
+  .provider(openai("gpt-5.4-mini"))
+  .build()`,
   Anthropic: `import { anthropic } from "@kaji/sdk"
 
-provider: anthropic("claude-sonnet-4-6")`,
+const provider = anthropic("claude-sonnet-4-6")`,
+  OpenRouter: `import { openrouter } from "@kaji/sdk"
+
+const provider = openrouter("anthropic/claude-sonnet-4-6")`,
+  Kimi: `import { kimi } from "@kaji/sdk"
+
+const provider = kimi()`,
+  Gemini: `import { gemini } from "@kaji/sdk"
+
+const provider = gemini("gemini-2.5-flash")`,
 };
 
-export const serverCodeTs = `import { EventType } from "@kaji/sdk"
+export const serverCodeTs = `import { AgentBuilder, openai } from "@kaji/sdk"
 
-// Send a message and stream the response
-const session = crypto.randomUUID()
-await runtime.send(session, "What's the weather in Tokyo?")
+const runtime = new AgentBuilder()
+  .provider(openai("gpt-5.4-mini"))
+  .build()
 
-for await (const event of bus.subscribe(session)) {
-  if (event.type === EventType.AGENT_MESSAGE_DELTA) {
-    process.stdout.write(event.delta)
-  }
-  if (event.type === EventType.AGENT_MESSAGE_COMPLETED) {
-    break
-  }
-}`;
+const result = await runtime.turn("Say hello.", {
+  sessionId: "demo-session",
+})
 
-export const serverCodePy = `from kaji.infra.events.types import EventType
+console.log(result.text, result.sessionId, result.turnId)`;
 
-# Send a message and stream the response
-session_id = "s1"
-await runtime.run_turn(session_id)
+export const serverCodePy = `import kaji
 
-async for event in bus.subscribe(session_id):
-    if event.type == EventType.AGENT_MESSAGE_DELTA:
-        print(event.delta, end="", flush=True)
-    if event.type == EventType.AGENT_MESSAGE_COMPLETED:
-        break`;
+runtime = (
+    kaji.AgentBuilder()
+    .provider(kaji.get_provider("openai"))
+    .build()
+)
+
+result = await runtime.turn(
+    "Say hello.",
+    session_id="demo-session",
+)
+
+print(result.text, result.session_id, result.turn_id)`;

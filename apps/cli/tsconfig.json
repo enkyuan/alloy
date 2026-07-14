@@ -2,7 +2,7 @@
   "extends": "@kaji/shared/tsconfig/node",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "."
   },
-  "include": ["src"]
+  "include": ["src", "test", "vitest.config.ts"]
 }

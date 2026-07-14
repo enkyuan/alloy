@@ -15,35 +15,31 @@ on:
       - ".github/actions/setup-go-cache/**"
       - ".github/workflows/go.lint.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  api:
-    name: ryo/api
+  lint:
+    name: ryo/${{ matrix.component }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, consumer]
     defaults:
       run:
-        working-directory: ryo/api
+        working-directory: ryo/${{ matrix.component }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-go-cache
         with:
-          working-directory: ryo/api
-
-      - name: Vet
-        run: go vet ./...
-
-  consumer:
-    name: ryo/consumer
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ryo/consumer
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/setup-go-cache
-        with:
-          working-directory: ryo/consumer
+          working-directory: ryo/${{ matrix.component }}
 
       - name: Vet
         run: go vet ./...

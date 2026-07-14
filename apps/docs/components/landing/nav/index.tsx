@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import { useNav } from "@lib/landing/use-nav";
 import { useMobile } from "@hooks/use-mobile";
 import { useDropdown } from "@hooks/use-dropdown";
-import { AgentkitWordmark } from "@components/icons/logo";
+import { KajiWordmark } from "@components/icons/logo";
 import { ArrowUpRightIcon } from "@components/icons";
 import { contents } from "@lib/sidebar-config";
 import { DocsSidebarItem, MobileViewToggle } from "./helpers";
@@ -213,7 +213,7 @@ export function Nav() {
               new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }),
             )
           }
-          leftPane={<AgentkitWordmark />}
+          leftPane={<KajiWordmark />}
           leftPaneWidthClass={styles.leftPaneWidthClass}
         />
 

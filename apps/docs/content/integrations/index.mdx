@@ -1,0 +1,80 @@
+---
+title: Integrations
+description: Copy source-owned integration bundles from the Python or TypeScript SDK registry, with explicit stability, auth, and risk boundaries.
+---
+
+Kaji integrations are source-owned bundles. `kaji add` copies a manifest,
+implementation, fixtures, and any included tests into your project. Review the
+copy, configure its dependencies and credentials, then register the integration
+with `AgentBuilder`. Kaji does not silently activate catalog tools.
+
+## Catalog status
+
+This is the 0.2 beta-candidate catalog. “Experimental” entries require
+`--allow-experimental` and are outside the first beta compatibility promise.
+
+| Integration | Stability    | Runtime            | Auth               | Tools |
+| ----------- | ------------ | ------------------ | ------------------ | ----- |
+| `echo`      | Beta         | Python, TypeScript | None               | 2     |
+| `github`    | Experimental | Python, TypeScript | `GITHUB_TOKEN`     | 6     |
+| `fs`        | Experimental | TypeScript         | None               | 4     |
+| `http`      | Experimental | TypeScript         | Bound transport    | 4     |
+| `sqlite`    | Experimental | TypeScript         | None               | 3     |
+| `web`       | Experimental | TypeScript         | Optional Brave key | 3     |
+
+The Python registry contains `echo` and `github`. The TypeScript registry also
+contains the four TypeScript-only experiments. Registry manifests and JSON
+schemas are validated, and the shared entries are checked for cross-SDK ABI
+parity.
+
+## Discover and copy
+
+<Tabs items={["python", "typescript"]}>
+  <Tab value="python">
+    ```bash
+    kaji list-integrations
+    kaji add echo --out ./integrations
+    kaji add github --out ./integrations --allow-experimental
+    ```
+
+  </Tab>
+  <Tab value="typescript">
+    ```bash
+    npx --package=@kaji/sdk kaji list-integrations
+    npx --package=@kaji/sdk kaji add echo --out ./integrations
+    npx --package=@kaji/sdk kaji add github --out ./integrations --allow-experimental
+    ```
+
+  </Tab>
+</Tabs>
+
+Use `--check` to inspect copy status without writing and `--json` for tooling.
+A current unmodified bundle is a no-op. `--force` replaces only an unmodified,
+same-provider outdated bundle; it does not overwrite arbitrary local edits.
+
+## GitHub
+
+The experimental GitHub bundle exposes four parallel-safe reads:
+`get_file`, `get_issue`, `list_issues`, and `search_code`; and two serialized
+external effects: `create_issue` and `add_comment`. The integration namespace
+is applied before provider dispatch.
+
+The runtime requires an application-owned repository allowlist and resolves
+`GITHUB_TOKEN` per tool execution context. Its client is fixed to
+`https://api.github.com`, rejects redirects, bounds response headers and bodies,
+and treats a connection loss after mutation dispatch as an unknown outcome.
+Reconcile the issue or comment marker before retrying such a mutation.
+
+GitHub has deterministic package and ABI proofs, but it remains experimental
+until protected keyed API evidence and the release gates complete.
+
+## Gmail status
+
+No Gmail manifest, client, or tool bundle is shipped in either registry at this
+checkpoint. The SDKs contain shared Google OAuth, macOS Keychain, fixed-origin,
+and recovery-contract primitives for a future Gmail integration. Those
+primitives -- and the presence of `connect` / `disconnect` commands -- do not make
+`kaji add gmail` or `kaji connect gmail` valid today.
+
+See [integration recovery](/docs/integrations/recovery-v1) for the closed error
+vocabulary, including the Gmail rows reserved by the shared contract.

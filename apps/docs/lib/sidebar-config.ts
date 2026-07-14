@@ -4,10 +4,12 @@ import {
   RiBroadcastLine,
   RiCpuLine,
   RiGitBranchLine,
+  RiPlugLine,
   RiRocket2Line,
   RiServerLine,
   RiStackFill,
   RiStackLine,
+  RiTerminalBoxLine,
   RiToolsLine,
 } from "@remixicon/react";
 
@@ -46,13 +48,21 @@ export const contents: Content[] = [
     Icon: RiRocket2Line,
     list: [
       { title: "Introduction", href: "/docs", icon: RiBook2Line },
+      { title: "Install", href: "/docs/install", icon: RiRocket2Line },
       { title: "Getting Started", href: "/docs/getting-started", icon: RiRocket2Line },
-      { title: "Architecture", href: "/docs/architecture", icon: RiStackLine },
+      { title: "CLI", href: "/docs/cli", icon: RiTerminalBoxLine },
       {
-        title: "Reference Service",
-        href: "/docs/reference-service",
-        icon: RiServerLine,
+        title: "Integrations",
+        href: "/docs/integrations",
+        icon: RiPlugLine,
+        subpages: [
+          {
+            title: "Recovery v1",
+            href: "/docs/integrations/recovery-v1",
+          },
+        ],
       },
+      { title: "Architecture", href: "/docs/architecture", icon: RiStackLine },
     ],
   },
   {
@@ -65,13 +75,30 @@ export const contents: Content[] = [
         href: "/docs/concepts/session-state",
         icon: RiGitBranchLine,
       },
+      { title: "Runtime", href: "/docs/concepts/runtime", icon: RiStackLine },
       {
         title: "Tool Registry",
         href: "/docs/concepts/tool-registry",
         icon: RiToolsLine,
       },
-      { title: "Event Bus", href: "/docs/concepts/event-bus", icon: RiStackFill },
+      { title: "Event Delivery", href: "/docs/concepts/event-bus", icon: RiStackFill },
       { title: "Providers", href: "/docs/concepts/providers", icon: RiCpuLine },
+    ],
+  },
+  {
+    title: "Operations",
+    Icon: RiServerLine,
+    list: [
+      {
+        title: "Reference Service",
+        href: "/docs/reference-service",
+        icon: RiServerLine,
+      },
+      {
+        title: "Troubleshooting",
+        href: "/docs/troubleshooting",
+        icon: RiToolsLine,
+      },
     ],
   },
 ];

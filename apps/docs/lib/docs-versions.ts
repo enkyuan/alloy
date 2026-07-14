@@ -8,11 +8,11 @@ export interface DocsVersion {
 
 export const docsVersions: DocsVersion[] = [
   {
-    label: "Latest",
-    version: "0.0",
+    label: "0.2 beta candidate",
+    version: "0.2",
     branch: "main",
     slug: null,
-    badge: null,
+    badge: "pre-release",
   },
 ];
 

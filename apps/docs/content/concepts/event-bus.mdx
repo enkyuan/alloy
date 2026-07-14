@@ -1,10 +1,11 @@
 ---
-title: Event Bus
-description: The event bus fans events out to per-session subscribers. In-memory by default in both SDKs, with optional Python Redis adapters for cross-process hand-off.
+title: Event Delivery
+description: Subscribe through the canonical event journal in Python or event committer in TypeScript; the split event bus adapters are experimental.
 ---
 
-Subscribe to the bus when you want to stream events as they happen -- e.g.
-push agent deltas to a UI, or tee them into your own log.
+Subscribe to the canonical append-and-delivery boundary when you want to push
+agent deltas to a UI or consume a resumable event stream. Python calls this an
+`EventJournal`; TypeScript calls it an `EventCommitter`.
 
 The default builders create `InMemoryEventJournal` (Python) or
 `InMemoryEventCommitter` (TypeScript). Each commits to an `EventStore` and

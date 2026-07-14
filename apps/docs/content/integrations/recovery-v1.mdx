@@ -1,0 +1,83 @@
+---
+title: Integration Recovery v1
+description: Closed, redaction-safe recovery actions emitted by Kaji integration transports and OAuth boundaries.
+---
+
+Integration failures expose a closed tuple of `error_code`, `reason_code`,
+`recovery_code`, and `doc_url`. Route on those fields; do not parse exception
+messages or log credentials, request bodies, tool arguments, or vendor errors.
+
+Gmail rows below are reserved by the shared contract. No Gmail integration or
+Gmail tools are bundled at this checkpoint.
+
+## GitHub token
+
+`CONFIGURE_GITHUB_TOKEN`: set the manifest-declared `GITHUB_TOKEN` and retry.
+
+## Gmail grant
+
+`CONNECT_GMAIL`: once a reviewed Gmail manifest exists, use its
+package-qualified `connect` command with the same stable host principal.
+
+## Keychain missing
+
+`RESTORE_KEYCHAIN`: restore `/usr/bin/security` on a supported macOS host.
+
+## Keychain locked
+
+`UNLOCK_KEYCHAIN`: unlock the login Keychain before reading the stored grant.
+
+## Keychain corrupt
+
+`RESET_GMAIL_GRANT`: remove the invalid local grant and reconnect with the same
+principal after a Gmail bundle is available.
+
+## Keychain unsupported
+
+`USE_SUPPORTED_KEYCHAIN`: use a supported macOS host. Never fall back to
+plaintext OAuth credential storage.
+
+## Gmail scope drift
+
+`RECONNECT_GMAIL`: reconnect the same principal and consent to the exact
+manifest-declared scopes after a Gmail bundle is available.
+
+## Policy rejected
+
+`REVIEW_INTEGRATION_POLICY`: review the fixed origin, repository or recipient
+allowlist, principal, and request schema. The request did not dispatch.
+
+## API rejected
+
+`REVIEW_PROVIDER_REJECTION`: correct the confirmed non-retryable provider
+rejection before retrying manually.
+
+## Transient read
+
+`RETRY_INTEGRATION_READ`: retry only the idempotent read with bounded backoff.
+
+## Rate limited
+
+`RETRY_AFTER_RATE_LIMIT`: reduce parallelism and wait for the bounded provider
+delay before retrying.
+
+## Redirect rejected
+
+`REJECT_PROVIDER_REDIRECT`: verify the fixed provider endpoint. Kaji does not
+follow integration redirects; never retry an ambiguous mutation blindly.
+
+## Response limit
+
+`REDUCE_INTEGRATION_RESPONSE`: narrow a read. Reconcile a mutation before any
+retry because the remote effect may have completed before the oversized
+response was rejected.
+
+## GitHub mutation unknown
+
+`RECONCILE_GITHUB_MUTATION`: look up the issue or comment marker associated
+with the idempotency key before deciding whether to retry.
+
+## Gmail mutation unknown
+
+`RECONCILE_GMAIL_MUTATION`: once Gmail tools exist, reconcile the draft key or
+sent message before deciding whether to retry.
