@@ -10,7 +10,7 @@ on:
       - "package.json"
       - "bun.lock"
       - ".github/actions/setup-bun-cache/**"
-      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/ast-grep.test.yml"
   pull_request:
     paths:
       - "kaji/**"
@@ -19,7 +19,7 @@ on:
       - "package.json"
       - "bun.lock"
       - ".github/actions/setup-bun-cache/**"
-      - ".github/workflows/ast-grep.yml"
+      - ".github/workflows/ast-grep.test.yml"
 
 permissions:
   contents: read

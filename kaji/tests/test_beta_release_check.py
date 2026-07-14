@@ -25,7 +25,7 @@ ROOT_GITIGNORE = REPO_ROOT / ".gitignore"
 RULE_DIR = REPO_ROOT / "tools" / "ast-grep" / "rules"
 RULE_TEST_DIR = REPO_ROOT / "tools" / "ast-grep" / "rule-tests"
 SGCONFIG = REPO_ROOT / "sgconfig.yml"
-AST_GREP_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ast-grep.yml"
+AST_GREP_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ast-grep.test.yml"
 
 
 def _load_beta_gate():

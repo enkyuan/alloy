@@ -273,7 +273,7 @@ const workflowFiles = [
   "ts.test.yml",
   "ts.lint.yml",
   "ts.format.yml",
-  "ast-grep.yml",
+  "ast-grep.test.yml",
   "kaji.benchmark.yml",
   "kaji.beta-pr.yml",
   "kaji.beta.yml",
