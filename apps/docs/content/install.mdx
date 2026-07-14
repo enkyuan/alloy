@@ -61,12 +61,12 @@ Three packages expose a binary named `kaji`; their command sets are different.
 ```bash
 pip install kaji-sdk   # Python SDK CLI: init/add/connect/disconnect/list/...
 bun add @kaji/sdk "zod@>=4.3 <5" # Embedded TS CLI: init/add/connect/disconnect/list/replay
-bun add -D @kaji/cli   # Standalone cross-language scaffold + diagnostics
 ```
 
-Only standalone `@kaji/cli` has `mcp`; it reports that server setup is deferred
-and does not write AI-tool config. See [CLI](/docs/cli) for the exact command
-matrix and flag differences.
+The standalone cross-language `@kaji/cli` is not published yet and is outside
+the SDK beta release. Its repository source includes `mcp`, which only reports
+that server setup is deferred and does not write AI-tool config. See
+[CLI](/docs/cli) for the exact command matrix and flag differences.
 
 ## Version policy
 

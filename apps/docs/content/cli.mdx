@@ -76,17 +76,13 @@ command. Successful data uses stdout, diagnostics use stderr, and exits are 0
 for success/help, 1 for validation/runtime/file conflicts, and 2 for usage.
 Replay output is a closed redaction-safe projection.
 
-## Standalone cross-language CLI
+## Standalone cross-language CLI (source only)
 
-Install `@kaji/cli` when you want one scaffold and diagnostic tool for either
-language:
+`@kaji/cli` is not published yet. Contributors can run its source from this
+repository when they want one scaffold and diagnostic tool for either language:
 
 ```bash
-bun add -D @kaji/cli
-bunx @kaji/cli init --cwd ./my-agent --lang ts --provider openai --yes
-bunx @kaji/cli gen --spec openapi.yaml --out tools/ --lang ts
-bunx @kaji/cli info --json
-bunx @kaji/cli doctor
+bun run --cwd apps/cli dev -- --help
 ```
 
 It provides `init`, `gen`, `info`, `secret`, `doctor`, `upgrade`, and `mcp`.
@@ -94,9 +90,9 @@ Its `init` uses `--cwd` and requires an explicit `--lang` for non-interactive
 cross-language scaffolding. The `mcp` command only reports that server support
 is deferred; it does not install a server or write AI-tool configuration.
 
-The published standalone package remains `0.1.x`; the next CLI changes in this
-repository are unreleased and outside the SDK beta-core compatibility promise.
+Its repository version is `0.1.0`, but no npm release exists. The standalone
+CLI is outside the SDK beta-core compatibility and publication promise.
 
-If both npm packages are present, avoid relying on whichever `kaji` bin wins
-package-manager linking. Invoke the standalone package explicitly (for example,
-`bunx @kaji/cli --help`) or run the embedded SDK binary from its package script.
+If it is published later, avoid relying on whichever `kaji` bin wins
+package-manager linking when both npm packages are present. Invoke the intended
+package explicitly or run the embedded SDK binary from its package script.
