@@ -14,6 +14,24 @@
   },
   "packageSubpaths": {
     "typescript": {
+      "./anthropic": {
+        "tier": "stable",
+        "exports": ["AnthropicProvider", "AnthropicProviderOptions"]
+      },
+      "./auth": {
+        "tier": "experimental",
+        "exports": [
+          "GoogleOAuthClient",
+          "GoogleOAuthClientOptions",
+          "MacOSKeychainTokenStorage",
+          "OAuthAccessTokenProvider",
+          "OAuthCredentialRecord",
+          "OAuthTokenSet",
+          "OAuthTokenStorage",
+          "canonicalOAuthCredentialJson",
+          "snapshotOAuthCredentialRecord"
+        ]
+      },
       "./cli": {
         "tier": "stable",
         "exports": []
@@ -33,18 +51,17 @@
           "snapshotIntegrationResult"
         ]
       },
-      "./auth": {
+      "./openai": {
+        "tier": "stable",
+        "exports": ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"]
+      },
+      "./testing": {
         "tier": "experimental",
         "exports": [
-          "GoogleOAuthClient",
-          "GoogleOAuthClientOptions",
-          "MacOSKeychainTokenStorage",
-          "OAuthAccessTokenProvider",
-          "OAuthCredentialRecord",
-          "OAuthTokenSet",
-          "OAuthTokenStorage",
-          "canonicalOAuthCredentialJson",
-          "snapshotOAuthCredentialRecord"
+          "MockProvider",
+          "ProviderResponseDiagnostics",
+          "createSessionState",
+          "withProviderResponseDiagnostics"
         ]
       }
     }

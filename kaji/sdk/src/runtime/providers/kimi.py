@@ -62,15 +62,8 @@ class KimiProvider(ModelProvider):
             self.app_title = None
         else:
             self.model_name = model or settings.KIMI_MODEL
-            self.base_url = (
-                base_url
-                or settings.KIMI_BASE_URL
-                or settings.OPENROUTER_BASE_URL
-                or "https://openrouter.ai/api/v1/chat/completions"
-            )
-            self.api_key = (
-                api_key or settings.OPENROUTER_API_KEY or settings.KIMI_API_KEY
-            )
+            self.base_url = base_url or settings.OPENROUTER_BASE_URL
+            self.api_key = api_key or settings.OPENROUTER_API_KEY
             self.http_referer = http_referer or settings.OPENROUTER_HTTP_REFERER
             self.app_title = app_title or settings.OPENROUTER_APP_TITLE
 

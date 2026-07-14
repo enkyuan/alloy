@@ -86,7 +86,7 @@ def _provenance_validator() -> Validator:
 
 def _package_version() -> str:
     try:
-        return version("kaji")
+        return version("kaji-sdk")
     except PackageNotFoundError:
         return "0.0.0"
 
@@ -96,7 +96,7 @@ def _package_license() -> Path:
     if checkout.is_file():
         return checkout
     try:
-        installed = distribution("kaji")
+        installed = distribution("kaji-sdk")
     except PackageNotFoundError:
         raise ManifestError("Installed package license is unavailable") from None
     for relative in installed.files or ():

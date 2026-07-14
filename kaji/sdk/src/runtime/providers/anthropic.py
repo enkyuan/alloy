@@ -26,7 +26,7 @@ from kaji.runtime.providers.errors import (
     ProviderOutputLimitError,
     provider_error_from_exception,
 )
-from kaji.runtime.providers.costs import calculate_cost_usd
+from kaji.runtime.providers.costs import calculate_cost_usd, lookup_cost
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -86,7 +86,7 @@ class AnthropicProvider(ModelProvider):
                 AsyncAnthropic = import_module("anthropic").AsyncAnthropic
             except ImportError:
                 raise ProviderConfigError(
-                    "Anthropic provider requires anthropic. Install kaji[anthropic]."
+                    "Anthropic provider requires anthropic. Install kaji-sdk[anthropic]."
                 ) from None
 
             # Kaji does not own a cancellable pre-stream retry loop. Disable
@@ -254,7 +254,7 @@ class AnthropicProvider(ModelProvider):
                     metrics.prompt_tokens,
                     metrics.completion_tokens,
                 )
-                if usage is not None
+                if usage is not None and lookup_cost(self.model_name) is not None
                 else None
             ),
         )
@@ -422,10 +422,14 @@ class AnthropicProvider(ModelProvider):
         if latest_metrics is not None:
             yield ModelResponseChunk(
                 metrics=latest_metrics,
-                cost_usd=calculate_cost_usd(
-                    self.model_name,
-                    latest_metrics.prompt_tokens,
-                    latest_metrics.completion_tokens,
+                cost_usd=(
+                    calculate_cost_usd(
+                        self.model_name,
+                        latest_metrics.prompt_tokens,
+                        latest_metrics.completion_tokens,
+                    )
+                    if lookup_cost(self.model_name) is not None
+                    else None
                 ),
             )
 

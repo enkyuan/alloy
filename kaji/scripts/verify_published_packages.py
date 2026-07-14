@@ -22,7 +22,7 @@ from typing import Any, Literal, NoReturn, Sequence
 from process_runner import METADATA_BUDGET, CommandError, run_checked
 
 
-PYPI_PROJECT = "kaji"
+PYPI_PROJECT = "kaji-sdk"
 PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
 NPM_PACKAGE = "@kaji/sdk"
@@ -189,6 +189,13 @@ def verify_pypi(
     )
     if not isinstance(metadata, dict):
         raise VerificationMismatch("PyPI returned malformed project metadata")
+    info = metadata.get("info")
+    if (
+        not isinstance(info, dict)
+        or info.get("name") != PYPI_PROJECT
+        or info.get("version") != PYPI_VERSION
+    ):
+        raise VerificationMismatch("PyPI returned the wrong project or version")
     expected_names = {
         name for name, entry in entries.items() if entry["package"] == "python"
     }

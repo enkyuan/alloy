@@ -7,8 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from kaji_serve import __version__
+from kaji_serve.config import settings
 from kaji_serve.server.router import api_router
-from kaji.core.config import settings
 from kaji.core.logging import setup_logging
 from kaji_serve.server.database import close_async_engine
 from kaji.infra.realtime.redis import close_redis_client
@@ -41,8 +42,8 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
     docs_url=f"{settings.API_V1_PREFIX}/docs",
     redoc_url=f"{settings.API_V1_PREFIX}/redoc",
-    version="1.0.0",
-    description="Kaji SDK",
+    version=__version__,
+    description="Kaji reference service",
     lifespan=lifespan,
 )
 

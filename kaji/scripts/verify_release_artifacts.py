@@ -15,8 +15,8 @@ from typing import Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
-    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.1.tgz": ("typescript", "0.2.0-beta.1"),
 }
 EXPECTED_PACKAGES = {
@@ -156,8 +156,8 @@ def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
         root=root,
         commit=commit,
         manifest_sha256=sha256(artifacts / "manifest.json"),
-        python_wheel=(root / "kaji-0.2.0b1-py3-none-any.whl"),
-        python_sdist=(root / "kaji-0.2.0b1.tar.gz"),
+        python_wheel=(root / "kaji_sdk-0.2.0b1-py3-none-any.whl"),
+        python_sdist=(root / "kaji_sdk-0.2.0b1.tar.gz"),
         npm_tarball=(root / "kaji-sdk-0.2.0-beta.1.tgz"),
         artifact_sha256=MappingProxyType(dict(sorted(manifest_hashes.items()))),
     )

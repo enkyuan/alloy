@@ -7,7 +7,7 @@ from typing import Any
 
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
-from kaji.core.config import get_settings
+from kaji_serve.config import get_settings
 
 
 @lru_cache(maxsize=1)

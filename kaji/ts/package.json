@@ -99,7 +99,7 @@
     }
   },
   "scripts": {
-    "prebuild": "bun run scripts/prepare_registry.ts",
+    "prebuild": "bun run validate:registry",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",

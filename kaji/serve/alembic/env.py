@@ -12,7 +12,7 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import settings and models
-from kaji.core.config import settings
+from kaji_serve.config import settings
 from kaji_serve.server.database import Base
 from kaji_serve.server.models.conversation import Conversation  # noqa: F401
 from kaji_serve.server.models.user import User  # noqa: F401

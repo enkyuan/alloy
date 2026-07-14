@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 
 def test_default_provider_is_mock() -> None:
@@ -34,3 +37,15 @@ def test_default_openai_model_is_recommended_live_test_model() -> None:
 
     settings = Settings()
     assert settings.OPENAI_MODEL == "gpt-5.4-mini"
+    assert settings.GEMINI_MODEL == "gemini-3.5-flash"
+
+
+def test_default_realtime_url_targets_the_local_opt_in_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kaji.core.config import Settings
+
+    monkeypatch.chdir(tmp_path)
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings()
+        assert settings.REDIS_URL == "redis://localhost:6379/0"

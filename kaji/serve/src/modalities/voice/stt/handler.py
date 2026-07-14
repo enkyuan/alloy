@@ -20,6 +20,7 @@ from kaji.infra.events.envelope import (
     to_redis_stream_fields,
 )
 from kaji.modalities.voice.event_models import UserTranscriptionReceived
+from kaji_serve.config import settings
 from kaji_serve.server.auth_utils import decode_bearer_token
 
 logger = logging.getLogger(__name__)
@@ -29,15 +30,20 @@ def normalize_command_text(value: str) -> str:
     return " ".join(value.lower().split())
 
 
-def extract_websocket_bearer_token(websocket: WebSocket) -> Optional[str]:
-    """Extract auth token from websocket headers or legacy query param."""
+def extract_websocket_access_token(websocket: WebSocket) -> Optional[str]:
+    """Extract bearer auth or an origin-bound host-managed browser cookie."""
     authorization = websocket.headers.get("authorization")
-    if not authorization or not authorization.startswith("Bearer "):
-        query_token = websocket.query_params.get("token")
-        if query_token:
-            return str(query_token)
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ")
+
+    cookie_token = websocket.cookies.get("kaji_access_token")
+    if not cookie_token:
         return None
-    return authorization.replace("Bearer ", "")
+
+    origin = websocket.headers.get("origin")
+    if not origin or origin not in settings.cors_allow_origins:
+        return None
+    return str(cookie_token)
 
 
 def _parse_pubsub_event(data: Any) -> dict[str, Any] | None:
@@ -198,7 +204,7 @@ async def send_error_message(websocket: WebSocket, message: str) -> None:
 
 async def authenticate_ws(websocket: WebSocket) -> tuple[str, str] | None:
     """Authenticate websocket and return (user_id, session_id)."""
-    access_token = extract_websocket_bearer_token(websocket)
+    access_token = extract_websocket_access_token(websocket)
     if not access_token:
         logger.warning("Missing or invalid auth token for STT websocket")
         await send_error_message(websocket, "Missing or invalid auth token.")

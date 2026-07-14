@@ -15,9 +15,9 @@ import { OpenAIProvider, type OpenAIProviderOptions } from "@/providers/openai";
 import { AnthropicProvider, type AnthropicProviderOptions } from "@/providers/anthropic";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
-const DEFAULT_KIMI_MODEL = "moonshotai/kimi-k2";
+const DEFAULT_KIMI_MODEL = "moonshotai/kimi-k2.6";
 const GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
-const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash";
 
 type ModelOrOptions<TOpts> = string | (Omit<TOpts, "apiKey"> & { apiKey?: string });
 
@@ -65,7 +65,7 @@ export interface OpenRouterFactoryOptions extends Omit<
   apiKey?: string;
   /** Sent as `HTTP-Referer`. OpenRouter shows the app on its leaderboard. */
   httpReferer?: string;
-  /** Sent as `X-Title`. Human-readable app name on the OpenRouter dashboard. */
+  /** Sent as `X-OpenRouter-Title`. Human-readable app name on the OpenRouter dashboard. */
   appTitle?: string;
 }
 
@@ -76,15 +76,14 @@ function mergeOpenRouterHeaders(
 ): Record<string, string> | undefined {
   const merged: Record<string, string> = { ...base };
   if (httpReferer) merged["HTTP-Referer"] = httpReferer;
-  if (appTitle) merged["X-Title"] = appTitle;
+  if (appTitle) merged["X-OpenRouter-Title"] = appTitle;
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 /**
  * Create an OpenRouter provider. OpenRouter is OpenAI-compatible, so this is
  * an `OpenAIProvider` pointed at the OpenRouter base URL. Reads
- * `OPENROUTER_API_KEY` (falling back to `OPENAI_API_KEY`) when no `apiKey`
- * is passed.
+ * `OPENROUTER_API_KEY` when no `apiKey` is passed.
  *
  *   const p = openrouter("anthropic/claude-3.5-sonnet");
  *   const p = openrouter({ model: "meta-llama/llama-3.1-70b-instruct", appTitle: "My agent" });
@@ -94,7 +93,7 @@ export function resolveOpenRouterOptions(
   arg?: string | OpenRouterFactoryOptions,
 ): OpenAIProviderOptions {
   const opts: OpenRouterFactoryOptions = typeof arg === "string" ? { model: arg } : (arg ?? {});
-  const apiKey = opts.apiKey ?? process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
+  const apiKey = opts.apiKey ?? process.env.OPENROUTER_API_KEY ?? "";
   return {
     apiKey,
     baseURL: OPENROUTER_BASE_URL,
@@ -136,9 +135,9 @@ export interface GeminiFactoryOptions extends Omit<OpenAIProviderOptions, "apiKe
  * Create a Gemini provider via Google's OpenAI-compatible endpoint
  * (https://generativelanguage.googleapis.com/v1beta/openai/). Reads
  * `GEMINI_API_KEY`, falling back to `GOOGLE_API_KEY`, when no `apiKey` is
- * passed. Defaults to model `gemini-2.5-flash`.
+ * passed. Defaults to model `gemini-3.5-flash`.
  *
- *   const p = gemini();                        // gemini-2.5-flash
+ *   const p = gemini();                        // gemini-3.5-flash
  *   const p = gemini("gemini-2.5-pro");
  *   const p = gemini({ model: "gemini-2.5-pro", maxTokens: 2048 });
  *

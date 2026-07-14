@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from kaji.core.config import settings
+from kaji_serve.config import settings
 
 
 def decode_bearer_token(token: str) -> dict[str, Any]:
@@ -15,7 +15,25 @@ def decode_bearer_token(token: str) -> dict[str, Any]:
 
     Raises:
         HTTPException 401: if the token is invalid, expired, or missing a sub.
+        HTTPException 503: if JWT trust settings are incomplete.
     """
+    try:
+        from fastapi import HTTPException, status  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            "fastapi is required for HTTPException. "
+            "Install it in the host package (kaji-serve already depends on it)."
+        ) from exc
+
+    secret = settings.JWT_SECRET.strip()
+    issuer = settings.JWT_ISSUER.strip()
+    audience = settings.JWT_AUDIENCE.strip()
+    if not secret or not issuer or not audience:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+
     try:
         from jose import JWTError, jwt  # noqa: PLC0415
     except ImportError as exc:
@@ -25,19 +43,13 @@ def decode_bearer_token(token: str) -> dict[str, Any]:
         ) from exc
 
     try:
-        from fastapi import HTTPException, status  # noqa: PLC0415
-    except ImportError as exc:
-        raise RuntimeError(
-            "fastapi is required for HTTPException. "
-            "Install it in the host package (kaji-serve already depends on it)."
-        ) from exc
-
-    try:
         payload: dict[str, Any] = jwt.decode(
             token,
-            settings.JWT_SECRET,
+            secret,
             algorithms=["HS256"],
-            options={"verify_aud": False},
+            issuer=issuer,
+            audience=audience,
+            options={"require_iss": True, "require_aud": True},
         )
     except JWTError as error:
         raise HTTPException(

@@ -97,15 +97,12 @@ def test_public_api_keeps_low_level_verbs_hidden_from_top_level():
 
 
 def test_public_api_hides_non_mvp_extensions_from_top_level():
-    """Modality adapters (TTS, text-only session helpers) and the legacy
-    UpperCamel retriever factory stay subpackage-only. Knowledge primitives
+    """Modality adapters and text-only session helpers stay subpackage-only.
+    Knowledge primitives
     (Chunk/Document/DocumentRAG/VectorStore/InMemoryVectorStore) and the
     tool retriever (ToolRetriever/Embedder/EmbeddingCache) were promoted to
     the top-level surface in feat/sdk-audit-fixes Task 2."""
     non_mvp = {
-        "ChunkText",
-        "GetToolRetriever",
-        "GetTTSProvider",
         "TextModalityAdapter",
         "TextSession",
         "TextSessionConfig",
@@ -127,16 +124,16 @@ def test_public_api_hides_snake_case_non_mvp_helpers_from_top_level():
 
 
 def test_non_mvp_extensions_remain_importable_from_submodules():
-    from kaji.knowledge import ChunkText, Document, DocumentRAG
+    from kaji.knowledge import Document, DocumentRAG, chunk_text
     from kaji.modalities.text import TextModalityAdapter
-    from kaji.modalities.voice.tts import GetTTSProvider
-    from kaji.runtime.tools.retriever import GetToolRetriever, ToolRetriever
+    from kaji.modalities.voice.tts import get_tts_provider
+    from kaji.runtime.tools.retriever import ToolRetriever, get_tool_retriever
 
-    assert ChunkText is not None
+    assert chunk_text is not None
     assert Document is not None
     assert DocumentRAG is not None
-    assert GetToolRetriever is not None
-    assert GetTTSProvider is not None
+    assert get_tool_retriever is not None
+    assert get_tts_provider is not None
     assert TextModalityAdapter is not None
     assert ToolRetriever is not None
 
@@ -251,6 +248,12 @@ def test_sdk_package_exports_only_advertise_pep8_names_in_all():
         "ClearTools",
         "ToolSpecFromModel",
         "ProviderSafeToolName",
+        "BuildIdempotencyKey",
+        "ChunkText",
+        "CosineSimilarity",
+        "GetToolRetriever",
+        "GetTTSProvider",
+        "TraceSpan",
     }
 
     offenders: dict[str, list[str]] = {}
@@ -277,3 +280,36 @@ def test_sdk_package_exports_only_advertise_pep8_names_in_all():
                 offenders[str(path.relative_to(package_root))] = bad
 
     assert offenders == {}, offenders
+
+
+def test_sdk_does_not_define_removed_uppercamel_helper_aliases() -> None:
+    package_root = Path(kaji.__file__).parent
+    removed = {
+        "BuildIdempotencyKey",
+        "ChunkText",
+        "CosineSimilarity",
+        "GetToolRetriever",
+        "GetTTSProvider",
+        "TraceSpan",
+    }
+    offenders: dict[str, list[str]] = {}
+
+    for path in sorted(package_root.rglob("*.py")):
+        tree = ast.parse(path.read_text())
+        names = {
+            target.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        }
+        found = sorted(names & removed)
+        if found:
+            offenders[str(path.relative_to(package_root))] = found
+
+    assert offenders == {}, offenders
+
+
+def test_sdk_does_not_restore_uncontracted_payload_alias() -> None:
+    payload = importlib.import_module("kaji.runtime.tools.payload")
+    assert not hasattr(payload, "tools_fingerprint")

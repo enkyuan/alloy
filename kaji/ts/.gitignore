@@ -1,3 +1,3 @@
 coverage/
 # registry/ is now the TS-native source registry. Tracked in git.
-# Previously generated from kaji/sdk; that copy step is now a no-op.
+# Canonical schema/ABI copies are synchronized by the repository contract gates.

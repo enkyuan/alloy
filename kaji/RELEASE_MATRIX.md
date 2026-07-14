@@ -34,6 +34,8 @@ is checked against the machine feature contract and both registry indexes by
 
 The echo integration is the only catalog entry inside the first beta promise.
 GitHub, HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
+`kaji-serve`, its legacy worker runtime, Redis transport, and voice path are
+also excluded from the 0.2 SDK beta promise.
 
 ## Catalog Stability
 
@@ -53,45 +55,45 @@ GitHub, HTTP, Web, filesystem, and SQLite remain explicit opt-in experiments.
 
 ## Experimental Python-Only
 
-| Surface | Status | Why |
-| --- | --- | --- |
-| Redis realtime/history | Experimental Python-only | present, but not a beta release gate |
-| voice/TTS | Experimental Python-only | provider adapters exist, placeholder TTS remains valid for unconfigured use |
-| RAG/retrieval (DocumentRAG) | Experimental Python-only | useful primitives, not cross-SDK parity |
-| native Gemini/Kimi | Experimental Python-only | not part of first live readiness gate |
-| Retriever selection (tool retrieval) | Experimental Python-only | not part of first live readiness gate |
+| Surface                              | Status                   | Why                                                                         |
+| ------------------------------------ | ------------------------ | --------------------------------------------------------------------------- |
+| Redis realtime/history               | Experimental Python-only | present, but not a beta release gate                                        |
+| voice/TTS                            | Experimental Python-only | provider adapters exist, placeholder TTS remains valid for unconfigured use |
+| RAG/retrieval (DocumentRAG)          | Experimental Python-only | useful primitives, not cross-SDK parity                                     |
+| native Gemini/Kimi                   | Experimental Python-only | not part of first live readiness gate                                       |
+| Retriever selection (tool retrieval) | Experimental Python-only | not part of first live readiness gate                                       |
 
 ## Other Experimental or Deferred Surfaces
 
-| Surface | Status | Why |
-| --- | --- | --- |
-| TypeScript HTTP integration | Experimental | requires a bound transport |
-| TypeScript Web integration | Experimental | requires a bound transport |
-| TypeScript filesystem integration | Experimental | excluded from the first beta promise |
-| TypeScript SQLite integration | Experimental | excluded from the first beta promise |
-| Distributed same-session serialization | Deferred | the beta coordinator is process-local |
-| Exactly-once external side effects | Deferred | external systems must honor idempotency |
-| Unbounded or cross-process replay | Deferred | beta replay is capacity-limited |
-| Durable snapshotting | Deferred | promoted with a durable storage backend |
+| Surface                                | Status       | Why                                     |
+| -------------------------------------- | ------------ | --------------------------------------- |
+| TypeScript HTTP integration            | Experimental | requires a bound transport              |
+| TypeScript Web integration             | Experimental | requires a bound transport              |
+| TypeScript filesystem integration      | Experimental | excluded from the first beta promise    |
+| TypeScript SQLite integration          | Experimental | excluded from the first beta promise    |
+| Distributed same-session serialization | Deferred     | the beta coordinator is process-local   |
+| Exactly-once external side effects     | Deferred     | external systems must honor idempotency |
+| Unbounded or cross-process replay      | Deferred     | beta replay is capacity-limited         |
+| Durable snapshotting                   | Deferred     | promoted with a durable storage backend |
 
 ## TypeScript Not Ported
 
-| Surface | TS status |
-| --- | --- |
-| Redis realtime/history | Not ported |
-| voice/TTS | Not ported |
-| RAG | Not ported |
-| native Gemini/Kimi | Not ported; Gemini/Kimi are OpenAI-compatible factories |
+| Surface                | TS status                                               |
+| ---------------------- | ------------------------------------------------------- |
+| Redis realtime/history | Not ported                                              |
+| voice/TTS              | Not ported                                              |
+| RAG                    | Not ported                                              |
+| native Gemini/Kimi     | Not ported; Gemini/Kimi are OpenAI-compatible factories |
 
 ## Promotion criteria
 
-| Surface | Promotion requirement before beta claim |
-| --- | --- |
-| Redis realtime/history | Fake-Redis unit tests, keyed Redis integration tests, reconnect/backlog behavior tests, and documented durability limits. |
-| voice/TTS | Event registry tests, configured TTS adapter smoke tests, interruption/cancellation tests, and explicit fallback behavior for unconfigured adapters. |
-| DocumentRAG | Deterministic retrieval tests, fixture-based indexing tests, eval set for answer grounding, and documented storage requirements. |
-| native Gemini/Kimi | Native keyed provider smoke tests, tool-call tests where supported, error mapping tests, and cost metadata tests. |
-| tool retrieval | Ranking fixture tests, policy interaction tests, and runtime integration tests proving retrieved tools are callable. |
+| Surface                | Promotion requirement before beta claim                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Redis realtime/history | Fake-Redis unit tests, keyed Redis integration tests, reconnect/backlog behavior tests, and documented durability limits.                            |
+| voice/TTS              | Event registry tests, configured TTS adapter smoke tests, interruption/cancellation tests, and explicit fallback behavior for unconfigured adapters. |
+| DocumentRAG            | Deterministic retrieval tests, fixture-based indexing tests, eval set for answer grounding, and documented storage requirements.                     |
+| native Gemini/Kimi     | Native keyed provider smoke tests, tool-call tests where supported, error mapping tests, and cost metadata tests.                                    |
+| tool retrieval         | Ranking fixture tests, policy interaction tests, and runtime integration tests proving retrieved tools are callable.                                 |
 
 ## Release Gates
 
@@ -111,10 +113,12 @@ The pinned ast-grep step is mandatory. It guards the Python SDK/service
 boundary, core package dependency direction, legacy tool-model imports,
 TypeScript optional provider imports, and cancellation error shape.
 
-| Gate | Command or workflow | Required for beta | Current evidence |
-| --- | --- | --- | --- |
+| Gate                      | Command or workflow                                                             | Required for beta                                                   | Current evidence                       |
+| ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
 | Offline release rehearsal | `uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+
 <!-- beta-parity-scenarios: 67 -->
+
 | Cross-SDK behavioral parity | `uv run --project kaji/sdk python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
 | Shared schemas and registry | `Kaji beta PR gate` / `Kaji beta PR gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |

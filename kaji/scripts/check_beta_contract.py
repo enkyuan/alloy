@@ -1753,95 +1753,89 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
 
 def check_package_subpaths(document: dict[str, Any]) -> None:
     path = CONTRACTS / "feature-tiers-v1.json"
-    expected = {
-        "typescript": {
-            "./cli": {
-                "tier": "stable",
-                "exports": [],
-            },
-            "./integrations": {
-                "tier": "experimental",
-                "exports": [
-                    "BoundedResponse",
-                    "FixedOriginRequester",
-                    "IntegrationAuthRequiredError",
-                    "IntegrationExecutionError",
-                    "IntegrationPolicyError",
-                    "IntegrationRateLimitedError",
-                    "IntegrationTransientReadError",
-                    "createGitHubRequester",
-                    "createGmailRequester",
-                    "snapshotIntegrationResult",
-                ],
-            },
-            "./auth": {
-                "tier": "experimental",
-                "exports": [
-                    "GoogleOAuthClient",
-                    "GoogleOAuthClientOptions",
-                    "MacOSKeychainTokenStorage",
-                    "OAuthAccessTokenProvider",
-                    "OAuthCredentialRecord",
-                    "OAuthTokenSet",
-                    "OAuthTokenStorage",
-                    "canonicalOAuthCredentialJson",
-                    "snapshotOAuthCredentialRecord",
-                ],
-            },
-        }
-    }
-    if document.get("packageSubpaths") != expected:
-        raise fail(path, "/packageSubpaths", "unexpected package subpath contract")
-
     package_path = ROOT / "kaji" / "ts" / "package.json"
     package = load_json(package_path)
-    expected_cli_subpath = {
-        "import": {
-            "types": "./dist/cli/package-entry.d.ts",
-            "default": "./dist/cli/package-entry.js",
-        },
-        "require": {
-            "types": "./dist/cli/package-entry-cjs.d.cts",
-            "default": "./dist/cli/package-entry-cjs.cjs",
-        },
-    }
-    if package.get("exports", {}).get("./cli") != expected_cli_subpath:
-        raise fail(package_path, "/exports/~1cli", "missing stable CLI export")
-    subpath = package.get("exports", {}).get("./integrations")
-    if not isinstance(subpath, dict):
+    package_exports = package.get("exports")
+    if not isinstance(package_exports, dict):
+        raise fail(package_path, "/exports", "expected an object")
+
+    matrix = document.get("packageSubpaths")
+    if not isinstance(matrix, dict) or set(matrix) != {"typescript"}:
+        raise fail(path, "/packageSubpaths", "expected a typescript subpath matrix")
+    typescript = matrix["typescript"]
+    if not isinstance(typescript, dict):
+        raise fail(path, "/packageSubpaths/typescript", "expected an object")
+
+    shipped_subpaths = {key for key in package_exports if key != "."}
+    classified_subpaths = set(typescript)
+    if classified_subpaths != shipped_subpaths:
         raise fail(
-            package_path, "/exports/~1integrations", "missing integrations export"
-        )
-    expected_targets = {
-        "./dist/integrations.js",
-        "./dist/integrations.cjs",
-        "./dist/integrations.d.ts",
-        "./dist/integrations.d.cts",
-    }
-    actual_targets = set(
-        re.findall(
-            r"\./dist/integrations\.(?:js|cjs|d\.ts|d\.cts)", json.dumps(subpath)
-        )
-    )
-    if actual_targets != expected_targets:
-        raise fail(
-            package_path, "/exports/~1integrations", "unexpected integrations targets"
+            path,
+            "/packageSubpaths/typescript",
+            "package subpath coverage mismatch; "
+            f"missing={sorted(shipped_subpaths - classified_subpaths)}, "
+            f"extra={sorted(classified_subpaths - shipped_subpaths)}",
         )
 
-    auth_subpath = package.get("exports", {}).get("./auth")
-    if not isinstance(auth_subpath, dict):
-        raise fail(package_path, "/exports/~1auth", "missing auth export")
-    expected_auth_targets = {
-        "./dist/auth.js",
-        "./dist/auth.cjs",
-        "./dist/auth.d.ts",
-        "./dist/auth.d.cts",
-    }
-    actual_auth_targets = set(
-        re.findall(r"\./dist/auth\.(?:js|cjs|d\.ts|d\.cts)", json.dumps(auth_subpath))
-    )
-    if actual_auth_targets != expected_auth_targets:
-        raise fail(package_path, "/exports/~1auth", "unexpected auth targets")
+    for subpath_name in sorted(shipped_subpaths):
+        entry = typescript[subpath_name]
+        if not isinstance(entry, dict) or set(entry) != {"tier", "exports"}:
+            raise fail(
+                path,
+                f"/packageSubpaths/typescript/{subpath_name}",
+                "expected tier and exports",
+            )
+        if entry["tier"] not in {"stable", "experimental"}:
+            raise fail(
+                path,
+                f"/packageSubpaths/typescript/{subpath_name}/tier",
+                "expected stable or experimental",
+            )
+        exports = entry["exports"]
+        if (
+            not isinstance(exports, list)
+            or not all(isinstance(name, str) and name for name in exports)
+            or exports != sorted(set(exports))
+        ):
+            raise fail(
+                path,
+                f"/packageSubpaths/typescript/{subpath_name}/exports",
+                "expected sorted unique public export names",
+            )
+
+        package_target = package_exports[subpath_name]
+        if not isinstance(package_target, dict):
+            raise fail(
+                package_path,
+                f"/exports/{subpath_name.replace('/', '~1')}",
+                "expected typed ESM and CJS targets",
+            )
+        stem = subpath_name.removeprefix("./")
+        if stem == "cli":
+            expected_targets = {
+                "./dist/cli/package-entry.js",
+                "./dist/cli/package-entry.d.ts",
+                "./dist/cli/package-entry-cjs.cjs",
+                "./dist/cli/package-entry-cjs.d.cts",
+            }
+            target_pattern = (
+                r"\./dist/cli/package-entry(?:-cjs)?\.(?:js|cjs|d\.ts|d\.cts)"
+            )
+        else:
+            expected_targets = {
+                f"./dist/{stem}.js",
+                f"./dist/{stem}.cjs",
+                f"./dist/{stem}.d.ts",
+                f"./dist/{stem}.d.cts",
+            }
+            target_pattern = rf"\./dist/{re.escape(stem)}\.(?:js|cjs|d\.ts|d\.cts)"
+        actual_targets = set(re.findall(target_pattern, json.dumps(package_target)))
+        if actual_targets != expected_targets:
+            raise fail(
+                package_path,
+                f"/exports/{subpath_name.replace('/', '~1')}",
+                "unexpected package targets",
+            )
 
 
 def check_cli_init_cases(document: dict[str, Any]) -> None:

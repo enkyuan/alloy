@@ -1,16 +1,5 @@
 import asyncio
-import sys
 from typing import Collection, Union
-
-if sys.version_info < (3, 11):
-
-    class ExceptionGroup(Exception):
-        """Simple ExceptionGroup implementation for Python < 3.11"""
-
-        def __init__(self, message: str, exceptions: list):
-            self.message = message
-            self.exceptions = exceptions
-            super().__init__(message)
 
 
 async def cancel_tasks_safe(
@@ -59,7 +48,3 @@ def _raise_if_task_errors(results: list[object]) -> None:
         raise ExceptionGroup(
             "Multiple errors occurred during task cancellation", errors
         )
-
-
-CancelTasksSafe = cancel_tasks_safe
-AwaitTasksSafe = await_tasks_safe

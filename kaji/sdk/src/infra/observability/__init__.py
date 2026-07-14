@@ -10,7 +10,7 @@ from kaji.infra.observability.protocols import (
     TraceSink,
 )
 from kaji.infra.observability.timeline import EventTimeline
-from kaji.infra.observability.tracing import Span, TraceSpan
+from kaji.infra.observability.tracing import Span, trace_span
 
 __all__ = [
     "EventTimeline",
@@ -22,5 +22,5 @@ __all__ = [
     "Span",
     "SpanHandle",
     "TraceSink",
-    "TraceSpan",
+    "trace_span",
 ]

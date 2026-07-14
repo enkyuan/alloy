@@ -39,6 +39,17 @@ describe("model cost table", () => {
     expect(calculateCostUsd("gpt-5.4-mini", 1_000_000, 1_000_000)).toBe(5.25);
   });
 
+  it("accepts snapshots without guessing model families", () => {
+    expect(lookupCost("gpt-5.4-mini-2026-04-15")).toEqual(lookupCost("gpt-5.4-mini"));
+    expect(lookupCost("gemini-3.5-flash-001")).toEqual(lookupCost("gemini-3.5-flash"));
+    expect(lookupCost("claude-sonnet-4-60")).toBeUndefined();
+    expect(lookupCost("moonshotai/kimi-k2.6")).toBeUndefined();
+  });
+
+  it("uses the current Gemini 2.5 Flash standard rate", () => {
+    expect(lookupCost("gemini-2.5-flash")).toEqual({ inputPer1M: 0.3, outputPer1M: 2.5 });
+  });
+
   it.each(fixture.cases)("matches the shared $name fixture", (testCase) => {
     const { inputTokens, outputTokens, expectedCanonicalUsd } = testCase;
     let canonical: string;
@@ -67,8 +78,8 @@ describe("model cost table", () => {
   });
 
   it.each(fixture.invalidTokenCounts)("rejects $name token counts", ({ value }) => {
-    expect(() => calculateCostUsd("gemini-1.5-pro", value as number, 0)).toThrow();
-    expect(() => calculateCostUsd("gemini-1.5-pro", 0, value as number)).toThrow();
+    expect(() => calculateCostUsd("gemini-3.5-flash", value as number, 0)).toThrow();
+    expect(() => calculateCostUsd("gemini-3.5-flash", 0, value as number)).toThrow();
   });
 
   it.each(fixture.invalidRates)("rejects the shared $name rate", ({ kind, value }) => {

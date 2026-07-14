@@ -5,20 +5,20 @@ import pytest
 
 import kaji
 from kaji.runtime.providers.errors import (
-    ClassifyHTTPError,
     ProviderAPIError,
     ProviderConfigError,
     ProviderConnectionError,
     ProviderError,
     ServiceError,
-    ServiceErrorToDetail,
-    ServiceErrorToHTTPStatus,
     ServiceAPIError,
     ServiceAuthError,
     ServiceNetworkError,
     ServiceRateLimitError,
+    classify_http_error,
     normalize_provider_error,
     provider_error_from_exception,
+    service_error_to_detail,
+    service_error_to_http_status,
 )
 
 
@@ -44,7 +44,7 @@ PROVIDER_NORMALIZATION_CASES = json.loads(
     ],
 )
 def test_classify_http_error(status: int, expected_type: type):
-    error = ClassifyHTTPError(
+    error = classify_http_error(
         service="test", action="fetch", status_code=status, response_text="body"
     )
     assert isinstance(error, expected_type)
@@ -54,29 +54,33 @@ def test_classify_http_error(status: int, expected_type: type):
 
 def test_service_error_to_http_status_mapping():
     assert (
-        ServiceErrorToHTTPStatus(ServiceAuthError(service="x", action="y", message="m"))
+        service_error_to_http_status(
+            ServiceAuthError(service="x", action="y", message="m")
+        )
         == 401
     )
     assert (
-        ServiceErrorToHTTPStatus(
+        service_error_to_http_status(
             ServiceRateLimitError(service="x", action="y", message="m")
         )
         == 429
     )
     assert (
-        ServiceErrorToHTTPStatus(
+        service_error_to_http_status(
             ServiceNetworkError(service="x", action="y", message="m")
         )
         == 503
     )
     assert (
-        ServiceErrorToHTTPStatus(ServiceAPIError(service="x", action="y", message="m"))
+        service_error_to_http_status(
+            ServiceAPIError(service="x", action="y", message="m")
+        )
         == 502
     )
 
 
 def test_service_error_to_detail_masks_internals():
-    detail = ServiceErrorToDetail(
+    detail = service_error_to_detail(
         ServiceAuthError(service="spotify", action="auth", message="x"),
         fallback="failed",
     )
@@ -91,7 +95,7 @@ def test_provider_errors_accept_message_only_constructors():
 @pytest.mark.parametrize("status", [401, 403, 429, 400, 500])
 def test_public_provider_error_catches_http_classifications(status: int) -> None:
     assert kaji.ProviderError is ProviderError
-    error = ClassifyHTTPError(
+    error = classify_http_error(
         service="fixture",
         action="request",
         status_code=status,
@@ -178,7 +182,7 @@ def test_vendor_connection_error_is_classified_without_importing_vendor_sdk() ->
 
 
 def test_provider_http_error_normalization_preserves_status_and_retryability() -> None:
-    error = ClassifyHTTPError(
+    error = classify_http_error(
         service="anthropic",
         action="request",
         status_code=429,

@@ -24,8 +24,8 @@ COMMIT = re.compile(r"[0-9a-f]{40}")
 ARTIFACT_DIGEST = re.compile(r"[0-9a-f]{64}")
 ARTIFACT_ID = re.compile(r"[1-9][0-9]*")
 WORKFLOW_RUN = re.compile(r"https?://.+/actions/runs/[1-9][0-9]*")
-PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
-PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
+PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.1.tgz"
 
 

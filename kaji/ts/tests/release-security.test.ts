@@ -876,8 +876,8 @@ describe("Kaji workflow contracts", () => {
         failureCode: null,
         releaseManifestSha256: "b".repeat(64),
         artifactSha256: {
-          "kaji-0.2.0b1-py3-none-any.whl": "c".repeat(64),
-          "kaji-0.2.0b1.tar.gz": "d".repeat(64),
+          "kaji_sdk-0.2.0b1-py3-none-any.whl": "c".repeat(64),
+          "kaji_sdk-0.2.0b1.tar.gz": "d".repeat(64),
         },
         runtime: {
           implementation: "CPython",
@@ -885,8 +885,8 @@ describe("Kaji workflow contracts", () => {
           executable: "/opt/python/bin/python",
         },
         artifacts: {
-          wheel: "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
-          sdist: "/artifacts/kaji-0.2.0b1.tar.gz",
+          wheel: "/artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl",
+          sdist: "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
         },
         githubPackageProofs: {
           wheel: githubProof,

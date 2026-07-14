@@ -22,8 +22,8 @@ import { withProviderResponseDiagnostics } from "@/providers/base";
 import { CancellationToken } from "@/runtime/cancellation";
 import { TestOpenAIProvider } from "./helpers/provider-clients";
 
-const makeProvider = (client: unknown) =>
-  new TestOpenAIProvider({ apiKey: "test-key" }, client as unknown as OpenAI);
+const makeProvider = (client: unknown, model?: string) =>
+  new TestOpenAIProvider({ apiKey: "test-key", model }, client as unknown as OpenAI);
 
 const responseLimits = (
   overrides: Partial<ProviderResponseLimits> = {},
@@ -179,6 +179,27 @@ describe("OpenAIProvider.generate", () => {
     expect(result.content).toBe("Hello there");
     expect(result.toolCalls).toHaveLength(0);
     expect(result.costUsd).toBe(0.00001725);
+  });
+
+  it("omits cost for an unpriced model even when usage is present", async () => {
+    const provider = makeProvider(
+      {
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: "Hello there", tool_calls: null } }],
+              usage: { prompt_tokens: 5, completion_tokens: 3 },
+            }),
+          },
+        },
+      },
+      "routed/unknown-model",
+    );
+
+    const result = await provider.generate([{ role: "user", content: "hi" }], []);
+
+    expect(result.usage).toEqual({ input: 5, output: 3 });
+    expect(result.costUsd).toBeUndefined();
   });
 
   it("parses tool calls from the response", async () => {
@@ -506,36 +527,44 @@ describe("OpenAIProvider.generateStream", () => {
     expect(text).toBe("hello");
   });
 
-  it("yields a metadata chunk when streaming usage is reported", async () => {
-    async function* fakeStream() {
-      yield { choices: [{ delta: { content: "hi" }, finish_reason: null }] };
-      yield {
-        choices: [],
-        usage: { prompt_tokens: 3, completion_tokens: 2 },
-      };
-    }
+  it.each([
+    ["gpt-5.4-mini", true],
+    ["routed/unknown-model", false],
+  ] as const)(
+    "yields a metadata chunk for model %s when streaming usage is reported",
+    async (model, hasKnownCost) => {
+      async function* fakeStream() {
+        yield { choices: [{ delta: { content: "hi" }, finish_reason: null }] };
+        yield {
+          choices: [],
+          usage: { prompt_tokens: 3, completion_tokens: 2 },
+        };
+      }
 
-    const create = vi.fn().mockResolvedValue(fakeStream());
-    const provider = makeProvider({
-      chat: { completions: { create } },
-    });
+      const create = vi.fn().mockResolvedValue(fakeStream());
+      const provider = makeProvider({ chat: { completions: { create } } }, model);
 
-    const chunks = [];
-    for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
-      chunks.push(chunk);
-    }
+      const chunks = [];
+      for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+        chunks.push(chunk);
+      }
 
-    expect(create.mock.calls[0]?.[0]).toMatchObject({
-      stream: true,
-      stream_options: { include_usage: true },
-    });
-    expect(chunks.at(-1)).toMatchObject({
-      delta: "",
-      toolCalls: [],
-      usage: { input: 3, output: 2 },
-    });
-    expect(chunks.at(-1)?.costUsd).toBeGreaterThan(0);
-  });
+      expect(create.mock.calls[0]?.[0]).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+      expect(chunks.at(-1)).toMatchObject({
+        delta: "",
+        toolCalls: [],
+        usage: { input: 3, output: 2 },
+      });
+      if (hasKnownCost) {
+        expect(chunks.at(-1)?.costUsd).toBeGreaterThan(0);
+      } else {
+        expect(chunks.at(-1)?.costUsd).toBeUndefined();
+      }
+    },
+  );
 
   it("accumulates fragmented tool-call arguments across chunks", async () => {
     async function* fakeStream() {

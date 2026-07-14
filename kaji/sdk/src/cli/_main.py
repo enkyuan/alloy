@@ -21,7 +21,7 @@ from ._pkg import get_version
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="kaji", description=f"kaji (Python package kaji) {get_version()}"
+        prog="kaji", description=f"kaji (Python distribution kaji-sdk) {get_version()}"
     )
     parser.add_argument(
         "--no-color", action="store_true", help="disable ANSI color output"

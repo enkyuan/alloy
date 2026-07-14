@@ -1,5 +1,5 @@
 [project]
-name = "kaji"
+name = "kaji-sdk"
 version = "0.2.0b1"
 description = "An embeddable SDK for building agentic platforms (text + voice)."
 readme = "README.md"

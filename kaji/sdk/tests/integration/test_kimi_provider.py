@@ -1,6 +1,6 @@
 """Integration smoke test for KimiProvider.
 
-Requires OPENROUTER_API_KEY (or KIMI_API_KEY) to be set. Skipped
+Requires OPENROUTER_API_KEY to be set. Skipped
 automatically by conftest when OPENROUTER_API_KEY is absent.
 
 Run manually:

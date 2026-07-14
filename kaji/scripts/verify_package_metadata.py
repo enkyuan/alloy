@@ -18,6 +18,8 @@ from typing import NoReturn
 from verify_npm_package import verify_npm_tarball
 from process_runner import METADATA_BUDGET, CommandError, run_checked
 
+PYTHON_PROJECT = "kaji-sdk"
+PYTHON_DISTRIBUTION = "kaji_sdk"
 PYTHON_VERSION = "0.2.0b1"
 TYPESCRIPT_VERSION = "0.2.0-beta.1"
 PYTHON_BUILD_REQUIREMENTS = {"setuptools==83.0.0", "editables==0.6"}
@@ -88,11 +90,14 @@ def main() -> None:
     ts_match = re.search(r'export const VERSION = "([^"]+)"', typescript_source)
 
     python_version = python_metadata["project"]["version"]
+    python_project = python_metadata["project"]["name"]
     typescript_version = typescript_metadata["version"]
     if source_match is None or source_match.group(1) != python_version:
         fail("Python source and project versions differ")
     if ts_match is None or ts_match.group(1) != typescript_version:
         fail("TypeScript source and package versions differ")
+    if python_project != PYTHON_PROJECT:
+        fail("Python project name is not the approved PyPI project")
     if python_version != PYTHON_VERSION or typescript_version != TYPESCRIPT_VERSION:
         fail("package versions are not the approved beta versions")
     if set(python_metadata["build-system"]["requires"]) != PYTHON_BUILD_REQUIREMENTS:
@@ -151,7 +156,8 @@ def main() -> None:
 
     uv_lock = (sdk / "uv.lock").read_text()
     if not re.search(
-        rf'\[\[package\]\]\s+name = "kaji"\s+version = "{re.escape(python_version)}"',
+        rf'\[\[package\]\]\s+name = "{re.escape(PYTHON_PROJECT)}"\s+'
+        rf'version = "{re.escape(python_version)}"',
         uv_lock,
     ):
         fail("Python lockfile does not contain the beta package version")
@@ -186,8 +192,12 @@ def main() -> None:
     if args.release and actual_tools["bun"] != BUN_VERSION:
         fail(f"release requires Bun {BUN_VERSION}, found {actual_tools['bun']}")
 
-    wheel = find_one(sdk / "dist", f"kaji-{python_version}-*.whl", "Python wheel")
-    sdist = find_one(sdk / "dist", f"kaji-{python_version}.tar.gz", "Python sdist")
+    wheel = find_one(
+        sdk / "dist", f"{PYTHON_DISTRIBUTION}-{python_version}-*.whl", "Python wheel"
+    )
+    sdist = find_one(
+        sdk / "dist", f"{PYTHON_DISTRIBUTION}-{python_version}.tar.gz", "Python sdist"
+    )
     tarballs = sorted(artifacts.glob("kaji-sdk-*.tgz"))
     if not tarballs:
         tarballs = sorted(ts.glob("kaji-sdk-*.tgz"))
@@ -202,10 +212,12 @@ def main() -> None:
         ]
         if (
             len(metadata_names) != 1
+            or f"Name: {PYTHON_PROJECT}\n"
+            not in archive.read(metadata_names[0]).decode()
             or f"Version: {python_version}\n"
             not in archive.read(metadata_names[0]).decode()
         ):
-            fail("wheel metadata version is incorrect")
+            fail("wheel project name or version is incorrect")
     with tarfile.open(sdist, "r:gz") as archive:
         pkg_info = [
             member
@@ -215,11 +227,14 @@ def main() -> None:
         if len(pkg_info) != 1:
             fail("sdist has no unique PKG-INFO")
         stream = archive.extractfile(pkg_info[0])
+        if stream is None:
+            fail("sdist PKG-INFO is missing")
+        pkg_info_text = stream.read().decode()
         if (
-            stream is None
-            or f"Version: {python_version}\n" not in stream.read().decode()
+            f"Name: {PYTHON_PROJECT}\n" not in pkg_info_text
+            or f"Version: {python_version}\n" not in pkg_info_text
         ):
-            fail("sdist metadata version is incorrect")
+            fail("sdist project name or version is incorrect")
     copied: list[Path] = []
     for source in (wheel, sdist, npm_tarball):
         target = artifacts / source.name

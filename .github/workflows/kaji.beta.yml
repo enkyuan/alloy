@@ -169,7 +169,7 @@ jobs:
                .fingerprint.versions.bun == "1.3.11" and
                (.releaseManifestSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
                (.artifacts | type == "object" and keys == ["python", "typescript"]) and
-               (.artifacts.python.file == "kaji-0.2.0b1-py3-none-any.whl") and
+               (.artifacts.python.file == "kaji_sdk-0.2.0b1-py3-none-any.whl") and
                (.artifacts.typescript.file == "kaji-sdk-0.2.0-beta.1.tgz") and
                (.artifacts.python.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
                (.artifacts.typescript.sha256 | type == "string" and test("^[0-9a-f]{64}$")) and
@@ -404,7 +404,7 @@ jobs:
                 if $kind == "python" then
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
+                    keys == ["kaji_sdk-0.2.0b1-py3-none-any.whl", "kaji_sdk-0.2.0b1.tar.gz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -618,7 +618,7 @@ jobs:
                 if $kind == "python" then
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
+                    keys == ["kaji_sdk-0.2.0b1-py3-none-any.whl", "kaji_sdk-0.2.0b1.tar.gz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and

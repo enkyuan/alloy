@@ -1,7 +1,7 @@
 """Redis-backed conversation history store for reasoning nodes (opt-in).
 
-Satisfies the ``HistoryStore`` protocol by adapting the existing
-``redis_events`` history helpers. Lives in the realtime/Redis layer so importing
+Satisfies the ``HistoryStore`` protocol with the focused history helpers. Lives
+in the realtime/Redis layer so importing
 a reasoning node pulls in no Redis dependency — the default history store is
 in-memory. Wire this in for durable, cross-process history::
 

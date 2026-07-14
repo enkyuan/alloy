@@ -12,6 +12,9 @@ from importlib.metadata import distributions
 from ._style import color
 
 
+_KAJI_DISTRIBUTIONS = frozenset({"kaji-sdk", "kaji-serve"})
+
+
 def _parse_version(v: str) -> tuple[int, ...]:
     parts: list[int] = []
     for chunk in v.split("."):
@@ -38,7 +41,7 @@ def list_installed_kaji() -> dict[str, str]:
     out: dict[str, str] = {}
     for d in distributions():
         name = d.metadata["Name"] or ""
-        if name == "kaji" or name.startswith("kaji-"):
+        if name.lower() in _KAJI_DISTRIBUTIONS:
             out[name] = d.version
     return out
 

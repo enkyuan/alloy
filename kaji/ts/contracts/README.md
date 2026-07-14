@@ -9,5 +9,6 @@ These files define the behavior shared by the Python and TypeScript SDK beta.
 - `errors/error-codes.json` is the normalized public failure vocabulary;
   `errors/provider-normalization.json` pins cross-SDK status classification.
 
-Canonical files live here. Package copies are generated and checked by
-`kaji/scripts/sync_beta_contracts.py`; do not edit package copies directly.
+Canonical files live in `kaji/contracts`. Package copies are generated and
+checked by `kaji/scripts/sync_beta_contracts.py`; do not edit package copies
+directly.

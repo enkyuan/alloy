@@ -18,14 +18,11 @@ from kaji.runtime.tools.registry import list_tool_specs
 
 logger = logging.getLogger(__name__)
 
-CosineSimilarity = cosine_similarity
-
 __all__ = [
-    "CosineSimilarity",
     "Embedder",
     "EmbeddingCache",
-    "GetToolRetriever",
     "ToolRetriever",
+    "get_tool_retriever",
 ]
 
 
@@ -191,6 +188,35 @@ class ToolRetriever:
         if not query_vec:
             return [spec.name for spec in list_tool_specs()]
 
+        query_dimension = len(query_vec)
+        mismatched_names = [
+            name
+            for name, vector in self._embeddings.items()
+            if len(vector) != query_dimension
+        ]
+        if mismatched_names:
+            for name in mismatched_names:
+                self._embeddings.pop(name, None)
+            logger.warning(
+                "Discarded %s cached tool vectors with an unexpected dimension.",
+                len(mismatched_names),
+            )
+            try:
+                await self._cache.save(self._embeddings)
+            except Exception as error:
+                log_redacted_failure(
+                    logger,
+                    logging.WARNING,
+                    "Failed to evict incompatible cached tool embeddings",
+                    error,
+                )
+            # Rebuild the missing tool vectors on the next request. This request
+            # safely falls back when the incompatible cache was the whole index.
+            self._initialized = False
+
+        if not self._embeddings:
+            return [spec.name for spec in list_tool_specs()]
+
         scores: List[Tuple[str, float]] = []
         for tool_name, tool_vec in self._embeddings.items():
             sim = cosine_similarity(query_vec, tool_vec)
@@ -216,6 +242,3 @@ def get_tool_retriever() -> ToolRetriever:
     if _retriever is None:
         _retriever = ToolRetriever()
     return _retriever
-
-
-GetToolRetriever = get_tool_retriever

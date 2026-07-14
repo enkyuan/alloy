@@ -40,10 +40,6 @@ def build_tools_payload(
     ]
 
 
-# Back-compat alias: this used to return the neutral list under a different name.
-tools_fingerprint = build_tools_payload
-
-
 def to_gemini(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Translate the neutral list to Gemini's ``function_declarations`` form."""
     if not tools:

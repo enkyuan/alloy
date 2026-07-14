@@ -88,7 +88,7 @@ def load_archives(dist_dir: Path) -> None:
     project_version = project["version"]
     wheel_distribution = project_name.replace("-", "_")
     expected_dist_info = f"{wheel_distribution}-{project_version}.dist-info"
-    expected_sdist_root = f"{project_name}-{project_version}"
+    expected_sdist_root = f"{wheel_distribution}-{project_version}"
 
 
 def forbidden_artifacts(paths: set[str]) -> list[str]:
@@ -428,6 +428,9 @@ def validate_requires_txt(data: bytes, label: str) -> None:
 
 
 def verify_archives() -> None:
+    if project_name != "kaji-sdk":
+        fail(f"unexpected Python project name: {project_name}")
+    egg_info = f"{wheel_distribution}.egg-info"
     expected_source_bytes = {
         f"kaji/{path.relative_to(sdk_root / 'src').as_posix()}": path.read_bytes()
         for path in (sdk_root / "src").rglob("*")
@@ -445,7 +448,7 @@ def verify_archives() -> None:
 
     if wheel.name != f"{wheel_distribution}-{project_version}-py3-none-any.whl":
         fail(f"wheel filename is not canonical: {wheel.name}")
-    if sdist.name != f"{project_name}-{project_version}.tar.gz":
+    if sdist.name != f"{wheel_distribution}-{project_version}.tar.gz":
         fail(f"sdist filename is not canonical: {sdist.name}")
 
     with zipfile.ZipFile(wheel) as zf:
@@ -592,12 +595,12 @@ def verify_archives() -> None:
         generated_sdist_metadata = {
             "PKG-INFO",
             "setup.cfg",
-            "kaji.egg-info/PKG-INFO",
-            "kaji.egg-info/SOURCES.txt",
-            "kaji.egg-info/dependency_links.txt",
-            "kaji.egg-info/entry_points.txt",
-            "kaji.egg-info/requires.txt",
-            "kaji.egg-info/top_level.txt",
+            f"{egg_info}/PKG-INFO",
+            f"{egg_info}/SOURCES.txt",
+            f"{egg_info}/dependency_links.txt",
+            f"{egg_info}/entry_points.txt",
+            f"{egg_info}/requires.txt",
+            f"{egg_info}/top_level.txt",
         }
         checkout_metadata = {
             "LICENSE",
@@ -628,7 +631,7 @@ def verify_archives() -> None:
             return extracted.read()
 
         root_pkg_info = sdist_bytes("PKG-INFO")
-        egg_pkg_info = sdist_bytes("kaji.egg-info/PKG-INFO")
+        egg_pkg_info = sdist_bytes(f"{egg_info}/PKG-INFO")
         validate_core_metadata(root_pkg_info, "sdist PKG-INFO")
         if wheel_metadata_bytes is None or root_pkg_info != wheel_metadata_bytes:
             fail("sdist PKG-INFO differs from wheel METADATA")
@@ -642,21 +645,21 @@ def verify_archives() -> None:
         }:
             fail("sdist setup.cfg is not the canonical setuptools egg_info file")
         validate_entry_points(
-            sdist_bytes("kaji.egg-info/entry_points.txt"),
+            sdist_bytes(f"{egg_info}/entry_points.txt"),
             "sdist egg-info entry_points.txt",
         )
         validate_requires_txt(
-            sdist_bytes("kaji.egg-info/requires.txt"),
+            sdist_bytes(f"{egg_info}/requires.txt"),
             "sdist egg-info requires.txt",
         )
-        if sdist_bytes("kaji.egg-info/dependency_links.txt") != b"\n":
+        if sdist_bytes(f"{egg_info}/dependency_links.txt") != b"\n":
             fail("sdist egg-info dependency_links.txt is not canonical")
-        if sdist_bytes("kaji.egg-info/top_level.txt") != b"kaji\n":
+        if sdist_bytes(f"{egg_info}/top_level.txt") != b"kaji\n":
             fail("sdist egg-info top_level.txt is not canonical")
 
         try:
             source_lines = (
-                sdist_bytes("kaji.egg-info/SOURCES.txt").decode("utf-8").splitlines()
+                sdist_bytes(f"{egg_info}/SOURCES.txt").decode("utf-8").splitlines()
             )
         except UnicodeDecodeError:
             fail("sdist egg-info SOURCES.txt is not UTF-8")
@@ -671,12 +674,12 @@ def verify_archives() -> None:
             set(expected_sdist_source_bytes)
             | checkout_metadata
             | {
-                "kaji.egg-info/PKG-INFO",
-                "kaji.egg-info/SOURCES.txt",
-                "kaji.egg-info/dependency_links.txt",
-                "kaji.egg-info/entry_points.txt",
-                "kaji.egg-info/requires.txt",
-                "kaji.egg-info/top_level.txt",
+                f"{egg_info}/PKG-INFO",
+                f"{egg_info}/SOURCES.txt",
+                f"{egg_info}/dependency_links.txt",
+                f"{egg_info}/entry_points.txt",
+                f"{egg_info}/requires.txt",
+                f"{egg_info}/top_level.txt",
             }
         )
         if set(source_lines) != expected_source_listing:

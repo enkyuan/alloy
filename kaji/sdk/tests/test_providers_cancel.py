@@ -70,7 +70,7 @@ def _make_kimi(chunks: list[str] | None):
     from kaji.runtime.providers.kimi import KimiProvider
 
     with (
-        patch("kaji.core.config.settings.KIMI_API_KEY", "test_key"),
+        patch("kaji.core.config.settings.OPENROUTER_API_KEY", "test_key"),
         patch("kaji.core.config.settings.CLOUDFLARE_ACCOUNT_ID", None),
     ):
         provider = KimiProvider()

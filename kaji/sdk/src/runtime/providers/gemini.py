@@ -1,11 +1,12 @@
 """Google Gemini AI service for conversational AI."""
 
 import asyncio
-import logging
 import hashlib
 import json
+import logging
 
 from importlib import import_module
+from time import monotonic
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from kaji.core.config import get_settings
@@ -38,6 +39,8 @@ from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 logger = logging.getLogger(__name__)
 
+_CONTEXT_CACHE_LOCAL_TTL_SECONDS = 9 * 60
+
 
 def _gemini_error(action: str, error: Exception) -> ServiceError:
     return provider_error_from_exception(
@@ -50,7 +53,7 @@ def _gemini_error(action: str, error: Exception) -> ServiceError:
 class GeminiService:
     """Service for Google Gemini AI operations."""
 
-    _active_caches: Dict[str, str] = {}
+    _active_caches: Dict[str, tuple[str, float]] = {}
 
     def __init__(self, api_key: Optional[str] = None):
         """Initialize Gemini service.
@@ -58,7 +61,8 @@ class GeminiService:
         Args:
             api_key: Optional API key. If not provided, uses GEMINI_API_KEY from settings.
         """
-        self.api_key = api_key if api_key is not None else get_settings().GEMINI_API_KEY
+        settings = get_settings()
+        self.api_key = api_key if api_key is not None else settings.GEMINI_API_KEY
         if not self.api_key:
             logger.error("GEMINI_API_KEY is not set in environment variables")
             raise ProviderConfigError("GEMINI_API_KEY is required", service="gemini")
@@ -68,11 +72,12 @@ class GeminiService:
             genai = import_module("google.genai")
         except ImportError:
             raise ProviderConfigError(
-                "Gemini provider requires google-genai. Install kaji[gemini]."
+                "Gemini provider requires google-genai. Install kaji-sdk[gemini]."
             ) from None
 
         self.client = genai.Client(api_key=self.api_key)
-        self.model = get_settings().GEMINI_MODEL
+        self.model = settings.GEMINI_MODEL
+        self.embedding_model = settings.GEMINI_EMBEDDING_MODEL
         logger.info("Gemini client initialized with model: %s", self.model)
 
     async def _get_active_cache(
@@ -91,13 +96,22 @@ class GeminiService:
         # Build deterministic hash
         safe_tools = tools if tools else []
         cache_key_data = json.dumps(
-            {"sys": system_instruction, "history": cache_slice, "tools": safe_tools},
+            {
+                "model": self.model,
+                "sys": system_instruction,
+                "history": cache_slice,
+                "tools": safe_tools,
+            },
             default=str,
         )
-        cache_hash = hashlib.md5(cache_key_data.encode()).hexdigest()
+        cache_hash = hashlib.sha256(cache_key_data.encode()).hexdigest()
 
-        if cache_hash in GeminiService._active_caches:
-            return GeminiService._active_caches[cache_hash]
+        active_cache = GeminiService._active_caches.get(cache_hash)
+        if active_cache is not None:
+            cache_name, expires_at = active_cache
+            if monotonic() < expires_at:
+                return cache_name
+            del GeminiService._active_caches[cache_hash]
 
         # Count tokens of the slice
         try:
@@ -130,8 +144,12 @@ class GeminiService:
             )
             if not cache.name:
                 return None
-            GeminiService._active_caches[cache_hash] = str(cache.name)
-            return str(cache.name)
+            cache_name = str(cache.name)
+            GeminiService._active_caches[cache_hash] = (
+                cache_name,
+                monotonic() + _CONTEXT_CACHE_LOCAL_TTL_SECONDS,
+            )
+            return cache_name
         except Exception as error:
             logger.warning(
                 "Failed to provision GCP Context Cache (%s; details redacted)",
@@ -175,7 +193,7 @@ class GeminiService:
         try:
             response = await asyncio.to_thread(
                 self.client.models.embed_content,
-                model="text-embedding-004",
+                model=self.embedding_model,
                 contents=text,
             )
         except Exception as error:

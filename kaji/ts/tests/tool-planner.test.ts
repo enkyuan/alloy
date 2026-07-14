@@ -734,7 +734,7 @@ describe("ToolPlanner", () => {
     const planner = new ToolPlanner({
       executor: vi.fn(),
       specs: specsFor("search"),
-      uuid: () => "duplicate",
+      idFactory: { next: () => "duplicate" },
     });
 
     await expect(

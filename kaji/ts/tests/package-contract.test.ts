@@ -297,6 +297,31 @@ describe("npm contract artifact", () => {
       tier: "stable",
       exports: [],
     });
+    expect(Object.keys(tiers.packageSubpaths.typescript).sort()).toEqual([
+      "./anthropic",
+      "./auth",
+      "./cli",
+      "./integrations",
+      "./openai",
+      "./testing",
+    ]);
+    expect(tiers.packageSubpaths.typescript["./openai"]).toEqual({
+      tier: "stable",
+      exports: ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"],
+    });
+    expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
+      tier: "stable",
+      exports: ["AnthropicProvider", "AnthropicProviderOptions"],
+    });
+    expect(tiers.packageSubpaths.typescript["./testing"]).toEqual({
+      tier: "experimental",
+      exports: [
+        "MockProvider",
+        "ProviderResponseDiagnostics",
+        "createSessionState",
+        "withProviderResponseDiagnostics",
+      ],
+    });
 
     for (const required of [
       "assertGeneratedVersions",

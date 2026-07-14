@@ -1,19 +1,19 @@
 from kaji.runtime.workflows.idempotency import (
-    BuildIdempotencyKey,
     IdempotencyStore,
+    build_idempotency_key,
 )
 
 
 def test_build_idempotency_key_is_stable_for_same_payload():
-    key_a = BuildIdempotencyKey(workflow="voice", payload={"a": 1, "b": 2})
-    key_b = BuildIdempotencyKey(workflow="voice", payload={"b": 2, "a": 1})
+    key_a = build_idempotency_key(workflow="voice", payload={"a": 1, "b": 2})
+    key_b = build_idempotency_key(workflow="voice", payload={"b": 2, "a": 1})
     assert key_a == key_b
     assert len(key_a) == 32
 
 
 def test_build_idempotency_key_differs_by_workflow():
-    key_a = BuildIdempotencyKey(workflow="voice", payload={"x": 1})
-    key_b = BuildIdempotencyKey(workflow="tools", payload={"x": 1})
+    key_a = build_idempotency_key(workflow="voice", payload={"x": 1})
+    key_b = build_idempotency_key(workflow="tools", payload={"x": 1})
     assert key_a != key_b
 
 

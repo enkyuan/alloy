@@ -46,12 +46,7 @@
     "summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "noKeyMedianMs",
-        "noKeyMaxMs",
-        "echoMedianMs",
-        "echoMaxMs"
-      ],
+      "required": ["noKeyMedianMs", "noKeyMaxMs", "echoMedianMs", "echoMaxMs"],
       "properties": {
         "noKeyMedianMs": { "$ref": "#/$defs/milliseconds" },
         "noKeyMaxMs": { "$ref": "#/$defs/milliseconds" },
@@ -69,8 +64,8 @@
       "properties": {
         "name": {
           "enum": [
-            "kaji-0.2.0b1-py3-none-any.whl",
-            "kaji-0.2.0b1.tar.gz",
+            "kaji_sdk-0.2.0b1-py3-none-any.whl",
+            "kaji_sdk-0.2.0b1.tar.gz",
             "kaji-sdk-0.2.0-beta.1.tgz"
           ]
         },
@@ -110,13 +105,7 @@
       "required": ["name", "durationMs"],
       "properties": {
         "name": {
-          "enum": [
-            "artifact-install",
-            "scaffold-init",
-            "no-key-run",
-            "echo-setup",
-            "echo-run"
-          ]
+          "enum": ["artifact-install", "scaffold-init", "no-key-run", "echo-setup", "echo-run"]
         },
         "durationMs": { "$ref": "#/$defs/milliseconds" }
       }

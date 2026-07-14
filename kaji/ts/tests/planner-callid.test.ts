@@ -16,13 +16,13 @@ const turnContext = {
   traceId: "trace",
 };
 
-describe("ToolPlanner uuid injection", () => {
-  it("uses an injected uuid factory for missing call ids", async () => {
+describe("ToolPlanner idFactory injection", () => {
+  it("uses an injected id factory for missing call ids", async () => {
     let counter = 0;
     const planner = new ToolPlanner({
       executor: async () => ({ ok: true }),
       specs: new Map([[noopSpec.name, noopSpec]]),
-      uuid: () => `fixed-${++counter}`,
+      idFactory: { next: () => `fixed-${++counter}` },
     });
 
     const out = await planner.executeBatch(
@@ -41,7 +41,7 @@ describe("ToolPlanner uuid injection", () => {
     const planner = new ToolPlanner({
       executor: async () => ({ ok: true }),
       specs: new Map([[noopSpec.name, noopSpec]]),
-      uuid: () => `gen-${++counter}`,
+      idFactory: { next: () => `gen-${++counter}` },
     });
 
     const out = await planner.executeBatch(
@@ -60,14 +60,21 @@ describe("ToolPlanner uuid injection", () => {
     expect(ids).toEqual(["gen-1", "gen-2", "gen-3"]);
   });
 
-  it("preserves an explicit call id and does not call the factory", async () => {
-    let called = 0;
+  it("preserves an explicit call id without requesting a tool-call id", async () => {
+    let toolCallIdsRequested = 0;
+    let otherIdsRequested = 0;
     const planner = new ToolPlanner({
       executor: async () => ({ ok: true }),
       specs: new Map([[noopSpec.name, noopSpec]]),
-      uuid: () => {
-        called += 1;
-        return "should-not-be-used";
+      idFactory: {
+        next: (scope) => {
+          if (scope === "tool_call") {
+            toolCallIdsRequested += 1;
+            return "should-not-be-used";
+          }
+          otherIdsRequested += 1;
+          return `${scope}-${otherIdsRequested}`;
+        },
       },
     });
 
@@ -80,7 +87,7 @@ describe("ToolPlanner uuid injection", () => {
     );
 
     expect((out[0] as { id: string }).id).toBe("caller-id");
-    expect(called).toBe(0);
+    expect(toolCallIdsRequested).toBe(0);
   });
 
   it("produces a uuid-shaped default id when no factory is injected", async () => {

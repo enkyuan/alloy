@@ -50,6 +50,23 @@ def test_sdk_does_not_import_service_only_dependencies():
     assert violations == []
 
 
+def test_sdk_settings_do_not_own_service_infrastructure() -> None:
+    config = (PACKAGE_ROOT / "core" / "config.py").read_text()
+    service_only_settings = {
+        "DATABASE_URL",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "SUPABASE_KONG_URL",
+        "SONIOX_API_KEY",
+        "JWT_SECRET",
+        "CORS_ALLOW_ORIGINS",
+    }
+
+    leaked = sorted(name for name in service_only_settings if name in config)
+    assert leaked == [], f"Service-only settings leaked into SDK config: {leaked}"
+
+
 def test_core_package_has_no_infra_or_runtime_dependencies():
     banned_roots = {
         "kaji.infra",

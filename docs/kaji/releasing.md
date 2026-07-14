@@ -119,7 +119,7 @@ is failure. Therefore:
 - Check both registry states exactly:
 
   ```bash
-  curl --fail --silent --show-error https://pypi.org/pypi/kaji/0.2.0b1/json
+  curl --fail --silent --show-error https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
   npm view @kaji/sdk@0.2.0-beta.1 version --json
   ```
 
@@ -129,7 +129,7 @@ is failure. Therefore:
   ownership and still choose new beta versions.
 
 - If Python `0.2.0b1` exists, open
-  `https://pypi.org/manage/project/kaji/release/0.2.0b1/`, select **Options**,
+  `https://pypi.org/manage/project/kaji-sdk/release/0.2.0b1/`, select **Options**,
   and yank the release with the incident/new-version reason. Do not delete its
   files or upload replacements.
 - If npm `0.2.0-beta.1` exists, deprecate it with a forward pointer:

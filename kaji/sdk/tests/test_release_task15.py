@@ -134,6 +134,12 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     assert '"file": "kaji/sdk/build-requirements.txt"' in metadata_verifier
     assert '"sha256": sha256(build_audit)' in metadata_verifier
     assert "verify_npm_tarball(npm_tarball, repo)" in metadata_verifier
+    assert 'PYTHON_PROJECT = "kaji-sdk"' in metadata_verifier
+    assert "if python_project != PYTHON_PROJECT:" in metadata_verifier
+
+    publish_workflow = _read(".github/workflows/kaji.beta-publish.yml")
+    assert publish_workflow.count("https://pypi.org/pypi/kaji-sdk/0.2.0b1/json") == 2
+    assert "https://pypi.org/pypi/kaji/0.2.0b1/json" not in publish_workflow
 
     npm_verifier = _read("kaji/scripts/verify_npm_package.py")
     for expected in (
@@ -1068,7 +1074,7 @@ def test_malformed_registry_json_is_retained_as_typed_machine_failure(
                 "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.1"},
                 "artifacts": [
                     {
-                        "file": "kaji-0.2.0b1-py3-none-any.whl",
+                        "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
                         "package": "python",
                         "sha256": "0" * 64,
                         "size": 1,
@@ -1234,8 +1240,8 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
 ) -> None:
     verifier = _load_root_script("verify_published_packages.py")
     payloads = {
-        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
-        "kaji-0.2.0b1.tar.gz": b"sdist",
+        "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
     }
     entries = {
         name: {
@@ -1260,7 +1266,12 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
     def fetch(url: str, **_kwargs: object) -> bytes:
         fetched.append(url)
         if url == verifier.PYPI_URL:
-            return json.dumps({"urls": urls}).encode()
+            return json.dumps(
+                {
+                    "info": {"name": "kaji-sdk", "version": "0.2.0b1"},
+                    "urls": urls,
+                }
+            ).encode()
         if "/integrity/" in url:
             return json.dumps(
                 {"attestation_bundles": [{"attestations": [{}]}]}
@@ -1285,7 +1296,7 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
 
     assert len(evidence["files"]) == 2
     assert all(item["byteVerified"] for item in evidence["files"])
-    assert sum("/integrity/kaji/0.2.0b1/" in url for url in fetched) == 2
+    assert sum("/integrity/kaji-sdk/0.2.0b1/" in url for url in fetched) == 2
     assert (
         sum(
             command[:3] == ("pypi-attestations", "verify", "pypi")
@@ -1303,8 +1314,8 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
     )
     retained = {path.name for path in tmp_path.iterdir()}
     assert {
-        "registry-kaji-0.2.0b1-py3-none-any.whl",
-        "registry-kaji-0.2.0b1.tar.gz",
+        "registry-kaji_sdk-0.2.0b1-py3-none-any.whl",
+        "registry-kaji_sdk-0.2.0b1.tar.gz",
     }.issubset(retained)
     assert sum(name.endswith(".provenance.json") for name in retained) == 2
     assert sum(name.endswith(".github-attestation.json") for name in retained) == 2
@@ -1314,13 +1325,13 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
     ("published_names", "expected_error"),
     [
         (
-            ["kaji-0.2.0b1-py3-none-any.whl"],
+            ["kaji_sdk-0.2.0b1-py3-none-any.whl"],
             "VerificationUnavailable",
         ),
         (
             [
-                "kaji-0.2.0b1-py3-none-any.whl",
-                "kaji-0.2.0b1.tar.gz",
+                "kaji_sdk-0.2.0b1-py3-none-any.whl",
+                "kaji_sdk-0.2.0b1.tar.gz",
                 "unexpected.zip",
             ],
             "VerificationMismatch",
@@ -1337,11 +1348,14 @@ def test_pypi_missing_files_are_retryable_but_unexpected_files_are_terminal(
     entries = {
         name: {"file": name, "package": "python", "sha256": "0" * 64, "size": 1}
         for name in (
-            "kaji-0.2.0b1-py3-none-any.whl",
-            "kaji-0.2.0b1.tar.gz",
+            "kaji_sdk-0.2.0b1-py3-none-any.whl",
+            "kaji_sdk-0.2.0b1.tar.gz",
         )
     }
-    metadata = {"urls": [{"filename": name} for name in published_names]}
+    metadata = {
+        "info": {"name": "kaji-sdk", "version": "0.2.0b1"},
+        "urls": [{"filename": name} for name in published_names],
+    }
     monkeypatch.setattr(
         verifier,
         "fetch",
@@ -1352,6 +1366,29 @@ def test_pypi_missing_files_are_retryable_but_unexpected_files_are_terminal(
     with pytest.raises(error_type):
         verifier.verify_pypi(
             entries,
+            downloads_dir=tmp_path,
+            repository="alloy-org/alloy",
+            commit="a" * 40,
+        )
+
+
+def test_pypi_verifier_rejects_a_different_project_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    metadata = {
+        "info": {"name": "kaji", "version": "0.2.0b1"},
+        "urls": [],
+    }
+    monkeypatch.setattr(
+        verifier,
+        "fetch",
+        lambda *_args, **_kwargs: json.dumps(metadata).encode(),
+    )
+
+    with pytest.raises(verifier.VerificationMismatch, match="wrong project"):
+        verifier.verify_pypi(
+            {},
             downloads_dir=tmp_path,
             repository="alloy-org/alloy",
             commit="a" * 40,
@@ -1607,8 +1644,8 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     artifacts.mkdir()
     commit = "a" * 40
     payloads = {
-        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
-        "kaji-0.2.0b1.tar.gz": b"sdist",
+        "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
         "kaji-sdk-0.2.0-beta.1.tgz": b"npm",
     }
     entries = []
@@ -1673,9 +1710,10 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         == hashlib.sha256((artifacts / "manifest.json").read_bytes()).hexdigest()
     )
     assert (
-        verified.python_wheel == (artifacts / "kaji-0.2.0b1-py3-none-any.whl").resolve()
+        verified.python_wheel
+        == (artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl").resolve()
     )
-    assert verified.python_sdist == (artifacts / "kaji-0.2.0b1.tar.gz").resolve()
+    assert verified.python_sdist == (artifacts / "kaji_sdk-0.2.0b1.tar.gz").resolve()
     assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.1.tgz").resolve()
     with pytest.raises(TypeError):
         cast(MutableMapping[str, str], verified.artifact_sha256)["extra"] = (
@@ -1698,7 +1736,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     assert "artifact file set mismatch" in result.stderr
     unexpected.unlink()
 
-    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
+    wheel = artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     wheel.unlink()
     result = subprocess.run(command, capture_output=True, check=False, text=True)
     assert result.returncode != 0
@@ -1937,8 +1975,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             **identity_free_passed,
             "releaseManifestSha256": "b" * 64,
             "artifactSha256": {
-                "kaji-0.2.0b1-py3-none-any.whl": "c" * 64,
-                "kaji-0.2.0b1.tar.gz": "d" * 64,
+                "kaji_sdk-0.2.0b1-py3-none-any.whl": "c" * 64,
+                "kaji_sdk-0.2.0b1.tar.gz": "d" * 64,
             },
             "runtime": {
                 "implementation": "CPython",
@@ -1946,8 +1984,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "executable": "/opt/python/bin/python",
             },
             "artifacts": {
-                "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
-                "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
+                "wheel": "/artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl",
+                "sdist": "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
             },
             "githubPackageProofs": {
                 "wheel": github_proof("python"),
@@ -2039,8 +2077,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     artifacts_dir = tmp_path / "release"
     artifacts_dir.mkdir()
     payloads = {
-        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
-        "kaji-0.2.0b1.tar.gz": b"sdist",
+        "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
         "kaji-sdk-0.2.0-beta.1.tgz": b"npm",
     }
     entries: list[dict[str, object]] = []
@@ -2092,8 +2130,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     artifact_hashes = {str(entry["file"]): str(entry["sha256"]) for entry in entries}
     runtime_artifacts = {
         "python": {
-            "file": "kaji-0.2.0b1-py3-none-any.whl",
-            "sha256": artifact_hashes["kaji-0.2.0b1-py3-none-any.whl"],
+            "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+            "sha256": artifact_hashes["kaji_sdk-0.2.0b1-py3-none-any.whl"],
         },
         "typescript": {
             "file": "kaji-sdk-0.2.0-beta.1.tgz",
@@ -2158,8 +2196,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "artifactSha256": {
                     name: artifact_hashes[name]
                     for name in (
-                        "kaji-0.2.0b1-py3-none-any.whl",
-                        "kaji-0.2.0b1.tar.gz",
+                        "kaji_sdk-0.2.0b1-py3-none-any.whl",
+                        "kaji_sdk-0.2.0b1.tar.gz",
                     )
                 },
                 "runtime": {
@@ -2168,8 +2206,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "executable": f"/opt/python/{version}/bin/python",
                 },
                 "artifacts": {
-                    "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
-                    "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
+                    "wheel": "/artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl",
+                    "sdist": "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
                 },
                 "githubPackageProofs": {
                     "wheel": github_proof("python"),

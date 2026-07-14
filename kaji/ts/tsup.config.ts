@@ -2,7 +2,7 @@ import { rmSync } from "node:fs";
 
 import { defineConfig } from "tsup";
 
-const EXTERNAL_PROVIDERS = ["openai", "@anthropic-ai/sdk", "@google/genai"];
+const EXTERNAL_PROVIDERS = ["openai", "@anthropic-ai/sdk"];
 
 // Clean once before parallel configs build; per-config cleaning can delete faster outputs.
 rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });

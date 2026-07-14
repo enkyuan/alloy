@@ -34,13 +34,13 @@ class FakeProviderHTTPError(RuntimeError):
         self.response = SimpleNamespace(text=response_text)
 
 
-def _provider():
+def _provider(model: str = "claude-sonnet-4-6"):
     """Return a freshly constructed AnthropicProvider with a mocked key."""
     from kaji.runtime.providers.anthropic import AnthropicProvider
 
     with patch(_PATCH) as mock_gs:
         mock_gs.return_value = MagicMock(**_FAKE_SETTINGS)
-        return AnthropicProvider()
+        return AnthropicProvider(model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +217,25 @@ async def test_anthropic_generate_omits_cost_without_usage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_anthropic_generate_omits_cost_for_unpriced_model() -> None:
+    provider = _provider("routed/unknown-model")
+    fake_client = MagicMock()
+    fake_client.messages.create = AsyncMock(
+        return_value=SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Hello!")],
+            usage=SimpleNamespace(input_tokens=5, output_tokens=3),
+        )
+    )
+    provider._client = fake_client
+
+    result = await provider.generate([{"role": "user", "content": "hi"}])
+
+    assert result.metrics is not None
+    assert result.metrics.total_tokens == 8
+    assert result.cost_usd is None
+
+
+@pytest.mark.asyncio
 async def test_anthropic_generate_with_tools_passes_translated_payload():
     provider = _provider()
     captured: dict = {}
@@ -311,9 +330,15 @@ async def test_anthropic_generate_stream_yields_text_chunks():
     assert any(c.delta == "Hello" for c in chunks)
 
 
+@pytest.mark.parametrize(
+    ("model", "has_known_cost"),
+    [("claude-sonnet-4-6", True), ("routed/unknown-model", False)],
+)
 @pytest.mark.asyncio
-async def test_anthropic_generate_stream_yields_usage_metadata_when_present():
-    provider = _provider()
+async def test_anthropic_generate_stream_yields_usage_metadata_when_present(
+    model: str, has_known_cost: bool
+):
+    provider = _provider(model)
 
     async def fake_stream_iter():
         yield SimpleNamespace(
@@ -347,8 +372,11 @@ async def test_anthropic_generate_stream_yields_usage_metadata_when_present():
     assert metadata.metrics is not None
     assert metadata.metrics.prompt_tokens == 5
     assert metadata.metrics.completion_tokens == 3
-    assert metadata.cost_usd is not None
-    assert metadata.cost_usd > 0
+    if has_known_cost:
+        assert metadata.cost_usd is not None
+        assert metadata.cost_usd > 0
+    else:
+        assert metadata.cost_usd is None
 
 
 @pytest.mark.asyncio

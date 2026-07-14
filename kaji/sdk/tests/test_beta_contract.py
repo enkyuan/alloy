@@ -82,9 +82,26 @@ def test_every_packaged_cli_command_has_one_stability_tier() -> None:
     }
 
 
-def test_package_subpath_contract_accepts_typed_esm_and_cjs_cli() -> None:
+def test_package_subpath_contract_covers_every_typed_esm_and_cjs_export() -> None:
+    document = json.loads(FEATURE_TIERS.read_text())
+    assert set(document["packageSubpaths"]["typescript"]) == {
+        "./anthropic",
+        "./auth",
+        "./cli",
+        "./integrations",
+        "./openai",
+        "./testing",
+    }
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
-    checker["check_package_subpaths"](json.loads(FEATURE_TIERS.read_text()))
+    checker["check_package_subpaths"](document)
+
+
+def test_package_subpath_contract_rejects_an_unclassified_manifest_export() -> None:
+    document = json.loads(FEATURE_TIERS.read_text())
+    del document["packageSubpaths"]["typescript"]["./testing"]
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
+    with pytest.raises(checker["ContractError"], match="coverage mismatch"):
+        checker["check_package_subpaths"](document)
 
 
 def test_beta_error_vocabulary_includes_event_boundary_failures() -> None:

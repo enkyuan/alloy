@@ -99,11 +99,10 @@ describe("openrouter()", () => {
     expect(resolved.apiKey).toBe("or-key");
   });
 
-  it("falls back to OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
+  it("does not use OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
     process.env.OPENAI_API_KEY = "sk-fallback";
-    expect(resolveOpenRouterOptions("meta-llama/llama-3.1-70b-instruct").apiKey).toBe(
-      "sk-fallback",
-    );
+    expect(resolveOpenRouterOptions("meta-llama/llama-3.1-70b-instruct").apiKey).toBe("");
+    expect(() => openrouter("meta-llama/llama-3.1-70b-instruct")).toThrow(ProviderConfigError);
   });
 
   it("merges httpReferer and appTitle into defaultHeaders", () => {
@@ -115,7 +114,7 @@ describe("openrouter()", () => {
     });
     expect(resolved.defaultHeaders).toEqual({
       "HTTP-Referer": "https://example.com",
-      "X-Title": "My Agent",
+      "X-OpenRouter-Title": "My Agent",
     });
   });
 
@@ -131,12 +130,12 @@ describe("openrouter()", () => {
 });
 
 describe("kimi()", () => {
-  it("defaults to moonshotai/kimi-k2 routed through OpenRouter", () => {
+  it("defaults to moonshotai/kimi-k2.6 routed through OpenRouter", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
     const p = kimi();
     const resolved = resolveKimiOptions();
     expect(p).toBeInstanceOf(OpenAIProvider);
-    expect(resolved.model).toBe("moonshotai/kimi-k2");
+    expect(resolved.model).toBe("moonshotai/kimi-k2.6");
     expect(resolved.baseURL).toBe("https://openrouter.ai/api/v1");
   });
 
@@ -158,7 +157,7 @@ describe("gemini()", () => {
     const resolved = resolveGeminiOptions();
     expect(p).toBeInstanceOf(OpenAIProvider);
     expect(resolved.baseURL).toBe("https://generativelanguage.googleapis.com/v1beta/openai/");
-    expect(resolved.model).toBe("gemini-2.5-flash");
+    expect(resolved.model).toBe("gemini-3.5-flash");
     expect(resolved.apiKey).toBe("g-key");
   });
 

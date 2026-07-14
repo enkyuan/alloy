@@ -484,7 +484,7 @@ def smoke_archives(
                 cwd=artifact_workdir,
                 environment=environment,
             )
-            if "kaji (Python package kaji) 0.2.0b1" not in help_output:
+            if "kaji (Python distribution kaji-sdk) 0.2.0b1" not in help_output:
                 raise SystemExit("FAIL: qualified Python CLI owner/version mismatch")
 
             scaffold = workdir / f"scaffold-{safe_name}"
@@ -722,8 +722,10 @@ def failure_receipt(
             "executable": str(Path(sys.executable).resolve()),
         },
         "artifacts": {
-            "wheel": (str(root / "kaji-0.2.0b1-py3-none-any.whl") if root else None),
-            "sdist": str(root / "kaji-0.2.0b1.tar.gz") if root else None,
+            "wheel": (
+                str(root / "kaji_sdk-0.2.0b1-py3-none-any.whl") if root else None
+            ),
+            "sdist": str(root / "kaji_sdk-0.2.0b1.tar.gz") if root else None,
         },
         "githubPackageProofs": {},
         "conclusion": "failed",

@@ -4,7 +4,7 @@ import logging
 from functools import lru_cache
 from typing import Any, Dict, Optional
 
-from kaji.core.config import get_settings
+from kaji_serve.config import get_settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 """Workflow helpers for the embeddable runtime."""
 
 from kaji.runtime.workflows.idempotency import (
-    BuildIdempotencyKey,
     IdempotencyStore,
+    build_idempotency_key,
 )
 
-__all__ = ["BuildIdempotencyKey", "IdempotencyStore"]
+__all__ = ["IdempotencyStore", "build_idempotency_key"]

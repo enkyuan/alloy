@@ -95,7 +95,7 @@ def _fake_installed_runtime(
     python_package.parent.mkdir(parents=True)
     typescript_package.mkdir(parents=True)
     python_package.write_text("", encoding="utf-8")
-    wheel = tmp_path / "artifacts/kaji-0.2.0b1-py3-none-any.whl"
+    wheel = tmp_path / "artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl"
     tarball = tmp_path / "artifacts/kaji-sdk-0.2.0-beta.1.tgz"
     wheel.parent.mkdir(parents=True)
     wheel.write_bytes(b"wheel")
@@ -333,7 +333,7 @@ def test_protected_provider_proof_runs_four_real_tool_loops_and_records_commit(
     assert retained["releaseManifestSha256"] == "b" * 64
     assert retained["artifacts"] == {
         "python": {
-            "file": "kaji-0.2.0b1-py3-none-any.whl",
+            "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
             "sha256": "c" * 64,
         },
         "typescript": {

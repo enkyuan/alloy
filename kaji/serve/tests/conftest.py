@@ -2,7 +2,7 @@ import os
 import sys
 
 # Provide safe defaults for required settings BEFORE importing the app, so that
-# `kaji.core.config.Settings()` (instantiated at import time) does not fail
+# `kaji_serve.config.Settings()` does not fail
 # when these env vars are absent. Real values in the environment take precedence.
 os.environ.setdefault(
     "DATABASE_URL",
@@ -10,6 +10,8 @@ os.environ.setdefault(
 )
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret")
+os.environ.setdefault("JWT_ISSUER", "https://test.supabase.co/auth/v1")
+os.environ.setdefault("JWT_AUDIENCE", "authenticated")
 
 import pytest
 from typing import AsyncGenerator

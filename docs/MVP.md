@@ -14,7 +14,7 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Install the package** (`pip install kaji` or `npm install @kaji/sdk zod`)
+1. **Install the package** (`pip install kaji-sdk` or `npm install @kaji/sdk zod`)
 2. **Install your provider SDK** (OpenAI or Anthropic; see below)
 3. **Set an API key for live providers** (`OPENAI_API_KEY` or
    `ANTHROPIC_API_KEY`). The installed-package mock quickstart needs no key.
@@ -26,17 +26,17 @@ your image size reflects only what you use.
 
 ## MVP scope
 
-| Feature | Python | TypeScript |
-|---------|--------|------------|
-| `AgentBuilder` + integrations | Yes | Yes |
-| `AgentRuntime` ReAct loop | Yes | Yes |
-| Tool registry + `ToolPlanner` + `ToolPolicy` | Yes | Yes |
-| OpenAI provider | Yes | Yes |
-| Anthropic provider | Yes | Yes |
-| Event store + bus (in-memory) | Yes | Yes |
-| Session replay (`replaySession`) | Yes | Yes |
-| `kaji init` CLI scaffold | Yes | Yes |
-| `CancellationToken` | Yes | Yes |
+| Feature                                      | Python | TypeScript |
+| -------------------------------------------- | ------ | ---------- |
+| `AgentBuilder` + integrations                | Yes    | Yes        |
+| `AgentRuntime` ReAct loop                    | Yes    | Yes        |
+| Tool registry + `ToolPlanner` + `ToolPolicy` | Yes    | Yes        |
+| OpenAI provider                              | Yes    | Yes        |
+| Anthropic provider                           | Yes    | Yes        |
+| Event store + bus (in-memory)                | Yes    | Yes        |
+| Session replay (`replaySession`)             | Yes    | Yes        |
+| `kaji init` CLI scaffold                     | Yes    | Yes        |
+| `CancellationToken`                          | Yes    | Yes        |
 
 ---
 
@@ -53,16 +53,16 @@ The operating contract and exact defaults are in
 tool-safety, integration-schema, migration, and failure guidance live beside
 it in [`docs/kaji/`](kaji/).
 
-| Area | Python SDK | TypeScript SDK | MVP status |
-|------|------------|----------------|------------|
-| Embedded ReAct runtime | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`. | Same shape as Python. | Implemented. |
-| Custom tools | Works through `ToolRegistry`; `Integration` + `tool` are exported from top-level `kaji`. | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters. | Implemented. |
-| Provider setup | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`. | OpenAI/Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented. |
-| Provider-safe tool names | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`. | Implemented. |
-| First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema. | TypeScript ships local/dev examples and validates manifests against the same schema. | Catalog contract implemented; production third-party integrations remain out of MVP. |
-| Event inspection | Store-backed event log is the source of truth. | Store-backed event log is the source of truth. | Implemented. |
-| Quickstart protection | `tests/test_quickstart.py` + `tests/test_public_api.py`. | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`. | Implemented. |
-| Public surface | Top-level `kaji` includes the core runtime plus documented Python extensions. | Top-level entry is MVP-focused; `MockProvider` moved to `@kaji/sdk/testing`. | Implemented; keep docs honest. |
+| Area                            | Python SDK                                                                                                  | TypeScript SDK                                                                                   | MVP status                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Embedded ReAct runtime          | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`.                           | Same shape as Python.                                                                            | Implemented.                                                                         |
+| Custom tools                    | Works through `ToolRegistry`; `Integration` + `tool` are exported from top-level `kaji`.                    | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters.       | Implemented.                                                                         |
+| Provider setup                  | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`.                                        | OpenAI/Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented.                                                                         |
+| Provider-safe tool names        | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`.                                                                | Implemented.                                                                         |
+| First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.             | Catalog contract implemented; production third-party integrations remain out of MVP. |
+| Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                   | Implemented.                                                                         |
+| Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                      | Implemented.                                                                         |
+| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `@kaji/sdk/testing`.                     | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
 
@@ -85,17 +85,17 @@ The practical readiness judgement:
 These features exist in the Python SDK (and some in TS) but are **not required**
 to build a working embedded agent and are not part of the getting-started path:
 
-| Feature | Status |
-|---------|--------|
-| Kimi / Gemini providers | Python native; TS OpenAI-compatible factories |
-| Document RAG / vector store | Python only |
-| Tool retriever | Python only |
-| Text modality adapter | Python only |
-| Voice / TTS adapters | Python only (not hardened) |
-| Redis realtime bus | Python only (not hardened) |
-| `kaji-serve` (FastAPI + workers) | Python only (not hardened) |
-| Durable event/session stores | Neither; bring your own |
-| Observability / token metrics | Core event schema and streamed usage/cost metadata only |
+| Feature                          | Status                                                  |
+| -------------------------------- | ------------------------------------------------------- |
+| Kimi / Gemini providers          | Python native; TS OpenAI-compatible factories           |
+| Document RAG / vector store      | Python only                                             |
+| Tool retriever                   | Python only                                             |
+| Text modality adapter            | Python only                                             |
+| Voice / TTS adapters             | Python only (not hardened)                              |
+| Redis realtime bus               | Python only (not hardened)                              |
+| `kaji-serve` (FastAPI + workers) | Python only (not hardened)                              |
+| Durable event/session stores     | Neither; bring your own                                 |
+| Observability / token metrics    | Core event schema and streamed usage/cost metadata only |
 
 "Not hardened" means the code is present but multi-process deployments need
 additional load and durability testing before production use. See the Python
@@ -130,9 +130,9 @@ gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 **Python**
 
 ```bash
-pip install 'kaji[openai]'     # OpenAI
+pip install 'kaji-sdk[openai]'     # OpenAI
 # or
-pip install 'kaji[anthropic]'  # Anthropic
+pip install 'kaji-sdk[anthropic]'  # Anthropic
 ```
 
 **TypeScript**
@@ -333,8 +333,8 @@ asyncio.run(main())
 import { AgentBuilder } from "@kaji/sdk";
 
 const runtime = new AgentBuilder()
-  .provider(provider)                   // from step 2
-  .integration(new WeatherIntegration())  // from step 3
+  .provider(provider) // from step 2
+  .integration(new WeatherIntegration()) // from step 3
   .systemPrompt("You are a weather assistant.")
   .build();
 
@@ -364,15 +364,15 @@ for (const e of result.events) {
 Events are written in contiguous session-local sequence order. Timestamps are
 observability data and do not determine replay order. Key types to look for:
 
-| Event type | Meaning |
-|------------|---------|
-| `user.message` | The message you sent |
-| `agent.message.delta` | Streaming text chunk from the model |
-| `agent.message.completed` | Full model response text |
-| `tool.call.requested` | Model requested a tool |
-| `tool.call.started` | Execution began |
-| `tool.call.completed` | Tool returned a result |
-| `tool.call.failed` | Tool raised an error |
+| Event type                | Meaning                             |
+| ------------------------- | ----------------------------------- |
+| `user.message`            | The message you sent                |
+| `agent.message.delta`     | Streaming text chunk from the model |
+| `agent.message.completed` | Full model response text            |
+| `tool.call.requested`     | Model requested a tool              |
+| `tool.call.started`       | Execution began                     |
+| `tool.call.completed`     | Tool returned a result              |
+| `tool.call.failed`        | Tool raised an error                |
 
 ---
 
@@ -398,11 +398,11 @@ fixed and does not reflect real LLM outputs.
 
 ## CI checks by package
 
-| Package | Checks |
-|---------|--------|
-| `kaji/sdk` | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
-| `kaji/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart) |
-| `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed |
+| Package      | Checks                                                                                    |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| `kaji/sdk`   | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
+| `kaji/ts`    | tsc (type check), oxfmt (format), vitest (unit + quickstart)                              |
+| `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed                          |
 
 Install smoke jobs for both SDK packages validate that the published wheel /
 tarball exports resolve correctly and provider errors are clear.
@@ -423,7 +423,7 @@ the wheel into a temporary virtualenv, and runs `scripts/smoke_install.py`.
 ## When to use Redis vs kaji-serve
 
 - **Single-process app, only one agent runtime:** in-memory bus and store. No Redis needed.
-- **Multiple processes that need to share events:** add `pip install 'kaji[realtime]'` and swap `InMemoryEventBus` for `EventBus` (Redis-backed). Still no `kaji-serve` required.
+- **Multiple processes that need to share events:** add `pip install 'kaji-sdk[realtime]'` and swap `InMemoryEventBus` for `EventBus` (Redis-backed). Still no `kaji-serve` required.
 - **Full hosted platform (REST API, voice WebSocket, async tool workers):** install `kaji-serve`. It wires the SDK + Redis + Postgres + TaskIQ into a deployable reference service.
 
 ---
@@ -548,8 +548,8 @@ Target shape:
 
 ```ts
 interface ToolSpec {
-  name: string;          // provider-safe, e.g. "weather_get_weather"
-  catalogName?: string;  // human/catalog identity, e.g. "weather.get_weather"
+  name: string; // provider-safe, e.g. "weather_get_weather"
+  catalogName?: string; // human/catalog identity, e.g. "weather.get_weather"
   description: string;
   parameters: Record<string, unknown>;
   risk: ToolRisk;

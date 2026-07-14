@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
-from kaji.core.config import get_settings
+from kaji_serve.config import get_settings
 
 logger = logging.getLogger(__name__)
 

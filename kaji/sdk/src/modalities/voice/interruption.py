@@ -3,11 +3,11 @@
 from kaji.modalities.voice.utils.dtmf_lookahead_buffer import (
     DTMFLookAheadCharacterBuffer,
     DTMFLookAheadStringBuffer,
-    SplitDTMFOutput,
+    split_dtmf_output,
 )
 
 __all__ = [
     "DTMFLookAheadCharacterBuffer",
     "DTMFLookAheadStringBuffer",
-    "SplitDTMFOutput",
+    "split_dtmf_output",
 ]

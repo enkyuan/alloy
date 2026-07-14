@@ -22,7 +22,7 @@ from kaji.infra.observability import (
     Measurement,
     NOOP_METRICS,
     NOOP_TRACE,
-    TraceSpan,
+    trace_span,
 )
 from kaji.infra.observability.protocols import (
     metric_error_code,
@@ -203,7 +203,7 @@ def test_exact_noop_sinks_skip_measurement_and_span_allocation() -> None:
 
 
 def test_trace_span_records_duration():
-    with TraceSpan("unit.test") as span:
+    with trace_span("unit.test") as span:
         span.attributes["key"] = "value"
         assert isinstance(span, Span)
     assert span.end_time is not None

@@ -26,7 +26,7 @@ import {
   providerAPIErrorFromUnknown,
 } from "@/providers/errors";
 import { parseToolArgsJSON } from "@/providers/args";
-import { calculateCostUsd } from "@/providers/costs";
+import { calculateCostUsd, lookupCost } from "@/providers/costs";
 import {
   closeProviderStream,
   LinearStringParts,
@@ -252,9 +252,10 @@ export class AnthropicProvider implements ModelProvider {
       const usage = response.usage
         ? { input: response.usage.input_tokens, output: response.usage.output_tokens }
         : undefined;
-      const costUsd = usage
-        ? calculateCostUsd(this.opts.model, usage.input, usage.output)
-        : undefined;
+      const costUsd =
+        usage && lookupCost(this.opts.model) !== undefined
+          ? calculateCostUsd(this.opts.model, usage.input, usage.output)
+          : undefined;
       return { content, toolCalls, usage, costUsd };
     } catch (error) {
       if (error instanceof ProviderOutputLimitError) throw error;
@@ -369,7 +370,10 @@ export class AnthropicProvider implements ModelProvider {
           delta: "",
           toolCalls: [],
           usage: latestUsage,
-          costUsd: calculateCostUsd(this.opts.model, latestUsage.input, latestUsage.output),
+          costUsd:
+            lookupCost(this.opts.model) === undefined
+              ? undefined
+              : calculateCostUsd(this.opts.model, latestUsage.input, latestUsage.output),
         };
       }
     } catch (error) {

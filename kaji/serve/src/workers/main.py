@@ -15,7 +15,7 @@ from kaji.modalities.voice.event_models import (
 )
 from kaji_serve.runtime.messaging import Bridge, Bus, Message
 from kaji_serve.runtime.workflows.queue import RedisPublisher, RedisStreamInput
-from kaji.core.config import get_settings
+from kaji_serve.config import get_settings
 from kaji_serve.server.database import get_sessionmaker
 from kaji.infra.realtime.redis import RedisConfig, RedisKeys
 from kaji.modalities.voice.tts import (

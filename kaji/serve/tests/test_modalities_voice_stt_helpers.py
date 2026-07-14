@@ -9,7 +9,7 @@ from kaji_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,
     compose_final_text,
-    extract_websocket_bearer_token,
+    extract_websocket_access_token,
     handle_command_message,
     normalize_command_text,
     publish_transcription,
@@ -22,18 +22,34 @@ def test_normalize_command_text_collapses_whitespace():
     assert normalize_command_text("  Play   Jazz  ") == "play jazz"
 
 
-def test_extract_websocket_bearer_token_from_header():
+def test_extract_websocket_access_token_from_header():
     websocket = MagicMock()
     websocket.headers = {"authorization": "Bearer secret"}
-    websocket.query_params = {}
-    assert extract_websocket_bearer_token(websocket) == "secret"
+    websocket.cookies = {}
+    assert extract_websocket_access_token(websocket) == "secret"
 
 
-def test_extract_websocket_bearer_token_from_query_fallback():
+def test_extract_websocket_access_token_from_cookie():
+    websocket = MagicMock()
+    websocket.headers = {"origin": "http://localhost:3000"}
+    websocket.cookies = {"kaji_access_token": "cookie-secret"}
+    assert extract_websocket_access_token(websocket) == "cookie-secret"
+
+
+@pytest.mark.parametrize("origin", [None, "https://malicious.example"])
+def test_extract_websocket_access_token_rejects_untrusted_cookie_origin(origin):
+    websocket = MagicMock()
+    websocket.headers = {"origin": origin} if origin else {}
+    websocket.cookies = {"kaji_access_token": "cookie-secret"}
+    assert extract_websocket_access_token(websocket) is None
+
+
+def test_extract_websocket_access_token_rejects_query_token():
     websocket = MagicMock()
     websocket.headers = {}
-    websocket.query_params = {"token": "legacy"}
-    assert extract_websocket_bearer_token(websocket) == "legacy"
+    websocket.cookies = {}
+    websocket.query_params = {"token": "must-not-be-read"}
+    assert extract_websocket_access_token(websocket) is None
 
 
 def test_compose_final_text_joins_tokens():
@@ -56,7 +72,7 @@ async def test_publish_transcription_writes_stream_entry():
 async def test_authenticate_ws_missing_token_closes_socket():
     websocket = AsyncMock()
     websocket.headers = {}
-    websocket.query_params = {}
+    websocket.cookies = {}
     result = await authenticate_ws(websocket)
     assert result is None
     websocket.close.assert_awaited_once_with(code=1008)

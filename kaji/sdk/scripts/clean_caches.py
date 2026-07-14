@@ -16,6 +16,7 @@ ROOT_CACHE_PATHS = (
     ".ty",
     ".coverage",
     "htmlcov",
+    "logs",
 )
 
 
@@ -29,7 +30,7 @@ def remove_path(path: Path) -> None:
 
 def clean_caches(root: Path) -> None:
     """Remove caches under source/test trees and known project-root caches."""
-    for tree_name in ("src", "tests", "scripts"):
+    for tree_name in ("src", "tests", "scripts", "benchmarks"):
         tree = root / tree_name
         if not tree.is_dir():
             continue
@@ -53,6 +54,9 @@ def clean_caches(root: Path) -> None:
 
     for relative in ROOT_CACHE_PATHS:
         remove_path(root / relative)
+
+    for egg_info in root.glob("*.egg-info"):
+        remove_path(egg_info)
 
 
 def parse_args() -> argparse.Namespace:

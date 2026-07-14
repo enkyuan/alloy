@@ -404,31 +404,3 @@ class InMemoryToolIdempotencyLedger:
                     "tool idempotency ledger capacity exhausted"
                 )
             self._entries.pop(completed_key)
-
-
-# Pre-beta compatibility helpers. They are deliberately local and separate
-# from workflow idempotency; runtime execution uses the exact call-id ledger.
-def build_tool_idempotency_key(
-    *, session_id: str, tool_name: str, tool_args: dict[str, Any]
-) -> str:
-    return _fingerprint(f"{session_id}:{tool_name}", tool_args)[:32]
-
-
-class ToolIdempotencyGuard:
-    """Legacy synchronous argument-hash guard; prefer the async ledger."""
-
-    def __init__(self) -> None:
-        self._claimed: set[str] = set()
-
-    def should_execute(
-        self, *, session_id: str, tool_name: str, tool_args: dict[str, Any]
-    ) -> bool:
-        key = build_tool_idempotency_key(
-            session_id=session_id,
-            tool_name=tool_name,
-            tool_args=tool_args,
-        )
-        if key in self._claimed:
-            return False
-        self._claimed.add(key)
-        return True

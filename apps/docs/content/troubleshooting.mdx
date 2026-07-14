@@ -7,10 +7,10 @@ If you see one of these errors, try the matching fix below.
 
 ## ModuleNotFoundError: No module named 'openai'
 
-You installed `kaji` without the provider extra.
+You installed `kaji-sdk` without the provider extra.
 
 ```bash
-pip install "kaji[openai]"        # or [anthropic] / [gemini] / [providers]
+pip install "kaji-sdk[openai]"    # or [anthropic] / [gemini] / [providers]
 ```
 
 In TypeScript, Zod `>=4.3 <5` is required and the provider clients are optional
@@ -28,7 +28,7 @@ it in a `.env` file that your runtime loads.
 ```bash
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
-export KIMI_API_KEY=...
+export OPENROUTER_API_KEY=...
 ```
 
 Run `kaji doctor` to verify at least one provider key is present.

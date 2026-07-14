@@ -28,7 +28,7 @@ from kaji.runtime.providers.errors import (
     ProviderOutputLimitError,
     provider_error_from_exception,
 )
-from kaji.runtime.providers.costs import calculate_cost_usd
+from kaji.runtime.providers.costs import calculate_cost_usd, lookup_cost
 from kaji.runtime.providers.registry import register_provider
 from kaji.runtime.providers.types import (
     GenerateResponse,
@@ -95,7 +95,7 @@ class OpenAIProvider(ModelProvider):
                 AsyncOpenAI = import_module("openai").AsyncOpenAI
             except ImportError:
                 raise ProviderConfigError(
-                    "OpenAI provider requires openai. Install kaji[openai]."
+                    "OpenAI provider requires openai. Install kaji-sdk[openai]."
                 ) from None
 
             # Kaji does not own a cancellable pre-stream retry loop. Disable
@@ -344,7 +344,7 @@ class OpenAIProvider(ModelProvider):
                     metrics.prompt_tokens,
                     metrics.completion_tokens,
                 )
-                if usage is not None
+                if usage is not None and lookup_cost(self.model_name) is not None
                 else None
             ),
         )
@@ -413,10 +413,14 @@ class OpenAIProvider(ModelProvider):
                     )
                     yield ModelResponseChunk(
                         metrics=metrics,
-                        cost_usd=calculate_cost_usd(
-                            self.model_name,
-                            metrics.prompt_tokens,
-                            metrics.completion_tokens,
+                        cost_usd=(
+                            calculate_cost_usd(
+                                self.model_name,
+                                metrics.prompt_tokens,
+                                metrics.completion_tokens,
+                            )
+                            if lookup_cost(self.model_name) is not None
+                            else None
                         ),
                     )
                     continue

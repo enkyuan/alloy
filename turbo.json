@@ -66,7 +66,7 @@
     },
     "@kaji/sdk#build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "registry/**"],
+      "outputs": ["dist/**"],
       "cache": true
     },
     "@kaji/cli#dev": {

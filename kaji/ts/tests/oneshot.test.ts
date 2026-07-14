@@ -210,14 +210,13 @@ describe("openrouter factory", () => {
     }
   });
 
-  it("falls back to OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
+  it("does not use OPENAI_API_KEY when OPENROUTER_API_KEY is unset", () => {
     const prevOR = process.env.OPENROUTER_API_KEY;
     const prevOA = process.env.OPENAI_API_KEY;
     delete process.env.OPENROUTER_API_KEY;
     process.env.OPENAI_API_KEY = "fallback-key";
     try {
-      const p = openrouter("anthropic/claude-3.5-sonnet");
-      expect(readOpts(p).apiKey).toBe("fallback-key");
+      expect(() => openrouter("anthropic/claude-3.5-sonnet")).toThrow();
     } finally {
       if (prevOR !== undefined) process.env.OPENROUTER_API_KEY = prevOR;
       if (prevOA === undefined) delete process.env.OPENAI_API_KEY;
@@ -225,7 +224,7 @@ describe("openrouter factory", () => {
     }
   });
 
-  it("attaches HTTP-Referer and X-Title headers when provided", () => {
+  it("attaches HTTP-Referer and X-OpenRouter-Title headers when provided", () => {
     const prev = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = "or-key";
     try {
@@ -237,7 +236,7 @@ describe("openrouter factory", () => {
       const headers = readOpts(p).defaultHeaders;
       expect(headers).toBeDefined();
       expect(headers!["HTTP-Referer"]).toBe("https://example.com");
-      expect(headers!["X-Title"]).toBe("My Agent");
+      expect(headers!["X-OpenRouter-Title"]).toBe("My Agent");
     } finally {
       if (prev === undefined) delete process.env.OPENROUTER_API_KEY;
       else process.env.OPENROUTER_API_KEY = prev;
@@ -274,14 +273,14 @@ describe("kimi factory", () => {
 });
 
 describe("gemini factory", () => {
-  it("defaults to gemini-2.5-flash on the OpenAI-compatible endpoint", () => {
+  it("defaults to gemini-3.5-flash on the OpenAI-compatible endpoint", () => {
     const prev = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = "g-key";
     try {
       const p = gemini();
       const opts = readOpts(p);
       expect(opts.baseURL).toBe("https://generativelanguage.googleapis.com/v1beta/openai/");
-      expect(opts.model).toBe("gemini-2.5-flash");
+      expect(opts.model).toBe("gemini-3.5-flash");
       expect(opts.apiKey).toBe("g-key");
     } finally {
       if (prev === undefined) delete process.env.GEMINI_API_KEY;

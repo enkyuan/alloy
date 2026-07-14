@@ -75,7 +75,7 @@ def test_release_smoke_preserves_build_verify_install_order(
         if command == ["kaji", "--help"]:
             return "kaji (conflicting fixture) 9.9.9\n"
         if command[1:4] == ["-m", "kaji.cli", "--help"]:
-            return "kaji (Python package kaji) 0.2.0b1\n"
+            return "kaji (Python distribution kaji-sdk) 0.2.0b1\n"
         return "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
 
     monkeypatch.setattr(module, "run_capture", fake_run_capture)
@@ -213,8 +213,8 @@ def test_release_smoke_consumes_verified_archives_without_building(
     module = _load_script("release_smoke.py")
     artifacts = tmp_path / "release"
     artifacts.mkdir()
-    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = artifacts / "kaji-0.2.0b1.tar.gz"
+    wheel = artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl"
+    sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
     npm = artifacts / "kaji-sdk-0.2.0-beta.1.tgz"
     for path in (wheel, sdist, npm):
         path.write_bytes(path.name.encode())
@@ -298,8 +298,8 @@ def test_python_compatibility_identity_excludes_unconsumed_npm_hash(
     tmp_path: Path,
 ) -> None:
     module = _load_script("release_smoke.py")
-    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
+    wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
+    sdist = tmp_path / "kaji_sdk-0.2.0b1.tar.gz"
     npm = tmp_path / "kaji-sdk-0.2.0-beta.1.tgz"
     hashes = MappingProxyType(
         {
@@ -469,7 +469,7 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         "install_conflicting_kaji_binary(workdir)",
         '["kaji", "--help"]',
         '[str(python), "-m", "kaji.cli", "--help"]',
-        '"kaji (Python package kaji) 0.2.0b1"',
+        '"kaji (Python distribution kaji-sdk) 0.2.0b1"',
         "copied.read_bytes() != packaged.read_bytes()",
     ):
         assert required in script
@@ -624,9 +624,12 @@ def test_clean_caches_removes_project_caches_without_touching_venv(
         tmp_path / "src" / "package" / "__pycache__" / "module.pyc",
         tmp_path / "tests" / "case.pyc",
         tmp_path / "scripts" / "__pycache__" / "tool.pyo",
+        tmp_path / "benchmarks" / "__pycache__" / "runtime.pyc",
         tmp_path / ".pytest_cache" / "state",
         tmp_path / ".ruff_cache" / "state",
         tmp_path / "htmlcov" / "index.html",
+        tmp_path / "logs" / "kaji.log",
+        tmp_path / "kaji.egg-info" / "SOURCES.txt",
         tmp_path / ".coverage",
     ]
     preserved = tmp_path / ".venv" / "lib" / "keep.pyc"

@@ -17,8 +17,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = REPO_ROOT / "kaji/contracts/release/tthw-evidence-v1.schema.json"
 VALIDATOR = REPO_ROOT / "kaji/scripts/validate_tthw_evidence.py"
 ARTIFACTS = {
-    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.1.tgz": ("typescript", "0.2.0-beta.1"),
 }
 

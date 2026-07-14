@@ -1,9 +1,8 @@
 """Errors for model providers.
 
 The foundational ``Service*`` errors and HTTP-classification helpers live in
-``kaji.core.errors`` (so ``core`` need not depend upward on ``providers``)
-and are re-exported here for backwards compatibility. This module adds the
-LLM-provider-specific subclasses on top.
+``kaji.core.errors`` (so ``core`` need not depend upward on ``providers``).
+This module adds the LLM-provider-specific subclasses on top.
 """
 
 from __future__ import annotations
@@ -21,11 +20,7 @@ from kaji.core.errors import (
     service_error_to_http_status,
 )
 
-ServiceErrorToDetail = service_error_to_detail
-ServiceErrorToHTTPStatus = service_error_to_http_status
-
 __all__ = [
-    "ClassifyHTTPError",
     "ProviderError",
     "ProviderConfigError",
     "ProviderAPIError",
@@ -34,13 +29,14 @@ __all__ = [
     "ServiceAPIError",
     "ServiceAuthError",
     "ServiceError",
-    "ServiceErrorToDetail",
-    "ServiceErrorToHTTPStatus",
     "ServiceNetworkError",
     "ServiceRateLimitError",
+    "classify_http_error",
     "provider_error_from_exception",
     "normalize_provider_error",
     "NormalizedProviderError",
+    "service_error_to_detail",
+    "service_error_to_http_status",
 ]
 
 
@@ -204,9 +200,6 @@ def classify_http_error(
         action=action,
         status_code=status_code,
     )
-
-
-ClassifyHTTPError = classify_http_error
 
 
 def _extract_status_code(error: Exception) -> int | None:

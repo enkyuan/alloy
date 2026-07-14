@@ -591,7 +591,7 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
         "releaseManifestSha256": "b" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
                 "sha256": "c" * 64,
             },
             "typescript": {
@@ -835,7 +835,7 @@ def test_installed_python_provider_dependencies_are_opt_in(
     package = root / "python" / "site-packages" / "kaji" / "__init__.py"
     package.parent.mkdir(parents=True)
     package.write_text("")
-    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
+    wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
     release = SimpleNamespace(python_wheel=wheel)
     commands: list[list[str]] = []
@@ -931,8 +931,8 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _load_root_script("installed_release_runtime.py")
-    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
+    wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
+    sdist = tmp_path / "kaji_sdk-0.2.0b1.tar.gz"
     tarball = tmp_path / "kaji-sdk-0.2.0-beta.1.tgz"
     for path in (wheel, sdist, tarball):
         path.write_bytes(b"artifact")
@@ -1848,7 +1848,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
         "releaseManifestSha256": "b" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
                 "sha256": "c" * 64,
             },
             "typescript": {
@@ -2053,7 +2053,7 @@ def test_soak_report_reuses_complete_performance_provenance(
         "releaseManifestSha256": "c" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.2.0b1-py3-none-any.whl",
+                "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
                 "sha256": "d" * 64,
             },
             "typescript": {
@@ -2348,11 +2348,14 @@ def test_ast_grep_is_mandatory_in_ci() -> None:
 
 
 def test_release_docs_reference_beta_release_check() -> None:
+    readmes = [
+        (REPO_ROOT / "kaji" / "sdk" / "README.md").read_text(),
+        (REPO_ROOT / "kaji" / "ts" / "README.md").read_text(),
+    ]
     combined = "\n".join(
         [
             (REPO_ROOT / "kaji" / "RELEASE_MATRIX.md").read_text(),
-            (REPO_ROOT / "kaji" / "sdk" / "README.md").read_text(),
-            (REPO_ROOT / "kaji" / "ts" / "README.md").read_text(),
+            *readmes,
             (REPO_ROOT / "docs" / "MVP.md").read_text(),
         ]
     )
@@ -2364,6 +2367,11 @@ def test_release_docs_reference_beta_release_check() -> None:
     assert "KAJI_RUN_KEYED_LIVE=1" in combined
     assert "SDK/service boundary" in combined
     assert "TypeScript optional provider imports" in combined
+    for readme in readmes:
+        assert "OPENAI_API_KEY=... ANTHROPIC_API_KEY=..." in readme
+        assert "KAJI_RELEASE_ARTIFACTS_DIR=" in readme
+        assert "KAJI_RELEASE_COMMIT=<40-character-commit>" in readme
+        assert "OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1" not in readme
 
 
 def test_release_matrix_names_pending_protected_pr_gate_truthfully() -> None:

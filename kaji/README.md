@@ -2,9 +2,9 @@
 
 kaji is an embeddable SDK for building agents: an event-sourced runtime,
 tool registry, and pluggable LLM/TTS providers. the core is infra-free -- no
-database or server required to import and use it. deploy it yourself or run the
-reference service (`kaji-serve`) when you need FastAPI, Redis/Postgres
-persistence, workers, or STT voice input.
+database or server required to import and use it. `kaji-serve` is a separate,
+experimental reference service for evaluating FastAPI, Redis/Postgres, and STT
+voice integration; it is not part of the 0.2 SDK beta promise.
 
 it is used by ryo as the agent runtime layer. it can also be used
 standalone in any python or typescript project.
@@ -13,11 +13,11 @@ standalone in any python or typescript project.
 
 three packages live under `kaji/`:
 
-| package | path | what it is |
-| -------------------- | ---------------------- | ------------------------------------------------ |
-| `kaji` | `kaji/sdk` | python SDK: the core runtime, embed anywhere |
-| `kaji-serve` | `kaji/serve` | python: FastAPI + workers reference service |
-| `@kaji/sdk` | `kaji/ts` | TypeScript SDK for the shared embedded core |
+| package      | path         | what it is                                       |
+| ------------ | ------------ | ------------------------------------------------ |
+| `kaji-sdk`   | `kaji/sdk`   | python SDK: the core runtime, imported as `kaji` |
+| `kaji-serve` | `kaji/serve` | python: experimental FastAPI + voice service     |
+| `@kaji/sdk`  | `kaji/ts`    | TypeScript SDK for the shared embedded core      |
 
 individual package setup lives in each package's own README. this doc covers
 the shared concepts across all three.
@@ -65,32 +65,32 @@ all session state is derived from an append-only event log. events are
 discriminated by `type`. the string values below are the wire format and are
 identical across both SDKs.
 
-| group | type string | meaning |
-| --- | --- | --- |
-| session | `session.created` | a new session opened |
-| session | `session.closed` | session terminated |
-| user input | `user.message` | text turn from the user |
-| user input | `user.audio.chunk` | audio frame, voice modality only |
-| transcript | `transcript.partial` | interim STT result |
-| transcript | `transcript.final` | finalized user transcript, becomes a user message in replay |
-| memory | `memory.retrieval.started` | RAG lookup kicked off |
-| memory | `memory.retrieval.completed` | RAG returned chunks |
-| agent | `agent.reasoning.started` | runtime entered a turn |
-| agent | `agent.message.delta` | streaming token from the model |
-| agent | `agent.message.completed` | model finalized its text for the turn |
-| agent | `agent.turn.exhausted` | runtime hit the configured tool-iteration limit without a final response |
-| tool call | `tool.call.requested` | model asked for a tool call |
-| tool call | `tool.call.started` | runtime began executing |
-| tool call | `tool.call.completed` | tool returned a result |
-| tool call | `tool.call.failed` | tool raised, was denied, or had invalid args |
-| tool approval | `tool.approval.requested` | policy gate paused before execution |
-| tool approval | `tool.approval.approved` | approval handler said yes |
-| tool approval | `tool.approval.rejected` | approval handler said no |
-| workflow | `workflow.started` | long-running tool workflow began |
-| workflow | `workflow.completed` | workflow finished |
-| workflow | `workflow.failed` | workflow raised |
-| cancellation | `cancellation.requested` | caller asked the runtime to stop |
-| cancellation | `cancellation.completed` | runtime acknowledged and stopped |
+| group         | type string                  | meaning                                                                  |
+| ------------- | ---------------------------- | ------------------------------------------------------------------------ |
+| session       | `session.created`            | a new session opened                                                     |
+| session       | `session.closed`             | session terminated                                                       |
+| user input    | `user.message`               | text turn from the user                                                  |
+| user input    | `user.audio.chunk`           | audio frame, voice modality only                                         |
+| transcript    | `transcript.partial`         | interim STT result                                                       |
+| transcript    | `transcript.final`           | finalized user transcript, becomes a user message in replay              |
+| memory        | `memory.retrieval.started`   | RAG lookup kicked off                                                    |
+| memory        | `memory.retrieval.completed` | RAG returned chunks                                                      |
+| agent         | `agent.reasoning.started`    | runtime entered a turn                                                   |
+| agent         | `agent.message.delta`        | streaming token from the model                                           |
+| agent         | `agent.message.completed`    | model finalized its text for the turn                                    |
+| agent         | `agent.turn.exhausted`       | runtime hit the configured tool-iteration limit without a final response |
+| tool call     | `tool.call.requested`        | model asked for a tool call                                              |
+| tool call     | `tool.call.started`          | runtime began executing                                                  |
+| tool call     | `tool.call.completed`        | tool returned a result                                                   |
+| tool call     | `tool.call.failed`           | tool raised, was denied, or had invalid args                             |
+| tool approval | `tool.approval.requested`    | policy gate paused before execution                                      |
+| tool approval | `tool.approval.approved`     | approval handler said yes                                                |
+| tool approval | `tool.approval.rejected`     | approval handler said no                                                 |
+| workflow      | `workflow.started`           | long-running tool workflow began                                         |
+| workflow      | `workflow.completed`         | workflow finished                                                        |
+| workflow      | `workflow.failed`            | workflow raised                                                          |
+| cancellation  | `cancellation.requested`     | caller asked the runtime to stop                                         |
+| cancellation  | `cancellation.completed`     | runtime acknowledged and stopped                                         |
 
 the canonical sources are
 [`kaji/sdk/src/infra/events/types.py`](sdk/src/infra/events/types.py)
@@ -196,10 +196,11 @@ service hand-off. TypeScript remains in-memory only.
 ### providers
 
 LLM providers implement a common interface. the python SDK ships `kimi`
-(OpenRouter/Kimi, the default), `gemini`, `openai`, `anthropic`, and `mock`
-(for tests). selected via `KAJI_MODEL_PROVIDER`. provider SDKs are optional
-extras (`kaji[openai]`, `kaji[anthropic]`, `kaji[gemini]`, or
-`kaji[providers]`). adding a new provider means implementing the
+(OpenRouter/Kimi), `gemini`, `openai`, `anthropic`, and `mock` (the default).
+selected via `KAJI_MODEL_PROVIDER`. provider SDKs are optional
+extras (`kaji-sdk[openai]`, `kaji-sdk[anthropic]`, `kaji-sdk[gemini]`, or
+`kaji-sdk[providers]`). the distribution installs the import package and CLI
+as `kaji`. adding a new provider means implementing the
 `ModelProvider` protocol and registering it.
 
 TTS providers (`gemini`, `openai`, `none`) follow the same pattern via the
@@ -208,22 +209,22 @@ SDK.
 
 ## the reference service (kaji-serve)
 
-`kaji-serve` (`kaji/serve`) wraps the SDK as three processes over Redis
-so heavy tool execution never stalls a real-time exchange:
+`kaji-serve` (`kaji/serve`) is an experimental service shell around the SDK.
+Its current voice path uses Redis plus the pre-beta service worker runtime:
 
-| process | role |
+| process      | role                                                    |
 | ------------ | ------------------------------------------------------- |
-| `api` | FastAPI app: REST routes and STT WebSocket |
-| `bus-worker` | service runtime: LLM calls, event bus, tool dispatch |
-| `worker` | async tool execution (TaskIQ), results back to bus-worker |
+| `api`        | FastAPI app: REST routes and STT WebSocket              |
+| `bus-worker` | legacy runtime: LLM calls and in-process tool execution |
+| `worker`     | TaskIQ surface, not used by the normal reasoning path   |
 
-Redis Streams provide at-least-once hand-off between service processes.
 Redis Pub/Sub fans out agent responses to the connected client in real time.
-Session-list metadata is stored in Postgres; durable event replay is not the
-default until a persistent `EventStore` is wired in.
+The service is excluded from the 0.2 SDK beta because it does not yet use the
+canonical `AgentRuntime`, acknowledge input only after a completed turn, or
+provide persistent event replay and distributed coordination.
 
-use `kaji-serve` when you need multi-process workers and real-time voice.
-embed `kaji` directly when you want infra-free usage inside your own app.
+Use `kaji-serve` only for reference-service evaluation and voice experiments.
+Embed `kaji` directly for the supported SDK beta surface.
 
 ## typescript SDK
 

@@ -18,7 +18,6 @@ import {
   type IdFactory,
   type TimerHandle,
   type TimerScheduler,
-  type UuidFactory,
 } from "@/internal/uuid";
 import type {
   ApprovalDecision,
@@ -134,8 +133,6 @@ export interface ToolPlannerOptions {
   policy?: ToolPolicy;
   approvalHandler?: AnyApprovalHandler;
   specs?: ReadonlyMap<string, ToolSpec>;
-  /** @deprecated Prefer the scoped `idFactory` seam. */
-  uuid?: UuidFactory;
   idFactory?: IdFactory;
   clock?: Clock;
   executionController?: ToolExecutionController;
@@ -392,7 +389,6 @@ export class ToolPlanner {
   private readonly specs: Map<string, ToolSpec>;
   private readonly schemaValidator: ToolSchemaValidator;
   private readonly idFactory: IdFactory;
-  private readonly nextToolCallId: UuidFactory;
   private readonly clock: Clock;
   private readonly now: () => number;
   private readonly timerScheduler: TimerScheduler;
@@ -424,7 +420,6 @@ export class ToolPlanner {
     );
     this.schemaValidator = new ToolSchemaValidator(this.specs);
     this.idFactory = opts.idFactory ?? systemIdFactory;
-    this.nextToolCallId = opts.uuid ?? (() => this.idFactory.next("tool_call"));
     this.clock = opts.clock ?? systemClock;
     this.now = opts.now ?? (() => this.clock.nowMonotonic());
     this.timerScheduler = opts.timerScheduler ?? systemTimerScheduler;
@@ -646,7 +641,7 @@ export class ToolPlanner {
   ): NormalizedCall[] {
     const ids = new Set<string>();
     return toolCalls.map((instruction) => {
-      const id = instruction.id ?? this.nextToolCallId();
+      const id = instruction.id ?? this.idFactory.next("tool_call");
       assertNonEmptyContextId(id, "toolCallId");
       if (ids.has(id)) throw new TypeError(`Duplicate toolCallId: ${id}`);
       ids.add(id);

@@ -20,10 +20,10 @@ import {
 import { CancellationToken } from "@/runtime/cancellation";
 import { TestAnthropicProvider } from "./helpers/provider-clients";
 
-function makeProvider(client?: unknown) {
+function makeProvider(client?: unknown, model?: string) {
   return client === undefined
-    ? new AnthropicProvider({ apiKey: "test-key" })
-    : new TestAnthropicProvider({ apiKey: "test-key" }, client as unknown as Anthropic);
+    ? new AnthropicProvider({ apiKey: "test-key", model })
+    : new TestAnthropicProvider({ apiKey: "test-key", model }, client as unknown as Anthropic);
 }
 
 const responseLimits = (
@@ -271,6 +271,25 @@ describe("AnthropicProvider.generate", () => {
     expect(result.costUsd).toBe(0.00006);
   });
 
+  it("omits cost for an unpriced model even when usage is present", async () => {
+    const provider = makeProvider(
+      {
+        messages: {
+          create: vi.fn().mockResolvedValue({
+            content: [{ type: "text", text: "Hello!" }],
+            usage: { input_tokens: 5, output_tokens: 3 },
+          }),
+        },
+      },
+      "routed/unknown-model",
+    );
+
+    const result = await provider.generate([{ role: "user", content: "hi" }], []);
+
+    expect(result.usage).toEqual({ input: 5, output: 3 });
+    expect(result.costUsd).toBeUndefined();
+  });
+
   it("parses tool_use blocks into ToolCall shape", async () => {
     const provider = makeProvider({
       messages: {
@@ -493,33 +512,46 @@ describe("AnthropicProvider.generateStream", () => {
     ).toBe("hello");
   });
 
-  it("yields a metadata chunk when streaming usage is reported", async () => {
-    const events = [
-      { type: "message_start", usage: { input_tokens: 5, output_tokens: 0 } },
-      { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } },
-      { type: "message_delta", usage: { output_tokens: 3 } },
-    ];
+  it.each([
+    ["claude-sonnet-4-6", true],
+    ["routed/unknown-model", false],
+  ] as const)(
+    "yields a metadata chunk for model %s when streaming usage is reported",
+    async (model, hasKnownCost) => {
+      const events = [
+        { type: "message_start", usage: { input_tokens: 5, output_tokens: 0 } },
+        { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } },
+        { type: "message_delta", usage: { output_tokens: 3 } },
+      ];
 
-    const fakeStream = {
-      [Symbol.asyncIterator]: async function* () {
-        for (const e of events) yield e;
-      },
-    };
+      const fakeStream = {
+        [Symbol.asyncIterator]: async function* () {
+          for (const e of events) yield e;
+        },
+      };
 
-    const provider = makeProvider({ messages: { stream: vi.fn().mockReturnValue(fakeStream) } });
+      const provider = makeProvider(
+        { messages: { stream: vi.fn().mockReturnValue(fakeStream) } },
+        model,
+      );
 
-    const chunks = [];
-    for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
-      chunks.push(chunk);
-    }
+      const chunks = [];
+      for await (const chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+        chunks.push(chunk);
+      }
 
-    expect(chunks.at(-1)).toMatchObject({
-      delta: "",
-      toolCalls: [],
-      usage: { input: 5, output: 3 },
-    });
-    expect(chunks.at(-1)?.costUsd).toBeGreaterThan(0);
-  });
+      expect(chunks.at(-1)).toMatchObject({
+        delta: "",
+        toolCalls: [],
+        usage: { input: 5, output: 3 },
+      });
+      if (hasKnownCost) {
+        expect(chunks.at(-1)?.costUsd).toBeGreaterThan(0);
+      } else {
+        expect(chunks.at(-1)?.costUsd).toBeUndefined();
+      }
+    },
+  );
 
   it("reassembles fragmented input_json_delta into a single ToolCall", async () => {
     const events = [

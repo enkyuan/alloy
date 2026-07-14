@@ -46,24 +46,24 @@
     },
     {
       "name": "gemini-small",
-      "model": "gemini-1.5-flash",
+      "model": "gemini-3.5-flash",
       "inputTokens": 7949,
       "outputTokens": 3594,
-      "expectedCanonicalUsd": "0.001674375"
+      "expectedCanonicalUsd": "0.0442695"
     },
     {
       "name": "gemini-large",
-      "model": "gemini-1.5-pro",
+      "model": "gemini-3.5-flash",
       "inputTokens": 7634695068019977,
       "outputTokens": 4642980045805002,
-      "expectedCanonicalUsd": "32758269064.04998125"
+      "expectedCanonicalUsd": "53238863014.2749835"
     },
     {
       "name": "maximum-safe-token-counts",
-      "model": "gemini-1.5-pro",
+      "model": "gemini-3.5-flash",
       "inputTokens": 9007199254740991,
       "outputTokens": 9007199254740991,
-      "expectedCanonicalUsd": "56294995342.13119375"
+      "expectedCanonicalUsd": "94575592174.7804055"
     },
     {
       "name": "unknown-model",

@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from kaji.core.config import settings
+from kaji_serve import __version__
+from kaji_serve.config import settings
 
 router = APIRouter(tags=["health"])
 
@@ -11,14 +12,14 @@ def health_payload() -> dict[str, str]:
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
-        "version": "1.0.0",
+        "version": __version__,
     }
 
 
 def root_payload() -> dict[str, str]:
     return {
         "message": settings.PROJECT_NAME,
-        "version": "1.0.0",
+        "version": __version__,
         "docs": f"{settings.API_V1_PREFIX}/docs",
         "health": "/health",
     }

@@ -43,9 +43,6 @@ def split_dtmf_output(item: DTMFOutputEvent) -> Generator[DTMFOutputEvent, None,
         yield DTMFOutputEvent(button=digit)
 
 
-SplitDTMFOutput = split_dtmf_output
-
-
 class DTMFLookAheadCharacterBuffer:
     """
     A look ahead buffer that will replace DTMF expressions with DTMF output events

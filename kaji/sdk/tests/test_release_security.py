@@ -363,6 +363,7 @@ async def test_gemini_failure_does_not_retain_vendor_exception(
     service = object.__new__(GeminiService)
     service.client = SimpleNamespace(models=Models())
     service.model = "gemini-test"
+    service.embedding_model = "gemini-embedding-test"
 
     with pytest.raises(ServiceError) as captured:
         if operation == "generate":

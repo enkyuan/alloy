@@ -8,10 +8,10 @@ from kaji.modalities.voice.tts.adapter import TTSNotConfiguredError, VoiceTTSAda
 from kaji.modalities.voice.tts.base import TTSProvider
 
 __all__ = [
-    "GetTTSProvider",
     "TTSNotConfiguredError",
     "TTSProvider",
     "VoiceTTSAdapter",
+    "get_tts_provider",
 ]
 
 
@@ -45,6 +45,3 @@ def get_tts_provider(provider: str | None = None) -> TTSProvider:
     raise ValueError(
         f"Unknown TTS_PROVIDER: {name!r} (expected 'none', 'gemini', or 'openai')"
     )
-
-
-GetTTSProvider = get_tts_provider

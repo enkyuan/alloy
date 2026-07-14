@@ -57,6 +57,7 @@ def test_cosine_similarity_basics():
     assert cosine_similarity([1, 0], [1, 0]) == pytest.approx(1.0)
     assert cosine_similarity([1, 0], [0, 1]) == pytest.approx(0.0)
     assert cosine_similarity([0, 0], [1, 1]) == 0.0
+    assert cosine_similarity([1, 0], [1, 0, 1]) == 0.0
 
 
 @pytest.mark.asyncio
@@ -115,3 +116,19 @@ async def test_retriever_uses_and_populates_cache(one_tool):
     await r2.initialize()
     # No new tool embeddings computed (cache hit); embedder2 untouched at init.
     assert embedder2.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_retriever_evicts_cached_vectors_with_wrong_dimension(one_tool):
+    cache = InMemoryEmbeddingCache()
+    await cache.save({"weather": [1.0, 0.0, 0.0]})
+    embedder = FakeEmbedder(vectors={"Tool: weather": [1.0, 0.0], "sunny": [1.0, 0.0]})
+    retriever = ToolRetriever(embedder=embedder, cache=cache)
+
+    # The first lookup rejects the stale vector and safely falls back to all tools.
+    assert await retriever.get_top_tools("sunny", threshold=0.5) == ["weather"]
+    assert await cache.load() == {}
+
+    # The next lookup rebuilds the missing vector at the current dimension.
+    assert await retriever.get_top_tools("sunny", threshold=0.5) == ["weather"]
+    assert await cache.load() == {"weather": [1.0, 0.0]}

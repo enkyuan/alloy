@@ -1106,7 +1106,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kaji"
+name = "kaji-sdk"
 version = "0.2.0b1"
 source = { editable = "../sdk" }
 dependencies = [
@@ -1170,7 +1170,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "fastapi" },
-    { name = "kaji", extra = ["providers", "realtime"] },
+    { name = "kaji-sdk", extra = ["providers", "realtime"] },
     { name = "passlib" },
     { name = "psycopg2-binary" },
     { name = "python-jose" },
@@ -1196,7 +1196,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.0,<2" },
     { name = "asyncpg", specifier = ">=0.30.0,<0.31" },
     { name = "fastapi", specifier = ">=0.119.0,<0.120" },
-    { name = "kaji", extras = ["realtime", "providers"], editable = "../sdk" },
+    { name = "kaji-sdk", extras = ["realtime", "providers"], editable = "../sdk" },
     { name = "passlib", specifier = ">=1.7.4,<2" },
     { name = "psycopg2-binary", specifier = ">=2.9.11,<3" },
     { name = "python-jose", specifier = ">=3.5.0,<4" },

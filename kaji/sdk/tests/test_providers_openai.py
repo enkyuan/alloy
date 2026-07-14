@@ -206,6 +206,28 @@ async def test_openai_generate_omits_cost_without_usage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_openai_generate_omits_cost_for_unpriced_model() -> None:
+    async def fake_create(**_kwargs):
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(message=SimpleNamespace(content="hello", tool_calls=[]))
+            ],
+            usage=SimpleNamespace(prompt_tokens=3, completion_tokens=2, total_tokens=5),
+        )
+
+    provider = OpenAIProvider(api_key="test-key", model="routed/unknown-model")
+    provider._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
+    )
+
+    result = await provider.generate(messages=[{"role": "user", "content": "hi"}])
+
+    assert result.metrics is not None
+    assert result.metrics.total_tokens == 5
+    assert result.cost_usd is None
+
+
+@pytest.mark.asyncio
 async def test_openai_generate_maps_rate_limits_to_service_error():
     async def fake_create(**_kwargs):
         raise FakeProviderHTTPError("slow down", status=429, response_text="slow down")
@@ -300,8 +322,14 @@ async def test_openai_stream_accumulates_fragmented_tool_call_arguments():
     ]
 
 
+@pytest.mark.parametrize(
+    ("model", "has_known_cost"),
+    [("gpt-5.4-mini", True), ("routed/unknown-model", False)],
+)
 @pytest.mark.asyncio
-async def test_openai_stream_yields_usage_metadata_chunk():
+async def test_openai_stream_yields_usage_metadata_chunk(
+    model: str, has_known_cost: bool
+):
     captured: dict = {}
 
     class FakeStream:
@@ -334,7 +362,7 @@ async def test_openai_stream_yields_usage_metadata_chunk():
         chat=SimpleNamespace(completions=SimpleNamespace(create=fake_create))
     )
 
-    provider = OpenAIProvider(api_key="test-key")
+    provider = OpenAIProvider(api_key="test-key", model=model)
     provider._client = fake_client
 
     chunks = [chunk async for chunk in provider.generate_stream(messages=[], tools=[])]
@@ -344,8 +372,11 @@ async def test_openai_stream_yields_usage_metadata_chunk():
     assert chunks[-1].metrics is not None
     assert chunks[-1].metrics.prompt_tokens == 3
     assert chunks[-1].metrics.completion_tokens == 2
-    assert chunks[-1].cost_usd is not None
-    assert chunks[-1].cost_usd > 0
+    if has_known_cost:
+        assert chunks[-1].cost_usd is not None
+        assert chunks[-1].cost_usd > 0
+    else:
+        assert chunks[-1].cost_usd is None
 
 
 def test_format_messages_openai_preserves_tool_call_id():

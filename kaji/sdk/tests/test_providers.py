@@ -17,12 +17,10 @@ from kaji.runtime.providers.registry import get_provider
 
 
 @pytest.mark.asyncio
-async def test_provider_registry_selects_kimi_by_default():
-    # Assuming settings.KAJI_MODEL_PROVIDER defaults to "kimi" in test config or we mock it
-    # We can just test the registry logic
+async def test_provider_registry_selects_kimi_explicitly():
     with (
         patch("kaji.core.config.settings.KAJI_MODEL_PROVIDER", "kimi"),
-        patch("kaji.core.config.settings.KIMI_API_KEY", "test_key"),
+        patch("kaji.core.config.settings.OPENROUTER_API_KEY", "test_key"),
     ):
         provider = get_provider("kimi")
         assert isinstance(provider, KimiProvider)
@@ -49,6 +47,16 @@ def test_kimi_provider_honors_explicit_options():
     assert provider._get_headers()["X-OpenRouter-Title"] == "Example App"
 
 
+def test_kimi_provider_requires_current_credentials():
+    with (
+        patch("kaji.core.config.settings.OPENROUTER_API_KEY", None),
+        patch("kaji.core.config.settings.CLOUDFLARE_ACCOUNT_ID", None),
+        patch("kaji.core.config.settings.CLOUDFLARE_API_TOKEN", None),
+    ):
+        with pytest.raises(ProviderConfigError, match="OPENROUTER_API_KEY"):
+            KimiProvider()
+
+
 def test_mock_provider_does_not_eager_import_optional_provider_modules():
     for module in [
         "kaji.runtime.providers.anthropic",
@@ -68,7 +76,7 @@ def test_mock_provider_does_not_eager_import_optional_provider_modules():
 @pytest.mark.asyncio
 async def test_kimi_provider_normalizes_request_payload():
     with (
-        patch("kaji.core.config.settings.KIMI_API_KEY", "test_key"),
+        patch("kaji.core.config.settings.OPENROUTER_API_KEY", "test_key"),
         patch("kaji.core.config.settings.CLOUDFLARE_ACCOUNT_ID", None),
     ):
         provider = KimiProvider()
@@ -87,7 +95,7 @@ async def test_kimi_provider_normalizes_request_payload():
 
 @pytest.mark.asyncio
 async def test_kimi_provider_normalizes_mocked_streaming_response():
-    with patch("kaji.core.config.settings.KIMI_API_KEY", "test_key"):
+    with patch("kaji.core.config.settings.OPENROUTER_API_KEY", "test_key"):
         provider = KimiProvider()
 
         # Mock httpx.AsyncClient.stream
@@ -194,7 +202,7 @@ async def test_kimi_provider_rejects_invalid_json_response():
 
 @pytest.mark.asyncio
 async def test_kimi_provider_accumulates_fragmented_streaming_tool_calls():
-    with patch("kaji.core.config.settings.KIMI_API_KEY", "test_key"):
+    with patch("kaji.core.config.settings.OPENROUTER_API_KEY", "test_key"):
         provider = KimiProvider()
 
         class MockResponse:
@@ -264,6 +272,112 @@ def test_gemini_service_missing_key_raises_provider_config_error():
         mock_settings.return_value.GEMINI_API_KEY = None
         with pytest.raises(ProviderConfigError):
             GeminiService()
+
+
+@pytest.mark.asyncio
+async def test_gemini_service_uses_configured_embedding_model():
+    from kaji.runtime.providers.gemini import GeminiService
+
+    captured = {}
+
+    class Models:
+        def embed_content(self, *, model, contents):
+            captured["model"] = model
+            captured["contents"] = contents
+            return SimpleNamespace(embeddings=[SimpleNamespace(values=[0.25, -0.5])])
+
+    class Client:
+        def __init__(self, api_key):
+            self.models = Models()
+
+    genai = SimpleNamespace(Client=Client)
+    configured_settings = SimpleNamespace(
+        GEMINI_API_KEY=None,
+        GEMINI_MODEL="gemini-chat-test",
+        GEMINI_EMBEDDING_MODEL="gemini-embedding-test",
+    )
+
+    with (
+        patch(
+            "kaji.runtime.providers.gemini.get_settings",
+            return_value=configured_settings,
+        ),
+        patch("kaji.runtime.providers.gemini.import_module", return_value=genai),
+    ):
+        service = GeminiService(api_key="explicit-gemini-key")
+        embedding = await service.embed_text("hello")
+
+    assert service.model == "gemini-chat-test"
+    assert captured == {"model": "gemini-embedding-test", "contents": "hello"}
+    assert embedding == [0.25, -0.5]
+
+
+@pytest.mark.asyncio
+async def test_gemini_context_cache_identity_includes_model():
+    from kaji.runtime.providers.gemini import GeminiService
+
+    created_for = []
+
+    class Models:
+        def count_tokens(self, *, model, contents):
+            return SimpleNamespace(total_tokens=40_000)
+
+    class Caches:
+        def create(self, *, model, config):
+            created_for.append(model)
+            return SimpleNamespace(name=f"cache-{model}")
+
+    contents = [{"role": "user", "parts": [str(index)]} for index in range(3)]
+    client = SimpleNamespace(models=Models(), caches=Caches())
+    GeminiService._active_caches.clear()
+
+    first = object.__new__(GeminiService)
+    first.client = client
+    first.model = "gemini-first"
+    second = object.__new__(GeminiService)
+    second.client = client
+    second.model = "gemini-second"
+
+    assert await first._get_active_cache("system", contents, None) == (
+        "cache-gemini-first"
+    )
+    assert await second._get_active_cache("system", contents, None) == (
+        "cache-gemini-second"
+    )
+    assert created_for == ["gemini-first", "gemini-second"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_context_cache_recreates_before_remote_expiry():
+    from kaji.runtime.providers.gemini import GeminiService
+
+    created = []
+
+    class Models:
+        def count_tokens(self, *, model, contents):
+            return SimpleNamespace(total_tokens=40_000)
+
+    class Caches:
+        def create(self, *, model, config):
+            name = f"cache-{len(created) + 1}"
+            created.append(name)
+            return SimpleNamespace(name=name)
+
+    contents = [{"role": "user", "parts": [str(index)]} for index in range(3)]
+    service = object.__new__(GeminiService)
+    service.client = SimpleNamespace(models=Models(), caches=Caches())
+    service.model = "gemini-test"
+    GeminiService._active_caches.clear()
+
+    with patch(
+        "kaji.runtime.providers.gemini.monotonic",
+        side_effect=[0.0, 539.0, 541.0, 541.0],
+    ):
+        assert await service._get_active_cache("system", contents, None) == "cache-1"
+        assert await service._get_active_cache("system", contents, None) == "cache-1"
+        assert await service._get_active_cache("system", contents, None) == "cache-2"
+
+    assert created == ["cache-1", "cache-2"]
 
 
 @pytest.mark.asyncio

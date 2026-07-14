@@ -19,29 +19,56 @@ function readFreshDeclaration(file: string, sourceFiles: string[]): string {
   return readFileSync(declarationPath, "utf8");
 }
 
+function declarationExportNames(declaration: string): string[] {
+  const blocks = [...declaration.matchAll(/^export \{ (.*?) \}(?: from .*?)?;$/gm)];
+  expect(blocks.length).toBeGreaterThan(0);
+  const names = blocks.flatMap((match) =>
+    match[1]!.split(", ").map(
+      (item) =>
+        item
+          .replace(/^type /, "")
+          .split(" as ")
+          .at(-1)!,
+    ),
+  );
+  expect(new Set(names).size).toBe(names.length);
+  return names.sort();
+}
+
 describe("public declarations", () => {
-  it("exposes only the experimental OAuth and Keychain auth surface", () => {
-    const sources = ["src/auth/index.ts", "src/auth/oauth.ts", "src/auth/keychain.ts"];
+  it("matches every non-CLI subpath contract in both module formats", () => {
     const contract = JSON.parse(
       readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
-    ) as { packageSubpaths: { typescript: { "./auth": { exports: string[] } } } };
+    ) as {
+      packageSubpaths: {
+        typescript: Record<string, { exports: string[] }>;
+      };
+    };
+
+    for (const [subpath, entry] of Object.entries(contract.packageSubpaths.typescript)) {
+      if (subpath === "./cli") continue;
+      const stem = subpath.slice(2);
+      for (const suffix of [".d.ts", ".d.cts"]) {
+        const declaration = readFreshDeclaration(`${stem}${suffix}`, ["tsup.config.ts"]);
+        expect(declarationExportNames(declaration)).toEqual(entry.exports);
+      }
+    }
+  });
+
+  it("exposes only the experimental OAuth and Keychain auth surface", () => {
+    const sources = ["src/auth/index.ts", "src/auth/oauth.ts", "src/auth/keychain.ts"];
     for (const declaration of [
       readFreshDeclaration("auth.d.ts", sources),
       readFreshDeclaration("auth.d.cts", sources),
     ]) {
-      const allowed = contract.packageSubpaths.typescript["./auth"].exports;
-      for (const name of allowed) expect(declaration).toContain(name);
-      const exportBlock = declaration.match(/^export \{ (.*?) \};$/m)?.[1];
-      expect(exportBlock).toBeDefined();
-      const exports = exportBlock!.split(", ").map((item) => item.replace(/^type /, ""));
-      expect(exports.sort()).toEqual([...allowed].sort());
+      const exports = declarationExportNames(declaration);
       for (const internal of [
         "KeychainProcess",
         "_createGoogleOAuthClientForTest",
         "_createMacOSKeychainTokenStorageForTest",
         "validateOAuthPrincipal",
       ]) {
-        expect(exportBlock).not.toContain(internal);
+        expect(exports).not.toContain(internal);
       }
     }
   });
@@ -52,21 +79,11 @@ describe("public declarations", () => {
       "src/integrations/fixed-origin.ts",
       "src/integrations/safe-fetch.ts",
     ];
-    const contract = JSON.parse(
-      readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
-    ) as { packageSubpaths: { typescript: { "./integrations": { exports: string[] } } } };
     for (const declaration of [
       readFreshDeclaration("integrations.d.ts", sources),
       readFreshDeclaration("integrations.d.cts", sources),
     ]) {
-      const allowed = contract.packageSubpaths.typescript["./integrations"].exports;
-      for (const name of allowed) {
-        expect(declaration).toContain(name);
-      }
-      const exportBlock = declaration.match(/^export \{ (.*?) \};$/m)?.[1];
-      expect(exportBlock).toBeDefined();
-      const exports = exportBlock!.split(", ").map((item) => item.replace(/^type /, ""));
-      expect(exports.sort()).toEqual([...allowed].sort());
+      const exports = declarationExportNames(declaration);
       const executionError = declaration.match(
         /declare class IntegrationExecutionError extends ToolExecutionError \{[\s\S]*?\n\}/,
       )?.[0];
@@ -87,26 +104,15 @@ describe("public declarations", () => {
         "CERTIFIED_FAILURES",
         "CertifiedIntegrationReason",
       ]) {
-        expect(declaration).not.toContain(internal);
+        expect(exports).not.toContain(internal);
       }
     }
   });
 
   it("classifies every built root export exactly once and syncs the generated docs", () => {
     const declaration = readFreshDeclaration("index.d.ts", ["src/index.ts"]);
-    const blocks = [...declaration.matchAll(/^export \{ (.*?) \}(?: from .*?)?;$/gm)];
-    expect(blocks.length).toBeGreaterThan(0);
-    const declaredExports = blocks.flatMap((match) =>
-      match[1]!.split(", ").map(
-        (item) =>
-          item
-            .replace(/^type /, "")
-            .split(" as ")
-            .at(-1)!,
-      ),
-    );
+    const declaredExports = declarationExportNames(declaration);
     const exports = new Set(declaredExports);
-    expect(exports.size).toBe(declaredExports.length);
     const contract = JSON.parse(
       readFileSync(resolve(root, "../contracts/feature-tiers-v1.json"), "utf8"),
     );

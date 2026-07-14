@@ -27,7 +27,7 @@ def get_provider(name: str, **kwargs) -> ModelProvider:
         except ImportError:
             raise ProviderConfigError(
                 f"Provider '{name}' requires optional dependencies. "
-                f"Install kaji[{name}] or the corresponding provider package."
+                f"Install kaji-sdk[{name}] or the corresponding provider package."
             ) from None
         provider_cls = _PROVIDERS.get(name) or getattr(module, class_name)
     if provider_cls is None:

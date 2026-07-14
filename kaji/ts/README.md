@@ -170,8 +170,19 @@ It is not provider evidence. The protected release mode requires both
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
-The same keyed proof can be included in the wrapper with
-`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py`.
+`KAJI_RUN_KEYED_LIVE=1` is not a one-key shortcut. It is the fail-closed
+four-cell proof and requires both provider keys, the frozen artifact set, and
+the exact 40-character release commit:
+
+```bash
+OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \
+KAJI_RELEASE_ARTIFACTS_DIR="$PWD/.artifacts/kaji-release" \
+KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+```
+
+The protected `kaji-beta` workflow is authoritative release evidence; the
+single-provider command above is only a local paid smoke test.
 
 ## Stability tiers
 

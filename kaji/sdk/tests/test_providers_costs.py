@@ -30,6 +30,19 @@ def test_unknown_model_cost_is_zero() -> None:
     assert calculate_cost_usd("unknown-model", 1_000_000, 1_000_000) == 0
 
 
+def test_cost_lookup_accepts_snapshots_but_never_guesses_model_families() -> None:
+    assert lookup_cost("gpt-5.4-mini-2026-04-15") == lookup_cost("gpt-5.4-mini")
+    assert lookup_cost("gemini-3.5-flash-001") == lookup_cost("gemini-3.5-flash")
+    assert lookup_cost("claude-sonnet-4-60") is None
+    assert lookup_cost("moonshotai/kimi-k2.6") is None
+
+
+def test_gemini_25_flash_uses_current_standard_rate() -> None:
+    entry = lookup_cost("gemini-2.5-flash")
+    assert entry is not None
+    assert (entry.input_per_1m, entry.output_per_1m) == (0.3, 2.5)
+
+
 @pytest.mark.parametrize("case", FIXTURE["cases"], ids=lambda case: case["name"])
 def test_provider_cost_contract(case: dict[str, object]) -> None:
     input_tokens = case["inputTokens"]
@@ -82,7 +95,7 @@ def test_provider_cost_rejects_invalid_token_counts(
     output_tokens = value if field == "output" else 0
     with pytest.raises((TypeError, ValueError)):
         calculate_cost_usd(
-            "gemini-1.5-pro",
+            "gemini-3.5-flash",
             input_tokens,  # ty: ignore[invalid-argument-type]
             output_tokens,  # ty: ignore[invalid-argument-type]
         )

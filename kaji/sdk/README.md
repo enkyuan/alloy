@@ -15,20 +15,23 @@ the full five-step developer path and scope definition.
 ## Install
 
 ```bash
-pip install 'kaji[openai]'     # OpenAI (recommended)
+pip install 'kaji-sdk[openai]'     # OpenAI (recommended)
 # or
-pip install 'kaji[anthropic]'  # Anthropic
+pip install 'kaji-sdk[anthropic]'  # Anthropic
 # or
-pip install kaji               # core only, bring your own provider
+pip install kaji-sdk               # core only, bring your own provider
 ```
 
 Other optional extras:
 
 ```bash
-pip install 'kaji[gemini]'      # Gemini provider
-pip install 'kaji[realtime]'    # Redis event bus (multi-process)
-pip install 'kaji[providers]'   # all provider SDKs
+pip install 'kaji-sdk[gemini]'      # Gemini provider
+pip install 'kaji-sdk[realtime]'    # Redis event bus (multi-process)
+pip install 'kaji-sdk[providers]'   # all provider SDKs
 ```
+
+The PyPI distribution is `kaji-sdk`; installed code is still imported as
+`kaji`, and the Python CLI command remains `kaji`.
 
 ## Quick start
 
@@ -258,8 +261,19 @@ It is not provider evidence. The protected release mode requires both
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
 ```
 
-The same keyed proof can be included in the wrapper with
-`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py`.
+`KAJI_RUN_KEYED_LIVE=1` is not a one-key shortcut. It is the fail-closed
+four-cell proof and requires both provider keys, the frozen artifact set, and
+the exact 40-character release commit:
+
+```bash
+OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \
+KAJI_RELEASE_ARTIFACTS_DIR="$PWD/.artifacts/kaji-release" \
+KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
+uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+```
+
+The protected `kaji-beta` workflow is authoritative release evidence; the
+single-provider command above is only a local paid smoke test.
 
 ## Stability tiers
 
@@ -293,56 +307,56 @@ with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
 
 ## What's exported
 
-| Name | What it is |
-| --- | --- |
-| `AgentBuilder` | Fluent builder wiring provider + integrations + policy into `AgentRuntime` |
-| `AgentRuntime` | Provider-agnostic ReAct loop |
-| `EffectiveRuntimeLimits` | Immutable values returned by `AgentRuntime.effective_limits()` after overrides |
-| `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator` | Turn-scoped result and injectable same-session FIFO coordination |
-| `ToolSpec`, `ToolRegistry`, `ToolExecutionContext` | Tool definition, scoped registry, and execution context |
-| `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError` | Draft 2020-12 validation and normalized failures before tool side effects |
-| `ToolExecutionController`, `ToolExecutionLimits`, `ToolExecutionError` | Bounded execution, deadlines, drain state, and certified retryable handler failures |
-| `ToolIdempotencyLedger`, `InMemoryToolIdempotencyLedger`, `IdempotencyCapacityExceeded`, `IdempotencyConflictError` | Exact tool-call coalescing/replay and bounded-ledger failures |
-| `ApprovalDecision`, `ApprovalHandler`, `ApprovalRequestContext`, `EventApprovalHandler`, `EventBackedApprovalHandler`, `JournalEventEmitter` | Typed approval lifecycle and canonical event-backed bridge |
-| `Measurement`, `MetricsSink`, `TraceSink`, `SpanHandle`, `NOOP_METRICS`, `NOOP_TRACE` | Dependency-free, low-cardinality observability contracts and no-op defaults |
-| `tool`, `function_tool`, `register_tool`, `list_tool_specs` | PEP 8 decorators and registry helpers for declaring and listing tools |
-| `Integration` | Namespace-scoped tool bundle base class |
-| `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus` | Append-only event log and per-session pub/sub (abstract + in-memory) |
-| `InvalidDurableValueError`, `DurableJsonLimitError` | Durable event boundary failures for non-JSON values and oversized UTF-8 payloads |
-| `UserMessage` | Convenience constructor for the initial `user.message` event |
-| `replay_session`, `SessionManager`, `SessionState` | Session state projection and management |
-| `SessionStore`, `InMemorySessionStore`, `SessionRecord` | Cross-session index keyed by user (process-local default; postgres opt-in) |
-| `HistoryStore`, `InMemoryHistoryStore` | Conversation history backend for reasoning nodes (in-memory default; Redis opt-in) |
-| `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore` | Document RAG primitives: chunking, ingest, retrieval |
-| `ToolRetriever`, `Embedder`, `EmbeddingCache` | Semantic tool retrieval with a pluggable embedder and cache |
-| `build_tools_payload`, `spec_to_neutral` | Build the neutral tool payload from the registry |
-| `to_openai`, `to_anthropic`, `to_gemini` | Per-provider translators applied at the provider boundary |
-| `ModelProvider`, `get_provider`, `register_provider` | Provider protocol + registry |
-| `ProviderMessage`, `ProviderToolSpec` | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `kaji.runtime.providers.types`) |
-| `ProviderError`, `ProviderConfigError`, `ProviderAPIError` | Provider error class hierarchy (subclasses of `ProviderError`) |
-| `NormalizedProviderError`, `normalize_provider_error` | Redaction-safe semantic classification for Kaji provider errors |
-| `Clock`, `IdFactory`, `SystemClock`, `SystemIdFactory` | Deterministic time/ID seams and their production defaults |
-| `UnknownToolError` | Raised when the model calls a tool name not in the registry |
-| `CancellationToken` | Cooperative cancellation across async boundaries |
+| Name                                                                                                                                         | What it is                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgentBuilder`                                                                                                                               | Fluent builder wiring provider + integrations + policy into `AgentRuntime`                                                                |
+| `AgentRuntime`                                                                                                                               | Provider-agnostic ReAct loop                                                                                                              |
+| `EffectiveRuntimeLimits`                                                                                                                     | Immutable values returned by `AgentRuntime.effective_limits()` after overrides                                                            |
+| `TurnResult`, `TurnCoordinator`, `InMemoryTurnCoordinator`                                                                                   | Turn-scoped result and injectable same-session FIFO coordination                                                                          |
+| `ToolSpec`, `ToolRegistry`, `ToolExecutionContext`                                                                                           | Tool definition, scoped registry, and execution context                                                                                   |
+| `ToolSchemaValidator`, `ToolSchemaValidationError`, `ToolArgumentValidationError`                                                            | Draft 2020-12 validation and normalized failures before tool side effects                                                                 |
+| `ToolExecutionController`, `ToolExecutionLimits`, `ToolExecutionError`                                                                       | Bounded execution, deadlines, drain state, and certified retryable handler failures                                                       |
+| `ToolIdempotencyLedger`, `InMemoryToolIdempotencyLedger`, `IdempotencyCapacityExceeded`, `IdempotencyConflictError`                          | Exact tool-call coalescing/replay and bounded-ledger failures                                                                             |
+| `ApprovalDecision`, `ApprovalHandler`, `ApprovalRequestContext`, `EventApprovalHandler`, `EventBackedApprovalHandler`, `JournalEventEmitter` | Typed approval lifecycle and canonical event-backed bridge                                                                                |
+| `Measurement`, `MetricsSink`, `TraceSink`, `SpanHandle`, `NOOP_METRICS`, `NOOP_TRACE`                                                        | Dependency-free, low-cardinality observability contracts and no-op defaults                                                               |
+| `tool`, `function_tool`, `register_tool`, `list_tool_specs`                                                                                  | PEP 8 decorators and registry helpers for declaring and listing tools                                                                     |
+| `Integration`                                                                                                                                | Namespace-scoped tool bundle base class                                                                                                   |
+| `EventStore`, `InMemoryEventStore`, `EventBus`, `InMemoryEventBus`                                                                           | Append-only event log and per-session pub/sub (abstract + in-memory)                                                                      |
+| `InvalidDurableValueError`, `DurableJsonLimitError`                                                                                          | Durable event boundary failures for non-JSON values and oversized UTF-8 payloads                                                          |
+| `UserMessage`                                                                                                                                | Convenience constructor for the initial `user.message` event                                                                              |
+| `replay_session`, `SessionManager`, `SessionState`                                                                                           | Session state projection and management                                                                                                   |
+| `SessionStore`, `InMemorySessionStore`, `SessionRecord`                                                                                      | Cross-session index keyed by user (process-local default; postgres opt-in)                                                                |
+| `HistoryStore`, `InMemoryHistoryStore`                                                                                                       | Conversation history backend for reasoning nodes (in-memory default; Redis opt-in)                                                        |
+| `Chunk`, `Document`, `DocumentRAG`, `VectorStore`, `InMemoryVectorStore`                                                                     | Document RAG primitives: chunking, ingest, retrieval                                                                                      |
+| `ToolRetriever`, `Embedder`, `EmbeddingCache`                                                                                                | Semantic tool retrieval with a pluggable embedder and cache                                                                               |
+| `build_tools_payload`, `spec_to_neutral`                                                                                                     | Build the neutral tool payload from the registry                                                                                          |
+| `to_openai`, `to_anthropic`, `to_gemini`                                                                                                     | Per-provider translators applied at the provider boundary                                                                                 |
+| `ModelProvider`, `get_provider`, `register_provider`                                                                                         | Provider protocol + registry                                                                                                              |
+| `ProviderMessage`, `ProviderToolSpec`                                                                                                        | TypedDicts documenting the neutral message + tool payload the runtime sends to providers (importable from `kaji.runtime.providers.types`) |
+| `ProviderError`, `ProviderConfigError`, `ProviderAPIError`                                                                                   | Provider error class hierarchy (subclasses of `ProviderError`)                                                                            |
+| `NormalizedProviderError`, `normalize_provider_error`                                                                                        | Redaction-safe semantic classification for Kaji provider errors                                                                           |
+| `Clock`, `IdFactory`, `SystemClock`, `SystemIdFactory`                                                                                       | Deterministic time/ID seams and their production defaults                                                                                 |
+| `UnknownToolError`                                                                                                                           | Raised when the model calls a tool name not in the registry                                                                               |
+| `CancellationToken`                                                                                                                          | Cooperative cancellation across async boundaries                                                                                          |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format
 shared with the TypeScript SDK.
 
 ## Python vs TypeScript parity
 
-| Feature | Python SDK | TS SDK |
-| --- | --- | --- |
-| Event-sourced runtime | Yes | Yes |
-| Tool registry + planner + policy | Yes | Yes |
-| `AgentBuilder` + integrations | Yes | Yes |
-| OpenAI / Anthropic providers | Yes | Yes |
-| OpenRouter / Kimi / Gemini providers | Yes (native) | Yes (via OpenAI-compatible factory) |
-| Document RAG / vector store | Yes | No |
-| Tool retriever | Yes | No |
-| Text modality adapter | Yes (non-MVP) | No |
-| Voice / TTS | Yes (non-MVP) | No |
-| Redis realtime bus | Yes (non-MVP) | No |
-| CLI scaffold | Yes | Yes |
+| Feature                              | Python SDK    | TS SDK                              |
+| ------------------------------------ | ------------- | ----------------------------------- |
+| Event-sourced runtime                | Yes           | Yes                                 |
+| Tool registry + planner + policy     | Yes           | Yes                                 |
+| `AgentBuilder` + integrations        | Yes           | Yes                                 |
+| OpenAI / Anthropic providers         | Yes           | Yes                                 |
+| OpenRouter / Kimi / Gemini providers | Yes (native)  | Yes (via OpenAI-compatible factory) |
+| Document RAG / vector store          | Yes           | No                                  |
+| Tool retriever                       | Yes           | No                                  |
+| Text modality adapter                | Yes (non-MVP) | No                                  |
+| Voice / TTS                          | Yes (non-MVP) | No                                  |
+| Redis realtime bus                   | Yes (non-MVP) | No                                  |
+| CLI scaffold                         | Yes           | Yes                                 |
 
 ## Development
 
@@ -467,7 +481,7 @@ For multi-process deployments where multiple workers share events, replace the
 in-memory bus with the Redis-backed `EventBus`:
 
 ```bash
-pip install 'kaji[realtime]'
+pip install 'kaji-sdk[realtime]'
 export REDIS_URL=redis://localhost:6379/0
 ```
 
@@ -481,24 +495,24 @@ tool workers, Postgres) is in `kaji-serve`.
 
 ### When to use Redis vs kaji-serve
 
-| Need | Use |
-|------|-----|
-| Single process, one agent | `InMemoryEventBus` -- no Redis |
-| Multiple processes sharing events | `kaji[realtime]` + `EventBus` |
-| Full hosted platform (REST, voice, workers) | `kaji-serve` |
+| Need                                       | Use                               |
+| ------------------------------------------ | --------------------------------- |
+| Single process, one agent                  | `InMemoryEventBus` -- no Redis    |
+| Multiple processes sharing events          | `kaji-sdk[realtime]` + `EventBus` |
+| Experimental REST/voice service evaluation | `kaji-serve`                      |
 
 ---
 
 ## Reference service architecture
 
-`kaji-serve` is a deployable reference service -- one way to run the SDK in
-production, not a requirement for using it. It runs as three processes over Redis:
+`kaji-serve` is an experimental reference service and is excluded from the 0.2
+SDK beta. Its current voice path uses three process entry points over Redis:
 
-| Process | Responsibility |
-| --- | --- |
-| `api` | FastAPI app: REST routes and the (voice) STT WebSocket endpoint |
-| `bus-worker` | The reasoning loop: consumes input, calls the LLM, runs the event bus |
-| `worker` | TaskIQ workers that execute tool calls asynchronously |
+| Process      | Responsibility                                                     |
+| ------------ | ------------------------------------------------------------------ |
+| `api`        | FastAPI app: REST routes and the (voice) STT WebSocket endpoint    |
+| `bus-worker` | Legacy loop: consumes input and executes ordinary tools in-process |
+| `worker`     | TaskIQ surface, not used by the normal reasoning path              |
 
 ```
    ┌────────────────────────────────┐
@@ -518,16 +532,17 @@ production, not a requirement for using it. It runs as three processes over Redi
    └────────────────────────────────┘
 ```
 
-FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, service runtime
-nodes, and TaskIQ workers are **not** in the SDK -- they live in the separate
-[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) distribution.
+FastAPI, Supabase auth, SQLAlchemy/Postgres models, STT/Soniox, the legacy
+service runtime, and TaskIQ workers are **not** in the SDK. Before promotion,
+the service needs a canonical `AgentRuntime` adapter, persistent `EventStore`,
+post-turn acknowledgement, and distributed coordination. See the separate
+[`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) package.
 
 ## Module layout
 
 ```
 kaji/
 ├── core/             # foundation: config, logging, errors
-├── types/            # shared type definitions
 ├── infra/            # backbone above core
 │   ├── events/       #   event envelopes, store, replay
 │   ├── realtime/     #   redis stream/pub-sub helpers (opt-in, [realtime] extra)
@@ -548,23 +563,24 @@ kaji/
 Settings load lazily from environment variables (or a `.env` file). No
 configuration is needed to `import kaji`.
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | for openai provider | OpenAI LLM |
-| `ANTHROPIC_API_KEY` | for anthropic provider | Anthropic LLM |
-| `KAJI_MODEL_PROVIDER` | no | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
-| `OPENAI_MODEL` | no | OpenAI model (default `gpt-5.4-mini`) |
-| `REDIS_URL` | for realtime extra | Defaults to `redis://redis:6379/0` |
-| `GEMINI_API_KEY` | for gemini provider | Gemini LLM + TTS |
-| `TTS_PROVIDER` | no | `none` (default), `gemini`, or `openai` |
-| `DATABASE_URL` | kaji-serve only | Postgres connection |
-| `SUPABASE_ANON_KEY` | kaji-serve only | Supabase auth |
+| Variable                 | Required               | Purpose                                                        |
+| ------------------------ | ---------------------- | -------------------------------------------------------------- |
+| `OPENAI_API_KEY`         | for openai provider    | OpenAI LLM                                                     |
+| `ANTHROPIC_API_KEY`      | for anthropic provider | Anthropic LLM                                                  |
+| `KAJI_MODEL_PROVIDER`    | no                     | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
+| `OPENAI_MODEL`           | no                     | OpenAI model (default `gpt-5.4-mini`)                          |
+| `REDIS_URL`              | for realtime extra     | Defaults to `redis://localhost:6379/0`                         |
+| `GEMINI_API_KEY`         | for gemini provider    | Gemini LLM + TTS                                               |
+| `GEMINI_EMBEDDING_MODEL` | no                     | Gemini embeddings (default `gemini-embedding-2`)               |
+| `OPENROUTER_API_KEY`     | for kimi provider      | OpenRouter-hosted Kimi                                         |
+| `TTS_PROVIDER`           | no                     | `none` (default), `gemini`, or `openai`                        |
 
 See [`.env.example`](https://github.com/enkyuan/alloy/blob/main/.env.example) for the full list.
 
 ## Project layout notes
 
-The repo ships **two distributions**: `kaji` (this SDK) and
+The repo contains **two Python distributions**: `kaji-sdk` (this SDK, imported
+as `kaji`) and
 [`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) (the reference FastAPI + workers
 service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.
