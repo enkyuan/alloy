@@ -19,7 +19,7 @@ jobs:
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           sync-args: --frozen
 
       - uses: ./.github/actions/setup-bun-cache
@@ -29,34 +29,34 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Check the production-beta contract
-        run: uv run --project kaji/sdk python kaji/scripts/check_beta_contract.py
+        run: uv run --project kaji python kaji/scripts/check_beta_contract.py
 
       - name: Check packaged beta contracts
-        run: uv run --project kaji/sdk python kaji/scripts/sync_beta_contracts.py --check
+        run: uv run --project kaji python kaji/scripts/sync_beta_contracts.py --check
 
       - name: Check packaged integration contracts
-        run: uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
+        run: uv run --project kaji python kaji/scripts/sync_integration_contracts.py --check
 
       - name: Check the integration ABI
-        run: uv run --project kaji/sdk python kaji/scripts/check_integration_abi.py --explain
+        run: uv run --project kaji python kaji/scripts/check_integration_abi.py --explain
 
       - name: Check SDK parity
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/check_sdk_parity.py
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/check_sdk_parity.py
 
       - name: Run structural guards
         run: bun run audit:ast-grep
 
       - name: Run quick beta benchmarks
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --quick
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py --quick
 
       - name: Run quick integration benchmarks
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync python kaji/scripts/integration_benchmark.py --mode quick
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/integration_benchmark.py --mode quick
 
       - name: Run Python tests offline
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji/sdk --no-sync pytest kaji/sdk/tests -m "not integration" --cov-fail-under=80
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync pytest kaji/tests -m "not integration" --cov-fail-under=80
 
       - name: Build TypeScript package offline
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build
 
       - name: Run TypeScript tests offline
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test:coverage
+        run: uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test:coverage

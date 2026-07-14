@@ -55,12 +55,12 @@ jobs:
         run: bun install --frozen-lockfile
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
       - name: Build and verify one release artifact set
         env:
           KAJI_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
-        run: uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
+        run: uv run --project kaji python kaji/scripts/beta_release_check.py --release
       - name: Upload exact release artifacts
         id: release-artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -90,7 +90,7 @@ jobs:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.11.9"
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -108,7 +108,7 @@ jobs:
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Compare five-sample medians
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py
+          uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py
           --full --protected --artifacts-dir .artifacts/kaji-release
       - name: Upload raw benchmark samples
         if: always()
@@ -140,7 +140,7 @@ jobs:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.11.9"
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -158,7 +158,7 @@ jobs:
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Run protected 30-minute soak
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_soak.py
+          uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py
           --minutes 30 --protected --artifacts-dir .artifacts/kaji-release
       - name: Upload soak and heap samples
         if: always()
@@ -187,7 +187,7 @@ jobs:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.11.9"
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -205,7 +205,7 @@ jobs:
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Produce candidate baseline only
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py
+          uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py
           --calibrate --protected --artifacts-dir .artifacts/kaji-release
       - name: Upload candidate baseline and raw samples
         if: always()

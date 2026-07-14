@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.lint.yml"
   pull_request:
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.lint.yml"
@@ -20,18 +20,18 @@ permissions:
 
 jobs:
   sdk:
-    name: kaji/sdk
+    name: kaji
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: kaji/sdk
+        working-directory: kaji
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           # --no-editable installs kaji as a built wheel (src/ -> kaji/ remap
           # applied at install time) rather than via the runtime MetaPathFinder
           # that setuptools+editables uses for editable installs. Static type

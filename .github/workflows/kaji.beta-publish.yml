@@ -98,7 +98,7 @@ jobs:
           install-args: --frozen-lockfile
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
       - name: Run offline release gates and retain the actual summary
         id: offline
@@ -108,7 +108,7 @@ jobs:
         run: |
           mkdir -p .artifacts/kaji-offline-evidence
           set +e
-          uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release \
+          uv run --project kaji python kaji/scripts/beta_release_check.py --release \
             > >(tee .artifacts/kaji-offline-evidence/offline-gates.log) 2>&1
           status=$?
           set -e
@@ -187,7 +187,7 @@ jobs:
           node-version: "22.14.0"
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.11.9"
       - uses: ./.github/actions/setup-bun-cache
         with:
@@ -207,10 +207,10 @@ jobs:
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Run protected full benchmark
         id: benchmark
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_benchmarks.py --full --protected --artifacts-dir .artifacts/kaji-release
+        run: uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py --full --protected --artifacts-dir .artifacts/kaji-release
       - name: Run protected 30-minute soak
         id: soak
-        run: uv run --project kaji/sdk --no-sync python kaji/scripts/run_beta_soak.py --minutes 30 --protected --artifacts-dir .artifacts/kaji-release
+        run: uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py --minutes 30 --protected --artifacts-dir .artifacts/kaji-release
       - name: Validate and normalize exact-commit performance evidence
         id: performance-validation
         env:
@@ -219,7 +219,7 @@ jobs:
           benchmark=.artifacts/kaji-benchmarks/results.json
           soak=.artifacts/kaji-soak/results.json
           expected_fingerprint="$(
-            uv run --project kaji/sdk python -c \
+            uv run --project kaji python -c \
               'import json, sys; sys.path.insert(0, "kaji/scripts"); from beta_benchmark_gate import fingerprint; print(json.dumps(fingerprint(), sort_keys=True))'
           )"
           validate_report() {
@@ -384,7 +384,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: ${{ matrix.python-version }}
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -402,7 +402,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/sdk/scripts/release_smoke.py
+          uv run --project kaji --no-sync python kaji/scripts/release_smoke.py
           --artifacts-dir .artifacts/kaji-release
           --expected-commit "$EXPECTED_COMMIT"
           --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
@@ -810,7 +810,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -836,7 +836,7 @@ jobs:
           trap 'rm -f "$raw_evidence"' EXIT
           printf '%s' "$KAJI_TTHW_EVIDENCE_JSON" >"$raw_evidence"
           set +e
-          uv run --project kaji/sdk --no-sync python kaji/scripts/validate_tthw_evidence.py \
+          uv run --project kaji --no-sync python kaji/scripts/validate_tthw_evidence.py \
             "$raw_evidence" \
             --release-manifest .artifacts/kaji-release/manifest.json \
             --artifacts-dir .artifacts/kaji-release \
@@ -991,7 +991,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
           sync-args: --frozen
       - id: download
@@ -1011,7 +1011,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/scripts/live_provider_proof.py
+          uv run --project kaji --no-sync python kaji/scripts/live_provider_proof.py
           --protected --artifacts-dir .artifacts/kaji-release
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Normalize terminal provider evidence
@@ -1104,7 +1104,7 @@ jobs:
           node-version: "24"
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
           sync-args: --frozen
       - uses: ./.github/actions/setup-bun-cache
@@ -1183,14 +1183,14 @@ jobs:
           bun --cwd kaji/ts run build
           python kaji/scripts/verify_npm_package.py \
             .artifacts/kaji-release/kaji-sdk-0.2.0-beta.1.tgz
-          python3 kaji/sdk/scripts/verify_archives.py \
+          python3 kaji/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Validate one canonical current-run evidence set
         id: evidence-validation
         env:
           KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
         run: >-
-          uv run --project kaji/sdk --no-sync python kaji/scripts/validate_release_evidence.py
+          uv run --project kaji --no-sync python kaji/scripts/validate_release_evidence.py
           --artifacts-dir .artifacts/kaji-release
           --expected-commit "$KAJI_RELEASE_COMMIT"
           --workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
@@ -1392,7 +1392,7 @@ jobs:
           --expected-commit "$EXPECTED_COMMIT"
       - name: Reverify Python archive contents against the clean checkout
         run: >-
-          python3 kaji/sdk/scripts/verify_archives.py
+          python3 kaji/scripts/verify_archives.py
           .artifacts/kaji-release
       - name: Isolate Python distributions
         run: |
@@ -1560,7 +1560,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: "3.14"
       - name: Install pinned registry-attestation verifiers
         id: verifiers

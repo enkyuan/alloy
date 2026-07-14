@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - "kaji/contracts/**"
       - "kaji/scripts/**"
@@ -15,7 +15,7 @@ on:
       - "sgconfig.yml"
       - "package.json"
       - "bun.lock"
-      - "kaji/sdk/uv.lock"
+      - "kaji/uv.lock"
       - ".github/actions/setup-python-uv/**"
       - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/python.lint.yml"
@@ -31,7 +31,7 @@ on:
       - ".github/workflows/kaji.beta-publish.yml"
   pull_request:
     paths:
-      - "kaji/sdk/**"
+      - "kaji/**"
       - "kaji/serve/**"
       - "kaji/contracts/**"
       - "kaji/scripts/**"
@@ -42,7 +42,7 @@ on:
       - "sgconfig.yml"
       - "package.json"
       - "bun.lock"
-      - "kaji/sdk/uv.lock"
+      - "kaji/uv.lock"
       - ".github/actions/setup-python-uv/**"
       - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/python.lint.yml"
@@ -62,18 +62,18 @@ permissions:
 
 jobs:
   sdk:
-    name: kaji/sdk
+    name: kaji
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: kaji/sdk
+        working-directory: kaji
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
 
       - name: Run quickstart smoke
         run: uv run pytest tests/test_quickstart.py -q
@@ -85,11 +85,11 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-sdk
-          path: kaji/sdk/coverage.xml
+          path: kaji/coverage.xml
           retention-days: 7
 
   sdk-install-smoke:
-    name: kaji/sdk install smoke / Python ${{ matrix.python-version }}
+    name: kaji install smoke / Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -100,13 +100,13 @@ jobs:
           - python-version: "3.14"
     defaults:
       run:
-        working-directory: kaji/sdk
+        working-directory: kaji
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/sdk
+          working-directory: kaji
           python-version: ${{ matrix.python-version }}
 
       - name: Build, verify, and install wheel and sdist
