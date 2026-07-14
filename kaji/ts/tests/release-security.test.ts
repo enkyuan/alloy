@@ -275,9 +275,9 @@ const workflowFiles = [
   "ts.format.yml",
   "ast-grep.test.yml",
   "kaji.benchmark.yml",
-  "kaji.beta-pr.yml",
-  "kaji.beta.yml",
-  "kaji.beta-publish.yml",
+  "kaji.gate.yml",
+  "kaji.rehearsal.yml",
+  "kaji.publish.yml",
 ] as const;
 const sharedBetaPaths = [
   "kaji/contracts/**",
@@ -324,7 +324,7 @@ const readOnlyPermissions: PermissionMap = { contents: "read" };
 const expectedJobPermissionDeclarations: Partial<
   Record<(typeof workflowFiles)[number], Record<string, PermissionMap>>
 > = {
-  "kaji.beta-publish.yml": {
+  "kaji.publish.yml": {
     "supply-chain": {
       contents: "read",
       "id-token": "write",
@@ -602,7 +602,7 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("defines one always-on, protection-ready PR gate", () => {
-    const { workflow } = readWorkflow("kaji.beta-pr.yml");
+    const { workflow } = readWorkflow("kaji.gate.yml");
     assertProtectionReadyGate(workflow);
   });
 
@@ -622,7 +622,7 @@ describe("Kaji workflow contracts", () => {
       for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
         expect(job["timeout-minutes"], `${name}:${jobId}`).toBeGreaterThan(0);
         if (job["timeout-minutes"] === 75) {
-          expect(`${name}:${jobId}`).toBe("kaji.beta-publish.yml:performance");
+          expect(`${name}:${jobId}`).toBe("kaji.publish.yml:performance");
         }
       }
       assertNarrowPermissions(name, workflow);
@@ -630,8 +630,8 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("gates rehearsal and publication on exact-commit protected TTHW evidence", () => {
-    const rehearsal = readWorkflow("kaji.beta.yml");
-    const publish = readWorkflow("kaji.beta-publish.yml");
+    const rehearsal = readWorkflow("kaji.rehearsal.yml");
+    const publish = readWorkflow("kaji.publish.yml");
 
     expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(7);
     expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(15);
@@ -691,8 +691,8 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("smokes compatibility matrices only from verified producer artifacts", () => {
-    const rehearsal = readWorkflow("kaji.beta.yml").workflow;
-    const publish = readWorkflow("kaji.beta-publish.yml").workflow;
+    const rehearsal = readWorkflow("kaji.rehearsal.yml").workflow;
+    const publish = readWorkflow("kaji.publish.yml").workflow;
 
     for (const [workflow, producer] of [
       [rehearsal, "offline-release"],
@@ -778,7 +778,7 @@ describe("Kaji workflow contracts", () => {
     }
   });
 
-  it.each(["kaji.beta.yml", "kaji.beta-publish.yml"] as const)(
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
     "keeps runner contexts out of every job-level environment in %s",
     (workflowName) => {
       const jobs = readWorkflow(workflowName).workflow.jobs ?? {};
@@ -789,7 +789,7 @@ describe("Kaji workflow contracts", () => {
   );
 
   it("normalizes interrupted compatibility receipts and preserves terminal evidence", () => {
-    const job = readWorkflow("kaji.beta.yml").workflow.jobs?.["python-compat"];
+    const job = readWorkflow("kaji.rehearsal.yml").workflow.jobs?.["python-compat"];
     const script = job?.steps?.find((step) => step.name === "Normalize compatibility receipt")?.run;
     expect(script).toBeDefined();
     const root = mkdtempSync(join(tmpdir(), "kaji-compat-normalize-"));
@@ -1003,7 +1003,7 @@ describe("Kaji workflow contracts", () => {
   it("fans every release-byte consumer out from one same-run artifact producer", () => {
     const cases = [
       {
-        name: "kaji.beta.yml" as const,
+        name: "kaji.rehearsal.yml" as const,
         producer: "offline-release",
         consumers: [
           "performance",
@@ -1015,7 +1015,7 @@ describe("Kaji workflow contracts", () => {
         ],
       },
       {
-        name: "kaji.beta-publish.yml" as const,
+        name: "kaji.publish.yml" as const,
         producer: "offline-gates",
         consumers: [
           "performance",
@@ -1097,7 +1097,7 @@ describe("Kaji workflow contracts", () => {
       expect(command, jobId).toContain("--artifacts-dir .artifacts/kaji-release");
     }
 
-    for (const workflowName of ["kaji.beta.yml", "kaji.beta-publish.yml"] as const) {
+    for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const performance = readWorkflow(workflowName).workflow.jobs?.performance;
       for (const fragment of ["run_beta_benchmarks.py --full", "run_beta_soak.py --minutes 30"]) {
         const command = performance?.steps?.find((step) => step.run?.includes(fragment))?.run;
@@ -1118,7 +1118,7 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("centrally validates every current-run rehearsal receipt", () => {
-    const { workflow } = readWorkflow("kaji.beta.yml");
+    const { workflow } = readWorkflow("kaji.rehearsal.yml");
     const evidence = workflow.jobs?.["candidate-evidence"];
     expect(evidence?.needs).toEqual([
       "offline-release",
@@ -1185,7 +1185,7 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("terminal-normalizes protected TTHW and provider receipts after every failure boundary", () => {
-    for (const workflowName of ["kaji.beta.yml", "kaji.beta-publish.yml"] as const) {
+    for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const workflow = readWorkflow(workflowName).workflow;
       for (const [jobId, normalizerName, uploadName] of [
         ["tthw-evidence", "Normalize terminal TTHW status", "kaji-tthw-evidence"],
@@ -1211,7 +1211,7 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("centrally validates and attests every current-run publish receipt", () => {
-    const { workflow } = readWorkflow("kaji.beta-publish.yml");
+    const { workflow } = readWorkflow("kaji.publish.yml");
     const supplyChain = workflow.jobs?.["supply-chain"];
     expect(supplyChain?.if).toBe(
       "${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}",
@@ -1288,7 +1288,7 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("sets up frozen Python dependencies before central evidence validation", () => {
-    const { source, workflow } = readWorkflow("kaji.beta-publish.yml");
+    const { source, workflow } = readWorkflow("kaji.publish.yml");
     const steps = workflow.jobs?.["supply-chain"]?.steps ?? [];
     const setupIndex = steps.findIndex((step) => step.uses === "./.github/actions/setup-python-uv");
     const validationSteps = steps.filter((step) =>
@@ -1359,7 +1359,7 @@ describe("Kaji workflow contract mutations", () => {
     ],
     ["command if false", (job: WorkflowJob): void => void (job.steps![3]!.if = false)],
   ] as const)("rejects %s on the required PR gate path", (_label, mutate) => {
-    const workflow = structuredClone(readWorkflow("kaji.beta-pr.yml").workflow);
+    const workflow = structuredClone(readWorkflow("kaji.gate.yml").workflow);
     mutate(gateJob(workflow));
 
     expect(() => assertProtectionReadyGate(workflow)).toThrow();
@@ -1372,14 +1372,14 @@ describe("Kaji workflow contract mutations", () => {
     ["array", []],
     ["filtered mapping", { paths: ["**"] }],
   ] as const)("rejects an invalid pull_request trigger: %s", (_label, trigger) => {
-    const workflow = structuredClone(readWorkflow("kaji.beta-pr.yml").workflow);
+    const workflow = structuredClone(readWorkflow("kaji.gate.yml").workflow);
     workflow.on!.pull_request = trigger;
 
     expect(() => assertProtectionReadyGate(workflow)).toThrow();
   });
 
   it("accepts an empty unfiltered pull_request mapping", () => {
-    const workflow = structuredClone(readWorkflow("kaji.beta-pr.yml").workflow);
+    const workflow = structuredClone(readWorkflow("kaji.gate.yml").workflow);
     workflow.on!.pull_request = {};
 
     expect(() => assertProtectionReadyGate(workflow)).not.toThrow();
@@ -1388,20 +1388,20 @@ describe("Kaji workflow contract mutations", () => {
   it.each(["checks", "deployments", "security-events", "id-token"] as const)(
     "rejects unexpected %s write permission on the PR gate",
     (permission) => {
-      const workflow = structuredClone(readWorkflow("kaji.beta-pr.yml").workflow);
+      const workflow = structuredClone(readWorkflow("kaji.gate.yml").workflow);
       gateJob(workflow).permissions = { contents: "read", [permission]: "write" };
 
-      expect(() => assertNarrowPermissions("kaji.beta-pr.yml", workflow)).toThrow();
+      expect(() => assertNarrowPermissions("kaji.gate.yml", workflow)).toThrow();
     },
   );
 
   it("rejects permission drift on a privileged release job", () => {
-    const workflow = structuredClone(readWorkflow("kaji.beta-publish.yml").workflow);
+    const workflow = structuredClone(readWorkflow("kaji.publish.yml").workflow);
     const supplyChain = workflow.jobs?.["supply-chain"];
     if (!supplyChain?.permissions) throw new Error("missing supply-chain permissions");
     supplyChain.permissions.checks = "write";
 
-    expect(() => assertNarrowPermissions("kaji.beta-publish.yml", workflow)).toThrow();
+    expect(() => assertNarrowPermissions("kaji.publish.yml", workflow)).toThrow();
   });
 
   it("rejects a transitive floating action in a nested local composite", () => {

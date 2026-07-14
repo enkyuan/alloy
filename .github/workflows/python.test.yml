@@ -26,9 +26,9 @@ on:
       - ".github/workflows/ts.test.yml"
       - ".github/workflows/ast-grep.test.yml"
       - ".github/workflows/kaji.benchmark.yml"
-      - ".github/workflows/kaji.beta-pr.yml"
-      - ".github/workflows/kaji.beta.yml"
-      - ".github/workflows/kaji.beta-publish.yml"
+      - ".github/workflows/kaji.gate.yml"
+      - ".github/workflows/kaji.rehearsal.yml"
+      - ".github/workflows/kaji.publish.yml"
   pull_request:
     paths:
       - "kaji/**"
@@ -53,9 +53,9 @@ on:
       - ".github/workflows/ts.test.yml"
       - ".github/workflows/ast-grep.test.yml"
       - ".github/workflows/kaji.benchmark.yml"
-      - ".github/workflows/kaji.beta-pr.yml"
-      - ".github/workflows/kaji.beta.yml"
-      - ".github/workflows/kaji.beta-publish.yml"
+      - ".github/workflows/kaji.gate.yml"
+      - ".github/workflows/kaji.rehearsal.yml"
+      - ".github/workflows/kaji.publish.yml"
 
 permissions:
   contents: read

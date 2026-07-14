@@ -1033,9 +1033,9 @@ def test_kaji_ci_uses_only_reviewed_action_pins_with_release_annotations() -> No
         ".github/workflows/ts.format.yml",
         ".github/workflows/ast-grep.test.yml",
         ".github/workflows/kaji.benchmark.yml",
-        ".github/workflows/kaji.beta-pr.yml",
-        ".github/workflows/kaji.beta.yml",
-        ".github/workflows/kaji.beta-publish.yml",
+        ".github/workflows/kaji.gate.yml",
+        ".github/workflows/kaji.rehearsal.yml",
+        ".github/workflows/kaji.publish.yml",
         ".github/actions/setup-python-uv/action.yml",
         ".github/actions/setup-bun-cache/action.yml",
     )

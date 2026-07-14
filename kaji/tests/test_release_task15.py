@@ -70,8 +70,8 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
 
 
 def test_release_workflows_bound_every_job() -> None:
-    rehearsal = _read(".github/workflows/kaji.beta.yml")
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
 
     assert rehearsal.count("timeout-minutes:") == 7
     assert publish.count("timeout-minutes:") == 15
@@ -80,8 +80,8 @@ def test_release_workflows_bound_every_job() -> None:
 
 
 def test_performance_workflow_timeouts_cover_child_and_cleanup_budgets() -> None:
-    rehearsal = _read(".github/workflows/kaji.beta.yml")
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
     benchmark = _read(".github/workflows/kaji.benchmark.yml")
     performance_jobs = [
         rehearsal.split("  performance:", 1)[1].split("  python-compat:", 1)[0],
@@ -137,7 +137,7 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     assert 'PYTHON_PROJECT = "kaji-sdk"' in metadata_verifier
     assert "if python_project != PYTHON_PROJECT:" in metadata_verifier
 
-    publish_workflow = _read(".github/workflows/kaji.beta-publish.yml")
+    publish_workflow = _read(".github/workflows/kaji.publish.yml")
     assert publish_workflow.count("https://pypi.org/pypi/kaji-sdk/0.2.0b1/json") == 2
     assert "https://pypi.org/pypi/kaji/0.2.0b1/json" not in publish_workflow
 
@@ -161,8 +161,8 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
 
 
 def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None:
-    rehearsal = _read(".github/workflows/kaji.beta.yml")
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
 
     assert "environment: kaji-beta" in rehearsal
     assert "OPENAI_API_KEY" in rehearsal
@@ -378,9 +378,9 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
 @pytest.mark.parametrize(
     ("workflow_name", "expected_commit"),
     [
-        (".github/workflows/kaji.beta.yml", "${{ github.sha }}"),
+        (".github/workflows/kaji.rehearsal.yml", "${{ github.sha }}"),
         (
-            ".github/workflows/kaji.beta-publish.yml",
+            ".github/workflows/kaji.publish.yml",
             "${{ needs.verify-tag.outputs.commit }}",
         ),
     ],
@@ -458,7 +458,7 @@ def test_performance_evidence_is_bound_before_retention(
         in upload
     )
     assert ".artifacts/kaji-evidence/performance-status.json" in workflow
-    if workflow_name.endswith("kaji.beta-publish.yml"):
+    if workflow_name.endswith("kaji.publish.yml"):
         for retained in (
             ".artifacts/kaji-evidence/raw/benchmarks/results.json",
             ".artifacts/kaji-evidence/raw/soak/python.json",
@@ -474,9 +474,9 @@ def test_performance_evidence_is_bound_before_retention(
 @pytest.mark.parametrize(
     ("workflow_name", "upstream", "expected_commit"),
     [
-        (".github/workflows/kaji.beta.yml", "offline-release", "${{ github.sha }}"),
+        (".github/workflows/kaji.rehearsal.yml", "offline-release", "${{ github.sha }}"),
         (
-            ".github/workflows/kaji.beta-publish.yml",
+            ".github/workflows/kaji.publish.yml",
             "[verify-tag, offline-gates]",
             "${{ needs.verify-tag.outputs.commit }}",
         ),
@@ -519,7 +519,7 @@ def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
     assert "status.json" in steps
     assert "validation.log" in steps
 
-    if workflow_name.endswith("kaji.beta-publish.yml"):
+    if workflow_name.endswith("kaji.publish.yml"):
         assert "github.run_attempt == 1" in job_header
         assert "name: kaji-tthw-evidence" in workflow
         assert ".artifacts/kaji-evidence/tthw/status.json" in workflow
@@ -533,7 +533,7 @@ def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
 
 @pytest.mark.parametrize(
     "workflow_name",
-    [".github/workflows/kaji.beta.yml", ".github/workflows/kaji.beta-publish.yml"],
+    [".github/workflows/kaji.rehearsal.yml", ".github/workflows/kaji.publish.yml"],
 )
 def test_keyed_proof_secrets_are_step_scoped_and_initial_evidence_precedes_setup(
     workflow_name: str,
@@ -575,7 +575,7 @@ def test_keyed_proof_secrets_are_step_scoped_and_initial_evidence_precedes_setup
 
 
 def test_publication_reruns_are_guarded_before_queries_and_release_mutation() -> None:
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
     status_job = publish.split("  publication-status:", 1)[1].split(
         "  publication-incident:", 1
     )[0]
@@ -744,7 +744,7 @@ def test_only_exact_clean_no_attempt_state_avoids_an_incident(
 
     assert decision.state == "unpublished"
     assert decision.incident_code == incident
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
     status_job = publish.split("  publication-status:", 1)[1].split(
         "  publication-incident:", 1
     )[0]
@@ -1750,8 +1750,8 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
 
 
 def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
-    rehearsal = _read(".github/workflows/kaji.beta.yml")
-    publish = _read(".github/workflows/kaji.beta-publish.yml")
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
     rehearsal_python = rehearsal.split("  python-compat:", 1)[1].split(
         "  node-compat:", 1
     )[0]
@@ -1835,10 +1835,10 @@ def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
 @pytest.mark.parametrize(
     ("workflow_name", "job_name", "runtime_kind", "runtime_version"),
     (
-        ("kaji.beta.yml", "python-compat", "python", "3.11"),
-        ("kaji.beta.yml", "node-compat", "node", "22"),
-        ("kaji.beta-publish.yml", "python-compat", "python", "3.14"),
-        ("kaji.beta-publish.yml", "node-compat", "node", "24"),
+        ("kaji.rehearsal.yml", "python-compat", "python", "3.11"),
+        ("kaji.rehearsal.yml", "node-compat", "node", "22"),
+        ("kaji.publish.yml", "python-compat", "python", "3.14"),
+        ("kaji.publish.yml", "node-compat", "node", "24"),
     ),
 )
 def test_compatibility_normalizer_fails_closed_across_hostile_states(
