@@ -36,5 +36,8 @@ does not narrow the SDK runtime platforms declared by package metadata.
 OpenAI and Anthropic each require a real normalized tool loop in Python and
 TypeScript on the exact commit. A missing key is a blocking failure, not a
 skip. The exact-commit five-user TTHW protocol lives in
-`kaji/contracts/release/tthw-evidence-v1.schema.json`; until five real runs are
-retained and validated, human TTHW remains **unmeasured**.
+`kaji/contracts/release/tthw-evidence-v1.schema.json`. Follow the
+[TTHW evidence operator guide](tthw-evidence.md) for the exact no-source
+Python, npm, and Bun paths, receipt templates, Echo lifecycle assertions, and
+atomic composition command. Until five real runs are retained and validated,
+human TTHW remains **unmeasured**.

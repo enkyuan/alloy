@@ -24,7 +24,7 @@ is inferred from automated smoke tests.
 
 ## Support boundaries
 
-Stable, experimental, and deprecated features and exports are classified by
+Stable and experimental features and exports are classified by
 [`feature-tiers-v1.json`](../../kaji/contracts/feature-tiers-v1.json).
 OpenAI and Anthropic adapters are declared stable, so protected Python and
 TypeScript tool-loop proof for both is mandatory release evidence. Missing

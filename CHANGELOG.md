@@ -27,7 +27,7 @@ All notable changes to Kaji are documented here.
 
 ---
 
-### Python SDK (`kaji/sdk`) — Pre-Beta
+### Python SDK (`kaji`) — Pre-Beta
 
 #### Fixes
 - `kaji/core/config.py`: Added `overload` stubs for the PEP 562 `settings` lazy attribute so type checkers resolve `from kaji.core.config import settings` as `Settings` rather than `Any`.
@@ -41,7 +41,7 @@ All notable changes to Kaji are documented here.
 - `tests/test_infra_redis.py`: Tests for `RedisKeys` versioned naming scheme, `RedisConfig` constants, `get_redis_client` singleton with fakeredis patching, missing-redis error handling, and `close_redis_client` singleton reset.
 
 #### CI
-- Added `.github/workflows/sdk-tests.yml`: uses `snok/install-poetry`, runs `poetry install`, `pyrefly check`, and `pytest -q` on every push/PR to `kaji/sdk/**`.
+- Added `.github/workflows/sdk-tests.yml`: uses `snok/install-poetry`, runs `poetry install`, `pyrefly check`, and `pytest -q` on every push/PR to `kaji/**`.
 
 ---
 

@@ -12,22 +12,22 @@ Completed 2026-05-31. `import kaji` -> run an agent -> call a tool works end-to-
 
 ### 1. Wire tools into `AgentRuntime` (DONE)
 
-- `kaji/sdk/src/kaji/runtime/agents/runtime.py` -- `tools: List[ToolSpec]` constructor arg, provider-neutral payload surfaced to `generate_stream` each turn.
-- Tests: `kaji/sdk/tests/test_agents_runtime.py`.
+- `kaji/src/kaji/runtime/agents/runtime.py` -- `tools: List[ToolSpec]` constructor arg, provider-neutral payload surfaced to `generate_stream` each turn.
+- Tests: `kaji/tests/test_agents_runtime.py`.
 
 ### 2. Register the mock provider (DONE)
 
-- `kaji/sdk/src/kaji/runtime/providers/registry.py` -- loads mock in `_ensure_builtin_providers_loaded`.
-- `kaji/sdk/src/kaji/runtime/providers/mock.py` -- self-registers, drives full tool loop with no network.
+- `kaji/src/kaji/runtime/providers/registry.py` -- loads mock in `_ensure_builtin_providers_loaded`.
+- `kaji/src/kaji/runtime/providers/mock.py` -- self-registers, drives full tool loop with no network.
 
 ### 3. Export the agent loop from the public API (DONE)
 
-- `kaji/sdk/src/kaji/__init__.py` -- `AgentRuntime`, `AgentStrategy`, `ToolPlanner`, `CancellationToken`, `ModelProvider`, `UserMessage`, `InMemoryEventBus` added to lazy map.
+- `kaji/src/kaji/__init__.py` -- `AgentRuntime`, `AgentStrategy`, `ToolPlanner`, `CancellationToken`, `ModelProvider`, `UserMessage`, `InMemoryEventBus` added to lazy map.
 
 ### 3b. In-memory `EventBus` (DONE)
 
-- `kaji/sdk/src/kaji/infra/events/bus.py` -- `InMemoryEventBus` (per-session log + live fan-out). Redis `EventBus` unchanged.
-- Tests: `kaji/sdk/tests/test_events_bus.py`.
+- `kaji/src/kaji/infra/events/bus.py` -- `InMemoryEventBus` (per-session log + live fan-out). Redis `EventBus` unchanged.
+- Tests: `kaji/tests/test_events_bus.py`.
 
 ---
 
@@ -35,28 +35,28 @@ Completed 2026-05-31. `import kaji` -> run an agent -> call a tool works end-to-
 
 ### 4. OpenAI LLM provider (DONE)
 
-- `kaji/sdk/src/kaji/runtime/providers/openai.py` -- `generate` + `generate_stream` with tool calls via async openai SDK. Kimi stays default.
-- Tests: `kaji/sdk/tests/test_providers_openai.py`.
+- `kaji/src/kaji/runtime/providers/openai.py` -- `generate` + `generate_stream` with tool calls via async openai SDK. Kimi stays default.
+- Tests: `kaji/tests/test_providers_openai.py`.
 
 ### 5. Anthropic provider (DONE)
 
-- `kaji/sdk/src/kaji/runtime/providers/anthropic.py` -- Messages API provider with streaming + tool use.
+- `kaji/src/kaji/runtime/providers/anthropic.py` -- Messages API provider with streaming + tool use.
 - `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` config path exists.
-- Unit and opt-in live integration tests: `kaji/sdk/tests/test_providers_errors.py`, `kaji/sdk/tests/integration/test_anthropic_provider.py`.
+- Unit and opt-in live integration tests: `kaji/tests/test_providers_errors.py`, `kaji/tests/integration/test_anthropic_provider.py`.
 
 ### 6. Fix Gemini streaming (DONE)
 
-- `kaji/sdk/src/kaji/runtime/providers/gemini.py` -- `generate_stream` now has full history + tool calls parity with `generate`.
-- Tests: `kaji/sdk/tests/test_providers_gemini_stream.py`.
+- `kaji/src/kaji/runtime/providers/gemini.py` -- `generate_stream` now has full history + tool calls parity with `generate`.
+- Tests: `kaji/tests/test_providers_gemini_stream.py`.
 
 ### 7. Provider-neutral tool payloads (DONE)
 
-- `kaji/sdk/src/kaji/runtime/tools/payload.py` -- flat neutral list, `to_gemini` / `to_openai` translators at provider boundaries.
-- Tests: `kaji/sdk/tests/test_tools_payload.py`.
+- `kaji/src/kaji/runtime/tools/payload.py` -- flat neutral list, `to_gemini` / `to_openai` translators at provider boundaries.
+- Tests: `kaji/tests/test_tools_payload.py`.
 
 ### 7b. Fix Kimi tool translation (DONE)
 
-- `kaji/sdk/src/kaji/runtime/providers/kimi.py` -- translates via `to_openai` at the boundary.
+- `kaji/src/kaji/runtime/providers/kimi.py` -- translates via `to_openai` at the boundary.
 
 ### 8. ryo API scaffold (MISSING)
 
@@ -85,27 +85,27 @@ New Go service at `ryo/consumer`, port 8091.
 
 ### 10. Decouple `ToolRetriever` from Gemini + Redis (DONE)
 
-- `kaji/sdk/src/kaji/runtime/tools/retriever.py` -- pluggable `Embedder` + `EmbeddingCache` protocols. Defaults infra-free.
-- `kaji/sdk/src/kaji/infra/realtime/embedding_cache.py` -- `RedisEmbeddingCache` opt-in.
-- Tests: `kaji/sdk/tests/test_tools_retriever.py`.
+- `kaji/src/kaji/runtime/tools/retriever.py` -- pluggable `Embedder` + `EmbeddingCache` protocols. Defaults infra-free.
+- `kaji/src/kaji/infra/realtime/embedding_cache.py` -- `RedisEmbeddingCache` opt-in.
+- Tests: `kaji/tests/test_tools_retriever.py`.
 
 ### 11. Conversation history storage primitives (DONE)
 
-- `kaji/sdk/src/kaji/runtime/agents/history.py` -- `HistoryStore` protocol + `InMemoryHistoryStore`.
-- `kaji/sdk/src/kaji/infra/realtime/redis_history.py` -- `RedisHistoryStore` opt-in.
-- Tests: `kaji/sdk/tests/test_agents_history.py`, `test_redis_history.py`.
+- `kaji/src/kaji/runtime/agents/history.py` -- `HistoryStore` protocol + `InMemoryHistoryStore`.
+- `kaji/src/kaji/infra/realtime/redis_history.py` -- `RedisHistoryStore` opt-in.
+- Tests: `kaji/tests/test_agents_history.py`, `test_redis_history.py`.
 
 ### 11b. Project `TOOL_CALL_FAILED` into session state (DONE)
 
-- `kaji/sdk/src/kaji/infra/events/replay.py` -- `TOOL_CALL_FAILED` branch appends `{role: tool, name, content: "Error: <error>"}`.
-- Tests: `kaji/sdk/tests/test_events_replay.py`.
+- `kaji/src/kaji/infra/events/replay.py` -- `TOOL_CALL_FAILED` branch appends `{role: tool, name, content: "Error: <error>"}`.
+- Tests: `kaji/tests/test_events_replay.py`.
 
 ### 12. `request_payment` kaji tool (MISSING)
 
 The bridge between kaji and ryo. Registers with `AgentRuntime`; when called, hits `POST /v1/sessions` on `@ryo/api` and returns a checkout URL to the agent.
 
 - Tool spec: `{name: "request_payment", parameters: {amount: integer (cents), description: string}}`.
-- Implementation in `kaji/sdk/src/kaji/tools/payment.py` (or equivalent) -- thin HTTP call to ryo API, configurable base URL via env.
+- Implementation in `kaji/src/kaji/tools/payment.py` (or equivalent) -- thin HTTP call to ryo API, configurable base URL via env.
 - Needs `@ryo/api` session endpoint (item 8) live first.
 
 ---
@@ -114,7 +114,7 @@ The bridge between kaji and ryo. Registers with `AgentRuntime`; when called, hit
 
 ### 14. General document / knowledge RAG (DONE)
 
-- `kaji/sdk/src/kaji/knowledge/` -- `Document`/`Chunk` types, deterministic `chunk_text`, `VectorStore` protocol + `InMemoryVectorStore` (cosine, dimension-guarded), `DocumentRAG` (ingest + retrieve). Infra-free by default; reuses the tool retriever's `Embedder` protocol.
+- `kaji/src/kaji/knowledge/` -- `Document`/`Chunk` types, deterministic `chunk_text`, `VectorStore` protocol + `InMemoryVectorStore` (cosine, dimension-guarded), `DocumentRAG` (ingest + retrieve). Infra-free by default; reuses the tool retriever's `Embedder` protocol.
 - Exported from the public API; runnable quickstart in the SDK README.
 - `AgentRuntime(rag=...)` retrieves from the latest user message and injects relevant chunks into the system prompt each turn.
 
@@ -124,7 +124,7 @@ The bridge between kaji and ryo. Registers with `AgentRuntime`; when called, hit
 
 ### 16. Durable session persistence (DONE -- SessionStore interface + serve Postgres backend)
 
-- `kaji/sdk/src/kaji/runtime/sessions/store.py` -- `SessionStore` protocol + `SessionRecord` + `InMemorySessionStore` (a cross-session index, distinct from the per-session `EventStore`).
+- `kaji/src/kaji/runtime/sessions/store.py` -- `SessionStore` protocol + `SessionRecord` + `InMemorySessionStore` (a cross-session index, distinct from the per-session `EventStore`).
 - `SessionManager` takes an optional `SessionStore`; `list_active` returns recorded sessions when configured, `[]` otherwise. `record_session` + round-trip test exercise the path.
 - Exported from the public API; runnable quickstart in the SDK README.
 - `kaji/serve/src/kaji_serve/server/session_store.py` -- `PostgresSessionStore` implements the same protocol over the existing `Conversation` table.
@@ -162,11 +162,11 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 - The reference service is STT-only and has no hosted response or TTS path to interrupt.
 - Barge-in belongs in a future hosted-runtime adapter, not the current service shell.
-- The SDK-level DTMF lookahead buffer at `kaji/sdk/src/kaji/modalities/voice/utils/dtmf_lookahead_buffer.py` remains experimental.
+- The SDK-level DTMF lookahead buffer at `kaji/src/kaji/modalities/voice/utils/dtmf_lookahead_buffer.py` remains experimental.
 
 ### 21. Automatic turn / endpoint detection (MISSING)
 
-- `kaji/sdk/src/kaji/modalities/voice/turn_detection.py` -- `resolve_turn_policy` has zero consumers.
+- `kaji/src/kaji/modalities/voice/turn_detection.py` -- `resolve_turn_policy` has zero consumers.
 - `kaji/serve/src/kaji_serve/modalities/voice/stt/soniox_gateway.py` -- endpoint detection is not yet wired through.
 
 ### 22. Durable chat persistence (PARTIAL)
@@ -191,7 +191,7 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 ### 25. Provider layer (DONE)
 
-- `kaji/ts/src/providers/` -- `ModelProvider` interface (`base.ts`), `registry.ts` (`registerProvider`/`getProvider`/`clearProviders`), `MockProvider` (drives the full tool loop with no network). Mirrors `kaji/sdk/src/kaji/runtime/providers/base.py`.
+- `kaji/ts/src/providers/` -- `ModelProvider` interface (`base.ts`), `registry.ts` (`registerProvider`/`getProvider`/`clearProviders`), `MockProvider` (drives the full tool loop with no network). Mirrors `kaji/src/kaji/runtime/providers/base.py`.
 - A real TS provider (OpenAI/Anthropic) is a clean follow-up; the interface is fixed so it has no design risk.
 
 ### 26. Agent runtime (DONE)

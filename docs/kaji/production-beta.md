@@ -174,8 +174,8 @@ replay, tool schema/policy/execution, OpenAI and Anthropic adapters, and the ech
 catalog integration. RAG/retrieval may be implemented in Python but remains
 experimental and outside this promise.
 
-Echo is the only beta catalog entry. TypeScript HTTP, Web, filesystem, and
-SQLite integrations are experimental and require explicit opt-in. Python-only
+Echo is the only beta catalog entry. GitHub is experimental and requires
+explicit opt-in in both SDKs. Python-only
 Redis event/history, voice/TTS, RAG/retrieval, native Gemini/Kimi, and retriever
 selection are also experimental.
 
@@ -246,7 +246,7 @@ inject scoped implementations through `AgentBuilder.clock()` and
 The local release rehearsal is necessary but not sufficient:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
+uv run --project kaji python kaji/scripts/beta_release_check.py --release
 ```
 
 Promotion additionally requires evidence from the exact release commit for:

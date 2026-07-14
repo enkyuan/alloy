@@ -43,10 +43,9 @@ supported runtimes:
 }
 ```
 
-Echo is the only beta integration. TypeScript HTTP, Web, filesystem, and SQLite
-entries are experimental and require `--allow-experimental` when copied by the
-CLI. HTTP and Web also require an application-owned address-pinning transport
-or egress proxy; the SDK deliberately has no native `fetch()` fallback.
+Echo is the only beta integration. GitHub is experimental and requires
+`--allow-experimental` when copied by either CLI. Every retained catalog entry
+has a canonical cross-SDK ABI digest in copied-bundle provenance.
 
 Manifest and index schema failures both normalize to
 `INTEGRATION_SCHEMA_INVALID` with a JSON Pointer; their distinct exception
@@ -57,7 +56,7 @@ not represented as provider errors.
 ## Validate and synchronize
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/sync_integration_contracts.py --check
+uv run --project kaji python kaji/scripts/sync_integration_contracts.py --check
 cd kaji/ts
 bun run validate:registry
 bun run check:integrations

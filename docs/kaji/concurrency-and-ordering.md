@@ -71,11 +71,9 @@ lagging subscriber with `EventBufferOverflowError` and reports its last and
 latest sequence. The agent turn continues. Resume through the journal from the
 reported cursor; do not restart the turn or infer a timestamp boundary.
 
-## Legacy logs
+## Historical logs
 
-Stable replay accepts only stored, sequenced events. Fully unsequenced legacy
-logs must use `replay_legacy_session()` or `replayLegacySession()`. That named
-compatibility path warns and orders by stable `(timestamp, input index)`.
-Mixed sequenced and unsequenced logs are rejected. Migrate offline by assigning
-contiguous sequence values in the legacy compatibility order while preserving
-the original timestamps.
+Stable replay accepts only stored, sequenced events. Migrate unsequenced logs
+offline by assigning contiguous sequence values in a documented source order.
+Mixed sequenced and unsequenced logs are rejected; the runtime never infers
+timestamp ordering.

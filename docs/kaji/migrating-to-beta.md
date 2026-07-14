@@ -10,41 +10,8 @@ had no caller identity, and omitted risk could behave like a read. After,
 Python receives `ToolInvocation`; TypeScript receives `(name, args, context)`;
 and every enabled tool declares risk.
 
-The compatibility adapters still accept these legacy executor shapes while
-emitting a deprecation warning:
-
-<!-- docs-test:python-migration-before:start -->
-```python
-from kaji.runtime.agents.planner import ToolPlanner
-
-
-async def legacy_execute(name: str, args: dict) -> dict:
-    return {"tool": name, "args": args}
-
-
-legacy_planner = ToolPlanner(executor=legacy_execute)
-assert legacy_planner is not None
-```
-<!-- docs-test:python-migration-before:end -->
-
-<!-- docs-test:typescript-migration-before:start -->
-```ts
-import { ToolRegistry, toolSpecFromSchema } from "@kaji/sdk";
-import { z } from "zod";
-
-const legacyRegistry = new ToolRegistry();
-legacyRegistry.register(
-  toolSpecFromSchema(
-    "lookup",
-    "Look up a record.",
-    z.object({}),
-    "read",
-  ),
-  async () => ({ ok: true }),
-);
-await legacyRegistry.execute("legacy-user", "lookup", {});
-```
-<!-- docs-test:typescript-migration-before:end -->
+Pre-beta executor overloads were removed rather than carried into the beta
+contract. Update the call boundary before installing the beta artifact:
 
 <!-- docs-test:python-migration-after:start -->
 ```python
@@ -107,8 +74,8 @@ import kaji
 class MissingRisk(kaji.Integration):
     namespace = "migration"
 
-    @kaji.tool(description="Unsafe legacy tool.", parameters={"type": "object"})
-    async def unsafe(self, context: kaji.ToolContext, args: dict) -> dict:
+    @kaji.tool(description="Unclassified tool.", parameters={"type": "object"})
+    async def unsafe(self, context: kaji.ToolExecutionContext, args: dict) -> dict:
         return {"ok": True}
 
 
@@ -133,7 +100,7 @@ class Classified(kaji.Integration):
         parameters={"type": "object", "additionalProperties": False},
         risk="read",
     )
-    async def inspect(self, context: kaji.ToolContext, args: dict) -> dict:
+    async def inspect(self, context: kaji.ToolExecutionContext, args: dict) -> dict:
         return {"principal": context.principal_id}
 
 
@@ -207,7 +174,7 @@ import { z } from "zod";
 
 const unsafe = {
   name: "unsafe",
-  description: "Unsafe legacy tool.",
+  description: "Unclassified tool.",
   parameters: { type: "object" },
 } as unknown as ToolSpec;
 try {
@@ -284,7 +251,7 @@ finite non-integral values remain valid. Check an existing stored-event log
 without modifying it before promotion:
 
 ```console
-uv run --project kaji/sdk python kaji/scripts/check_event_migration.py path/to/events.jsonl
+uv run --project kaji python kaji/scripts/check_event_migration.py path/to/events.jsonl
 ```
 
 The preflight reports every incompatible line with
@@ -297,7 +264,7 @@ import asyncio
 import kaji
 
 
-async def legacy_read() -> None:
+async def full_read() -> None:
     store = kaji.InMemoryEventStore()
     await store.append(kaji.UserMessage(session_id="cursor", content="one"))
     await store.append(kaji.UserMessage(session_id="cursor", content="two"))
@@ -305,7 +272,7 @@ async def legacy_read() -> None:
     assert len(events) == 2
 
 
-asyncio.run(legacy_read())
+asyncio.run(full_read())
 ```
 <!-- docs-test:python-cursor-before:end -->
 
@@ -346,7 +313,7 @@ await store.append(
   KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: "cursor", content: "two" }),
 );
 const events = await store.getEvents("cursor");
-if (events.length !== 2) throw new Error("legacy full read failed");
+if (events.length !== 2) throw new Error("full read failed");
 ```
 <!-- docs-test:typescript-cursor-before:end -->
 
@@ -382,70 +349,14 @@ if ((await store.lastSequence("cursor")) !== 2) throw new Error("last sequence f
 ```
 <!-- docs-test:typescript-cursor-after:end -->
 
-For fully unsequenced historical logs, use the named compatibility function:
-
-<!-- docs-test:python-replay-before:start -->
-```python
-from types import SimpleNamespace
-
-legacy_events = [SimpleNamespace(timestamp=2), SimpleNamespace(timestamp=1)]
-legacy_events = sorted(legacy_events, key=lambda event: event.timestamp)
-assert [event.timestamp for event in legacy_events] == [1, 2]
-```
-<!-- docs-test:python-replay-before:end -->
-
-<!-- docs-test:python-replay-after:start -->
-```python
-import warnings
-
-import kaji
-from kaji.infra.events import LegacyEventOrderingWarning
-
-legacy_events = [kaji.UserMessage(session_id="legacy", content="hello")]
-with warnings.catch_warnings(record=True) as captured:
-    warnings.simplefilter("always", LegacyEventOrderingWarning)
-    state = kaji.replay_legacy_session(legacy_events)
-assert captured and isinstance(captured[0].message, LegacyEventOrderingWarning)
-```
-<!-- docs-test:python-replay-after:end -->
-
-<!-- docs-test:typescript-replay-before:start -->
-```ts
-const legacyEvents = [{ timestamp: 2 }, { timestamp: 1 }];
-legacyEvents.sort((left, right) => left.timestamp - right.timestamp);
-if (legacyEvents[0]?.timestamp !== 1) throw new Error("legacy sort failed");
-```
-<!-- docs-test:typescript-replay-before:end -->
-
-<!-- docs-test:typescript-replay-after:start -->
-```ts
-import { EventType, KajiEvent, replayLegacySession } from "@kaji/sdk";
-
-const legacyEvents = [
-  KajiEvent.parse({
-    type: EventType.USER_MESSAGE,
-    session_id: "legacy",
-    content: "hello",
-  }),
-];
-const state = replayLegacySession(legacyEvents);
-void state;
-```
-<!-- docs-test:typescript-replay-after:end -->
-
-Mixed logs are rejected. For a permanent migration, assign sequence in the
-compatibility order and retain the original timestamp.
+Unsequenced historical logs are not accepted by the beta runtime. Migrate them
+offline by choosing and documenting one source order, assigning contiguous
+sequence values, validating every stored event, and preserving original
+timestamps only as audit metadata. Mixed logs are rejected.
 
 ## Typed approvals
 
 Replace Boolean approval results with explicit decisions:
-
-<!-- docs-test:python-approval-before:start -->
-```python
-async def legacy_approval(name: str, args: dict, risk: str) -> bool:
-    return True
-```
-<!-- docs-test:python-approval-before:end -->
 
 <!-- docs-test:python-approval-after:start -->
 ```python
@@ -457,16 +368,6 @@ class ApprovalHandler:
         return kaji.ApprovalDecision(granted=True, code="approved")
 ```
 <!-- docs-test:python-approval-after:end -->
-
-<!-- docs-test:typescript-approval-before:start -->
-```ts
-import { adaptLegacyApprovalHandler } from "@kaji/sdk";
-
-const legacyApproval = async () => true;
-const compatibilityHandler = adaptLegacyApprovalHandler(legacyApproval);
-void compatibilityHandler;
-```
-<!-- docs-test:typescript-approval-before:end -->
 
 <!-- docs-test:typescript-approval-after:start -->
 ```ts
@@ -528,7 +429,7 @@ npm install @kaji/sdk@0.2.0-beta.1 'zod@>=4.3 <5'
 
 ## Manifest and index schema
 
-Legacy API-key auth and tools without risk are rejected:
+Pre-beta API-key auth and tools without risk are rejected:
 
 <!-- docs-test:manifest-before:start -->
 ```json
@@ -536,7 +437,7 @@ Legacy API-key auth and tools without risk are rejected:
   "name": "echo",
   "version": "0.1.0",
   "namespace": "echo",
-  "description": "Legacy manifest.",
+  "description": "Pre-beta manifest.",
   "auth": { "kind": "api_key", "env": "ECHO_API_KEY" },
   "files": ["index.ts"],
   "tools": [{ "name": "say", "description": "Echo input." }]
@@ -647,9 +548,8 @@ bounded. Durable deltas may be coalesced into chunks of at most 4 KiB. Only the
 ordered concatenated text is stable; do not rely on vendor chunk boundaries or
 one durable delta per provider chunk.
 
-## Compatibility removal horizon
+## Removed pre-beta compatibility
 
-Legacy executor/Boolean-approval adapters and unsequenced replay are
-compatibility paths, not beta defaults. They warn where the host language
-permits and are candidates for removal before `1.0`. Do not build new code on
-them.
+Two-argument Python executors, user-ID registry overloads, Boolean approval
+callbacks, inferred context aliases, and unsequenced replay are not part of the
+beta artifacts. Migrate those boundaries before upgrading.

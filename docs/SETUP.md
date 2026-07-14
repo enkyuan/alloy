@@ -5,8 +5,9 @@
 ```
 .
 ├── kaji/
-│   ├── sdk/             # the `kaji` SDK (Python)
-│   ├── serve/           # `kaji-serve` -- REST + Soniox STT (path-depends on ../sdk)
+│   ├── src/kaji/        # the `kaji` SDK (Python)
+│   ├── pyproject.toml   # `kaji-sdk` project metadata
+│   ├── serve/           # `kaji-serve` -- REST + Soniox STT (path-depends on ..)
 │   └── ts/              # `@kaji/sdk` -- TypeScript SDK
 └── docker/
     ├── kaji/        # Postgres and Supabase for kaji-serve
@@ -17,7 +18,7 @@
 
 The reference service is the `kaji-serve` distribution. Run these from
 `kaji/serve/`; it pulls in the `kaji` SDK via a path dependency
-(`../sdk`).
+(`..`).
 
 ### 1. Install dependencies with uv
 
@@ -64,8 +65,8 @@ tool worker.
 ## Running Tests
 
 ```bash
-# Core SDK tests (from kaji/sdk/ -- no database needed)
-cd kaji/sdk && uv run pytest tests/
+# Core SDK tests (from kaji/ -- no database needed)
+cd kaji && uv run pytest tests/
 
 # Reference service tests (from kaji/serve/ -- DB tests need Postgres)
 cd kaji/serve && uv run pytest tests/

@@ -185,7 +185,7 @@ final assistant text.
 **Python**
 
 ```bash
-cd kaji/sdk
+cd kaji
 uv run pytest tests/test_quickstart.py -q
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
   uv run pytest -m integration tests/integration/test_openai_tools.py -q
@@ -208,7 +208,7 @@ blocks release. Native Gemini and Kimi remain experimental.
 For release readiness, run the cross-SDK gate from the repository root:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py
+uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
@@ -218,8 +218,8 @@ live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, cor
 For the live-gate credential modes specifically:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+uv run --project kaji python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
@@ -228,11 +228,11 @@ requires both OpenAI and Anthropic credentials and fails loudly if either is
 absent.
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/sdk python kaji/scripts/verify_openai_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
 The same keyed proof can be included in the wrapper with
-`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/sdk python kaji/scripts/beta_release_check.py`.
+`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji python kaji/scripts/beta_release_check.py`.
 
 ### Step 2.6 - Scaffold the first run
 
@@ -263,7 +263,7 @@ the MVP scaffold path until a real server command exists.
 **Python**
 
 ```python
-from kaji import Integration, ToolContext, tool
+from kaji import Integration, ToolExecutionContext, tool
 
 class WeatherIntegration(Integration):
     namespace = "weather"
@@ -277,7 +277,7 @@ class WeatherIntegration(Integration):
         },
         risk="read",
     )
-    async def get_weather(self, ctx: ToolContext, args: dict) -> dict:
+    async def get_weather(self, ctx: ToolExecutionContext, args: dict) -> dict:
         return {"city": args["city"], "tempF": 68}
 ```
 
@@ -401,7 +401,7 @@ fixed and does not reflect real LLM outputs.
 
 | Package      | Checks                                                                                    |
 | ------------ | ----------------------------------------------------------------------------------------- |
-| `kaji/sdk`   | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
+| `kaji`   | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
 | `kaji/ts`    | tsc (type check), oxfmt (format), vitest (unit + quickstart)                              |
 | `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed                          |
 
@@ -411,7 +411,7 @@ tarball exports resolve correctly and provider errors are clear.
 Python release packaging must also run:
 
 ```bash
-cd kaji/sdk
+cd kaji
 uv run python scripts/clean_caches.py
 uv run python scripts/release_smoke.py
 ```
@@ -450,10 +450,10 @@ AgentBuilder
 
 Current code paths:
 
-- Python: `kaji/sdk/src/kaji/runtime/agents/builder.py` creates a scoped
+- Python: `kaji/src/kaji/runtime/agents/builder.py` creates a scoped
   registry, registers each integration, builds a planner, and passes
   `registry.list_specs()` into `AgentRuntime`.
-- Python: `kaji/sdk/src/kaji/runtime/agents/runtime.py` commits runtime events through
+- Python: `kaji/src/kaji/runtime/agents/runtime.py` commits runtime events through
   the journal and advances a cursor-based session projector.
 - TypeScript: `kaji/ts/src/runtime/builder.ts` mirrors the Python builder
   by creating a scoped `ToolRegistry`, `ToolPlanner`, and runtime.
@@ -488,7 +488,7 @@ scraper-backed integrations.
 Target Python shape:
 
 ```python
-from kaji import Integration, ToolContext, tool
+from kaji import Integration, ToolExecutionContext, tool
 
 class WeatherIntegration(Integration):
     @property
@@ -504,7 +504,7 @@ class WeatherIntegration(Integration):
         },
         risk="read",
     )
-    async def get_weather(self, ctx: ToolContext, args: dict) -> dict:
+    async def get_weather(self, ctx: ToolExecutionContext, args: dict) -> dict:
         return {"city": args["city"], "tempF": 68}
 ```
 
@@ -585,8 +585,8 @@ Current behavior:
 ### Plan 3 - Define the first-party integration catalog contract (implemented)
 
 The current SDKs share closed manifest and registry-index schemas. Echo is the
-only beta catalog entry; TypeScript HTTP, Web, filesystem, and SQLite are
-experimental. Production credential storage, third-party catalogs, and scraper
+only beta catalog entry; GitHub is experimental. Production credential
+storage, third-party catalogs, and scraper
 fallback policy remain future integration-expansion work.
 
 Current manifest contract:

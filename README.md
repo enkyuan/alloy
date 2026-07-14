@@ -20,7 +20,7 @@ python or typescript project.
 | [`ryo/consumer`](ryo/consumer) | ryo | consumer identity, wallet, transaction history | go, postgresql |
 | [`ryo/auth`](ryo/auth) | ryo | auth service (better-auth + jwt) | bun, typescript |
 | [`apps/web`](apps/web) | ryo | studio: configure agents, connect payment providers | react, tanstack router, shadcn |
-| [`kaji/sdk`](kaji/sdk) | kaji | `kaji`: agent runtime, toolgen, providers | python 3.11 |
+| [`kaji`](kaji) | kaji | `kaji`: agent runtime, toolgen, providers | python 3.11 |
 | [`kaji/serve`](kaji/serve) | kaji | `kaji-serve`: experimental rest + soniox stt edge | python 3.11, fastapi, soniox |
 | [`kaji/ts`](kaji/ts) | kaji | `@kaji/sdk`: typescript runtime port | typescript |
 
@@ -51,7 +51,7 @@ modalities. payment collection is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  kaji runtime            │   kaji/sdk or @kaji/sdk
+   │  kaji runtime            │   kaji or @kaji/sdk
    │  llm loop · toolgen      │   optional serve edge: fastapi + soniox stt
    └──────────────────────────┘
 ```
@@ -75,7 +75,7 @@ go run ./cmd/api/main.go
 bun --filter @ryo/web dev
 
 # kaji python sdk
-cd kaji/sdk && uv sync && uv run pytest
+cd kaji && uv sync && uv run pytest
 ```
 
 see [`ryo/README.md`](ryo/README.md) for the full ryo setup, routes, and environment variables.

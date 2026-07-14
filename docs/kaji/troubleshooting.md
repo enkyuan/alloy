@@ -75,10 +75,9 @@ turn; persisted history remains authoritative.
 
 ## Replay rejects a log
 
-Stable replay requires one session, contiguous unique sequences, and no mixed
-legacy rows. Fully unsequenced historical logs must use the named legacy replay
-function, then be migrated offline. Timestamp sorting is not a stable replay
-contract.
+Stable replay requires one session and contiguous unique sequences. Migrate
+unsequenced historical rows offline before loading them; timestamp sorting is
+not a runtime replay contract.
 
 The TypeScript CLI also fails closed on any corrupt JSONL line. Its human and
 JSON output are safe projections and never include prompts, assistant text,
@@ -87,9 +86,8 @@ tool arguments/results, arbitrary metadata, keys, or raw cause strings.
 ## Integration is experimental
 
 Echo is the only beta catalog entry. The CLI requires
-`--allow-experimental` for HTTP, Web, filesystem, and SQLite. This flag opts
-into an unsupported surface; it does not promote the integration. HTTP/Web
-also require an application-owned bound transport or egress proxy.
+`--allow-experimental` for GitHub. This flag opts into an unsupported surface;
+it does not promote the integration.
 
 ## Normalized provider errors
 

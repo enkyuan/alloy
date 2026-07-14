@@ -64,8 +64,7 @@ should inject a restart-safe ledger.
 Python executors accept one `ToolInvocation` containing name, arguments, and
 `ToolExecutionContext`. TypeScript executors accept `(name, args, context)`.
 Integration handlers in both SDKs receive arguments plus the resolved context;
-Python's `ToolContext` remains only as a deprecated compatibility alias for
-`ToolExecutionContext`.
+both SDKs require the canonical `ToolExecutionContext` shape.
 
 ## Approval decisions
 
@@ -81,6 +80,6 @@ return kaji.ApprovalDecision(granted=True, code="approved")
 return { granted: true, code: "approved" };
 ```
 
-Boolean approval callbacks remain a deprecated compatibility path. Production
-hosts should use a typed handler and the canonical runtime journal. External
+Approval callbacks must return a typed decision. Production hosts use a typed
+handler and the canonical runtime journal. External
 decision bridges match turn ID, tool-call ID, and tool name.

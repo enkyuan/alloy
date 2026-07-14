@@ -12,9 +12,9 @@ destination is checked before any write. A collision without `--force` writes
 nothing. Final-component symlinks are rejected and replacement writes do not
 follow a raced-in symlink.
 
-TypeScript alone accepts deprecated `--out <path>`. It writes one warning to
-stderr and rejects using `--out` together with the positional path. New docs
-and examples use only the positional form.
+Both package CLIs use positional `init [path]` syntax. Unknown options,
+including the removed init-only `--out` spelling, fail with a usage error. The
+`add` command retains its separate `--out` destination flag.
 
 ## Command stability
 
@@ -24,7 +24,12 @@ and examples use only the positional form.
 | Echo `add` and `list-integrations` | Yes | Yes | Stable for Echo only |
 | `replay` | No | Yes | Stable, redaction-safe projection |
 | Python `doctor`, `gen`, `info`, `secret`, `upgrade` | Experimental | No | Experimental |
-| HTTP, Web, filesystem, SQLite `add` | No | Opt-in | Experimental |
+| GitHub `add` | Opt-in | Opt-in | Experimental |
+
+Python OAuth hosts implement the public asynchronous `CredentialStore`
+protocol to load, save, and delete principal-scoped credential records behind
+the CLI boundary. Kaji's macOS adapter keeps the concrete keychain mechanism
+out of integration and runtime code.
 
 ## Streams and exits
 

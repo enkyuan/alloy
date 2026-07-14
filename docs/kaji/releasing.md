@@ -37,8 +37,8 @@ From a clean checkout with Bun 1.3.11, Node 22 or 24, uv 0.11.25, and the locked
 Python interpreters available, run:
 
 ```bash
-uv run --project kaji/sdk python kaji/scripts/beta_release_check.py --release
-uv run --project kaji/sdk python kaji/scripts/verify_package_metadata.py
+uv run --project kaji python kaji/scripts/beta_release_check.py --release
+uv run --project kaji python kaji/scripts/verify_package_metadata.py
 ```
 
 `--release` is deliberately offline with respect to provider APIs and package
@@ -173,9 +173,30 @@ exactly five distinct pseudonymous fresh-user runs across macOS/Linux and
 Python/npm/Bun. Configuration alone does not claim that the cohort passed;
 until that real evidence exists, TTHW is **unmeasured**.
 
+Collect and compose it only through the
+[TTHW evidence operator guide](tthw-evidence.md). The guide provides the
+checked-in participant and automated-timing templates, exact no-source
+Python/npm/Bun commands, required Echo tool-loop observations, and the atomic
+`compose_tthw_evidence.py` command. The composer derives totals, summary,
+manifest hash, artifact sizes, and artifact hashes, then calls the same
+protected validator before writing owner-only output.
+
 The validator recomputes median and maximum totals. No-key median must be under
 5 minutes and every run under 10; Echo median must be under 10 minutes and
 every run under 20. Retain clean/no-source attestations, toolchain versions,
 ordered step milliseconds, deterministic lifecycle assertions, redacted
 confusion/remediation, owner, review date, and follow-up date. Repeat the
 protocol 30 days after publication.
+
+## Calibration provenance versus candidate evidence
+
+The reviewed baseline retains the calibration commit and hashes for artifact
+set A as provenance. Its applicability to candidate B is determined only by
+the explicit benchmark source hash, dependency-lock hash, runtime/toolchain
+versions, and pinned-runner fingerprint. The committed baseline does not need
+to name B's release manifest.
+
+This does not relax candidate evidence. Protected full benchmark and soak
+receipts must install and identify candidate B's artifacts and must bind to
+B's commit, release-manifest hash, and artifact hashes. Any applicability
+fingerprint change requires a new calibration.
