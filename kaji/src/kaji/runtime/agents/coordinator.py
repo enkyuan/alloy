@@ -16,7 +16,7 @@ from kaji.runtime.agents.limits import (
     ProviderCancellationContractViolation,
     TurnTimeoutError,
 )
-from kaji.runtime.determinism import (
+from kaji.core.determinism import (
     Clock,
     SYSTEM_CLOCK,
     SYSTEM_TIMER_SCHEDULER,

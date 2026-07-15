@@ -1,0 +1,11 @@
+id: python-observability-no-runtime-imports
+valid:
+  - |
+      from kaji.infra.events.schemas import StoredKajiEvent
+  - |
+      from kaji.infra.observability.protocols import MetricsSink
+invalid:
+  - |
+      from kaji.runtime.sessions.replay import SessionState
+  - |
+      import kaji.runtime.sessions

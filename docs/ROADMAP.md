@@ -167,12 +167,11 @@ Stripe Connect Standard onboarding for merchant wallets. Agentpay owns the UI, s
 
 - The reference service is STT-only and has no hosted response or TTS path to interrupt.
 - Barge-in belongs in a future hosted-runtime adapter, not the current service shell.
-- The SDK-level DTMF lookahead buffer at `kaji/src/kaji/modalities/voice/utils/dtmf_lookahead_buffer.py` remains experimental.
 
 ### 21. Automatic turn / endpoint detection (MISSING)
 
-- `kaji/src/kaji/modalities/voice/turn_detection.py` -- `resolve_turn_policy` has zero consumers.
-- `kaji/serve/src/kaji_serve/modalities/voice/stt/soniox_gateway.py` -- endpoint detection is not yet wired through.
+- The SDK does not ship an unused endpoint-policy abstraction. Automatic endpoint
+  detection remains future reference-service work.
 
 ### 22. Durable chat persistence (PARTIAL)
 
@@ -223,5 +222,5 @@ ships `mcp` only as a status command; MCP server registration is deferred until
 a real server command exists.
 
 - TS: `bun add -D @kaji/cli` -> `npx kaji init --lang ts|python --provider openai|anthropic|kimi|gemini`
-- Python: `pip install kaji-sdk` -> `kaji init --provider openai`
+- Python: `pip install 'kaji-sdk==0.2.0b1'` -> `kaji init --provider openai`
 - Landing-page CLI tab: safe to show both `kaji init` flows, but not MCP setup commands.

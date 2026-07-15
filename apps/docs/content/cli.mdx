@@ -26,7 +26,7 @@ command sets. Install the one that owns the workflow you need, and use its
 
 ## Python SDK CLI
 
-`pip install kaji-sdk` installs the Python SDK and its `kaji` CLI. It scaffolds Python
+`pip install 'kaji-sdk==0.2.0b1'` installs the Python SDK and its `kaji` CLI. It scaffolds Python
 projects, generates Python or TypeScript OpenAPI handlers, and manages the
 packaged integration registry.
 
@@ -63,8 +63,8 @@ kaji replay ./session.jsonl --format summary
 ```
 
 The embedded `init` uses the same positional path, provider, `--yes`, and
-`--force` grammar as Python. TypeScript temporarily accepts deprecated `--out`
-with one stderr warning, but maintained examples use the positional path.
+`--force` grammar as Python. The removed `--out` alias is rejected for `init`;
+use the positional path. (`add` still uses `--out` for its destination.)
 Experimental integrations require `--allow-experimental`. The auth commands
 are present for manifest-declared OAuth integrations, but Gmail tools and a
 Gmail manifest are not shipped at this checkpoint. `replay` accepts

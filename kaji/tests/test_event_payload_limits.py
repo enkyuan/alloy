@@ -17,7 +17,7 @@ from kaji.infra.events.errors import (
     InvalidDurableValueError,
 )
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
-from kaji.infra.events.replay import replay_session
+from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.schemas import (
     BaseEvent,
     EventType,

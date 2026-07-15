@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, Dict, Optional
 
-from kaji.infra.events.replay import SessionState
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
@@ -27,6 +26,7 @@ from kaji.runtime.agents.context import (
     build_context,
 )
 from kaji.runtime.agents.prompts import SystemPrompt
+from kaji.runtime.sessions.replay import SessionState
 
 
 @dataclass(slots=True)

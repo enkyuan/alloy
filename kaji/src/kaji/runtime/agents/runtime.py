@@ -75,7 +75,7 @@ from kaji.runtime.sessions.context_index import ContextIndexStats
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
-from kaji.runtime.determinism import (
+from kaji.core.determinism import (
     Clock,
     IdFactory,
     SYSTEM_CLOCK,

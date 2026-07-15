@@ -2,7 +2,7 @@
  * Minimal Kaji agent — generated example.
  *
  * Prerequisites:
- *   npm install @kaji/sdk zod openai   # or @anthropic-ai/sdk
+ *   npm install @kaji/sdk@0.2.0-beta.1 zod openai   # or @anthropic-ai/sdk
  *   export OPENAI_API_KEY=sk-...       # or ANTHROPIC_API_KEY
  *
  * Run:

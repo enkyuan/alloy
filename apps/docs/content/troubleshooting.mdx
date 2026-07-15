@@ -10,14 +10,14 @@ If you see one of these errors, try the matching fix below.
 You installed `kaji-sdk` without the provider extra.
 
 ```bash
-pip install "kaji-sdk[openai]"    # or [anthropic] / [gemini] / [providers]
+pip install "kaji-sdk[openai]==0.2.0b1" # or select another extra at this version
 ```
 
 In TypeScript, Zod `>=4.3 <5` is required and the provider clients are optional
 peers. Install Zod plus the provider you'll use:
 
 ```bash
-bun add @kaji/sdk "zod@>=4.3 <5" openai
+bun add @kaji/sdk@0.2.0-beta.1 "zod@>=4.3 <5" openai
 ```
 
 ## ProviderConfigError: `<PROVIDER>_API_KEY` is required

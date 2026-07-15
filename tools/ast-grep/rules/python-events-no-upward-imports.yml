@@ -1,0 +1,16 @@
+id: python-events-no-upward-imports
+language: Python
+message: Event infrastructure must depend only on core and contracts, never upward on runtime or integrations.
+severity: error
+files:
+  - "kaji/src/kaji/infra/events/**/*.py"
+rule:
+  any:
+    - pattern: import kaji.runtime
+    - pattern: import kaji.runtime.$M
+    - pattern: from kaji.runtime import $$$
+    - pattern: from kaji.runtime.$M import $$$
+    - pattern: import kaji.integrations
+    - pattern: import kaji.integrations.$M
+    - pattern: from kaji.integrations import $$$
+    - pattern: from kaji.integrations.$M import $$$

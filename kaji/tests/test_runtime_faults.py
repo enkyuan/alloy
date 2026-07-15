@@ -10,7 +10,7 @@ from typing import Any, Callable, Literal, Never
 import pytest
 
 from kaji.infra.events.store.inmem import InMemoryEventStore
-from kaji.infra.events.replay import replay_session
+from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.types import EventType
 from kaji.infra.observability import InMemoryMetrics
 from kaji.runtime.sessions.projector import SessionProjector
@@ -48,7 +48,7 @@ from kaji.runtime.tools.idempotency import (
 )
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
-from kaji.runtime.determinism import Clock, ScheduledCallback, TimerScheduler
+from kaji.core.determinism import Clock, ScheduledCallback, TimerScheduler
 from tests.helpers.mock_provider import MockProvider
 
 

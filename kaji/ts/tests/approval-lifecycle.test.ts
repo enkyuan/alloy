@@ -6,10 +6,11 @@ import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 import type { Clock, TimerHandle, TimerScheduler } from "@/internal/uuid";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
+import type { EventBackedApprovalHandler, TypedApprovalHandler } from "@/runtime/approval/types";
 import { AgentRuntime } from "@/runtime/runtime";
 import { MockProvider } from "@/providers/mock";
 import { approvalKey, replaySession } from "@/sessions/replay";
-import { ToolPlanner, bindEmitterToCommitter, type AnyApprovalHandler } from "@/tools/planner";
+import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 
 const SPEC = {
@@ -61,7 +62,7 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 async function executeApproval(
-  handler: AnyApprovalHandler | undefined,
+  handler: TypedApprovalHandler | undefined,
   options: {
     deadlineMonotonicMs?: number;
     onEvent?: (type: string) => void;
@@ -766,12 +767,13 @@ describe("approval lifecycle closure", () => {
 
   it("backfills the request before closing a broken event-backed handler", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { store } = await executeApproval({
+    const handler: EventBackedApprovalHandler = {
       approvalRequestOwner: "handler" as const,
       request: async () => {
         throw new Error("bridge failed before emit");
       },
-    });
+    };
+    const { store } = await executeApproval(handler);
     expect((await store.getEvents("session")).map((event) => event.type)).toEqual([
       EventType.TOOL_CALL_REQUESTED,
       EventType.TOOL_APPROVAL_REQUESTED,
@@ -783,10 +785,11 @@ describe("approval lifecycle closure", () => {
 
   it("does not trust an event-backed decision returned without its request event", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { store, executor, results } = await executeApproval({
+    const handler: EventBackedApprovalHandler = {
       approvalRequestOwner: "handler" as const,
       request: async () => ({ granted: true, code: "approved" }),
-    });
+    };
+    const { store, executor, results } = await executeApproval(handler);
     expect((await store.getEvents("session")).map((event) => event.type)).toEqual([
       EventType.TOOL_CALL_REQUESTED,
       EventType.TOOL_APPROVAL_REQUESTED,

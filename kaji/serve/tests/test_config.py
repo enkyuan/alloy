@@ -9,10 +9,10 @@ def test_sdk_settings_exclude_service_infrastructure() -> None:
         assert not hasattr(sdk_settings, name)
 
 
-def test_service_settings_extend_sdk_and_resolve_aliases() -> None:
+def test_service_settings_extend_sdk_with_canonical_infrastructure_names() -> None:
     settings = Settings(
-        SUPABASE_URL="https://supabase.test",
-        SUPABASE_SERVICE_KEY="service-key",
+        SUPABASE_KONG_URL="https://supabase.test",
+        SUPABASE_SERVICE_ROLE_KEY="service-key",
         JWT_ISSUER="https://supabase.test/auth/v1",
         JWT_AUDIENCE="authenticated",
         CORS_ALLOW_ORIGINS="",
@@ -24,3 +24,6 @@ def test_service_settings_extend_sdk_and_resolve_aliases() -> None:
     assert settings.JWT_ISSUER == "https://supabase.test/auth/v1"
     assert settings.JWT_AUDIENCE == "authenticated"
     assert settings.cors_allow_origins == ["http://localhost:3000"]
+
+    assert "SUPABASE_URL" not in Settings.model_fields
+    assert "SUPABASE_SERVICE_KEY" not in Settings.model_fields

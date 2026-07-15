@@ -1,0 +1,11 @@
+id: ts-events-no-upward-imports
+valid:
+  - |
+      import { isClosedRecoveryTuple } from "@/contracts/integration-recovery";
+  - |
+      import { defaultUuid } from "@/internal/uuid";
+invalid:
+  - |
+      import { recoveryForReason } from "@/integrations/recovery";
+  - |
+      import type { ModelProvider } from "@/providers/types";

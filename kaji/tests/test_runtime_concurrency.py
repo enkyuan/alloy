@@ -22,7 +22,7 @@ from kaji.runtime.agents import (
 )
 from kaji.runtime.agents.limits import TurnTimeoutError
 from kaji.runtime.context import TurnContext
-from kaji.runtime.determinism import Clock, IdScope, ScheduledCallback, TimerScheduler
+from kaji.core.determinism import Clock, IdScope, ScheduledCallback, TimerScheduler
 from kaji.runtime.agents.coordinator import TurnCoordinator, TurnLease
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.types import (

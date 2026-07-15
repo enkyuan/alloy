@@ -1,4 +1,4 @@
-"""Injectable identifiers and clocks for deterministic runtime execution."""
+"""Foundational identifiers and clocks for deterministic SDK execution."""
 
 from __future__ import annotations
 

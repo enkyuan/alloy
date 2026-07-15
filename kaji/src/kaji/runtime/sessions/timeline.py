@@ -1,13 +1,13 @@
-"""Event timeline projection for debugging and replay UI."""
+"""Session event timeline projection for debugging and replay UI."""
 
 from __future__ import annotations
 
 from typing import Sequence
 
-from kaji.infra.events.replay import replay_session, SessionState
 from kaji.infra.events.schemas import StoredKajiEvent
+from kaji.runtime.sessions.replay import SessionState, replay_session
 
-__all__ = ["EventTimeline", "replay_session", "SessionState"]
+__all__ = ["EventTimeline"]
 
 
 class EventTimeline:

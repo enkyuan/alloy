@@ -25,7 +25,7 @@ from kaji.infra.observability.protocols import (
     start_span,
 )
 from kaji.runtime.context import ToolInvocation, _copy_metadata_snapshot
-from kaji.runtime.determinism import (
+from kaji.core.determinism import (
     SYSTEM_TIMER_SCHEDULER,
     TimerScheduler,
 )
@@ -60,13 +60,15 @@ logger = logging.getLogger(__name__)
 
 
 def _integration_recovery_fields(value: object) -> dict[str, str]:
-    from kaji.integrations.recovery import closed_recovery_fields  # noqa: PLC0415
+    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+        closed_recovery_fields,
+    )
 
     return closed_recovery_fields(value)
 
 
 def _integration_transport_failure_fields(value: object) -> dict[str, str]:
-    from kaji.integrations.recovery import (  # noqa: PLC0415
+    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
         closed_transport_failure_fields,
     )
 

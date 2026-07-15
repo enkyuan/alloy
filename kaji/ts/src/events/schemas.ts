@@ -18,7 +18,7 @@ import {
   type DurableJsonSubject,
 } from "@/events/errors";
 import { EventType } from "@/events/types";
-import { isClosedRecoveryTuple } from "@/integrations/recovery";
+import { isClosedRecoveryTuple } from "@/contracts/integration-recovery";
 import {
   canonicalJsonValue,
   cloneAndFreezeJson,

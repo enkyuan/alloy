@@ -7,7 +7,7 @@ import json
 import resource
 import sys
 
-from kaji.infra.events.replay import SessionState, apply_event
+from kaji.runtime.sessions.replay import SessionState, apply_event
 from kaji.infra.events.schemas import (
     AgentMessageCompleted,
     AgentReasoningStarted,

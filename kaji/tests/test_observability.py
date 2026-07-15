@@ -17,7 +17,6 @@ from kaji.infra.events.schemas import (
 )
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.observability import (
-    EventTimeline,
     InMemoryMetrics,
     Measurement,
     NOOP_METRICS,
@@ -34,6 +33,7 @@ from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation
 from kaji.runtime.providers.mock import MockProvider
+from kaji.runtime.sessions import EventTimeline
 from kaji.runtime.tools.execution import ToolExecutionController
 from kaji.runtime.tools.registry import ToolSpec
 

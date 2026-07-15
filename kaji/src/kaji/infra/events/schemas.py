@@ -39,7 +39,7 @@ from kaji.infra.events.errors import (
 )
 from kaji.infra.events.json import canonical_json, durable_json_snapshot
 from kaji.infra.events.types import EventType
-from kaji.runtime.determinism import (
+from kaji.core.determinism import (
     Clock,
     IdFactory,
     SYSTEM_CLOCK,
@@ -332,7 +332,7 @@ class ToolCallFailed(BaseEvent):
 
     @model_validator(mode="after")
     def _closed_recovery_tuple(self) -> "ToolCallFailed":
-        from kaji.integrations.recovery import (  # noqa: PLC0415
+        from kaji.contracts.integration_recovery import (  # noqa: PLC0415
             is_closed_recovery_tuple,
         )
 
@@ -554,7 +554,7 @@ def _wire_preflight(value: object, *, stored: bool) -> dict[str, Any]:
         raise EventSchemaIncompatibleError("/")
     document = cast(dict[str, Any], value)
     if any(field in document for field in ("reason_code", "recovery_code", "doc_url")):
-        from kaji.integrations.recovery import (  # noqa: PLC0415
+        from kaji.contracts.integration_recovery import (  # noqa: PLC0415
             is_closed_recovery_tuple,
         )
 

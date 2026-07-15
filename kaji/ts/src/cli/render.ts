@@ -6,7 +6,7 @@ import {
   closedRecoveryFields,
   recoveryForReason,
   type IntegrationRecoveryReason,
-} from "@/integrations/recovery";
+} from "@/contracts/integration-recovery";
 
 type RenderableEvent = KajiEvent | StoredKajiEvent;
 

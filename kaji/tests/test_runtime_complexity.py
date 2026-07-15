@@ -37,7 +37,7 @@ from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.runtime import AgentRuntime, _TurnEventCollector
 from kaji.runtime.agents.strategy import AgentStrategy
-from kaji.runtime.determinism import Clock, IdScope
+from kaji.core.determinism import Clock, IdScope
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.idempotency import InMemoryToolIdempotencyLedger

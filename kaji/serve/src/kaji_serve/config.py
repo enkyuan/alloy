@@ -13,10 +13,8 @@ class Settings(SDKSettings):
 
     DATABASE_URL: str = ""
 
-    SUPABASE_URL: Optional[str] = None
     SUPABASE_KONG_URL: Optional[str] = None
     SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
 
     JWT_SECRET: str = ""
@@ -29,12 +27,6 @@ class Settings(SDKSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "Kaji Serve"
     CORS_ALLOW_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
-
-    def model_post_init(self, __context: Any) -> None:
-        if not self.SUPABASE_KONG_URL and self.SUPABASE_URL:
-            self.SUPABASE_KONG_URL = self.SUPABASE_URL
-        if not self.SUPABASE_SERVICE_ROLE_KEY and self.SUPABASE_SERVICE_KEY:
-            self.SUPABASE_SERVICE_ROLE_KEY = self.SUPABASE_SERVICE_KEY
 
     @property
     def cors_allow_origins(self) -> list[str]:

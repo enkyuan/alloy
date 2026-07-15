@@ -1,5 +1,6 @@
 /** Closed, redaction-safe recovery metadata shared by errors and renderers. */
 
+/** Closed, redaction-safe recovery metadata shared by events and integrations. */
 const DOCS = "https://kaji.dev/docs/integrations/recovery-v1";
 
 export type IntegrationRecoveryReason =

@@ -17,7 +17,7 @@ from pydantic import TypeAdapter
 
 from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.replay import ApprovalKey, SessionState, replay_session
+from kaji.runtime.sessions.replay import ApprovalKey, SessionState, replay_session
 from kaji.infra.events.schemas import (
     KajiEvent,
     StoredKajiEvent,
@@ -32,7 +32,7 @@ from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.context import ToolInvocation, TurnContext
-from kaji.runtime.determinism import Clock, IdFactory, IdScope, ScheduledCallback
+from kaji.core.determinism import Clock, IdFactory, IdScope, ScheduledCallback
 from kaji.runtime.providers.anthropic import AnthropicProvider
 from kaji.runtime.providers.errors import ProviderError, normalize_provider_error
 from kaji.runtime.providers.openai import OpenAIProvider

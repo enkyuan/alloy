@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11/3.14, asyncio, Pydantic 2, pytest, Ruff, ty, uv; TypeScript 5.7/current 6.x, Node 22/24, Vitest, tsup, Bun; ast-grep 0.44.1; GitHub Actions; PyPI trusted publishing; npm provenance; GitButler.
 
-**Status:** Implementation plan written from the 2026-07-13 repository audit. Engineering review is required before implementation.
+**Status:** Tasks 1-8 are implemented and locally verified as of 2026-07-14; both SDKs are internal-test-ready. Task 9 still requires commit-bound protected evidence, and Task 10 remains behind separate tag/publication authorization.
 
 **Supersedes:** This is the remaining-work delta to `docs/superpowers/plans/2026-07-10-kaji-sdk-production-beta.md` and `docs/superpowers/plans/2026-07-11-kaji-sdk-production-beta-gap-closure.md`. It does not reopen completed architecture or contract work.
 
@@ -65,7 +65,7 @@ Reuse these components; do not replace them:
 - `kaji/scripts/release_smoke.py` and `kaji/ts/scripts/smoke_package.mts` already exercise installed archives, public exports, stable CLI flows, no-key scaffolds, optional-provider boundaries, and cold/warm output.
 - `kaji/scripts/{run_beta_benchmarks,run_beta_soak,live_provider_proof,validate_tthw_evidence}.py` already define the performance, soak, four-cell provider, and five-user evidence shapes.
 - `.github/workflows/kaji.beta.yml` already orchestrates protected rehearsal; `.github/workflows/kaji.beta-publish.yml` already verifies signed tags, builds supply-chain evidence, gates publishers, publishes, checks registry bytes, handles partial incidents, and attaches release evidence.
-- `kaji/scripts/check_sdk_parity.py`, the canonical contract/schema synchronizers, the integration ABI checker, and the 37 ast-grep guards already cover cross-SDK semantics and structural invariants.
+- `kaji/scripts/check_sdk_parity.py`, the canonical contract/schema synchronizers, the integration ABI checker, and the 42 ast-grep guards cover cross-SDK semantics and structural invariants.
 - Python and TypeScript release-security tests already parse workflows and enforce action pins, permissions, dependency closure, fail-closed steps, and retained evidence.
 
 The implementation should extend these seams rather than create a parallel release CLI, workflow, manifest, evidence schema, or provider harness.
@@ -76,13 +76,13 @@ The implementation should extend these seams rather than create a parallel relea
 
 | Area                         | Confirmed state                                                                                                                       | Remaining blocker                                                                                               |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Python behavior              | 1,659 tests were previously exercised; the four stale fixture/docs failures now pass                                                  | `scripts/check_types.py` reports 71 diagnostics: 22 in source and 49 in tests                                   |
-| TypeScript behavior          | 1,441 passed, 16 skipped; clean build and declaration/package/runtime-builder checks pass                                             | PR workflow runs artifact-consuming tests without first building `dist/`                                        |
-| Cross-SDK contracts          | 67/67 canonical parity scenarios pass; integration contracts, registry copies, schemas, and ABIs are synchronized                     | `kaji/RELEASE_MATRIX.md` still claims 59 scenarios                                                              |
-| Structure/performance design | 37/37 ast-grep guards pass; bounded concurrency/deadlines, linear streaming, session commits, and incremental context are implemented | Baseline is still `uncalibrated`; protected full benchmark and soak are not retained evidence                   |
-| Provider proofs              | Python and TypeScript live tests assert one requested/completed tool call with matching IDs and final text                            | TypeScript live tests inject deprecated `EventBus`; protected proof runs the checkout, not frozen package bytes |
-| Release system               | Artifact manifest, checksums, TTHW validation, signed-tag checks, SBOM/provenance, publication, and byte verification exist           | Compatibility and performance jobs rebuild/use the checkout; provider jobs use source test suites               |
-| External evidence            | Workflows declare Python 3.11/3.14, Node 22/24, four provider cells, five-user TTHW, and protected publishing                         | Required protected runs, human receipts, credentials, signed tag, and registry evidence remain pending          |
+| Python behavior              | 1,756 passed, 15 skipped; 85.25% coverage; Ruff, typecheck, wheel/sdist build, archive verification, and installed-artifact smoke pass | Protected Python 3.11/3.14 receipts are not retained candidate evidence                                        |
+| TypeScript behavior          | 1,389 passed, 16 skipped; all coverage dimensions exceed 80%; build, typecheck, lint, package smoke, publint, and ATTW pass             | Protected Node 22/24 receipts are not retained candidate evidence                                               |
+| Cross-SDK contracts          | 67/67 canonical parity scenarios pass; integration contracts, registry copies, schemas, and ABIs are synchronized                     | None for internal testing                                                                                        |
+| Structure/performance design | 42/42 ast-grep guards pass; bounded concurrency/deadlines, linear streaming, session commits, and incremental context are implemented | Baseline remains `uncalibrated`; protected full benchmark and 30-minute soak are not retained evidence          |
+| Provider proofs              | Stable-committer lifecycle tests and fail-closed no-key behavior pass in both SDKs                                                     | Four keyed installed-artifact cells await OpenAI/Anthropic credentials and protected execution                  |
+| Release system               | Exact local wheel/sdist/npm smoke, type-artifact audit, and locked production dependency audits pass                                 | Candidate-bound matrices, benchmark/soak, TTHW, provider, and canonical retained evidence still require Task 9 |
+| External evidence            | Workflows declare Python 3.11/3.14, Node 22/24, four provider cells, five-user TTHW, and protected publishing                         | Human receipts, protected runner evidence, credentials, signed tag, and registry evidence remain pending       |
 
 The architecture is valid for an embedded, process-local beta. No evidence supports a rewrite. The only new system-design correction is to close the identity gap between “built artifact” and “thing actually exercised” in protected jobs.
 
@@ -785,14 +785,14 @@ Tasks 1, 2, and 4 may run in parallel. Task 3 may run after or alongside Task 2 
 
 ### Internal test-ready
 
-- [ ] Python type diagnostics: 0.
-- [ ] Python Ruff and non-integration tests: pass.
-- [ ] TypeScript clean build, typecheck, lint, declarations, and tests: pass.
-- [ ] TypeScript live proof files use the default committer and preserve lifecycle assertions.
-- [ ] PR workflow builds before TypeScript tests from a clean checkout.
-- [ ] 67/67 parity scenarios pass.
-- [ ] Beta contracts, integration schemas, registry copies, and ABI checks pass.
-- [ ] 37/37 ast-grep guards pass.
+- [x] Python type diagnostics: 0.
+- [x] Python Ruff and non-integration tests: pass.
+- [x] TypeScript clean build, typecheck, lint, declarations, and tests: pass.
+- [x] TypeScript live proof files use the default committer and preserve lifecycle assertions.
+- [x] PR workflow builds before TypeScript tests from a clean checkout.
+- [x] 67/67 parity scenarios pass.
+- [x] Beta contracts, integration schemas, registry copies, and ABI checks pass.
+- [x] 42/42 ast-grep guards pass.
 
 ### Beta release-candidate ready
 

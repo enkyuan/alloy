@@ -664,7 +664,9 @@ def integration_recovery_entries(
                 raise fail(
                     path, f"{location}/{field}", "expected fixed redaction-safe text"
                 )
-    from kaji.integrations.recovery import INTEGRATION_RECOVERY  # noqa: PLC0415
+    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+        INTEGRATION_RECOVERY,
+    )
 
     runtime_entries = {
         reason: {

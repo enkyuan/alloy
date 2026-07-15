@@ -1,4 +1,6 @@
 import ast
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -42,6 +44,92 @@ def _imports(path: Path) -> set[str]:
 
 def _matches(import_name: str, root: str) -> bool:
     return import_name == root or import_name.startswith(f"{root}.")
+
+
+def test_runtime_sessions_owns_session_projection() -> None:
+    """Session projection must not drift back into event infrastructure."""
+    events_root = PACKAGE_ROOT / "infra" / "events"
+    sessions_root = PACKAGE_ROOT / "runtime" / "sessions"
+    replay_path = sessions_root / "replay.py"
+    projection_names = {
+        "ApprovalKey",
+        "SessionState",
+        "apply_event",
+        "replay_session",
+    }
+
+    assert replay_path.is_file()
+    assert not (events_root / "replay.py").exists()
+    assert not (sessions_root / "state.py").exists()
+
+    replay_tree = ast.parse(replay_path.read_text(), filename=str(replay_path))
+    runtime_definitions = {
+        node.name
+        for node in replay_tree.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert projection_names <= runtime_definitions
+
+    infra_owners: list[str] = []
+    infra_runtime_imports: list[str] = []
+    for path in _python_files(events_root):
+        rel = path.relative_to(SDK_ROOT)
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in tree.body:
+            if (
+                isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in projection_names
+            ):
+                infra_owners.append(f"{rel}: defines {node.name}")
+        for import_name in _imports(path):
+            if _matches(import_name, "kaji.runtime.sessions"):
+                infra_runtime_imports.append(f"{rel}: imports {import_name}")
+
+    assert infra_owners == []
+    assert infra_runtime_imports == []
+
+    removed_import_roots = {
+        "kaji.infra.events.replay",
+        "kaji.runtime.sessions.state",
+    }
+    stale_imports: list[str] = []
+    for root in (PACKAGE_ROOT, SDK_ROOT / "tests"):
+        for path in _python_files(root):
+            rel = path.relative_to(SDK_ROOT)
+            for import_name in _imports(path):
+                for removed_root in removed_import_roots:
+                    if _matches(import_name, removed_root):
+                        stale_imports.append(f"{rel}: imports {import_name}")
+
+    assert stale_imports == []
+
+
+def test_observability_and_provider_import_order_is_acyclic() -> None:
+    """Session exports must stay lazy across observability/provider imports."""
+    imports = (
+        "import kaji.infra.observability\n"
+        "from kaji.runtime.providers.errors import ProviderConfigError\n",
+        "from kaji.runtime.providers.errors import ProviderConfigError\n"
+        "import kaji.infra.observability\n",
+        "from kaji.runtime.sessions.replay import SessionState\n"
+        "from kaji.runtime.sessions.projector import SessionProjector\n"
+        "from kaji.runtime.sessions import EventTimeline\n",
+    )
+    session_exports = (
+        "from kaji.runtime.sessions import (\n"
+        "    ApprovalKey, SessionState, apply_event, replay_session,\n"
+        ")\n"
+    )
+
+    for import_order in imports:
+        result = subprocess.run(
+            [sys.executable, "-c", import_order + session_exports],
+            cwd=SDK_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
 
 
 def test_sdk_does_not_import_service_only_dependencies():

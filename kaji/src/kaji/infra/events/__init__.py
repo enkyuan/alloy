@@ -11,12 +11,6 @@ from .errors import (
 )
 from .journal import InMemoryEventJournal, SplitEventJournal
 from .protocols import EventBusProtocol, EventJournal
-from .replay import (
-    ApprovalKey,
-    SessionState,
-    apply_event,
-    replay_session,
-)
 from .schemas import (
     AgentTurnFailed,
     BaseEvent,
@@ -36,7 +30,6 @@ from .types import EventType
 
 __all__ = [
     "EventType",
-    "ApprovalKey",
     "AgentTurnFailed",
     "KajiEvent",
     "NewKajiEvent",
@@ -66,7 +59,4 @@ __all__ = [
     "EventStoreCapacityError",
     "EventBufferOverflowError",
     "EventDeliveryError",
-    "replay_session",
-    "apply_event",
-    "SessionState",
 ]

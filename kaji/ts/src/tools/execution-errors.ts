@@ -3,7 +3,7 @@ import {
   closedTransportFailureFields,
   type IntegrationRecoveryFields,
   type IntegrationRecoveryReason,
-} from "@/integrations/recovery";
+} from "@/contracts/integration-recovery";
 
 export type ToolFailureOutcome = "not_started" | "failed" | "unknown";
 

@@ -1,4 +1,4 @@
-"""Observability — metrics, tracing, and timelines."""
+"""Observability infrastructure — metrics and tracing."""
 
 from kaji.infra.observability.metrics import InMemoryMetrics
 from kaji.infra.observability.protocols import (
@@ -9,11 +9,9 @@ from kaji.infra.observability.protocols import (
     SpanHandle,
     TraceSink,
 )
-from kaji.infra.observability.timeline import EventTimeline
 from kaji.infra.observability.tracing import Span, trace_span
 
 __all__ = [
-    "EventTimeline",
     "InMemoryMetrics",
     "Measurement",
     "MetricsSink",

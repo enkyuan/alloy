@@ -74,10 +74,6 @@ def db_engine():
     engine = create_engine(TEST_DATABASE_URL)
 
     try:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            conn.commit()
-
         Base.metadata.create_all(bind=engine)
 
         yield engine

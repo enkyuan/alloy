@@ -1,0 +1,12 @@
+id: python-observability-no-runtime-imports
+language: Python
+message: Observability infrastructure must remain runtime-agnostic.
+severity: error
+files:
+  - "kaji/src/kaji/infra/observability/**/*.py"
+rule:
+  any:
+    - pattern: import kaji.runtime
+    - pattern: import kaji.runtime.$M
+    - pattern: from kaji.runtime import $$$
+    - pattern: from kaji.runtime.$M import $$$

@@ -44,3 +44,33 @@ def test_compose_build_context_targets_repository_dockerfile() -> None:
     assert "context: ../.." in compose
     assert build_context == REPO_ROOT
     assert (build_context / "Dockerfile").is_file()
+
+
+def test_reference_service_examples_use_only_canonical_configuration_names() -> None:
+    root_env = (REPO_ROOT / ".env.example").read_text()
+    docker_env = (REPO_ROOT / "docker" / "kaji" / ".env.example").read_text()
+    compose = (REPO_ROOT / "docker" / "kaji" / "docker-compose.yml").read_text()
+    service_block = compose.split("\n  kong:", 1)[0]
+    auth_block = compose.split("\n  auth:", 1)[1].split("\n  db:", 1)[0]
+
+    for stale in (
+        "SUPABASE_URL=",
+        "SUPABASE_SERVICE_KEY=",
+        "JWT_ALGORITHM=",
+        "ACCESS_TOKEN_EXPIRE_MINUTES=",
+        "PROJECT_NAME=AgentKit SDK",
+    ):
+        assert stale not in root_env
+    for required in ("JWT_ISSUER=", "JWT_AUDIENCE="):
+        assert required in root_env
+        assert required in docker_env
+    assert "JWT_ISSUER: ${JWT_ISSUER}" in service_block
+    assert "JWT_AUDIENCE: ${JWT_AUDIENCE}" in service_block
+    assert "GOTRUE_JWT_ISSUER: ${JWT_ISSUER}" in auth_block
+    assert "JWT_ALGORITHM:" not in service_block
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES:" not in service_block
+
+
+def test_database_fixture_does_not_restore_removed_pgvector_dependency() -> None:
+    fixture = (SERVE_ROOT / "tests" / "conftest.py").read_text()
+    assert "CREATE EXTENSION IF NOT EXISTS vector" not in fixture

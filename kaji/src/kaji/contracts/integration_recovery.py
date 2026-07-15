@@ -1,4 +1,4 @@
-"""Closed, redaction-safe integration recovery metadata."""
+"""Closed, redaction-safe integration recovery contract."""
 
 from __future__ import annotations
 

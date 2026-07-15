@@ -9,7 +9,7 @@ import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
+from kaji.core.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 if TYPE_CHECKING:
     from kaji.runtime.agents.cancellation import CancellationToken

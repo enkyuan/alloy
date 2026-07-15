@@ -248,7 +248,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
         assert stale not in combined
 
     getting_started = paths[0].read_text()
-    assert 'bun add @kaji/sdk "zod@>=4.3 <5"' in getting_started
+    assert 'bun add @kaji/sdk@0.2.0-beta.1 "zod@>=4.3 <5"' in getting_started
     assert "peer dependency" in getting_started
     assert 'risk="read"' in getting_started
     assert 'risk: "read"' in getting_started
@@ -302,3 +302,44 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
         r'\[\s*"compiled-docs/docs-quickstart\.mjs"\s*\]\s*\)',
         ts_smoke,
     )
+
+
+def test_public_beta_install_paths_select_the_prerelease_artifacts() -> None:
+    documents = {
+        path: path.read_text()
+        for path in (
+            REPO_ROOT / "kaji" / "README.md",
+            REPO_ROOT / "kaji" / "ts" / "README.md",
+            REPO_ROOT / "docs" / "MVP.md",
+            REPO_ROOT / "docs" / "ROADMAP.md",
+            REPO_ROOT / "apps" / "docs" / "content" / "getting-started.mdx",
+            REPO_ROOT / "apps" / "docs" / "content" / "install.mdx",
+            REPO_ROOT / "apps" / "docs" / "content" / "cli.mdx",
+            REPO_ROOT / "apps" / "docs" / "content" / "troubleshooting.mdx",
+        )
+    }
+    combined = "\n".join(documents.values())
+    assert "kaji-sdk==0.2.0b1" in combined
+    assert "kaji-sdk[openai]==0.2.0b1" in combined
+    assert "@kaji/sdk@0.2.0-beta.1" in combined
+
+    unpinned_python = re.compile(
+        r"pip install [^\n`]*kaji-sdk(?:\[[^\]]+\])?(?!==0\.2\.0b1)(?:['\"]|\s|$)"
+    )
+    unpinned_typescript = re.compile(
+        r"(?:npm install|bun add)\s+@kaji/sdk(?!@0\.2\.0-beta\.1)(?:\s|$)"
+    )
+    assert unpinned_python.search(combined) is None
+    assert unpinned_typescript.search(combined) is None
+
+
+def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:
+    events = (
+        REPO_ROOT / "apps" / "docs" / "content" / "concepts" / "events.mdx"
+    ).read_text()
+    cli = (REPO_ROOT / "apps" / "docs" / "content" / "cli.mdx").read_text()
+
+    assert events.count("Reserved; no embedded runtime producer") == 9
+    assert "schema presence" in events
+    assert "temporarily accepts deprecated" not in cli
+    assert "removed `--out` alias is rejected" in cli

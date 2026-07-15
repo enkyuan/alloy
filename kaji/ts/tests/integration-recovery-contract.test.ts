@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { INTEGRATION_RECOVERY } from "@/integrations/recovery";
+import { INTEGRATION_RECOVERY } from "@/contracts/integration-recovery";
 
 describe("integration recovery contract", () => {
   it("matches every canonical packaged recovery row and field", () => {

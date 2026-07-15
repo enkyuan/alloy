@@ -87,7 +87,6 @@ export {
   type ToolCallInstruction,
   type ToolCallResult,
   type ToolExecutor,
-  type AnyApprovalHandler,
 } from "@/tools/planner";
 export {
   ToolArgumentValidationError,
@@ -266,7 +265,6 @@ export type {
   ApprovalDeadlineSource,
   ApprovalRequestContext,
   ApprovalRejectionCode,
-  ApprovalRequestContext as ApprovalContext,
   ApprovalDecision,
 } from "@/runtime/approval/types";
 export { EventApprovalHandler, type EventApprovalHandlerOptions } from "@/runtime/approval/handler";

@@ -17,7 +17,7 @@ from kaji.integrations.errors import (
     IntegrationTransportError,
 )
 from kaji.integrations.fixed_origin import IntegrationResponse
-from kaji.integrations.recovery import recovery_for_reason
+from kaji.contracts.integration_recovery import recovery_for_reason
 from kaji.integrations.registry.github.client import GitHubClient
 from kaji.runtime.agents.cancellation import CancellationToken, CancelledError
 from kaji.runtime.context import ToolExecutionContext

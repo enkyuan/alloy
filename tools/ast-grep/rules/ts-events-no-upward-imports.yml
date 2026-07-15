@@ -1,0 +1,16 @@
+id: ts-events-no-upward-imports
+language: TypeScript
+message: Event infrastructure must depend only on internal helpers and contracts, never upward on runtime or integrations.
+severity: error
+files:
+  - "kaji/ts/src/events/**/*.ts"
+rule:
+  any:
+    - all:
+        - kind: import_statement
+        - regex: 'from\s+["'']@/(?:runtime|integrations|providers|sessions|tools)(?:/|["''])'
+    - pattern: import("@/runtime/$MODULE")
+    - pattern: import("@/integrations/$MODULE")
+    - pattern: import("@/providers/$MODULE")
+    - pattern: import("@/sessions/$MODULE")
+    - pattern: import("@/tools/$MODULE")

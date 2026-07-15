@@ -25,7 +25,7 @@ from kaji.infra.events.schemas import (
     UserMessage,
     require_stored_event,
 )
-from kaji.infra.events.replay import apply_event
+from kaji.runtime.sessions.replay import apply_event
 from kaji.runtime.agents.context import ContextWindow
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.sessions.context_index import build_context_from_messages

@@ -9,7 +9,7 @@ import {
   type BoundedResponse,
   type FixedOriginRequester,
 } from "@kaji/sdk/integrations";
-import { recoveryForReason } from "@/integrations/recovery";
+import { recoveryForReason } from "@/contracts/integration-recovery";
 import { GitHubClient } from "../registry/github/client";
 
 interface FixtureCase {

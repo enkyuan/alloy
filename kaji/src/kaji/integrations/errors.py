@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Literal
 
-from kaji.integrations.recovery import IntegrationRecovery, recovery_for_reason
+from kaji.contracts.integration_recovery import IntegrationRecovery, recovery_for_reason
 from kaji.runtime.tools.execution import ToolExecutionError
 
 

@@ -3,7 +3,7 @@ from typing import Any, cast
 import pytest
 
 from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.replay import replay_session
+from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.schemas import (
     AgentMessageCompleted,
     KajiEvent,

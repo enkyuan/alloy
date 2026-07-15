@@ -6,8 +6,7 @@ import logging
 from typing import Any, Optional
 
 from kaji.infra.events.store import EventStore
-from kaji.runtime.sessions.replay import replay_session
-from kaji.runtime.sessions.state import SessionState
+from kaji.runtime.sessions.replay import SessionState, replay_session
 from kaji.runtime.sessions.store import SessionRecord, SessionStore
 
 logger = logging.getLogger(__name__)

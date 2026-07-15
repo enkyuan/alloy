@@ -32,19 +32,19 @@ while the Python SDK never imports service-only code.
 ## Install
 
 ```bash
-pip install 'kaji-sdk[openai]'     # OpenAI (recommended)
+pip install 'kaji-sdk[openai]==0.2.0b1'     # OpenAI (recommended)
 # or
-pip install 'kaji-sdk[anthropic]'  # Anthropic
+pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
 # or
-pip install kaji-sdk               # core only, bring your own provider
+pip install 'kaji-sdk==0.2.0b1'             # core only, bring your own provider
 ```
 
 Other optional extras:
 
 ```bash
-pip install 'kaji-sdk[gemini]'      # Gemini provider
-pip install 'kaji-sdk[realtime]'    # Redis event bus (multi-process)
-pip install 'kaji-sdk[providers]'   # all provider SDKs
+pip install 'kaji-sdk[gemini]==0.2.0b1'      # Gemini provider
+pip install 'kaji-sdk[realtime]==0.2.0b1'    # Redis event bus (multi-process)
+pip install 'kaji-sdk[providers]==0.2.0b1'   # all provider SDKs
 ```
 
 The PyPI distribution is `kaji-sdk`; installed code is still imported as
@@ -498,7 +498,7 @@ For evaluating cross-process event delivery, replace the in-memory journal with
 the Redis-backed `EventBus`:
 
 ```bash
-pip install 'kaji-sdk[realtime]'
+pip install 'kaji-sdk[realtime]==0.2.0b1'
 export REDIS_URL=redis://localhost:6379/0
 ```
 

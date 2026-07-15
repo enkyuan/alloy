@@ -1,6 +1,6 @@
 from kaji.runtime.agents.context import build_messages
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.infra.events.replay import SessionState
+from kaji.runtime.sessions.replay import SessionState
 
 
 def test_build_messages_includes_system_prompt_and_history():

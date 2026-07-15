@@ -3,7 +3,6 @@
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-from kaji.infra.events.replay import SessionState, apply_event
 from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
 from kaji.infra.events.store import EventStore
 from kaji.infra.observability.protocols import (
@@ -17,6 +16,7 @@ from kaji.runtime.agents.context import (
 )
 from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.sessions.context_index import ContextIndex, ContextIndexStats
+from kaji.runtime.sessions.replay import SessionState, apply_event
 
 
 class SessionProjector:

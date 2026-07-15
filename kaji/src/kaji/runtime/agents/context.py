@@ -10,12 +10,12 @@ from kaji.runtime.context import (
     TurnContext as TurnContext,
 )
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.infra.events.replay import SessionState
 from kaji.infra.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,
 )
+from kaji.runtime.sessions.replay import SessionState
 
 
 @dataclass(frozen=True, slots=True)

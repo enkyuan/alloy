@@ -2,7 +2,7 @@ import { GoogleOAuthClient, validateOAuthPrincipal } from "@/auth/oauth";
 import { MacOSKeychainTokenStorage } from "@/auth/keychain";
 import type { RunOptions } from "@/cli/index";
 import { TYPESCRIPT_SDK_CLI } from "@/cli/package-identity";
-import { closedRecoveryFields, recoveryForReason } from "@/integrations/recovery";
+import { closedRecoveryFields, recoveryForReason } from "@/contracts/integration-recovery";
 import {
   formatIntegrationError,
   loadManifest,

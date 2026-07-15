@@ -17,7 +17,7 @@ from kaji.infra.events.schemas import (
     UserMessage,
     require_stored_event,
 )
-from kaji.infra.events.replay import SessionState
+from kaji.runtime.sessions.replay import SessionState
 from kaji.infra.events.store import InMemoryEventStore
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.context import (

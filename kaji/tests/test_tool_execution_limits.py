@@ -18,7 +18,7 @@ from kaji.runtime.agents.context import (
 )
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
-from kaji.runtime.determinism import ScheduledCallback, TimerScheduler
+from kaji.core.determinism import ScheduledCallback, TimerScheduler
 from kaji.runtime.integrations.base import Integration, tool
 from kaji.runtime.integrations.functional import function_tool
 from kaji.runtime.providers.mock import MockProvider

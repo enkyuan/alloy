@@ -1,1 +1,1 @@
-"""Runtime — the agent reasoning/orchestration engine (agents, tools, providers, sessions, workflows)."""
+"""Runtime — the agent reasoning engine (agents, tools, providers, and sessions)."""

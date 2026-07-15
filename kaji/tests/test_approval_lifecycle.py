@@ -12,7 +12,7 @@ import pytest
 
 from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.replay import (
+from kaji.runtime.sessions.replay import (
     ApprovalKey,
     SessionState,
     apply_event,
@@ -49,7 +49,7 @@ from kaji.runtime.agents.planner import (
     _ApprovalRequestGate,
 )
 from kaji.runtime.providers.mock import MockProvider
-from kaji.runtime.determinism import Clock, ScheduledCallback, TimerScheduler
+from kaji.core.determinism import Clock, ScheduledCallback, TimerScheduler
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec

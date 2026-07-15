@@ -36,13 +36,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   Per-command help works as `kaji <cmd> --help`. The
   binary entry split out of `index.ts` into a dedicated `bin.ts` so tests
   can drive `runCli(argv, opts)` without firing `process.exit`.
-- **`cliApprovalHandler`** — default approval handler for dev / REPL use.
-  Factory returning an `ApprovalHandler` that matches the planner's
-  `(name, args, risk)` signature; prints tool name, risk, and arguments,
-  then reads `y` / `N` on stdin. Optional `label` field disambiguates
-  concurrent agents in the prompt header. It is a deprecated Boolean
-  compatibility path; production hosts implement `TypedApprovalHandler` and
-  return an `ApprovalDecision`.
+- **`cliApprovalHandler`** — default typed approval handler for dev / REPL use.
+  It prints tool name, risk, and arguments, reads `y` / `N` on stdin, and
+  returns an `ApprovalDecision`. Optional `label` disambiguates concurrent
+  agents in the prompt header.
 - **`SessionState` approval projection** — `replaySession` now projects the
   three approval events into observable state:
   - `pendingApprovals` (tool_call_ids requested but not yet resolved)

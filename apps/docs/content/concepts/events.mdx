@@ -7,8 +7,9 @@ Session state in kaji is a deterministic projection of an append-only
 event log. The runtime appends events as you call `turn()` or the lower-level
 `send`; `replaySession` reads them back into a usable `SessionState`.
 
-You usually don't emit events yourself -- the runtime does. Reach into
-the log when you want to inspect, persist, or replay a session.
+You usually don't emit runtime events yourself. Reserved wire variants are
+included for interoperability, but have no producer in the embedded beta
+runtime; hosts must not infer implemented behavior from schema presence.
 
 ## Event types
 
@@ -20,11 +21,11 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 | `session.created`            | First event in a new session                  |
 | `session.closed`             | Session was closed                            |
 | `user.message`               | Caller (via `runtime.turn` or `runtime.send`) |
-| `user.audio.chunk`           | Audio input from user                         |
-| `transcript.partial`         | Partial STT transcript available              |
-| `transcript.final`           | Final STT transcript completed                |
-| `memory.retrieval.started`   | RAG query execution began                     |
-| `memory.retrieval.completed` | RAG query returned documents                  |
+| `user.audio.chunk`           | Reserved; no embedded runtime producer        |
+| `transcript.partial`         | Reserved; no embedded runtime producer        |
+| `transcript.final`           | Reserved; no embedded runtime producer        |
+| `memory.retrieval.started`   | Reserved; no embedded runtime producer        |
+| `memory.retrieval.completed` | Reserved; no embedded runtime producer        |
 | `agent.reasoning.started`    | Model began reasoning                         |
 | `agent.message.delta`        | Provider streaming a text chunk               |
 | `agent.message.completed`    | Provider finished a turn                      |
@@ -37,10 +38,10 @@ the Python SDK can be replayed by the TypeScript SDK and vice versa.
 | `tool.approval.requested`    | Awaiting approval to execute tool             |
 | `tool.approval.approved`     | User approved tool execution                  |
 | `tool.approval.rejected`     | User rejected tool execution                  |
-| `workflow.started`           | Multi-step workflow begun                     |
-| `workflow.completed`         | Workflow finished successfully                |
-| `workflow.failed`            | Workflow encountered an error                 |
-| `cancellation.requested`     | Session cancellation signaled                 |
+| `workflow.started`           | Reserved; no embedded runtime producer        |
+| `workflow.completed`         | Reserved; no embedded runtime producer        |
+| `workflow.failed`            | Reserved; no embedded runtime producer        |
+| `cancellation.requested`     | Reserved; no embedded runtime producer        |
 | `cancellation.completed`     | Session cancellation finalized                |
 
 The canonical list is in the SDK source -- check there before relying on

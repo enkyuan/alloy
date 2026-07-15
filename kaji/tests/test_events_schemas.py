@@ -7,7 +7,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import TypeAdapter, ValidationError
 
-from kaji.infra.events.replay import replay_session
+from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.schemas import (
     AgentTurnExhausted,
     AgentTurnFailed,
@@ -32,7 +32,7 @@ from kaji.infra.events.schemas import (
 from kaji.infra.events import errors as event_errors
 from kaji.infra.events.errors import EventSchemaIncompatibleError
 from kaji.infra.events.types import EventType
-from kaji.runtime.determinism import SYSTEM_CLOCK
+from kaji.core.determinism import SYSTEM_CLOCK
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

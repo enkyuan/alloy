@@ -1,6 +1,6 @@
 /**
  * Session-state projection from the event log, mirroring
- * `kaji.infra.events.replay`. The append-only log is the source of truth;
+ * `kaji.runtime.sessions.replay`. The append-only log is the source of truth;
  * `SessionState` is a read model derived by replaying events in store order.
  */
 import { EventType } from "@/events/types";

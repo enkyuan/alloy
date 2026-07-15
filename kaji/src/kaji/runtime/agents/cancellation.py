@@ -8,7 +8,7 @@ from kaji.runtime.agents.limits import (
     ProviderCancellationContractViolation,
     TurnTimeoutError,
 )
-from kaji.runtime.determinism import Clock, TimerScheduler
+from kaji.core.determinism import Clock, TimerScheduler
 
 
 T = TypeVar("T")

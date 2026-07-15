@@ -190,8 +190,6 @@
         "AgentTurnFailed",
         "AnthropicProvider",
         "AnthropicProviderOptions",
-        "AnyApprovalHandler",
-        "ApprovalContext",
         "ApprovalDeadlineSource",
         "ApprovalDecision",
         "ApprovalFailureCode",

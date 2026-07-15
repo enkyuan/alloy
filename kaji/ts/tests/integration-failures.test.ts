@@ -7,7 +7,7 @@ import {
   IntegrationExecutionError,
   IntegrationTransportError,
 } from "@/integrations/errors";
-import { recoveryForReason } from "@/integrations/recovery";
+import { recoveryForReason } from "@/contracts/integration-recovery";
 import { ToolPlanner } from "@/tools/planner";
 import type { ToolSpec } from "@/tools/registry";
 

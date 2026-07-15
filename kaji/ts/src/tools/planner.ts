@@ -23,7 +23,6 @@ import type {
   ApprovalDecision,
   ApprovalRejectionCode,
   ApprovalRequestContext,
-  EventBackedApprovalHandler,
   TypedApprovalHandler,
 } from "@/runtime/approval/types";
 import { TurnTimeoutError, type TurnPhase } from "@/runtime/limits";
@@ -43,7 +42,7 @@ import {
   type ToolExecutionLimits,
 } from "@/tools/execution";
 import type { ToolExecutionError } from "@/tools/execution-errors";
-import type { IntegrationRecoveryReason } from "@/integrations/recovery";
+import type { IntegrationRecoveryReason } from "@/contracts/integration-recovery";
 import type { MetricsSink, TraceSink } from "@/observability";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { ToolPolicy } from "@/tools/policy";
@@ -119,13 +118,10 @@ function emitterCommitter(emit: EmitFn): EventCommitter | undefined {
   return (emit as Partial<CommitterBoundEmitFn>)[EMITTER_COMMITTER];
 }
 
-/** Approval handlers accepted by stable planner and runtime construction paths. */
-export type AnyApprovalHandler = TypedApprovalHandler | EventBackedApprovalHandler;
-
 export interface ToolPlannerOptions {
   executor: ToolExecutor;
   policy?: ToolPolicy;
-  approvalHandler?: AnyApprovalHandler;
+  approvalHandler?: TypedApprovalHandler;
   specs?: ReadonlyMap<string, ToolSpec>;
   idFactory?: IdFactory;
   clock?: Clock;

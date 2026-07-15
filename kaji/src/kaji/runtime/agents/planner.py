@@ -60,7 +60,7 @@ from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
 from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
 from kaji.runtime.tools.registry import ToolSpec, _snapshot_tool_spec
 from kaji.runtime.tools.validation import ToolSchemaValidator
-from kaji.runtime.determinism import (
+from kaji.core.determinism import (
     Clock,
     IdFactory,
     SYSTEM_CLOCK,

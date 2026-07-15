@@ -28,12 +28,7 @@ import { SessionProjector } from "@/sessions/projector";
 import type { ContextIndexStats } from "@/sessions/context-index";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
-import {
-  ToolPlanner,
-  bindEmitterToCommitter,
-  type AnyApprovalHandler,
-  type ToolExecutor,
-} from "@/tools/planner";
+import { ToolPlanner, bindEmitterToCommitter, type ToolExecutor } from "@/tools/planner";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import {
@@ -50,6 +45,7 @@ import {
   CancellationToken,
   createDeadlineCancellationScope,
 } from "@/runtime/cancellation";
+import type { TypedApprovalHandler } from "@/runtime/approval/types";
 import {
   resolveTurnExecutionLimits,
   providerViolationSettlement,
@@ -142,7 +138,7 @@ export interface AgentRuntimeOptions {
    * Optional approval handler for tools that require explicit approval.
    * Wired into the default `ToolPlanner` when `planner` is not provided.
    */
-  approvalHandler?: AnyApprovalHandler;
+  approvalHandler?: TypedApprovalHandler;
   /**
    * Tool execution planner. When omitted, a default planner is constructed from
    * `toolExecutor`, `policy`, `approvalHandler`, and `tools`.
@@ -263,7 +259,7 @@ export class AgentRuntime {
   private readonly fixedTools: ToolSpec[] | undefined;
   private readonly toolExecutor: ToolExecutor;
   private readonly policy: ToolPolicy | undefined;
-  private readonly approvalHandler: AnyApprovalHandler | undefined;
+  private readonly approvalHandler: TypedApprovalHandler | undefined;
   private readonly defaultContext: TurnContext | undefined;
   private readonly turnCoordinator: SessionTurnCoordinator;
   private readonly contextWindow: Readonly<ContextWindow>;

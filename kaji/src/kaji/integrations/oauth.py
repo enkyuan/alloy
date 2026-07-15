@@ -33,7 +33,7 @@ from kaji.infra.observability.protocols import (
 )
 from kaji.runtime.agents.cancellation import CancelledError, CancellationToken
 from kaji.runtime.context import ToolExecutionContext
-from kaji.runtime.determinism import Clock, SYSTEM_CLOCK
+from kaji.core.determinism import Clock, SYSTEM_CLOCK
 
 
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"

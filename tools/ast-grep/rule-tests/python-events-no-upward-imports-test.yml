@@ -1,0 +1,11 @@
+id: python-events-no-upward-imports
+valid:
+  - |
+      from kaji.contracts.integration_recovery import is_closed_recovery_tuple
+  - |
+      from kaji.core.determinism import Clock
+invalid:
+  - |
+      from kaji.runtime.determinism import Clock
+  - |
+      from kaji.integrations.recovery import is_closed_recovery_tuple

@@ -6,7 +6,7 @@ import { AgentRuntime } from "@/runtime/runtime";
 import type { AgentStrategy } from "@/runtime/runtime";
 import type { ModelProvider } from "@/providers/base";
 import type { ToolPolicy } from "@/tools/policy";
-import { ToolPlanner, type AnyApprovalHandler } from "@/tools/planner";
+import { ToolPlanner } from "@/tools/planner";
 import { ToolRegistry } from "@/tools/registry";
 import type { EventCommitter } from "@/events/protocols";
 import { InMemoryEventCommitter } from "@/events/committer";
@@ -24,6 +24,7 @@ import {
   type TimerScheduler,
 } from "@/internal/uuid";
 import type { TurnExecutionLimits } from "@/runtime/limits";
+import type { TypedApprovalHandler } from "@/runtime/approval/types";
 
 /** Anything with a register(registry: ToolRegistry) method. */
 export interface Integrable {
@@ -43,7 +44,7 @@ export class AgentBuilder {
   private _provider: ModelProvider | undefined;
   private readonly _integrations: Integrable[] = [];
   private _policy: ToolPolicy | undefined;
-  private _approvalHandler: AnyApprovalHandler | undefined;
+  private _approvalHandler: TypedApprovalHandler | undefined;
   private _systemPrompt = "You are a helpful assistant.";
   private _strategy: AgentStrategy | undefined;
   private _contextWindow: ContextWindow | undefined;
@@ -78,7 +79,7 @@ export class AgentBuilder {
     return this;
   }
 
-  approvalHandler(handler: AnyApprovalHandler): this {
+  approvalHandler(handler: TypedApprovalHandler): this {
     this._approvalHandler = handler;
     return this;
   }

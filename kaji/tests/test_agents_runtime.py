@@ -569,7 +569,7 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     tool_call_id the second provider request is structurally broken for
     OpenAI/Anthropic (they require matching IDs on tool results).
     """
-    from kaji.infra.events.replay import replay_session
+    from kaji.runtime.sessions.replay import replay_session
     from kaji.infra.events.schemas import (
         ToolCallCompleted,
         ToolCallRequested,
@@ -622,7 +622,7 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
 @pytest.mark.asyncio
 async def test_tool_call_id_preserved_on_failed_tool_replay():
     """TOOL_CALL_FAILED events must also carry tool_call_id through replay."""
-    from kaji.infra.events.replay import replay_session
+    from kaji.runtime.sessions.replay import replay_session
     from kaji.infra.events.schemas import (
         ToolCallFailed,
         ToolCallRequested,

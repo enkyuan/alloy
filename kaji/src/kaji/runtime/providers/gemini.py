@@ -35,7 +35,7 @@ from kaji.runtime.providers._translate import (
     format_messages_gemini,
     split_system_for_gemini,
 )
-from kaji.runtime.determinism import IdFactory, SYSTEM_ID_FACTORY
+from kaji.core.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 logger = logging.getLogger(__name__)
 

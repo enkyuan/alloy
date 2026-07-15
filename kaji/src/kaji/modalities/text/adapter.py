@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
@@ -27,14 +27,12 @@ class TextSession:
     config: TextSessionConfig
     runtime: AgentRuntime
     store: EventStore
-    _sent: int = field(default=0, init=False)
 
     async def send(self, content: str) -> list[StoredKajiEvent]:
         """Send text through the runtime and return only this turn's events."""
         if not content.strip():
             raise ValueError("content must not be empty")
         result = await self.runtime.turn(content, session_id=self.config.session_id)
-        self._sent += 1
         return result.events
 
     async def events(

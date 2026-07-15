@@ -25,7 +25,7 @@ from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
-from kaji.runtime.determinism import Clock, IdFactory, TimerScheduler
+from kaji.core.determinism import Clock, IdFactory, TimerScheduler
 
 
 @runtime_checkable
