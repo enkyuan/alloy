@@ -197,7 +197,7 @@ export class OpenAIProvider implements ModelProvider {
       model: this.opts.model,
       messages: toOpenAIChatMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
-      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
+      max_completion_tokens: options?.maxTokens ?? this.opts.maxTokens,
     };
     if (tools.length > 0) params.tools = toOpenAITools(tools);
 
@@ -260,7 +260,7 @@ export class OpenAIProvider implements ModelProvider {
       model: this.opts.model,
       messages: toOpenAIChatMessages(messages),
       temperature: options?.temperature ?? this.opts.temperature,
-      max_tokens: options?.maxTokens ?? this.opts.maxTokens,
+      max_completion_tokens: options?.maxTokens ?? this.opts.maxTokens,
       stream: true,
       stream_options: { include_usage: true },
     };

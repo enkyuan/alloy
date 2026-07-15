@@ -158,6 +158,21 @@ describe("OpenAIProvider.generate", () => {
     });
   });
 
+  it("uses max_completion_tokens for the OpenAI token limit", async () => {
+    const create = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: "ok", tool_calls: null } }],
+    });
+    const provider = new TestOpenAIProvider({ apiKey: "test-key", maxTokens: 321 }, {
+      chat: { completions: { create } },
+    } as unknown as OpenAI);
+
+    await provider.generate([{ role: "user", content: "hi" }], []);
+
+    const params = create.mock.calls[0]?.[0];
+    expect(params).toMatchObject({ max_completion_tokens: 321 });
+    expect(params).not.toHaveProperty("max_tokens");
+  });
+
   it("returns text content from a plain response", async () => {
     const fakeClient = {
       chat: {
@@ -485,6 +500,24 @@ describe("OpenAIProvider.generateStream", () => {
       signal: token.signal,
       timeout: 2_500,
     });
+  });
+
+  it("uses max_completion_tokens for the streaming token limit", async () => {
+    async function* fakeStream() {
+      yield { choices: [] };
+    }
+    const create = vi.fn().mockResolvedValue(fakeStream());
+    const provider = new TestOpenAIProvider({ apiKey: "test-key", maxTokens: 654 }, {
+      chat: { completions: { create } },
+    } as unknown as OpenAI);
+
+    for await (const _chunk of provider.generateStream([{ role: "user", content: "hi" }], [])) {
+      // Exhaust the stream so the vendor call completes.
+    }
+
+    const params = create.mock.calls[0]?.[0];
+    expect(params).toMatchObject({ max_completion_tokens: 654 });
+    expect(params).not.toHaveProperty("max_tokens");
   });
 
   it("recreates a stream after a 429 before the first chunk", async () => {
