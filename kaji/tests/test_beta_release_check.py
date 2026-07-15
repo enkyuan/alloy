@@ -2369,7 +2369,7 @@ def test_release_docs_reference_beta_release_check() -> None:
         assert "OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1" not in readme
 
 
-def test_release_matrix_names_pending_protected_pr_gate_truthfully() -> None:
+def test_release_matrix_names_pending_protected_release_gate_truthfully() -> None:
     matrix = (REPO_ROOT / "kaji" / "RELEASE_MATRIX.md").read_text()
     row = next(
         line
@@ -2377,7 +2377,7 @@ def test_release_matrix_names_pending_protected_pr_gate_truthfully() -> None:
         if line.startswith("| Shared schemas and registry |")
     )
 
-    assert "`Kaji beta PR gate` / `Kaji beta PR gate`" in row
+    assert "`gate / kaji` / `beta release gate`" in row
     assert row.endswith("| locally proven; protected PR run pending |")
     assert "passed" not in row.lower()
 

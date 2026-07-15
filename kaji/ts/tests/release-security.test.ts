@@ -279,6 +279,50 @@ const workflowFiles = [
   "kaji.rehearsal.yml",
   "kaji.publish.yml",
 ] as const;
+const expectedKajiWorkflowNames = {
+  "kaji.benchmark.yml": "benchmark / kaji",
+  "kaji.gate.yml": "gate / kaji",
+  "kaji.rehearsal.yml": "rehearsal / kaji",
+  "kaji.publish.yml": "publish / kaji",
+} as const;
+type KajiWorkflowFile = keyof typeof expectedKajiWorkflowNames;
+const expectedKajiJobNames = {
+  "kaji.benchmark.yml": {
+    "release-artifacts": "release artifacts",
+    benchmark: "performance benchmark",
+    soak: "30-minute soak",
+    calibrate: "baseline calibration",
+  },
+  "kaji.gate.yml": {
+    "kaji-beta-pr-gate": "beta release gate",
+  },
+  "kaji.rehearsal.yml": {
+    "offline-release": "offline release",
+    performance: "performance evidence",
+    "python-compat": "Python ${{ matrix.python-version }} compatibility",
+    "node-compat": "Node ${{ matrix.node-version }} compatibility",
+    "tthw-evidence": "time-to-hello-world evidence",
+    "keyed-proof": "keyed provider proof",
+    "candidate-evidence": "release candidate evidence",
+  },
+  "kaji.publish.yml": {
+    "verify-tag": "verify release tag",
+    "offline-gates": "offline release gates",
+    performance: "performance evidence",
+    "python-compat": "Python ${{ matrix.python-version }} compatibility",
+    "node-compat": "Node ${{ matrix.node-version }} compatibility",
+    "tthw-evidence": "time-to-hello-world evidence",
+    "keyed-proof": "keyed provider proof",
+    "supply-chain": "supply-chain evidence",
+    "registry-preflight": "registry preflight",
+    "publisher-preflight": "publisher preflight",
+    "publish-python": "publish Python package",
+    "publish-npm": "publish npm package",
+    "publication-status": "verify publication",
+    "publication-incident": "publication incident",
+    "release-evidence": "release evidence",
+  },
+} as const satisfies Record<KajiWorkflowFile, Readonly<Record<string, string>>>;
 const sharedBetaPaths = [
   "kaji/contracts/**",
   "kaji/scripts/**",
@@ -493,7 +537,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   const triggers = workflow.on!;
   const pullRequest = triggers.pull_request;
 
-  expect(workflow.name).toBe("Kaji beta PR gate");
+  expect(workflow.name).toBe("gate / kaji");
   expect(triggers).not.toHaveProperty("pull_request_target");
   expect(triggers).toHaveProperty("pull_request");
   expect(
@@ -509,7 +553,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(jobs).toHaveLength(1);
   const [jobId, job] = jobs[0]!;
   expect(jobId).toBe("kaji-beta-pr-gate");
-  expect(job.name).toBe("Kaji beta PR gate");
+  expect(job.name).toBe("beta release gate");
   expect(job.strategy).toBeUndefined();
   expect(job.if).toBeUndefined();
   expect(job["continue-on-error"] ?? false).toBe(false);
@@ -579,11 +623,25 @@ function withTemporaryRepository(run: (root: string) => void): void {
 
 function gateJob(workflow: Workflow): WorkflowJob {
   const job = workflow.jobs?.["kaji-beta-pr-gate"];
-  if (!job) throw new Error("missing Kaji beta PR gate job");
+  if (!job) throw new Error("missing Kaji beta release gate job");
   return job;
 }
 
 describe("Kaji workflow contracts", () => {
+  it("uses functional display names for every Kaji workflow and job", () => {
+    for (const workflowFile of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
+      const { workflow } = readWorkflow(workflowFile);
+      const jobs = workflow.jobs ?? {};
+      const expectedJobs = expectedKajiJobNames[workflowFile];
+
+      expect(workflow.name, workflowFile).toBe(expectedKajiWorkflowNames[workflowFile]);
+      expect(Object.keys(jobs).sort(), workflowFile).toEqual(Object.keys(expectedJobs).sort());
+      for (const [jobId, expectedName] of Object.entries(expectedJobs)) {
+        expect(jobs[jobId]?.name, `${workflowFile}:${jobId}`).toBe(expectedName);
+      }
+    }
+  });
+
   it.each([
     ["python.test.yml", ["kaji/**", "kaji/serve/**"]],
     ["ts.test.yml", ["kaji/ts/**", "ryo/auth/**", "packages/ui/**"]],

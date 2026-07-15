@@ -112,7 +112,7 @@ TypeScript optional provider imports, and cancellation error shape.
 <!-- beta-parity-scenarios: 67 -->
 
 | Cross-SDK behavioral parity | `uv run --project kaji python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
-| Shared schemas and registry | `Kaji beta PR gate` / `Kaji beta PR gate` | Yes | locally proven; protected PR run pending |
+| Shared schemas and registry | `gate / kaji` / `beta release gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |

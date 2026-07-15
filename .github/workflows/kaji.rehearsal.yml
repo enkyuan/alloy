@@ -1,4 +1,4 @@
-name: Kaji beta rehearsal
+name: rehearsal / kaji
 
 on:
   workflow_dispatch:
@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   offline-release:
+    name: offline release
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -74,6 +75,7 @@ jobs:
           if-no-files-found: error
 
   performance:
+    name: performance evidence
     needs: offline-release
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
     # 35-minute benchmark + 42-minute soak + 18-minute setup/validation/upload,
@@ -276,6 +278,7 @@ jobs:
           if-no-files-found: error
 
   python-compat:
+    name: Python ${{ matrix.python-version }} compatibility
     needs: offline-release
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -484,6 +487,7 @@ jobs:
           if-no-files-found: error
 
   node-compat:
+    name: Node ${{ matrix.node-version }} compatibility
     needs: offline-release
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -698,6 +702,7 @@ jobs:
           if-no-files-found: error
 
   tthw-evidence:
+    name: time-to-hello-world evidence
     needs: offline-release
     if: ${{ always() && needs.offline-release.result == 'success' }}
     runs-on: ubuntu-latest
@@ -855,6 +860,7 @@ jobs:
           if-no-files-found: error
 
   keyed-proof:
+    name: keyed provider proof
     needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]
     if: ${{ always() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1009,6 +1015,7 @@ jobs:
           if-no-files-found: error
 
   candidate-evidence:
+    name: release candidate evidence
     needs: [offline-release, performance, tthw-evidence, keyed-proof, python-compat, node-compat]
     if: ${{ always() && needs.offline-release.result == 'success' }}
     runs-on: ubuntu-latest

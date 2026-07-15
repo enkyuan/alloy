@@ -1,4 +1,4 @@
-name: Kaji beta performance
+name: benchmark / kaji
 
 on:
   schedule:
@@ -32,6 +32,7 @@ env:
 
 jobs:
   release-artifacts:
+    name: release artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -70,6 +71,7 @@ jobs:
           if-no-files-found: error
 
   benchmark:
+    name: performance benchmark
     needs: release-artifacts
     if: >-
       github.event_name == 'schedule' ||
@@ -120,6 +122,7 @@ jobs:
           retention-days: 30
 
   soak:
+    name: 30-minute soak
     needs: release-artifacts
     if: >-
       github.event_name == 'schedule' ||
@@ -170,6 +173,7 @@ jobs:
           retention-days: 30
 
   calibrate:
+    name: baseline calibration
     needs: release-artifacts
     if: github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate'
     runs-on: [self-hosted, linux, x64, kaji-benchmark]

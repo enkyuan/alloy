@@ -1,4 +1,4 @@
-name: Publish Kaji beta
+name: publish / kaji
 
 on:
   push:
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   verify-tag:
+    name: verify release tag
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -78,6 +79,7 @@ jobs:
             await core.summary.write();
 
   offline-gates:
+    name: offline release gates
     needs: verify-tag
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -145,6 +147,7 @@ jobs:
           if-no-files-found: error
 
   performance:
+    name: performance evidence
     needs: [verify-tag, offline-gates]
     runs-on: [self-hosted, linux, x64, kaji-benchmark]
     # 35-minute benchmark + 42-minute soak + 18-minute setup/validation/upload,
@@ -347,6 +350,7 @@ jobs:
           if-no-files-found: error
 
   python-compat:
+    name: Python ${{ matrix.python-version }} compatibility
     needs: [verify-tag, offline-gates]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -557,6 +561,7 @@ jobs:
           if-no-files-found: error
 
   node-compat:
+    name: Node ${{ matrix.node-version }} compatibility
     needs: [verify-tag, offline-gates]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -773,6 +778,7 @@ jobs:
           if-no-files-found: error
 
   tthw-evidence:
+    name: time-to-hello-world evidence
     needs: [verify-tag, offline-gates]
     if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}
     runs-on: ubuntu-latest
@@ -932,6 +938,7 @@ jobs:
           if-no-files-found: error
 
   keyed-proof:
+    name: keyed provider proof
     needs: [verify-tag, offline-gates, performance, tthw-evidence, python-compat, node-compat]
     if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1087,6 +1094,7 @@ jobs:
           if-no-files-found: error
 
   supply-chain:
+    name: supply-chain evidence
     needs: [verify-tag, offline-gates, performance, tthw-evidence, keyed-proof, python-compat, node-compat]
     if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1270,6 +1278,7 @@ jobs:
           if-no-files-found: error
 
   registry-preflight:
+    name: registry preflight
     needs: [verify-tag, supply-chain]
     if: ${{ always() && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1309,6 +1318,7 @@ jobs:
           fi
 
   publisher-preflight:
+    name: publisher preflight
     needs: [verify-tag, supply-chain, registry-preflight]
     if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1367,6 +1377,7 @@ jobs:
               >>"$GITHUB_STEP_SUMMARY"
           fi
   publish-python:
+    name: publish Python package
     needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]
     if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' && needs.publisher-preflight.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1413,6 +1424,7 @@ jobs:
           packages-dir: .artifacts/python-dist
 
   publish-npm:
+    name: publish npm package
     needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]
     if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' && needs.publisher-preflight.result == 'success' }}
     runs-on: ubuntu-latest
@@ -1464,6 +1476,7 @@ jobs:
         run: npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.1.tgz --provenance --access public --tag beta
 
   publication-status:
+    name: verify publication
     needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight, publish-python, publish-npm]
     if: ${{ always() }}
     outputs:
@@ -1731,6 +1744,7 @@ jobs:
           exit 1
 
   publication-incident:
+    name: publication incident
     needs: [verify-tag, publication-status]
     if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.publication-status.outputs.state != 'byte_verified' && needs.publication-status.outputs.incident == 'true' }}
     runs-on: ubuntu-latest
@@ -1783,6 +1797,7 @@ jobs:
           esac
 
   release-evidence:
+    name: release evidence
     needs: [verify-tag, tthw-evidence, supply-chain, publication-status]
     if: ${{ always() && needs.verify-tag.result == 'success' && needs.tthw-evidence.result == 'success' && needs.supply-chain.result == 'success' && needs.publication-status.result == 'success' && needs.publication-status.outputs.state == 'byte_verified' }}
     runs-on: ubuntu-latest
