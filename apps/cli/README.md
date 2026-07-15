@@ -39,9 +39,10 @@ python agent.py
 
 Both scaffolds print deterministic `text`, `turn_id`, and `final_sequence`
 fields. Select `--provider openai` or `--provider anthropic` for a live model
-and set the generated `.env.example` credential. The beta scaffold intentionally
-supports `mock`, `openai`, and `anthropic`; other SDK provider adapters remain
-outside this first-run contract.
+and copy `.env.example` to `.env` before setting the generated credential. The
+TypeScript scaffold's `start` command loads it with its pinned dotenvx
+dependency. The beta scaffold intentionally supports `mock`, `openai`, and
+`anthropic`; other SDK provider adapters remain outside this first-run contract.
 
 ## Commands
 

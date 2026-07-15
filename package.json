@@ -11,6 +11,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:kaji-serve": "dotenvx run --ignore=MISSING_ENV_FILE -- uv run --project kaji/serve uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080",
+    "env:example": "dotenvx genexample",
     "lint": "turbo run lint",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
@@ -34,6 +36,7 @@
   },
   "devDependencies": {
     "@ast-grep/cli": "0.44.1",
+    "@dotenvx/dotenvx": "2.9.0",
     "turbo": "^2.5.0",
     "husky": "^9.1.0",
     "oxlint": "^1.1.0",

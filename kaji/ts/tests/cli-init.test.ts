@@ -143,7 +143,10 @@ describe("kaji init", () => {
       zod: ">=4.3 <5",
     });
     expect(pkg.devDependencies["@types/node"]).toBe(installed.devDependencies["@types/node"]);
-    expect(pkg.scripts.start).toBe("tsx agent.ts");
+    expect(pkg.devDependencies["@dotenvx/dotenvx"]).toBe(
+      installed.devDependencies["@dotenvx/dotenvx"],
+    );
+    expect(pkg.scripts.start).toBe("dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts");
     const tsconfig = JSON.parse(readFileSync(join(out, "tsconfig.json"), "utf8"));
     expect(tsconfig.compilerOptions.types).toEqual(["node"]);
     expect(tsconfig.compilerOptions.skipLibCheck).toBe(false);
@@ -356,6 +359,8 @@ describe("kaji init", () => {
       zod: ">=4.3 <5",
       [peer]: range,
     });
+    const key = provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+    expect(readFileSync(join(out, ".env.example"), "utf8")).toContain(`${key}=\n`);
     const installed = JSON.parse(
       readFileSync(join(import.meta.dirname, "../package.json"), "utf8"),
     );

@@ -250,6 +250,8 @@ kaji replay <session.jsonl>            # render a stored JSONL session log
 This is the embedded `@kaji/sdk` CLI. The standalone cross-language
 `@kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
 package also exposes additional Python-only maintenance commands.
+Generated projects pin dotenvx and load `.env` from their `start` script after
+you copy `.env.example` to `.env`.
 
 `echo` is the only beta catalog entry. `github` is the only experimental
 catalog entry and requires `--allow-experimental` when copied.

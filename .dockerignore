@@ -38,8 +38,8 @@ htmlcov/
 *~
 
 # Environment
-.env
-.env.local
+.env*
+**/.env*
 
 # OS
 .DS_Store

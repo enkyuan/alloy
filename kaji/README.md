@@ -319,8 +319,8 @@ kaji init ./my-agent
 ```
 
 Creates `agent.py` and `.env.example` in `./my-agent` wired to `AgentBuilder`
-with an env-driven provider (set `KAJI_MODEL_PROVIDER` to `openai` or
-`anthropic`, plus the matching API key).
+with an env-driven provider. Copy `.env.example` to `.env`, then set
+`KAJI_MODEL_PROVIDER` to `openai` or `anthropic` plus the matching API key.
 
 ## What's exported
 

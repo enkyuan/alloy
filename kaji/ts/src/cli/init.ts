@@ -175,6 +175,10 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
   if (nodeTypesRange === undefined) {
     throw new Error("installed @kaji/sdk has no supported @types/node range");
   }
+  const dotenvxVersion = metadata.devDependencies["@dotenvx/dotenvx"];
+  if (dotenvxVersion === undefined) {
+    throw new Error("installed @kaji/sdk has no supported dotenvx version");
+  }
 
   const dependencies: Record<string, string> = {
     "@kaji/sdk": metadata.version,
@@ -197,9 +201,13 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
         version: "0.1.0",
         private: true,
         type: "module",
-        scripts: { start: "tsx agent.ts", typecheck: "tsc --noEmit" },
+        scripts: {
+          start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
+          typecheck: "tsc --noEmit",
+        },
         dependencies,
         devDependencies: {
+          "@dotenvx/dotenvx": dotenvxVersion,
           "@types/node": nodeTypesRange,
           tsx: "^4.0.0",
           typescript57: metadata.devDependencies.typescript57 ?? "npm:typescript@5.7.3",
@@ -230,8 +238,8 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
       provider === "mock"
         ? "# No provider credentials required.\n"
         : provider === "openai"
-          ? "OPENAI_API_KEY=sk-...\n"
-          : "ANTHROPIC_API_KEY=sk-ant-...\n",
+          ? "OPENAI_API_KEY=\n"
+          : "ANTHROPIC_API_KEY=\n",
   };
 }
 

@@ -1,11 +1,19 @@
+import json
 from pathlib import Path
+import re
 import tomllib
 
+from kaji.core.config import Settings as SDKSettings
 import kaji_serve
+from kaji_serve.config import Settings as ServeSettings
 
 
 SERVE_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = SERVE_ROOT.parents[1]
+
+
+def _env_names(contents: str) -> set[str]:
+    return set(re.findall(r"^([A-Z][A-Z0-9_]*)=", contents, flags=re.MULTILINE))
 
 
 def test_editable_import_uses_conventional_source_package() -> None:
@@ -69,6 +77,57 @@ def test_reference_service_examples_use_only_canonical_configuration_names() -> 
     assert "GOTRUE_JWT_ISSUER: ${JWT_ISSUER}" in auth_block
     assert "JWT_ALGORITHM:" not in service_block
     assert "ACCESS_TOKEN_EXPIRE_MINUTES:" not in service_block
+
+
+def test_root_env_documents_every_kaji_setting() -> None:
+    root_env = (REPO_ROOT / ".env.example").read_text()
+
+    assert set(SDKSettings.model_fields) | set(
+        ServeSettings.model_fields
+    ) <= _env_names(root_env)
+
+
+def test_root_exposes_pinned_dotenvx_workflows() -> None:
+    package = json.loads((REPO_ROOT / "package.json").read_text())
+
+    assert package["devDependencies"]["@dotenvx/dotenvx"] == "2.9.0"
+    assert package["scripts"]["env:example"] == "dotenvx genexample"
+    assert package["scripts"]["dev:kaji-serve"].startswith(
+        "dotenvx run --ignore=MISSING_ENV_FILE -- "
+    )
+
+
+def test_docker_build_context_excludes_dotenvx_secrets() -> None:
+    ignore_rules = {
+        line.strip()
+        for line in (REPO_ROOT / ".dockerignore").read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert {".env*", "**/.env*"} <= ignore_rules
+
+
+def test_docker_env_matches_compose_and_has_no_legacy_duplicate() -> None:
+    docker_root = REPO_ROOT / "docker" / "kaji"
+    docker_env = (docker_root / ".env.example").read_text()
+    compose = (docker_root / "docker-compose.yml").read_text()
+    compose_names = set(re.findall(r"\$\{([A-Z][A-Z0-9_]*)", compose))
+
+    assert compose_names == _env_names(docker_env)
+    assert not (docker_root / "supabase" / ".env.example").exists()
+    for stale in (
+        "AgentKit",
+        "TOKEN_ENCRYPTION_KEY=",
+        "LOG_LEVEL=",
+        "SUPABASE_PUBLIC_URL=",
+        "STUDIO_DEFAULT_ORGANIZATION=",
+        "DASHBOARD_USERNAME=",
+        "PGRST_DB_SCHEMAS=",
+        "IMGPROXY_ENABLE_WEBP_DETECTION=",
+        "LOGFLARE_PUBLIC_ACCESS_TOKEN=",
+        "DOCKER_SOCKET_LOCATION=",
+    ):
+        assert stale not in docker_env
 
 
 def test_database_fixture_does_not_restore_removed_pgvector_dependency() -> None:

@@ -35,10 +35,13 @@ describe("init command", () => {
     );
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(pkg.engines.node).toBe("22.x || 24.x");
+    expect(pkg.scripts.start).toBe("dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts");
     expect(pkg.scripts.typecheck).toBe("tsc --noEmit");
+    expect(pkg.devDependencies["@dotenvx/dotenvx"]).toBe("2.9.0");
     expect(pkg.dependencies["@kaji/sdk"]).toBe("^0.2.0-beta.1");
     expect(pkg.dependencies.zod).toBe(">=4.3 <5");
     expect(pkg.dependencies.openai).toBe(">=4 <8");
+    expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
   });
 
   it("ts --yes defaults to a deterministic mock provider", async () => {
@@ -95,6 +98,7 @@ describe("init command", () => {
     expect(agent).not.toMatch(/InMemoryEventBus|InMemoryEventStore|store\.append|run_turn/);
     const requirements = readFileSync(join(dir, "requirements.txt"), "utf-8");
     expect(requirements).toContain("kaji-sdk[openai]>=0.2.0b1,<0.3");
+    expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
   });
 
   it("refuses to overwrite without --force", async () => {

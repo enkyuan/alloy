@@ -336,6 +336,8 @@ describe("npm contract artifact", () => {
       "assertRootDeclarationsVendorNeutral",
       'generated.devDependencies["@types/node"]',
       'installed.devDependencies["@types/node"]',
+      'generated.devDependencies["@dotenvx/dotenvx"]',
+      'installed.devDependencies["@dotenvx/dotenvx"]',
       "const nodeTypesPackage = `@types/node@${nodeTypesRange}`",
       "type SmokePhase =",
       "error instanceof CommandError",

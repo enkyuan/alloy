@@ -47,8 +47,8 @@ export function pythonRequirementsTemplate(provider: Provider): string {
 export function pythonEnvTemplate(provider: Provider): string {
   const credentials: Record<Provider, string> = {
     mock: "# No provider credentials required.",
-    openai: "OPENAI_API_KEY=sk-...",
-    anthropic: "ANTHROPIC_API_KEY=sk-ant-...",
+    openai: "OPENAI_API_KEY=",
+    anthropic: "ANTHROPIC_API_KEY=",
   };
   const credential = credentials[provider];
   return `# kaji provider: ${provider}\nKAJI_MODEL_PROVIDER=${provider}\n${credential}\n`;

@@ -16,7 +16,8 @@ uv sync --project kaji/serve
 
 Go services manage dependencies through the `go.mod` in each service. Copy an
 `.env.example` only for a service you intend to run; ordinary SDK tests do not
-need live credentials.
+need live credentials. The root workspace pins dotenvx for Kaji development
+commands and generated TypeScript starters.
 
 ## Find the right package
 

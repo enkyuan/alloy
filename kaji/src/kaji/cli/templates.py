@@ -35,8 +35,8 @@ if __name__ == "__main__":
 def env_template(provider: str) -> str:
     credentials = {
         "mock": "# No provider credentials required.",
-        "openai": "# OPENAI_API_KEY=sk-...",
-        "anthropic": "# ANTHROPIC_API_KEY=sk-ant-...",
+        "openai": "OPENAI_API_KEY=",
+        "anthropic": "ANTHROPIC_API_KEY=",
     }
     return f"""# kaji provider: {provider}
 KAJI_MODEL_PROVIDER={provider}

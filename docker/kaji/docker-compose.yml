@@ -49,18 +49,14 @@ services:
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_AUDIENCE: ${JWT_AUDIENCE}
 
-      # Token encryption (falls back to JWT_SECRET if not set)
-      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
-
       # Application
       DEBUG: ${DEBUG:-false}
-      API_V1_PREFIX: /api/v1
-      PROJECT_NAME: Kaji Serve
+      API_V1_PREFIX: ${API_V1_PREFIX:-/api/v1}
+      PROJECT_NAME: ${PROJECT_NAME:-Kaji Serve}
       CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://localhost:5173}
 
       # Python logging
       PYTHONUNBUFFERED: 1
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
       # Soniox
       SONIOX_API_KEY: ${SONIOX_API_KEY:-}
@@ -150,7 +146,7 @@ services:
       GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
 
       GOTRUE_JWT_ADMIN_ROLES: service_role
-      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_AUD: ${JWT_AUDIENCE}
       GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
       GOTRUE_JWT_EXP: ${JWT_EXPIRY}
       GOTRUE_JWT_ISSUER: ${JWT_ISSUER}

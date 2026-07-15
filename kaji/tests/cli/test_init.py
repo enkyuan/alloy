@@ -40,6 +40,7 @@ PYTHON_CLI_CASES = [
 def test_init_project_creates_files(tmp_path: Path) -> None:
     written = init_project(tmp_path, provider="openai")
     assert {p.name for p in written} == {"agent.py", ".env.example"}
+    assert "OPENAI_API_KEY=\n" in (tmp_path / ".env.example").read_text()
 
 
 def test_init_project_skips_existing(tmp_path: Path) -> None:

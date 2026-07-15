@@ -86,6 +86,14 @@ bun --filter @ryo/web dev
 cd kaji && uv sync && uv run pytest
 ```
 
+For the Kaji reference service, copy the canonical host-side template and let
+the pinned dotenvx runner inject it:
+
+```bash
+cp .env.example .env
+bun run dev:kaji-serve
+```
+
 Run JavaScript/TypeScript checks from the root, or target one workspace:
 
 ```bash

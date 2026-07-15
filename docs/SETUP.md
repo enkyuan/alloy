@@ -30,7 +30,7 @@ uv sync
 ### 2. Set up environment
 
 ```bash
-cp ../../docker/kaji/.env.example .env
+cp ../../.env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
@@ -47,6 +47,14 @@ uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`
+
+Alternatively, keep `.env` at the repository root and run the service through
+the pinned dotenvx command:
+
+```bash
+cp .env.example .env
+bun run dev:kaji-serve
+```
 
 ## Docker Stack
 
@@ -79,5 +87,5 @@ cd kaji/serve && uv run pytest tests/
 cd docker/kaji && docker compose up -d
 
 # Option 2: API server directly (from kaji/serve/; requires its dependencies)
-cd kaji/serve && uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+cd kaji/serve && cp ../../.env.example .env && uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

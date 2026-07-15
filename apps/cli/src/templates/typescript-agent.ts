@@ -2,6 +2,7 @@ import type { Provider } from "../providers.js";
 
 export const TYPESCRIPT_SDK_RANGE = "^0.2.0-beta.1";
 export const ZOD_RANGE = ">=4.3 <5";
+const DOTENVX_VERSION = "2.9.0";
 
 export const TYPESCRIPT_PROVIDER_RANGES = {
   mock: {},
@@ -73,9 +74,13 @@ export function typescriptPackageTemplate(provider: Provider): string {
         private: true,
         type: "module",
         engines: { node: "22.x || 24.x" },
-        scripts: { start: "tsx agent.ts", typecheck: "tsc --noEmit" },
+        scripts: {
+          start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
+          typecheck: "tsc --noEmit",
+        },
         dependencies: { "@kaji/sdk": TYPESCRIPT_SDK_RANGE, zod: ZOD_RANGE, ...providerDeps },
         devDependencies: {
+          "@dotenvx/dotenvx": DOTENVX_VERSION,
           "@types/node": "^22.10.2",
           tsx: "^4.21.0",
           typescript: "^6.0.2",
@@ -111,8 +116,8 @@ export function typescriptConfigTemplate(): string {
 export function typescriptEnvTemplate(provider: Provider): string {
   const credentials: Record<Provider, string> = {
     mock: "# No provider credentials required.",
-    openai: "OPENAI_API_KEY=sk-...",
-    anthropic: "ANTHROPIC_API_KEY=sk-ant-...",
+    openai: "OPENAI_API_KEY=",
+    anthropic: "ANTHROPIC_API_KEY=",
   };
   const credential = credentials[provider];
   return `# kaji provider: ${provider}\nKAJI_MODEL_PROVIDER=${provider}\n${credential}\n`;

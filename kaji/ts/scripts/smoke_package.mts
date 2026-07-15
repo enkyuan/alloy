@@ -310,6 +310,11 @@ function assertGeneratedVersions(
   if (generated.devDependencies["@types/node"] !== installed.devDependencies["@types/node"]) {
     throw new Error("generated scaffold did not use the installed @types/node range");
   }
+  if (
+    generated.devDependencies["@dotenvx/dotenvx"] !== installed.devDependencies["@dotenvx/dotenvx"]
+  ) {
+    throw new Error("generated scaffold did not use the installed dotenvx version");
+  }
   const currentCompiler = generated.devDependencies.typescript;
   if (typeof currentCompiler !== "string" || !currentCompiler.includes("6.")) {
     throw new Error("generated scaffold did not declare the current TypeScript 6.x compiler");

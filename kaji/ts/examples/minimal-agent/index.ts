@@ -2,11 +2,11 @@
  * Minimal Kaji agent — generated example.
  *
  * Prerequisites:
- *   npm install @kaji/sdk@0.2.0-beta.1 zod openai   # or @anthropic-ai/sdk
- *   export OPENAI_API_KEY=sk-...       # or ANTHROPIC_API_KEY
+ *   npm install @kaji/sdk@0.2.0-beta.1 zod openai @dotenvx/dotenvx
+ *   cp .env.example .env               # fill OpenAI or Anthropic key
  *
  * Run:
- *   npx tsx index.ts
+ *   npx dotenvx run -- npx tsx index.ts
  */
 import { AgentBuilder, anthropic, functionTool, openai, type ModelProvider } from "@kaji/sdk";
 import * as z from "zod";
