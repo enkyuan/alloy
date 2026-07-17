@@ -21,6 +21,7 @@ import {
   type ToolIdempotencyLedger,
 } from "@kaji/sdk";
 import { MockProvider } from "@/providers/mock";
+import { pageHistory } from "./helpers/history";
 
 class NonPurgeableStore implements EventStore {
   private readonly inner = new InMemoryEventStore();
@@ -222,6 +223,37 @@ describe("AgentRuntime.turn", () => {
     const r2 = await runtime.turn("second", { sessionId: "s-1" });
     expect(r1.events.some((e) => e.type === EventType.SESSION_CREATED)).toBe(true);
     expect(r2.events.some((e) => e.type === EventType.SESSION_CREATED)).toBe(false);
+  });
+
+  it("pages beyond the 1,024-event default with an exclusive sequence cursor", async () => {
+    const sessionId = "large-history";
+    const store = new InMemoryEventStore({ maxEventsPerSession: 2_000 });
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "unused" }))
+      .build({ store });
+
+    await store.append(KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: sessionId }));
+    for (let index = 1; index < 1_025; index += 1) {
+      await store.append(
+        KajiEvent.parse({
+          type: EventType.USER_MESSAGE,
+          session_id: sessionId,
+          content: `history-${index}`,
+        }),
+      );
+    }
+
+    const defaultPage = await runtime.history(sessionId);
+    expect(defaultPage).toHaveLength(1_024);
+    expect(defaultPage.at(-1)?.sequence).toBe(1_024);
+    expect(await runtime.history(sessionId, { afterSequence: 1_024, limit: 128 })).toEqual([
+      expect.objectContaining({ sequence: 1_025 }),
+    ]);
+    const allEvents = await pageHistory(runtime, sessionId, 128);
+    expect(allEvents).toHaveLength(1_025);
+    expect(allEvents.map(({ sequence }) => sequence)).toEqual(
+      Array.from({ length: 1_025 }, (_, index) => index + 1),
+    );
   });
 
   it("purges persisted and runtime-owned session state without disturbing shared-store peers", async () => {

@@ -17,6 +17,7 @@ import { AgentBuilder } from "@/runtime/builder";
 import { AgentRuntime } from "@/runtime/runtime";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore } from "@/events/store";
+import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 import { MockProvider } from "@/providers/mock";
 import {
@@ -38,6 +39,7 @@ import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/too
 import { ToolPlanner } from "@/tools/planner";
 import type { MetricMeasurement, MetricsSink } from "@/observability";
 import type { ToolSpec } from "@/tools/registry";
+import { pageHistory, safeJournalEvidence } from "./helpers/history";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -610,6 +612,116 @@ describe("durable tool results", () => {
 });
 
 describe("provider fault matrix", () => {
+  it("pages provider failure evidence after successful tool work before purge", async () => {
+    const sessionId = "provider-failure-after-tool";
+    const providerSecret = "provider-private-failure-canary";
+    const promptCanary = "prompt-private-canary";
+    const argumentCanary = "argument-private-canary";
+    const resultCanary = "result-private-canary";
+    const providerError = new Error(providerSecret);
+    let providerCalls = 0;
+    const provider: ModelProvider = {
+      async generate(): Promise<ModelResponse> {
+        return { content: "", toolCalls: [] };
+      },
+      async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+        providerCalls += 1;
+        if (providerCalls === 1) {
+          yield {
+            delta: "",
+            toolCalls: [
+              {
+                id: "journal-probe-call",
+                name: "journal_probe",
+                args: { value: argumentCanary },
+              },
+            ],
+          };
+          return;
+        }
+        throw providerError;
+      },
+    };
+    const store = new InMemoryEventStore();
+    const runtime = new AgentBuilder()
+      .provider(provider)
+      .integration({
+        register(registry) {
+          registry.register(
+            {
+              name: "journal_probe",
+              description: "Return privileged journal proof",
+              parameters: {},
+              risk: "read",
+            },
+            async () => ({ value: resultCanary }),
+          );
+        },
+      })
+      .defaultContext({ principalId: "journal-test" })
+      .build({ store });
+
+    let caught: unknown;
+    try {
+      await runtime.turn(promptCanary, { sessionId });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(providerError);
+
+    const events = await pageHistory(runtime, sessionId);
+    expect(events.map(({ type }) => type)).toEqual(
+      expect.arrayContaining([
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_CALL_STARTED,
+        EventType.TOOL_CALL_COMPLETED,
+        EventType.AGENT_TURN_FAILED,
+      ]),
+    );
+    const privileged = JSON.stringify(events);
+    for (const canary of [promptCanary, argumentCanary, resultCanary]) {
+      expect(privileged).toContain(canary);
+    }
+    const failure = events.find(({ type }) => type === EventType.AGENT_TURN_FAILED);
+    expect(failure).toBeDefined();
+    expect(failure).not.toHaveProperty("error_code");
+    expect(failure).not.toHaveProperty("recovery_code");
+    expect(JSON.stringify(failure)).not.toContain(providerSecret);
+
+    const safeEvidence = events.map(safeJournalEvidence);
+    expect(safeEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: EventType.TOOL_CALL_COMPLETED,
+          tool_name: "journal_probe",
+          tool_call_id: "journal-probe-call",
+        }),
+        expect.objectContaining({ type: EventType.AGENT_TURN_FAILED }),
+      ]),
+    );
+    for (const canary of [promptCanary, argumentCanary, resultCanary, providerSecret]) {
+      expect(JSON.stringify(safeEvidence)).not.toContain(canary);
+    }
+
+    await expect(runtime.purgeSession(sessionId)).resolves.toBe(true);
+    expect(await pageHistory(runtime, sessionId)).toEqual([]);
+  });
+
+  it("rejects a history reader whose exclusive cursor does not advance", async () => {
+    const store = new InMemoryEventStore();
+    const stored = await store.append(
+      KajiEvent.parse({ type: EventType.SESSION_CREATED, session_id: "stalled-history" }),
+    );
+    const reader = {
+      history: vi.fn(async () => [stored.event]),
+    } as Pick<AgentRuntime, "history">;
+
+    await expect(pageHistory(reader, "stalled-history")).rejects.toThrow(
+      "history cursor did not advance",
+    );
+    expect(reader.history).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps late claim cleanup busy until drain makes purge safe", async () => {
     const backing = new InMemoryToolIdempotencyLedger();
     const claimEntered = Promise.withResolvers<void>();
@@ -828,11 +940,8 @@ describe("provider fault matrix", () => {
       retryable: true,
       outcome: "unknown",
     });
-    expect(
-      (await store.getEvents("deadline-reject")).filter(
-        (event) => event.type === EventType.AGENT_TURN_FAILED,
-      ),
-    ).toEqual([
+    const timeoutHistory = await pageHistory(runtime, "deadline-reject");
+    expect(timeoutHistory.filter((event) => event.type === EventType.AGENT_TURN_FAILED)).toEqual([
       expect.objectContaining({
         error_code: "TURN_TIMEOUT",
         phase: "provider_open",
@@ -840,6 +949,18 @@ describe("provider fault matrix", () => {
         outcome: "unknown",
       }),
     ]);
+    expect(JSON.stringify(timeoutHistory)).not.toContain(raw.message);
+    expect(timeoutHistory.map(safeJournalEvidence)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: EventType.AGENT_TURN_FAILED,
+          error_code: "TURN_TIMEOUT",
+          phase: "provider_open",
+          retryable: true,
+          outcome: "unknown",
+        }),
+      ]),
+    );
     expect(stream.returnCount).toBe(1);
     expect(coordinator.entryCount).toBe(0);
     expect(coordinator.waitingCount).toBe(0);
@@ -848,6 +969,59 @@ describe("provider fault matrix", () => {
       provider_family: "custom",
       status: "error",
     });
+    await expect(runtime.purgeSession("deadline-reject")).resolves.toBe(true);
+    expect(await pageHistory(runtime, "deadline-reject")).toEqual([]);
+  });
+
+  it("continues after an ordinary terminal tool failure and exposes safe evidence before purge", async () => {
+    const sessionId = "terminal-tool-failure";
+    const privateCause = "private-tool-cause-canary";
+    const store = new InMemoryEventStore();
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ toolCall: { name: "failing_probe", args: {} } }))
+      .integration({
+        register(registry) {
+          registry.register(
+            {
+              name: "failing_probe",
+              description: "Fail for terminal evidence",
+              parameters: {},
+              risk: "read",
+            },
+            async () => {
+              throw new Error(privateCause);
+            },
+          );
+        },
+      })
+      .defaultContext({ principalId: "journal-test" })
+      .build({ store });
+
+    const result = await runtime.turn("run the failing probe", { sessionId });
+    expect(result.text).not.toBe("");
+    const events = await pageHistory(runtime, sessionId);
+    const failure = events.find(({ type }) => type === EventType.TOOL_CALL_FAILED);
+    expect(failure).toMatchObject({
+      tool_name: "failing_probe",
+      error_code: "TOOL_EXECUTION_FAILED",
+      retryable: false,
+      outcome: "unknown",
+    });
+    expect(events.some(({ type }) => type === EventType.AGENT_TURN_FAILED)).toBe(false);
+    expect(JSON.stringify(events)).not.toContain(privateCause);
+    expect(events.map(safeJournalEvidence)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: EventType.TOOL_CALL_FAILED,
+          tool_name: "failing_probe",
+          error_code: "TOOL_EXECUTION_FAILED",
+          outcome: "unknown",
+        }),
+      ]),
+    );
+
+    await expect(runtime.purgeSession(sessionId)).resolves.toBe(true);
+    expect(await pageHistory(runtime, sessionId)).toEqual([]);
   });
 
   it("preserves a provider error that settles before the injected deadline", async () => {
@@ -879,12 +1053,13 @@ describe("provider fault matrix", () => {
     const stream = new RuntimeControlledStream();
     const coordinator = new InMemorySessionTurnCoordinator();
     const measurements: MetricMeasurement[] = [];
+    const store = new InMemoryEventStore();
     const runtime = providerDeadlineRuntime(
       new RuntimeControlledProvider([stream]),
       clock,
       scheduler,
       coordinator,
-      new InMemoryEventStore(),
+      store,
       10_000,
       {
         record(measurement) {
@@ -922,6 +1097,16 @@ describe("provider fault matrix", () => {
     expect(stream.returnCount).toBe(1);
     expect(coordinator.entryCount).toBe(0);
     expect(scheduler.pendingCount).toBe(0);
+    const cancellationHistory = await pageHistory(runtime, "caller-cancel");
+    expect(cancellationHistory.map(({ type }) => type)).toContain(EventType.CANCELLATION_COMPLETED);
+    expect(cancellationHistory.some(({ type }) => type === EventType.AGENT_TURN_FAILED)).toBe(
+      false,
+    );
+    expect(cancellationHistory.map(safeJournalEvidence)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: EventType.CANCELLATION_COMPLETED })]),
+    );
+    await expect(runtime.purgeSession("caller-cancel")).resolves.toBe(true);
+    expect(await pageHistory(runtime, "caller-cancel")).toEqual([]);
   });
 
   it.each([

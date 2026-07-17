@@ -22,8 +22,9 @@ four boundaries:
 1. A text-only turn needs no principal because it cannot execute a tool.
 2. A tool-enabled turn supplies an explicit principal and every tool declares risk.
 3. A whole-turn deadline pairs the tool deadline with cooperative cancellation.
-4. Results expose turn, event, and sequence IDs; Kaji provider errors normalize
-   to a redaction-safe shape.
+4. Results retain turn IDs in memory for event correlation; examples output only
+   non-privileged text/accounting, and Kaji provider errors normalize to a
+   redaction-safe shape.
 
 ### Python
 
@@ -56,7 +57,7 @@ async def main() -> None:
     text = await text_runtime.turn("Say hello.")
     assert text.text == "hello"
     assert all(event.turn_id == text.turn_id for event in text.events)
-    print(text.session_id, text.turn_id, [event.sequence for event in text.events])
+    print(text.text)
 
     tool_runtime = (
         kaji.AgentBuilder()
@@ -135,7 +136,7 @@ if (text.text !== "hello") throw new Error("unexpected text result");
 if (!text.events.every((event) => event.turn_id === text.turnId)) {
   throw new Error("turn IDs did not propagate");
 }
-console.log(text.sessionId, text.turnId, text.events.map((event) => event.sequence));
+console.log(text.text, text.accounting);
 
 const toolRuntime = new AgentBuilder()
   .provider(new MockProvider())
@@ -165,6 +166,72 @@ configured grace for cooperative shutdown.
 provider errors, not arbitrary vendor exceptions. Provider adapters convert
 vendor failures before they cross the public boundary. The normalized object
 contains only `type`, `code`, `service`, `action`, `status`, and `retryable`.
+
+## Privileged journal and failure recovery
+
+`TurnResult.events` and `history()` are a privileged full-fidelity journal in
+both SDKs. Retained events can include prompts, provider-derived text and deltas,
+tool arguments, tool results, arbitrary metadata, and correlation identifiers.
+They are not redaction-safe and must not be logged, attached to exceptions, or
+exported wholesale.
+
+`MetricsSink` / `TraceSink` in TypeScript and their Python counterparts are
+best-effort timing and correlation surfaces, not complete business or audit
+records. Delivery failures do not change runtime behavior. Treat trace IDs as
+access-controlled correlation data even though observability does not carry the
+full journal payload.
+
+Outcome shape matters:
+
+| Outcome | Public result | Retained evidence |
+| --- | --- | --- |
+| Provider or timeout failure | Rejects with the original/typed error; no `TurnResult` | Accepted events plus `agent.turn.failed` when the secondary append succeeds. Timeout fields are structured; a generic provider failure has no durable recovery code. |
+| Ordinary terminal tool failure | Usually continues to the next provider iteration and resolves | `tool.call.failed` with bounded public fields. Closed integration failures may include `reason_code`, `recovery_code`, and `doc_url`. |
+| Mid-provider cooperative cancellation | Resolves with a cancellation result | `cancellation.completed`; no `agent.turn.failed`. An interrupted provider call is not successful-turn accounting. |
+| Cancellation while queued | Rejects with `CancellationError` | `cancellation.completed`; no provider dispatch. |
+| Failure-event append failure | Preserves the original operation error | The terminal event can be absent because the secondary journal append is best effort. |
+
+For a failed turn, choose a preselected session ID. Preserve the caught error
+separately, page until an empty page using the exclusive `afterSequence` cursor
+(`after_sequence` in Python), reject a non-advancing cursor, and reduce to an
+allowlist before export. Safe evidence includes only `sequence`, `turn_id`,
+`type`, tool name/call ID, failure code/phase/retryability/outcome, and a closed
+integration recovery tuple. Never include `content`, `delta`, `tool_args`,
+`result`, arbitrary metadata, or the raw session ID by default. This is an
+application pattern; the embedded SDK does not yet ship a public safe-journal
+projection helper.
+Always page until an empty page; a short page is not proof of exhaustion.
+
+`close()` rejects future turn APIs but does not delete retained history, cancel
+already-active work, or prevent paging. Default stores and coordination are
+in-memory and process-local. The embedded beta ships no persistent event store
+or distributed coordinator and does not release-certify host implementations;
+their durability, deletion, and cross-process correctness are host
+responsibilities.
+
+## TypeScript-only purge and accounting
+
+The following lifecycle is TypeScript-only in this beta. `TurnAccounting`
+summarizes only normally completed provider iterations on a successful
+`TurnResult`; thrown failed turns have no aggregate accounting result.
+`PurgeableEventStore`, `supportsSessionPurge()`, `purgeSession()`,
+`SessionPurgeBusyError`, and `SessionPurgeUnsupportedError` are not Python
+parity claims.
+
+Before disposal, stop ingress for the named session. Drain tool and provider
+work, page and reduce required evidence, and then call
+`purgeSession(sessionId)`. A live runtime may keep serving other sessions. For a
+whole-runtime shutdown, call `close()` first to block new turn APIs; history and
+purge remain callable afterward. A provider that violates cancellation keeps
+the session quarantined until it really settles and `drainProviders()` succeeds.
+
+Purge removes SDK-owned retained indexes and caches but cannot promise VM string
+zeroization or delete copies held by the caller, providers, logs, observability
+backends, custom stores, or crash dumps. A custom store without the purge
+capability fails closed. A custom `ToolIdempotencyLedger.releaseSettled()` runs
+as host ledger cleanup only after the event store and SDK caches have been
+cleared. If it rejects, purge cannot roll back deletion; repair the host ledger
+and retry. If it never settles, the purge promise and fence remain pending.
 
 ## Stable core
 
@@ -233,8 +300,10 @@ never settles remains visible through `drainTools()` and requires process
 restart.
 
 The in-memory coordinator, event store, journal, and idempotency ledger are
-process-local. Inject durable/distributed implementations when work spans
-processes or must survive restart.
+process-local. Kaji ships and release-certifies no durable/distributed
+replacement in the embedded beta. Hosts may inject their own implementations,
+but their durability, deletion, and cross-process correctness remain host
+responsibilities.
 
 `Clock`, `IdFactory`, `SystemClock`, and `SystemIdFactory` are public Python
 determinism seams. Applications normally keep the system defaults; tests may

@@ -41,6 +41,7 @@ type SmokePhase =
   | `${PackageManager}:compile-typescript-5.7`
   | `${PackageManager}:compile-typescript-current`
   | `${PackageManager}:lifecycle-run`
+  | `${PackageManager}:failure-history-run`
   | `${PackageManager}:cold-run`
   | `${PackageManager}:warm-run`;
 interface PackageManifest {
@@ -149,6 +150,156 @@ if ((await store.getEvents(sessionId)).length !== 0) {
   throw new Error("installed lifecycle fixture retained purged history");
 }
 console.log("lifecycle_purge=ok");
+`;
+const FAILURE_HISTORY_SMOKE_SOURCE = `import {
+  AgentBuilder,
+  EventType,
+  InMemoryEventStore,
+  type AgentRuntime,
+  type ModelProvider,
+  type ModelResponse,
+  type ModelResponseChunk,
+  type StoredKajiEvent,
+} from "@kaji/sdk";
+
+async function pageHistory(
+  runtime: AgentRuntime,
+  sessionId: string,
+  limit = 2,
+): Promise<StoredKajiEvent[]> {
+  const events: StoredKajiEvent[] = [];
+  let afterSequence = 0;
+  for (;;) {
+    const page = await runtime.history(sessionId, { afterSequence, limit });
+    if (page.length === 0) return events;
+    const nextSequence = page.at(-1)!.sequence;
+    if (nextSequence <= afterSequence) throw new Error("history cursor did not advance");
+    events.push(...page);
+    afterSequence = nextSequence;
+  }
+}
+
+const SAFE_FIELDS = [
+  "tool_name",
+  "tool_call_id",
+  "error_code",
+  "phase",
+  "retryable",
+  "outcome",
+  "reason_code",
+  "recovery_code",
+  "doc_url",
+] as const;
+
+function safeJournalEvidence(event: StoredKajiEvent): Record<string, unknown> {
+  const safe: Record<string, unknown> = { sequence: event.sequence, type: event.type };
+  if (event.turn_id !== undefined) safe.turn_id = event.turn_id;
+  for (const field of SAFE_FIELDS) {
+    const value = Reflect.get(event, field);
+    if (value !== undefined) safe[field] = value;
+  }
+  return safe;
+}
+
+const sessionId = "installed-failure-history-session";
+const promptCanary = "installed-private-prompt-canary";
+const argumentCanary = "installed-private-argument-canary";
+const resultCanary = "installed-private-result-canary";
+const providerSecret = "installed-private-provider-canary";
+const providerError = new Error(providerSecret);
+let providerCalls = 0;
+const provider: ModelProvider = {
+  async generate(): Promise<ModelResponse> {
+    return { content: "", toolCalls: [] };
+  },
+  async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+    providerCalls += 1;
+    if (providerCalls === 1) {
+      yield {
+        delta: "",
+        toolCalls: [
+          {
+            id: "installed-journal-call",
+            name: "journal_probe",
+            args: { value: argumentCanary },
+          },
+        ],
+      };
+      return;
+    }
+    throw providerError;
+  },
+};
+const store = new InMemoryEventStore({ maxSessions: 1, maxEventsPerSession: 100 });
+const runtime = new AgentBuilder()
+  .provider(provider)
+  .integration({
+    register(registry) {
+      registry.register(
+        {
+          name: "journal_probe",
+          description: "Return installed journal proof",
+          parameters: {},
+          risk: "read",
+        },
+        async () => ({ value: resultCanary }),
+      );
+    },
+  })
+  .defaultContext({ principalId: "installed-journal-test" })
+  .build({ store });
+
+let proofFailure: unknown;
+try {
+  let caught: unknown;
+  try {
+    await runtime.turn(promptCanary, { sessionId });
+  } catch (error) {
+    caught = error;
+  }
+  if (caught !== providerError) {
+    throw new Error("provider failure identity was not preserved");
+  }
+  const events = await pageHistory(runtime, sessionId);
+  if (!events.some((event) => event.type === EventType.TOOL_CALL_COMPLETED)) {
+    throw new Error("installed failure history omitted completed tool work");
+  }
+  const failure = events.find((event) => event.type === EventType.AGENT_TURN_FAILED);
+  if (failure === undefined) throw new Error("installed failure history omitted turn failure");
+  if ("error_code" in failure || "recovery_code" in failure) {
+    throw new Error("generic provider failure unexpectedly exposed a durable recovery code");
+  }
+  if (JSON.stringify(failure).includes(providerSecret)) {
+    throw new Error("installed failure history retained the private provider exception");
+  }
+  const safeEvidence = events.map(safeJournalEvidence);
+  const safeJson = JSON.stringify(safeEvidence);
+  for (const canary of [promptCanary, argumentCanary, resultCanary, providerSecret]) {
+    if (safeJson.includes(canary)) {
+      throw new Error("installed safe journal evidence leaked privileged content");
+    }
+  }
+} catch (error) {
+  proofFailure = error;
+} finally {
+  try {
+    const activeTools = await runtime.drainTools(10_000);
+    const activeProviders = await runtime.drainProviders(10_000);
+    if (activeTools.length > 0 || activeProviders.length > 0) {
+      throw new Error("installed failure-history fixture did not drain owned work");
+    }
+    await runtime.purgeSession(sessionId);
+  } catch (error) {
+    proofFailure ??= error;
+  } finally {
+    runtime.close();
+  }
+}
+if (proofFailure !== undefined) throw proofFailure;
+if ((await runtime.history(sessionId)).length !== 0) {
+  throw new Error("installed failure-history fixture retained purged history");
+}
+console.log("failure_history=ok");
 `;
 const LEGACY_LEDGER_TYPES_SOURCE = `import {
   InMemoryToolIdempotencyLedger,
@@ -416,6 +567,18 @@ function assertLifecycleOutput(output: string): void {
   );
   if (fields.get("lifecycle_purge") !== "ok") {
     throw new Error("installed lifecycle fixture did not prove explicit purge");
+  }
+}
+
+function assertFailureHistoryOutput(output: string): void {
+  const fields = new Map(
+    output
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => line.split("=", 2) as [string, string]),
+  );
+  if (fields.get("failure_history") !== "ok") {
+    throw new Error("installed failure-history fixture did not prove recovery and purge");
   }
 }
 
@@ -746,6 +909,7 @@ async function runScaffold(
   writeFileSync(generatedManifestPath, JSON.stringify(generatedManifest, null, 2));
   await install(manager, "generated", generated, [], environment);
   writeFileSync(join(generated, "lifecycle.ts"), LIFECYCLE_SMOKE_SOURCE);
+  writeFileSync(join(generated, "failure-history.ts"), FAILURE_HISTORY_SMOKE_SOURCE);
   writeFileSync(join(generated, "legacy-ledger-types.ts"), LEGACY_LEDGER_TYPES_SOURCE);
 
   const config = JSON.parse(readFileSync(join(generated, "tsconfig.json"), "utf8")) as {
@@ -776,6 +940,14 @@ async function runScaffold(
     environment,
   );
   assertLifecycleOutput(lifecycleOutput);
+  const failureHistoryOutput = await runCommand(
+    `${manager}:failure-history-run`,
+    nodeBinary,
+    [tsx, "failure-history.ts"],
+    generated,
+    environment,
+  );
+  assertFailureHistoryOutput(failureHistoryOutput);
 
   const run = (phase: SmokePhase) =>
     manager === "npm"

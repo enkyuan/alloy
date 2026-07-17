@@ -393,7 +393,9 @@ describe("npm contract artifact", () => {
       'const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop."',
       'fields.get("text") !== EXPECTED_MOCK_REPLY',
       "`${manager}:lifecycle-run`",
+      "`${manager}:failure-history-run`",
       "const LIFECYCLE_SMOKE_SOURCE = `import {",
+      "const FAILURE_HISTORY_SMOKE_SOURCE = `import {",
       "type TurnAccounting,",
       "const accounting: TurnAccounting = result.accounting;",
       "accounting.providerIterations !== 1",
@@ -403,6 +405,13 @@ describe("npm contract artifact", () => {
       "await runtime.purgeSession(sessionId);",
       "runtime.close();",
       'fields.get("lifecycle_purge") !== "ok"',
+      'fields.get("failure_history") !== "ok"',
+      "async function pageHistory(",
+      "function safeJournalEvidence(",
+      "history cursor did not advance",
+      "provider failure identity was not preserved",
+      "generic provider failure unexpectedly exposed a durable recovery code",
+      'writeFileSync(join(generated, "failure-history.ts"), FAILURE_HISTORY_SMOKE_SOURCE);',
       "coldResult.text !== warmResult.text",
       "coldResult.finalSequence !== warmResult.finalSequence",
       "const githubRequester = integrations.createGitHubRequester();",
@@ -775,8 +784,12 @@ console.log(JSON.stringify({
         },
       });
       expect(paths).toContain("LICENSE");
+      expect(paths).toContain("README.md");
       expect(runBytes("tar", ["-xOf", tarball, "package/LICENSE"])).toEqual(
         readFileSync(join(repositoryRoot, "LICENSE")),
+      );
+      expect(runBytes("tar", ["-xOf", tarball, "package/README.md"])).toEqual(
+        readFileSync(join(packageRoot, "README.md")),
       );
       for (const required of [
         "dist/cli/bin.js",

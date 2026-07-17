@@ -30,6 +30,96 @@ function snippet(document: string, name: string, language: string): string {
 }
 
 describe("cross-SDK release matrix docs", () => {
+  it("defines privileged journal recovery and disposal boundaries", () => {
+    const readme = read("kaji/ts/README.md");
+    const production = read("docs/kaji/production-beta.md");
+    const ordering = read("docs/kaji/concurrency-and-ordering.md");
+
+    for (const source of [readme, production]) {
+      const document = source.replace(/\s+/gu, " ");
+      expect(document).toContain("privileged full-fidelity journal");
+      expect(document).toContain("not redaction-safe");
+      expect(document).toContain("preselected session ID");
+      expect(document).toContain("exclusive `afterSequence` cursor");
+      expect(document).toContain("page until an empty page");
+      expect(document).toContain("reduce to an allowlist");
+      expect(document).toContain("best-effort timing and correlation");
+      expect(document).toContain("does not delete retained history");
+    }
+
+    for (const source of [readme, production, ordering]) {
+      const document = source.replace(/\s+/gu, " ");
+      expect(document).toContain("VM string zeroization");
+      expect(document).toContain("stop ingress");
+      expect(document).toContain("process-local");
+    }
+
+    const normalizedReadme = readme.replace(/\s+/gu, " ");
+    const normalizedProduction = production.replace(/\s+/gu, " ");
+    const normalizedOrdering = ordering.replace(/\s+/gu, " ");
+    expect(normalizedReadme).toContain("failed turns have no `TurnResult`");
+    expect(normalizedReadme).toContain("generic provider failures have no durable recovery code");
+    expect(normalizedReadme).toContain("releaseSettled()");
+    expect(normalizedReadme).toContain("host ledger cleanup");
+    expect(normalizedReadme).toContain("pageHistory");
+    expect(normalizedReadme).toContain("safeJournalEvidence");
+    expect(normalizedReadme).toContain("append-only while retained");
+
+    const recoveryBlock = [...readme.matchAll(/```ts\n([\s\S]*?)\n```/gu)]
+      .map((match) => match[1] ?? "")
+      .find((block) => block.includes("stopIngress(sessionId)"));
+    expect(recoveryBlock, "missing runnable failure-recovery block").toBeDefined();
+    const compactRecovery = recoveryBlock?.replace(/\s+/gu, "") ?? "";
+    const recoverySteps = [
+      "stopIngress(sessionId)",
+      "awaitruntime.drainTools(10_000)",
+      "awaitruntime.drainProviders(10_000)",
+      "awaitpageHistory(runtime,sessionId)",
+      "handleEvidenceExportError(evidenceError)",
+      "awaitruntime.purgeSession(sessionId)",
+      "handleOriginalError(failure.error)",
+    ];
+    let priorStep = -1;
+    for (const step of recoverySteps) {
+      const nextStep = compactRecovery.indexOf(step);
+      expect(nextStep, `missing or misordered recovery step: ${step}`).toBeGreaterThan(priorStep);
+      priorStep = nextStep;
+    }
+    expect(compactRecovery).toContain("}finally{awaitruntime.purgeSession(sessionId);}");
+
+    const pythonQuickstart = snippet(production, "installed-quickstart:python", "python");
+    const typescriptQuickstart = snippet(production, "installed-quickstart:typescript", "ts");
+    expect(pythonQuickstart).toContain("event.turn_id == text.turn_id");
+    expect(typescriptQuickstart).toContain("event.turn_id === text.turnId");
+
+    const pythonOutput = pythonQuickstart
+      .split("\n")
+      .filter((line) => /\bprint\s*\(/u.test(line))
+      .join("\n");
+    const typescriptOutput = typescriptQuickstart
+      .split("\n")
+      .filter((line) => /\bconsole\.(?:log|info|debug|warn|error)\s*\(/u.test(line))
+      .join("\n");
+    expect(pythonOutput).not.toMatch(/session_id|turn_id|\.sequence|\.events/u);
+    expect(typescriptOutput).not.toMatch(/sessionId|turnId|\.sequence|\.events/u);
+
+    expect(normalizedProduction).toContain("Provider or timeout failure");
+    expect(normalizedProduction).toContain("Ordinary terminal tool failure");
+    expect(normalizedProduction).toContain("Mid-provider cooperative cancellation");
+    expect(normalizedProduction).toContain("Failure-event append failure");
+    expect(normalizedProduction).toContain("## TypeScript-only purge and accounting");
+    expect(normalizedProduction).toContain(
+      "ships no persistent event store or distributed coordinator",
+    );
+    expect(normalizedProduction).toContain("does not release-certify host implementations");
+    expect(normalizedProduction).toContain("durability, deletion, and cross-process correctness");
+
+    expect(normalizedOrdering).toContain("cursor did not advance");
+    expect(normalizedOrdering).toContain("reset the cursor to `0` after purge");
+    expect(normalizedOrdering).toContain("privileged journal warning");
+    expect(normalizedOrdering).toContain("does not cancel already-active work");
+  });
+
   it("keeps stable core, experimental, and not-ported surfaces explicit", () => {
     const combined = [
       read("kaji/RELEASE_MATRIX.md"),

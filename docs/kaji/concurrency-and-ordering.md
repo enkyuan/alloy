@@ -56,6 +56,14 @@ await runtime.purgeSession(sessionId);
 runtime.close();
 ```
 
+Before this sequence, stop ingress for the named session. Otherwise another
+caller can start work between drain and purge; purge fails closed with
+`SessionPurgeBusyError`, but deterministic teardown requires the host to fence
+ingress and retry. For whole-runtime shutdown, `close()` may run first to block
+future turn APIs because history, drain, and purge remain callable. `close()`
+does not cancel already-active work. For one session on a live runtime, do not
+close the runtime solely to dispose that session.
+
 Custom event stores remain compatible with `EventStore`; opt into deletion by
 implementing `PurgeableEventStore`. `supportsSessionPurge(store)` checks that
 capability before any runtime cache is cleared. Every live runtime sharing that
@@ -74,7 +82,8 @@ first and SDK-owned caches are cleared synchronously before host ledger cleanup
 is awaited. If that host cleanup fails, purge rejects but cannot roll back the
 already-deleted event history; retry the named purge after repairing the
 ledger. Purge deterministically removes SDK-owned indexes and caches, but does
-not claim JavaScript string zeroization.
+not claim VM string zeroization or deletion of copies already emitted to
+providers, logs, sinks, custom stores, crash dumps, or caller-owned objects.
 
 ## Bounded replay and context
 
@@ -86,7 +95,10 @@ request/result group. If the current turn alone exceeds the character bound,
 the runtime raises `ContextWindowOverflowError` instead of sending partial
 context.
 
-History is cursor-paged and defaults to 1,024 events:
+History is cursor-paged and defaults to 1,024 events. Apply the privileged
+journal warning in the package README before reading it: pages can contain
+prompts, provider text, tool arguments, tool results, and metadata and are not
+redaction-safe.
 
 ```python
 page = await runtime.history("session", after_sequence=cursor, limit=128)
@@ -94,9 +106,21 @@ cursor = page[-1].sequence if page else cursor
 ```
 
 ```ts
-const page = await runtime.history("session", { afterSequence: cursor, limit: 128 });
-cursor = page.at(-1)?.sequence ?? cursor;
+for (;;) {
+  const page = await runtime.history("session", { afterSequence: cursor, limit: 128 });
+  if (page.length === 0) break;
+  const next = page.at(-1)!.sequence;
+  if (next <= cursor) throw new Error("history cursor did not advance");
+  cursor = next;
+}
 ```
+
+The cursor is exclusive: a cursor of 2 starts the next page at sequence 3.
+Continue until the explicit empty page; do not infer completion from a short
+page. Reusing a session ID after explicit purge starts again at sequence 1, so
+reset the cursor to `0` after purge. Default storage and coordination are
+process-local; cross-process correctness belongs to any host-supplied
+implementation.
 
 ## Subscriber overflow
 

@@ -40,9 +40,116 @@ const runtime = new AgentBuilder()
   .provider(new MockProvider({ reply: "hello" }))
   .build();
 const result = await runtime.turn("Say hello.");
-console.log(result.text, result.sessionId, result.turnId);
-console.log(result.events.map((event) => [event.sequence, event.turn_id, event.type]));
+console.log(result.text, result.accounting);
 ```
+
+## Privileged event journal and disposal
+
+> **Security boundary:** `TurnResult.events` and `AgentRuntime.history()` are a
+> privileged full-fidelity journal. They can contain user prompts,
+> provider-derived text and deltas, tool arguments, tool results, and arbitrary
+> metadata. They are not redaction-safe; never log, attach, or export them
+> wholesale.
+
+`MetricsSink` and `TraceSink` are best-effort timing and correlation surfaces,
+not complete business or audit records. Sink failures are swallowed so
+observability cannot change turn behavior. Traces still contain access-controlled
+correlation identifiers even though they omit full event payloads.
+
+Failed turns throw: failed turns have no `TurnResult` and therefore no
+`TurnResult.events` or successful-turn `TurnAccounting` aggregate. Applications
+that need failure evidence must choose a preselected session ID, retain the
+caught error separately for live control flow, page history with an
+exclusive `afterSequence` cursor until an empty page, and reduce to an allowlist
+before export; generic provider failures have no durable recovery code today. Use the
+caught typed provider error and `normalizeProviderError()` where applicable.
+Always page until an empty page; a short page is not proof of exhaustion.
+
+```ts
+import type { AgentRuntime, StoredKajiEvent } from "@kaji/sdk";
+
+async function pageHistory(runtime: AgentRuntime, sessionId: string, limit = 128) {
+  const events: StoredKajiEvent[] = [];
+  let afterSequence = 0;
+  for (;;) {
+    const page = await runtime.history(sessionId, { afterSequence, limit });
+    if (page.length === 0) return events;
+    const nextSequence = page.at(-1)!.sequence;
+    if (nextSequence <= afterSequence) throw new Error("history cursor did not advance");
+    events.push(...page);
+    afterSequence = nextSequence;
+  }
+}
+
+const SAFE_FIELDS = [
+  "tool_name",
+  "tool_call_id",
+  "error_code",
+  "phase",
+  "retryable",
+  "outcome",
+  "reason_code",
+  "recovery_code",
+  "doc_url",
+] as const;
+
+function safeJournalEvidence(event: StoredKajiEvent): Record<string, unknown> {
+  const safe: Record<string, unknown> = { sequence: event.sequence, type: event.type };
+  if (event.turn_id !== undefined) safe.turn_id = event.turn_id;
+  for (const field of SAFE_FIELDS) {
+    const value = Reflect.get(event, field);
+    if (value !== undefined) safe[field] = value;
+  }
+  return safe; // never content, delta, tool_args, result, metadata, or raw session_id
+}
+
+const sessionId = crypto.randomUUID();
+let failure: { error: unknown } | undefined;
+try {
+  await runtime.turn("Investigate the failure.", { sessionId });
+} catch (error) {
+  failure = { error }; // retain separately; never add this value to safe evidence
+}
+
+if (failure !== undefined) {
+  stopIngress(sessionId);
+  await runtime.drainTools(10_000);
+  await runtime.drainProviders(10_000);
+  try {
+    const privilegedHistory = await pageHistory(runtime, sessionId);
+    const exportableEvidence = privilegedHistory.map(safeJournalEvidence);
+    sendToYourIncidentStore(exportableEvidence);
+  } catch (evidenceError) {
+    handleEvidenceExportError(evidenceError); // report separately; original failure stays authoritative
+  } finally {
+    await runtime.purgeSession(sessionId);
+  }
+  handleOriginalError(failure.error); // cleanup finished; preserve original control flow
+}
+```
+
+Before disposal, stop ingress for the named session so another caller cannot
+race the drain-to-purge interval. On a live runtime, drain tools and providers,
+page and reduce any required evidence, then call `purgeSession(sessionId)` while
+leaving other sessions running. For whole-runtime shutdown, `close()` may run
+first to reject future turn APIs; history and purge remain callable afterward.
+`close()` does not delete retained history and does not cancel already-active
+work.
+
+TypeScript's embedded defaults are bounded, in-memory, and process-local. This
+beta ships no persistent event store or distributed coordinator and does not
+release-certify host implementations; durability, deletion, and cross-process
+correctness are host responsibilities. `purgeSession()` removes SDK-owned
+retained indexes and caches but cannot promise VM string zeroization or erase
+copies already sent to logs, sinks, providers, custom stores, crash dumps, or
+caller-owned objects.
+
+A custom `ToolIdempotencyLedger` must implement optional `releaseSettled()` to
+participate in purge. The event store and SDK caches are already cleared before
+host ledger cleanup is awaited. If that cleanup rejects, deletion cannot be
+rolled back; repair the host ledger and retry the named purge. If it never
+settles, the purge promise and fence remain pending. Kaji cannot force hostile
+in-process host code to settle.
 
 Then set an API key and add a risk-classified tool with explicit caller
 identity, deadline, and cancellation:
@@ -87,11 +194,7 @@ const result = await runtime.turn("Weather in Seattle?", {
     deadlineAtMs: deadlineAfter(30_000),
   },
 });
-console.log(result.text, result.sessionId, result.turnId);
-
-for (const e of result.events) {
-  console.log(e.id, e.sequence, e.turn_id, e.type);
-}
+console.log(result.text, result.accounting);
 ```
 
 Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
@@ -295,7 +398,7 @@ const result = await executeTool(
 | Export | What it is |
 | --- | --- |
 | `EventType`, `KajiEvent` | Event discriminants and Zod-validated event union |
-| `EventStore`, `InMemoryEventStore` | Append-only event log |
+| `EventStore`, `InMemoryEventStore` | Event log that is append-only while retained; explicit session purge is an optional lifecycle capability |
 | `EventBus` | In-memory pub/sub per session |
 | `replaySession`, `SessionManager`, session store types | Session projection and management |
 | `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
