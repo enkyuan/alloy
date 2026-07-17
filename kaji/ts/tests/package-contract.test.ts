@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
+  copyFileSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -52,23 +53,116 @@ const CANONICAL_GITHUB_ROW = {
   },
 };
 
+const GITHUB_SHARED_ABI = JSON.parse(
+  readFileSync(join(canonicalRoot, "integrations/github-tool-abi-v1.json"), "utf8"),
+) as {
+  version: "1.0.0";
+  tools: ReadonlyArray<{ risk?: unknown }>;
+};
+const GITHUB_API_FIXTURE = JSON.parse(
+  readFileSync(join(canonicalRoot, "integrations/github-api-conformance-v1.json"), "utf8"),
+) as { version: "1.0.0"; cases: readonly unknown[] };
+const CURRENT_TYPESCRIPT_VERSION = (
+  JSON.parse(readFileSync(join(packageRoot, "node_modules/typescript/package.json"), "utf8")) as {
+    version: string;
+  }
+).version;
+const GITHUB_PUBLIC_SCENARIOS = [
+  "conditional-exports",
+  "class-identity",
+  "private-source-containment",
+  "declaration-privacy",
+  "catalog-inspection",
+  "public-registration",
+  "closed-lifecycle",
+  "repository-policy",
+  "approval-rejection",
+  "validation-failure",
+  "execution-failure",
+  "synthetic-completed-event",
+  "mock-provider-loop",
+  "alias-collision",
+] as const;
+
+const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
+  "export interface PackageGitHubRuntime",
+  "readonly createRequester: (observability:",
+  "readonly createClient: (options: GitHubClientOptions)",
+  "runtime: PackageGitHubRuntime = productionRuntime",
+  "Preserve the client construction failure that prevented ownership transfer.",
+] as const;
+
 const GITHUB_PACKAGE_PROOF = {
-  schemaVersion: 1,
+  schemaVersion: 3,
   evidenceClass: "offline_exact_artifact_smoke",
   integration: "github",
   runtime: "typescript",
-  network: "scripted",
+  network: "blocked",
   liveProvider: false,
-  contractVersion: "1.0.0",
-  caseCount: 23,
-  toolCount: 6,
+  sharedAbiVersion: GITHUB_SHARED_ABI.version,
+  apiFixtureVersion: GITHUB_API_FIXTURE.version,
+  sharedFixtureCaseCount: GITHUB_API_FIXTURE.cases.length,
+  publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
+  toolCount: GITHUB_SHARED_ABI.tools.length,
+  readToolCount: GITHUB_SHARED_ABI.tools.filter((tool) => tool.risk === "read").length,
+  esmSharedAbiMatched: true,
+  cjsSharedAbiMatched: true,
+  esmClassIdentityMatched: true,
+  cjsClassIdentityMatched: true,
+  esmFactoryIdentityMatched: true,
+  cjsFactoryIdentityMatched: true,
+  esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+  cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+  esmDeclarationExports: [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ],
+  cjsDeclarationExports: [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ],
+  typescriptDeclarationChecks: {
+    compilerOptions: {
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      skipLibCheck: false,
+    },
+    typescript57: { version: "5.7.3", mtsImport: "passed", ctsRequire: "passed" },
+    typescriptCurrent: {
+      version: CURRENT_TYPESCRIPT_VERSION,
+      mtsImport: "passed",
+      ctsRequire: "passed",
+    },
+  },
+  privateGitHubCompositionSourcesPacked: false,
+  privateGitHubCompositionSourceImportsRejected: true,
+  closedCallsDeniedBeforeCredentialAccess: true,
   approvalDeniedBeforeCredentialAccess: true,
-  mutationRetries: 0,
-  unknownMutationPreserved: true,
-  sourceRuntimeDetected: false,
+  repositoryDeniedBeforeCredentialAccess: true,
+  githubCatalogEventsVerified: ["requested", "started", "failed"],
+  genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+  aliasCollisionRejected: true,
   conclusion: "passed",
   failureCode: null,
 };
+
+const EXPECTED_PACKED_REGISTRY_FILES = [
+  "registry/echo/index.ts",
+  "registry/echo/manifest.json",
+  "registry/github/LICENSE",
+  "registry/github/client.ts",
+  "registry/github/github_vitest.ts",
+  "registry/github/index.ts",
+  "registry/github/manifest.json",
+  "registry/github/owner-fixtures.json",
+  "registry/index.json",
+  "registry/index.schema.json",
+  "registry/schema.json",
+] as const;
 
 interface SyncChildOptions {
   cwd?: string;
@@ -276,6 +370,23 @@ describe("npm contract artifact", () => {
     expect(entry).toContain("process.argv.slice(1)");
   });
 
+  it("exports the canonical GitHub package subpath", () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+    const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
+
+    expect(manifest.exports["./integrations/github"]).toEqual({
+      import: {
+        types: "./dist/integrations/github.d.ts",
+        default: "./dist/integrations/github.js",
+      },
+      require: {
+        types: "./dist/integrations/github.d.cts",
+        default: "./dist/integrations/github.cjs",
+      },
+    });
+    expect(buildConfig).toContain('"integrations/github": "src/integrations/github.ts"');
+  });
+
   it("smokes generated npm and Bun projects with both supported compiler lines", () => {
     const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
     const tiers = JSON.parse(
@@ -302,9 +413,19 @@ describe("npm contract artifact", () => {
       "./auth",
       "./cli",
       "./integrations",
+      "./integrations/github",
       "./openai",
       "./testing",
     ]);
+    expect(tiers.packageSubpaths.typescript["./integrations/github"]).toEqual({
+      tier: "experimental",
+      exports: [
+        "CreateGitHubIntegrationOptions",
+        "GitHubIntegration",
+        "createGithubIntegration",
+        "inspectIntegration",
+      ],
+    });
     expect(tiers.packageSubpaths.typescript["./openai"]).toEqual({
       tier: "stable",
       exports: ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"],
@@ -359,9 +480,14 @@ describe("npm contract artifact", () => {
       "copyFileSync(INSTALLED_GITHUB_SMOKE, githubProofRunner)",
       "`${manager}:github-package-proof`",
       '"--sandbox-root"',
-      '"--bundle-root"',
       '"--package-root"',
+      'from "@kaji/sdk/integrations/github"',
+      'import * as github from "@kaji/sdk/integrations/github";',
+      'const github = require("@kaji/sdk/integrations/github");',
+      'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
+      'writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE)',
       "githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof }",
+      "const typescriptDeclarationChecks = await compileInstalledGitHubTypes(manager, generated)",
       "assertCliListOutput(listOutput)",
       "assertCliReplayOutput(replayOutput)",
       "createConflictingKajiFixture(root)",
@@ -441,26 +567,88 @@ describe("npm contract artifact", () => {
     );
   });
 
+  it("compiles installed GitHub declarations through every NodeNext conditional branch", () => {
+    const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
+
+    for (const required of [
+      'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
+      'writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE)',
+      'source: "github-types.mts"',
+      'source: "github-types.cts"',
+      'config: "tsconfig.github-types-esm.json"',
+      'config: "tsconfig.github-types-cjs.json"',
+      'import { Integration } from "@kaji/sdk";',
+      'import sdk = require("@kaji/sdk");',
+      'import github = require("@kaji/sdk/integrations/github");',
+      "const roots: Integration[] = [direct, created, inspected]",
+      "const roots: sdk.Integration[] = [direct, created, inspected]",
+      'module: "NodeNext"',
+      'moduleResolution: "NodeNext"',
+      "skipLibCheck: false",
+      "files: [consumer.source]",
+      'alias: "typescript57"',
+      'line: "5.7"',
+      'alias: "typescript"',
+      'line: "current"',
+      '"--ignoreDeprecations", "5.0"',
+      "`${manager}:github-types-compiler-version-${compiler.line}`",
+      '[tsc, "--version"]',
+      "`${manager}:github-types-${consumer.module}-typescript-${compiler.line}`",
+      '[tsc, "--project", consumer.config, "--noEmit", ...compiler.extraArgs]',
+      'typescript57: { version: typescript57Version, mtsImport: "passed", ctsRequire: "passed" }',
+      'mtsImport: "passed"',
+      'ctsRequire: "passed"',
+      "typescriptDeclarationChecks:",
+      '"--typescript-declaration-checks"',
+      "typescriptDeclarationChecksPath",
+    ]) {
+      expect(source).toContain(required);
+    }
+    expect(source).not.toContain(
+      'writeFileSync(join(generated, "github-types.ts"), GITHUB_TYPES_SOURCE)',
+    );
+    expect(source).not.toContain("githubTypeCompilations:");
+  });
+
   it("keeps the installed GitHub behavior receipt deterministic and non-live", () => {
     const runner = readFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), "utf8");
     for (const required of [
       'evidenceClass: "offline_exact_artifact_smoke"',
       'integration: "github"',
       'runtime: "typescript"',
-      'network: "scripted"',
+      'network: "blocked"',
       "liveProvider: false",
-      "caseCount: fixture.cases.length",
-      "toolCount: executedTools.size",
-      "approvalDeniedBeforeCredentialAccess: true",
-      "mutationRetries: 0",
-      "unknownMutationPreserved: true",
-      "sourceRuntimeDetected: false",
+      "sharedAbiVersion: abi.version",
+      "apiFixtureVersion: fixture.version",
+      "sharedFixtureCaseCount: fixture.cases.length",
+      "publicScenarioCount: publicScenarios.length",
+      "toolCount: packageTools.length",
       'const sdk = await import("@kaji/sdk");',
+      'const testing = (await import("@kaji/sdk/testing"))',
+      'await import("@kaji/sdk/integrations/github")',
+      "const requirePackage = createRequire(import.meta.url);",
+      'exactToolSpecs(inspected, abi, "ESM")',
+      'exactToolSpecs(requiredInspected, abi, "CommonJS")',
+      "declarationExportNames(declaration)",
+      "readTypeScriptDeclarationChecks(",
+      'proofStage = "typescript-declaration-checks"',
+      "typescriptDeclarationChecks,",
+      "inspectPrivateGitHubCompositionSources(packageRoot)",
+      'Object.hasOwn(document, "sourcesContent")',
+      "privateSourceContainment.privateGitHubCompositionSourcesPacked",
+      "privateSourceContainment.privateGitHubCompositionSourceImportsRejected",
+      "closedCallsDeniedBeforeCredentialAccess: true",
+      "approvalDeniedBeforeCredentialAccess: true",
+      "repositoryDeniedBeforeCredentialAccess: true",
+      'githubCatalogEventsVerified: ["requested", "started", "failed"]',
+      'genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"]',
+      "aliasCollisionRejected: true",
       'Reflect.set(Socket.prototype, "connect"',
-      "factoryClosesOwnedTransport",
       "createGithubIntegration",
-      "factoryLifecycleClosed",
-      'error.name === "IntegrationPolicyError"',
+      'error.name !== "IntegrationPolicyError"',
+      "new testing.MockProvider",
+      "class SyntheticIntegration extends sdk.Integration",
+      "class CollidingIntegration extends sdk.Integration",
     ]) {
       expect(runner).toContain(required);
     }
@@ -470,33 +658,222 @@ describe("npm contract artifact", () => {
     );
     expect(runner).not.toContain("process.env.GITHUB_TOKEN");
     expect(runner).not.toContain("createGitHubRequester");
+    expect(runner).not.toContain("ScriptedRequester");
+    expect(runner).not.toContain("GitHubClientLike");
+    expect(runner).not.toContain("--bundle-root");
     expect(runner).not.toContain("fetch(");
+    expect(runner).not.toContain("privateTransportExposed");
+    expect(runner).not.toContain("sourceRuntimeDetected");
+    expect(runner).not.toContain("logicalCatalogEventsVerified");
+    expect(runner).not.toContain("privateGitHubCompositionSourcesPacked: false");
   });
+
+  it("proves installed ESM and CommonJS GitHub class identity through the package root", () => {
+    const runner = readFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), "utf8");
+    for (const required of [
+      'requirePackage.resolve("@kaji/sdk")',
+      'requirePackage.resolve("@kaji/sdk/integrations/github")',
+      "esmIdentityInspected instanceof sdk.Integration",
+      "cjsIdentityInspected instanceof requiredSdk.Integration",
+      "esmIdentityCreated instanceof github.GitHubIntegration",
+      "cjsIdentityCreated instanceof requiredGithub.GitHubIntegration",
+      "Object.getPrototypeOf(github.GitHubIntegration.prototype) === sdk.Integration.prototype",
+      "Object.getPrototypeOf(requiredGithub.GitHubIntegration.prototype) ===",
+      "esmClassIdentityMatched",
+      "cjsClassIdentityMatched",
+      "esmFactoryIdentityMatched",
+      "cjsFactoryIdentityMatched",
+    ]) {
+      expect(runner).toContain(required);
+    }
+  });
+
+  it("omits embedded private GitHub sources from every packed source map", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "kaji-github-sourcemap-pack-"));
+    try {
+      const packed = JSON.parse(
+        runText("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", workdir], {
+          cwd: packageRoot,
+          env: { ...process.env, npm_config_cache: join(workdir, "npm-cache") },
+        }),
+      ) as Array<{ filename: string; files: Array<{ path: string }> }>;
+      const tarball = join(workdir, packed[0]!.filename);
+      const sourceMaps = packed[0]!.files
+        .map(({ path }) => path)
+        .filter((path) => path.startsWith("dist/") && path.endsWith(".map"))
+        .map((path) => {
+          const document = JSON.parse(runText("tar", ["-xOf", tarball, `package/${path}`])) as {
+            sources?: unknown;
+            sourcesContent?: unknown;
+          };
+          return { path, document };
+        });
+      const githubSourceMaps = sourceMaps.filter(
+        ({ path, document }) =>
+          /^dist\/integrations\/github(?:\.[^/]+)*\.map$/.test(path) ||
+          (Array.isArray(document.sources) &&
+            document.sources.some(
+              (source) =>
+                typeof source === "string" &&
+                /(?:^|\/)(?:src\/integrations\/github(?:-package-internal)?|registry\/github\/[^/]+)\.ts$/.test(
+                  source.replaceAll("\\", "/"),
+                ),
+            )),
+      );
+
+      expect(githubSourceMaps.map(({ path }) => path)).toEqual(
+        expect.arrayContaining([
+          "dist/integrations/github.js.map",
+          "dist/integrations/github.cjs.map",
+        ]),
+      );
+      for (const { path, document } of githubSourceMaps) {
+        const embeddedSources = Array.isArray(document.sourcesContent)
+          ? document.sourcesContent.filter((source) => typeof source === "string")
+          : Object.hasOwn(document, "sourcesContent")
+            ? [document.sourcesContent]
+            : [];
+        expect(embeddedSources, `${path} embeds sourcesContent`).toEqual([]);
+      }
+      for (const { path, document } of sourceMaps) {
+        const encoded = JSON.stringify(document);
+        for (const canary of PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES) {
+          expect(encoded, `${path} embeds private GitHub source canary`).not.toContain(canary);
+        }
+      }
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("executes every GitHub package-proof case without network access", () => {
-    const runner = resolve(packageRoot, "scripts/installed-github-smoke.mts");
-    const environment = Object.fromEntries(
-      ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((name) =>
-        process.env[name] === undefined ? [] : [[name, process.env[name]]],
-      ),
-    );
-    const output = runText(
-      "bun",
-      [
-        "--no-install",
-        runner,
-        "--sandbox-root",
-        repositoryRoot,
-        "--bundle-root",
-        resolve(packageRoot, "registry/github"),
-        "--package-root",
-        packageRoot,
-      ],
-      { cwd: packageRoot, env: environment },
-    );
+    const workdir = mkdtempSync(join(tmpdir(), "kaji-github-proof-"));
+    try {
+      const packDestination = join(workdir, "pack");
+      mkdirSync(packDestination);
+      const packed = JSON.parse(
+        runText(
+          "npm",
+          ["pack", "--ignore-scripts", "--json", "--pack-destination", packDestination],
+          {
+            cwd: packageRoot,
+            env: { ...process.env, npm_config_cache: join(workdir, "npm-cache") },
+          },
+        ),
+      ) as Array<{ filename: string }>;
+      const extracted = join(workdir, "artifact");
+      mkdirSync(extracted);
+      runText("tar", ["-xzf", join(packDestination, packed[0]!.filename), "-C", extracted]);
 
-    expect(JSON.parse(output)).toEqual(GITHUB_PACKAGE_PROOF);
-  });
+      const installed = realpathSync(join(extracted, "package"));
+      const bootstrap = join(workdir, "bootstrap");
+      mkdirSync(join(bootstrap, "node_modules", "@kaji"), { recursive: true });
+      symlinkSync(installed, join(bootstrap, "node_modules", "@kaji", "sdk"), "dir");
+      symlinkSync(join(packageRoot, "node_modules"), join(installed, "node_modules"), "dir");
+      symlinkSync(
+        join(packageRoot, "node_modules", "@types"),
+        join(bootstrap, "node_modules", "@types"),
+        "dir",
+      );
+      symlinkSync(
+        join(packageRoot, "node_modules", "undici-types"),
+        join(bootstrap, "node_modules", "undici-types"),
+        "dir",
+      );
+      writeFileSync(
+        join(bootstrap, "github-types.mts"),
+        `import { Integration } from "@kaji/sdk";
+import {
+  GitHubIntegration,
+  createGithubIntegration,
+  inspectIntegration,
+  type CreateGitHubIntegrationOptions,
+} from "@kaji/sdk/integrations/github";
+const options: CreateGitHubIntegrationOptions = { tokenFor: async () => "proof", repositories: [] };
+const direct: GitHubIntegration = new GitHubIntegration(options);
+const created: GitHubIntegration = createGithubIntegration(options);
+const inspected: GitHubIntegration = inspectIntegration();
+const roots: Integration[] = [direct, created, inspected];
+void roots;
+`,
+      );
+      writeFileSync(
+        join(bootstrap, "github-types.cts"),
+        `import sdk = require("@kaji/sdk");
+import github = require("@kaji/sdk/integrations/github");
+const options: github.CreateGitHubIntegrationOptions = { tokenFor: async () => "proof", repositories: [] };
+const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
+const created: github.GitHubIntegration = github.createGithubIntegration(options);
+const inspected: github.GitHubIntegration = github.inspectIntegration();
+const roots: sdk.Integration[] = [direct, created, inspected];
+void roots;
+`,
+      );
+      const compilerOptions = {
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        noEmit: true,
+        skipLibCheck: false,
+        strict: true,
+        target: "ES2022",
+        types: ["node"],
+      };
+      for (const [config, source] of [
+        ["tsconfig.github-types-esm.json", "github-types.mts"],
+        ["tsconfig.github-types-cjs.json", "github-types.cts"],
+      ] as const) {
+        writeFileSync(
+          join(bootstrap, config),
+          JSON.stringify({ compilerOptions, files: [source] }),
+        );
+      }
+      for (const [compiler, extraArgs] of [
+        [join(packageRoot, "node_modules/typescript57/bin/tsc"), ["--ignoreDeprecations", "5.0"]],
+        [join(packageRoot, "node_modules/typescript/bin/tsc"), []],
+      ] as const) {
+        for (const config of ["tsconfig.github-types-esm.json", "tsconfig.github-types-cjs.json"]) {
+          runText("node", [compiler, "--project", config, "--noEmit", ...extraArgs], {
+            cwd: bootstrap,
+          });
+        }
+      }
+      const declarationChecks = join(bootstrap, "typescript-declaration-checks.json");
+      writeFileSync(
+        declarationChecks,
+        JSON.stringify(GITHUB_PACKAGE_PROOF.typescriptDeclarationChecks),
+      );
+      const runner = join(bootstrap, "installed-github-smoke.mts");
+      copyFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), runner);
+      const environment = Object.fromEntries(
+        ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((name) =>
+          process.env[name] === undefined ? [] : [[name, process.env[name]]],
+        ),
+      );
+      expect(() =>
+        runText("node", [runner, "--sandbox-root", workdir, "--package-root", installed], {
+          cwd: bootstrap,
+          env: environment,
+        }),
+      ).toThrow();
+      const output = runText(
+        "node",
+        [
+          runner,
+          "--sandbox-root",
+          workdir,
+          "--package-root",
+          installed,
+          "--typescript-declaration-checks",
+          declarationChecks,
+        ],
+        { cwd: bootstrap, env: environment },
+      );
+
+      expect(JSON.parse(output)).toEqual(GITHUB_PACKAGE_PROOF);
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("preserves tool error identity across installed ESM and CommonJS entrypoints", () => {
     const esmRoot = pathToFileURL(resolve(packageRoot, "dist/index.js")).href;
@@ -802,6 +1179,10 @@ console.log(JSON.stringify({
         "dist/integrations.cjs",
         "dist/integrations.d.ts",
         "dist/integrations.d.cts",
+        "dist/integrations/github.js",
+        "dist/integrations/github.cjs",
+        "dist/integrations/github.d.ts",
+        "dist/integrations/github.d.cts",
         "registry/index.json",
         "registry/schema.json",
       ]) {
@@ -812,6 +1193,17 @@ console.log(JSON.stringify({
       }
       for (const target of Object.values(manifest.bin)) {
         expect(paths, `missing CLI target ${target}`).toContain(target.replace(/^\.\//, ""));
+      }
+      expect([...paths].filter((path) => path.startsWith("registry/")).sort()).toEqual(
+        EXPECTED_PACKED_REGISTRY_FILES,
+      );
+      for (const privatePath of [
+        "registry/_template/manifest.json",
+        "registry/github/github_pytest.py",
+        "registry/github/package.ts",
+        "registry/github/package-internal.ts",
+      ]) {
+        expect(paths).not.toContain(privatePath);
       }
       for (const declarationPath of ["dist/index.d.ts", "dist/index.d.cts"]) {
         const declaration = runText("tar", ["-xOf", tarball, `package/${declarationPath}`]);

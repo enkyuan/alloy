@@ -23,6 +23,9 @@ const MAX_TOKEN_CHARACTERS = 4_096;
 const MAX_URL_CHARACTERS = 2_048;
 const GENERAL_ACCEPT = "application/vnd.github+json";
 const SEARCH_ACCEPT = "application/vnd.github.text-match+json";
+const GITHUB_API_VERSION = "2026-03-10";
+const GITHUB_CATALOG_VERSION = "0.2.0";
+const GITHUB_USER_AGENT = `@kaji/sdk-github/${GITHUB_CATALOG_VERSION}`;
 
 type Route =
   | "search_code"
@@ -516,9 +519,11 @@ export class GitHubClient {
       options.body === undefined
         ? undefined
         : new TextEncoder().encode(JSON.stringify(snapshotIntegrationResult(options.body)));
-    const headers: Record<string, string> = {
+    const identityHeaders = {
       accept: route === "search_code" ? SEARCH_ACCEPT : GENERAL_ACCEPT,
-    };
+      "user-agent": GITHUB_USER_AGENT,
+      "x-github-api-version": GITHUB_API_VERSION,
+    } as const;
 
     if (context.signal.aborted) throw context.signal.reason;
     let token: string;
@@ -529,8 +534,11 @@ export class GitHubClient {
       throw authError();
     }
     if (context.signal.aborted) throw context.signal.reason;
-    headers.authorization = `Bearer ${normalizedToken(token)}`;
-    if (requestBody !== undefined) headers["content-type"] = "application/json";
+    const headers = Object.freeze({
+      ...identityHeaders,
+      authorization: `Bearer ${normalizedToken(token)}`,
+      ...(requestBody === undefined ? {} : { "content-type": "application/json" }),
+    });
 
     let response: BoundedResponse | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {

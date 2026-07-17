@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -19,6 +20,8 @@ import { CommandError, runCommand as runBoundedCommand } from "./command";
 
 type PackageManager = "npm" | "bun";
 type InstallStage = "package" | "bootstrap" | "generated";
+type GitHubTypeModule = "esm" | "cjs";
+type GitHubTypeCompilerLine = "5.7" | "current";
 type SmokePhase =
   | "npm:pack"
   | "node:version"
@@ -40,6 +43,8 @@ type SmokePhase =
   | `${PackageManager}:cli-replay`
   | `${PackageManager}:compile-typescript-5.7`
   | `${PackageManager}:compile-typescript-current`
+  | `${PackageManager}:github-types-compiler-version-${GitHubTypeCompilerLine}`
+  | `${PackageManager}:github-types-${GitHubTypeModule}-typescript-${GitHubTypeCompilerLine}`
   | `${PackageManager}:lifecycle-run`
   | `${PackageManager}:failure-history-run`
   | `${PackageManager}:cold-run`
@@ -62,21 +67,114 @@ interface SmokeArguments {
 }
 
 interface GitHubPackageProof {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 3;
   readonly evidenceClass: "offline_exact_artifact_smoke";
   readonly integration: "github";
   readonly runtime: "typescript";
-  readonly network: "scripted";
+  readonly network: "blocked";
   readonly liveProvider: false;
-  readonly contractVersion: "1.0.0";
-  readonly caseCount: 23;
-  readonly toolCount: 6;
+  readonly sharedAbiVersion: "1.0.0";
+  readonly apiFixtureVersion: "1.0.0";
+  readonly sharedFixtureCaseCount: number;
+  readonly publicScenarioCount: number;
+  readonly toolCount: number;
+  readonly readToolCount: number;
+  readonly esmSharedAbiMatched: true;
+  readonly cjsSharedAbiMatched: true;
+  readonly esmClassIdentityMatched: true;
+  readonly cjsClassIdentityMatched: true;
+  readonly esmFactoryIdentityMatched: true;
+  readonly cjsFactoryIdentityMatched: true;
+  readonly esmRuntimeExports: readonly [
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly cjsRuntimeExports: readonly [
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly esmDeclarationExports: readonly [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly cjsDeclarationExports: readonly [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly typescriptDeclarationChecks: TypeScriptDeclarationChecks;
+  readonly privateGitHubCompositionSourcesPacked: false;
+  readonly privateGitHubCompositionSourceImportsRejected: true;
+  readonly closedCallsDeniedBeforeCredentialAccess: true;
   readonly approvalDeniedBeforeCredentialAccess: true;
-  readonly mutationRetries: 0;
-  readonly unknownMutationPreserved: true;
-  readonly sourceRuntimeDetected: false;
+  readonly repositoryDeniedBeforeCredentialAccess: true;
+  readonly githubCatalogEventsVerified: readonly ["requested", "started", "failed"];
+  readonly genericSyntheticCatalogEventsVerified: readonly ["requested", "started", "completed"];
+  readonly aliasCollisionRejected: true;
   readonly conclusion: "passed";
   readonly failureCode: null;
+}
+
+interface TypeScriptDeclarationChecks {
+  readonly compilerOptions: {
+    readonly module: "NodeNext";
+    readonly moduleResolution: "NodeNext";
+    readonly skipLibCheck: false;
+  };
+  readonly typescript57: {
+    readonly version: "5.7.3";
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
+  readonly typescriptCurrent: {
+    readonly version: string;
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
+}
+
+const GITHUB_PUBLIC_SCENARIOS = [
+  "conditional-exports",
+  "class-identity",
+  "private-source-containment",
+  "declaration-privacy",
+  "catalog-inspection",
+  "public-registration",
+  "closed-lifecycle",
+  "repository-policy",
+  "approval-rejection",
+  "validation-failure",
+  "execution-failure",
+  "synthetic-completed-event",
+  "mock-provider-loop",
+  "alias-collision",
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_PATHS = [
+  "registry/github/package.ts",
+  "registry/github/package-internal.ts",
+  "src/integrations/github.ts",
+  "src/integrations/github-package-internal.ts",
+] as const;
+const EXPECTED_GITHUB_SOURCE_MAPS = [
+  "dist/integrations/github.js.map",
+  "dist/integrations/github.cjs.map",
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
+  "export interface PackageGitHubRuntime",
+  "readonly createRequester: (observability:",
+  "readonly createClient: (options: GitHubClientOptions)",
+  "runtime: PackageGitHubRuntime = productionRuntime",
+  "Preserve the client construction failure that prevented ownership transfer.",
+] as const;
+
+interface SourceMapDocument {
+  readonly sources?: unknown;
+  readonly sourcesContent?: unknown;
 }
 
 const packageRoot = resolve(import.meta.dir, "..");
@@ -90,6 +188,64 @@ const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const PACKAGE_VERSION = "0.2.0-beta.1";
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
+const GITHUB_ESM_TYPES_SOURCE = `import { Integration } from "@kaji/sdk";
+import {
+  GitHubIntegration,
+  createGithubIntegration,
+  inspectIntegration,
+  type CreateGitHubIntegrationOptions,
+} from "@kaji/sdk/integrations/github";
+
+const options: CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "installed-type-proof",
+  repositories: [],
+};
+const direct: GitHubIntegration = new GitHubIntegration(options);
+const created: GitHubIntegration = createGithubIntegration(options);
+const inspected: GitHubIntegration = inspectIntegration();
+const roots: Integration[] = [direct, created, inspected];
+void roots;
+direct.close();
+created.close();
+inspected.close();
+`;
+const GITHUB_CJS_TYPES_SOURCE = `import sdk = require("@kaji/sdk");
+import github = require("@kaji/sdk/integrations/github");
+
+const options: github.CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "installed-type-proof",
+  repositories: [],
+};
+const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
+const created: github.GitHubIntegration = github.createGithubIntegration(options);
+const inspected: github.GitHubIntegration = github.inspectIntegration();
+const roots: sdk.Integration[] = [direct, created, inspected];
+void roots;
+direct.close();
+created.close();
+inspected.close();
+`;
+const GITHUB_TYPES_COMPILER_OPTIONS = {
+  module: "NodeNext",
+  moduleResolution: "NodeNext",
+  noEmit: true,
+  skipLibCheck: false,
+  strict: true,
+  target: "ES2022",
+  types: ["node"],
+} as const;
+const GITHUB_TYPE_CONSUMERS = [
+  {
+    module: "esm",
+    source: "github-types.mts",
+    config: "tsconfig.github-types-esm.json",
+  },
+  {
+    module: "cjs",
+    source: "github-types.cts",
+    config: "tsconfig.github-types-cjs.json",
+  },
+] as const;
 const REPLAY_FIXTURE =
   JSON.stringify({
     id: "artifact-event",
@@ -327,6 +483,72 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
+function filesBelow(directory: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...filesBelow(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
+function parseSourceMap(path: string): SourceMapDocument {
+  const document = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    throw new Error(`packed source map is not a JSON object: ${path}`);
+  }
+  return document as SourceMapDocument;
+}
+
+function isGitHubSourceMap(path: string, document: SourceMapDocument): boolean {
+  if (/^dist\/integrations\/github(?:\.[^/]+)*\.map$/.test(path)) return true;
+  return (
+    Array.isArray(document.sources) &&
+    document.sources.some(
+      (source) =>
+        typeof source === "string" &&
+        /(?:^|\/)(?:src\/integrations\/github(?:-package-internal)?|registry\/github\/[^/]+)\.ts$/.test(
+          source.replaceAll("\\", "/"),
+        ),
+    )
+  );
+}
+
+function inspectPrivateGitHubCompositionSources(installedPackageRoot: string): boolean {
+  const standaloneSourcePacked = PRIVATE_GITHUB_COMPOSITION_PATHS.some((path) =>
+    existsSync(join(installedPackageRoot, path)),
+  );
+  const sourceMaps = filesBelow(join(installedPackageRoot, "dist"))
+    .filter((path) => path.endsWith(".map"))
+    .map((absolutePath) => {
+      const path = absolutePath.slice(installedPackageRoot.length + 1).replaceAll("\\", "/");
+      const document = parseSourceMap(absolutePath);
+      return { path, document, encoded: JSON.stringify(document) };
+    });
+  const githubSourceMaps = sourceMaps.filter(({ path, document }) =>
+    isGitHubSourceMap(path, document),
+  );
+  for (const expected of EXPECTED_GITHUB_SOURCE_MAPS) {
+    if (!githubSourceMaps.some(({ path }) => path === expected)) {
+      throw new Error(`installed package is missing GitHub source map ${expected}`);
+    }
+  }
+  return (
+    standaloneSourcePacked ||
+    githubSourceMaps.some(({ document }) => {
+      if (!Object.hasOwn(document, "sourcesContent")) return false;
+      return (
+        !Array.isArray(document.sourcesContent) ||
+        document.sourcesContent.some((source) => typeof source === "string")
+      );
+    }) ||
+    sourceMaps.some(({ encoded }) =>
+      PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES.some((canary) => encoded.includes(canary)),
+    )
+  );
+}
+
 function parseArguments(argv: string[]): SmokeArguments {
   const parsed: SmokeArguments = {};
   for (let index = 0; index < argv.length; index += 1) {
@@ -432,27 +654,79 @@ function githubProofEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessE
   };
 }
 
-function assertGithubPackageProof(output: string): GitHubPackageProof {
+function assertGithubPackageProof(
+  output: string,
+  installedPackageRoot: string,
+  typescriptDeclarationChecks: TypeScriptDeclarationChecks,
+): GitHubPackageProof {
   let document: unknown;
   try {
     document = JSON.parse(output);
   } catch {
     throw new Error("GitHub package proof emitted invalid JSON");
   }
+  const sharedAbi = JSON.parse(
+    readFileSync(
+      join(installedPackageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+      "utf8",
+    ),
+  ) as {
+    version: "1.0.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
+  const apiFixture = JSON.parse(
+    readFileSync(
+      join(installedPackageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+      "utf8",
+    ),
+  ) as { version: "1.0.0"; cases: readonly unknown[] };
+  const privateGitHubCompositionSourcesPacked =
+    inspectPrivateGitHubCompositionSources(installedPackageRoot);
+  if (privateGitHubCompositionSourcesPacked) {
+    throw new Error("installed package contains private GitHub composition source");
+  }
   const expected: GitHubPackageProof = {
-    schemaVersion: 1,
+    schemaVersion: 3,
     evidenceClass: "offline_exact_artifact_smoke",
     integration: "github",
     runtime: "typescript",
-    network: "scripted",
+    network: "blocked",
     liveProvider: false,
-    contractVersion: "1.0.0",
-    caseCount: 23,
-    toolCount: 6,
+    sharedAbiVersion: sharedAbi.version,
+    apiFixtureVersion: apiFixture.version,
+    sharedFixtureCaseCount: apiFixture.cases.length,
+    publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
+    toolCount: sharedAbi.tools.length,
+    readToolCount: sharedAbi.tools.filter((tool) => tool.risk === "read").length,
+    esmSharedAbiMatched: true,
+    cjsSharedAbiMatched: true,
+    esmClassIdentityMatched: true,
+    cjsClassIdentityMatched: true,
+    esmFactoryIdentityMatched: true,
+    cjsFactoryIdentityMatched: true,
+    esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    esmDeclarationExports: [
+      "CreateGitHubIntegrationOptions",
+      "GitHubIntegration",
+      "createGithubIntegration",
+      "inspectIntegration",
+    ],
+    cjsDeclarationExports: [
+      "CreateGitHubIntegrationOptions",
+      "GitHubIntegration",
+      "createGithubIntegration",
+      "inspectIntegration",
+    ],
+    typescriptDeclarationChecks,
+    privateGitHubCompositionSourcesPacked,
+    privateGitHubCompositionSourceImportsRejected: true,
+    closedCallsDeniedBeforeCredentialAccess: true,
     approvalDeniedBeforeCredentialAccess: true,
-    mutationRetries: 0,
-    unknownMutationPreserved: true,
-    sourceRuntimeDetected: false,
+    repositoryDeniedBeforeCredentialAccess: true,
+    githubCatalogEventsVerified: ["requested", "started", "failed"],
+    genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+    aliasCollisionRejected: true,
     conclusion: "passed",
     failureCode: null,
   };
@@ -733,6 +1007,83 @@ async function install(
   }
 }
 
+function writeGitHubTypeConsumerFixtures(generated: string): void {
+  writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE);
+  writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE);
+  for (const consumer of GITHUB_TYPE_CONSUMERS) {
+    writeFileSync(
+      join(generated, consumer.config),
+      JSON.stringify(
+        {
+          compilerOptions: GITHUB_TYPES_COMPILER_OPTIONS,
+          files: [consumer.source],
+        },
+        null,
+        2,
+      ),
+    );
+  }
+}
+
+async function compileInstalledGitHubTypes(
+  manager: PackageManager,
+  generated: string,
+): Promise<TypeScriptDeclarationChecks> {
+  writeGitHubTypeConsumerFixtures(generated);
+  const compilers = [
+    {
+      alias: "typescript57",
+      line: "5.7",
+      extraArgs: ["--ignoreDeprecations", "5.0"],
+    },
+    { alias: "typescript", line: "current", extraArgs: [] },
+  ] as const;
+  const compilerVersions = new Map<string, string>();
+  for (const compiler of compilers) {
+    const tsc = join(generated, `node_modules/${compiler.alias}/bin/tsc`);
+    if (!existsSync(tsc)) throw new Error(`generated scaffold is missing ${compiler.alias}`);
+    const versionOutput = (
+      await runCommand(
+        `${manager}:github-types-compiler-version-${compiler.line}`,
+        nodeBinary,
+        [tsc, "--version"],
+        generated,
+      )
+    ).trim();
+    const compilerVersion = /^Version (\d+\.\d+\.\d+(?:[-+].+)?)$/.exec(versionOutput)?.[1];
+    if (compilerVersion === undefined) {
+      throw new Error(`generated scaffold has an invalid ${compiler.alias} version`);
+    }
+    compilerVersions.set(compiler.alias, compilerVersion);
+    for (const consumer of GITHUB_TYPE_CONSUMERS) {
+      await runCommand(
+        `${manager}:github-types-${consumer.module}-typescript-${compiler.line}`,
+        nodeBinary,
+        [tsc, "--project", consumer.config, "--noEmit", ...compiler.extraArgs],
+        generated,
+      );
+    }
+  }
+  const typescript57Version = compilerVersions.get("typescript57");
+  const typescriptCurrentVersion = compilerVersions.get("typescript");
+  if (typescript57Version !== "5.7.3" || typescriptCurrentVersion === undefined) {
+    throw new Error("generated scaffold compiler versions do not match the supported matrix");
+  }
+  return {
+    compilerOptions: {
+      module: GITHUB_TYPES_COMPILER_OPTIONS.module,
+      moduleResolution: GITHUB_TYPES_COMPILER_OPTIONS.moduleResolution,
+      skipLibCheck: GITHUB_TYPES_COMPILER_OPTIONS.skipLibCheck,
+    },
+    typescript57: { version: typescript57Version, mtsImport: "passed", ctsRequire: "passed" },
+    typescriptCurrent: {
+      version: typescriptCurrentVersion,
+      mtsImport: "passed",
+      ctsRequire: "passed",
+    },
+  };
+}
+
 async function runScaffold(
   manager: PackageManager,
   tarball: string,
@@ -846,24 +1197,6 @@ async function runScaffold(
   assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
   const githubProofRunner = join(bootstrap, "installed-github-smoke.mts");
   copyFileSync(INSTALLED_GITHUB_SMOKE, githubProofRunner);
-  const githubProof = assertGithubPackageProof(
-    await runCommand(
-      `${manager}:github-package-proof`,
-      "bun",
-      [
-        "--no-install",
-        githubProofRunner,
-        "--sandbox-root",
-        root,
-        "--bundle-root",
-        github,
-        "--package-root",
-        realpathSync(installedPackageRoot),
-      ],
-      bootstrap,
-      githubProofEnvironment(ownerEnvironment),
-    ),
-  );
   const githubModule = JSON.stringify(join(github, "index.ts"));
   await runCommand(
     `${manager}:cli-inspect`,
@@ -930,6 +1263,32 @@ async function runScaffold(
         : `${manager}:compile-typescript-current`;
     await runCommand(phase, nodeBinary, [tsc, "--project", "tsconfig.json", "--noEmit"], generated);
   }
+  const typescriptDeclarationChecks = await compileInstalledGitHubTypes(manager, generated);
+  const typescriptDeclarationChecksPath = join(generated, "github-types-declaration-checks.json");
+  writeFileSync(
+    typescriptDeclarationChecksPath,
+    JSON.stringify(typescriptDeclarationChecks, null, 2),
+  );
+  const githubProof = assertGithubPackageProof(
+    await runCommand(
+      `${manager}:github-package-proof`,
+      "bun",
+      [
+        "--no-install",
+        githubProofRunner,
+        "--sandbox-root",
+        root,
+        "--package-root",
+        realpathSync(installedPackageRoot),
+        "--typescript-declaration-checks",
+        typescriptDeclarationChecksPath,
+      ],
+      bootstrap,
+      githubProofEnvironment(ownerEnvironment),
+    ),
+    installedPackageRoot,
+    typescriptDeclarationChecks,
+  );
   const tsx = join(generated, "node_modules/tsx/dist/cli.mjs");
   if (!existsSync(tsx)) throw new Error("generated scaffold is missing the tsx runner");
   const lifecycleOutput = await runCommand(
@@ -1062,8 +1421,10 @@ import * as testing from "@kaji/sdk/testing";
 import * as openai from "@kaji/sdk/openai";
 import * as anthropic from "@kaji/sdk/anthropic";
 import * as integrations from "@kaji/sdk/integrations";
+import * as github from "@kaji/sdk/integrations/github";
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
+if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 6) process.exit(1);
 const githubRequester = integrations.createGitHubRequester();
 const gmailRequester = integrations.createGmailRequester();
 githubRequester.close();
@@ -1077,8 +1438,10 @@ const testing = require("@kaji/sdk/testing");
 const openai = require("@kaji/sdk/openai");
 const anthropic = require("@kaji/sdk/anthropic");
 const integrations = require("@kaji/sdk/integrations");
+const github = require("@kaji/sdk/integrations/github");
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
+if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 6) process.exit(1);
 const githubRequester = integrations.createGitHubRequester();
 const gmailRequester = integrations.createGmailRequester();
 githubRequester.close();

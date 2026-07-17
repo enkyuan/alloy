@@ -19,7 +19,17 @@
     "LICENSE",
     "contracts",
     "dist",
-    "registry"
+    "registry/index.json",
+    "registry/index.schema.json",
+    "registry/schema.json",
+    "registry/echo/index.ts",
+    "registry/echo/manifest.json",
+    "registry/github/LICENSE",
+    "registry/github/client.ts",
+    "registry/github/github_vitest.ts",
+    "registry/github/index.ts",
+    "registry/github/manifest.json",
+    "registry/github/owner-fixtures.json"
   ],
   "type": "module",
   "sideEffects": false,
@@ -75,6 +85,16 @@
       "require": {
         "types": "./dist/integrations.d.cts",
         "default": "./dist/integrations.cjs"
+      }
+    },
+    "./integrations/github": {
+      "import": {
+        "types": "./dist/integrations/github.d.ts",
+        "default": "./dist/integrations/github.js"
+      },
+      "require": {
+        "types": "./dist/integrations/github.d.cts",
+        "default": "./dist/integrations/github.cjs"
       }
     },
     "./auth": {

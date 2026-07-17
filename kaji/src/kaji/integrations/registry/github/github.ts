@@ -12,7 +12,7 @@ import { createGitHubRequester } from "@kaji/sdk/integrations";
 
 import { GitHubClient } from "./client";
 
-type Client = Pick<
+export type SharedGitHubClient = Pick<
   GitHubClient,
   "addComment" | "createIssue" | "getFile" | "getIssue" | "listIssues" | "searchCode"
 >;
@@ -136,12 +136,76 @@ function objectResult(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function handler(client: SharedGitHubClient, name: string): ToolHandler {
+  return async (args, context) => {
+    switch (name) {
+      case "add_comment":
+        return objectResult(
+          await client.addComment(context, {
+            repository: args.repository as string,
+            issueNumber: args.issue_number as number,
+            body: args.body as string,
+          }),
+        );
+      case "create_issue":
+        return objectResult(
+          await client.createIssue(context, {
+            repository: args.repository as string,
+            title: args.title as string,
+            body: args.body as string,
+          }),
+        );
+      case "get_file":
+        return objectResult(
+          await client.getFile(context, {
+            repository: args.repository as string,
+            path: args.path as string,
+            ...(args.ref === undefined ? {} : { ref: args.ref as string }),
+          }),
+        );
+      case "get_issue":
+        return objectResult(
+          await client.getIssue(context, {
+            repository: args.repository as string,
+            issueNumber: args.issue_number as number,
+          }),
+        );
+      case "list_issues":
+        return objectResult(
+          await client.listIssues(context, {
+            repository: args.repository as string,
+            ...(args.state === undefined ? {} : { state: args.state as "open" | "closed" | "all" }),
+            ...(args.page === undefined ? {} : { page: args.page as number }),
+            ...(args.per_page === undefined ? {} : { perPage: args.per_page as number }),
+          }),
+        );
+      case "search_code":
+        return objectResult(
+          await client.searchCode(context, {
+            repository: args.repository as string,
+            query: args.query as string,
+            ...(args.page === undefined ? {} : { page: args.page as number }),
+            ...(args.per_page === undefined ? {} : { perPage: args.per_page as number }),
+          }),
+        );
+      default:
+        throw new Error("Unknown GitHub tool");
+    }
+  };
+}
+
+export function createSharedGitHubToolBindings(
+  client: SharedGitHubClient,
+): [ToolSpec, ToolHandler][] {
+  return specs().map((spec) => [spec, handler(client, spec.name)]);
+}
+
 export class GitHubIntegration extends Integration {
   readonly namespace = "github";
   private closeOwnedRequester: (() => void) | undefined;
 
   constructor(
-    private readonly client: Client,
+    private readonly client: SharedGitHubClient,
     closeOwnedRequester?: () => void,
   ) {
     super();
@@ -149,7 +213,7 @@ export class GitHubIntegration extends Integration {
   }
 
   override tools(): [ToolSpec, ToolHandler][] {
-    return specs().map((spec) => [spec, this.handler(spec.name)]);
+    return createSharedGitHubToolBindings(this.client);
   }
 
   close(): void {
@@ -157,66 +221,6 @@ export class GitHubIntegration extends Integration {
     if (close === undefined) return;
     close();
     this.closeOwnedRequester = undefined;
-  }
-
-  private handler(name: string): ToolHandler {
-    return async (args, context) => {
-      switch (name) {
-        case "add_comment":
-          return objectResult(
-            await this.client.addComment(context, {
-              repository: args.repository as string,
-              issueNumber: args.issue_number as number,
-              body: args.body as string,
-            }),
-          );
-        case "create_issue":
-          return objectResult(
-            await this.client.createIssue(context, {
-              repository: args.repository as string,
-              title: args.title as string,
-              body: args.body as string,
-            }),
-          );
-        case "get_file":
-          return objectResult(
-            await this.client.getFile(context, {
-              repository: args.repository as string,
-              path: args.path as string,
-              ...(args.ref === undefined ? {} : { ref: args.ref as string }),
-            }),
-          );
-        case "get_issue":
-          return objectResult(
-            await this.client.getIssue(context, {
-              repository: args.repository as string,
-              issueNumber: args.issue_number as number,
-            }),
-          );
-        case "list_issues":
-          return objectResult(
-            await this.client.listIssues(context, {
-              repository: args.repository as string,
-              ...(args.state === undefined
-                ? {}
-                : { state: args.state as "open" | "closed" | "all" }),
-              ...(args.page === undefined ? {} : { page: args.page as number }),
-              ...(args.per_page === undefined ? {} : { perPage: args.per_page as number }),
-            }),
-          );
-        case "search_code":
-          return objectResult(
-            await this.client.searchCode(context, {
-              repository: args.repository as string,
-              query: args.query as string,
-              ...(args.page === undefined ? {} : { page: args.page as number }),
-              ...(args.per_page === undefined ? {} : { perPage: args.per_page as number }),
-            }),
-          );
-        default:
-          throw new Error("Unknown GitHub tool");
-      }
-    };
   }
 }
 
@@ -241,7 +245,7 @@ export function createGithubIntegration(
   );
 }
 
-function createGithubIntegrationForTest(client: Client): GitHubIntegration {
+function createGithubIntegrationForTest(client: SharedGitHubClient): GitHubIntegration {
   return new GitHubIntegration(client);
 }
 
@@ -252,7 +256,7 @@ const inspectionClient = new Proxy(
       throw new Error("inspection dependencies must not execute");
     },
   },
-) as Client;
+) as SharedGitHubClient;
 
 export function inspectIntegration(): GitHubIntegration {
   return createGithubIntegrationForTest(inspectionClient);

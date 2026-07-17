@@ -108,8 +108,18 @@ def test_package_subpath_contract_covers_every_typed_esm_and_cjs_export() -> Non
         "./auth",
         "./cli",
         "./integrations",
+        "./integrations/github",
         "./openai",
         "./testing",
+    }
+    assert document["packageSubpaths"]["typescript"]["./integrations/github"] == {
+        "tier": "experimental",
+        "exports": [
+            "CreateGitHubIntegrationOptions",
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
     }
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
     checker["check_package_subpaths"](document)

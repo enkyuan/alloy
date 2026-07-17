@@ -1,8 +1,14 @@
 import { rmSync } from "node:fs";
 
-import { defineConfig } from "tsup";
+import { defineConfig, type Options } from "tsup";
 
 const EXTERNAL_PROVIDERS = ["openai", "@anthropic-ai/sdk"];
+const SOURCE_MAP_POLICY = {
+  sourcemap: true,
+  esbuildOptions(options) {
+    options.sourcesContent = false;
+  },
+} satisfies Pick<Options, "sourcemap" | "esbuildOptions">;
 
 // Clean once before parallel configs build; per-config cleaning can delete faster outputs.
 rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });
@@ -12,7 +18,7 @@ export default defineConfig([
     entry: ["src/index.ts", "src/testing.ts"],
     format: ["esm", "cjs"],
     dts: true,
-    sourcemap: true,
+    ...SOURCE_MAP_POLICY,
     clean: false,
     treeshake: true,
     // Provider SDKs are optional peer dependencies — consumers install only what they use.
@@ -26,13 +32,15 @@ export default defineConfig([
       anthropic: "src/providers/anthropic.ts",
       auth: "src/auth/index.ts",
       integrations: "src/integrations/public.ts",
+      "integrations/github": "src/integrations/github.ts",
     },
     format: ["esm", "cjs"],
     dts: true,
-    sourcemap: true,
+    ...SOURCE_MAP_POLICY,
     clean: false,
     treeshake: true,
-    external: EXTERNAL_PROVIDERS,
+    // Keep package self-imports external so subpaths share the root runtime constructors.
+    external: [...EXTERNAL_PROVIDERS, "@kaji/sdk"],
   },
   {
     // `kaji` CLI. ESM only; tsup strips shebangs unless restored via banner.
@@ -45,7 +53,7 @@ export default defineConfig([
     format: ["esm"],
     outDir: "dist/cli",
     dts: true,
-    sourcemap: true,
+    ...SOURCE_MAP_POLICY,
     clean: false,
     banner: { js: "#!/usr/bin/env node" },
     external: EXTERNAL_PROVIDERS,
@@ -55,7 +63,7 @@ export default defineConfig([
     entry: ["src/cli/integration-copy-worker.mjs"],
     format: ["esm"],
     outDir: "dist/cli",
-    sourcemap: true,
+    ...SOURCE_MAP_POLICY,
     clean: false,
     banner: { js: "#!/usr/bin/env node" },
     external: EXTERNAL_PROVIDERS,
@@ -66,7 +74,7 @@ export default defineConfig([
     format: ["cjs"],
     outDir: "dist/cli",
     dts: true,
-    sourcemap: true,
+    ...SOURCE_MAP_POLICY,
     clean: false,
     external: EXTERNAL_PROVIDERS,
   },

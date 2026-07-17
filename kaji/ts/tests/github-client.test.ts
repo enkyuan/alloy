@@ -47,6 +47,22 @@ const fixture = JSON.parse(
   ),
 ) as Fixture;
 
+const TYPESCRIPT_REQUEST_IDENTITY = {
+  "user-agent": "@kaji/sdk-github/0.2.0",
+  "x-github-api-version": "2026-03-10",
+} as const;
+
+function withoutTypeScriptRequestIdentity(request: unknown): unknown {
+  const document = structuredClone(request) as {
+    headers?: Record<string, string>;
+  };
+  if (document.headers !== undefined) {
+    delete document.headers["user-agent"];
+    delete document.headers["x-github-api-version"];
+  }
+  return document;
+}
+
 function context(overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext {
   return {
     principalId: "tester",
@@ -159,6 +175,26 @@ async function invoke(
 }
 
 describe("shared GitHub client conformance", () => {
+  it("adds stable GitHub request identity", async () => {
+    const testCase = fixture.cases.find((candidate) => candidate.name === "get issue")!;
+    const http = new ScriptedRequester(testCase.responses);
+    const client = new GitHubClient({
+      tokenFor: async () => fixture.token,
+      repositories: [fixture.repository],
+      http,
+    });
+
+    await invoke(client, context(), testCase);
+
+    expect(http.requests[0]).toMatchObject({
+      headers: {
+        accept: "application/vnd.github+json",
+        authorization: `Bearer ${fixture.token}`,
+        ...TYPESCRIPT_REQUEST_IDENTITY,
+      },
+    });
+  });
+
   it.each(fixture.cases)("matches $name", async (testCase) => {
     const http = new ScriptedRequester(testCase.responses);
     const tokenContexts: ToolExecutionContext[] = [];
@@ -208,7 +244,10 @@ describe("shared GitHub client conformance", () => {
     }
 
     expect(actual).toEqual(testCase.expected);
-    expect(http.requests).toEqual(testCase.expected_requests);
+    for (const request of http.requests) {
+      expect(request).toMatchObject({ headers: TYPESCRIPT_REQUEST_IDENTITY });
+    }
+    expect(http.requests.map(withoutTypeScriptRequestIdentity)).toEqual(testCase.expected_requests);
     expect(sleeps).toEqual(testCase.expected_sleeps ?? []);
     expect(tokenFor).toHaveBeenCalledTimes(testCase.expected_token_calls ?? 1);
     expect(tokenContexts.every((seen) => seen === executionContext)).toBe(true);
@@ -231,6 +270,22 @@ describe("shared GitHub client conformance", () => {
       expect(http.requests).toEqual([]);
     },
   );
+
+  it("maps credential-provider failures before HTTP", async () => {
+    const http = new ScriptedRequester([]);
+    const client = new GitHubClient({
+      tokenFor: async () => {
+        throw new Error("private credential detail");
+      },
+      repositories: [fixture.repository],
+      http,
+    });
+
+    await expect(
+      client.getIssue(context(), { repository: fixture.repository, issueNumber: 1 }),
+    ).rejects.toBeInstanceOf(IntegrationAuthRequiredError);
+    expect(http.requests).toEqual([]);
+  });
 
   it.each(["", ".", "..", "src//secret", "src/../secret"])(
     "rejects content path %j before token or HTTP",

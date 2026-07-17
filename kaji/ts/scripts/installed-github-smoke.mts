@@ -1,79 +1,109 @@
 #!/usr/bin/env bun
-/** Exercise one CLI-copied GitHub bundle against an installed npm artifact. */
+/** Prove the installed public GitHub package boundary without private transport injection. */
 
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { Socket } from "node:net";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import type { ToolExecutionContext, ToolRegistry } from "@kaji/sdk";
-import type { BoundedResponse, FixedOriginRequester } from "@kaji/sdk/integrations";
+import type { ToolExecutionContext } from "@kaji/sdk";
 
 type SdkRuntime = typeof import("@kaji/sdk");
+type TestingRuntime = typeof import("@kaji/sdk/testing");
+type GitHubRuntime = typeof import("@kaji/sdk/integrations/github");
 
-const EXPECTED_TOOLS = new Set([
+const EXPECTED_TOOLS = [
   "add_comment",
   "create_issue",
   "get_file",
   "get_issue",
   "list_issues",
   "search_code",
-]);
+] as const;
+const EXPECTED_RUNTIME_EXPORTS = [
+  "GitHubIntegration",
+  "createGithubIntegration",
+  "inspectIntegration",
+] as const;
+const EXPECTED_DECLARATION_EXPORTS = [
+  "CreateGitHubIntegrationOptions",
+  ...EXPECTED_RUNTIME_EXPORTS,
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_PATHS = [
+  "registry/github/package.ts",
+  "registry/github/package-internal.ts",
+  "src/integrations/github.ts",
+  "src/integrations/github-package-internal.ts",
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_SPECIFIERS = [
+  "@kaji/sdk/registry/github/package.ts",
+  "@kaji/sdk/registry/github/package-internal.ts",
+  "@kaji/sdk/src/integrations/github.ts",
+  "@kaji/sdk/src/integrations/github-package-internal.ts",
+] as const;
+const EXPECTED_GITHUB_SOURCE_MAPS = [
+  "dist/integrations/github.js.map",
+  "dist/integrations/github.cjs.map",
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
+  "export interface PackageGitHubRuntime",
+  "readonly createRequester: (observability:",
+  "readonly createClient: (options: GitHubClientOptions)",
+  "runtime: PackageGitHubRuntime = productionRuntime",
+  "Preserve the client construction failure that prevented ownership transfer.",
+] as const;
+const EXPECTED_PUBLIC_SCENARIOS = [
+  "conditional-exports",
+  "class-identity",
+  "private-source-containment",
+  "declaration-privacy",
+  "catalog-inspection",
+  "public-registration",
+  "closed-lifecycle",
+  "repository-policy",
+  "approval-rejection",
+  "validation-failure",
+  "execution-failure",
+  "synthetic-completed-event",
+  "mock-provider-loop",
+  "alias-collision",
+] as const;
 
-interface FixtureCase {
-  readonly name: string;
-  readonly operation: string;
-  readonly input: Readonly<Record<string, unknown>>;
-  readonly responses: readonly Readonly<Record<string, unknown>>[];
-  readonly expected_requests: readonly unknown[];
-  readonly expected_sleeps?: readonly number[];
-  readonly expected_token_calls?: number;
-  readonly expected: Readonly<Record<string, unknown>>;
-}
-
-interface Fixture {
-  readonly version: string;
+interface ApiFixture {
+  readonly version: "1.0.0";
   readonly repository: string;
-  readonly token: string;
-  readonly cases: readonly FixtureCase[];
+  readonly cases: readonly unknown[];
 }
 
-interface GitHubClientLike {
-  new (
-    options: Readonly<{
-      tokenFor: (context: ToolExecutionContext) => Promise<string>;
-      repositories: readonly string[];
-      http: FixedOriginRequester;
-    }>,
-    runtime?: Readonly<{
-      sleep: (delayMs: number, signal: AbortSignal) => Promise<void>;
-      monotonicNow: () => number;
-    }>,
-  ): object;
+interface SharedAbi {
+  readonly version: "1.0.0";
+  readonly namespace: "github";
+  readonly tools: readonly Record<string, unknown>[];
 }
 
-interface GitHubIntegrationInstance {
-  tools(): Array<
-    [
-      Readonly<{ name: string }>,
-      (args: Record<string, unknown>, context: ToolExecutionContext) => Promise<unknown>,
-    ]
-  >;
-  register(registry: ToolRegistry): void;
-  close(): void;
+interface SourceMapDocument {
+  readonly sources?: unknown;
+  readonly sourcesContent?: unknown;
 }
 
-interface GitHubIntegrationLike {
-  new (client: object, closeOwnedRequester?: () => void): GitHubIntegrationInstance;
-}
-
-interface GitHubIntegrationModule {
-  GitHubIntegration: GitHubIntegrationLike;
-  createGithubIntegration(options: {
-    tokenFor: (context: ToolExecutionContext) => Promise<string>;
-    repositories: readonly string[];
-  }): GitHubIntegrationInstance;
+interface TypeScriptDeclarationChecks {
+  readonly compilerOptions: {
+    readonly module: "NodeNext";
+    readonly moduleResolution: "NodeNext";
+    readonly skipLibCheck: false;
+  };
+  readonly typescript57: {
+    readonly version: "5.7.3";
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
+  readonly typescriptCurrent: {
+    readonly version: string;
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
 }
 
 function contained(path: string, root: string, label: string): string {
@@ -88,15 +118,17 @@ function contained(path: string, root: string, label: string): string {
 
 function parseArguments(argv: string[]): {
   sandboxRoot: string;
-  bundleRoot: string;
   packageRoot: string;
+  typescriptDeclarationChecks: string;
 } {
   const values = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (
-      !["--sandbox-root", "--bundle-root", "--package-root"].includes(flag ?? "") ||
+      !["--sandbox-root", "--package-root", "--typescript-declaration-checks"].includes(
+        flag ?? "",
+      ) ||
       value === undefined ||
       value.startsWith("--")
     ) {
@@ -107,9 +139,46 @@ function parseArguments(argv: string[]): {
   if (values.size !== 3) throw new Error("incomplete installed GitHub proof arguments");
   return {
     sandboxRoot: values.get("--sandbox-root")!,
-    bundleRoot: values.get("--bundle-root")!,
     packageRoot: values.get("--package-root")!,
+    typescriptDeclarationChecks: values.get("--typescript-declaration-checks")!,
   };
+}
+
+function readTypeScriptDeclarationChecks(
+  path: string,
+  sandbox: string,
+): TypeScriptDeclarationChecks {
+  const document = JSON.parse(
+    readFileSync(contained(path, sandbox, "TypeScript declaration checks"), "utf8"),
+  ) as unknown;
+  let currentVersion = "";
+  if (typeof document === "object" && document !== null && !Array.isArray(document)) {
+    const current = Reflect.get(document, "typescriptCurrent") as unknown;
+    if (typeof current === "object" && current !== null && !Array.isArray(current)) {
+      const version = Reflect.get(current, "version") as unknown;
+      if (typeof version === "string") currentVersion = version;
+    }
+  }
+  if (!/^\d+\.\d+\.\d+(?:[-+].+)?$/.test(currentVersion) || currentVersion === "5.7.3") {
+    throw new Error("TypeScript declaration checks contain an invalid current compiler version");
+  }
+  const expected: TypeScriptDeclarationChecks = {
+    compilerOptions: {
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      skipLibCheck: false,
+    },
+    typescript57: { version: "5.7.3", mtsImport: "passed", ctsRequire: "passed" },
+    typescriptCurrent: {
+      version: currentVersion,
+      mtsImport: "passed",
+      ctsRequire: "passed",
+    },
+  };
+  if (!isDeepStrictEqual(document, expected)) {
+    throw new Error("TypeScript declaration checks are invalid or incomplete");
+  }
+  return document as TypeScriptDeclarationChecks;
 }
 
 function context(): ToolExecutionContext {
@@ -126,245 +195,190 @@ function context(): ToolExecutionContext {
   };
 }
 
-class ScriptedRequester implements FixedOriginRequester {
-  readonly requests: unknown[] = [];
-  readonly contexts: ToolExecutionContext[] = [];
-  readonly responses: Readonly<Record<string, unknown>>[];
-
-  constructor(responses: readonly Readonly<Record<string, unknown>>[]) {
-    this.responses = [...responses];
-  }
-
-  async request(
-    pathAndQuery: string,
-    init: Readonly<{
-      method: "GET" | "POST";
-      headers: ConstructorParameters<typeof Headers>[0];
-      body?: Uint8Array;
-    }>,
-    executionContext: ToolExecutionContext,
-  ): Promise<BoundedResponse> {
-    this.requests.push({
-      method: init.method,
-      path_and_query: pathAndQuery,
-      headers: Object.fromEntries(new Headers(init.headers).entries()),
-      body: init.body === undefined ? null : new TextDecoder().decode(init.body),
-    });
-    this.contexts.push(executionContext);
-    const response = this.responses.shift();
-    if (response === undefined) throw new Error("scripted GitHub response queue was exhausted");
-    if (response.transport_error === "response_limit") {
-      throw new Error("private response limit detail");
-    }
-    if (response.transport_error === "cancelled") {
-      throw new DOMException("private cancellation detail", "AbortError");
-    }
-    if (response.transport_error === "connection") {
-      throw new Error("private connection detail");
-    }
-    const bytes =
-      "json" in response
-        ? new TextEncoder().encode(JSON.stringify(response.json))
-        : new TextEncoder().encode(String(response.body ?? ""));
-    return {
-      status: response.status as number,
-      headers: Object.freeze({
-        ...(response.headers as Record<string, string> | undefined),
-      }),
-      bytes,
-    };
-  }
-}
-
-async function runCases(
+function assertToolEvents(
   sdk: SdkRuntime,
-  Client: GitHubClientLike,
-  Integration: GitHubIntegrationLike,
-  fixture: Fixture,
-): Promise<{
-  executedTools: Set<string>;
-  unknownMutationPreserved: boolean;
-  mutationRetries: number;
-}> {
-  const executedTools = new Set<string>();
-  let unknownMutationPreserved = false;
-  let mutationRetries = -1;
-
-  for (const [caseIndex, testCase] of fixture.cases.entries()) {
-    proofStage = `conformance-case-${caseIndex + 1}`;
-    const http = new ScriptedRequester(testCase.responses);
-    const tokenContexts: ToolExecutionContext[] = [];
-    const sleeps: number[] = [];
-    const client = new Client(
-      {
-        tokenFor: async (executionContext) => {
-          tokenContexts.push(executionContext);
-          return fixture.token;
-        },
-        repositories: [fixture.repository],
-        http,
-      },
-      {
-        sleep: async (delayMs) => {
-          sleeps.push(delayMs / 1_000);
-        },
-        monotonicNow: () => 0,
-      },
-    );
-    const integration = new Integration(client);
-    const handlers = new Map(integration.tools().map(([spec, handler]) => [spec.name, handler]));
-    if (
-      handlers.size !== EXPECTED_TOOLS.size ||
-      [...EXPECTED_TOOLS].some((name) => !handlers.has(name))
-    ) {
-      throw new Error("copied GitHub integration exposed an unexpected tool set");
-    }
-    const handler = handlers.get(testCase.operation);
-    if (handler === undefined) throw new Error("conformance case references an unknown tool");
-    const executionContext = context();
-    let actual: Record<string, unknown>;
-    try {
-      actual = {
-        result: await handler(
-          { repository: fixture.repository, ...testCase.input },
-          executionContext,
-        ),
-      };
-    } catch (error) {
-      if (error instanceof sdk.ToolExecutionError) {
-        actual = {
-          error: {
-            code: error.error_code,
-            outcome: error.outcome,
-            retryable: error.retryable,
-          },
-        };
-      } else if (error instanceof DOMException && error.name === "AbortError") {
-        actual = { exception: "cancelled" };
-      } else {
-        if (String(error).toLowerCase().includes("private")) {
-          throw new Error("private transport detail escaped");
-        }
-        actual = { exception: "unknown" };
-      }
-    }
-    if (
-      !isDeepStrictEqual(actual, testCase.expected) ||
-      !isDeepStrictEqual(http.requests, testCase.expected_requests) ||
-      !isDeepStrictEqual(sleeps, testCase.expected_sleeps ?? []) ||
-      tokenContexts.length !== (testCase.expected_token_calls ?? 1) ||
-      tokenContexts.some((seen) => seen !== executionContext) ||
-      http.contexts.some((seen) => seen !== executionContext) ||
-      http.responses.length !== 0
-    ) {
-      throw new Error("installed GitHub conformance case failed");
-    }
-    executedTools.add(testCase.operation);
-    if (testCase.name === "connection loss after write dispatch is unknown") {
-      unknownMutationPreserved = isDeepStrictEqual(actual, { exception: "unknown" });
-      mutationRetries = Math.max(0, http.requests.length - 1);
-    }
-  }
-  return { executedTools, unknownMutationPreserved, mutationRetries };
-}
-
-async function approvalPrecedesCredentials(
-  sdk: SdkRuntime,
-  Client: GitHubClientLike,
-  Integration: GitHubIntegrationLike,
-  repository: string,
-): Promise<boolean> {
-  let credentialCalls = 0;
-  let requestCalls = 0;
-  const integration = new Integration(
-    new Client({
-      tokenFor: async () => {
-        credentialCalls += 1;
-        throw new Error("credential access must not run");
-      },
-      repositories: [repository],
-      http: {
-        request: async () => {
-          requestCalls += 1;
-          throw new Error("HTTP must not run");
-        },
-      },
-    }),
+  events: ReadonlyArray<{ type: string; metadata: Readonly<Record<string, unknown>> }>,
+  catalogName: string,
+  expectedTypes: readonly string[],
+): void {
+  const toolEvents = events.filter((event) =>
+    [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_STARTED,
+      sdk.EventType.TOOL_CALL_COMPLETED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ].includes(event.type as never),
   );
+  if (
+    JSON.stringify(toolEvents.map((event) => event.type)) !== JSON.stringify(expectedTypes) ||
+    toolEvents.some((event) => event.metadata.catalog_name !== catalogName)
+  ) {
+    throw new Error(`logical catalog identity failed for ${catalogName}`);
+  }
+}
+
+function declarationExportNames(declaration: string): string[] {
+  const blocks = [...declaration.matchAll(/^export \{ (.*?) \}(?: from .*?)?;$/gm)];
+  if (blocks.length !== 1) throw new Error("GitHub declaration export block is not exact");
+  const names = blocks[0]![1]!.split(", ").map(
+    (item) =>
+      item
+        .replace(/^type /, "")
+        .split(" as ")
+        .at(-1)!,
+  );
+  if (new Set(names).size !== names.length) {
+    throw new Error("GitHub declaration contains duplicate exports");
+  }
+  return names.sort();
+}
+
+function exactToolSpecs(
+  integration: InstanceType<GitHubRuntime["GitHubIntegration"]>,
+  abi: SharedAbi,
+  label: string,
+): Record<string, unknown>[] {
+  const specs = integration
+    .tools()
+    .map(([spec]) => JSON.parse(JSON.stringify(spec)) as Record<string, unknown>);
+  if (integration.namespace !== abi.namespace || !isDeepStrictEqual(specs, abi.tools)) {
+    throw new Error(`${label} GitHub catalog differs from the canonical shared ABI`);
+  }
+  return specs;
+}
+
+async function importRejected(specifier: string): Promise<boolean> {
+  try {
+    await import(specifier);
+  } catch {
+    return true;
+  }
+  return false;
+}
+
+function filesBelow(directory: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...filesBelow(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
+function parseSourceMap(path: string): SourceMapDocument {
+  const document = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    throw new Error(`packed source map is not a JSON object: ${path}`);
+  }
+  return document as SourceMapDocument;
+}
+
+function isGitHubSourceMap(path: string, document: SourceMapDocument): boolean {
+  if (/^dist\/integrations\/github(?:\.[^/]+)*\.map$/.test(path)) return true;
+  return (
+    Array.isArray(document.sources) &&
+    document.sources.some(
+      (source) =>
+        typeof source === "string" &&
+        /(?:^|\/)(?:src\/integrations\/github(?:-package-internal)?|registry\/github\/[^/]+)\.ts$/.test(
+          source.replaceAll("\\", "/"),
+        ),
+    )
+  );
+}
+
+async function inspectPrivateGitHubCompositionSources(packageRoot: string): Promise<{
+  privateGitHubCompositionSourcesPacked: boolean;
+  privateGitHubCompositionSourceImportsRejected: boolean;
+}> {
+  const standaloneSourcePacked = PRIVATE_GITHUB_COMPOSITION_PATHS.some((path) =>
+    existsSync(join(packageRoot, path)),
+  );
+  const sourceMaps = filesBelow(contained(join(packageRoot, "dist"), packageRoot, "Kaji dist"))
+    .filter((path) => path.endsWith(".map"))
+    .map((absolutePath) => {
+      const path = relative(packageRoot, absolutePath).replaceAll("\\", "/");
+      const document = parseSourceMap(absolutePath);
+      return { path, document, encoded: JSON.stringify(document) };
+    });
+  const githubSourceMaps = sourceMaps.filter(({ path, document }) =>
+    isGitHubSourceMap(path, document),
+  );
+  for (const expected of EXPECTED_GITHUB_SOURCE_MAPS) {
+    if (!githubSourceMaps.some(({ path }) => path === expected)) {
+      throw new Error(`installed package is missing GitHub source map ${expected}`);
+    }
+  }
+  const embeddedSourceContent = githubSourceMaps.some(({ document }) => {
+    if (!Object.hasOwn(document, "sourcesContent")) return false;
+    return (
+      !Array.isArray(document.sourcesContent) ||
+      document.sourcesContent.some((source) => typeof source === "string")
+    );
+  });
+  const embeddedPrivateCanary = sourceMaps.some(({ encoded }) =>
+    PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES.some((canary) => encoded.includes(canary)),
+  );
+  const relativeImports = await Promise.all(
+    PRIVATE_GITHUB_COMPOSITION_PATHS.map((path) =>
+      importRejected(pathToFileURL(join(packageRoot, path)).href),
+    ),
+  );
+  const packageImports = await Promise.all(
+    PRIVATE_GITHUB_COMPOSITION_SPECIFIERS.map(importRejected),
+  );
+  return {
+    privateGitHubCompositionSourcesPacked:
+      standaloneSourcePacked || embeddedSourceContent || embeddedPrivateCanary,
+    privateGitHubCompositionSourceImportsRejected: [...relativeImports, ...packageImports].every(
+      Boolean,
+    ),
+  };
+}
+
+async function executeCall(
+  sdk: SdkRuntime,
+  integration:
+    | InstanceType<GitHubRuntime["GitHubIntegration"]>
+    | InstanceType<SdkRuntime["Integration"]>,
+  call: Readonly<{ id: string; name: string; arguments: Record<string, unknown> }>,
+  options: Readonly<{
+    policy?: InstanceType<SdkRuntime["ToolPolicy"]>;
+    approvalHandler?: { request: () => Promise<Record<string, unknown>> };
+  }> = {},
+): Promise<{
+  results: readonly Record<string, unknown>[];
+  events: ReadonlyArray<{ type: string; metadata: Readonly<Record<string, unknown>> }>;
+}> {
   const registry = new sdk.ToolRegistry();
   integration.register(registry);
-  const specs = new Map(registry.listSpecs().map((spec) => [spec.name, spec]));
   const store = new sdk.InMemoryEventStore();
   const committer = new sdk.InMemoryEventCommitter(store);
   const planner = new sdk.ToolPlanner({
-    specs,
-    policy: new sdk.ToolPolicy({ requireApprovalFor: new Set(["external_effect"]) }),
-    approvalHandler: {
-      request: async () => ({
-        granted: false,
-        code: "rejected",
-        reason: "Rejected by installed package proof",
-      }),
-    },
+    specs: new Map(registry.listSpecs().map((spec) => [spec.name, spec])),
+    executor: (name, args, executionContext) =>
+      registry.execute(name, { ...args }, executionContext),
     approvalCommitter: committer,
-    executor: async (toolName, args, executionContext) =>
-      registry.execute(toolName, { ...args }, executionContext),
+    ...(options.policy === undefined ? {} : { policy: options.policy }),
+    ...(options.approvalHandler === undefined
+      ? {}
+      : { approvalHandler: options.approvalHandler as never }),
   });
-  const calls = [
-    {
-      id: "create",
-      name: "github_create_issue",
-      arguments: { repository, title: "title", body: "body" },
-    },
-    {
-      id: "comment",
-      name: "github_add_comment",
-      arguments: { repository, issue_number: 1, body: "body" },
-    },
-  ];
-  for (const [index, call] of calls.entries()) {
-    const results = await planner.executeBatch(
-      "session",
-      [call],
-      sdk.ToolPlanner.committerEmitter(committer),
-      `turn-${index}`,
-      { principalId: "principal", requestId: "request", traceId: "trace" },
-    );
-    if (results[0]?.error_code !== "APPROVAL_REJECTED") return false;
-  }
-  const events = await store.getEvents("session");
-  return (
-    credentialCalls === 0 &&
-    requestCalls === 0 &&
-    !events.some((event) => event.type === sdk.EventType.TOOL_CALL_STARTED)
+  const results = await planner.executeBatch(
+    "installed-proof-session",
+    [call],
+    sdk.ToolPlanner.committerEmitter(committer),
+    "installed-proof-turn",
+    { principalId: "principal", requestId: "request", traceId: "trace" },
   );
-}
-
-async function factoryClosesOwnedTransport(
-  integrationModule: GitHubIntegrationModule,
-  repository: string,
-): Promise<boolean> {
-  let closeCalls = 0;
-  const direct = new integrationModule.GitHubIntegration({}, () => {
-    closeCalls += 1;
-  });
-  direct.close();
-  direct.close();
-
-  const integration = integrationModule.createGithubIntegration({
-    tokenFor: async () => "artifact-proof-token",
-    repositories: [repository],
-  });
-  integration.close();
-  integration.close();
-  const getIssue = integration.tools().find(([spec]) => spec.name === "get_issue")?.[1];
-  if (getIssue === undefined) return false;
-  try {
-    await getIssue({ repository, issue_number: 1 }, context());
-  } catch (error) {
-    return closeCalls === 1 && error instanceof Error && error.name === "IntegrationPolicyError";
-  }
-  return false;
+  return {
+    results,
+    events: (await store.getEvents("installed-proof-session")) as Array<{
+      type: string;
+      metadata: Readonly<Record<string, unknown>>;
+    }>,
+  };
 }
 
 async function runProof(argv: string[]) {
@@ -372,23 +386,15 @@ async function runProof(argv: string[]) {
   if ("GITHUB_TOKEN" in process.env || "NODE_PATH" in process.env) {
     throw new Error("installed TypeScript proof environment is not isolated");
   }
-  proofStage = "containment";
   const args = parseArguments(argv);
   const sandbox = realpathSync(args.sandboxRoot);
-  const bundle = contained(args.bundleRoot, sandbox, "GitHub bundle");
   const packageRoot = contained(args.packageRoot, sandbox, "Kaji package");
   contained(fileURLToPath(import.meta.url), sandbox, "GitHub proof runner");
-  proofStage = "package-identity";
-  const sdkEntry = fileURLToPath(import.meta.resolve("@kaji/sdk"));
-  const resolvedSdk = realpathSync(join(dirname(sdkEntry), ".."));
-  if (resolvedSdk !== packageRoot) throw new Error("Kaji did not resolve from the npm artifact");
-  proofStage = "contract";
-  const fixturePath = contained(
-    join(packageRoot, "contracts/integrations/github-api-conformance-v1.json"),
-    packageRoot,
-    "GitHub conformance contract",
+  proofStage = "typescript-declaration-checks";
+  const typescriptDeclarationChecks = readTypeScriptDeclarationChecks(
+    args.typescriptDeclarationChecks,
+    sandbox,
   );
-  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as Fixture;
 
   proofStage = "network-guard";
   let networkAttempts = 0;
@@ -402,64 +408,430 @@ async function runProof(argv: string[]) {
     networkAttempts += 1;
     throw new Error("external network is disabled in package proof");
   });
+
   try {
-    proofStage = "sdk-import";
+    proofStage = "package-identity";
+    const requirePackage = createRequire(import.meta.url);
+    const sdkEntry = fileURLToPath(import.meta.resolve("@kaji/sdk"));
+    const githubEntry = fileURLToPath(import.meta.resolve("@kaji/sdk/integrations/github"));
+    const requiredSdkEntry = requirePackage.resolve("@kaji/sdk");
+    const requiredGithubEntry = requirePackage.resolve("@kaji/sdk/integrations/github");
+    if (
+      realpathSync(join(dirname(sdkEntry), "..")) !== packageRoot ||
+      realpathSync(join(dirname(requiredSdkEntry), "..")) !== packageRoot
+    ) {
+      throw new Error("Kaji did not resolve from the npm artifact");
+    }
+    contained(githubEntry, join(packageRoot, "dist"), "GitHub package export");
+    contained(requiredGithubEntry, join(packageRoot, "dist"), "CommonJS GitHub package export");
+    const fixture = JSON.parse(
+      readFileSync(
+        contained(
+          join(packageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+          packageRoot,
+          "GitHub conformance contract",
+        ),
+        "utf8",
+      ),
+    ) as ApiFixture;
+    const abi = JSON.parse(
+      readFileSync(
+        contained(
+          join(packageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+          packageRoot,
+          "GitHub shared ABI",
+        ),
+        "utf8",
+      ),
+    ) as SharedAbi;
+
+    proofStage = "public-imports";
     const sdk = await import("@kaji/sdk");
-    proofStage = "bundle-import";
-    const clientUrl = pathToFileURL(contained(join(bundle, "client.ts"), bundle, "GitHub client"));
-    const integrationUrl = pathToFileURL(
-      contained(join(bundle, "index.ts"), bundle, "GitHub integration"),
-    );
-    const clientModule = (await import(clientUrl.href)) as { GitHubClient: GitHubClientLike };
-    const integrationModule = (await import(integrationUrl.href)) as GitHubIntegrationModule;
-    proofStage = "conformance";
-    const { executedTools, unknownMutationPreserved, mutationRetries } = await runCases(
+    const testing = (await import("@kaji/sdk/testing")) as TestingRuntime;
+    const github = (await import("@kaji/sdk/integrations/github")) as GitHubRuntime;
+    const requiredSdk = requirePackage("@kaji/sdk") as SdkRuntime;
+    const requiredGithub = requirePackage("@kaji/sdk/integrations/github") as GitHubRuntime;
+    const publicScenarios: string[] = [];
+    const esmRuntimeExports = Object.keys(github).sort();
+    const cjsRuntimeExports = Object.keys(requiredGithub).sort();
+    for (const names of [esmRuntimeExports, cjsRuntimeExports]) {
+      if (!isDeepStrictEqual(names, [...EXPECTED_RUNTIME_EXPORTS].sort())) {
+        throw new Error("GitHub package exposed unexpected runtime symbols");
+      }
+    }
+    publicScenarios.push("conditional-exports");
+
+    proofStage = "class-identity";
+    const identityOptions = {
+      tokenFor: async () => "artifact-proof-token",
+      repositories: [] as const,
+    };
+    const esmIdentityInspected = github.inspectIntegration();
+    const cjsIdentityInspected = requiredGithub.inspectIntegration();
+    const esmIdentityCreated = github.createGithubIntegration(identityOptions);
+    const cjsIdentityCreated = requiredGithub.createGithubIntegration(identityOptions);
+    const esmClassIdentityMatched =
+      esmIdentityInspected instanceof github.GitHubIntegration &&
+      esmIdentityInspected instanceof sdk.Integration &&
+      Object.getPrototypeOf(github.GitHubIntegration.prototype) === sdk.Integration.prototype;
+    const cjsClassIdentityMatched =
+      cjsIdentityInspected instanceof requiredGithub.GitHubIntegration &&
+      cjsIdentityInspected instanceof requiredSdk.Integration &&
+      Object.getPrototypeOf(requiredGithub.GitHubIntegration.prototype) ===
+        requiredSdk.Integration.prototype;
+    const esmFactoryIdentityMatched =
+      esmIdentityCreated instanceof github.GitHubIntegration &&
+      esmIdentityCreated instanceof sdk.Integration &&
+      Object.getPrototypeOf(esmIdentityCreated) === github.GitHubIntegration.prototype;
+    const cjsFactoryIdentityMatched =
+      cjsIdentityCreated instanceof requiredGithub.GitHubIntegration &&
+      cjsIdentityCreated instanceof requiredSdk.Integration &&
+      Object.getPrototypeOf(cjsIdentityCreated) === requiredGithub.GitHubIntegration.prototype;
+    esmIdentityInspected.close();
+    cjsIdentityInspected.close();
+    esmIdentityCreated.close();
+    cjsIdentityCreated.close();
+    if (
+      !esmClassIdentityMatched ||
+      !cjsClassIdentityMatched ||
+      !esmFactoryIdentityMatched ||
+      !cjsFactoryIdentityMatched
+    ) {
+      throw new Error("GitHub package class identity differs from the root Integration export");
+    }
+    if (
+      !/\bfrom\s+["']@kaji\/sdk["']/.test(readFileSync(githubEntry, "utf8")) ||
+      !/\brequire\(["']@kaji\/sdk["']\)/.test(readFileSync(requiredGithubEntry, "utf8"))
+    ) {
+      throw new Error("GitHub package output does not resolve Integration through the root export");
+    }
+    publicScenarios.push("class-identity");
+
+    proofStage = "private-source-containment";
+    const privateSourceContainment = await inspectPrivateGitHubCompositionSources(packageRoot);
+    if (
+      privateSourceContainment.privateGitHubCompositionSourcesPacked ||
+      !privateSourceContainment.privateGitHubCompositionSourceImportsRejected
+    ) {
+      throw new Error("private GitHub package composition source is present or importable");
+    }
+    publicScenarios.push("private-source-containment");
+
+    proofStage = "declaration-privacy";
+    const declarationExports: string[][] = [];
+    for (const declarationPath of [
+      "dist/integrations/github.d.ts",
+      "dist/integrations/github.d.cts",
+    ]) {
+      const declaration = readFileSync(
+        contained(join(packageRoot, declarationPath), packageRoot, "GitHub declaration"),
+        "utf8",
+      );
+      const exports = declarationExportNames(declaration);
+      if (
+        !isDeepStrictEqual(exports, [...EXPECTED_DECLARATION_EXPORTS].sort()) ||
+        !declaration.includes("constructor(options: CreateGitHubIntegrationOptions);") ||
+        /GitHubClient|FixedOriginRequester|GitHubClientOptions|PackageGitHubRuntime|\bhttp\b|\brequester\b|\btransport\b/.test(
+          declaration,
+        )
+      ) {
+        throw new Error("GitHub declarations expose a private construction seam");
+      }
+      declarationExports.push(exports);
+    }
+    const [esmDeclarationExports, cjsDeclarationExports] = declarationExports as [
+      string[],
+      string[],
+    ];
+    publicScenarios.push("declaration-privacy");
+
+    proofStage = "catalog";
+    const inspected = github.inspectIntegration();
+    const packageTools = exactToolSpecs(inspected, abi, "ESM");
+    inspected.close();
+    const requiredInspected = requiredGithub.inspectIntegration();
+    const requiredPackageTools = exactToolSpecs(requiredInspected, abi, "CommonJS");
+    requiredInspected.close();
+    if (
+      packageTools.length !== EXPECTED_TOOLS.length ||
+      requiredPackageTools.length !== EXPECTED_TOOLS.length
+    ) {
+      throw new Error("GitHub shared ABI tool count changed");
+    }
+    publicScenarios.push("catalog-inspection");
+
+    proofStage = "registration";
+    const registry = new sdk.ToolRegistry();
+    github.inspectIntegration().register(registry);
+    const registered = registry.listSpecs();
+    if (
+      JSON.stringify(registered.map((spec) => spec.name)) !==
+        JSON.stringify(EXPECTED_TOOLS.map((name) => `github_${name}`)) ||
+      registered.some((spec, index) => spec.catalogName !== `github.${EXPECTED_TOOLS[index]}`)
+    ) {
+      throw new Error("GitHub provider aliases lost catalog identity");
+    }
+    publicScenarios.push("public-registration");
+
+    proofStage = "closed-lifecycle";
+    let closedTokenCalls = 0;
+    const closed = github.createGithubIntegration({
+      tokenFor: async () => {
+        closedTokenCalls += 1;
+        return "artifact-proof-token";
+      },
+      repositories: [fixture.repository],
+    });
+    closed.close();
+    closed.close();
+    const closedGetIssue = closed.tools().find(([spec]) => spec.name === "get_issue")?.[1];
+    if (closedGetIssue === undefined) throw new Error("GitHub get_issue handler is missing");
+    try {
+      await closedGetIssue({ repository: fixture.repository, issue_number: 1 }, context());
+      throw new Error("closed GitHub integration unexpectedly executed");
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "IntegrationPolicyError") throw error;
+    }
+    if (closedTokenCalls !== 0) throw new Error("closed GitHub integration read credentials");
+    publicScenarios.push("closed-lifecycle");
+
+    proofStage = "repository-policy";
+    let repositoryTokenCalls = 0;
+    const repositoryDenied = github.createGithubIntegration({
+      tokenFor: async () => {
+        repositoryTokenCalls += 1;
+        return "artifact-proof-token";
+      },
+      repositories: [fixture.repository],
+    });
+    const getFile = repositoryDenied.tools().find(([spec]) => spec.name === "get_file")?.[1];
+    if (getFile === undefined) throw new Error("GitHub get_file handler is missing");
+    try {
+      await getFile({ repository: "outside/repository", path: "README.md" }, context());
+      throw new Error("repository policy unexpectedly allowed execution");
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "IntegrationPolicyError") throw error;
+    } finally {
+      repositoryDenied.close();
+    }
+    if (repositoryTokenCalls !== 0) throw new Error("repository policy read credentials");
+    publicScenarios.push("repository-policy");
+
+    proofStage = "approval-rejection";
+    let approvalTokenCalls = 0;
+    const approvalIntegration = github.createGithubIntegration({
+      tokenFor: async () => {
+        approvalTokenCalls += 1;
+        return "artifact-proof-token";
+      },
+      repositories: [fixture.repository],
+    });
+    const approval = await executeCall(
       sdk,
-      clientModule.GitHubClient,
-      integrationModule.GitHubIntegration,
-      fixture,
+      approvalIntegration,
+      {
+        id: "approval",
+        name: "github_create_issue",
+        arguments: { repository: fixture.repository, title: "title", body: "body" },
+      },
+      {
+        policy: new sdk.ToolPolicy({ requireApprovalFor: new Set(["external_effect"]) }),
+        approvalHandler: {
+          request: async () => ({
+            granted: false,
+            code: "rejected",
+            reason: "Rejected by installed package proof",
+          }),
+        },
+      },
     );
-    proofStage = "approval";
-    const approvalFirst = await approvalPrecedesCredentials(
-      sdk,
-      clientModule.GitHubClient,
-      integrationModule.GitHubIntegration,
-      fixture.repository,
-    );
-    proofStage = "lifecycle";
-    const factoryLifecycleClosed = await factoryClosesOwnedTransport(
-      integrationModule,
-      fixture.repository,
-    );
+    approvalIntegration.close();
+    if (approvalTokenCalls !== 0 || approval.results[0]?.error_code !== "APPROVAL_REJECTED") {
+      throw new Error("approval rejection reached credentials");
+    }
+    assertToolEvents(sdk, approval.events, "github.create_issue", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ]);
+    publicScenarios.push("approval-rejection");
+
+    proofStage = "validation-failure";
+    let validationTokenCalls = 0;
+    const validationIntegration = github.createGithubIntegration({
+      tokenFor: async () => {
+        validationTokenCalls += 1;
+        return "artifact-proof-token";
+      },
+      repositories: [fixture.repository],
+    });
+    const validation = await executeCall(sdk, validationIntegration, {
+      id: "validation",
+      name: "github_get_issue",
+      arguments: { repository: fixture.repository },
+    });
+    validationIntegration.close();
+    if (
+      validationTokenCalls !== 0 ||
+      validation.results[0]?.error_code !== "INVALID_TOOL_ARGUMENTS"
+    ) {
+      throw new Error("validation failure reached credentials");
+    }
+    assertToolEvents(sdk, validation.events, "github.get_issue", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ]);
+    publicScenarios.push("validation-failure");
+
+    proofStage = "execution-failure";
+    const executionIntegration = github.createGithubIntegration({
+      tokenFor: async () => {
+        throw new Error("credential provider unavailable");
+      },
+      repositories: [fixture.repository],
+    });
+    const execution = await executeCall(sdk, executionIntegration, {
+      id: "execution",
+      name: "github_get_issue",
+      arguments: { repository: fixture.repository, issue_number: 1 },
+    });
+    executionIntegration.close();
+    assertToolEvents(sdk, execution.events, "github.get_issue", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_STARTED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ]);
+    publicScenarios.push("execution-failure");
+
+    proofStage = "completed-event";
+    class SyntheticIntegration extends sdk.Integration {
+      readonly namespace = "synthetic";
+
+      override tools() {
+        return [
+          [
+            { name: "complete", description: "complete", parameters: {}, risk: "read" as const },
+            async () => ({ ok: true }),
+          ],
+        ] as never;
+      }
+    }
+    const completed = await executeCall(sdk, new SyntheticIntegration(), {
+      id: "completed",
+      name: "synthetic_complete",
+      arguments: {},
+    });
+    assertToolEvents(sdk, completed.events, "synthetic.complete", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_STARTED,
+      sdk.EventType.TOOL_CALL_COMPLETED,
+    ]);
+    publicScenarios.push("synthetic-completed-event");
+
+    proofStage = "mock-provider";
+    const mockStore = new sdk.InMemoryEventStore();
+    const mockIntegration = github.createGithubIntegration({
+      tokenFor: async () => {
+        throw new Error("credential provider unavailable");
+      },
+      repositories: [fixture.repository],
+    });
+    const runtime = new sdk.AgentBuilder()
+      .provider(
+        new testing.MockProvider({
+          toolCall: {
+            name: "github_get_issue",
+            args: { repository: fixture.repository, issue_number: 1 },
+          },
+        }),
+      )
+      .integration(mockIntegration)
+      .build({ store: mockStore });
+    const turn = await runtime.turn("inspect the issue", {
+      context: { principalId: "installed-proof" },
+    });
+    const mockEvents = (await mockStore.getEvents(turn.sessionId)) as Array<{
+      type: string;
+      metadata: Readonly<Record<string, unknown>>;
+    }>;
+    runtime.close();
+    mockIntegration.close();
+    if (turn.text !== "The mock provider has completed the tool loop.") {
+      throw new Error("MockProvider did not terminate deterministically");
+    }
+    assertToolEvents(sdk, mockEvents, "github.get_issue", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_STARTED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ]);
+    publicScenarios.push("mock-provider-loop");
+
+    proofStage = "alias-collision";
+    class CollidingIntegration extends sdk.Integration {
+      readonly namespace = "github_get";
+
+      override tools() {
+        return [
+          [
+            { name: "file", description: "collision", parameters: {}, risk: "read" as const },
+            async () => ({}),
+          ],
+        ] as never;
+      }
+    }
+    const collisionRegistry = new sdk.ToolRegistry();
+    github.inspectIntegration().register(collisionRegistry);
+    try {
+      new CollidingIntegration().register(collisionRegistry);
+      throw new Error("provider alias collision was accepted");
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes("github_get_file")) throw error;
+    }
+    publicScenarios.push("alias-collision");
+
     proofStage = "assertions";
     if (
-      executedTools.size !== EXPECTED_TOOLS.size ||
-      [...EXPECTED_TOOLS].some((name) => !executedTools.has(name)) ||
-      !unknownMutationPreserved ||
-      mutationRetries !== 0 ||
-      !approvalFirst ||
-      !factoryLifecycleClosed ||
+      JSON.stringify(publicScenarios) !== JSON.stringify(EXPECTED_PUBLIC_SCENARIOS) ||
       networkAttempts !== 0
     ) {
-      throw new Error("installed GitHub proof assertions failed");
+      throw new Error("installed GitHub public proof assertions failed");
     }
     return {
-      schemaVersion: 1,
+      schemaVersion: 3,
       evidenceClass: "offline_exact_artifact_smoke",
       integration: "github",
       runtime: "typescript",
-      network: "scripted",
+      network: "blocked",
       liveProvider: false,
-      contractVersion: fixture.version,
-      caseCount: fixture.cases.length,
-      toolCount: executedTools.size,
+      sharedAbiVersion: abi.version,
+      apiFixtureVersion: fixture.version,
+      sharedFixtureCaseCount: fixture.cases.length,
+      publicScenarioCount: publicScenarios.length,
+      toolCount: packageTools.length,
+      readToolCount: packageTools.filter((spec) => spec.risk === "read").length,
+      esmSharedAbiMatched: true,
+      cjsSharedAbiMatched: true,
+      esmClassIdentityMatched,
+      cjsClassIdentityMatched,
+      esmFactoryIdentityMatched,
+      cjsFactoryIdentityMatched,
+      esmRuntimeExports,
+      cjsRuntimeExports,
+      esmDeclarationExports,
+      cjsDeclarationExports,
+      typescriptDeclarationChecks,
+      privateGitHubCompositionSourcesPacked:
+        privateSourceContainment.privateGitHubCompositionSourcesPacked,
+      privateGitHubCompositionSourceImportsRejected:
+        privateSourceContainment.privateGitHubCompositionSourceImportsRejected,
+      closedCallsDeniedBeforeCredentialAccess: true,
       approvalDeniedBeforeCredentialAccess: true,
-      mutationRetries: 0,
-      unknownMutationPreserved: true,
-      sourceRuntimeDetected: false,
+      repositoryDeniedBeforeCredentialAccess: true,
+      githubCatalogEventsVerified: ["requested", "started", "failed"],
+      genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+      aliasCollisionRejected: true,
       conclusion: "passed",
       failureCode: null,
-    };
+    } as const;
   } finally {
     globalThis.fetch = originalFetch;
     Reflect.set(Socket.prototype, "connect", originalConnect);

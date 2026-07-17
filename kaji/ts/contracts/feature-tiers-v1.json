@@ -51,6 +51,15 @@
           "snapshotIntegrationResult"
         ]
       },
+      "./integrations/github": {
+        "tier": "experimental",
+        "exports": [
+          "CreateGitHubIntegrationOptions",
+          "GitHubIntegration",
+          "createGithubIntegration",
+          "inspectIntegration"
+        ]
+      },
       "./openai": {
         "tier": "stable",
         "exports": ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"]

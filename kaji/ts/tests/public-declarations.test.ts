@@ -109,6 +109,30 @@ describe("public declarations", () => {
     }
   });
 
+  it("exposes only safe GitHub package construction options", () => {
+    const sources = [
+      "src/integrations/github.ts",
+      "src/integrations/github-package-internal.ts",
+      "registry/github/index.ts",
+      "registry/github/client.ts",
+    ];
+    for (const declaration of [
+      readFreshDeclaration("integrations/github.d.ts", sources),
+      readFreshDeclaration("integrations/github.d.cts", sources),
+    ]) {
+      expect(declarationExportNames(declaration)).toEqual([
+        "CreateGitHubIntegrationOptions",
+        "GitHubIntegration",
+        "createGithubIntegration",
+        "inspectIntegration",
+      ]);
+      expect(declaration).toContain("constructor(options: CreateGitHubIntegrationOptions);");
+      expect(declaration).not.toMatch(
+        /GitHubClient|FixedOriginRequester|GitHubClientOptions|PackageGitHubRuntime|\bhttp\b|\brequester\b|\btransport\b/,
+      );
+    }
+  });
+
   it("classifies every built root export exactly once and syncs the generated docs", () => {
     const declaration = readFreshDeclaration("index.d.ts", ["src/index.ts"]);
     const declaredExports = declarationExportNames(declaration);

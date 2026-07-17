@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { listToolSpecs, ToolRegistry } from "@kaji/sdk";
+import { Integration, listToolSpecs, ToolRegistry } from "@kaji/sdk";
 import type { FixedOriginRequester } from "@kaji/sdk/integrations";
 import { EventType } from "@/events/types";
 import { InMemoryEventCommitter } from "@/events/committer";
@@ -12,6 +12,12 @@ import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { GitHubClient } from "../registry/github/client";
 import { GitHubIntegration, inspectIntegration } from "../registry/github/index";
+import {
+  createGithubIntegration as createPackageGithubIntegration,
+  GitHubIntegration as PackageGitHubIntegration,
+  inspectIntegration as inspectPackageIntegration,
+} from "@/integrations/github";
+import { createPackageGitHubState } from "@/integrations/github-package-internal";
 
 const kajiRoot = resolve(import.meta.dirname, "../..");
 const abi = JSON.parse(
@@ -62,6 +68,114 @@ describe("GitHub registry bundle", () => {
       tools: abi.tools,
     });
     expect(listToolSpecs()).toEqual(before);
+  });
+
+  it("exposes the exact shared ABI from the public package facade", () => {
+    const integration = inspectPackageIntegration();
+    const tools = integration.tools().map(([spec]) => ({
+      name: spec.name,
+      description: spec.description,
+      parameters: spec.parameters,
+      risk: spec.risk,
+      parallel_safe: spec.parallel_safe,
+      timeout_ms: spec.timeout_ms,
+    }));
+
+    expect(integration).toBeInstanceOf(PackageGitHubIntegration);
+    expect({ namespace: integration.namespace, tools }).toEqual({
+      namespace: abi.namespace,
+      tools: abi.tools,
+    });
+    expect(tools.filter((tool) => tool.risk === "read")).toHaveLength(4);
+    integration.close();
+  });
+
+  it("keeps package factory lifecycle idempotent and introspectable", () => {
+    const integration = createPackageGithubIntegration({
+      tokenFor: async () => "token",
+      repositories: [],
+    });
+
+    expect(integration.tools()).toHaveLength(abi.tools.length);
+    integration.close();
+    integration.close();
+    expect(integration.tools()).toHaveLength(abi.tools.length);
+  });
+
+  it("rejects post-close package calls before reading credentials", async () => {
+    const tokenFor = vi.fn(async () => "token");
+    const integration = createPackageGithubIntegration({
+      tokenFor,
+      repositories: ["owner/repo"],
+    });
+    const getIssue = integration.tools().find(([spec]) => spec.name === "get_issue")?.[1];
+
+    integration.close();
+
+    await expect(
+      getIssue?.({ repository: "owner/repo", issue_number: 1 }, {
+        signal: new AbortController().signal,
+      } as never),
+    ).rejects.toMatchObject({ name: "IntegrationPolicyError" });
+    expect(tokenFor).not.toHaveBeenCalled();
+  });
+
+  it("closes its requester when package client construction fails", () => {
+    const close = vi.fn();
+    const failure = new Error("client construction failed");
+
+    expect(() =>
+      createPackageGitHubState(
+        { tokenFor: async () => "token", repositories: ["owner/repo"] },
+        {
+          createRequester: () => ({ request: vi.fn(), close }) as never,
+          createClient: () => {
+            throw failure;
+          },
+        },
+      ),
+    ).toThrow(failure);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("registers provider aliases with their logical catalog identities", () => {
+    const integration = inspectPackageIntegration();
+    const registry = new ToolRegistry();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    integration.register(registry);
+
+    expect(registry.listSpecs().map(({ name, catalogName }) => ({ name, catalogName }))).toEqual(
+      abi.tools.map((tool) => ({
+        name: `github_${tool.name}`,
+        catalogName: `github.${tool.name}`,
+      })),
+    );
+    expect(warn).toHaveBeenCalledTimes(abi.tools.length);
+    warn.mockRestore();
+  });
+
+  it("rejects colliding provider aliases before a turn", () => {
+    class CollidingIntegration extends Integration {
+      readonly namespace = "github_get";
+
+      override tools() {
+        return [
+          [
+            { name: "file", description: "collision", parameters: {}, risk: "read" as const },
+            async () => ({}),
+          ],
+        ] as never;
+      }
+    }
+
+    const registry = new ToolRegistry();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    inspectPackageIntegration().register(registry);
+
+    expect(() => new CollidingIntegration().register(registry)).toThrow(
+      "Tool already registered: github_get_file",
+    );
+    warn.mockRestore();
   });
 
   it("delegates snake_case tool arguments to the matching client method", async () => {
