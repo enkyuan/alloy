@@ -382,6 +382,8 @@ interface TurnEventCollector {
  * - `toolCallEvents` are `KajiEvent`s of type `TOOL_CALL_REQUESTED`, not
  *   provider-neutral `ToolCall` payloads. The name reflects the type.
  * - `events` contains persisted events after this call's starting cursor.
+ * - `accounting` covers completed provider iterations, including iterations
+ *   with no durable assistant completion event.
  */
 export interface TurnResult {
   text: string;
@@ -389,6 +391,86 @@ export interface TurnResult {
   turnId: string;
   toolCallEvents: StoredKajiEvent[];
   events: StoredKajiEvent[];
+  accounting: TurnAccounting;
+}
+
+/** Immutable provider usage and cost totals for one successful turn. */
+export interface TurnAccounting {
+  readonly providerIterations: number;
+  readonly usage: Readonly<TokenUsage> | null;
+  readonly usageComplete: boolean;
+  readonly costUsd: number | null;
+  readonly costComplete: boolean;
+}
+
+class TurnAccountingAccumulator {
+  private completedIterations = 0;
+  private usageReports = 0;
+  private costReports = 0;
+  private inputTokens = 0;
+  private outputTokens = 0;
+  private totalCostUsd = 0;
+
+  get providerIterations(): number {
+    return this.completedIterations;
+  }
+
+  recordCompletedIteration(usage: TokenUsage | undefined, costUsd: number | undefined): void {
+    let nextInput = this.inputTokens;
+    let nextOutput = this.outputTokens;
+    let nextCost = this.totalCostUsd;
+
+    if (usage !== undefined) {
+      if (
+        !Number.isSafeInteger(usage.input) ||
+        usage.input < 0 ||
+        !Number.isSafeInteger(usage.output) ||
+        usage.output < 0
+      ) {
+        throw new RangeError("Provider token usage must contain non-negative safe integers");
+      }
+      nextInput += usage.input;
+      nextOutput += usage.output;
+      if (!Number.isSafeInteger(nextInput) || !Number.isSafeInteger(nextOutput)) {
+        throw new RangeError("Turn token usage exceeds the safe integer range");
+      }
+    }
+
+    if (costUsd !== undefined) {
+      if (!Number.isFinite(costUsd) || costUsd < 0) {
+        throw new RangeError("Provider cost must be a finite non-negative number");
+      }
+      nextCost += costUsd;
+      if (!Number.isFinite(nextCost)) {
+        throw new RangeError("Turn cost exceeds the finite number range");
+      }
+    }
+
+    this.completedIterations += 1;
+    if (usage !== undefined) {
+      this.usageReports += 1;
+      this.inputTokens = nextInput;
+      this.outputTokens = nextOutput;
+    }
+    if (costUsd !== undefined) {
+      this.costReports += 1;
+      this.totalCostUsd = nextCost;
+    }
+  }
+
+  snapshot(): TurnAccounting {
+    const usage =
+      this.usageReports === 0
+        ? null
+        : Object.freeze({ input: this.inputTokens, output: this.outputTokens });
+    return Object.freeze({
+      providerIterations: this.completedIterations,
+      usage,
+      usageComplete: this.completedIterations > 0 && this.usageReports === this.completedIterations,
+      costUsd: this.costReports === 0 ? null : this.totalCostUsd,
+      costComplete: this.completedIterations > 0 && this.costReports === this.completedIterations,
+    });
+  }
 }
 
 /**
@@ -978,7 +1060,7 @@ export class AgentRuntime {
             });
             await this.appendEvent(created);
           }
-          await this.sendUnlocked(sessionId, prompt, turnId, token, context);
+          const accounting = await this.sendUnlocked(sessionId, prompt, turnId, token, context);
           const resultEvents = turnEvents.map(cloneStoredEvent);
           const text = resultEvents
             .filter((event) => event.type === EventType.AGENT_MESSAGE_COMPLETED)
@@ -987,7 +1069,7 @@ export class AgentRuntime {
           const toolCallEvents = resultEvents
             .filter((event) => event.type === EventType.TOOL_CALL_REQUESTED)
             .map(cloneStoredEvent);
-          return { text, sessionId, turnId, toolCallEvents, events: resultEvents };
+          return { text, sessionId, turnId, toolCallEvents, events: resultEvents, accounting };
         } finally {
           this.turnEventCollectors.delete(turnId);
         }
@@ -1023,7 +1105,7 @@ export class AgentRuntime {
     turnId: string,
     token: CancellationToken,
     context: ResolvedTurnContext,
-  ): Promise<void> {
+  ): Promise<TurnAccounting> {
     token.throwIfCancelled();
     const event = this.event({
       type: EventType.USER_MESSAGE,
@@ -1032,7 +1114,7 @@ export class AgentRuntime {
       content,
     });
     await this.appendEvent(event);
-    await this.runTurnUnlocked(sessionId, turnId, token, context);
+    return this.runTurnUnlocked(sessionId, turnId, token, context);
   }
 
   /**
@@ -1065,11 +1147,11 @@ export class AgentRuntime {
     turnId: string,
     token: CancellationToken,
     turnContext: ResolvedTurnContext,
-  ): Promise<void> {
+  ): Promise<TurnAccounting> {
     token.throwIfCancelled();
     const turnStarted = this.clock.nowMonotonic();
     let turnOutcome: TurnOutcome = "completed";
-    let iterations = 0;
+    const accounting = new TurnAccountingAccumulator();
     const turnSpan = startSpan(this.trace, "kaji.turn", {
       "session.id": sessionId,
       "turn.id": turnId,
@@ -1092,7 +1174,6 @@ export class AgentRuntime {
       const providerTools = this.allowToolCalls ? tools : [];
 
       for (let i = 0; i < this.maxToolIterations; i++) {
-        iterations = i + 1;
         token.throwIfCancelled();
 
         // Persist a provider-output/tool-batch boundary for deterministic
@@ -1182,6 +1263,8 @@ export class AgentRuntime {
           providerSpan.end();
         }
 
+        accounting.recordCompletedIteration(usage, costUsd);
+
         // Finalize the assistant text for THIS iteration before touching tools.
         // Mirrors the Python reference (runtime.py:134): a turn that streams both
         // text and tool calls must still emit AgentMessageCompleted, or the text
@@ -1241,7 +1324,7 @@ export class AgentRuntime {
       ) {
         turnOutcome = "cancelled";
         await emit({ type: EventType.CANCELLATION_COMPLETED });
-        return;
+        return accounting.snapshot();
       }
       turnOutcome = "failed";
       turnSpan.recordError(error);
@@ -1254,9 +1337,12 @@ export class AgentRuntime {
         Math.max(0, this.clock.nowMonotonic() - turnStarted),
         { outcome: turnOutcome },
       );
-      recordMetric(this.metrics, "kaji.turn.iterations", iterations, { outcome: turnOutcome });
+      recordMetric(this.metrics, "kaji.turn.iterations", accounting.providerIterations, {
+        outcome: turnOutcome,
+      });
       turnSpan.end();
     }
+    return accounting.snapshot();
   }
 
   private async recordTurnFailure(

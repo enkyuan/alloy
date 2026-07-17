@@ -901,10 +901,23 @@ describe("provider fault matrix", () => {
     await stream.entered.promise;
     token.cancel();
 
-    await expect(turn).resolves.toMatchObject({ sessionId: "caller-cancel" });
+    await expect(turn).resolves.toMatchObject({
+      sessionId: "caller-cancel",
+      accounting: {
+        providerIterations: 0,
+        usage: null,
+        usageComplete: false,
+        costUsd: null,
+        costComplete: false,
+      },
+    });
     expect(measurements.find(({ name }) => name === "kaji.provider.duration_ms")?.labels).toEqual({
       provider_family: "custom",
       status: "cancelled",
+    });
+    expect(measurements.find(({ name }) => name === "kaji.turn.iterations")).toMatchObject({
+      value: 0,
+      labels: { outcome: "cancelled" },
     });
     expect(stream.returnCount).toBe(1);
     expect(coordinator.entryCount).toBe(0);

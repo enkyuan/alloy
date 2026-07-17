@@ -148,6 +148,22 @@ describe("public declarations", () => {
     }
   });
 
+  it("exposes frozen successful-turn accounting from both module formats", () => {
+    const sources = ["src/index.ts", "src/runtime/runtime.ts"];
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", sources),
+      readFreshDeclaration("index.d.cts", sources),
+    ]) {
+      expect(declaration).toContain("interface TurnAccounting");
+      expect(declaration).toContain("readonly providerIterations: number");
+      expect(declaration).toContain("readonly usage: Readonly<TokenUsage> | null");
+      expect(declaration).toContain("readonly usageComplete: boolean");
+      expect(declaration).toContain("readonly costUsd: number | null");
+      expect(declaration).toContain("readonly costComplete: boolean");
+      expect(declaration).toMatch(/interface TurnResult \{[\s\S]*?accounting: TurnAccounting;/);
+    }
+  });
+
   it("exposes tool validation classes from both module formats", () => {
     const sources = ["src/index.ts", "src/tools/validation.ts"];
     for (const declaration of [

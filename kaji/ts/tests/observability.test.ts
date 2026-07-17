@@ -239,6 +239,10 @@ describe("observability contracts", () => {
     ]) {
       expect(names.has(expected as never)).toBe(true);
     }
+    expect(measurements.find(({ name }) => name === "kaji.turn.iterations")).toMatchObject({
+      value: 1,
+      labels: { outcome: "completed" },
+    });
     expect(JSON.stringify(measurements)).not.toContain(secret);
     expect(JSON.stringify(measurements)).not.toContain("secret-tool-name");
     expect(JSON.stringify(measurements)).not.toContain("principal");

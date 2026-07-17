@@ -420,6 +420,9 @@ describe("AgentRuntime.runTurn", () => {
           measurement.labels.status === "cancelled",
       ),
     ).toBe(true);
+    expect(
+      measurements.find((measurement) => measurement.name === "kaji.turn.iterations"),
+    ).toMatchObject({ value: 0, labels: { outcome: "cancelled" } });
   });
 
   it("still rejects provider errors when the cancellation token is not cancelled", async () => {

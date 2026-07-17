@@ -213,6 +213,7 @@ export {
   type AgentStrategy,
   type RunTurnOptions,
   type TurnOptions,
+  type TurnAccounting,
   type TurnResult,
 } from "@/runtime/runtime";
 export { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/errors";

@@ -98,7 +98,11 @@ const REPLAY_FIXTURE =
     session_id: "artifact-session",
     sequence: 1,
   }) + "\n";
-const LIFECYCLE_SMOKE_SOURCE = `import { AgentBuilder, InMemoryEventStore } from "@kaji/sdk";
+const LIFECYCLE_SMOKE_SOURCE = `import {
+  AgentBuilder,
+  InMemoryEventStore,
+  type TurnAccounting,
+} from "@kaji/sdk";
 import { MockProvider } from "@kaji/sdk/testing";
 
 const graceMs = 10_000;
@@ -108,7 +112,18 @@ const runtime = new AgentBuilder().provider(new MockProvider()).build({ store })
 let failed = false;
 let failure: unknown;
 try {
-  await runtime.turn("Exercise explicit lifecycle cleanup.", { sessionId });
+  const result = await runtime.turn("Exercise explicit lifecycle cleanup.", { sessionId });
+  const accounting: TurnAccounting = result.accounting;
+  if (
+    accounting.providerIterations !== 1 ||
+    accounting.usage !== null ||
+    accounting.usageComplete ||
+    accounting.costUsd !== null ||
+    accounting.costComplete ||
+    !Object.isFrozen(accounting)
+  ) {
+    throw new Error("installed lifecycle fixture received invalid turn accounting");
+  }
 } catch (error) {
   failed = true;
   failure = error;

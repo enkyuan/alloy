@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import {
   AgentBuilder,
+  CancellationToken,
   InMemoryEventStore,
   InMemoryToolIdempotencyLedger,
   EventType,
@@ -11,7 +12,10 @@ import {
   SessionPurgeUnsupportedError,
   supportsSessionPurge,
   type EventStore,
+  type MetricMeasurement,
+  type MetricsSink,
   type ModelProvider,
+  type ModelProviderOptions,
   type ModelResponseChunk,
   type ProviderMessage,
   type ToolIdempotencyLedger,
@@ -81,6 +85,65 @@ class RecordingProvider implements ModelProvider {
     this.messages.push(structuredClone(messages));
     yield { delta: "fresh-answer", toolCalls: [] };
   }
+}
+
+class AccountingProvider implements ModelProvider {
+  private call = 0;
+
+  constructor(private readonly iterations: readonly (readonly ModelResponseChunk[])[]) {}
+
+  async generate() {
+    return { content: "", toolCalls: [] };
+  }
+
+  async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+    const chunks = this.iterations[this.call++];
+    if (chunks === undefined) throw new Error("missing scripted provider iteration");
+    for (const chunk of chunks) yield structuredClone(chunk);
+  }
+}
+
+function accountingToolCall(id: string): ModelResponseChunk {
+  return {
+    delta: "",
+    toolCalls: [{ id, name: "accounting_echo", args: {} }],
+  };
+}
+
+function buildAccountingRuntime(
+  provider: ModelProvider,
+  options: {
+    maxToolIterations?: number;
+    metrics?: MetricsSink;
+    onTool?: () => void | Promise<void>;
+  } = {},
+) {
+  const store = new InMemoryEventStore();
+  const builder = new AgentBuilder()
+    .provider(provider)
+    .integration({
+      register(registry) {
+        registry.register(
+          { name: "accounting_echo", description: "accounting echo", parameters: {}, risk: "read" },
+          async () => {
+            await options.onTool?.();
+            return { ok: true };
+          },
+        );
+      },
+    })
+    .defaultContext({ principalId: "accounting-test" });
+  if (options.maxToolIterations !== undefined) {
+    builder.strategy({ maxToolIterations: options.maxToolIterations });
+  }
+  if (options.metrics !== undefined) builder.metricsSink(options.metrics);
+  return { runtime: builder.build({ store }), store };
+}
+
+function turnIterations(measurements: readonly MetricMeasurement[]): number[] {
+  return measurements
+    .filter((measurement) => measurement.name === "kaji.turn.iterations")
+    .map((measurement) => measurement.value);
 }
 
 function build(provider: MockProvider) {
@@ -358,5 +421,327 @@ describe("AgentRuntime.turn", () => {
     }
     const { runtime } = build(new FailingProvider() as unknown as MockProvider);
     await expect(runtime.turn("hi")).rejects.toThrow("provider boom");
+  });
+});
+
+describe("TurnResult.accounting", () => {
+  it.each([
+    { label: "tool-only", firstDelta: "", completionCount: 1 },
+    { label: "mixed text and tool", firstDelta: "checking", completionCount: 2 },
+  ])(
+    "includes a $label provider iteration that durable completion totals cannot represent",
+    async ({ firstDelta, completionCount }) => {
+      const first = accountingToolCall("accounting-1");
+      first.delta = firstDelta;
+      first.usage = { input: 10, output: 2 };
+      first.costUsd = 0.01;
+      const provider = new AccountingProvider([
+        [first],
+        [{ delta: "done", toolCalls: [], usage: { input: 20, output: 3 }, costUsd: 0.02 }],
+      ]);
+      const measurements: MetricMeasurement[] = [];
+      const { runtime } = buildAccountingRuntime(provider, {
+        metrics: {
+          record(measurement) {
+            measurements.push(measurement);
+          },
+        },
+      });
+
+      const result = await runtime.turn("account for this");
+
+      expect(result.accounting).toEqual({
+        providerIterations: 2,
+        usage: { input: 30, output: 5 },
+        usageComplete: true,
+        costUsd: expect.closeTo(0.03),
+        costComplete: true,
+      });
+      const completions = result.events.filter(
+        (event) => event.type === EventType.AGENT_MESSAGE_COMPLETED,
+      );
+      expect(completions).toHaveLength(completionCount);
+      if (firstDelta === "") {
+        expect(completions).toEqual([
+          expect.objectContaining({
+            content: "done",
+            tokens: { input: 20, output: 3 },
+            cost_usd: 0.02,
+          }),
+        ]);
+      }
+      expect(turnIterations(measurements)).toEqual([2]);
+    },
+  );
+
+  it.each([
+    {
+      label: "all dimensions supplied",
+      first: { usage: { input: 1, output: 2 }, costUsd: 0.125 },
+      second: { usage: { input: 3, output: 4 }, costUsd: 0.25 },
+      expected: {
+        usage: { input: 4, output: 6 },
+        usageComplete: true,
+        costUsd: 0.375,
+        costComplete: true,
+      },
+    },
+    {
+      label: "dimensions partially supplied",
+      first: { usage: { input: 1, output: 2 } },
+      second: { costUsd: 0.25 },
+      expected: {
+        usage: { input: 1, output: 2 },
+        usageComplete: false,
+        costUsd: 0.25,
+        costComplete: false,
+      },
+    },
+    {
+      label: "dimensions never supplied",
+      first: {},
+      second: {},
+      expected: {
+        usage: null,
+        usageComplete: false,
+        costUsd: null,
+        costComplete: false,
+      },
+    },
+    {
+      label: "explicit zeroes supplied",
+      first: { usage: { input: 0, output: 0 }, costUsd: 0 },
+      second: { usage: { input: 0, output: 0 }, costUsd: 0 },
+      expected: {
+        usage: { input: 0, output: 0 },
+        usageComplete: true,
+        costUsd: 0,
+        costComplete: true,
+      },
+    },
+  ])("reports honest completeness when $label", async ({ first, second, expected }) => {
+    const provider = new AccountingProvider([
+      [{ ...accountingToolCall("matrix-1"), ...first }],
+      [{ delta: "done", toolCalls: [], ...second }],
+    ]);
+    const { runtime } = buildAccountingRuntime(provider);
+
+    const result = await runtime.turn("matrix");
+
+    expect(result.accounting).toEqual({ providerIterations: 2, ...expected });
+  });
+
+  it("uses the latest supplied metadata within an iteration without erasing it on omission", async () => {
+    const { runtime } = buildAccountingRuntime(
+      new AccountingProvider([
+        [
+          { delta: "", toolCalls: [], usage: { input: 1, output: 2 }, costUsd: 0.125 },
+          { delta: "done", toolCalls: [], usage: { input: 3, output: 4 }, costUsd: 0.25 },
+          { delta: "!", toolCalls: [] },
+        ],
+      ]),
+    );
+
+    const result = await runtime.turn("latest metadata");
+
+    expect(result.accounting).toEqual({
+      providerIterations: 1,
+      usage: { input: 3, output: 4 },
+      usageComplete: true,
+      costUsd: 0.25,
+      costComplete: true,
+    });
+  });
+
+  it("counts an empty completed stream and freezes every accounting object", async () => {
+    const { runtime } = buildAccountingRuntime(new AccountingProvider([[]]));
+
+    const result = await runtime.turn("empty");
+
+    expect(result.accounting).toEqual({
+      providerIterations: 1,
+      usage: null,
+      usageComplete: false,
+      costUsd: null,
+      costComplete: false,
+    });
+    expect(Object.isFrozen(result.accounting)).toBe(true);
+
+    const withUsage = await buildAccountingRuntime(
+      new AccountingProvider([
+        [{ delta: "done", toolCalls: [], usage: { input: 1, output: 2 }, costUsd: 0 }],
+      ]),
+    ).runtime.turn("immutable");
+    expect(Object.isFrozen(withUsage.accounting.usage)).toBe(true);
+    expect(() => {
+      (withUsage.accounting as { providerIterations: number }).providerIterations = 99;
+    }).toThrow(TypeError);
+    expect(() => {
+      (withUsage.accounting.usage as { input: number }).input = 99;
+    }).toThrow(TypeError);
+  });
+
+  it("returns every completed iteration on max-tool exhaustion", async () => {
+    const measurements: MetricMeasurement[] = [];
+    const provider = new AccountingProvider([
+      [{ ...accountingToolCall("exhaust-1"), usage: { input: 1, output: 2 }, costUsd: 0.1 }],
+      [{ ...accountingToolCall("exhaust-2"), usage: { input: 3, output: 4 }, costUsd: 0.2 }],
+    ]);
+    const { runtime } = buildAccountingRuntime(provider, {
+      maxToolIterations: 2,
+      metrics: {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+    });
+
+    const result = await runtime.turn("exhaust");
+
+    expect(result.accounting).toMatchObject({
+      providerIterations: 2,
+      usage: { input: 4, output: 6 },
+      usageComplete: true,
+      costComplete: true,
+    });
+    expect(result.accounting.costUsd).toBeCloseTo(0.3);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ type: EventType.AGENT_TURN_EXHAUSTED, max_iterations: 2 }),
+    );
+    expect(turnIterations(measurements)).toEqual([2]);
+  });
+
+  it("keeps completed accounting when cancellation begins during tool execution", async () => {
+    const token = new CancellationToken();
+    const measurements: MetricMeasurement[] = [];
+    const provider = new AccountingProvider([
+      [{ ...accountingToolCall("cancel-tool"), usage: { input: 5, output: 1 }, costUsd: 0.5 }],
+    ]);
+    const { runtime } = buildAccountingRuntime(provider, {
+      metrics: {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+      onTool: () => token.cancel(),
+    });
+
+    const result = await runtime.turn("cancel", { cancellationToken: token });
+
+    expect(result.accounting).toEqual({
+      providerIterations: 1,
+      usage: { input: 5, output: 1 },
+      usageComplete: true,
+      costUsd: 0.5,
+      costComplete: true,
+    });
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ type: EventType.CANCELLATION_COMPLETED }),
+    );
+    expect(turnIterations(measurements)).toEqual([1]);
+  });
+
+  it("excludes an interrupted provider stream and its partial metadata", async () => {
+    let call = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        return { content: "", toolCalls: [] };
+      },
+      async *generateStream(_messages, _tools, options?: ModelProviderOptions) {
+        call++;
+        if (call === 1) {
+          yield {
+            ...accountingToolCall("cancel-provider"),
+            usage: { input: 7, output: 2 },
+            costUsd: 0.7,
+          };
+          return;
+        }
+        yield { delta: "partial", toolCalls: [], usage: { input: 100, output: 100 }, costUsd: 10 };
+        (options?.cancellationToken as CancellationToken | undefined)?.cancel();
+        yield { delta: "ignored", toolCalls: [], usage: { input: 200, output: 200 }, costUsd: 20 };
+      },
+    };
+    const measurements: MetricMeasurement[] = [];
+    const { runtime } = buildAccountingRuntime(provider, {
+      metrics: {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+    });
+
+    const result = await runtime.turn("interrupt");
+
+    expect(result.accounting).toEqual({
+      providerIterations: 1,
+      usage: { input: 7, output: 2 },
+      usageComplete: true,
+      costUsd: 0.7,
+      costComplete: true,
+    });
+    expect(result.events).toContainEqual(
+      expect.objectContaining({ type: EventType.CANCELLATION_COMPLETED }),
+    );
+    expect(turnIterations(measurements)).toEqual([1]);
+  });
+
+  it.each([
+    ["negative input", { usage: { input: -1, output: 0 } }],
+    ["fractional output", { usage: { input: 0, output: 0.5 } }],
+    ["unsafe input", { usage: { input: Number.MAX_SAFE_INTEGER + 1, output: 0 } }],
+    ["non-finite output", { usage: { input: 0, output: Number.POSITIVE_INFINITY } }],
+    ["negative cost", { costUsd: -0.01 }],
+    ["non-finite cost", { costUsd: Number.POSITIVE_INFINITY }],
+  ])("rejects tool-only %s metadata before exposing it", async (_label, metadata) => {
+    const provider = new AccountingProvider([
+      [{ ...accountingToolCall("invalid-metadata"), ...metadata } as ModelResponseChunk],
+    ]);
+    const { runtime } = buildAccountingRuntime(provider);
+
+    await expect(runtime.turn("invalid")).rejects.toBeInstanceOf(RangeError);
+  });
+
+  it.each([
+    [
+      "token",
+      { input: Number.MAX_SAFE_INTEGER, output: 0 },
+      { input: 1, output: 0 },
+      Number.MAX_VALUE / 4,
+      Number.MAX_VALUE / 4,
+    ],
+    ["cost", { input: 0, output: 0 }, { input: 0, output: 0 }, Number.MAX_VALUE, Number.MAX_VALUE],
+  ])(
+    "rejects an unsafe %s aggregate instead of returning Infinity or wrapped totals",
+    async (_label, firstUsage, secondUsage, firstCost, secondCost) => {
+      const provider = new AccountingProvider([
+        [
+          {
+            ...accountingToolCall("overflow-1"),
+            usage: firstUsage,
+            costUsd: firstCost,
+          },
+        ],
+        [{ delta: "done", toolCalls: [], usage: secondUsage, costUsd: secondCost }],
+      ]);
+      const { runtime } = buildAccountingRuntime(provider);
+
+      await expect(runtime.turn("overflow")).rejects.toBeInstanceOf(RangeError);
+    },
+  );
+
+  it("keeps failed turns throwing instead of returning partial accounting", async () => {
+    const provider: ModelProvider = {
+      async generate() {
+        return { content: "", toolCalls: [] };
+      },
+      // oxlint-disable-next-line require-yield -- failure must occur when the stream is consumed.
+      async *generateStream() {
+        throw new Error("provider failed");
+      },
+    };
+    const { runtime } = buildAccountingRuntime(provider);
+
+    await expect(runtime.turn("fail")).rejects.toThrow("provider failed");
   });
 });
