@@ -42,6 +42,40 @@ behind the still-owned lease. Call `drain_providers()` or `drainProviders()`
 before another turn. Closing rejects new work but cannot force-kill hostile
 in-process code; restart the process if the operation never settles.
 
+## Explicit session purge
+
+Session purge is explicit and session-scoped; `close()` never deletes history.
+The runtime rejects purge while that session has queued or active turn work,
+projection work, tool settlement, or provider quarantine. Drain owned work,
+purge the named session, and only then close the runtime:
+
+```ts
+await runtime.drainTools(graceMs);
+await runtime.drainProviders(graceMs);
+await runtime.purgeSession(sessionId);
+runtime.close();
+```
+
+Custom event stores remain compatible with `EventStore`; opt into deletion by
+implementing `PurgeableEventStore`. `supportsSessionPurge(store)` checks that
+capability before any runtime cache is cleared. Every live runtime sharing that
+store is invalidated for the named session, including its projector,
+diagnostics, and settled tool-idempotency entries. Runtime registrations are
+weakly held, so discarded runtimes do not become a store-lifetime leak. A new
+runtime cannot attach to the store while any session purge fence is active.
+
+Existing custom `ToolIdempotencyLedger` implementations remain source
+compatible. To opt into session purge, implement the optional
+`releaseSettled(sessionId)` operation so completed and unknown entries are
+removed while running entries remain owned. A runtime backed by a legacy custom
+ledger rejects purge with `SessionPurgeUnsupportedError` before deleting store
+or cache state. After capability and busy preflight, the event store is deleted
+first and SDK-owned caches are cleared synchronously before host ledger cleanup
+is awaited. If that host cleanup fails, purge rejects but cannot roll back the
+already-deleted event history; retry the named purge after repairing the
+ledger. Purge deterministically removes SDK-owned indexes and caches, but does
+not claim JavaScript string zeroization.
+
 ## Bounded replay and context
 
 A cold runtime pages the retained store once. A warm runtime reads only the

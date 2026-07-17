@@ -402,6 +402,24 @@ describe("tool idempotency ledger", () => {
     expect((await ledger.claim("session", "call", "fingerprint")).status).toBe("owner");
   });
 
+  it("purges every settled entry while preserving running claims", async () => {
+    const ledger = new InMemoryToolIdempotencyLedger();
+    const completed = await ledger.claim("session", "completed", "completed-old");
+    const unknown = await ledger.claim("session", "unknown", "unknown-old");
+    const running = await ledger.claim("session", "running", "running");
+    expect(completed.status).toBe("owner");
+    expect(unknown.status).toBe("owner");
+    expect(running.status).toBe("owner");
+    if (completed.status !== "owner" || unknown.status !== "owner") return;
+    await ledger.complete(completed.claim, { ok: true });
+    await ledger.unknownOutcome(unknown.claim, toolTimedOut("unknown"));
+
+    expect(await ledger.releaseSettled("session")).toBe(2);
+    expect((await ledger.claim("session", "completed", "completed-new")).status).toBe("owner");
+    expect((await ledger.claim("session", "unknown", "unknown-new")).status).toBe("owner");
+    expect((await ledger.claim("session", "running", "running")).status).toBe("running");
+  });
+
   it("uses a monotonic clock by default", async () => {
     const monotonic = vi.spyOn(globalThis.performance, "now").mockReturnValue(42);
     const wallClock = vi.spyOn(Date, "now").mockImplementation(() => {
@@ -592,6 +610,131 @@ describe("durable tool results", () => {
 });
 
 describe("provider fault matrix", () => {
+  it("keeps late claim cleanup busy until drain makes purge safe", async () => {
+    const backing = new InMemoryToolIdempotencyLedger();
+    const claimEntered = Promise.withResolvers<void>();
+    const releaseClaim = Promise.withResolvers<void>();
+    const ledger: ToolIdempotencyLedger = {
+      async claim(...args) {
+        claimEntered.resolve();
+        await releaseClaim.promise;
+        return backing.claim(...args);
+      },
+      complete: (...args) => backing.complete(...args),
+      retryableFailure: (...args) => backing.retryableFailure(...args),
+      unknownOutcome: (...args) => backing.unknownOutcome(...args),
+      releaseCompleted: (...args) => backing.releaseCompleted(...args),
+      releaseSettled: (...args) => backing.releaseSettled(...args),
+    };
+    const controller = new ToolExecutionController({ ledger, limits: { timeoutMs: null } });
+    const planner = new ToolPlanner({
+      specs: new Map(),
+      executionController: controller,
+      executor: async () => ({}),
+    });
+    const store = new InMemoryEventStore();
+    const runtime = new AgentRuntime({
+      provider: new MockProvider({ reply: "unused" }),
+      store,
+      committer: new InMemoryEventCommitter(store),
+      planner,
+      tools: [],
+    });
+    const cancellation = new AbortController();
+    const execution = controller.execute({
+      name: "late-claim",
+      args: {},
+      context: {
+        principalId: "principal",
+        sessionId: "late-claim-session",
+        turnId: "turn",
+        requestId: "request",
+        traceId: "trace",
+        toolCallId: "late-call",
+        idempotencyKey: "late-claim-session:late-call",
+        signal: cancellation.signal,
+        metadata: {},
+      },
+      exclusive: false,
+      onStarted: async () => {},
+      execute: async () => ({ ok: true }),
+    });
+    await claimEntered.promise;
+    cancellation.abort();
+    await expect(execution).resolves.toMatchObject({
+      status: "failed",
+      error: { error_code: "TOOL_CANCELLED", outcome: "not_started" },
+    });
+
+    await expect(runtime.purgeSession("late-claim-session")).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "late-claim-session",
+    });
+    expect(await runtime.drainTools(0)).toEqual(["late-call"]);
+
+    releaseClaim.resolve();
+    expect(await runtime.drainTools(50)).toEqual([]);
+    await expect(runtime.purgeSession("late-claim-session")).resolves.toBe(false);
+    expect((await backing.claim("late-claim-session", "late-call", "reused")).status).toBe("owner");
+  });
+
+  it("clears SDK caches before awaiting a failing host ledger purge", async () => {
+    const backing = new InMemoryToolIdempotencyLedger();
+    const releaseEntered = Promise.withResolvers<void>();
+    const releaseGate = Promise.withResolvers<void>();
+    const ledger: ToolIdempotencyLedger = {
+      claim: (...args) => backing.claim(...args),
+      complete: (...args) => backing.complete(...args),
+      retryableFailure: (...args) => backing.retryableFailure(...args),
+      unknownOutcome: (...args) => backing.unknownOutcome(...args),
+      releaseCompleted: (...args) => backing.releaseCompleted(...args),
+      async releaseSettled() {
+        releaseEntered.resolve();
+        await releaseGate.promise;
+        throw new Error("host ledger purge failed");
+      },
+    };
+    const store = new InMemoryEventStore();
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "canary" }))
+      .toolIdempotencyLedger(ledger)
+      .build({ store });
+    await runtime.turn("cache-canary", { sessionId: "ledger-failure" });
+    expect(runtime.contextIndexStats("ledger-failure")).toBeDefined();
+
+    const purge = runtime.purgeSession("ledger-failure");
+    await releaseEntered.promise;
+    expect(await store.getEvents("ledger-failure")).toEqual([]);
+    expect(runtime.contextIndexStats("ledger-failure")).toBeUndefined();
+
+    releaseGate.resolve();
+    await expect(purge).rejects.toThrow("host ledger purge failed");
+    expect(await store.getEvents("ledger-failure")).toEqual([]);
+  });
+
+  it("rejects purge while a turn owns or is setting up session-scoped runtime state", async () => {
+    const clock = new ProviderTestClock();
+    const scheduler = new ProviderTestScheduler(clock);
+    const stream = new RuntimeControlledStream();
+    const provider = new RuntimeControlledProvider([stream]);
+    const coordinator = new InMemorySessionTurnCoordinator();
+    const store = new InMemoryEventStore();
+    const runtime = providerDeadlineRuntime(provider, clock, scheduler, coordinator, store, 10_000);
+
+    const turn = runtime.turn("active", { sessionId: "active-purge" });
+    await stream.entered.promise;
+    await expect(runtime.purgeSession("active-purge")).rejects.toMatchObject({
+      name: "SessionPurgeBusyError",
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "active-purge",
+    });
+
+    stream.releaseNext();
+    await expect(turn).resolves.toMatchObject({ sessionId: "active-purge" });
+    await expect(runtime.purgeSession("active-purge")).resolves.toBe(true);
+    expect(await runtime.history("active-purge")).toEqual([]);
+  });
+
   it.each([
     { label: "before-output", midStream: false },
     { label: "mid-stream", midStream: true },
@@ -853,6 +996,11 @@ describe("provider fault matrix", () => {
     expect(coordinator.entryCount).toBe(1);
     expect(coordinator.waitingCount).toBe(0);
     expect(hostile.returnCount).toBe(0);
+    await expect(runtime.purgeSession("quarantine")).rejects.toMatchObject({
+      name: "SessionPurgeBusyError",
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "quarantine",
+    });
 
     await expect(sibling.turn("rejected", { sessionId: "quarantine" })).rejects.toBeInstanceOf(
       ProviderCancellationContractViolation,

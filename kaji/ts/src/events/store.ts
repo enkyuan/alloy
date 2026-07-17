@@ -26,6 +26,14 @@ export interface EventStore {
   lastSequence(sessionId: string): Promise<number>;
 }
 
+export interface PurgeableEventStore extends EventStore {
+  purgeSession(sessionId: string): Promise<boolean>;
+}
+
+export function supportsSessionPurge(store: EventStore): store is PurgeableEventStore {
+  return typeof (store as Partial<PurgeableEventStore>).purgeSession === "function";
+}
+
 export type SessionEventListener = (event: StoredKajiEvent) => boolean;
 
 export interface EventStoreSession {
@@ -90,7 +98,7 @@ function cloneStoredEvent(event: StoredKajiEvent): StoredKajiEvent {
   return validateStoredEvent(event);
 }
 
-export class InMemoryEventStore implements EventStore {
+export class InMemoryEventStore implements PurgeableEventStore {
   private readonly sessions = new Map<string, SessionLog>();
   private readonly eventsById = new Map<string, StoredKajiEvent>();
   private readonly idReservations = new Map<string, IdReservation>();
@@ -328,6 +336,22 @@ export class InMemoryEventStore implements EventStore {
     return this.sessionTransaction(sessionId, async (transaction) =>
       transaction.lastSequenceLocked(),
     );
+  }
+
+  async purgeSession(sessionId: string): Promise<boolean> {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new TypeError("sessionId must be a non-empty string");
+    }
+    return this.lanes.run(sessionId, async () => {
+      const session = this.sessions.get(sessionId);
+      const existed = session !== undefined || this.listeners.has(sessionId);
+      if (session !== undefined) {
+        this.sessions.delete(sessionId);
+        for (const event of session.events) this.eventsById.delete(event.id);
+      }
+      this.listeners.delete(sessionId);
+      return existed;
+    });
   }
 
   private lastSequenceLocked(sessionId: string): number {

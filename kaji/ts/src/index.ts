@@ -43,7 +43,12 @@ export {
   EventStoreCapacityError,
   InvalidDurableValueError,
 } from "@/events/errors";
-export { type EventStore, InMemoryEventStore } from "@/events/store";
+export {
+  InMemoryEventStore,
+  supportsSessionPurge,
+  type EventStore,
+  type PurgeableEventStore,
+} from "@/events/store";
 
 // Sessions
 export {
@@ -210,6 +215,7 @@ export {
   type TurnOptions,
   type TurnResult,
 } from "@/runtime/runtime";
+export { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/errors";
 export {
   DEFAULT_TURN_EXECUTION_LIMITS,
   ProviderCancellationContractViolation,

@@ -239,12 +239,19 @@ export class ToolExecutionController {
   private readonly timerScheduler: TimerScheduler;
   private readonly metrics: MetricsSink;
   private readonly trace: TraceSink;
-  private readonly active = new Map<string, { callId: string; settled: Promise<void> }>();
+  private readonly active = new Map<
+    string,
+    { sessionId: string; callId: string; settled: Promise<void> }
+  >();
   private readonly pendingStarts = new Map<
     string,
-    { callId: string; settled: Promise<void>; resolve: () => void }
+    { sessionId: string; callId: string; settled: Promise<void>; resolve: () => void }
   >();
-  private readonly claimCleanups = new Set<Promise<void>>();
+  private readonly claimCleanups = new Set<{
+    sessionId: string;
+    callId: string;
+    settled: Promise<void>;
+  }>();
 
   constructor(options: ToolExecutionControllerOptions = {}) {
     this.limits = Object.freeze({ ...DEFAULT_TOOL_EXECUTION_LIMITS, ...options.limits });
@@ -335,7 +342,12 @@ export class ToolExecutionController {
     if (claimed.status === "aborted") {
       const outcome = this.abortOutcome(linked.kind(), "not_started");
       const error = outcome.error;
-      this.scheduleLateClaimCleanup(claimPromise, error);
+      this.scheduleLateClaimCleanup(
+        canonicalContext.sessionId,
+        canonicalContext.toolCallId,
+        claimPromise,
+        error,
+      );
       linked.cleanup();
       return outcome;
     }
@@ -425,7 +437,12 @@ export class ToolExecutionController {
     } catch (cause) {
       startOperation = Promise.reject(cause);
     }
-    const start = this.trackPendingStart(key, canonicalContext.toolCallId, startOperation);
+    const start = this.trackPendingStart(
+      key,
+      canonicalContext.sessionId,
+      canonicalContext.toolCallId,
+      startOperation,
+    );
     const startResult = start.then(
       () => ({ status: "started" as const }),
       (cause: unknown) => ({ status: "failed" as const, cause }),
@@ -500,7 +517,11 @@ export class ToolExecutionController {
         this.active.delete(key);
         recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
       });
-    this.active.set(key, { callId: canonicalContext.toolCallId, settled: tracked });
+    this.active.set(key, {
+      sessionId: canonicalContext.sessionId,
+      callId: canonicalContext.toolCallId,
+      settled: tracked,
+    });
     this.finishPendingStart(key);
     recordMetric(this.metrics, "kaji.tool.active", this.active.size, {});
 
@@ -564,10 +585,11 @@ export class ToolExecutionController {
       });
     });
     try {
-      while (this.active.size > 0 || this.pendingStarts.size > 0) {
+      while (this.active.size > 0 || this.pendingStarts.size > 0 || this.claimCleanups.size > 0) {
         const snapshot = [
           ...[...this.active.values()].map(({ settled }) => settled),
           ...[...this.pendingStarts.values()].map(({ settled }) => settled),
+          ...[...this.claimCleanups].map(({ settled }) => settled),
         ];
         const wake = await Promise.race([
           Promise.allSettled(snapshot).then(() => "settled" as const),
@@ -583,15 +605,30 @@ export class ToolExecutionController {
     return [
       ...[...this.active.values()].map(({ callId }) => callId),
       ...[...this.pendingStarts.values()].map(({ callId }) => callId),
+      ...[...this.claimCleanups].map(({ callId }) => callId),
     ].sort();
   }
 
-  private trackPendingStart(key: string, callId: string, operation: Promise<void>): Promise<void> {
+  /** @internal Whether start recording or handler code still owns this session. */
+  hasActiveSession(sessionId: string): boolean {
+    return (
+      [...this.active.values()].some((entry) => entry.sessionId === sessionId) ||
+      [...this.pendingStarts.values()].some((entry) => entry.sessionId === sessionId) ||
+      [...this.claimCleanups].some((entry) => entry.sessionId === sessionId)
+    );
+  }
+
+  private trackPendingStart(
+    key: string,
+    sessionId: string,
+    callId: string,
+    operation: Promise<void>,
+  ): Promise<void> {
     let resolve!: () => void;
     const settled = new Promise<void>((done) => {
       resolve = done;
     });
-    this.pendingStarts.set(key, { callId, settled, resolve });
+    this.pendingStarts.set(key, { sessionId, callId, settled, resolve });
     return operation;
   }
 
@@ -648,12 +685,14 @@ export class ToolExecutionController {
   }
 
   private scheduleLateClaimCleanup(
+    sessionId: string,
+    callId: string,
     claimPromise: Promise<ToolClaimResult>,
     error: ToolExecutionError,
   ): void {
     const failure = snapshotToolExecutionError(error);
-    let cleanup!: Promise<void>;
-    cleanup = (async () => {
+    let cleanup!: { sessionId: string; callId: string; settled: Promise<void> };
+    const settled = (async () => {
       try {
         const claim = await claimPromise;
         if (claim.status === "owner") {
@@ -667,6 +706,7 @@ export class ToolExecutionController {
         this.claimCleanups.delete(cleanup);
       }
     })();
+    cleanup = { sessionId, callId, settled };
     this.claimCleanups.add(cleanup);
   }
 

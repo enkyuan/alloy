@@ -392,6 +392,13 @@ describe("npm contract artifact", () => {
       "`${manager}:warm-run`",
       'const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop."',
       'fields.get("text") !== EXPECTED_MOCK_REPLY',
+      "`${manager}:lifecycle-run`",
+      'const LIFECYCLE_SMOKE_SOURCE = `import { AgentBuilder, InMemoryEventStore } from "@kaji/sdk";',
+      "await runtime.drainTools(graceMs);",
+      "await runtime.drainProviders(graceMs);",
+      "await runtime.purgeSession(sessionId);",
+      "runtime.close();",
+      'fields.get("lifecycle_purge") !== "ok"',
       "coldResult.text !== warmResult.text",
       "coldResult.finalSequence !== warmResult.finalSequence",
       "const githubRequester = integrations.createGitHubRequester();",
@@ -401,6 +408,12 @@ describe("npm contract artifact", () => {
     ]) {
       expect(source).toContain(required);
     }
+
+    const scaffoldSource = readFileSync(join(packageRoot, "src/cli/init.ts"), "utf8");
+    expect(scaffoldSource).toContain('import { AgentBuilder } from "@kaji/sdk"');
+    expect(scaffoldSource).toContain("new AgentBuilder().provider(provider).build()");
+    expect(scaffoldSource).not.toContain("supportsSessionPurge");
+    expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
     expect(source).not.toContain("completed.stderr");
     expect(source).not.toContain("JSON.stringify(args)");

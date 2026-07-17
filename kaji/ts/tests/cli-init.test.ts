@@ -152,6 +152,10 @@ describe("kaji init", () => {
     expect(tsconfig.compilerOptions.skipLibCheck).toBe(false);
     const agent = readFileSync(join(out, "agent.ts"), "utf8");
     expect(agent).toContain('from "@kaji/sdk/testing"');
+    expect(agent).toContain('import { AgentBuilder } from "@kaji/sdk"');
+    expect(agent).toContain("new AgentBuilder().provider(provider).build()");
+    expect(agent).not.toContain("InMemoryEventStore");
+    expect(agent).not.toContain("purgeSession");
     expect(agent).toContain("result.turnId");
     expect(agent).toContain("event.sequence");
     expect(lines.join("\n")).toMatch(/Next: cd .* && (npm|bun) install/);

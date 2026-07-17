@@ -15,7 +15,7 @@ import {
   type NewKajiEvent,
 } from "@/events/schemas";
 import { EventType } from "@/events/types";
-import type { EventStore } from "@/events/store";
+import { supportsSessionPurge, type EventStore } from "@/events/store";
 import {
   resolveProviderResponseLimits,
   withProviderResponseDiagnostics,
@@ -83,9 +83,155 @@ import {
   type TurnOutcome,
 } from "@/observability";
 import { RuntimeStreamAccumulator, type StreamDiagnostics } from "@/runtime/delta-accumulator";
+import { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/errors";
 
 const PUBLIC_TURN_FAILURE = "Agent turn failed";
 const DEFAULT_TURN_COORDINATORS = new WeakMap<EventStore, SessionTurnCoordinator>();
+const STORE_SESSION_LIFECYCLES = new WeakMap<EventStore, Map<string, StoreSessionLifecycle>>();
+const STORE_RUNTIME_OWNERS = new WeakMap<EventStore, Set<WeakRef<StoreRuntimeOwner>>>();
+
+interface StoreRuntimeOwner {
+  supportsSessionPurge(): boolean;
+  isSessionBusy(sessionId: string): boolean;
+  clearSessionCaches(sessionId: string): void;
+  releaseSettledSession(sessionId: string): Promise<void>;
+}
+
+interface StoreRuntimeOwnerFinalizerToken {
+  readonly store: WeakRef<EventStore>;
+  readonly owner: WeakRef<StoreRuntimeOwner>;
+}
+
+const STORE_RUNTIME_OWNER_FINALIZER = new FinalizationRegistry<StoreRuntimeOwnerFinalizerToken>(
+  ({ store: storeReference, owner: ownerReference }) => {
+    const store = storeReference.deref();
+    if (store === undefined) return;
+    const owners = STORE_RUNTIME_OWNERS.get(store);
+    if (owners === undefined) return;
+    owners.delete(ownerReference);
+    if (owners.size === 0) STORE_RUNTIME_OWNERS.delete(store);
+  },
+);
+
+interface StoreSessionLifecycle {
+  activeOperations: number;
+  quarantinedProviders: number;
+  purging: boolean;
+}
+
+function runtimeOwnersForStore(store: EventStore): StoreRuntimeOwner[] {
+  const references = STORE_RUNTIME_OWNERS.get(store);
+  if (references === undefined) return [];
+  const owners: StoreRuntimeOwner[] = [];
+  for (const reference of references) {
+    const owner = reference.deref();
+    if (owner === undefined) references.delete(reference);
+    else owners.push(owner);
+  }
+  if (references.size === 0) STORE_RUNTIME_OWNERS.delete(store);
+  return owners;
+}
+
+function registerRuntimeOwner(store: EventStore, owner: StoreRuntimeOwner): void {
+  const purgingSession = [...(STORE_SESSION_LIFECYCLES.get(store)?.entries() ?? [])].find(
+    ([, state]) => state.purging,
+  )?.[0];
+  if (purgingSession !== undefined) {
+    throw new SessionPurgeBusyError(purgingSession);
+  }
+  let references = STORE_RUNTIME_OWNERS.get(store);
+  if (references === undefined) {
+    references = new Set();
+    STORE_RUNTIME_OWNERS.set(store, references);
+  }
+  for (const reference of references) {
+    if (reference.deref() === undefined) references.delete(reference);
+  }
+  const ownerReference = new WeakRef(owner);
+  references.add(ownerReference);
+  STORE_RUNTIME_OWNER_FINALIZER.register(owner, {
+    store: new WeakRef(store),
+    owner: ownerReference,
+  });
+}
+
+function storeSessionLifecycle(
+  store: EventStore,
+  sessionId: string,
+): { lifecycles: Map<string, StoreSessionLifecycle>; state: StoreSessionLifecycle } {
+  let lifecycles = STORE_SESSION_LIFECYCLES.get(store);
+  if (lifecycles === undefined) {
+    lifecycles = new Map();
+    STORE_SESSION_LIFECYCLES.set(store, lifecycles);
+  }
+  let state = lifecycles.get(sessionId);
+  if (state === undefined) {
+    state = { activeOperations: 0, quarantinedProviders: 0, purging: false };
+    lifecycles.set(sessionId, state);
+  }
+  return { lifecycles, state };
+}
+
+function releaseStoreSessionLifecycle(
+  store: EventStore,
+  sessionId: string,
+  lifecycles: Map<string, StoreSessionLifecycle>,
+  state: StoreSessionLifecycle,
+): void {
+  if (
+    state.activeOperations === 0 &&
+    state.quarantinedProviders === 0 &&
+    !state.purging &&
+    lifecycles.get(sessionId) === state
+  ) {
+    lifecycles.delete(sessionId);
+    if (lifecycles.size === 0) STORE_SESSION_LIFECYCLES.delete(store);
+  }
+}
+
+function beginStoreSessionOperation(store: EventStore, sessionId: string): () => void {
+  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
+  if (state.purging) {
+    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
+    throw new SessionPurgeBusyError(sessionId);
+  }
+  state.activeOperations += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    state.activeOperations -= 1;
+    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
+  };
+}
+
+function beginStoreSessionPurge(store: EventStore, sessionId: string): () => void {
+  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
+  if (state.purging || state.activeOperations > 0 || state.quarantinedProviders > 0) {
+    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
+    throw new SessionPurgeBusyError(sessionId);
+  }
+  state.purging = true;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    state.purging = false;
+    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
+  };
+}
+
+function retainStoreSessionQuarantine(store: EventStore, sessionId: string): () => void {
+  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
+  state.quarantinedProviders += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    state.quarantinedProviders -= 1;
+    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
+  };
+}
 
 function isCompatibleAbortError(error: unknown): boolean {
   return (
@@ -217,8 +363,14 @@ interface ProviderQuarantineRecord {
   readonly sessionId: string;
   readonly lease: SessionTurnLease;
   readonly settlement: Promise<void>;
+  readonly releaseLifecycle: () => void;
   settled: boolean;
   failed: boolean;
+}
+
+interface TurnEventCollector {
+  readonly sessionId: string;
+  readonly events: StoredKajiEvent[];
 }
 
 /**
@@ -267,7 +419,7 @@ export class AgentRuntime {
   private readonly projectors = new Map<string, SessionProjector>();
   private readonly projectionTails = new Map<string, Promise<void>>();
   private readonly activeProjectionSessions = new Map<string, number>();
-  private readonly turnEventCollectors = new Map<string, StoredKajiEvent[]>();
+  private readonly turnEventCollectors = new Map<string, TurnEventCollector>();
   private readonly contextDiagnosticsBySession = new Map<string, Readonly<ContextDiagnostics>>();
   private readonly streamDiagnosticsBySession = new Map<string, Readonly<StreamDiagnostics>>();
   private readonly toolExecutionController: ToolExecutionController;
@@ -279,6 +431,7 @@ export class AgentRuntime {
   private readonly providerResponseLimits: Readonly<ProviderResponseLimits>;
   private readonly timerScheduler: TimerScheduler;
   private readonly providerQuarantine = new Map<string, ProviderQuarantineRecord>();
+  private readonly storeRuntimeOwner: StoreRuntimeOwner;
   private closed = false;
   /**
    * Resolved planner: explicit if caller provided one, cached when the tool
@@ -374,6 +527,14 @@ export class AgentRuntime {
     this.planner =
       options.planner ??
       (this.fixedTools !== undefined ? this.buildPlanner(this.fixedTools) : null);
+    this.storeRuntimeOwner = Object.freeze({
+      supportsSessionPurge: () =>
+        typeof this.toolExecutionController.ledger.releaseSettled === "function",
+      isSessionBusy: (sessionId: string) => this.hasBusySessionState(sessionId),
+      clearSessionCaches: (sessionId: string) => this.clearSessionCaches(sessionId),
+      releaseSettledSession: (sessionId: string) => this.releaseSettledSession(sessionId),
+    });
+    registerRuntimeOwner(this.store, this.storeRuntimeOwner);
   }
 
   private buildPlanner(tools: ToolSpec[]): ToolPlanner {
@@ -426,12 +587,92 @@ export class AgentRuntime {
       await record.lease.release();
       await this.turnCoordinator.clearQuarantine(record.sessionId);
       this.providerQuarantine.delete(record.sessionId);
+      record.releaseLifecycle();
     }
     return [...this.providerQuarantine.keys()].sort();
   }
 
+  /**
+   * Deterministically remove one settled session from the store and every
+   * runtime-owned cache. Applications should shut down in this order:
+   *
+   * ```ts
+   * await runtime.drainTools(graceMs);
+   * await runtime.drainProviders(graceMs);
+   * await runtime.purgeSession(sessionId);
+   * runtime.close();
+   * ```
+   */
+  async purgeSession(sessionId: string): Promise<boolean> {
+    if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
+      throw new TypeError("sessionId must be a non-empty string");
+    }
+    if (!supportsSessionPurge(this.store)) {
+      throw new SessionPurgeUnsupportedError(sessionId);
+    }
+
+    const finishPurge = beginStoreSessionPurge(this.store, sessionId);
+    try {
+      const owners = runtimeOwnersForStore(this.store);
+      if (owners.some((owner) => !owner.supportsSessionPurge())) {
+        throw new SessionPurgeUnsupportedError(sessionId, "tool_idempotency_ledger");
+      }
+      if (owners.some((owner) => owner.isSessionBusy(sessionId))) {
+        throw new SessionPurgeBusyError(sessionId);
+      }
+
+      const purged = await this.store.purgeSession(sessionId);
+      for (const owner of owners) owner.clearSessionCaches(sessionId);
+      const settlements = await Promise.allSettled(
+        owners.map((owner) => owner.releaseSettledSession(sessionId)),
+      );
+      const rejected = settlements.find(
+        (settlement): settlement is PromiseRejectedResult => settlement.status === "rejected",
+      );
+      if (rejected !== undefined) {
+        throw rejected.reason;
+      }
+      return purged;
+    } finally {
+      finishPurge();
+    }
+  }
+
   close(): void {
     this.closed = true;
+  }
+
+  private hasBusySessionState(sessionId: string): boolean {
+    const hasCollector = [...this.turnEventCollectors.values()].some(
+      (collector) => collector.sessionId === sessionId,
+    );
+    return (
+      this.activeProjectionSessions.has(sessionId) ||
+      this.projectionTails.has(sessionId) ||
+      hasCollector ||
+      this.providerQuarantine.has(sessionId) ||
+      this.toolExecutionController.hasActiveSession(sessionId)
+    );
+  }
+
+  private clearSessionCaches(sessionId: string): void {
+    this.projectors.delete(sessionId);
+    this.projectionTails.delete(sessionId);
+    this.activeProjectionSessions.delete(sessionId);
+    for (const [turnId, collector] of this.turnEventCollectors) {
+      if (collector.sessionId === sessionId) this.turnEventCollectors.delete(turnId);
+    }
+    this.contextDiagnosticsBySession.delete(sessionId);
+    this.streamDiagnosticsBySession.delete(sessionId);
+    this.providerQuarantine.delete(sessionId);
+  }
+
+  private async releaseSettledSession(sessionId: string): Promise<void> {
+    const releaseSettled = this.toolExecutionController.ledger.releaseSettled;
+    if (releaseSettled === undefined) {
+      throw new SessionPurgeUnsupportedError(sessionId, "tool_idempotency_ledger");
+    }
+    await releaseSettled.call(this.toolExecutionController.ledger, sessionId);
   }
 
   private ensureOpen(): void {
@@ -511,7 +752,7 @@ export class AgentRuntime {
         const projector = this.projectorFor(event.session_id);
         const collect = (applied: StoredKajiEvent) => {
           if (applied.turn_id === undefined) return;
-          this.turnEventCollectors.get(applied.turn_id)?.push(cloneStoredEvent(applied));
+          this.turnEventCollectors.get(applied.turn_id)?.events.push(cloneStoredEvent(applied));
         };
         if (!projector.initialized) await projector.sync(this.store, collect);
         const stored = await this.committer.commit(event);
@@ -545,6 +786,7 @@ export class AgentRuntime {
     sessionId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
+    const finishOperation = beginStoreSessionOperation(this.store, sessionId);
     this.activeProjectionSessions.set(
       sessionId,
       (this.activeProjectionSessions.get(sessionId) ?? 0) + 1,
@@ -556,6 +798,7 @@ export class AgentRuntime {
       if (remaining === 0) this.activeProjectionSessions.delete(sessionId);
       else this.activeProjectionSessions.set(sessionId, remaining);
       this.trimProjectionCache();
+      finishOperation();
     }
   }
 
@@ -630,74 +873,81 @@ export class AgentRuntime {
     deadlineMonotonicMs: number,
     operation: () => Promise<T>,
   ): Promise<T> {
-    const queuedAt = this.clock.nowMonotonic();
-    let recorded = false;
-    const recordWait = () => {
-      if (recorded) return;
-      recorded = true;
-      recordMetric(
-        this.metrics,
-        "kaji.turn.queue_wait_ms",
-        Math.max(0, this.clock.nowMonotonic() - queuedAt),
-        {},
-      );
-    };
-    let lease: SessionTurnLease;
+    const finishOperation = beginStoreSessionOperation(this.store, sessionId);
     try {
-      lease = await this.turnCoordinator.acquire(sessionId, token, {
-        deadlineMonotonicMs,
-        clock: this.clock,
-        scheduler: this.timerScheduler,
-      });
-    } catch (error) {
-      recordWait();
-      if (error instanceof TurnTimeoutError && error.phase === "queue") {
-        await this.recordTurnFailure(sessionId, turnId, error);
-      } else if (error instanceof ProviderCancellationContractViolation) {
-        await this.recordTurnFailure(sessionId, turnId, error);
-      } else if (error instanceof CancellationError && token.isCancelled) {
-        await this.appendEvent(
-          this.event({
-            type: EventType.CANCELLATION_COMPLETED,
-            session_id: sessionId,
-            turn_id: turnId,
-          }),
+      const queuedAt = this.clock.nowMonotonic();
+      let recorded = false;
+      const recordWait = () => {
+        if (recorded) return;
+        recorded = true;
+        recordMetric(
+          this.metrics,
+          "kaji.turn.queue_wait_ms",
+          Math.max(0, this.clock.nowMonotonic() - queuedAt),
+          {},
         );
+      };
+      let lease: SessionTurnLease;
+      try {
+        lease = await this.turnCoordinator.acquire(sessionId, token, {
+          deadlineMonotonicMs,
+          clock: this.clock,
+          scheduler: this.timerScheduler,
+        });
+      } catch (error) {
+        recordWait();
+        if (error instanceof TurnTimeoutError && error.phase === "queue") {
+          await this.recordTurnFailure(sessionId, turnId, error);
+        } else if (error instanceof ProviderCancellationContractViolation) {
+          await this.recordTurnFailure(sessionId, turnId, error);
+        } else if (error instanceof CancellationError && token.isCancelled) {
+          await this.appendEvent(
+            this.event({
+              type: EventType.CANCELLATION_COMPLETED,
+              session_id: sessionId,
+              turn_id: turnId,
+            }),
+          );
+        }
+        throw error;
       }
-      throw error;
-    }
-    let transferred = false;
-    try {
-      recordWait();
-      return await operation();
-    } catch (error) {
-      if (error instanceof ProviderCancellationContractViolation) {
-        const settlement = providerViolationSettlement(error);
-        if (settlement === undefined) throw error;
-        const transferredLease = lease.transfer();
-        const record: ProviderQuarantineRecord = {
-          sessionId,
-          lease: transferredLease,
-          settlement,
-          settled: false,
-          failed: false,
-        };
-        this.providerQuarantine.set(sessionId, record);
-        void settlement.then(
-          () => {
-            record.settled = true;
-          },
-          () => {
-            record.settled = true;
-            record.failed = true;
-          },
-        );
-        transferred = true;
-        await this.turnCoordinator.quarantine(sessionId);
+      let transferred = false;
+      try {
+        recordWait();
+        return await operation();
+      } catch (error) {
+        if (error instanceof ProviderCancellationContractViolation) {
+          const settlement = providerViolationSettlement(error);
+          if (settlement === undefined) throw error;
+          const transferredLease = lease.transfer();
+          const releaseLifecycle = retainStoreSessionQuarantine(this.store, sessionId);
+          const record: ProviderQuarantineRecord = {
+            sessionId,
+            lease: transferredLease,
+            settlement,
+            releaseLifecycle,
+            settled: false,
+            failed: false,
+          };
+          this.providerQuarantine.set(sessionId, record);
+          void settlement.then(
+            () => {
+              record.settled = true;
+            },
+            () => {
+              record.settled = true;
+              record.failed = true;
+            },
+          );
+          transferred = true;
+          await this.turnCoordinator.quarantine(sessionId);
+        }
+        throw error;
+      } finally {
+        if (!transferred) await lease.release();
       }
-      throw error;
     } finally {
-      if (!transferred) await lease.release();
+      finishOperation();
     }
   }
 
@@ -718,7 +968,7 @@ export class AgentRuntime {
       this.withProjectionSession(sessionId, async () => {
         const projector = await this.syncProjection(sessionId);
         const turnEvents: StoredKajiEvent[] = [];
-        this.turnEventCollectors.set(turnId, turnEvents);
+        this.turnEventCollectors.set(turnId, { sessionId, events: turnEvents });
         try {
           if (projector.lastSequence === 0) {
             const created = this.event({

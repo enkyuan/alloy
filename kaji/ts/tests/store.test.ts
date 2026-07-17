@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as eventErrors from "@/events/errors";
 import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
 import { KajiEvent, type NewKajiEvent } from "@/events/schemas";
-import { InMemoryEventStore, type AppendResult } from "@/events/store";
+import { InMemoryEventStore, supportsSessionPurge, type AppendResult } from "@/events/store";
 import { EventType } from "@/events/types";
 import { NestedEventTransactionError } from "@/internal/keyed-serial";
 
@@ -166,6 +166,80 @@ describe("InMemoryEventStore", () => {
     await expect(store.append(userMessage("s1", "different", 1, "event-1"))).rejects.toBeInstanceOf(
       EventIdConflictError,
     );
+  });
+
+  it("purges one session from every owned index without affecting another session", async () => {
+    const store = new InMemoryEventStore();
+    await store.append(userMessage("purged", "prompt-canary", 1, "purged-user"));
+    await store.append(
+      KajiEvent.parse({
+        id: "purged-tool-request",
+        type: EventType.TOOL_CALL_REQUESTED,
+        session_id: "purged",
+        turn_id: "purged-turn",
+        tool_name: "lookup",
+        tool_call_id: "purged-call",
+        tool_args: { query: "args-canary" },
+      }),
+    );
+    await store.append(
+      KajiEvent.parse({
+        id: "purged-tool-result",
+        type: EventType.TOOL_CALL_COMPLETED,
+        session_id: "purged",
+        turn_id: "purged-turn",
+        tool_name: "lookup",
+        tool_call_id: "purged-call",
+        result: { value: "result-canary" },
+      }),
+    );
+    await store.append(userMessage("retained", "other-canary", 2, "retained-user"));
+    await store.sessionTransaction("purged", async (transaction) => {
+      transaction.attachListenerLocked(() => true);
+    });
+
+    expect(supportsSessionPurge(store)).toBe(true);
+    await expect(store.purgeSession("purged")).resolves.toBe(true);
+    expect(await store.getEvents("purged")).toEqual([]);
+    expect((await store.getEvents("retained")).map((event) => event.id)).toEqual(["retained-user"]);
+    expect(store.activeListenerCount).toBe(0);
+    expect(store.activeSessionLaneCount).toBe(0);
+
+    await expect(
+      store.append(userMessage("fresh", "replacement", 3, "purged-user")),
+    ).resolves.toMatchObject({ inserted: true, event: { sequence: 1 } });
+    await expect(store.purgeSession("purged")).resolves.toBe(false);
+  });
+
+  it("rejects invalid purge session ids before mutating the store", async () => {
+    const store = new InMemoryEventStore();
+    await store.append(userMessage("retained", "safe", 1, "retained"));
+
+    await expect(store.purgeSession("")).rejects.toThrow();
+    await expect(store.purgeSession("   ")).rejects.toThrow();
+    await expect(store.purgeSession(null as never)).rejects.toThrow();
+    expect((await store.getEvents("retained")).map((event) => event.id)).toEqual(["retained"]);
+  });
+
+  it("serializes purge behind an in-flight append for the same session", async () => {
+    const store = new BarrierStore("raced");
+    const append = store.append(userMessage("raced", "one", 1, "raced-event"));
+    await store.entered;
+
+    const purge = store.purgeSession("raced");
+    let purgeSettled = false;
+    void purge.finally(() => {
+      purgeSettled = true;
+    });
+    await Promise.resolve();
+    expect(purgeSettled).toBe(false);
+
+    store.releaseBlocked();
+    await expect(append).resolves.toMatchObject({ inserted: true });
+    await expect(purge).resolves.toBe(true);
+    expect(await store.getEvents("raced")).toEqual([]);
+    expect(store.activeSessionLaneCount).toBe(0);
+    expect(store.activeIdReservationCount).toBe(0);
   });
 
   it("lets an unrelated session commit while another store lane is blocked", async () => {

@@ -30,6 +30,8 @@ export interface ToolIdempotencyLedger {
   retryableFailure(claim: ToolIdempotencyClaim, error: ToolExecutionError): Promise<void>;
   unknownOutcome(claim: ToolIdempotencyClaim, error: ToolExecutionError): Promise<void>;
   releaseCompleted(sessionId: string): Promise<number>;
+  /** Remove completed and unknown entries, but never an in-flight claim. */
+  releaseSettled?(sessionId: string): Promise<number>;
 }
 
 export interface InMemoryToolIdempotencyLedgerOptions {
@@ -155,6 +157,17 @@ export class InMemoryToolIdempotencyLedger implements ToolIdempotencyLedger {
     let released = 0;
     for (const [key, entry] of this.entries) {
       if (entry.status === "completed" && entry.claim.sessionId === sessionId) {
+        this.entries.delete(key);
+        released++;
+      }
+    }
+    return released;
+  }
+
+  async releaseSettled(sessionId: string): Promise<number> {
+    let released = 0;
+    for (const [key, entry] of this.entries) {
+      if (entry.status !== "running" && entry.claim.sessionId === sessionId) {
         this.entries.delete(key);
         released++;
       }

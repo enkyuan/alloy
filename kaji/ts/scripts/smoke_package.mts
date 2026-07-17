@@ -40,6 +40,7 @@ type SmokePhase =
   | `${PackageManager}:cli-replay`
   | `${PackageManager}:compile-typescript-5.7`
   | `${PackageManager}:compile-typescript-current`
+  | `${PackageManager}:lifecycle-run`
   | `${PackageManager}:cold-run`
   | `${PackageManager}:warm-run`;
 interface PackageManifest {
@@ -97,6 +98,58 @@ const REPLAY_FIXTURE =
     session_id: "artifact-session",
     sequence: 1,
   }) + "\n";
+const LIFECYCLE_SMOKE_SOURCE = `import { AgentBuilder, InMemoryEventStore } from "@kaji/sdk";
+import { MockProvider } from "@kaji/sdk/testing";
+
+const graceMs = 10_000;
+const sessionId = "installed-purge-session";
+const store = new InMemoryEventStore({ maxSessions: 1, maxEventsPerSession: 100 });
+const runtime = new AgentBuilder().provider(new MockProvider()).build({ store });
+let failed = false;
+let failure: unknown;
+try {
+  await runtime.turn("Exercise explicit lifecycle cleanup.", { sessionId });
+} catch (error) {
+  failed = true;
+  failure = error;
+} finally {
+  try {
+    const activeTools = await runtime.drainTools(graceMs);
+    const activeProviders = await runtime.drainProviders(graceMs);
+    if (activeTools.length > 0 || activeProviders.length > 0) {
+      throw new Error("installed lifecycle fixture did not drain owned work");
+    }
+    await runtime.purgeSession(sessionId);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      failure = error;
+    }
+  } finally {
+    runtime.close();
+  }
+}
+if (failed) throw failure;
+if ((await store.getEvents(sessionId)).length !== 0) {
+  throw new Error("installed lifecycle fixture retained purged history");
+}
+console.log("lifecycle_purge=ok");
+`;
+const LEGACY_LEDGER_TYPES_SOURCE = `import {
+  InMemoryToolIdempotencyLedger,
+  type ToolIdempotencyLedger,
+} from "@kaji/sdk";
+
+const backing = new InMemoryToolIdempotencyLedger();
+const legacyLedger: ToolIdempotencyLedger = {
+  claim: (...args) => backing.claim(...args),
+  complete: (...args) => backing.complete(...args),
+  retryableFailure: (...args) => backing.retryableFailure(...args),
+  unknownOutcome: (...args) => backing.unknownOutcome(...args),
+  releaseCompleted: (...args) => backing.releaseCompleted(...args),
+};
+void legacyLedger;
+`;
 const baseEnvironment = {
   ...process.env,
   npm_config_audit: "false",
@@ -204,9 +257,7 @@ function githubProofEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessE
     "TMPDIR",
   ];
   const proof = Object.fromEntries(
-    allowed.flatMap((name) =>
-      environment[name] === undefined ? [] : [[name, environment[name]]],
-    ),
+    allowed.flatMap((name) => (environment[name] === undefined ? [] : [[name, environment[name]]])),
   );
   return {
     ...proof,
@@ -339,6 +390,18 @@ function assertScaffoldOutput(output: string): { text: string; finalSequence: nu
     throw new Error("generated scaffold omitted a positive final sequence");
   }
   return { text: EXPECTED_MOCK_REPLY, finalSequence: sequence };
+}
+
+function assertLifecycleOutput(output: string): void {
+  const fields = new Map(
+    output
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => line.split("=", 2) as [string, string]),
+  );
+  if (fields.get("lifecycle_purge") !== "ok") {
+    throw new Error("installed lifecycle fixture did not prove explicit purge");
+  }
 }
 
 function assertCliInitOutput(output: string, generated: string): void {
@@ -667,6 +730,8 @@ async function runScaffold(
   generatedManifest.dependencies["@kaji/sdk"] = tarball;
   writeFileSync(generatedManifestPath, JSON.stringify(generatedManifest, null, 2));
   await install(manager, "generated", generated, [], environment);
+  writeFileSync(join(generated, "lifecycle.ts"), LIFECYCLE_SMOKE_SOURCE);
+  writeFileSync(join(generated, "legacy-ledger-types.ts"), LEGACY_LEDGER_TYPES_SOURCE);
 
   const config = JSON.parse(readFileSync(join(generated, "tsconfig.json"), "utf8")) as {
     compilerOptions?: { skipLibCheck?: boolean; types?: unknown };
@@ -686,6 +751,16 @@ async function runScaffold(
         : `${manager}:compile-typescript-current`;
     await runCommand(phase, nodeBinary, [tsc, "--project", "tsconfig.json", "--noEmit"], generated);
   }
+  const tsx = join(generated, "node_modules/tsx/dist/cli.mjs");
+  if (!existsSync(tsx)) throw new Error("generated scaffold is missing the tsx runner");
+  const lifecycleOutput = await runCommand(
+    `${manager}:lifecycle-run`,
+    nodeBinary,
+    [tsx, "lifecycle.ts"],
+    generated,
+    environment,
+  );
+  assertLifecycleOutput(lifecycleOutput);
 
   const run = (phase: SmokePhase) =>
     manager === "npm"
@@ -800,7 +875,7 @@ import * as testing from "@kaji/sdk/testing";
 import * as openai from "@kaji/sdk/openai";
 import * as anthropic from "@kaji/sdk/anthropic";
 import * as integrations from "@kaji/sdk/integrations";
-if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 const githubRequester = integrations.createGitHubRequester();
 const gmailRequester = integrations.createGmailRequester();
@@ -815,7 +890,7 @@ const testing = require("@kaji/sdk/testing");
 const openai = require("@kaji/sdk/openai");
 const anthropic = require("@kaji/sdk/anthropic");
 const integrations = require("@kaji/sdk/integrations");
-if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 const githubRequester = integrations.createGitHubRequester();
 const gmailRequester = integrations.createGmailRequester();
