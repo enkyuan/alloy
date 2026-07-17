@@ -15,6 +15,13 @@ EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_event_migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "src" / "kaji" / "contracts"
+GITHUB_TYPESCRIPT_ABI = (
+    REPO_ROOT
+    / "kaji"
+    / "contracts"
+    / "integrations"
+    / "github-tool-abi-typescript-v1.json"
+)
 EVENT_SCHEMAS = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json",
     REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json",
@@ -59,6 +66,43 @@ def test_python_package_contract_copy_matches_canonical_files() -> None:
         if source.is_file() and source.suffix in {".json", ".md"}:
             packaged = PACKAGE_CONTRACTS / source.relative_to(canonical)
             assert packaged.read_bytes() == source.read_bytes()
+
+
+def test_typescript_github_package_abi_is_closed_and_rejects_drift() -> None:
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="github_package_abi_test")
+    documents = checker["load_contract_documents"]()
+    check = checker["check_github_typescript_abi"]
+    contract_error = checker["ContractError"]
+
+    check(documents)
+    package_abi = json.loads(GITHUB_TYPESCRIPT_ABI.read_text())
+    assert package_abi["schema_version"] == "1.0.0"
+    assert package_abi["catalog_version"] == "0.2.0"
+    assert len(package_abi["tools"]) == 15
+    assert sum(tool["risk"] == "read" for tool in package_abi["tools"]) == 13
+
+    reordered = deepcopy(documents)
+    reordered["integrations/github-tool-abi-typescript-v1.json"]["tools"][6:8] = (
+        reversed(
+            reordered["integrations/github-tool-abi-typescript-v1.json"]["tools"][6:8]
+        )
+    )
+    with pytest.raises(contract_error, match="tool order differs"):
+        check(reordered)
+
+    shared_drift = deepcopy(documents)
+    shared_drift["integrations/github-tool-abi-typescript-v1.json"]["tools"][0][
+        "description"
+    ] = "drift"
+    with pytest.raises(contract_error, match="shared-six prefix differs"):
+        check(shared_drift)
+
+    schema_drift = deepcopy(documents)
+    schema_drift["integrations/github-tool-abi-typescript-v1.json"]["tools"][6][
+        "parameters"
+    ]["properties"]["per_page"]["maximum"] = 100
+    with pytest.raises(contract_error, match="parameter schema differs"):
+        check(schema_drift)
 
 
 def test_every_packaged_cli_command_has_one_stability_tier() -> None:

@@ -8,10 +8,11 @@ import {
 } from "@kaji/sdk";
 import { IntegrationPolicyError } from "@kaji/sdk/integrations";
 
+import { createSharedGitHubToolBindings } from "../../registry/github/index";
 import {
-  createSharedGitHubToolBindings,
-  type SharedGitHubClient,
-} from "../../registry/github/index";
+  createPackageGitHubToolBindings,
+  type PackageGitHubClient,
+} from "../../registry/github/package-tools";
 import { createPackageGitHubState } from "./github-package-internal";
 
 export interface CreateGitHubIntegrationOptions {
@@ -23,7 +24,7 @@ export interface CreateGitHubIntegrationOptions {
 
 export class GitHubIntegration extends Integration {
   readonly namespace = "github";
-  #client: SharedGitHubClient;
+  #client: PackageGitHubClient;
   #closeOwnedRequester: (() => void) | undefined;
   #closed = false;
 
@@ -35,7 +36,10 @@ export class GitHubIntegration extends Integration {
   }
 
   override tools(): [ToolSpec, ToolHandler][] {
-    return createSharedGitHubToolBindings(this.#client).map(([spec, handler]) => [
+    return [
+      ...createSharedGitHubToolBindings(this.#client),
+      ...createPackageGitHubToolBindings(this.#client),
+    ].map(([spec, handler]) => [
       spec,
       async (args, context) => {
         if (this.#closed) throw new IntegrationPolicyError();

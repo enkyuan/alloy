@@ -21,7 +21,19 @@ const EXPECTED_TOOLS = [
   "get_issue",
   "list_issues",
   "search_code",
+  "get_commit",
+  "get_pull_request",
+  "list_pull_request_files",
+  "list_check_runs",
+  "get_workflow_run",
+  "list_workflow_jobs",
+  "list_file_commits",
+  "get_release",
+  "list_deployments",
 ] as const;
+const EXPECTED_READ_TOOLS = EXPECTED_TOOLS.filter(
+  (name) => name !== "add_comment" && name !== "create_issue",
+);
 const EXPECTED_RUNTIME_EXPORTS = [
   "GitHubIntegration",
   "createGithubIntegration",
@@ -32,12 +44,14 @@ const EXPECTED_DECLARATION_EXPORTS = [
   ...EXPECTED_RUNTIME_EXPORTS,
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_PATHS = [
+  "registry/github/package-tools.ts",
   "registry/github/package.ts",
   "registry/github/package-internal.ts",
   "src/integrations/github.ts",
   "src/integrations/github-package-internal.ts",
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_SPECIFIERS = [
+  "@kaji/sdk/registry/github/package-tools.ts",
   "@kaji/sdk/registry/github/package.ts",
   "@kaji/sdk/registry/github/package-internal.ts",
   "@kaji/sdk/src/integrations/github.ts",
@@ -49,6 +63,7 @@ const EXPECTED_GITHUB_SOURCE_MAPS = [
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
   "export interface PackageGitHubRuntime",
+  "export function createPackageGitHubToolBindings(",
   "readonly createRequester: (observability:",
   "readonly createClient: (options: GitHubClientOptions)",
   "runtime: PackageGitHubRuntime = productionRuntime",
@@ -80,6 +95,18 @@ interface ApiFixture {
 interface SharedAbi {
   readonly version: "1.0.0";
   readonly namespace: "github";
+  readonly tools: readonly Record<string, unknown>[];
+}
+
+interface PackageAbi {
+  readonly schema_version: "1.0.0";
+  readonly catalog_version: "0.2.0";
+  readonly namespace: "github";
+  readonly tools: readonly Record<string, unknown>[];
+}
+
+interface CopiedManifest {
+  readonly version: "0.1.0";
   readonly tools: readonly Record<string, unknown>[];
 }
 
@@ -235,14 +262,14 @@ function declarationExportNames(declaration: string): string[] {
 
 function exactToolSpecs(
   integration: InstanceType<GitHubRuntime["GitHubIntegration"]>,
-  abi: SharedAbi,
+  abi: PackageAbi,
   label: string,
 ): Record<string, unknown>[] {
   const specs = integration
     .tools()
     .map(([spec]) => JSON.parse(JSON.stringify(spec)) as Record<string, unknown>);
   if (integration.namespace !== abi.namespace || !isDeepStrictEqual(specs, abi.tools)) {
-    throw new Error(`${label} GitHub catalog differs from the canonical shared ABI`);
+    throw new Error(`${label} GitHub catalog differs from the canonical package ABI`);
   }
   return specs;
 }
@@ -444,6 +471,26 @@ async function runProof(argv: string[]) {
         "utf8",
       ),
     ) as SharedAbi;
+    const packageAbi = JSON.parse(
+      readFileSync(
+        contained(
+          join(packageRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+          packageRoot,
+          "GitHub TypeScript package ABI",
+        ),
+        "utf8",
+      ),
+    ) as PackageAbi;
+    const copiedManifest = JSON.parse(
+      readFileSync(
+        contained(
+          join(packageRoot, "registry/github/manifest.json"),
+          packageRoot,
+          "GitHub copied manifest",
+        ),
+        "utf8",
+      ),
+    ) as CopiedManifest;
 
     proofStage = "public-imports";
     const sdk = await import("@kaji/sdk");
@@ -547,16 +594,26 @@ async function runProof(argv: string[]) {
 
     proofStage = "catalog";
     const inspected = github.inspectIntegration();
-    const packageTools = exactToolSpecs(inspected, abi, "ESM");
+    const packageTools = exactToolSpecs(inspected, packageAbi, "ESM");
     inspected.close();
     const requiredInspected = requiredGithub.inspectIntegration();
-    const requiredPackageTools = exactToolSpecs(requiredInspected, abi, "CommonJS");
+    const requiredPackageTools = exactToolSpecs(requiredInspected, packageAbi, "CommonJS");
     requiredInspected.close();
     if (
       packageTools.length !== EXPECTED_TOOLS.length ||
       requiredPackageTools.length !== EXPECTED_TOOLS.length
     ) {
-      throw new Error("GitHub shared ABI tool count changed");
+      throw new Error("GitHub package ABI tool count changed");
+    }
+    if (
+      !isDeepStrictEqual(packageTools.slice(0, abi.tools.length), abi.tools) ||
+      !isDeepStrictEqual(requiredPackageTools.slice(0, abi.tools.length), abi.tools) ||
+      copiedManifest.version !== "0.1.0" ||
+      !isDeepStrictEqual(copiedManifest.tools, abi.tools) ||
+      packageTools.filter((spec) => spec.risk === "read").map((spec) => spec.name).join(",") !==
+        EXPECTED_READ_TOOLS.join(",")
+    ) {
+      throw new Error("GitHub shared/package catalog boundary changed");
     }
     publicScenarios.push("catalog-inspection");
 
@@ -803,13 +860,24 @@ async function runProof(argv: string[]) {
       network: "blocked",
       liveProvider: false,
       sharedAbiVersion: abi.version,
+      packageAbiSchemaVersion: packageAbi.schema_version,
+      packageCatalogVersion: packageAbi.catalog_version,
       apiFixtureVersion: fixture.version,
       sharedFixtureCaseCount: fixture.cases.length,
       publicScenarioCount: publicScenarios.length,
-      toolCount: packageTools.length,
-      readToolCount: packageTools.filter((spec) => spec.risk === "read").length,
+      packageCatalog: {
+        toolCount: packageTools.length,
+        readToolCount: packageTools.filter((spec) => spec.risk === "read").length,
+      },
+      cliCopiedCatalog: {
+        manifestVersion: copiedManifest.version,
+        toolCount: copiedManifest.tools.length,
+        readToolCount: copiedManifest.tools.filter((spec) => spec.risk === "read").length,
+      },
       esmSharedAbiMatched: true,
       cjsSharedAbiMatched: true,
+      esmPackageAbiMatched: true,
+      cjsPackageAbiMatched: true,
       esmClassIdentityMatched,
       cjsClassIdentityMatched,
       esmFactoryIdentityMatched,

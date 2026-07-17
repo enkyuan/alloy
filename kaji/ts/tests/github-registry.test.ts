@@ -12,6 +12,7 @@ import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { GitHubClient } from "../registry/github/client";
 import { GitHubIntegration, inspectIntegration } from "../registry/github/index";
+import { createPackageGitHubToolBindings } from "../registry/github/package-tools";
 import {
   createGithubIntegration as createPackageGithubIntegration,
   GitHubIntegration as PackageGitHubIntegration,
@@ -23,6 +24,39 @@ const kajiRoot = resolve(import.meta.dirname, "../..");
 const abi = JSON.parse(
   readFileSync(resolve(kajiRoot, "contracts/integrations/github-tool-abi-v1.json"), "utf8"),
 ) as { namespace: string; tools: Array<Record<string, unknown>> };
+const packageAbi = JSON.parse(
+  readFileSync(
+    resolve(kajiRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+    "utf8",
+  ),
+) as {
+  schema_version: string;
+  catalog_version: string;
+  namespace: string;
+  tools: Array<Record<string, unknown>>;
+};
+
+const PACKAGE_TOOLS = [
+  "add_comment",
+  "create_issue",
+  "get_file",
+  "get_issue",
+  "list_issues",
+  "search_code",
+  "get_commit",
+  "get_pull_request",
+  "list_pull_request_files",
+  "list_check_runs",
+  "get_workflow_run",
+  "list_workflow_jobs",
+  "list_file_commits",
+  "get_release",
+  "list_deployments",
+] as const;
+
+const PACKAGE_READ_TOOLS = PACKAGE_TOOLS.filter(
+  (name) => name !== "add_comment" && name !== "create_issue",
+);
 
 describe("GitHub registry bundle", () => {
   it("closes its production-owned requester exactly once", () => {
@@ -70,7 +104,7 @@ describe("GitHub registry bundle", () => {
     expect(listToolSpecs()).toEqual(before);
   });
 
-  it("exposes the exact shared ABI from the public package facade", () => {
+  it("exposes the exact 15-tool package catalog while the copied catalog stays shared-six", () => {
     const integration = inspectPackageIntegration();
     const tools = integration.tools().map(([spec]) => ({
       name: spec.name,
@@ -83,11 +117,30 @@ describe("GitHub registry bundle", () => {
 
     expect(integration).toBeInstanceOf(PackageGitHubIntegration);
     expect({ namespace: integration.namespace, tools }).toEqual({
-      namespace: abi.namespace,
-      tools: abi.tools,
+      namespace: packageAbi.namespace,
+      tools: packageAbi.tools,
     });
-    expect(tools.filter((tool) => tool.risk === "read")).toHaveLength(4);
+    expect(tools.map((tool) => tool.name)).toEqual(PACKAGE_TOOLS);
+    expect(tools.filter((tool) => tool.risk === "read").map((tool) => tool.name)).toEqual(
+      PACKAGE_READ_TOOLS,
+    );
+    expect(
+      inspectIntegration()
+        .tools()
+        .map(([spec]) => spec.name),
+    ).toEqual(abi.tools.map((tool) => tool.name));
     integration.close();
+  });
+
+  it("keeps package ABI version domains distinct from npm and the shared manifest", () => {
+    const packageManifest = JSON.parse(readFileSync(resolve(kajiRoot, "ts/package.json"), "utf8"));
+    const copiedManifest = JSON.parse(
+      readFileSync(resolve(kajiRoot, "ts/registry/github/manifest.json"), "utf8"),
+    );
+    expect(packageAbi.schema_version).toBe("1.0.0");
+    expect(packageAbi.catalog_version).toBe("0.2.0");
+    expect(copiedManifest.version).toBe("0.1.0");
+    expect(packageManifest.version).not.toBe(packageAbi.catalog_version);
   });
 
   it("keeps package factory lifecycle idempotent and introspectable", () => {
@@ -96,10 +149,10 @@ describe("GitHub registry bundle", () => {
       repositories: [],
     });
 
-    expect(integration.tools()).toHaveLength(abi.tools.length);
+    expect(integration.tools()).toHaveLength(PACKAGE_TOOLS.length);
     integration.close();
     integration.close();
-    expect(integration.tools()).toHaveLength(abi.tools.length);
+    expect(integration.tools()).toHaveLength(PACKAGE_TOOLS.length);
   });
 
   it("rejects post-close package calls before reading credentials", async () => {
@@ -145,12 +198,12 @@ describe("GitHub registry bundle", () => {
     integration.register(registry);
 
     expect(registry.listSpecs().map(({ name, catalogName }) => ({ name, catalogName }))).toEqual(
-      abi.tools.map((tool) => ({
-        name: `github_${tool.name}`,
-        catalogName: `github.${tool.name}`,
+      PACKAGE_TOOLS.map((name) => ({
+        name: `github_${name}`,
+        catalogName: `github.${name}`,
       })),
     );
-    expect(warn).toHaveBeenCalledTimes(abi.tools.length);
+    expect(warn).toHaveBeenCalledTimes(PACKAGE_TOOLS.length);
     warn.mockRestore();
   });
 
@@ -211,6 +264,94 @@ describe("GitHub registry bundle", () => {
     expect(client.searchCode).toHaveBeenCalledWith(context, {
       repository: "owner/repo",
       query: "needle",
+    });
+  });
+
+  it("delegates every package-only snake_case argument explicitly", async () => {
+    const client = {
+      getCommit: vi.fn(async () => ({ operation: "get_commit" })),
+      getPullRequest: vi.fn(async () => ({ operation: "get_pull_request" })),
+      listPullRequestFiles: vi.fn(async () => ({ operation: "list_pull_request_files" })),
+      listCheckRuns: vi.fn(async () => ({ operation: "list_check_runs" })),
+      getWorkflowRun: vi.fn(async () => ({ operation: "get_workflow_run" })),
+      listWorkflowJobs: vi.fn(async () => ({ operation: "list_workflow_jobs" })),
+      listFileCommits: vi.fn(async () => ({ operation: "list_file_commits" })),
+      getRelease: vi.fn(async () => ({ operation: "get_release" })),
+      listDeployments: vi.fn(async () => ({ operation: "list_deployments" })),
+    } as never;
+    const bindings = createPackageGitHubToolBindings(client);
+    const context = { signal: new AbortController().signal } as never;
+    const argumentsByName: Record<string, Record<string, unknown>> = {
+      get_commit: { repository: "owner/repo", ref: "main", page: 2, per_page: 20 },
+      get_pull_request: { repository: "owner/repo", pull_number: 7 },
+      list_pull_request_files: { repository: "owner/repo", pull_number: 7, page: 2, per_page: 20 },
+      list_check_runs: {
+        repository: "owner/repo",
+        ref: "main",
+        filter: "all",
+        page: 2,
+        per_page: 20,
+      },
+      get_workflow_run: { repository: "owner/repo", run_id: 11 },
+      list_workflow_jobs: {
+        repository: "owner/repo",
+        run_id: 11,
+        filter: "all",
+        page: 2,
+        per_page: 20,
+      },
+      list_file_commits: {
+        repository: "owner/repo",
+        path: "src/a.ts",
+        ref: "main",
+        page: 2,
+        per_page: 20,
+      },
+      get_release: { repository: "owner/repo", tag: "v1" },
+      list_deployments: {
+        repository: "owner/repo",
+        ref: "main",
+        sha: "abc",
+        environment: "prod",
+        task: "deploy",
+        page: 2,
+        per_page: 20,
+      },
+    };
+
+    for (const [spec, handler] of bindings) {
+      await expect(handler(argumentsByName[spec.name]!, context)).resolves.toEqual({
+        operation: spec.name,
+      });
+    }
+    expect(client.getCommit).toHaveBeenCalledWith(context, {
+      repository: "owner/repo",
+      ref: "main",
+      page: 2,
+      perPage: 20,
+    });
+    expect(client.listCheckRuns).toHaveBeenCalledWith(context, {
+      repository: "owner/repo",
+      ref: "main",
+      filter: "all",
+      page: 2,
+      perPage: 20,
+    });
+    expect(client.listFileCommits).toHaveBeenCalledWith(context, {
+      repository: "owner/repo",
+      path: "src/a.ts",
+      ref: "main",
+      page: 2,
+      perPage: 20,
+    });
+    expect(client.listDeployments).toHaveBeenCalledWith(context, {
+      repository: "owner/repo",
+      ref: "main",
+      sha: "abc",
+      environment: "prod",
+      task: "deploy",
+      page: 2,
+      perPage: 20,
     });
   });
 

@@ -45,6 +45,7 @@ REQUIRED_JSON = {
     "integrations/copy-provenance-v1.schema.json",
     "integrations/echo-tool-abi-v1.json",
     "integrations/github-tool-abi-v1.json",
+    "integrations/github-tool-abi-typescript-v1.json",
     "parity/expected-normalized.json",
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
@@ -86,6 +87,24 @@ REQUIRED_EVENT_NEGATIVE_CASES = {
     "unsafe-integral-number",
 }
 SAFE_JSON_INTEGER_MAX = 9_007_199_254_740_991
+GITHUB_TYPESCRIPT_TOOL_NAMES = [
+    "add_comment",
+    "create_issue",
+    "get_file",
+    "get_issue",
+    "list_issues",
+    "search_code",
+    "get_commit",
+    "get_pull_request",
+    "list_pull_request_files",
+    "list_check_runs",
+    "get_workflow_run",
+    "list_workflow_jobs",
+    "list_file_commits",
+    "get_release",
+    "list_deployments",
+]
+GITHUB_TYPESCRIPT_EXTENSION_NAMES = GITHUB_TYPESCRIPT_TOOL_NAMES[6:]
 REQUIRED_PROVIDER_COST_CASES = [
     "tie-even-down",
     "tie-even-up",
@@ -594,6 +613,195 @@ def check_packaged_contracts() -> None:
         for relative in sorted(expected):
             if (target / relative).read_bytes() != (CONTRACTS / relative).read_bytes():
                 raise fail(target / relative, "/", "packaged contract is out of sync")
+
+
+def check_github_typescript_abi(documents: dict[str, dict[str, Any]]) -> None:
+    relative = "integrations/github-tool-abi-typescript-v1.json"
+    path = CONTRACTS / relative
+    document = documents[relative]
+    if set(document) != {
+        "$schema",
+        "schema_version",
+        "catalog_version",
+        "namespace",
+        "tools",
+    }:
+        raise fail(path, "/", "expected the closed TypeScript GitHub ABI envelope")
+    if document.get("schema_version") != "1.0.0":
+        raise fail(path, "/schema_version", "expected '1.0.0'")
+    if document.get("catalog_version") != "0.2.0":
+        raise fail(path, "/catalog_version", "expected '0.2.0'")
+    if document.get("namespace") != "github":
+        raise fail(path, "/namespace", "expected 'github'")
+
+    tools = document.get("tools")
+    if not isinstance(tools, list):
+        raise fail(path, "/tools", "expected an array")
+    names = [tool.get("name") if isinstance(tool, dict) else None for tool in tools]
+    if names != GITHUB_TYPESCRIPT_TOOL_NAMES:
+        raise fail(path, "/tools", "TypeScript GitHub package tool order differs")
+    if len(names) != len(set(names)):
+        raise fail(path, "/tools", "TypeScript GitHub package tools are not unique")
+
+    shared_tools = documents["integrations/github-tool-abi-v1.json"]["tools"]
+    if tools[:6] != shared_tools:
+        raise fail(path, "/tools", "shared-six prefix differs from the cross-SDK ABI")
+
+    repository = {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$",
+    }
+    safe_id = {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": SAFE_JSON_INTEGER_MAX,
+    }
+    page = {"type": "integer", "minimum": 1, "maximum": 1000, "default": 1}
+    per_page = {"type": "integer", "minimum": 1, "maximum": 20, "default": 10}
+    ref = {"type": "string", "minLength": 1, "maxLength": 100}
+    path_value = {"type": "string", "minLength": 1, "maxLength": 512}
+    filter_value = {
+        "type": "string",
+        "enum": ["latest", "all"],
+        "default": "latest",
+    }
+
+    def parameters(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
+        return {
+            "$schema": DRAFT_2020_12,
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        }
+
+    expected_parameters = {
+        "get_commit": parameters(
+            {"repository": repository, "ref": ref, "page": page, "per_page": per_page},
+            ["repository", "ref"],
+        ),
+        "get_pull_request": parameters(
+            {"repository": repository, "pull_number": safe_id},
+            ["repository", "pull_number"],
+        ),
+        "list_pull_request_files": parameters(
+            {
+                "repository": repository,
+                "pull_number": safe_id,
+                "page": page,
+                "per_page": per_page,
+            },
+            ["repository", "pull_number"],
+        ),
+        "list_check_runs": parameters(
+            {
+                "repository": repository,
+                "ref": ref,
+                "filter": filter_value,
+                "page": page,
+                "per_page": per_page,
+            },
+            ["repository", "ref"],
+        ),
+        "get_workflow_run": parameters(
+            {"repository": repository, "run_id": safe_id},
+            ["repository", "run_id"],
+        ),
+        "list_workflow_jobs": parameters(
+            {
+                "repository": repository,
+                "run_id": safe_id,
+                "filter": filter_value,
+                "page": page,
+                "per_page": per_page,
+            },
+            ["repository", "run_id"],
+        ),
+        "list_file_commits": parameters(
+            {
+                "repository": repository,
+                "path": path_value,
+                "ref": ref,
+                "page": page,
+                "per_page": per_page,
+            },
+            ["repository", "path"],
+        ),
+        "get_release": parameters(
+            {"repository": repository, "tag": ref},
+            ["repository", "tag"],
+        ),
+        "list_deployments": parameters(
+            {
+                "repository": repository,
+                "ref": ref,
+                "sha": {"type": "string", "pattern": "^[0-9A-Fa-f]{1,64}$"},
+                "environment": ref,
+                "task": ref,
+                "page": page,
+                "per_page": per_page,
+            },
+            ["repository"],
+        ),
+    }
+    for index, name in enumerate(GITHUB_TYPESCRIPT_EXTENSION_NAMES, start=6):
+        tool = tools[index]
+        location = f"/tools/{index}"
+        if not isinstance(tool, dict) or set(tool) != {
+            "name",
+            "description",
+            "parameters",
+            "risk",
+            "parallel_safe",
+            "timeout_ms",
+        }:
+            raise fail(path, location, "invalid TypeScript extension tool envelope")
+        if not isinstance(tool["description"], str) or not tool["description"]:
+            raise fail(path, f"{location}/description", "expected a non-empty string")
+        if tool["parameters"] != expected_parameters[name]:
+            raise fail(
+                path, f"{location}/parameters", "extension parameter schema differs"
+            )
+        if (
+            tool["risk"] != "read"
+            or tool["parallel_safe"] is not True
+            or tool["timeout_ms"] != 10000
+        ):
+            raise fail(path, location, "extension read invariants differ")
+        schema_issue = parameter_schema_issue(tool["parameters"])
+        if schema_issue is not None:
+            raise fail(
+                path,
+                f"{location}/parameters{pointer(schema_issue)}",
+                "invalid parameter schema",
+            )
+        schema_error = check_schema(tool["parameters"])
+        if schema_error is not None:
+            raise fail(
+                path,
+                f"{location}/parameters{pointer(schema_error.absolute_path)}",
+                "invalid parameter schema",
+            )
+
+    for manifest_path in (
+        ROOT / "kaji" / "ts" / "registry" / "github" / "manifest.json",
+        ROOT
+        / "kaji"
+        / "src"
+        / "kaji"
+        / "integrations"
+        / "registry"
+        / "github"
+        / "manifest.json",
+    ):
+        manifest = load_json(manifest_path)
+        manifest_tools = manifest.get("tools")
+        if manifest.get("version") != "0.1.0" or manifest_tools != shared_tools:
+            raise fail(
+                manifest_path,
+                "/tools",
+                "copied GitHub manifest must remain 0.1.0 with the shared six tools",
+            )
 
 
 def validate_instance(
@@ -2137,6 +2345,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_events(documents, codes, recoveries)
     check_tools(documents, codes)
     check_integrations(documents, codes)
+    check_github_typescript_abi(documents)
     check_parity(documents)
     check_provider_costs(documents["providers/cost-conformance.json"])
     check_packaged_contracts()

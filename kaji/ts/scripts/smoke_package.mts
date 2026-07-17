@@ -74,13 +74,24 @@ interface GitHubPackageProof {
   readonly network: "blocked";
   readonly liveProvider: false;
   readonly sharedAbiVersion: "1.0.0";
+  readonly packageAbiSchemaVersion: "1.0.0";
+  readonly packageCatalogVersion: "0.2.0";
   readonly apiFixtureVersion: "1.0.0";
   readonly sharedFixtureCaseCount: number;
   readonly publicScenarioCount: number;
-  readonly toolCount: number;
-  readonly readToolCount: number;
+  readonly packageCatalog: {
+    readonly toolCount: 15;
+    readonly readToolCount: 13;
+  };
+  readonly cliCopiedCatalog: {
+    readonly manifestVersion: "0.1.0";
+    readonly toolCount: 6;
+    readonly readToolCount: 4;
+  };
   readonly esmSharedAbiMatched: true;
   readonly cjsSharedAbiMatched: true;
+  readonly esmPackageAbiMatched: true;
+  readonly cjsPackageAbiMatched: true;
   readonly esmClassIdentityMatched: true;
   readonly cjsClassIdentityMatched: true;
   readonly esmFactoryIdentityMatched: true;
@@ -155,6 +166,7 @@ const GITHUB_PUBLIC_SCENARIOS = [
   "alias-collision",
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_PATHS = [
+  "registry/github/package-tools.ts",
   "registry/github/package.ts",
   "registry/github/package-internal.ts",
   "src/integrations/github.ts",
@@ -166,6 +178,7 @@ const EXPECTED_GITHUB_SOURCE_MAPS = [
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
   "export interface PackageGitHubRuntime",
+  "export function createPackageGitHubToolBindings(",
   "readonly createRequester: (observability:",
   "readonly createClient: (options: GitHubClientOptions)",
   "runtime: PackageGitHubRuntime = productionRuntime",
@@ -680,6 +693,25 @@ function assertGithubPackageProof(
       "utf8",
     ),
   ) as { version: "1.0.0"; cases: readonly unknown[] };
+  const packageAbi = JSON.parse(
+    readFileSync(
+      join(
+        installedPackageRoot,
+        "contracts/integrations/github-tool-abi-typescript-v1.json",
+      ),
+      "utf8",
+    ),
+  ) as {
+    schema_version: "1.0.0";
+    catalog_version: "0.2.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
+  const copiedManifest = JSON.parse(
+    readFileSync(join(installedPackageRoot, "registry/github/manifest.json"), "utf8"),
+  ) as {
+    version: "0.1.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
   const privateGitHubCompositionSourcesPacked =
     inspectPrivateGitHubCompositionSources(installedPackageRoot);
   if (privateGitHubCompositionSourcesPacked) {
@@ -693,13 +725,24 @@ function assertGithubPackageProof(
     network: "blocked",
     liveProvider: false,
     sharedAbiVersion: sharedAbi.version,
+    packageAbiSchemaVersion: packageAbi.schema_version,
+    packageCatalogVersion: packageAbi.catalog_version,
     apiFixtureVersion: apiFixture.version,
     sharedFixtureCaseCount: apiFixture.cases.length,
     publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
-    toolCount: sharedAbi.tools.length,
-    readToolCount: sharedAbi.tools.filter((tool) => tool.risk === "read").length,
+    packageCatalog: {
+      toolCount: packageAbi.tools.length as 15,
+      readToolCount: packageAbi.tools.filter((tool) => tool.risk === "read").length as 13,
+    },
+    cliCopiedCatalog: {
+      manifestVersion: copiedManifest.version,
+      toolCount: copiedManifest.tools.length as 6,
+      readToolCount: copiedManifest.tools.filter((tool) => tool.risk === "read").length as 4,
+    },
     esmSharedAbiMatched: true,
     cjsSharedAbiMatched: true,
+    esmPackageAbiMatched: true,
+    cjsPackageAbiMatched: true,
     esmClassIdentityMatched: true,
     cjsClassIdentityMatched: true,
     esmFactoryIdentityMatched: true,

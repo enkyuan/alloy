@@ -2,7 +2,7 @@ import type { MetricsSink, ToolExecutionContext, TraceSink } from "@kaji/sdk";
 import { createGitHubRequester, type FixedOriginRequester } from "@kaji/sdk/integrations";
 
 import { GitHubClient, type GitHubClientOptions } from "../../registry/github/client";
-import type { SharedGitHubClient } from "../../registry/github/index";
+import type { PackageGitHubClient } from "../../registry/github/package-tools";
 
 type OwnedGitHubRequester = FixedOriginRequester & { close(): void };
 
@@ -18,7 +18,7 @@ export interface PackageGitHubRuntime {
     readonly metricsSink?: MetricsSink;
     readonly traceSink?: TraceSink;
   }) => OwnedGitHubRequester;
-  readonly createClient: (options: GitHubClientOptions) => SharedGitHubClient;
+  readonly createClient: (options: GitHubClientOptions) => PackageGitHubClient;
 }
 
 const productionRuntime: PackageGitHubRuntime = {
@@ -29,7 +29,7 @@ const productionRuntime: PackageGitHubRuntime = {
 export function createPackageGitHubState(
   options: PackageGitHubOptions,
   runtime: PackageGitHubRuntime = productionRuntime,
-): Readonly<{ client: SharedGitHubClient; close: () => void }> {
+): Readonly<{ client: PackageGitHubClient; close: () => void }> {
   const { metricsSink, traceSink, ...clientOptions } = options;
   const requester = runtime.createRequester({ metricsSink, traceSink });
   try {

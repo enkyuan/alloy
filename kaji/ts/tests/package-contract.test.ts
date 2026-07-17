@@ -59,6 +59,19 @@ const GITHUB_SHARED_ABI = JSON.parse(
   version: "1.0.0";
   tools: ReadonlyArray<{ risk?: unknown }>;
 };
+const GITHUB_PACKAGE_ABI = JSON.parse(
+  readFileSync(join(canonicalRoot, "integrations/github-tool-abi-typescript-v1.json"), "utf8"),
+) as {
+  schema_version: "1.0.0";
+  catalog_version: "0.2.0";
+  tools: ReadonlyArray<{ risk?: unknown }>;
+};
+const GITHUB_COPIED_MANIFEST = JSON.parse(
+  readFileSync(join(packageRoot, "registry/github/manifest.json"), "utf8"),
+) as {
+  version: "0.1.0";
+  tools: ReadonlyArray<{ risk?: unknown }>;
+};
 const GITHUB_API_FIXTURE = JSON.parse(
   readFileSync(join(canonicalRoot, "integrations/github-api-conformance-v1.json"), "utf8"),
 ) as { version: "1.0.0"; cases: readonly unknown[] };
@@ -86,6 +99,7 @@ const GITHUB_PUBLIC_SCENARIOS = [
 
 const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
   "export interface PackageGitHubRuntime",
+  "export function createPackageGitHubToolBindings(",
   "readonly createRequester: (observability:",
   "readonly createClient: (options: GitHubClientOptions)",
   "runtime: PackageGitHubRuntime = productionRuntime",
@@ -100,13 +114,24 @@ const GITHUB_PACKAGE_PROOF = {
   network: "blocked",
   liveProvider: false,
   sharedAbiVersion: GITHUB_SHARED_ABI.version,
+  packageAbiSchemaVersion: GITHUB_PACKAGE_ABI.schema_version,
+  packageCatalogVersion: GITHUB_PACKAGE_ABI.catalog_version,
   apiFixtureVersion: GITHUB_API_FIXTURE.version,
   sharedFixtureCaseCount: GITHUB_API_FIXTURE.cases.length,
   publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
-  toolCount: GITHUB_SHARED_ABI.tools.length,
-  readToolCount: GITHUB_SHARED_ABI.tools.filter((tool) => tool.risk === "read").length,
+  packageCatalog: {
+    toolCount: GITHUB_PACKAGE_ABI.tools.length,
+    readToolCount: GITHUB_PACKAGE_ABI.tools.filter((tool) => tool.risk === "read").length,
+  },
+  cliCopiedCatalog: {
+    manifestVersion: GITHUB_COPIED_MANIFEST.version,
+    toolCount: GITHUB_COPIED_MANIFEST.tools.length,
+    readToolCount: GITHUB_COPIED_MANIFEST.tools.filter((tool) => tool.risk === "read").length,
+  },
   esmSharedAbiMatched: true,
   cjsSharedAbiMatched: true,
+  esmPackageAbiMatched: true,
+  cjsPackageAbiMatched: true,
   esmClassIdentityMatched: true,
   cjsClassIdentityMatched: true,
   esmFactoryIdentityMatched: true,
@@ -619,16 +644,19 @@ describe("npm contract artifact", () => {
       'network: "blocked"',
       "liveProvider: false",
       "sharedAbiVersion: abi.version",
+      "packageAbiSchemaVersion: packageAbi.schema_version",
+      "packageCatalogVersion: packageAbi.catalog_version",
       "apiFixtureVersion: fixture.version",
       "sharedFixtureCaseCount: fixture.cases.length",
       "publicScenarioCount: publicScenarios.length",
-      "toolCount: packageTools.length",
+      "packageCatalog:",
+      "cliCopiedCatalog:",
       'const sdk = await import("@kaji/sdk");',
       'const testing = (await import("@kaji/sdk/testing"))',
       'await import("@kaji/sdk/integrations/github")',
       "const requirePackage = createRequire(import.meta.url);",
-      'exactToolSpecs(inspected, abi, "ESM")',
-      'exactToolSpecs(requiredInspected, abi, "CommonJS")',
+      'exactToolSpecs(inspected, packageAbi, "ESM")',
+      'exactToolSpecs(requiredInspected, packageAbi, "CommonJS")',
       "declarationExportNames(declaration)",
       "readTypeScriptDeclarationChecks(",
       'proofStage = "typescript-declaration-checks"',
@@ -637,6 +665,9 @@ describe("npm contract artifact", () => {
       'Object.hasOwn(document, "sourcesContent")',
       "privateSourceContainment.privateGitHubCompositionSourcesPacked",
       "privateSourceContainment.privateGitHubCompositionSourceImportsRejected",
+      '"registry/github/package-tools.ts"',
+      '"@kaji/sdk/registry/github/package-tools.ts"',
+      '"export function createPackageGitHubToolBindings("',
       "closedCallsDeniedBeforeCredentialAccess: true",
       "approvalDeniedBeforeCredentialAccess: true",
       "repositoryDeniedBeforeCredentialAccess: true",
@@ -1200,6 +1231,7 @@ console.log(JSON.stringify({
       for (const privatePath of [
         "registry/_template/manifest.json",
         "registry/github/github_pytest.py",
+        "registry/github/package-tools.ts",
         "registry/github/package.ts",
         "registry/github/package-internal.ts",
       ]) {

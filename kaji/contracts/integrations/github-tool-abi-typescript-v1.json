@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": "1.0.0",
+  "catalog_version": "0.2.0",
+  "namespace": "github",
+  "tools": [
+    {
+      "name": "add_comment",
+      "description": "Add a comment to a GitHub issue.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "issue_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "body": { "type": "string", "minLength": 1, "maxLength": 16384 }
+        },
+        "required": ["repository", "issue_number", "body"],
+        "additionalProperties": false
+      },
+      "risk": "external_effect",
+      "parallel_safe": false,
+      "timeout_ms": 15000
+    },
+    {
+      "name": "create_issue",
+      "description": "Create a GitHub issue.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "body": { "type": "string", "minLength": 0, "maxLength": 16384 }
+        },
+        "required": ["repository", "title", "body"],
+        "additionalProperties": false
+      },
+      "risk": "external_effect",
+      "parallel_safe": false,
+      "timeout_ms": 15000
+    },
+    {
+      "name": "get_file",
+      "description": "Get a file from a GitHub repository.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "required": ["repository", "path"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_issue",
+      "description": "Get a GitHub issue.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "issue_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["repository", "issue_number"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_issues",
+      "description": "List GitHub issues.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["open", "closed", "all"],
+            "default": "open"
+          },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "search_code",
+      "description": "Search code in a GitHub repository.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "query": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "page": { "type": "integer", "minimum": 1, "maximum": 50, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "query"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_commit",
+      "description": "Get bounded commit evidence from a GitHub repository.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "ref"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_pull_request",
+      "description": "Get bounded pull request evidence from GitHub.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "pull_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["repository", "pull_number"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_pull_request_files",
+      "description": "List bounded changed-file evidence for a GitHub pull request.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "pull_number": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "pull_number"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_check_runs",
+      "description": "List bounded GitHub check-run evidence for a ref.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "filter": {
+            "type": "string",
+            "enum": ["latest", "all"],
+            "default": "latest"
+          },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "ref"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_workflow_run",
+      "description": "Get bounded GitHub workflow-run evidence.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "run_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["repository", "run_id"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_workflow_jobs",
+      "description": "List bounded GitHub workflow-job evidence.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "run_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "filter": {
+            "type": "string",
+            "enum": ["latest", "all"],
+            "default": "latest"
+          },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "run_id"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_file_commits",
+      "description": "List bounded GitHub commit history for a file path.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "path": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository", "path"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_release",
+      "description": "Get bounded published-release evidence for a GitHub tag.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "tag": { "type": "string", "minLength": 1, "maxLength": 100 }
+        },
+        "required": ["repository", "tag"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "list_deployments",
+      "description": "List bounded GitHub deployment evidence.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$"
+          },
+          "ref": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "sha": { "type": "string", "pattern": "^[0-9A-Fa-f]{1,64}$" },
+          "environment": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "task": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "page": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 1 },
+          "per_page": { "type": "integer", "minimum": 1, "maximum": 20, "default": 10 }
+        },
+        "required": ["repository"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    }
+  ]
+}
